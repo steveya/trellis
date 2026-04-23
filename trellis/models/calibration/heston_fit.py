@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field, replace
 from datetime import date
 from types import MappingProxyType
-from typing import Mapping, Sequence
+from typing import TYPE_CHECKING, Mapping, Sequence
 
 import numpy as raw_np
 
@@ -38,6 +38,9 @@ from trellis.models.processes.heston import (
     resolve_heston_runtime_binding,
 )
 from trellis.models.transforms.fft_pricer import fft_price
+
+if TYPE_CHECKING:
+    from trellis.models.calibration.equity_vol_surface import EquityVolSurfaceAuthorityResult
 
 
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
@@ -197,6 +200,116 @@ class HestonSmileSurface:
 
 
 @dataclass(frozen=True)
+class HestonSurfaceInput:
+    """Reusable multi-expiry implied-vol surface for Heston surface fits."""
+
+    spot: float
+    rate: float
+    expiries: tuple[float, ...]
+    strikes: tuple[float, ...]
+    market_vols: tuple[tuple[float, ...], ...]
+    dividend_yield: float = 0.0
+    surface_name: str = ""
+    source_kind: str = "option_surface"
+    source_ref: str = "build_heston_surface_input"
+    warnings: tuple[str, ...] = ()
+    quote_map_spec: QuoteMapSpec = field(default_factory=_default_implied_vol_quote_map_spec)
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        if not raw_np.isfinite(self.spot) or float(self.spot) <= 0.0:
+            raise ValueError("spot must be finite and positive")
+        if not raw_np.isfinite(self.rate):
+            raise ValueError("rate must be finite")
+        if not raw_np.isfinite(self.dividend_yield):
+            raise ValueError("dividend_yield must be finite")
+        expiries = tuple(float(value) for value in self.expiries)
+        strikes = tuple(float(value) for value in self.strikes)
+        if len(expiries) < 2:
+            raise ValueError("Heston surface inputs require at least two expiries")
+        if len(strikes) < 5:
+            raise ValueError("Heston surface inputs require at least five strikes")
+        if tuple(sorted(expiries)) != expiries or len(set(expiries)) != len(expiries):
+            raise ValueError("expiries must be strictly increasing")
+        if tuple(sorted(strikes)) != strikes or len(set(strikes)) != len(strikes):
+            raise ValueError("strikes must be strictly increasing")
+        if any(value <= 0.0 or not raw_np.isfinite(value) for value in expiries):
+            raise ValueError("expiries must be finite and positive")
+        if any(value <= 0.0 or not raw_np.isfinite(value) for value in strikes):
+            raise ValueError("strikes must be finite and positive")
+        vol_grid = tuple(tuple(float(vol) for vol in row) for row in self.market_vols)
+        if len(vol_grid) != len(expiries):
+            raise ValueError("market_vol rows must align with expiries")
+        if any(len(row) != len(strikes) for row in vol_grid):
+            raise ValueError("each market_vol row must align with strikes")
+        if any(vol <= 0.0 or not raw_np.isfinite(vol) for row in vol_grid for vol in row):
+            raise ValueError("market vols must be finite and positive")
+        if self.quote_map_spec.quote_family != "implied_vol":
+            raise ValueError("Heston surface inputs require an implied-vol quote map")
+        object.__setattr__(self, "spot", float(self.spot))
+        object.__setattr__(self, "rate", float(self.rate))
+        object.__setattr__(self, "dividend_yield", float(self.dividend_yield))
+        object.__setattr__(self, "expiries", expiries)
+        object.__setattr__(self, "strikes", strikes)
+        object.__setattr__(self, "market_vols", vol_grid)
+        object.__setattr__(self, "warnings", tuple(str(warning) for warning in self.warnings))
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    @property
+    def point_count(self) -> int:
+        return int(len(self.expiries) * len(self.strikes))
+
+    def smile_surfaces(self) -> tuple[HestonSmileSurface, ...]:
+        """Return the expiry slices as supported smile surfaces."""
+        return tuple(
+            HestonSmileSurface(
+                spot=self.spot,
+                rate=self.rate,
+                expiry_years=float(expiry_years),
+                points=tuple(
+                    HestonSmilePoint(
+                        strike=float(strike),
+                        market_vol=float(market_vol),
+                        weight=1.0,
+                        label=f"{float(expiry_years):g}y_{float(strike):g}",
+                    )
+                    for strike, market_vol in zip(self.strikes, self.market_vols[index])
+                ),
+                dividend_yield=self.dividend_yield,
+                surface_name=self.surface_name,
+                source_kind=self.source_kind,
+                source_ref=self.source_ref,
+                warnings=self.warnings,
+                quote_map_spec=self.quote_map_spec,
+                metadata={
+                    **dict(self.metadata),
+                    "expiry_years": float(expiry_years),
+                    "expiry_index": int(index),
+                },
+            )
+            for index, expiry_years in enumerate(self.expiries)
+        )
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a JSON-friendly payload."""
+        return {
+            "source_kind": self.source_kind,
+            "source_ref": self.source_ref,
+            "surface_name": self.surface_name,
+            "spot": float(self.spot),
+            "rate": float(self.rate),
+            "dividend_yield": float(self.dividend_yield),
+            "expiries": list(self.expiries),
+            "strikes": list(self.strikes),
+            "market_vols": [list(row) for row in self.market_vols],
+            "point_count": self.point_count,
+            "warnings": list(self.warnings),
+            "quote_map": self.quote_map_spec.to_payload(),
+            "metadata": dict(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
 class HestonSmileFitDiagnostics:
     """Fit diagnostics for a Heston smile calibration result."""
 
@@ -294,6 +407,104 @@ class HestonSmileCalibrationResult:
             "solver_provenance": self.solver_provenance.to_payload(),
             "solver_replay_artifact": self.solver_replay_artifact.to_payload(),
             "fit_diagnostics": self.diagnostics.to_payload(),
+            "parameter_set_name": self.parameter_set_name,
+            "model_parameters": dict(self.model_parameters),
+            "warnings": list(self.warnings),
+            "provenance": dict(self.provenance),
+            "summary": dict(self.summary),
+            "assumptions": list(self.assumptions),
+        }
+
+
+@dataclass(frozen=True)
+class HestonSurfaceFitDiagnostics:
+    """Fit diagnostics for a multi-expiry Heston surface calibration."""
+
+    expiry_fits: tuple[HestonSmileFitDiagnostics, ...]
+    max_abs_vol_error: float
+    rms_vol_error: float
+    point_count: int
+    expiry_count: int
+    warning_count: int = 0
+    quote_convention_mismatch_count: int = 0
+    numerical_failure_count: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "expiry_fits", tuple(self.expiry_fits))
+        object.__setattr__(self, "max_abs_vol_error", float(self.max_abs_vol_error))
+        object.__setattr__(self, "rms_vol_error", float(self.rms_vol_error))
+        object.__setattr__(self, "point_count", int(self.point_count))
+        object.__setattr__(self, "expiry_count", int(self.expiry_count))
+        object.__setattr__(self, "warning_count", int(self.warning_count))
+        object.__setattr__(self, "quote_convention_mismatch_count", int(self.quote_convention_mismatch_count))
+        object.__setattr__(self, "numerical_failure_count", int(self.numerical_failure_count))
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a JSON-friendly diagnostics payload."""
+        return {
+            "expiry_fits": [fit.to_payload() for fit in self.expiry_fits],
+            "max_abs_vol_error": float(self.max_abs_vol_error),
+            "rms_vol_error": float(self.rms_vol_error),
+            "point_count": int(self.point_count),
+            "expiry_count": int(self.expiry_count),
+            "warning_count": int(self.warning_count),
+            "quote_convention_mismatch_count": int(self.quote_convention_mismatch_count),
+            "numerical_failure_count": int(self.numerical_failure_count),
+        }
+
+
+@dataclass(frozen=True)
+class HestonSurfaceCalibrationResult:
+    """Structured result for the supported Heston surface workflow."""
+
+    surface: HestonSurfaceInput
+    runtime_binding: HestonRuntimeBinding
+    solve_request: SolveRequest
+    solve_result: SolveResult
+    solver_provenance: SolveProvenance
+    solver_replay_artifact: SolveReplayArtifact
+    diagnostics: HestonSurfaceFitDiagnostics
+    model_vols: tuple[tuple[float, ...], ...]
+    parameter_set_name: str = "heston"
+    model_parameters: dict[str, object] = field(default_factory=dict)
+    warnings: tuple[str, ...] = ()
+    provenance: dict[str, object] = field(default_factory=dict)
+    summary: dict[str, object] = field(default_factory=dict)
+    assumptions: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "model_vols", tuple(tuple(float(value) for value in row) for row in self.model_vols))
+        object.__setattr__(self, "warnings", tuple(str(warning) for warning in self.warnings))
+        object.__setattr__(self, "assumptions", tuple(str(assumption) for assumption in self.assumptions))
+
+    def apply_to_market_state(self, market_state: MarketState) -> MarketState:
+        """Return ``market_state`` enriched with the calibrated Heston parameters."""
+        return materialize_model_parameter_set(
+            market_state,
+            parameter_set_name=self.parameter_set_name,
+            model_parameters=dict(self.model_parameters),
+            source_kind=str(self.provenance.get("source_kind", "calibrated_surface")),
+            source_ref=str(self.provenance.get("source_ref", "fit_heston_surface")),
+            selected_curve_roles=dict(self.provenance.get("selected_curve_names", {})),
+            metadata={
+                "instrument_family": "equity_vol",
+                "model_family": "heston",
+                "parameter_set_name": self.parameter_set_name,
+                "runtime_binding": self.runtime_binding.to_payload(),
+            },
+        )
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a JSON-friendly calibration payload."""
+        return {
+            "surface": self.surface.to_payload(),
+            "runtime_binding": self.runtime_binding.to_payload(),
+            "solve_request": self.solve_request.to_payload(),
+            "solve_result": self.solve_result.to_payload(),
+            "solver_provenance": self.solver_provenance.to_payload(),
+            "solver_replay_artifact": self.solver_replay_artifact.to_payload(),
+            "fit_diagnostics": self.diagnostics.to_payload(),
+            "model_vols": [list(row) for row in self.model_vols],
             "parameter_set_name": self.parameter_set_name,
             "model_parameters": dict(self.model_parameters),
             "warnings": list(self.warnings),
@@ -402,6 +613,51 @@ def build_heston_smile_surface(
     )
 
 
+def build_heston_surface_input(
+    spot: float,
+    expiries: Sequence[float],
+    strikes: Sequence[float],
+    market_vols: Sequence[Sequence[float]],
+    *,
+    rate: float,
+    dividend_yield: float = 0.0,
+    surface_name: str = "",
+    metadata: Mapping[str, object] | None = None,
+) -> HestonSurfaceInput:
+    """Normalize one supported multi-expiry Heston surface input."""
+    expiry_array = raw_np.asarray(expiries, dtype=float)
+    strike_array = raw_np.asarray(strikes, dtype=float)
+    vol_array = raw_np.asarray(market_vols, dtype=float)
+    if expiry_array.ndim != 1 or strike_array.ndim != 1:
+        raise ValueError("expiries and strikes must be one-dimensional sequences")
+    if vol_array.ndim != 2:
+        raise ValueError("market_vols must be a two-dimensional surface")
+    if vol_array.shape != (expiry_array.size, strike_array.size):
+        raise ValueError("market_vols must have shape (len(expiries), len(strikes))")
+
+    warnings: list[str] = []
+    for expiry in expiry_array:
+        forward = float(spot) * float(raw_np.exp((float(rate) - float(dividend_yield)) * float(expiry)))
+        below = raw_np.any(strike_array < forward)
+        above = raw_np.any(strike_array > forward)
+        if not (below and above):
+            warnings.append(
+                f"Heston surface expiry {float(expiry):g} does not bracket the forward with strikes on both sides."
+            )
+
+    return HestonSurfaceInput(
+        spot=float(spot),
+        rate=float(rate),
+        expiries=tuple(float(value) for value in expiry_array),
+        strikes=tuple(float(value) for value in strike_array),
+        market_vols=tuple(tuple(float(vol) for vol in row) for row in vol_array),
+        dividend_yield=float(dividend_yield),
+        surface_name=surface_name,
+        warnings=tuple(warnings),
+        metadata=metadata or {},
+    )
+
+
 def _default_initial_guess(surface: HestonSmileSurface) -> tuple[float, ...]:
     """Return a stable default parameter guess from the smile shape."""
     atm_vol = float(surface.market_vols[surface.atm_index])
@@ -409,6 +665,12 @@ def _default_initial_guess(surface: HestonSmileSurface) -> tuple[float, ...]:
     rho_guess = -0.3 if slope < -1e-6 else 0.3 if slope > 1e-6 else 0.0
     variance_guess = max(atm_vol ** 2, 0.01)
     return (1.5, variance_guess, max(0.25, atm_vol), rho_guess, variance_guess)
+
+
+def _default_surface_initial_guess(surface: HestonSurfaceInput) -> tuple[float, ...]:
+    """Return a stable default parameter guess from the middle expiry slice."""
+    smiles = surface.smile_surfaces()
+    return _default_initial_guess(smiles[len(smiles) // 2])
 
 
 def _normalize_warm_start(
@@ -514,6 +776,41 @@ def _fit_diagnostics(
         quote_convention_mismatch_count=quote_convention_mismatch_count,
         numerical_failure_count=numerical_failure_count,
     )
+
+
+def _heston_surface_model_vol_rows(
+    surface: HestonSurfaceInput,
+    params: Sequence[float],
+    *,
+    fft_points: int,
+    fft_eta: float,
+    fft_alpha: float,
+    diagnostics: dict[str, object] | None = None,
+) -> tuple[raw_np.ndarray, ...]:
+    """Return model vols for every expiry row under one Heston parameter vector."""
+    rows: list[raw_np.ndarray] = []
+    expiry_diagnostics: list[dict[str, int]] = []
+    quote_convention_mismatch_count = 0
+    numerical_failure_count = 0
+    for smile in surface.smile_surfaces():
+        smile_diagnostics: dict[str, int] = {}
+        row = _heston_model_vols(
+            smile,
+            params,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            fft_alpha=fft_alpha,
+            diagnostics=smile_diagnostics,
+        )
+        rows.append(row)
+        expiry_diagnostics.append(dict(smile_diagnostics))
+        quote_convention_mismatch_count += int(smile_diagnostics.get("quote_convention_mismatch_count", 0))
+        numerical_failure_count += int(smile_diagnostics.get("numerical_failure_count", 0))
+    if diagnostics is not None:
+        diagnostics["quote_convention_mismatch_count"] = int(quote_convention_mismatch_count)
+        diagnostics["numerical_failure_count"] = int(numerical_failure_count)
+        diagnostics["expiry_diagnostics"] = tuple(expiry_diagnostics)
+    return tuple(rows)
 
 
 def fit_heston_smile_surface(
@@ -668,6 +965,197 @@ def fit_heston_smile_surface(
     )
 
 
+def fit_heston_surface(
+    surface: HestonSurfaceInput,
+    *,
+    initial_guess: Sequence[float] | None = None,
+    warm_start: Sequence[float] | WarmStart | None = None,
+    parameter_set_name: str = "heston",
+    fft_points: int = 1024,
+    fft_eta: float = 0.1,
+    fft_alpha: float = 1.5,
+) -> HestonSurfaceCalibrationResult:
+    """Fit a supported Heston surface onto the shared solve substrate."""
+    normalized_warm_start = _normalize_warm_start(warm_start)
+    starting_point = tuple(float(value) for value in initial_guess) if initial_guess is not None else None
+    if starting_point is None and normalized_warm_start is not None:
+        starting_point = normalized_warm_start.parameter_values
+    if starting_point is None:
+        starting_point = _default_surface_initial_guess(surface)
+
+    labels = tuple(
+        f"{float(expiry):g}y_strike_{float(strike):g}"
+        for expiry in surface.expiries
+        for strike in surface.strikes
+    )
+    target_values = tuple(float(vol) for row in surface.market_vols for vol in row)
+
+    def vector_objective_fn(params: raw_np.ndarray) -> raw_np.ndarray:
+        rows = _heston_surface_model_vol_rows(
+            surface,
+            params,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            fft_alpha=fft_alpha,
+        )
+        return raw_np.concatenate(rows, dtype=float)
+
+    objective = ObjectiveBundle(
+        objective_kind="least_squares",
+        labels=labels,
+        target_values=target_values,
+        weights=tuple(1.0 for _ in labels),
+        vector_objective_fn=vector_objective_fn,
+        metadata={
+            "model_family": "heston",
+            "surface_name": surface.surface_name,
+            "fit_space": "implied_vol_surface",
+            "quote_map": surface.quote_map_spec.to_payload(),
+        },
+    )
+    request = SolveRequest(
+        request_id="heston_surface_least_squares",
+        problem_kind="least_squares",
+        parameter_names=("kappa", "theta", "xi", "rho", "v0"),
+        initial_guess=starting_point,
+        objective=objective,
+        bounds=SolveBounds(
+            lower=(0.05, 0.005, 0.05, -0.999, 0.005),
+            upper=(5.0, 0.5, 2.0, 0.999, 0.5),
+        ),
+        solver_hint="trf",
+        warm_start=normalized_warm_start,
+        metadata={
+            "surface": surface.to_payload(),
+            "parameter_set_name": parameter_set_name,
+            "model_family": "heston",
+        },
+        options={"ftol": 1e-8, "xtol": 1e-8, "gtol": 1e-8, "maxiter": 120},
+    )
+    solve_result = execute_solve_request(request)
+    solver_provenance = build_solve_provenance(request, solve_result)
+    solver_replay_artifact = build_solve_replay_artifact(request, solve_result)
+
+    evaluation_diagnostics: dict[str, object] = {}
+    model_vol_rows = _heston_surface_model_vol_rows(
+        surface,
+        solve_result.solution,
+        fft_points=fft_points,
+        fft_eta=fft_eta,
+        fft_alpha=fft_alpha,
+        diagnostics=evaluation_diagnostics,
+    )
+    warnings = list(surface.warnings)
+    if evaluation_diagnostics.get("quote_convention_mismatch_count", 0):
+        warnings.append(
+            "Some fitted Heston surface prices could not be inverted under the selected carry convention; inspect quote-convention diagnostics."
+        )
+    if evaluation_diagnostics.get("numerical_failure_count", 0):
+        warnings.append(
+            "Some fitted Heston surface points encountered numerical pricing or inversion failures; inspect fit diagnostics."
+        )
+
+    smile_surfaces = surface.smile_surfaces()
+    expiry_payloads = tuple(evaluation_diagnostics.get("expiry_diagnostics", ()))
+    expiry_fits = tuple(
+        _fit_diagnostics(
+            smile,
+            model_vol_rows[index],
+            warning_count=len(smile.warnings),
+            quote_convention_mismatch_count=int(
+                expiry_payloads[index].get("quote_convention_mismatch_count", 0)
+            )
+            if index < len(expiry_payloads)
+            else 0,
+            numerical_failure_count=int(expiry_payloads[index].get("numerical_failure_count", 0))
+            if index < len(expiry_payloads)
+            else 0,
+        )
+        for index, smile in enumerate(smile_surfaces)
+    )
+    flat_market_vols = raw_np.asarray(target_values, dtype=float)
+    flat_model_vols = raw_np.concatenate(model_vol_rows, dtype=float)
+    residuals = flat_model_vols - flat_market_vols
+    diagnostics = HestonSurfaceFitDiagnostics(
+        expiry_fits=expiry_fits,
+        max_abs_vol_error=float(raw_np.max(raw_np.abs(residuals))),
+        rms_vol_error=float(raw_np.sqrt(raw_np.mean(residuals ** 2))),
+        point_count=surface.point_count,
+        expiry_count=len(surface.expiries),
+        warning_count=len(warnings),
+        quote_convention_mismatch_count=int(evaluation_diagnostics.get("quote_convention_mismatch_count", 0)),
+        numerical_failure_count=int(evaluation_diagnostics.get("numerical_failure_count", 0)),
+    )
+
+    model_parameters = build_heston_parameter_payload(
+        mu=surface.rate - surface.dividend_yield,
+        kappa=solve_result.solution[0],
+        theta=solve_result.solution[1],
+        xi=solve_result.solution[2],
+        rho=solve_result.solution[3],
+        v0=solve_result.solution[4],
+        parameter_set_name=parameter_set_name,
+        source_kind="calibration_workflow",
+        metadata={
+            "surface_name": surface.surface_name,
+            "fit_diagnostics": diagnostics.to_payload(),
+        },
+    )
+    binding_state = MarketState(
+        as_of=date(2000, 1, 1),
+        settlement=date(2000, 1, 1),
+        discount=YieldCurve.flat(surface.rate),
+        spot=surface.spot,
+        model_parameters=dict(model_parameters),
+        model_parameter_sets={parameter_set_name: dict(model_parameters)},
+    )
+    runtime_binding = resolve_heston_runtime_binding(binding_state, parameter_set_name=parameter_set_name)
+    warnings.extend(runtime_binding.warnings)
+
+    provenance = {
+        "source_kind": "calibrated_surface",
+        "source_ref": "fit_heston_surface",
+        "calibration_target": surface.to_payload(),
+        "solve_request": request.to_payload(),
+        "solve_result": solve_result.to_payload(),
+        "solver_provenance": solver_provenance.to_payload(),
+        "solver_replay_artifact": solver_replay_artifact.to_payload(),
+        "fit_diagnostics": diagnostics.to_payload(),
+        "runtime_binding": runtime_binding.to_payload(),
+        "warnings": list(warnings),
+    }
+    summary = {
+        "surface_name": surface.surface_name,
+        "parameter_set_name": parameter_set_name,
+        "spot": surface.spot,
+        "rate": surface.rate,
+        "dividend_yield": surface.dividend_yield,
+        "expiry_count": len(surface.expiries),
+        "strike_count": len(surface.strikes),
+        "point_count": surface.point_count,
+        "optimizer_success": bool(solve_result.success),
+        "max_abs_vol_error": diagnostics.max_abs_vol_error,
+        "quote_family": surface.quote_map_spec.quote_family,
+        "quote_convention": surface.quote_map_spec.convention,
+    }
+    return HestonSurfaceCalibrationResult(
+        surface=surface,
+        runtime_binding=runtime_binding,
+        solve_request=request,
+        solve_result=solve_result,
+        solver_provenance=solver_provenance,
+        solver_replay_artifact=solver_replay_artifact,
+        diagnostics=diagnostics,
+        model_vols=tuple(tuple(float(value) for value in row) for row in model_vol_rows),
+        parameter_set_name=parameter_set_name,
+        model_parameters=dict(model_parameters),
+        warnings=tuple(warnings),
+        provenance=provenance,
+        summary=summary,
+        assumptions=tuple(runtime_binding.assumptions),
+    )
+
+
 def calibrate_heston_smile_workflow(
     spot: float,
     expiry_years: float,
@@ -708,12 +1196,97 @@ def calibrate_heston_smile_workflow(
     return replace(result, provenance=provenance)
 
 
+def calibrate_heston_surface_workflow(
+    spot: float,
+    expiries: Sequence[float],
+    strikes: Sequence[float],
+    market_vols: Sequence[Sequence[float]],
+    *,
+    rate: float,
+    dividend_yield: float = 0.0,
+    surface_name: str = "",
+    parameter_set_name: str = "heston",
+    initial_guess: Sequence[float] | None = None,
+    warm_start: Sequence[float] | WarmStart | None = None,
+    metadata: Mapping[str, object] | None = None,
+) -> HestonSurfaceCalibrationResult:
+    """Run the supported Heston surface workflow from raw surface inputs."""
+    surface = build_heston_surface_input(
+        spot,
+        expiries,
+        strikes,
+        market_vols,
+        rate=rate,
+        dividend_yield=dividend_yield,
+        surface_name=surface_name,
+        metadata=metadata,
+    )
+    result = fit_heston_surface(
+        surface,
+        initial_guess=initial_guess,
+        warm_start=warm_start,
+        parameter_set_name=parameter_set_name,
+    )
+    provenance = dict(result.provenance)
+    provenance["source_ref"] = "calibrate_heston_surface_workflow"
+    return replace(result, provenance=provenance)
+
+
+def calibrate_heston_surface_from_equity_vol_surface_workflow(
+    authority_result: "EquityVolSurfaceAuthorityResult",
+    *,
+    parameter_set_name: str = "heston",
+    initial_guess: Sequence[float] | None = None,
+    warm_start: Sequence[float] | WarmStart | None = None,
+) -> HestonSurfaceCalibrationResult:
+    """Fit Heston to the repaired equity-vol authority rather than raw quotes."""
+    repaired_vol_grid = authority_result.vol_surface.sample_grid(
+        expiries=authority_result.input_surface.expiries,
+        strikes=authority_result.input_surface.strikes,
+    )
+    result = calibrate_heston_surface_workflow(
+        authority_result.input_surface.spot,
+        authority_result.input_surface.expiries,
+        authority_result.input_surface.strikes,
+        repaired_vol_grid,
+        rate=authority_result.input_surface.rate,
+        dividend_yield=authority_result.input_surface.dividend_yield,
+        surface_name=authority_result.surface_name,
+        parameter_set_name=parameter_set_name,
+        initial_guess=initial_guess,
+        warm_start=warm_start,
+        metadata={
+            "source_surface_name": authority_result.surface_name,
+            "source_surface_kind": "repaired_equity_vol_surface",
+            "stage_kind": "model_compression",
+        },
+    )
+    provenance = dict(result.provenance)
+    provenance["source_ref"] = "calibrate_heston_surface_from_equity_vol_surface_workflow"
+    provenance["source_surface"] = {
+        "surface_name": authority_result.surface_name,
+        "source_ref": str(authority_result.provenance.get("source_ref", "")),
+        "fit_diagnostics": authority_result.diagnostics.to_payload(),
+    }
+    summary = dict(result.summary)
+    summary["surface_name"] = authority_result.surface_name
+    summary["source_surface_kind"] = "repaired_equity_vol_surface"
+    return replace(result, provenance=provenance, summary=summary)
+
+
 __all__ = [
     "HestonSmilePoint",
     "HestonSmileSurface",
+    "HestonSurfaceInput",
     "HestonSmileFitDiagnostics",
     "HestonSmileCalibrationResult",
+    "HestonSurfaceFitDiagnostics",
+    "HestonSurfaceCalibrationResult",
     "build_heston_smile_surface",
+    "build_heston_surface_input",
     "fit_heston_smile_surface",
+    "fit_heston_surface",
     "calibrate_heston_smile_workflow",
+    "calibrate_heston_surface_workflow",
+    "calibrate_heston_surface_from_equity_vol_surface_workflow",
 ]

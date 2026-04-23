@@ -11,7 +11,9 @@ import numpy as raw_np
 from trellis.core.market_state import MarketState
 from trellis.models.calibration.heston_fit import (
     HestonSmileCalibrationResult,
+    HestonSurfaceCalibrationResult,
     calibrate_heston_smile_workflow,
+    calibrate_heston_surface_from_equity_vol_surface_workflow,
 )
 from trellis.models.calibration.implied_vol import _bs_price
 from trellis.models.calibration.local_vol import (
@@ -249,6 +251,109 @@ class EquityVolSurfaceInput:
             "warnings": list(self.warnings),
             "quote_map": self.quote_map_spec.to_payload(),
             "metadata": dict(self.metadata),
+        }
+
+
+@dataclass(frozen=True)
+class EquityVolQuoteAdjustment:
+    """One quote-cleaning adjustment on the observed vol grid."""
+
+    expiry_years: float
+    strike: float
+    raw_vol: float
+    cleaned_vol: float
+    adjustment: float
+    relative_adjustment: float
+    flags: tuple[str, ...] = ()
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "expiry_years", float(self.expiry_years))
+        object.__setattr__(self, "strike", float(self.strike))
+        object.__setattr__(self, "raw_vol", float(self.raw_vol))
+        object.__setattr__(self, "cleaned_vol", float(self.cleaned_vol))
+        object.__setattr__(self, "adjustment", float(self.adjustment))
+        object.__setattr__(self, "relative_adjustment", float(self.relative_adjustment))
+        object.__setattr__(self, "flags", tuple(str(flag) for flag in self.flags))
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a JSON-friendly adjustment payload."""
+        return {
+            "expiry_years": float(self.expiry_years),
+            "strike": float(self.strike),
+            "raw_vol": float(self.raw_vol),
+            "cleaned_vol": float(self.cleaned_vol),
+            "adjustment": float(self.adjustment),
+            "relative_adjustment": float(self.relative_adjustment),
+            "flags": list(self.flags),
+        }
+
+
+@dataclass(frozen=True)
+class EquityVolQuoteCleaningDiagnostics:
+    """Diagnostics for the quote-governance stage ahead of surface repair."""
+
+    adjusted_point_count: int
+    max_abs_adjustment: float
+    rms_adjustment: float
+    raw_smile_violation_count: int
+    cleaned_smile_violation_count: int
+    raw_calendar_violation_count: int
+    cleaned_calendar_violation_count: int
+    point_count: int
+    flagged_nodes: tuple[EquityVolQuoteAdjustment, ...] = ()
+    warning_count: int = 0
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "adjusted_point_count", int(self.adjusted_point_count))
+        object.__setattr__(self, "max_abs_adjustment", float(self.max_abs_adjustment))
+        object.__setattr__(self, "rms_adjustment", float(self.rms_adjustment))
+        object.__setattr__(self, "raw_smile_violation_count", int(self.raw_smile_violation_count))
+        object.__setattr__(self, "cleaned_smile_violation_count", int(self.cleaned_smile_violation_count))
+        object.__setattr__(self, "raw_calendar_violation_count", int(self.raw_calendar_violation_count))
+        object.__setattr__(self, "cleaned_calendar_violation_count", int(self.cleaned_calendar_violation_count))
+        object.__setattr__(self, "point_count", int(self.point_count))
+        object.__setattr__(self, "flagged_nodes", tuple(self.flagged_nodes))
+        object.__setattr__(self, "warning_count", int(self.warning_count))
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a JSON-friendly diagnostics payload."""
+        return {
+            "adjusted_point_count": int(self.adjusted_point_count),
+            "max_abs_adjustment": float(self.max_abs_adjustment),
+            "rms_adjustment": float(self.rms_adjustment),
+            "raw_smile_violation_count": int(self.raw_smile_violation_count),
+            "cleaned_smile_violation_count": int(self.cleaned_smile_violation_count),
+            "raw_calendar_violation_count": int(self.raw_calendar_violation_count),
+            "cleaned_calendar_violation_count": int(self.cleaned_calendar_violation_count),
+            "point_count": int(self.point_count),
+            "flagged_nodes": [node.to_payload() for node in self.flagged_nodes],
+            "warning_count": int(self.warning_count),
+        }
+
+
+@dataclass(frozen=True)
+class EquityVolQuoteCleaningResult:
+    """Structured result for the equity-vol quote-governance stage."""
+
+    raw_surface: EquityVolSurfaceInput
+    cleaned_surface: EquityVolSurfaceInput
+    diagnostics: EquityVolQuoteCleaningDiagnostics
+    warnings: tuple[str, ...] = ()
+    provenance: dict[str, object] = field(default_factory=dict)
+    summary: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "warnings", tuple(str(warning) for warning in self.warnings))
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a JSON-friendly quote-cleaning payload."""
+        return {
+            "raw_surface": self.raw_surface.to_payload(),
+            "cleaned_surface": self.cleaned_surface.to_payload(),
+            "fit_diagnostics": self.diagnostics.to_payload(),
+            "warnings": list(self.warnings),
+            "provenance": dict(self.provenance),
+            "summary": dict(self.summary),
         }
 
 
@@ -511,6 +616,8 @@ class EquityVolSurfaceAuthorityResult:
     smile_fits: tuple[SVISmileFitResult, ...]
     diagnostics: EquityVolSurfaceFitDiagnostics
     surface_name: str
+    raw_input_surface: EquityVolSurfaceInput | None = None
+    quote_cleaning: EquityVolQuoteCleaningResult | None = None
     warnings: tuple[str, ...] = ()
     provenance: dict[str, object] = field(default_factory=dict)
     summary: dict[str, object] = field(default_factory=dict)
@@ -535,6 +642,11 @@ class EquityVolSurfaceAuthorityResult:
                 "surface_name": self.surface_name,
                 "surface_model_family": "raw_svi_surface",
                 "point_count": int(self.diagnostics.point_count),
+                "quote_cleaning_adjusted_point_count": int(
+                    self.quote_cleaning.diagnostics.adjusted_point_count
+                )
+                if self.quote_cleaning is not None
+                else 0,
                 "raw_calendar_violation_count": int(self.diagnostics.raw_calendar_violation_count),
                 "repaired_calendar_violation_count": int(self.diagnostics.repaired_calendar_violation_count),
             },
@@ -544,9 +656,11 @@ class EquityVolSurfaceAuthorityResult:
         """Return a JSON-friendly payload."""
         return {
             "input_surface": self.input_surface.to_payload(),
+            "raw_input_surface": None if self.raw_input_surface is None else self.raw_input_surface.to_payload(),
             "repaired_vols": [list(row) for row in self.repaired_vols],
             "smile_fits": [smile.to_payload() for smile in self.smile_fits],
             "fit_diagnostics": self.diagnostics.to_payload(),
+            "quote_cleaning": None if self.quote_cleaning is None else self.quote_cleaning.to_payload(),
             "surface_name": self.surface_name,
             "warnings": list(self.warnings),
             "provenance": dict(self.provenance),
@@ -603,6 +717,55 @@ class EquityVolStageComparisonResult:
         }
 
 
+@dataclass(frozen=True)
+class EquityVolSurfaceStageComparisonResult:
+    """Full-surface comparison between repaired surface and Heston compression stages."""
+
+    expiries: tuple[float, ...]
+    strikes: tuple[float, ...]
+    market_vols: tuple[tuple[float, ...], ...]
+    surface_vols: tuple[tuple[float, ...], ...]
+    model_vols: tuple[tuple[float, ...], ...]
+    surface_max_abs_vol_error: float
+    model_max_abs_vol_error: float
+    surface_rms_vol_error: float
+    model_rms_vol_error: float
+    preferred_stage: str
+    heston_surface_result: HestonSurfaceCalibrationResult
+    provenance: dict[str, object] = field(default_factory=dict)
+    summary: dict[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "expiries", tuple(float(value) for value in self.expiries))
+        object.__setattr__(self, "strikes", tuple(float(value) for value in self.strikes))
+        object.__setattr__(self, "market_vols", tuple(tuple(float(value) for value in row) for row in self.market_vols))
+        object.__setattr__(self, "surface_vols", tuple(tuple(float(value) for value in row) for row in self.surface_vols))
+        object.__setattr__(self, "model_vols", tuple(tuple(float(value) for value in row) for row in self.model_vols))
+        object.__setattr__(self, "surface_max_abs_vol_error", float(self.surface_max_abs_vol_error))
+        object.__setattr__(self, "model_max_abs_vol_error", float(self.model_max_abs_vol_error))
+        object.__setattr__(self, "surface_rms_vol_error", float(self.surface_rms_vol_error))
+        object.__setattr__(self, "model_rms_vol_error", float(self.model_rms_vol_error))
+        object.__setattr__(self, "preferred_stage", str(self.preferred_stage))
+
+    def to_payload(self) -> dict[str, object]:
+        """Return a JSON-friendly payload."""
+        return {
+            "expiries": list(self.expiries),
+            "strikes": list(self.strikes),
+            "market_vols": [list(row) for row in self.market_vols],
+            "surface_vols": [list(row) for row in self.surface_vols],
+            "model_vols": [list(row) for row in self.model_vols],
+            "surface_max_abs_vol_error": float(self.surface_max_abs_vol_error),
+            "model_max_abs_vol_error": float(self.model_max_abs_vol_error),
+            "surface_rms_vol_error": float(self.surface_rms_vol_error),
+            "model_rms_vol_error": float(self.model_rms_vol_error),
+            "preferred_stage": self.preferred_stage,
+            "heston_surface_result": self.heston_surface_result.to_payload(),
+            "provenance": dict(self.provenance),
+            "summary": dict(self.summary),
+        }
+
+
 def build_equity_vol_surface_input(
     spot: float,
     expiries: Sequence[float],
@@ -649,6 +812,188 @@ def build_equity_vol_surface_input(
         warnings=tuple(warnings),
         metadata=metadata or {},
     )
+
+
+def _surface_smile_violation_count(
+    surface: EquityVolSurfaceInput,
+    vol_grid: raw_np.ndarray,
+) -> int:
+    """Return the total discrete smile violation count across expiries."""
+    strikes = raw_np.asarray(surface.strikes, dtype=float)
+    total = 0
+    for expiry_index, expiry_years in enumerate(surface.expiries):
+        call_prices = _call_prices_from_smile(
+            spot=surface.spot,
+            rate=surface.rate,
+            dividend_yield=surface.dividend_yield,
+            expiry_years=float(expiry_years),
+            strikes=strikes,
+            vols=raw_np.asarray(vol_grid[expiry_index], dtype=float),
+        )
+        monotonicity_violations, convexity_violations = _smile_no_arb_violation_counts(
+            strikes=strikes,
+            call_prices=call_prices,
+        )
+        total += monotonicity_violations + convexity_violations
+    return int(total)
+
+
+def _govern_equity_vol_surface_input(
+    surface: EquityVolSurfaceInput,
+    *,
+    absolute_outlier_threshold: float = 0.04,
+    relative_outlier_threshold: float = 0.15,
+    mad_multiplier: float = 4.0,
+    min_vol: float = 0.01,
+    max_vol: float = 3.0,
+) -> EquityVolQuoteCleaningResult:
+    """Return a cleaned quote surface and explicit cleaning diagnostics."""
+    raw_vols = raw_np.asarray(surface.market_vols, dtype=float)
+    cleaned_vols = raw_vols.copy()
+    adjustments: list[EquityVolQuoteAdjustment] = []
+
+    for expiry_index in range(raw_vols.shape[0]):
+        for strike_index in range(raw_vols.shape[1]):
+            raw_vol = float(raw_vols[expiry_index, strike_index])
+            cleaned_vol = float(raw_vol)
+            flags: list[str] = []
+
+            if cleaned_vol < float(min_vol):
+                cleaned_vol = float(min_vol)
+                flags.append("vol_floor")
+            elif cleaned_vol > float(max_vol):
+                cleaned_vol = float(max_vol)
+                flags.append("vol_cap")
+
+            row_start = max(0, expiry_index - 1)
+            row_stop = min(raw_vols.shape[0], expiry_index + 2)
+            col_start = max(0, strike_index - 1)
+            col_stop = min(raw_vols.shape[1], strike_index + 2)
+            neighborhood = raw_vols[row_start:row_stop, col_start:col_stop].reshape(-1)
+            if neighborhood.size > 1:
+                center = (expiry_index - row_start) * (col_stop - col_start) + (strike_index - col_start)
+                peers = raw_np.delete(neighborhood, center)
+            else:
+                peers = raw_np.asarray((), dtype=float)
+
+            if peers.size >= 3:
+                local_median = float(raw_np.median(peers))
+                local_mad = float(raw_np.median(raw_np.abs(peers - local_median)))
+                threshold = max(
+                    float(absolute_outlier_threshold),
+                    abs(local_median) * float(relative_outlier_threshold),
+                    float(mad_multiplier) * local_mad,
+                )
+                if abs(raw_vol - local_median) > threshold:
+                    cleaned_vol = min(max(local_median, float(min_vol)), float(max_vol))
+                    flags.append("local_outlier")
+
+            cleaned_vols[expiry_index, strike_index] = float(cleaned_vol)
+            adjustment = float(cleaned_vol - raw_vol)
+            if flags or abs(adjustment) > 1e-12:
+                adjustments.append(
+                    EquityVolQuoteAdjustment(
+                        expiry_years=float(surface.expiries[expiry_index]),
+                        strike=float(surface.strikes[strike_index]),
+                        raw_vol=float(raw_vol),
+                        cleaned_vol=float(cleaned_vol),
+                        adjustment=float(adjustment),
+                        relative_adjustment=float(adjustment / raw_vol) if abs(raw_vol) > 1e-12 else 0.0,
+                        flags=tuple(flags or ("manual_adjustment",)),
+                    )
+                )
+
+    raw_calendar_violation_count = _calendar_total_variance_violations(
+        expiries=raw_np.asarray(surface.expiries, dtype=float),
+        strikes=raw_np.asarray(surface.strikes, dtype=float),
+        vol_grid=raw_vols,
+    )
+    cleaned_calendar_violation_count = _calendar_total_variance_violations(
+        expiries=raw_np.asarray(surface.expiries, dtype=float),
+        strikes=raw_np.asarray(surface.strikes, dtype=float),
+        vol_grid=cleaned_vols,
+    )
+    raw_smile_violation_count = _surface_smile_violation_count(surface, raw_vols)
+    cleaned_smile_violation_count = _surface_smile_violation_count(surface, cleaned_vols)
+    adjustment_grid = cleaned_vols - raw_vols
+
+    warnings = list(surface.warnings)
+    if adjustments:
+        warnings.append(
+            f"Quote cleaning adjusted {len(adjustments)} observed equity-vol nodes before surface repair."
+        )
+
+    cleaned_surface = replace(
+        surface,
+        market_vols=tuple(tuple(float(vol) for vol in row) for row in cleaned_vols),
+        warnings=tuple(warnings),
+        metadata={
+            **dict(surface.metadata),
+            "quote_cleaning_adjusted_point_count": len(adjustments),
+        },
+    )
+    diagnostics = EquityVolQuoteCleaningDiagnostics(
+        adjusted_point_count=len(adjustments),
+        max_abs_adjustment=float(raw_np.max(raw_np.abs(adjustment_grid))) if adjustment_grid.size else 0.0,
+        rms_adjustment=float(raw_np.sqrt(raw_np.mean(adjustment_grid ** 2))) if adjustment_grid.size else 0.0,
+        raw_smile_violation_count=raw_smile_violation_count,
+        cleaned_smile_violation_count=cleaned_smile_violation_count,
+        raw_calendar_violation_count=raw_calendar_violation_count,
+        cleaned_calendar_violation_count=cleaned_calendar_violation_count,
+        point_count=surface.point_count,
+        flagged_nodes=tuple(adjustments),
+        warning_count=len(warnings),
+    )
+    provenance = {
+        "source_kind": "calibrated_surface",
+        "source_ref": "clean_equity_vol_surface_quotes",
+        "raw_surface": surface.to_payload(),
+        "fit_diagnostics": diagnostics.to_payload(),
+        "warnings": list(warnings),
+    }
+    summary = {
+        "surface_name": surface.surface_name,
+        "cleaning_stage": "quote_governance",
+        "point_count": surface.point_count,
+        "adjusted_point_count": len(adjustments),
+        "raw_smile_violation_count": raw_smile_violation_count,
+        "cleaned_smile_violation_count": cleaned_smile_violation_count,
+        "raw_calendar_violation_count": raw_calendar_violation_count,
+        "cleaned_calendar_violation_count": cleaned_calendar_violation_count,
+    }
+    return EquityVolQuoteCleaningResult(
+        raw_surface=surface,
+        cleaned_surface=cleaned_surface,
+        diagnostics=diagnostics,
+        warnings=tuple(warnings),
+        provenance=provenance,
+        summary=summary,
+    )
+
+
+def clean_equity_vol_surface_quotes(
+    spot: float,
+    expiries: Sequence[float],
+    strikes: Sequence[float],
+    market_vols: Sequence[Sequence[float]],
+    *,
+    rate: float,
+    dividend_yield: float = 0.0,
+    surface_name: str = "equity_vol_surface",
+    metadata: Mapping[str, object] | None = None,
+) -> EquityVolQuoteCleaningResult:
+    """Run the quote-governance stage on a raw equity-vol quote grid."""
+    surface = build_equity_vol_surface_input(
+        spot,
+        expiries,
+        strikes,
+        market_vols,
+        rate=rate,
+        dividend_yield=dividend_yield,
+        surface_name=surface_name,
+        metadata=metadata,
+    )
+    return _govern_equity_vol_surface_input(surface)
 
 
 def _default_svi_initial_guess(
@@ -1006,6 +1351,7 @@ def fit_equity_vol_surface(
         smile_fits=smile_fits,
         diagnostics=diagnostics,
         surface_name=surface_name,
+        raw_input_surface=surface,
         warnings=tuple(warnings),
         provenance=provenance,
         summary=summary,
@@ -1024,7 +1370,7 @@ def calibrate_equity_vol_surface_workflow(
     metadata: Mapping[str, object] | None = None,
 ) -> EquityVolSurfaceAuthorityResult:
     """Run the bounded repaired equity-vol surface workflow from raw grid inputs."""
-    surface = build_equity_vol_surface_input(
+    raw_surface = build_equity_vol_surface_input(
         spot,
         expiries,
         strikes,
@@ -1034,10 +1380,25 @@ def calibrate_equity_vol_surface_workflow(
         surface_name=surface_name,
         metadata=metadata,
     )
-    result = fit_equity_vol_surface(surface, surface_name=surface_name)
+    quote_cleaning = _govern_equity_vol_surface_input(raw_surface)
+    result = fit_equity_vol_surface(quote_cleaning.cleaned_surface, surface_name=surface_name)
     provenance = dict(result.provenance)
     provenance["source_ref"] = "calibrate_equity_vol_surface_workflow"
-    return replace(result, provenance=provenance)
+    provenance["raw_input_surface"] = raw_surface.to_payload()
+    provenance["quote_cleaning"] = quote_cleaning.to_payload()
+    summary = dict(result.summary)
+    summary["raw_smile_violation_count"] = int(quote_cleaning.diagnostics.raw_smile_violation_count)
+    summary["cleaned_smile_violation_count"] = int(quote_cleaning.diagnostics.cleaned_smile_violation_count)
+    summary["raw_calendar_violation_count"] = int(quote_cleaning.diagnostics.raw_calendar_violation_count)
+    summary["cleaned_calendar_violation_count"] = int(quote_cleaning.diagnostics.cleaned_calendar_violation_count)
+    summary["quote_cleaning_adjusted_point_count"] = int(quote_cleaning.diagnostics.adjusted_point_count)
+    return replace(
+        result,
+        raw_input_surface=raw_surface,
+        quote_cleaning=quote_cleaning,
+        provenance=provenance,
+        summary=summary,
+    )
 
 
 def calibrate_local_vol_surface_from_equity_vol_surface_workflow(
@@ -1099,9 +1460,10 @@ def compare_heston_to_equity_vol_surface_workflow(
     warm_start: Sequence[float] | None = None,
 ) -> EquityVolStageComparisonResult:
     """Compare the repaired surface stage against a Heston smile fit on one expiry slice."""
+    reference_surface = authority_result.raw_input_surface or authority_result.input_surface
     expiry_index = _normalize_expiry_index(authority_result.input_surface.expiries, float(expiry_years))
     strikes = tuple(float(value) for value in authority_result.input_surface.strikes)
-    market_vols = tuple(float(value) for value in authority_result.input_surface.market_vols[expiry_index])
+    market_vols = tuple(float(value) for value in reference_surface.market_vols[expiry_index])
     surface_vols = tuple(
         authority_result.vol_surface.black_vol(float(expiry_years), float(strike))
         for strike in strikes
@@ -1158,8 +1520,67 @@ def compare_heston_to_equity_vol_surface_workflow(
     )
 
 
+def compare_heston_surface_to_equity_vol_surface_workflow(
+    authority_result: EquityVolSurfaceAuthorityResult,
+    *,
+    parameter_set_name: str = "heston",
+    initial_guess: Sequence[float] | None = None,
+    warm_start: Sequence[float] | None = None,
+) -> EquityVolSurfaceStageComparisonResult:
+    """Compare the repaired surface stage against Heston compression on the full surface."""
+    reference_surface = authority_result.raw_input_surface or authority_result.input_surface
+    surface_vols = tuple(tuple(float(value) for value in row) for row in authority_result.repaired_vols)
+    heston_result = calibrate_heston_surface_from_equity_vol_surface_workflow(
+        authority_result,
+        parameter_set_name=parameter_set_name,
+        initial_guess=initial_guess,
+        warm_start=warm_start,
+    )
+    model_vols = tuple(tuple(float(value) for value in row) for row in heston_result.model_vols)
+    market_vols = tuple(tuple(float(value) for value in row) for row in reference_surface.market_vols)
+    surface_residuals = raw_np.asarray(surface_vols, dtype=float) - raw_np.asarray(market_vols, dtype=float)
+    model_residuals = raw_np.asarray(model_vols, dtype=float) - raw_np.asarray(market_vols, dtype=float)
+    surface_max_abs_vol_error = float(raw_np.max(raw_np.abs(surface_residuals)))
+    model_max_abs_vol_error = float(raw_np.max(raw_np.abs(model_residuals)))
+    surface_rms_vol_error = float(raw_np.sqrt(raw_np.mean(surface_residuals ** 2)))
+    model_rms_vol_error = float(raw_np.sqrt(raw_np.mean(model_residuals ** 2)))
+    preferred_stage = "surface_authority" if surface_max_abs_vol_error <= model_max_abs_vol_error else "model_fit"
+    provenance = {
+        "source_kind": "calibrated_surface",
+        "source_ref": "compare_heston_surface_to_equity_vol_surface_workflow",
+        "surface_stage": authority_result.to_payload(),
+        "model_stage": heston_result.to_payload(),
+    }
+    summary = {
+        "point_count": len(authority_result.input_surface.expiries) * len(authority_result.input_surface.strikes),
+        "surface_max_abs_vol_error": surface_max_abs_vol_error,
+        "model_max_abs_vol_error": model_max_abs_vol_error,
+        "surface_rms_vol_error": surface_rms_vol_error,
+        "model_rms_vol_error": model_rms_vol_error,
+        "preferred_stage": preferred_stage,
+    }
+    return EquityVolSurfaceStageComparisonResult(
+        expiries=authority_result.input_surface.expiries,
+        strikes=authority_result.input_surface.strikes,
+        market_vols=market_vols,
+        surface_vols=surface_vols,
+        model_vols=model_vols,
+        surface_max_abs_vol_error=surface_max_abs_vol_error,
+        model_max_abs_vol_error=model_max_abs_vol_error,
+        surface_rms_vol_error=surface_rms_vol_error,
+        model_rms_vol_error=model_rms_vol_error,
+        preferred_stage=preferred_stage,
+        heston_surface_result=heston_result,
+        provenance=provenance,
+        summary=summary,
+    )
+
+
 __all__ = [
     "EquityVolSurfaceInput",
+    "EquityVolQuoteAdjustment",
+    "EquityVolQuoteCleaningDiagnostics",
+    "EquityVolQuoteCleaningResult",
     "SVISmileParameters",
     "SVISmileFitDiagnostics",
     "SVISmileFitResult",
@@ -1167,9 +1588,12 @@ __all__ = [
     "EquityVolSurfaceFitDiagnostics",
     "EquityVolSurfaceAuthorityResult",
     "EquityVolStageComparisonResult",
+    "EquityVolSurfaceStageComparisonResult",
     "build_equity_vol_surface_input",
+    "clean_equity_vol_surface_quotes",
     "fit_equity_vol_surface",
     "calibrate_equity_vol_surface_workflow",
     "calibrate_local_vol_surface_from_equity_vol_surface_workflow",
     "compare_heston_to_equity_vol_surface_workflow",
+    "compare_heston_surface_to_equity_vol_surface_workflow",
 ]

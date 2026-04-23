@@ -10,11 +10,16 @@ from trellis.curves.yield_curve import YieldCurve
 from trellis.data.resolver import resolve_market_snapshot
 from trellis.models.calibration.equity_vol_surface import (
     EquityVolStageComparisonResult,
+    EquityVolSurfaceStageComparisonResult,
     EquityVolSurfaceAuthorityResult,
+    EquityVolQuoteCleaningResult,
     calibrate_equity_vol_surface_workflow,
+    clean_equity_vol_surface_quotes,
     calibrate_local_vol_surface_from_equity_vol_surface_workflow,
     compare_heston_to_equity_vol_surface_workflow,
+    compare_heston_surface_to_equity_vol_surface_workflow,
 )
+from trellis.models.calibration.heston_fit import HestonSurfaceCalibrationResult, calibrate_heston_surface_from_equity_vol_surface_workflow
 from trellis.models.calibration.local_vol import LocalVolCalibrationResult
 
 
@@ -52,7 +57,8 @@ def test_calibrate_equity_vol_surface_workflow_repairs_smile_violations_and_mate
 
     assert isinstance(result, EquityVolSurfaceAuthorityResult)
     assert result.summary["surface_model_family"] == "raw_svi_surface"
-    assert result.diagnostics.raw_smile_violation_count >= 1
+    assert result.quote_cleaning is not None
+    assert result.quote_cleaning.diagnostics.adjusted_point_count >= 1
     assert result.diagnostics.repaired_smile_violation_count <= result.diagnostics.raw_smile_violation_count
     assert result.diagnostics.repaired_calendar_violation_count <= result.diagnostics.raw_calendar_violation_count
     assert result.vol_surface.black_vol(1.0, spot) > 0.0
@@ -83,6 +89,27 @@ def test_local_vol_from_equity_surface_uses_repaired_surface_provenance():
     assert local_result.calibration_target["source_surface_kind"] == "repaired_equity_vol_surface"
     assert local_result.summary["source_surface_kind"] == "repaired_equity_vol_surface"
     assert local_result.local_vol_surface(spot, 1.0) > 0.0
+
+
+def test_equity_vol_quote_cleaning_flags_and_trims_outlier_before_surface_fit():
+    _, surface, spot, rate = _mock_spx_surface_inputs()
+    distorted_vols = raw_np.asarray(surface.vols, dtype=float).copy()
+    distorted_vols[2, 1] += 0.18
+
+    cleaning_result = clean_equity_vol_surface_quotes(
+        spot,
+        surface.expiries,
+        surface.strikes,
+        distorted_vols,
+        rate=rate,
+        surface_name="spx_dirty_surface",
+    )
+
+    assert isinstance(cleaning_result, EquityVolQuoteCleaningResult)
+    assert cleaning_result.diagnostics.adjusted_point_count >= 1
+    assert cleaning_result.cleaned_surface.market_vols[2][1] < distorted_vols[2, 1]
+    assert cleaning_result.diagnostics.cleaned_smile_violation_count <= cleaning_result.diagnostics.raw_smile_violation_count
+    assert cleaning_result.summary["cleaning_stage"] == "quote_governance"
 
 
 def test_compare_heston_to_equity_surface_reports_staged_errors():
@@ -116,6 +143,69 @@ def test_compare_heston_to_equity_surface_reports_staged_errors():
     assert comparison.model_max_abs_vol_error < 0.02
     assert comparison.preferred_stage in {"surface_authority", "model_fit"}
     assert comparison.heston_result.parameter_set_name == "heston_equity_stage"
+
+
+def test_heston_surface_fit_from_equity_surface_is_replayable_and_market_state_ready():
+    snapshot, surface, spot, rate = _mock_spx_surface_inputs()
+    authority_result = calibrate_equity_vol_surface_workflow(
+        spot,
+        surface.expiries,
+        surface.strikes,
+        surface.vols,
+        rate=rate,
+        surface_name="spx_surface_authority",
+    )
+    model_pack = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]["model_packs"]["volatility"]["model_parameter_sets"]["heston_equity"]
+
+    result = calibrate_heston_surface_from_equity_vol_surface_workflow(
+        authority_result,
+        parameter_set_name="heston_equity_surface_stage",
+        warm_start=(
+            float(model_pack["kappa"]),
+            float(model_pack["theta"]),
+            float(model_pack["xi"]),
+            float(model_pack["rho"]),
+            float(model_pack["v0"]),
+        ),
+    )
+
+    assert isinstance(result, HestonSurfaceCalibrationResult)
+    assert result.solve_request.request_id == "heston_surface_least_squares"
+    assert result.provenance["source_ref"] == "calibrate_heston_surface_from_equity_vol_surface_workflow"
+    assert result.summary["surface_name"] == "spx_surface_authority"
+    assert result.summary["expiry_count"] == len(surface.expiries)
+    assert result.diagnostics.max_abs_vol_error < 0.03
+
+
+def test_compare_heston_surface_to_equity_surface_reports_full_surface_stage_metrics():
+    snapshot, surface, spot, rate = _mock_spx_surface_inputs()
+    authority_result = calibrate_equity_vol_surface_workflow(
+        spot,
+        surface.expiries,
+        surface.strikes,
+        surface.vols,
+        rate=rate,
+        surface_name="spx_surface_authority",
+    )
+    model_pack = snapshot.provenance["prior_parameters"]["synthetic_generation_contract"]["model_packs"]["volatility"]["model_parameter_sets"]["heston_equity"]
+
+    comparison = compare_heston_surface_to_equity_vol_surface_workflow(
+        authority_result,
+        parameter_set_name="heston_equity_surface_stage",
+        warm_start=(
+            float(model_pack["kappa"]),
+            float(model_pack["theta"]),
+            float(model_pack["xi"]),
+            float(model_pack["rho"]),
+            float(model_pack["v0"]),
+        ),
+    )
+
+    assert isinstance(comparison, EquityVolSurfaceStageComparisonResult)
+    assert comparison.summary["point_count"] == len(surface.expiries) * len(surface.strikes)
+    assert comparison.surface_max_abs_vol_error < 0.03
+    assert comparison.model_max_abs_vol_error < 0.03
+    assert comparison.preferred_stage in {"surface_authority", "model_fit"}
 
 
 def test_equity_vol_surface_fit_is_stable_under_small_quote_perturbations():
