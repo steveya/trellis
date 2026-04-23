@@ -17,12 +17,14 @@ In scope:
 - analytical quanto adjustment and correlated Monte Carlo as the two initial
   route families
 - honest, provenance-aware market binding
+- bounded calibration-derived underlier/FX correlation as a runtime input
 
 Out of scope:
 
 - American or Bermudan quanto structures
 - path-dependent quanto exotics
 - multi-asset quanto baskets
+- a generic rates/equity/FX hybrid calibration plant
 - silent widening from the proving slice to generic cross-currency exotics
 
 ## Retained Contract Requirements
@@ -62,6 +64,8 @@ Optional or later-extension inputs:
 - the runtime must not fabricate `fx_vol` or `underlier_fx_correlation`
 - missing required quanto inputs should fail with family-specific wording rather
   than degrade into generic vanilla semantics
+- calibration-derived correlation must remain an explicit
+  `model_parameter_set` binding with source and residual diagnostics
 
 Accepted narrow-slice bridge forms:
 
@@ -69,6 +73,9 @@ Accepted narrow-slice bridge forms:
 - explicit `quanto_foreign_curve_policy` using the selected forecast curve
 - explicit `quanto_foreign_curve_policy` reusing the domestic discount curve
   when that bridge is intentionally declared
+- `calibrate_quanto_correlation_workflow(...)`, which consumes the same
+  resolver-backed runtime inputs and materializes a calibrated
+  `quanto_correlation` descriptor onto `MarketState`
 
 ## Route Expectations
 
@@ -101,6 +108,8 @@ The useful checked-in surfaces are:
 - keep the analytical and Monte Carlo helpers as stable route surfaces
 - preserve the narrow proving slice explicitly rather than implying broad quanto
   support
+- treat the new calibration workflow as an input-provenance and materialization
+  path for the single-underlier slice, not as new multi-asset product support
 - treat richer connector-backed runtime binding as follow-on work, not as
   already solved
 

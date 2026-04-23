@@ -562,6 +562,7 @@ The resolved source can be:
 - an explicit matrix or scalar
 - an empirical estimate from observed path data
 - an implied source tied to liquid market inputs
+- a calibrated ``model_parameter_set`` for bounded quanto correlation
 - a calibrated ``correlation_surface`` materialized on ``MarketState``
 - a synthetic prior for mock, stress, or proving runs
 
@@ -577,6 +578,13 @@ tranche pricing uses an explicit contract correlation when one is provided;
 otherwise it can resolve an exact maturity/attachment/detachment node from the
 selected calibrated surface. This remains a homogeneous representative-curve
 path, not heterogeneous name-level market data.
+
+For quanto workflows, ``calibrate_quanto_correlation_workflow(...)`` can
+materialize the calibrated underlier/FX correlation as
+``market_state.model_parameters["quanto_correlation"]`` inside a named
+``model_parameter_set``. The workflow still consumes explicit domestic and
+foreign curves, spots, volatility inputs, and market quotes; it does not build
+a general rates/equity/FX hybrid calibration plant.
 
 Multi-Curve
 -----------

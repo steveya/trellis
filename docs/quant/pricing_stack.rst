@@ -385,6 +385,7 @@ The currently supported calibration workflows are:
 - SABR single-smile calibration
 - Heston single-smile calibration
 - hardened Dupire local-vol workflow
+- bounded rates + equity/FX quanto-correlation calibration
 
 The calibration stack now also carries a checked validation and benchmark
 surface. ``tests/test_verification/test_calibration_replay.py`` locks replay
