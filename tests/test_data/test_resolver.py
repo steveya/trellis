@@ -7,9 +7,19 @@ import numpy as np
 import pytest
 
 from trellis.conventions.day_count import DayCountConvention
+from trellis.conventions.schedule import StubType
+from trellis.core.date_utils import build_period_schedule, year_fraction
 from trellis.core.types import Frequency
 from trellis.data.resolver import resolve_curve, resolve_market_snapshot
-from trellis.curves.bootstrap import BootstrapConventionBundle, BootstrapCurveInputBundle, BootstrapInstrument
+from trellis.curves.bootstrap import (
+    BootstrapConventionBundle,
+    BootstrapCurveInputBundle,
+    BootstrapInstrument,
+    DatedBootstrapCurveInputBundle,
+    DatedBootstrapInstrument,
+    MultiCurveBootstrapProgram,
+)
+from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments.fx import FXRate
 from trellis.models.vol_surface import FlatVol, GridVolSurface
 
@@ -57,6 +67,52 @@ def _synthetic_heston_market_vols(*, spot: float, rate: float, expiry_years: flo
         )
         for strike in strikes
     ]
+
+
+def _dated_deposit_quote(curve: YieldCurve, *, start_date: date, end_date: date) -> float:
+    start_years = year_fraction(date(2024, 11, 15), start_date, DayCountConvention.ACT_360)
+    end_years = year_fraction(date(2024, 11, 15), end_date, DayCountConvention.ACT_360)
+    accrual = year_fraction(start_date, end_date, DayCountConvention.ACT_360)
+    return (float(curve.discount(start_years)) / float(curve.discount(end_years)) - 1.0) / accrual
+
+
+def _dated_swap_quote(
+    *,
+    discount_curve: YieldCurve,
+    forecast_curve: YieldCurve,
+    start_date: date,
+    end_date: date,
+) -> float:
+    fixed_schedule = build_period_schedule(
+        start_date,
+        end_date,
+        Frequency.ANNUAL,
+        day_count=DayCountConvention.THIRTY_360_US,
+        time_origin=date(2024, 11, 15),
+        stub=StubType.SHORT_LAST,
+    )
+    float_schedule = build_period_schedule(
+        start_date,
+        end_date,
+        Frequency.QUARTERLY,
+        day_count=DayCountConvention.ACT_360,
+        time_origin=date(2024, 11, 15),
+        stub=StubType.SHORT_LAST,
+    )
+    annuity = sum(
+        float(period.accrual_fraction) * float(discount_curve.discount(float(period.t_payment)))
+        for period in fixed_schedule.periods
+    )
+    float_pv = 0.0
+    for period in float_schedule.periods:
+        accrual = float(period.accrual_fraction)
+        forward_rate = (
+            float(forecast_curve.discount(max(float(period.t_start), 0.0)))
+            / float(forecast_curve.discount(float(period.t_end)))
+            - 1.0
+        ) / accrual
+        float_pv += forward_rate * accrual * float(discount_curve.discount(float(period.t_payment)))
+    return float_pv / annuity
 
 
 class TestResolveCurve:
@@ -241,6 +297,106 @@ class TestResolveMarketSnapshot:
             "discount_curve": "usd_ois_boot",
             "forecast_curve": "USD-SOFR-3M",
         }
+
+    @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
+    def test_supports_dependency_aware_multi_curve_bootstrap_program(self, MockProvider):
+        mock = MockProvider.return_value
+        mock.fetch_yields.return_value = SAMPLE_YIELDS
+        settle = date(2024, 11, 15)
+        ois_true = YieldCurve.flat(0.040)
+        sofr_true = YieldCurve.flat(0.042)
+
+        program = MultiCurveBootstrapProgram(
+            settlement_date=settle,
+            curve_inputs=(
+                DatedBootstrapCurveInputBundle(
+                    curve_name="usd_ois_dated",
+                    currency="USD",
+                    rate_index="USD-OIS",
+                    curve_role="discount_curve",
+                    conventions=BootstrapConventionBundle(
+                        swap_fixed_frequency=Frequency.ANNUAL,
+                        swap_fixed_day_count=DayCountConvention.THIRTY_360_US,
+                        swap_float_frequency=Frequency.QUARTERLY,
+                        swap_float_day_count=DayCountConvention.ACT_360,
+                    ),
+                    instruments=(
+                        DatedBootstrapInstrument(
+                            start_date=settle,
+                            end_date=date(2025, 2, 15),
+                            quote=_dated_deposit_quote(
+                                ois_true,
+                                start_date=settle,
+                                end_date=date(2025, 2, 15),
+                            ),
+                            instrument_type="deposit",
+                            day_count=DayCountConvention.ACT_360,
+                            label="OIS_DEP3M",
+                        ),
+                    ),
+                ),
+                DatedBootstrapCurveInputBundle(
+                    curve_name="USD-SOFR-3M_dated",
+                    currency="USD",
+                    rate_index="USD-SOFR-3M",
+                    curve_role="forecast_curve",
+                    dependency_names={"discount_curve": "usd_ois_dated"},
+                    conventions=BootstrapConventionBundle(
+                        swap_fixed_frequency=Frequency.ANNUAL,
+                        swap_fixed_day_count=DayCountConvention.THIRTY_360_US,
+                        swap_float_frequency=Frequency.QUARTERLY,
+                        swap_float_day_count=DayCountConvention.ACT_360,
+                    ),
+                    instruments=(
+                        DatedBootstrapInstrument(
+                            start_date=settle,
+                            end_date=date(2025, 2, 15),
+                            quote=_dated_deposit_quote(
+                                sofr_true,
+                                start_date=settle,
+                                end_date=date(2025, 2, 15),
+                            ),
+                            instrument_type="deposit",
+                            day_count=DayCountConvention.ACT_360,
+                            label="SOFR_DEP3M",
+                        ),
+                        DatedBootstrapInstrument(
+                            start_date=settle,
+                            end_date=date(2027, 1, 20),
+                            quote=_dated_swap_quote(
+                                discount_curve=ois_true,
+                                forecast_curve=sofr_true,
+                                start_date=settle,
+                                end_date=date(2027, 1, 20),
+                            ),
+                            instrument_type="swap",
+                            stub_type=StubType.SHORT_LAST,
+                            label="SOFR_SWAP_STUB",
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+        snapshot = resolve_market_snapshot(
+            as_of=settle,
+            source="treasury_gov",
+            multi_curve_bootstrap_program=program,
+        )
+
+        assert "usd_ois_dated" in snapshot.discount_curves
+        assert "USD-SOFR-3M_dated" in snapshot.forecast_curves
+        assert snapshot.provenance["bootstrap_runs"]["multi_curve_program"]["dependency_order"] == [
+            "usd_ois_dated",
+            "USD-SOFR-3M_dated",
+        ]
+        assert (
+            snapshot.provenance["bootstrap_runs"]["multi_curve_program"]["dependency_graph"]["USD-SOFR-3M_dated"][
+                "discount_curve"
+            ]
+            == "usd_ois_dated"
+        )
+        assert snapshot.provenance["bootstrap_inputs"]["multi_curve_program"]["settlement_date"] == settle.isoformat()
 
     @patch("trellis.data.treasury_gov.TreasuryGovDataProvider")
     def test_rejects_duplicate_bootstrap_curve_names(self, MockProvider):

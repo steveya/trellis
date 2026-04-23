@@ -70,7 +70,7 @@ Rules for coding agents:
 | `CAL.0B` | `QUA-948` | Done | equity-vol carry consistency across pricing and implied-vol inversion | none |
 | `CAL.0C` | `QUA-949` | In Review | CDS-pricer-backed single-name credit objective and diagnostics | none |
 | `CAL.1` | `QUA-950` | In Review | industrial equity-vol surface foundation and staged model fits | `CAL.0B` |
-| `CAL.2` | `QUA-951` | Backlog | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
+| `CAL.2` | `QUA-951` | In Review | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
 | `CAL.3` | `QUA-952` | Backlog | caplet stripping, swaption cube assembly, and rates-vol model diagnostics | `CAL.2` |
 | `CAL.4` | `QUA-953` | Backlog | schedule-aware single-name credit curve calibration | `CAL.0C` |
 | `CAL.5` | `QUA-954` | Backlog | basket-credit base-correlation workflow and tranche-surface governance | `CAL.4` |
@@ -315,20 +315,25 @@ Current checked workflow surface:
 What is actually shipped:
 
 - typed bootstrap inputs for deposit, future, and swap quotes
+- dated bootstrap inputs for deposits, futures, and swaps with schedule-aware
+  accrual generation
+- explicit multi-curve bootstrap program support with dependency order and
+  dependency-graph payloads
 - explicit multi-curve role provenance through selected discount and forecast
   curve names
 - typed rates quote maps and materialization onto `MarketState`
 
 What is not yet at desk standard:
 
-- bootstrap still works on year-fraction tenors rather than fully dated
-  schedule construction
-- no evidence of production calendars, business-day rules, stubs, IMM logic,
-  or turn handling in the bootstrap itself
-- futures are handled as simplified contracts rather than with exchange-grade
-  convexity and date logic
-- there is no visible chained OIS then forecast then basis calibration DAG in
-  the bootstrap layer itself
+- the legacy bootstrap path still works on year-fraction tenors, and even the
+  new dated path is still bounded to one first dependency-aware program rather
+  than a universal dated bootstrap plant
+- the dated path now supports stub-aware schedules and optional business-day
+  handling, but it still does not cover IMM logic, turn handling, or a full
+  exchange-grade futures and calendar stack
+- futures are still handled without exchange-grade convexity adjustments
+- there is now a visible chained OIS-then-forecast calibration DAG, but not a
+  broader basis or cross-currency dependency plant
 - no explicit smoothing or regularized curve family is present beyond the
   current differentiable least-squares setup
 - no cross-currency or collateral-aware multi-curve calibration program was
@@ -336,9 +341,10 @@ What is not yet at desk standard:
 
 Industrial implication:
 
-- Trellis preserves multi-curve role metadata better than many toy libraries
-- the actual bootstrap engine remains materially simplified versus desk curve
-  construction
+- Trellis now has a first dated, dependency-aware multi-curve bootstrap lane
+  instead of only parallel tenor-only bundles
+- the actual bootstrap engine still remains materially simplified versus a
+  full desk curve-construction plant
 
 ### 3. Yield-vol models
 
