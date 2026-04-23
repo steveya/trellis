@@ -100,7 +100,7 @@ Rules for coding agents:
 
 | Queue ID | Linear | Status | Scope | Hard prerequisites |
 | --- | --- | --- | --- | --- |
-| `AD2.1` | `QUA-967` | Backlog | JVP, VJP, HVP operator implementation or checked backend decision | `QUA-957`, `QUA-965` |
+| `AD2.1` | `QUA-967` | Done | JVP, VJP, HVP operator implementation or checked backend decision | `QUA-957`, `QUA-965` |
 | `AD2.2` | `QUA-968` | Backlog | book-level reverse-mode / portfolio AAD substrate | `AD2.1` |
 | `AD2.3` | `QUA-969` | Backlog | smoothing and custom-adjoint policy for discontinuous products | `QUA-957` |
 | `AD2.4` | `QUA-970` | Backlog | product-family gradient matrix and support-contract cohort expansion | consume `AD2.1` / `AD2.3` outcomes as they land |
@@ -117,8 +117,8 @@ and runtime reporting that consume those objects.
 | Queue ID | Linear | Lane | Status | Implementation objective | Hard prerequisites |
 | --- | --- | --- | --- | --- | --- |
 | `INT.1` | `QUA-954` | Calibration | Backlog | basket-credit base-correlation / tranche-correlation workflow consuming calibrated single-name curves | `CAL.4` / `QUA-953` |
-| `INT.2` | `QUA-967` | Autograd | Backlog | truthful JVP, VJP, and HVP backend operator support or a checked fail-closed backend decision | `QUA-957`, `QUA-965` |
-| `INT.3` | `QUA-956` | Validation | Backlog | first desk-like fixture, perturbation, and latency tranche for the newly supported calibration slices | none; run alongside `INT.1` / `INT.2` |
+| `INT.2` | `QUA-967` | Autograd | Done | truthful JVP, VJP, and HVP backend operator support or a checked fail-closed backend decision | `QUA-957`, `QUA-965` |
+| `INT.3` | `QUA-956` | Validation | Backlog | first desk-like fixture, perturbation, and latency tranche for the newly supported calibration slices | none; run alongside `INT.1` |
 | `INT.4` | `QUA-968` | Autograd | Backlog | first bounded book-level reverse-mode / portfolio AAD substrate over supported smooth routes | `INT.2` |
 | `INT.5` | `QUA-969` | Autograd | Backlog | governed discontinuous-Greek policy for one bounded barrier, digital, or event/exercise family | `QUA-957`; coordinate with `INT.7` |
 | `INT.6` | `QUA-970` | Autograd | Backlog | product-family derivative matrix covering analytical, curve, surface, MC, and calibration representatives | `QUA-957`; consume `INT.2` / `INT.5` outcomes |
@@ -765,15 +765,17 @@ The completed implementation order through `CAL.4` was:
 The remaining integrated implementation order is:
 
 1. `QUA-954` basket-credit correlation calibration
-2. `QUA-967` truthful JVP/VJP/HVP backend operator decision
-3. `QUA-956` first validation tranche, run alongside the active slice
-4. `QUA-968` first bounded portfolio AAD substrate
-5. `QUA-969` governed discontinuous-Greek policy
-6. `QUA-970` product-family derivative matrix
-7. `QUA-971` unified runtime derivative reporting
-8. `QUA-955` one narrow cross-asset calibration slice once the concrete target
+2. `QUA-956` first validation tranche, run alongside the active slice
+3. `QUA-968` first bounded portfolio AAD substrate
+4. `QUA-969` governed discontinuous-Greek policy
+5. `QUA-970` product-family derivative matrix
+6. `QUA-971` unified runtime derivative reporting
+7. `QUA-955` one narrow cross-asset calibration slice once the concrete target
    and blockers are explicit
-9. `QUA-946` umbrella closeout and documentation maintenance
+8. `QUA-946` umbrella closeout and documentation maintenance
+
+`QUA-967` landed early as `AD2.1` / `INT.2`, so `QUA-968` can consume checked
+VJP/HVP support rather than reopening backend operator work.
 
 Reason:
 
@@ -810,9 +812,7 @@ The next execution slice after the `CAL.4` / `QUA-953` closeout should be:
 
 1. `QUA-954`: add the basket-credit calibration workflow and materialized
    correlation object that downstream basket-credit consumers can use.
-2. `QUA-967`: make the JVP/VJP/HVP backend capability surface executable
-   truth, or keep it fail-closed with a documented backend decision.
-3. `QUA-956`: start the validation tranche with fixtures and perturbation /
+2. `QUA-956`: start the validation tranche with fixtures and perturbation /
    latency envelopes for the new credit and basket-credit calibration surface.
 
 After those land, `QUA-968` through `QUA-971` should build the first
