@@ -88,6 +88,13 @@ named in that capability payload but intentionally report unsupported until a
 backend can supply them.  Call sites should use ``require_capability(...)``
 rather than assuming those operators exist.
 
+The important contract is that the capability payload is executable truth, not
+roadmap language. If an operator is reported as supported, its public wrapper
+must compute checked values. If it is not supported, the wrapper fails closed
+with ``NotImplementedError`` before a caller can accidentally rely on an
+unstable derivative path. That gives future backend work a stable target while
+keeping today's ``autograd`` boundary honest.
+
 - Black76 and Garman-Kohlhagen calls/puts
 - FX vanilla pricing can be assembled explicitly from Black76 terminal basis
   claims via ``terminal_vanilla_from_basis(...)`` after mapping spot FX and
@@ -143,6 +150,49 @@ Where Trellis Still Stays Forward-Only
 
 That split is deliberate: the compiled engines stay fast for production pricing,
 while the closed-form layer exposes gradients where they are genuinely useful.
+
+Phase 2 Follow-On Program
+-------------------------
+
+The completed public-contract work is now tracked separately from the next
+autograd phase. ``QUA-966`` is the follow-on umbrella for portfolio AAD and
+gradient governance; its repo mirror is
+``doc/plan/draft__autograd-phase-2-aad-and-gradient-governance.md``.
+
+That program is deliberately narrower than "differentiate everything". It is
+organized around five concrete follow-on slices:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Slice
+     - Goal
+     - Boundary
+   * - Backend operators
+     - implement or make a checked backend decision for ``jvp``, ``vjp``, and
+       ``hessian_vector_product``
+     - do not report support until the wrappers compute checked values
+   * - Portfolio AAD
+     - add the first book-level reverse-mode sensitivity substrate
+     - bounded supported books only; unsupported routes must be excluded or
+       reported explicitly
+   * - Discontinuous Greeks
+     - define smoothing, custom-adjoint, finite-difference, or unsupported
+       policy for barriers, digitals, and exercise/event logic
+     - no silent smoothing of production prices
+   * - Gradient matrix
+     - expand the support-contract tests into a product-family derivative
+       matrix
+     - representative coverage, not exhaustive generated-route coverage
+   * - Runtime reporting
+     - normalize derivative-method metadata across analytical, AD, AAD,
+       smoothed/custom-adjoint, bump, and unsupported lanes
+     - reporting only; pricing formulas remain owned by their route families
+
+The broader curve, surface, and cube calibration plants are tracked under the
+separate calibration sleeve program ``QUA-946``. The autograd Phase 2 work
+should consume those stronger calibrated market objects, not duplicate the
+calibration industrialization backlog.
 
 Implementation Rules
 --------------------
