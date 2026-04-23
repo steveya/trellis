@@ -456,6 +456,8 @@ def _quanto_calibration_quote(
         underlier_currency=spec.underlier_currency,
         domestic_currency=spec.domestic_currency,
         option_type=spec.option_type,
+        quanto_correlation_key=spec.quanto_correlation_key,
+        day_count=spec.day_count,
         label=label,
     )
 
@@ -471,6 +473,8 @@ def _check_bounded_quanto_calibration(row: GradientMatrixRow) -> None:
             strike=95.0,
             expiry_date=date(2025, 11, 15),
             fx_pair="EURUSD",
+            quanto_correlation_key="quanto_correlation",
+            day_count=DayCountConvention.ACT_360,
         ),
         _QuantoCalibrationSpec(
             notional=1_000_000.0,
@@ -483,6 +487,8 @@ def _check_bounded_quanto_calibration(row: GradientMatrixRow) -> None:
         _quanto_calibration_quote(true_state, spec, label=f"q{index}")
         for index, spec in enumerate(specs)
     )
+    assert quotes[0].quanto_correlation_key == "quanto_correlation"
+    assert quotes[0].day_count == DayCountConvention.ACT_360
 
     result = calibrate_quanto_correlation_workflow(
         quotes,
