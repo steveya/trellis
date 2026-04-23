@@ -616,6 +616,9 @@ class TestMonteCarloEngine:
 
         metadata = result["derivative_metadata"]
         assert metadata["resolved_derivative_method"] == "forward_price_only"
+        assert metadata["derivative_method_category"] == "forward"
+        assert metadata["derivative_method_support"] == "unsupported"
+        assert metadata["parameterization"] == "monte_carlo_discontinuous_pathwise_policy"
         assert metadata["pathwise_autodiff_supported"] is False
         assert metadata["discontinuous_features"] == ("barrier_monitor",)
         assert metadata["discontinuous_derivative_policy"] == "fail_closed"
@@ -635,6 +638,10 @@ class TestMonteCarloEngine:
         )
 
         assert metadata["resolved_derivative_method"] == "unsupported_discontinuous_pathwise"
+        assert metadata["derivative_method_category"] == "unsupported"
+        assert metadata["derivative_method_support"] == "unsupported"
+        assert metadata["parameterization"] == "monte_carlo_discontinuous_pathwise_policy"
+        assert metadata["fallback_derivative_method"] == "finite_difference_bump_reprice"
         assert metadata["pathwise_autodiff_supported"] is False
         assert metadata["unsupported_reason"] == "barrier_monitor_discontinuity"
         assert metadata["policy_version"] == "mc_discontinuous_derivative_policy_v1"
@@ -667,6 +674,10 @@ class TestMonteCarloEngine:
 
         metadata = result["derivative_metadata"]
         assert metadata["resolved_derivative_method"] == "autodiff_pathwise"
+        assert metadata["derivative_method_category"] == "autograd"
+        assert metadata["derivative_method_support"] == "supported"
+        assert metadata["backend_operator"] == "grad"
+        assert metadata["parameterization"] == "monte_carlo_explicit_shock_pathwise"
         assert metadata["pathwise_autodiff_supported"] is True
         assert metadata["discontinuous_features"] == ()
 

@@ -91,6 +91,9 @@ def test_least_squares_request_serializes_constraints_and_executes():
     assert result.objective_value == pytest.approx(0.0, abs=1e-10)
     assert result.method == "L-BFGS-B"
     assert result.metadata["derivative_method"] == "provided_scalar_gradient"
+    assert result.metadata["resolved_derivative_method"] == "provided_scalar_gradient"
+    assert result.metadata["derivative_method_category"] == "provided"
+    assert result.metadata["derivative_method_support"] == "supported"
 
 
 def test_least_squares_request_uses_vector_solver_when_residual_jacobian_is_provided():
@@ -125,6 +128,9 @@ def test_least_squares_request_uses_vector_solver_when_residual_jacobian_is_prov
     assert result.objective_value == pytest.approx(0.0, abs=1e-12)
     assert result.method == "trf"
     assert result.metadata["derivative_method"] == "provided_vector_jacobian"
+    assert result.metadata["resolved_derivative_method"] == "provided_vector_jacobian"
+    assert result.metadata["derivative_method_category"] == "provided"
+    assert result.metadata["derivative_method_support"] == "supported"
 
 
 def test_least_squares_request_records_two_point_fallback_when_no_vector_jacobian_is_supplied():
@@ -152,6 +158,9 @@ def test_least_squares_request_records_two_point_fallback_when_no_vector_jacobia
     assert result.objective_value == pytest.approx(0.0, abs=1e-12)
     assert result.method == "trf"
     assert result.metadata["derivative_method"] == "scipy_2point_residual_jacobian"
+    assert result.metadata["resolved_derivative_method"] == "scipy_2point_residual_jacobian"
+    assert result.metadata["derivative_method_category"] == "finite_difference_bump"
+    assert result.metadata["derivative_method_support"] == "fallback"
 
 
 def test_backend_registry_exposes_default_scipy_capabilities():
@@ -277,6 +286,9 @@ def test_solver_provenance_and_replay_artifact_capture_backend_and_residuals():
     assert isinstance(replay, SolveReplayArtifact)
     assert provenance.backend["backend_id"] == "scipy"
     assert provenance.backend["derivative_method"] == "not_applicable_root_scalar"
+    assert provenance.backend["resolved_derivative_method"] == "not_applicable_root_scalar"
+    assert provenance.backend["derivative_method_category"] == "not_applicable"
+    assert provenance.backend["derivative_method_support"] == "not_applicable"
     assert provenance.options["tol"] == pytest.approx(1e-10)
     assert provenance.termination["success"] is True
     assert provenance.residual_diagnostics["max_abs_residual"] < 1e-8

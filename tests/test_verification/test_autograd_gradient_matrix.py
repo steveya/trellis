@@ -9,6 +9,8 @@ from pathlib import Path
 import numpy as raw_np
 import pytest
 
+from trellis.analytics.derivative_methods import DERIVATIVE_METHODS, get_derivative_method
+from trellis.book import Book, portfolio_aad_curve_risk
 from trellis.conventions.day_count import DayCountConvention
 from trellis.core.differentiable import get_numpy, gradient
 from trellis.core.market_state import MarketState
@@ -22,6 +24,7 @@ from trellis.curves.bootstrap import (
 )
 from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
+from trellis.instruments.bond import Bond
 from trellis.instruments.fx import FXRate
 from trellis.models.analytical.quanto import price_quanto_option_analytical
 from trellis.models.black import black76_call
@@ -122,6 +125,19 @@ GRADIENT_MATRIX: tuple[GradientMatrixRow, ...] = (
             "finite_difference_bump_reprice",
         ),
     ),
+    GradientMatrixRow(
+        family_id="portfolio_aad_vjp",
+        product_family="bounded bond-book portfolio AAD route",
+        category="portfolio_aad",
+        support_status="partial",
+        expected_derivative_method="portfolio_aad_vjp",
+        fallback_derivative_method=None,
+        documentation_terms=(
+            "portfolio_aad_vjp",
+            "derivative_method_category",
+            "portfolio_aad",
+        ),
+    ),
 )
 
 
@@ -164,6 +180,7 @@ def test_gradient_matrix_has_required_product_family_coverage():
         "calibration",
         "route_generated",
         "unsupported_discontinuous",
+        "portfolio_aad",
     }
     categories = {row.category for row in GRADIENT_MATRIX}
     assert required_categories <= categories
@@ -173,6 +190,7 @@ def test_gradient_matrix_has_required_product_family_coverage():
 
     for row in GRADIENT_MATRIX:
         assert row.expected_derivative_method
+        assert get_derivative_method(row.expected_derivative_method).method_id == row.expected_derivative_method
         assert row.support_status in {
             "supported",
             "partial",
@@ -180,6 +198,8 @@ def test_gradient_matrix_has_required_product_family_coverage():
         }
         if row.support_status.startswith("unsupported"):
             assert row.fallback_derivative_method
+        if row.fallback_derivative_method:
+            assert get_derivative_method(row.fallback_derivative_method).method_id == row.fallback_derivative_method
 
 
 @pytest.mark.parametrize("row", GRADIENT_MATRIX, ids=lambda row: row.family_id)
@@ -193,6 +213,20 @@ def test_gradient_matrix_is_documented_and_prevents_stale_support_claims():
     limitations = (REPO_ROOT / "LIMITATIONS.md").read_text()
 
     assert "Product-Family Gradient Matrix" in differentiable_pricing
+    assert "Runtime Derivative-Method Taxonomy" in differentiable_pricing
+    assert "trellis.analytics.derivative_methods" in differentiable_pricing
+    for field in (
+        "resolved_derivative_method",
+        "derivative_method_category",
+        "derivative_method_support",
+        "backend_operator",
+        "fallback_derivative_method",
+        "fallback_reason",
+        "parameterization",
+    ):
+        assert field in differentiable_pricing
+    for method_id in DERIVATIVE_METHODS:
+        assert method_id in differentiable_pricing
     for row in GRADIENT_MATRIX:
         for term in row.documentation_terms:
             assert term in differentiable_pricing
@@ -395,6 +429,40 @@ def _check_barrier_mc_discontinuous_policy(row: GradientMatrixRow) -> None:
     assert metadata["discontinuous_derivative_policy"] == "fail_closed"
 
 
+def _check_portfolio_aad_vjp(row: GradientMatrixRow) -> None:
+    assert row.expected_derivative_method == "portfolio_aad_vjp"
+
+    curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+    book = Book(
+        {
+            "A": Bond(
+                face=100,
+                coupon=0.05,
+                maturity_date=date(2034, 11, 15),
+                maturity=10,
+                frequency=2,
+            ),
+            "B": Bond(
+                face=100,
+                coupon=0.04,
+                maturity_date=date(2030, 11, 15),
+                maturity=6,
+                frequency=2,
+            ),
+        },
+        notionals={"A": 1_000_000, "B": 750_000},
+    )
+    result = portfolio_aad_curve_risk(book, curve, SETTLE)
+
+    assert result.metadata["resolved_derivative_method"] == "portfolio_aad_vjp"
+    assert result.metadata["derivative_method_category"] == "portfolio_aad"
+    assert result.metadata["derivative_method_support"] == "supported"
+    assert result.metadata["backend_operator"] == "vjp"
+    assert result.metadata["parameterization"] == "shared_curve_zero_rate_nodes"
+    assert result.metadata["unsupported_position_count"] == 0
+    assert set(result) == {1.0, 2.0, 5.0, 10.0}
+
+
 _ROW_CHECKS = {
     "analytical_black76": _check_analytical_black76,
     "public_curve_nodes": _check_public_curve_nodes,
@@ -403,4 +471,5 @@ _ROW_CHECKS = {
     "rates_bootstrap_calibration": _check_rates_bootstrap_calibration,
     "quanto_generated_helper": _check_quanto_generated_helper,
     "barrier_mc_discontinuous_policy": _check_barrier_mc_discontinuous_policy,
+    "portfolio_aad_vjp": _check_portfolio_aad_vjp,
 }

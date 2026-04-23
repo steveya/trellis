@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 from datetime import timedelta
 from typing import Any, Protocol
 
+from trellis.analytics.derivative_methods import derivative_method_payload
 from trellis.analytics.result import RiskMeasureOutput, ScalarRiskMeasureOutput
 from trellis.core.differentiable import get_numpy, gradient
 from trellis.core.market_state import MarketState
@@ -191,18 +192,14 @@ def _rate_measure_metadata(
     bump_bps: float | None = None,
     fallback_reason: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    metadata = {
-        "resolved_derivative_method": str(resolved_derivative_method),
-        "selected_curve_name": ms.selected_curve_name("discount_curve"),
-        "resolved_curve_type": None if ms.discount is None else type(ms.discount).__name__,
-        "warnings": [] if fallback_reason is None else [dict(fallback_reason)],
-        "fallback_reason": None if fallback_reason is None else dict(fallback_reason),
-    }
-    if parameterization is not None:
-        metadata["parameterization"] = str(parameterization)
-    if bump_bps is not None:
-        metadata["bump_bps"] = float(bump_bps)
-    return metadata
+    return derivative_method_payload(
+        resolved_derivative_method,
+        selected_curve_name=ms.selected_curve_name("discount_curve"),
+        resolved_curve_type=None if ms.discount is None else type(ms.discount).__name__,
+        parameterization=None if parameterization is None else str(parameterization),
+        bump_bps=None if bump_bps is None else float(bump_bps),
+        fallback_reason=fallback_reason,
+    )
 
 
 def _scalar_risk_output(value, *, metadata: dict[str, Any]) -> ScalarRiskMeasureOutput:
@@ -488,14 +485,12 @@ class Vega:
             if requested_buckets is None:
                 return _scalar_risk_output(
                     0.0,
-                    metadata={
-                        "resolved_derivative_method": "vol_surface_unavailable",
-                        "resolved_surface_type": None,
-                        "bump_pct": float(self.bump_pct),
-                        "bump_vol_bps": float(self.bump_pct) * 100.0,
-                        "warnings": [],
-                        "fallback_reason": None,
-                    },
+                    metadata=derivative_method_payload(
+                        "vol_surface_unavailable",
+                        resolved_surface_type=None,
+                        bump_pct=float(self.bump_pct),
+                        bump_vol_bps=float(self.bump_pct) * 100.0,
+                    ),
                 )
             expiries, strikes = requested_buckets
             return _risk_output(
@@ -503,17 +498,15 @@ class Vega:
                     expiry: {strike: 0.0 for strike in strikes}
                     for expiry in expiries
                 },
-                metadata={
-                    "bucket_convention": "expiry_strike",
-                    "bucket_expiries": [float(expiry) for expiry in expiries],
-                    "bucket_strikes": [float(strike) for strike in strikes],
-                    "bump_pct": float(self.bump_pct),
-                    "bump_vol_bps": float(self.bump_pct) * 100.0,
-                    "resolved_derivative_method": "vol_surface_unavailable",
-                    "resolved_surface_type": None,
-                    "warnings": [],
-                    "fallback_reason": None,
-                },
+                metadata=derivative_method_payload(
+                    "vol_surface_unavailable",
+                    bucket_convention="expiry_strike",
+                    bucket_expiries=[float(expiry) for expiry in expiries],
+                    bucket_strikes=[float(strike) for strike in strikes],
+                    bump_pct=float(self.bump_pct),
+                    bump_vol_bps=float(self.bump_pct) * 100.0,
+                    resolved_surface_type=None,
+                ),
             )
 
         bump = self.bump_pct / 100
@@ -544,21 +537,21 @@ class Vega:
                 ctx["base_price"] = cache["base_price"]
 
             support = _declared_risk_support(vol, "scalar_vega") or {}
+            method_id = str(support.get("method") or "autodiff_flat_vol")
             return _scalar_risk_output(
                 float(gradient(price_from_vol, 0)(vol_value) * bump),
-                metadata={
-                    "resolved_derivative_method": str(support.get("method") or "autodiff_flat_vol"),
-                    "parameterization": str(support.get("parameterization") or "scalar_flat_vol"),
-                    "resolved_surface_type": _vol_surface_type_label(vol),
-                    "bump_pct": float(self.bump_pct),
-                    "bump_vol_bps": float(self.bump_pct) * 100.0,
-                    "warnings": [],
-                    "fallback_reason": None,
-                },
+                metadata=derivative_method_payload(
+                    method_id,
+                    parameterization=str(support.get("parameterization") or "scalar_flat_vol"),
+                    resolved_surface_type=_vol_surface_type_label(vol),
+                    bump_pct=float(self.bump_pct),
+                    bump_vol_bps=float(self.bump_pct) * 100.0,
+                ),
             )
 
         if isinstance(vol, GridVolSurface):
             support = _declared_risk_support(vol, "scalar_vega") or {}
+            method_id = str(support.get("method") or "surface_parallel_bucket_bump")
             return _scalar_risk_output(
                 _parallel_surface_vega(
                     payoff,
@@ -567,15 +560,13 @@ class Vega:
                     strikes=tuple(float(strike) for strike in vol.strikes),
                     bump_pct=float(self.bump_pct),
                 ),
-                metadata={
-                    "resolved_derivative_method": str(support.get("method") or "surface_parallel_bucket_bump"),
-                    "parameterization": str(support.get("parameterization") or "grid_node_vols"),
-                    "resolved_surface_type": _vol_surface_type_label(vol),
-                    "bump_pct": float(self.bump_pct),
-                    "bump_vol_bps": float(self.bump_pct) * 100.0,
-                    "warnings": [],
-                    "fallback_reason": None,
-                },
+                metadata=derivative_method_payload(
+                    method_id,
+                    parameterization=str(support.get("parameterization") or "grid_node_vols"),
+                    resolved_surface_type=_vol_surface_type_label(vol),
+                    bump_pct=float(self.bump_pct),
+                    bump_vol_bps=float(self.bump_pct) * 100.0,
+                ),
             )
 
         # Bump vol surface up and down
@@ -592,15 +583,15 @@ class Vega:
         v_down = payoff.evaluate(ms_down)
         return _scalar_risk_output(
             (v_up - v_down) / 2,
-            metadata={
-                "resolved_derivative_method": "representative_flat_vol_bump",
-                "resolved_surface_type": _vol_surface_type_label(vol),
-                "representative_flat_vol": float(base_vol),
-                "bump_pct": float(self.bump_pct),
-                "bump_vol_bps": float(self.bump_pct) * 100.0,
-                "warnings": [dict(fallback_reason)],
-                "fallback_reason": dict(fallback_reason),
-            },
+            metadata=derivative_method_payload(
+                "representative_flat_vol_bump",
+                resolved_surface_type=_vol_surface_type_label(vol),
+                parameterization="representative_flat_vol",
+                representative_flat_vol=float(base_vol),
+                bump_pct=float(self.bump_pct),
+                bump_vol_bps=float(self.bump_pct) * 100.0,
+                fallback_reason=fallback_reason,
+            ),
         )
 
 
@@ -621,15 +612,13 @@ class Delta:
         ms_down = bind_spot(base_spot - bump_size)
         return _scalar_risk_output(
             (float(payoff.evaluate(ms_up)) - float(payoff.evaluate(ms_down))) / (2.0 * bump_size),
-            metadata={
-                "resolved_derivative_method": "spot_central_bump",
-                "resolved_spot_binding": resolved_binding,
-                "underlier": self.underlier,
-                "bump_pct": float(self.bump_pct),
-                "bump_size": float(bump_size),
-                "warnings": [],
-                "fallback_reason": None,
-            },
+            metadata=derivative_method_payload(
+                "spot_central_bump",
+                resolved_spot_binding=resolved_binding,
+                underlier=self.underlier,
+                bump_pct=float(self.bump_pct),
+                bump_size=float(bump_size),
+            ),
         )
 
 
@@ -653,15 +642,13 @@ class Gamma:
         v_down = float(payoff.evaluate(ms_down))
         return _scalar_risk_output(
             (v_up - 2.0 * base + v_down) / (bump_size**2),
-            metadata={
-                "resolved_derivative_method": "spot_central_bump",
-                "resolved_spot_binding": resolved_binding,
-                "underlier": self.underlier,
-                "bump_pct": float(self.bump_pct),
-                "bump_size": float(bump_size),
-                "warnings": [],
-                "fallback_reason": None,
-            },
+            metadata=derivative_method_payload(
+                "spot_central_bump",
+                resolved_spot_binding=resolved_binding,
+                underlier=self.underlier,
+                bump_pct=float(self.bump_pct),
+                bump_size=float(bump_size),
+            ),
         )
 
 
@@ -685,12 +672,10 @@ class Theta:
         )
         return _scalar_risk_output(
             float(payoff.evaluate(rolled_ms)) - base,
-            metadata={
-                "resolved_derivative_method": "calendar_roll_down_bump",
-                "day_step": int(self.day_step),
-                "warnings": [],
-                "fallback_reason": None,
-            },
+            metadata=derivative_method_payload(
+                "calendar_roll_down_bump",
+                day_step=int(self.day_step),
+            ),
         )
 
 
@@ -1198,19 +1183,18 @@ def _bucketed_vega_surface(
         values[float(expiry)] = row
 
     support = _declared_risk_support(ms.vol_surface, "bucketed_vega") or {}
-    metadata = {
-        "bucket_convention": "expiry_strike",
-        "bucket_expiries": [float(expiry) for expiry in shock_surface.requested_expiries],
-        "bucket_strikes": [float(strike) for strike in shock_surface.requested_strikes],
-        "bump_pct": float(bump_pct),
-        "bump_vol_bps": bump_vol_bps,
-        "resolved_derivative_method": str(support.get("method") or "surface_bucket_bump"),
-        "parameterization": support.get("parameterization"),
-        "resolved_surface_type": _vol_surface_type_label(ms.vol_surface),
-        "buckets": [_vol_surface_bucket_payload(bucket) for bucket in shock_surface.buckets],
-        "warnings": _vol_surface_warning_payloads(shock_surface),
-        "fallback_reason": None,
-    }
+    metadata = derivative_method_payload(
+        str(support.get("method") or "surface_bucket_bump"),
+        bucket_convention="expiry_strike",
+        bucket_expiries=[float(expiry) for expiry in shock_surface.requested_expiries],
+        bucket_strikes=[float(strike) for strike in shock_surface.requested_strikes],
+        bump_pct=float(bump_pct),
+        bump_vol_bps=bump_vol_bps,
+        parameterization=support.get("parameterization"),
+        resolved_surface_type=_vol_surface_type_label(ms.vol_surface),
+        buckets=[_vol_surface_bucket_payload(bucket) for bucket in shock_surface.buckets],
+        warnings=_vol_surface_warning_payloads(shock_surface),
+    )
     return _risk_output(values, metadata=metadata)
 
 
@@ -1319,16 +1303,15 @@ def _zero_curve_key_rate_durations(
     if base == 0.0:
         return _risk_output(
             {float(tenor): 0.0 for tenor in tenors},
-            metadata={
-                "resolved_methodology": "zero_curve",
-                "bucket_convention": "curve_tenor",
-                "bucket_tenors": [float(tenor) for tenor in tenors],
-                "bump_bps": float(bump_bps),
-                "selected_curve_name": ms.selected_curve_name("discount_curve"),
-                "resolved_derivative_method": "curve_bucket_bump",
-                "warnings": [dict(fallback_reason)],
-                "fallback_reason": dict(fallback_reason),
-            },
+            metadata=derivative_method_payload(
+                "curve_bucket_bump",
+                resolved_methodology="zero_curve",
+                bucket_convention="curve_tenor",
+                bucket_tenors=[float(tenor) for tenor in tenors],
+                bump_bps=float(bump_bps),
+                selected_curve_name=ms.selected_curve_name("discount_curve"),
+                fallback_reason=dict(fallback_reason),
+            ),
         )
 
     dy = bump_bps / 10_000.0
@@ -1341,16 +1324,15 @@ def _zero_curve_key_rate_durations(
         result[float(tenor)] = -(v_up - v_down) / (2 * dy * base)
     return _risk_output(
         result,
-        metadata={
-            "resolved_methodology": "zero_curve",
-            "bucket_convention": "curve_tenor",
-            "bucket_tenors": [float(tenor) for tenor in tenors],
-            "bump_bps": float(bump_bps),
-            "selected_curve_name": ms.selected_curve_name("discount_curve"),
-            "resolved_derivative_method": "curve_bucket_bump",
-            "warnings": [dict(fallback_reason)],
-            "fallback_reason": dict(fallback_reason),
-        },
+        metadata=derivative_method_payload(
+            "curve_bucket_bump",
+            resolved_methodology="zero_curve",
+            bucket_convention="curve_tenor",
+            bucket_tenors=[float(tenor) for tenor in tenors],
+            bump_bps=float(bump_bps),
+            selected_curve_name=ms.selected_curve_name("discount_curve"),
+            fallback_reason=dict(fallback_reason),
+        ),
     )
 
 
@@ -1451,18 +1433,16 @@ def _rebuild_quote_space_key_rate_durations(
     except Exception:
         return None
 
-    metadata = {
-        "resolved_methodology": "curve_rebuild",
-        "bucket_convention": "bootstrap_quote",
-        "selected_curve_name": selected_curve_name,
-        "resolved_derivative_method": "bootstrap_quote_bump_rebuild",
-        "bucket_ids": [bucket.bucket_id for bucket in buckets],
-        "bucket_tenors": [float(bucket.tenor) for bucket in buckets],
-        "bucket_definitions": [bucket.to_payload() for bucket in buckets],
-        "bump_bps": float(bump_bps),
-        "warnings": [],
-        "fallback_reason": None,
-    }
+    metadata = derivative_method_payload(
+        "bootstrap_quote_bump_rebuild",
+        resolved_methodology="curve_rebuild",
+        bucket_convention="bootstrap_quote",
+        selected_curve_name=selected_curve_name,
+        bucket_ids=[bucket.bucket_id for bucket in buckets],
+        bucket_tenors=[float(bucket.tenor) for bucket in buckets],
+        bucket_definitions=[bucket.to_payload() for bucket in buckets],
+        bump_bps=float(bump_bps),
+    )
     ctx["key_rate_durations_metadata"] = metadata
     return _risk_output(result, metadata=metadata)
 
@@ -1652,13 +1632,13 @@ def _interpolation_aware_key_rate_durations(
     base = _base_price(payoff, ms, ctx)
     if base == 0.0:
         fallback_reason = ctx.setdefault("_cache", {}).get("autodiff_rate_bundle_failure")
-        metadata = {
-            "resolved_methodology": "zero_curve",
-            "bucket_convention": "curve_tenor",
-            "selected_curve_name": ms.selected_curve_name("discount_curve"),
-            "resolved_derivative_method": "curve_bucket_bump",
-            "bucket_tenors": [float(bucket.tenor) for bucket in surface.buckets],
-            "bucket_definitions": [
+        metadata = derivative_method_payload(
+            "curve_bucket_bump",
+            resolved_methodology="zero_curve",
+            bucket_convention="curve_tenor",
+            selected_curve_name=ms.selected_curve_name("discount_curve"),
+            bucket_tenors=[float(bucket.tenor) for bucket in surface.buckets],
+            bucket_definitions=[
                 {
                     "tenor": float(bucket.tenor),
                     "base_zero_rate": float(bucket.base_zero_rate),
@@ -1669,11 +1649,10 @@ def _interpolation_aware_key_rate_durations(
                 }
                 for bucket in surface.buckets
             ],
-            "bump_bps": float(bump_bps),
-            "warnings": list(ctx["key_rate_duration_warnings"])
-            + ([] if fallback_reason is None else [dict(fallback_reason)]),
-            "fallback_reason": None if fallback_reason is None else dict(fallback_reason),
-        }
+            bump_bps=float(bump_bps),
+            warnings=list(ctx["key_rate_duration_warnings"]),
+            fallback_reason=None if fallback_reason is None else dict(fallback_reason),
+        )
         cache[cache_key] = _risk_output(
             {float(bucket.tenor): 0.0 for bucket in surface.buckets},
             metadata=metadata,
@@ -1697,13 +1676,14 @@ def _interpolation_aware_key_rate_durations(
         v_down = float(payoff.evaluate(ms_down))
         result[float(bucket.tenor)] = -(v_up - v_down) / (2 * dy * base)
 
-    metadata = {
-        "resolved_methodology": "zero_curve",
-        "bucket_convention": "curve_tenor",
-        "selected_curve_name": ms.selected_curve_name("discount_curve"),
-        "resolved_derivative_method": "curve_bucket_bump",
-        "bucket_tenors": [float(bucket.tenor) for bucket in surface.buckets],
-        "bucket_definitions": [
+    fallback_reason = ctx.setdefault("_cache", {}).get("autodiff_rate_bundle_failure")
+    metadata = derivative_method_payload(
+        "curve_bucket_bump",
+        resolved_methodology="zero_curve",
+        bucket_convention="curve_tenor",
+        selected_curve_name=ms.selected_curve_name("discount_curve"),
+        bucket_tenors=[float(bucket.tenor) for bucket in surface.buckets],
+        bucket_definitions=[
             {
                 "tenor": float(bucket.tenor),
                 "base_zero_rate": float(bucket.base_zero_rate),
@@ -1714,19 +1694,10 @@ def _interpolation_aware_key_rate_durations(
             }
             for bucket in surface.buckets
         ],
-        "bump_bps": float(bump_bps),
-        "warnings": list(ctx["key_rate_duration_warnings"])
-        + (
-            []
-            if ctx.setdefault("_cache", {}).get("autodiff_rate_bundle_failure") is None
-            else [dict(ctx["_cache"]["autodiff_rate_bundle_failure"])]
-        ),
-        "fallback_reason": (
-            None
-            if ctx.setdefault("_cache", {}).get("autodiff_rate_bundle_failure") is None
-            else dict(ctx["_cache"]["autodiff_rate_bundle_failure"])
-        ),
-    }
+        bump_bps=float(bump_bps),
+        warnings=list(ctx["key_rate_duration_warnings"]),
+        fallback_reason=None if fallback_reason is None else dict(fallback_reason),
+    )
     cache[cache_key] = _risk_output(result, metadata=metadata)
     ctx["key_rate_durations_metadata"] = metadata
     return cache[cache_key]

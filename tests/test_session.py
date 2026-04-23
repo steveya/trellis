@@ -240,6 +240,9 @@ class TestSessionPricing:
         assert result.dv01 > 0
         assert result.convexity > 0
         assert result.dv01.metadata["resolved_derivative_method"] == "autodiff_public_curve"
+        assert result.dv01.metadata["derivative_method_category"] == "autograd"
+        assert result.dv01.metadata["derivative_method_support"] == "supported"
+        assert result.dv01.metadata["backend_operator"] == "grad"
         assert result.duration.metadata["resolved_derivative_method"] == "autodiff_public_curve"
         assert result.convexity.metadata["resolved_derivative_method"] == "autodiff_public_curve"
         assert result.key_rate_durations.metadata["resolved_derivative_method"] == "autodiff_public_curve"
@@ -256,6 +259,9 @@ class TestSessionPricing:
 
         assert result.dv01 > 0.0
         assert result.dv01.metadata["resolved_derivative_method"] == "parallel_curve_bump"
+        assert result.dv01.metadata["derivative_method_category"] == "finite_difference_bump"
+        assert result.dv01.metadata["derivative_method_support"] == "fallback"
+        assert result.dv01.metadata["fallback_derivative_method"] == "parallel_curve_bump"
         assert result.duration.metadata["resolved_derivative_method"] == "parallel_curve_bump"
         assert result.convexity.metadata["resolved_derivative_method"] == "parallel_curve_bump"
         assert result.dv01.metadata["fallback_reason"]["code"] == "autodiff_public_curve_unavailable"
@@ -414,6 +420,9 @@ class TestSessionPricing:
 
         assert result.vega == pytest.approx(0.01, abs=1e-12)
         assert result.vega.metadata["resolved_derivative_method"] == "autodiff_flat_vol"
+        assert result.vega.metadata["derivative_method_category"] == "autograd"
+        assert result.vega.metadata["derivative_method_support"] == "supported"
+        assert result.vega.metadata["backend_operator"] == "grad"
         assert result.vega.metadata["resolved_surface_type"] == "flat"
 
     def test_analyze_scalar_vega_records_representative_surface_fallback_provenance(self):
@@ -428,6 +437,10 @@ class TestSessionPricing:
         )
 
         assert result.vega.metadata["resolved_derivative_method"] == "representative_flat_vol_bump"
+        assert result.vega.metadata["derivative_method_category"] == "finite_difference_bump"
+        assert result.vega.metadata["derivative_method_support"] == "fallback"
+        assert result.vega.metadata["fallback_derivative_method"] == "representative_flat_vol_bump"
+        assert result.vega.metadata["parameterization"] == "representative_flat_vol"
         assert result.vega.metadata["fallback_reason"]["code"] == "representative_surface_reduction"
         warnings = {warning["code"] for warning in result.vega.metadata["warnings"]}
         assert "representative_surface_reduction" in warnings

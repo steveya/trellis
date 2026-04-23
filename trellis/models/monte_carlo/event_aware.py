@@ -15,6 +15,7 @@ from typing import Callable, Iterable, Mapping
 
 import numpy as raw_np
 
+from trellis.analytics.derivative_methods import derivative_method_payload
 from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.core.differentiable import get_numpy
 from trellis.core.types import SchedulePeriod
@@ -708,10 +709,15 @@ def _event_timeline_derivative_metadata(event_timeline: PathEventTimeline | None
     features = list(dict.fromkeys(features))
     if not features:
         return {}
-    return {
-        "discontinuous_features": tuple(features),
-        "unsupported_reason": f"{features[0]}_discontinuity",
-    }
+    return derivative_method_payload(
+        "unsupported_discontinuous_pathwise",
+        parameterization="event_timeline_discontinuous_pathwise_policy",
+        discontinuous_features=tuple(features),
+        discontinuous_derivative_policy="fail_closed",
+        fallback_derivative_method="finite_difference_bump_reprice",
+        unsupported_reason=f"{features[0]}_discontinuity",
+        policy_version="mc_discontinuous_derivative_policy_v1",
+    )
 
 
 def _resolve_event_state_payoff(
