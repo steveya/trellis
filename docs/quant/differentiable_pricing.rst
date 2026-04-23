@@ -38,6 +38,16 @@ provenance for the underlier spot, FX spot, domestic curve, foreign curve,
 volatility lookups, and correlation, and it only accepts noncanonical foreign
 carry reuse when an explicit ``quanto_foreign_curve_policy`` bridge is present.
 
+The first bounded hybrid calibration slice sits on top of that resolver
+boundary. ``calibrate_quanto_correlation_workflow(...)`` calibrates one scalar
+underlier/FX correlation for the checked ``bounded_quanto_correlation`` route,
+but the shipped solve provenance is intentionally finite-difference today:
+``resolved_derivative_method="scipy_2point_residual_jacobian"``,
+``derivative_method_category="finite_difference_bump"``,
+``derivative_method_support="fallback"``, and no ``backend_operator``. That is
+a governed bounded hybrid calibration contract, not a claim of universal
+hybrid AD, hybrid ``jvp``, or broad ``portfolio_aad`` support.
+
 The goal is not to make every numerical routine differentiable. It is to remove
 unnecessary bump/reprice loops, stabilize calibration, and keep the exact same
 pricing logic available to both value and sensitivity workflows.
@@ -78,10 +88,13 @@ The checked support contract is intentionally explicit:
      - scalar vega through ``autodiff_flat_vol``
      - flat surfaces only
    * - Calibration
-     - rates bootstrap ``autodiff_vector_jacobian``, SABR
+     - rates bootstrap ``autodiff_vector_jacobian``, bounded quanto-correlation
+       calibration ``scipy_2point_residual_jacobian``, SABR
        ``autodiff_scalar_gradient``, and Heston smile / full-surface
        ``finite_difference_vector_jacobian``
-     - solver provenance records the derivative method that actually ran
+     - solver provenance records the derivative method that actually ran;
+       bounded hybrid calibration is governed fallback finite differences, not
+       hybrid AD or AAD
    * - Monte Carlo
      - pathwise gradients through ``simulate_with_shocks(...)`` and
        ``price_event_aware_monte_carlo(...)``
@@ -202,6 +215,14 @@ runtime reporting must not overstate.
      - ``autodiff_vector_jacobian``
      - supported through the repricing Jacobian recorded in
        ``solver_provenance``
+   * - ``bounded_quanto_calibration``
+     - bounded hybrid quanto-correlation calibration route
+     - ``scipy_2point_residual_jacobian``
+     - partial support: the checked ``bounded_quanto_correlation`` slice is a
+       real shipped hybrid route, but its least-squares solve currently
+       reports finite-difference residual Jacobian provenance with no
+       ``backend_operator``; this is not a claim of hybrid AD, ``jvp``, or
+       broad ``portfolio_aad``
    * - ``quanto_generated_helper``
      - route-generated quanto analytical helper route
      - ``autodiff_scalar_gradient``
@@ -384,6 +405,10 @@ Where Trellis Still Stays Forward-Only
 - scalar vega on unsupported smile surfaces, which now reports an explicit
   representative-flat-vol fallback instead of silently pretending to be a
   surface-native Greek
+- hybrid derivative claims outside the single-underlier
+  ``bounded_quanto_correlation`` bridge; the shipped route records
+  ``scipy_2point_residual_jacobian`` solve provenance and does not widen into
+  universal hybrid AD, hybrid ``jvp``, or broad ``portfolio_aad`` support
 - state-aware Monte Carlo contracts with barrier monitors or other
   discontinuous event semantics, which still stay off the traced lane even
   when explicit shocks are supplied; the bounded checked policy is

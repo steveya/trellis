@@ -85,6 +85,14 @@ def test_derivative_method_taxonomy_covers_runtime_and_matrix_methods():
     assert unsupported_payload["derivative_method_category"] == "unsupported"
     assert unsupported_payload["fallback_derivative_method"] == "finite_difference_bump_reprice"
 
+    hybrid_calibration_payload = derivative_method_payload("scipy_2point_residual_jacobian")
+    assert hybrid_calibration_payload["derivative_method_category"] == "finite_difference_bump"
+    assert hybrid_calibration_payload["derivative_method_support"] == "fallback"
+    assert hybrid_calibration_payload["fallback_derivative_method"] == (
+        "scipy_2point_residual_jacobian"
+    )
+    assert "backend_operator" not in hybrid_calibration_payload
+
 
 def test_derivative_method_payload_rejects_unknown_method_ids():
     from trellis.analytics.derivative_methods import derivative_method_payload

@@ -27,6 +27,11 @@ from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments.bond import Bond
 from trellis.instruments.fx import FXRate
 from trellis.models.analytical.quanto import price_quanto_option_analytical
+from trellis.models.calibration.materialization import materialize_black_vol_surface
+from trellis.models.calibration.quanto import (
+    QuantoCorrelationCalibrationQuote,
+    calibrate_quanto_correlation_workflow,
+)
 from trellis.models.black import black76_call
 from trellis.models.monte_carlo.engine import (
     MonteCarloEngine,
@@ -34,6 +39,7 @@ from trellis.models.monte_carlo.engine import (
 )
 from trellis.models.monte_carlo.path_state import barrier_payoff
 from trellis.models.processes.gbm import GBM
+from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 from trellis.models.resolution.quanto import resolve_quanto_inputs
 from trellis.models.vol_surface import FlatVol, GridVolSurface
 from trellis.session import Session
@@ -104,6 +110,20 @@ GRADIENT_MATRIX: tuple[GradientMatrixRow, ...] = (
         documentation_terms=("rates_bootstrap_calibration", "autodiff_vector_jacobian", "solver_provenance"),
     ),
     GradientMatrixRow(
+        family_id="bounded_quanto_calibration",
+        product_family="bounded hybrid quanto-correlation calibration route",
+        category="calibration",
+        support_status="partial",
+        expected_derivative_method="scipy_2point_residual_jacobian",
+        fallback_derivative_method=None,
+        documentation_terms=(
+            "bounded_quanto_calibration",
+            "bounded hybrid quanto-correlation calibration route",
+            "bounded_quanto_correlation",
+            "scipy_2point_residual_jacobian",
+        ),
+    ),
+    GradientMatrixRow(
         family_id="quanto_generated_helper",
         product_family="route-generated quanto analytical helper route",
         category="route_generated",
@@ -146,6 +166,19 @@ class _ResolvedVolProbe:
     expiry: float
     strike: float
     vol: object
+
+
+@dataclass(frozen=True)
+class _QuantoCalibrationSpec:
+    notional: float
+    strike: float
+    expiry_date: date
+    fx_pair: str
+    underlier_currency: str = "EUR"
+    domestic_currency: str = "USD"
+    option_type: str = "call"
+    quanto_correlation_key: str | None = None
+    day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
 class _VolProbePayoff(ResolvedInputPayoff[None, _ResolvedVolProbe]):
@@ -238,6 +271,8 @@ def test_gradient_matrix_is_documented_and_prevents_stale_support_claims():
         "jvp=True",
         "portfolio_aad=True",
         "supports universal portfolio AAD",
+        "supports universal hybrid AD",
+        "bounded hybrid calibration uses autodiff_vector_jacobian",
         "automatic discontinuous Greeks are supported",
         "all generated routes are differentiable by default",
         "surface-native scalar vega for every smile surface is supported",
@@ -375,6 +410,106 @@ def _check_rates_bootstrap_calibration(row: GradientMatrixRow) -> None:
     assert result.diagnostics.max_abs_residual < 1e-8
 
 
+def _bounded_quanto_market_state(*, correlation: float | None = 0.35) -> MarketState:
+    state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.05),
+        forecast_curves={"EUR-DISC": YieldCurve.flat(0.03)},
+        fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+        spot=100.0,
+        underlier_spots={"EUR": 100.0},
+        vol_surface=FlatVol(0.20),
+        model_parameters=None if correlation is None else {"quanto_correlation": correlation},
+        selected_curve_names={
+            "discount_curve": "usd_ois",
+            "forecast_curve": "EUR-DISC",
+        },
+        market_provenance={"source_kind": "explicit_input", "source_ref": "gradient_matrix"},
+    )
+    return materialize_black_vol_surface(
+        state,
+        surface_name="quanto_flat_vol",
+        vol_surface=FlatVol(0.20),
+        source_kind="calibrated_surface",
+        source_ref="calibrate_equity_vol_surface_workflow",
+        selected_curve_roles={
+            "discount_curve": "usd_ois",
+            "forecast_curve": "EUR-DISC",
+        },
+        metadata={"instrument_family": "equity_fx_quanto"},
+    )
+
+
+def _quanto_calibration_quote(
+    market_state: MarketState,
+    spec: _QuantoCalibrationSpec,
+    *,
+    label: str,
+) -> QuantoCorrelationCalibrationQuote:
+    return QuantoCorrelationCalibrationQuote(
+        market_price=price_quanto_option_analytical_from_market_state(market_state, spec),
+        notional=spec.notional,
+        strike=spec.strike,
+        expiry_date=spec.expiry_date,
+        fx_pair=spec.fx_pair,
+        underlier_currency=spec.underlier_currency,
+        domestic_currency=spec.domestic_currency,
+        option_type=spec.option_type,
+        quanto_correlation_key=spec.quanto_correlation_key,
+        day_count=spec.day_count,
+        label=label,
+    )
+
+
+def _check_bounded_quanto_calibration(row: GradientMatrixRow) -> None:
+    assert row.expected_derivative_method == "scipy_2point_residual_jacobian"
+
+    true_state = _bounded_quanto_market_state(correlation=0.35)
+    calibration_state = _bounded_quanto_market_state(correlation=None)
+    specs = (
+        _QuantoCalibrationSpec(
+            notional=1_000_000.0,
+            strike=95.0,
+            expiry_date=date(2025, 11, 15),
+            fx_pair="EURUSD",
+            quanto_correlation_key="quanto_correlation",
+            day_count=DayCountConvention.ACT_360,
+        ),
+        _QuantoCalibrationSpec(
+            notional=1_000_000.0,
+            strike=105.0,
+            expiry_date=date(2026, 5, 15),
+            fx_pair="EURUSD",
+        ),
+    )
+    quotes = tuple(
+        _quanto_calibration_quote(true_state, spec, label=f"q{index}")
+        for index, spec in enumerate(specs)
+    )
+    assert quotes[0].quanto_correlation_key == "quanto_correlation"
+    assert quotes[0].day_count == DayCountConvention.ACT_360
+
+    result = calibrate_quanto_correlation_workflow(
+        quotes,
+        calibration_state,
+        parameter_set_name="quanto_rho_matrix",
+    )
+
+    assert result.summary["support_boundary"] == "bounded_quanto_correlation"
+    assert result.solve_provenance.backend["resolved_derivative_method"] == (
+        "scipy_2point_residual_jacobian"
+    )
+    assert result.solve_provenance.backend["derivative_method_category"] == (
+        "finite_difference_bump"
+    )
+    assert result.solve_provenance.backend["derivative_method_support"] == "fallback"
+    assert result.solve_provenance.backend["backend_operator"] is None
+    assert result.solve_provenance.backend["fallback_derivative_method"] == (
+        "scipy_2point_residual_jacobian"
+    )
+
+
 def _check_quanto_generated_helper(row: GradientMatrixRow) -> None:
     assert row.expected_derivative_method == "autodiff_scalar_gradient"
 
@@ -469,6 +604,7 @@ _ROW_CHECKS = {
     "grid_vol_surface_bucketed": _check_grid_vol_surface_bucketed,
     "smooth_monte_carlo_pathwise": _check_smooth_monte_carlo_pathwise,
     "rates_bootstrap_calibration": _check_rates_bootstrap_calibration,
+    "bounded_quanto_calibration": _check_bounded_quanto_calibration,
     "quanto_generated_helper": _check_quanto_generated_helper,
     "barrier_mc_discontinuous_policy": _check_barrier_mc_discontinuous_policy,
     "portfolio_aad_vjp": _check_portfolio_aad_vjp,
