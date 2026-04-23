@@ -93,6 +93,34 @@ For the latent-state and generator grammar inside the broader sleeve, see
 bridge that maps calibration contracts onto runtime bindings, see
 ``docs/developer/composition_calibration_design.md``.
 
+Bounded Hybrid Quanto Correlation Slice
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The first checked hybrid calibration workflow is intentionally narrow:
+``calibrate_quanto_correlation_workflow(...)`` fits one scalar
+``quanto_correlation`` from one or more quanto option price quotes.
+
+The workflow composes already-bound runtime market inputs rather than building
+a new cross-asset plant. It requires the existing quanto resolver to consume:
+
+- a domestic discount curve
+- a canonical or explicitly bridged foreign carry curve
+- underlier and FX spots
+- a volatility surface for the underlier / FX-vol lookups
+- market quotes for the bounded quanto option target
+
+The workflow records a ``CalibrationDependencyGraph`` with dependency-first
+ordering, solves the scalar correlation through the shared ``SolveRequest``
+surface, reports quote-level repricing residuals, and materializes the
+calibrated value back onto ``MarketState`` as a ``model_parameter_set`` named
+by the caller. Downstream quanto pricing then consumes the same
+``market_state.model_parameters["quanto_correlation"]`` binding used by direct,
+empirical, or user-supplied correlation inputs.
+
+This is not a universal rates/equity/FX calibration engine. It does not
+calibrate cross-currency curves, separate FX-vol surfaces, multi-underlier
+quanto baskets, or a globally smoothed hybrid state model.
+
 Solve-Request Substrate
 -----------------------
 
@@ -452,7 +480,7 @@ calibration plant.
 Validation And Replay Expectations
 ----------------------------------
 
-The supported calibration workflows now ship with a deterministic replay and
+Most supported calibration workflows now ship with a deterministic replay and
 tolerance pack that locks the current checked quality envelope on the synthetic
 benchmark fixtures used for workflow validation:
 
@@ -473,10 +501,14 @@ benchmark fixtures used for workflow validation:
   fits the desk-like two-maturity tranche grid through the homogeneous
   tranche-implied correlation workflow, and requires near-zero quote residuals
   with no root failures
+- Quanto-correlation calibration is currently covered by targeted workflow
+  regression tests that check the dependency DAG, repricing residuals,
+  materialization, and missing-input diagnostics; it is not yet in the
+  benchmark pack
 
 The benchmark baseline in ``docs/benchmarks/calibration_workflows.{json,md}``
 complements those fit-quality gates with cold-start versus warm-start timing
-expectations for the supported workflows. The benchmark pack now covers ten
+expectations for the benchmarked workflows. The benchmark pack now covers ten
 workflows: Hull-White, caplet stripping, SABR, swaption cube assembly,
 equity-vol surface authority, Heston single-smile fitting, Heston
 surface-compression fitting, local vol, single-name credit, and basket-credit
@@ -921,6 +953,9 @@ Implementation
 .. autofunction:: trellis.models.calibration.rates_vol_surface.compare_sabr_to_swaption_cube_workflow
 .. autofunction:: trellis.models.calibration.credit.calibrate_single_name_credit_curve_workflow
 .. autofunction:: trellis.models.calibration.basket_credit.calibrate_homogeneous_basket_tranche_correlation_workflow
+.. autoclass:: trellis.models.calibration.dependency_graph.CalibrationDependencyGraph
+.. autoclass:: trellis.models.calibration.dependency_graph.CalibrationDependencyNode
+.. autofunction:: trellis.models.calibration.quanto.calibrate_quanto_correlation_workflow
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileSurface
    :members:
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileFitDiagnostics

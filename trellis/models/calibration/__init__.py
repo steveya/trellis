@@ -117,6 +117,21 @@ from trellis.models.calibration.materialization import (
     materialize_model_parameter_set,
     resolve_materialized_object,
 )
+from trellis.models.calibration.dependency_graph import (
+    CalibrationDependencyCycleError,
+    CalibrationDependencyGraph,
+    CalibrationDependencyGraphError,
+    CalibrationDependencyNode,
+    DuplicateCalibrationDependencyNodeError,
+    MissingCalibrationDependencyNodeError,
+)
+from trellis.models.calibration.quanto import (
+    QuantoCorrelationCalibrationDiagnostics,
+    QuantoCorrelationCalibrationQuote,
+    QuantoCorrelationCalibrationResult,
+    QuantoCorrelationQuoteResidual,
+    calibrate_quanto_correlation_workflow,
+)
 from trellis.models.calibration.solve_request import (
     ConstraintSpec,
     ObjectiveBundle,
@@ -231,6 +246,17 @@ __all__ = [
     "materialize_credit_curve",
     "materialize_correlation_surface",
     "resolve_materialized_object",
+    "CalibrationDependencyCycleError",
+    "CalibrationDependencyGraph",
+    "CalibrationDependencyGraphError",
+    "CalibrationDependencyNode",
+    "DuplicateCalibrationDependencyNodeError",
+    "MissingCalibrationDependencyNodeError",
+    "QuantoCorrelationCalibrationDiagnostics",
+    "QuantoCorrelationCalibrationQuote",
+    "QuantoCorrelationCalibrationResult",
+    "QuantoCorrelationQuoteResidual",
+    "calibrate_quanto_correlation_workflow",
     "ConstraintSpec",
     "ObjectiveBundle",
     "SolveBackendRecord",

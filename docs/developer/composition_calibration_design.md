@@ -397,6 +397,25 @@ That split matters architecturally:
 - hybrid steps should reuse those already-materialized objects instead of
   rebuilding them implicitly
 
+The first checked hybrid step follows that rule with a bounded
+rates + equity/FX quanto correlation workflow:
+
+- `trellis.models.calibration.dependency_graph` records the dependency DAG as
+  typed nodes and dependency-first ordering
+- `trellis.models.calibration.quanto.calibrate_quanto_correlation_workflow`
+  preflights the existing quanto resolver inputs, fits one scalar
+  `quanto_correlation`, and records quote-level repricing diagnostics
+- the calibrated bridge is materialized with
+  `materialize_model_parameter_set(...)`, not a new hybrid object kind
+- downstream quanto pricing consumes the resulting
+  `market_state.model_parameters["quanto_correlation"]` descriptor through the
+  existing resolver path
+
+This is deliberately not a generic hybrid calibration engine. New hybrid
+families should reuse the DAG and materialization pattern, but each family
+still needs its own bounded quote contract, input preflight, diagnostics, and
+support boundary.
+
 ### Canonical model-grammar registry
 
 The planner and shared retrieval surface now also read a canonical calibration
