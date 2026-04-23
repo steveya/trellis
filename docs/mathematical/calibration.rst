@@ -501,29 +501,32 @@ benchmark fixtures used for workflow validation:
   fits the desk-like two-maturity tranche grid through the homogeneous
   tranche-implied correlation workflow, and requires near-zero quote residuals
   with no root failures
-- Quanto-correlation calibration is currently covered by targeted workflow
-  regression tests that check the dependency DAG, repricing residuals,
-  materialization, and missing-input diagnostics; it is not yet in the
-  benchmark pack
+- Quanto-correlation replay now covers the bounded desk-like EUR/USD fixture,
+  checks the dependency DAG, repricing residuals, keyed-correlation
+  materialization, and missing-input diagnostics, and records the honest
+  finite-difference calibration derivative lane through ``solve_provenance``
 
 The benchmark baseline in ``docs/benchmarks/calibration_workflows.{json,md}``
 complements those fit-quality gates with cold-start versus warm-start timing
-expectations for the benchmarked workflows. The benchmark pack now covers ten
-workflows: Hull-White, caplet stripping, SABR, swaption cube assembly,
+expectations for the benchmarked workflows. The benchmark pack now covers
+eleven workflows: Hull-White, caplet stripping, SABR, swaption cube assembly,
 equity-vol surface authority, Heston single-smile fitting, Heston
-surface-compression fitting, local vol, single-name credit, and basket-credit
-tranche-implied correlation. Warm-start timing is tracked on the four
-workflows that expose explicit warm seeds (Hull-White, SABR, Heston
-single-smile, and Heston surface compression).
+surface-compression fitting, local vol, single-name credit, basket-credit
+tranche-implied correlation, and bounded quanto-correlation calibration.
+Warm-start timing is tracked on the five workflows that expose explicit warm
+seeds (Hull-White, SABR, Heston single-smile, Heston surface compression, and
+quanto-correlation calibration).
 
-The first validation tranche also carries one desk-like basket-credit fixture
-instead of only synthetic single-asset fixtures. That fixture links a
+The first validation tranche now carries two desk-like fixtures instead of
+only synthetic single-asset fixtures. The basket-credit fixture links a
 materialized single-name credit curve to six tranche expected-loss quotes
-across two maturities and three attachment/detachment bands. Its benchmark
-payload records an explicit perturbation diagnostic for a parallel quote bump
-and a latency envelope for the cold-start solve, so quote-instability and
-performance drift are visible in the persisted artifact instead of being
-inferred from pass/fail replay alone.
+across two maturities and three attachment/detachment bands. The bounded
+quanto fixture links already-bound domestic/foreign curves, underlier and FX
+spots, and a materialized ``quanto_flat_vol`` surface to three keyed EUR/USD
+quanto-option quotes. Each benchmark payload records an explicit perturbation
+diagnostic and a latency envelope for the cold-start solve, so
+quote-instability and performance drift are visible in the persisted artifact
+instead of being inferred from pass/fail replay alone.
 
 Those checked fixtures now read from the same bounded mock-snapshot contracts
 used by replay and proving paths instead of from a separate benchmark-only
@@ -535,7 +538,10 @@ contract. The single-name credit canary continues to read spread/recovery
 inputs from the derived ``model_consistency_contract`` compatibility packet.
 The basket-credit canary layers its desk-like tranche surface on top of that
 single-name credit materialization to keep the representative-curve linkage
-explicit.
+explicit. The bounded quanto canary stays on the shipped hybrid contract: one
+materialized equity-style vol surface, one scalar keyed correlation bridge,
+and already-bound curves/spots rather than a broader cross-asset market-data
+plant.
 
 This keeps the checked calibration boundary aligned with the same bounded
 synthetic market assumptions that task and proving workflows see at runtime.

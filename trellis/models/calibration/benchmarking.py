@@ -14,6 +14,8 @@ from typing import Callable, Mapping, Sequence
 
 import numpy as raw_np
 
+from trellis.core.types import DayCountConvention
+
 
 DEFAULT_REPORT_ROOT = Path("docs") / "benchmarks"
 DEFAULT_REPORT_STEM = "calibration_workflows"
@@ -214,6 +216,21 @@ class _BenchmarkBasketTrancheSpec:
     end_date: date
     recovery: float = 0.4
     correlation: float | None = None
+
+
+@dataclass(frozen=True)
+class _BenchmarkQuantoOptionSpec:
+    """Local quanto option spec used for bounded hybrid benchmark quotes."""
+
+    notional: float
+    strike: float
+    expiry_date: date
+    fx_pair: str
+    underlier_currency: str = "EUR"
+    domestic_currency: str = "USD"
+    option_type: str = "call"
+    quanto_correlation_key: str | None = "EURUSD_corr"
+    day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
 def diagnose_metric_perturbation(
@@ -582,6 +599,7 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     from trellis.curves.yield_curve import YieldCurve
     from trellis.data.mock import MockDataProvider
     from trellis.data.schema import MarketSnapshot
+    from trellis.instruments.fx import FXRate
     from trellis.instruments._agent.swaption import SwaptionSpec
     from trellis.instruments.cap import CapFloorSpec, CapPayoff
     from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, price_bermudan_swaption_tree
@@ -599,6 +617,11 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         calibrate_heston_surface_from_equity_vol_surface_workflow,
     )
     from trellis.models.calibration.local_vol import calibrate_local_vol_surface_workflow
+    from trellis.models.calibration.materialization import materialize_black_vol_surface
+    from trellis.models.calibration.quanto import (
+        QuantoCorrelationCalibrationQuote,
+        calibrate_quanto_correlation_workflow,
+    )
     from trellis.models.calibration.rates import HullWhiteCalibrationInstrument, calibrate_hull_white, swaption_terms
     from trellis.models.calibration.rates_vol_surface import (
         CapletStripQuote,
@@ -609,6 +632,7 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     from trellis.models.calibration.sabr_fit import calibrate_sabr_smile_workflow
     from trellis.models.credit_basket_copula import price_credit_basket_tranche_result
     from trellis.models.processes.sabr import SABRProcess
+    from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
     from trellis.models.rate_style_swaption import price_swaption_black76
     from trellis.models.vol_surface import FlatVol, GridVolSurface
 
@@ -960,6 +984,115 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         cold_max_limit_seconds=8.0,
     ).to_dict()
 
+    quanto_truth_state = MarketState(
+        as_of=settle,
+        settlement=settle,
+        discount=YieldCurve.flat(0.05),
+        forecast_curves={"EUR-DISC": YieldCurve.flat(0.03)},
+        fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+        spot=100.0,
+        underlier_spots={"EUR": 100.0},
+        vol_surface=FlatVol(0.20),
+        model_parameters={"EURUSD_corr": 0.35},
+        selected_curve_names={
+            "discount_curve": "usd_ois",
+            "forecast_curve": "EUR-DISC",
+        },
+        market_provenance={"source_kind": "benchmark_fixture", "source_ref": "quanto_validation_fixture"},
+    )
+    quanto_truth_state = materialize_black_vol_surface(
+        quanto_truth_state,
+        surface_name="quanto_flat_vol",
+        vol_surface=FlatVol(0.20),
+        source_kind="calibrated_surface",
+        source_ref="calibrate_equity_vol_surface_workflow",
+        selected_curve_roles={
+            "discount_curve": "usd_ois",
+            "forecast_curve": "EUR-DISC",
+        },
+        metadata={"instrument_family": "equity_fx_quanto"},
+    )
+    quanto_calibration_state = replace(
+        quanto_truth_state,
+        model_parameters={"EURUSD_corr": -0.10},
+        model_parameter_sets=None,
+    )
+    quanto_specs = (
+        _BenchmarkQuantoOptionSpec(
+            notional=1_000_000.0,
+            strike=95.0,
+            expiry_date=date(2025, 11, 15),
+            fx_pair="EURUSD",
+        ),
+        _BenchmarkQuantoOptionSpec(
+            notional=1_000_000.0,
+            strike=100.0,
+            expiry_date=date(2026, 5, 15),
+            fx_pair="EURUSD",
+        ),
+        _BenchmarkQuantoOptionSpec(
+            notional=1_000_000.0,
+            strike=105.0,
+            expiry_date=date(2026, 11, 15),
+            fx_pair="EURUSD",
+        ),
+    )
+    quanto_quotes = tuple(
+        QuantoCorrelationCalibrationQuote(
+            market_price=price_quanto_option_analytical_from_market_state(quanto_truth_state, spec),
+            notional=spec.notional,
+            strike=spec.strike,
+            expiry_date=spec.expiry_date,
+            fx_pair=spec.fx_pair,
+            underlier_currency=spec.underlier_currency,
+            domestic_currency=spec.domestic_currency,
+            option_type=spec.option_type,
+            day_count=DayCountConvention.ACT_365,
+            label=f"quanto_{index}",
+            weight=1.0,
+            quanto_correlation_key=spec.quanto_correlation_key,
+        )
+        for index, spec in enumerate(quanto_specs)
+    )
+
+    def quanto_correlation_calibration(
+        quotes=quanto_quotes,
+        *,
+        initial_correlation: float = 0.0,
+    ):
+        return calibrate_quanto_correlation_workflow(
+            quotes,
+            quanto_calibration_state,
+            parameter_set_name="benchmark_quanto_rho",
+            initial_correlation=initial_correlation,
+        )
+
+    quanto_base_result = quanto_correlation_calibration()
+    quanto_perturbed_quotes = tuple(
+        replace(quote, market_price=float(quote.market_price) * 1.0025)
+        for quote in quanto_quotes
+    )
+    quanto_perturbed_result = quanto_correlation_calibration(
+        quanto_perturbed_quotes,
+        initial_correlation=-0.20,
+    )
+    quanto_perturbation_diagnostic = diagnose_metric_perturbation(
+        label="quanto_correlation_parallel_quote_up",
+        perturbation_size=0.0025,
+        baseline_metrics={"quanto_correlation": float(quanto_base_result.correlation)},
+        perturbed_metrics={"quanto_correlation": float(quanto_perturbed_result.correlation)},
+        instability_thresholds={"quanto_correlation": 0.08},
+    ).to_dict()
+    quanto_latency_envelope = CalibrationLatencyEnvelope(
+        workflow="quanto_correlation",
+        label="desk_quanto_correlation",
+        fixture_style="desk_like",
+        quote_count=len(quanto_quotes),
+        cold_mean_limit_seconds=1.5,
+        cold_max_limit_seconds=2.0,
+        warm_mean_limit_seconds=0.5,
+    ).to_dict()
+
     return (
         CalibrationBenchmarkScenario(
             workflow="hull_white",
@@ -1175,6 +1308,34 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 "support_boundary": "homogeneous_representative_curve",
                 "perturbation_diagnostic": basket_credit_diagnostic,
                 "latency_envelope": basket_credit_latency_envelope,
+            },
+        ),
+        CalibrationBenchmarkScenario(
+            workflow="quanto_correlation",
+            label="desk_quanto_correlation",
+            cold_runner=lambda: quanto_correlation_calibration(initial_correlation=0.0),
+            warm_runner=lambda: quanto_correlation_calibration(initial_correlation=0.35),
+            notes=(
+                "least_squares",
+                "desk_like_fixture",
+                "bounded_quanto_correlation",
+                "linked_market_state_materialization",
+            ),
+            metadata={
+                "fixture_style": "desk_like",
+                "quote_count": len(quanto_quotes),
+                "warm_start": True,
+                "parameter_set_name": "benchmark_quanto_rho",
+                "fx_pair": "EURUSD",
+                "correlation_keys": ["EURUSD_corr"],
+                "support_boundary": "bounded_quanto_correlation",
+                "linked_vol_surface": "quanto_flat_vol",
+                "linked_curve_roles": {
+                    "discount_curve": "usd_ois",
+                    "forecast_curve": "EUR-DISC",
+                },
+                "perturbation_diagnostic": quanto_perturbation_diagnostic,
+                "latency_envelope": quanto_latency_envelope,
             },
         ),
     )
