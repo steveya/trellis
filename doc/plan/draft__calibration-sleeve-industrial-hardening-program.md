@@ -8,9 +8,9 @@ portfolio AAD and derivative governance.
 
 The umbrella `QUA-946`, child tickets `QUA-947` through `QUA-956`, adjacent
 Autograd Phase 2 tickets `QUA-966` through `QUA-971`, and post-`QUA-955`
-hybrid follow-ons `QUA-972` / `QUA-973` are now filed in Linear. This
-document is the ordered repo-local mirror for that queue and should stay
-aligned with the live issue graph.
+hybrid follow-ons `QUA-972` / `QUA-973` were all filed and completed in
+Linear. This document is now the closeout mirror for that queue and should
+remain aligned with the landed issue graph.
 
 The adjacent Autograd Phase 2 plan is tracked by `QUA-966` through `QUA-971`.
 It should not duplicate calibration curve, surface, or cube plants. It should
@@ -83,7 +83,7 @@ Rules for coding agents:
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-946` Calibration sleeve: Trellis-native industrial hardening program | In Progress |
+| `QUA-946` Calibration sleeve: Trellis-native industrial hardening program | Done |
 | `QUA-966` Autograd Phase 2: portfolio AAD and gradient governance | Done |
 
 ### Ordered Queue
@@ -129,9 +129,9 @@ and runtime reporting that consume those objects.
 | `INT.6` | `QUA-970` | Autograd | Done | product-family derivative matrix covering analytical, curve, surface, MC, and calibration representatives | `QUA-957`; consume `INT.2` / `INT.5` outcomes |
 | `INT.7` | `QUA-971` | Autograd | Done | unified runtime derivative-method reporting across analytical, AD, AAD, JVP/VJP/HVP, bump, smoothed/custom-adjoint, and unsupported lanes | `INT.2`, `INT.6`; coordinate with `INT.4` / `INT.5` |
 | `INT.8` | `QUA-955` | Calibration | Done | bounded rates + equity/FX quanto-correlation slice on explicit dependency DAGs, using calibrated market objects and existing derivative provenance where useful | `QUA-950`, `QUA-951`, `QUA-971` |
-| `INT.9` | `QUA-972` | Validation | Backlog | desk-like bounded quanto calibration fixtures, perturbation diagnostics, replay coverage, and latency envelopes for the shipped hybrid slice | `INT.8` |
-| `INT.10` | `QUA-973` | Autograd | Backlog | bounded hybrid derivative-matrix row and runtime/reporting governance for the shipped quanto slice | `INT.8`; consume `INT.4`, `INT.6`, `INT.7` |
-| `INT.11` | `QUA-946` | Closeout | In Progress | umbrella cleanup, docs maintenance, plan reconciliation, and follow-on ticket split | `INT.9`, `INT.10` landed or explicitly deferred in closeout |
+| `INT.9` | `QUA-972` | Validation | Done | desk-like bounded quanto calibration fixtures, perturbation diagnostics, replay coverage, and latency envelopes for the shipped hybrid slice | `INT.8` |
+| `INT.10` | `QUA-973` | Autograd | Done | bounded hybrid derivative-matrix row and runtime/reporting governance for the shipped quanto slice | `INT.8`; consume `INT.4`, `INT.6`, `INT.7` |
+| `INT.11` | `QUA-946` | Closeout | Done | umbrella cleanup, docs maintenance, plan reconciliation, and follow-on ticket split | `INT.9`, `INT.10` landed or explicitly deferred in closeout |
 
 ### Pickup Rule
 
@@ -142,11 +142,12 @@ and runtime reporting that consume those objects.
 - do not start `CAL.5` before `CAL.4` closes
 - do not start `CAL.6` until the first supported hybrid slice and its concrete
   upstream blockers are explicit in the ticket
-- after `CAL.6` closes, start `INT.9` / `QUA-972` and `INT.10` / `QUA-973`
-  next; they may run in parallel once the bounded hybrid input and reporting
-  surfaces from `QUA-955` are stable
-- do not close `INT.11` / `QUA-946` until `INT.9` and `INT.10` are either
-  landed or explicitly deferred in the umbrella closeout note
+- `INT.9` / `QUA-972` and `INT.10` / `QUA-973` both landed after `INT.8`
+  and completed the bounded hybrid validation and derivative-governance
+  follow-ons
+- `INT.11` / `QUA-946` closes only after those follow-ons land and the
+  umbrella closeout restores the persisted benchmark artifact to the default
+  smoothed baseline (`repeats=3`, `warmups=1`)
 - keep `CAL.7` moving alongside the active implementation slices so validation
   does not become a deferred cleanup bucket
 - do not start `AD2.2` before `AD2.1` lands a truthful backend operator
@@ -780,12 +781,12 @@ validation and derivative-governance slices, was:
 9. Unified runtime derivative-method taxonomy and reporting
 10. First bounded hybrid cross-asset calibration slice
 
-The remaining integrated implementation order is:
+The final integrated implementation order was:
 
 1. `QUA-972` bounded hybrid validation tranche over the shipped quanto slice
 2. `QUA-973` bounded hybrid derivative-governance tranche over the same route
 3. `QUA-946` umbrella closeout and documentation maintenance once those
-   follow-ons land or are explicitly deferred
+   follow-ons landed
 
 `QUA-967` landed early as `AD2.1` / `INT.2`, and `QUA-968` consumed that
 checked VJP/HVP surface for the first bounded bond-book reverse-mode lane.
@@ -830,17 +831,18 @@ This plan does not propose immediately building:
 The right first industrialization move is to harden a few narrow slices until
 they are actually desk-grade, then widen.
 
-## Immediate Follow-On Execution Slice
+## Closeout Result
 
-The next execution slice after the `CAL.6` / `QUA-955` closeout should be:
+The final execution slice after the `CAL.6` / `QUA-955` closeout was:
 
-1. `QUA-972`: add the first desk-like bounded hybrid fixture pack, replay
+1. `QUA-972`: the first desk-like bounded hybrid fixture pack, replay
    coverage, perturbation diagnostics, and latency envelopes for the shipped
    quanto-correlation route
-2. `QUA-973`: extend the finished derivative-matrix and runtime-reporting
-   contract onto the bounded hybrid slice without overstating AD/AAD support
-3. `QUA-946`: close the umbrella only after those two follow-ons land or are
-   explicitly deferred in the closeout note
+2. `QUA-973`: the bounded hybrid derivative-matrix and runtime-reporting
+   contract on the same shipped route without overstating AD/AAD support
+3. `QUA-946`: umbrella closeout once those two follow-ons landed, including
+   benchmark-artifact stabilization back to the default smoothed baseline
 
-`QUA-972` and `QUA-973` may run in parallel once the `QUA-955` input schema,
-materialization payload, and runtime-reporting surface are treated as stable.
+`QUA-972` and `QUA-973` ran in parallel once the `QUA-955` input schema,
+materialization payload, and runtime-reporting surface were stable enough to
+treat as the shipped bounded hybrid contract.
