@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 
 from trellis.core.market_state import MarketState
+from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.models.rate_style_swaption import price_swaption_black76
 
@@ -39,6 +40,6 @@ class SwaptionPayoff:
     def requirements(self) -> set[str]:
         return {"black_vol_surface", "discount_curve", "forward_curve"}
 
-    def evaluate(self, market_state: MarketState) -> float:
+    def evaluate(self, market_state: MarketState) -> PricingValue:
         spec = self._spec
-        return float(price_swaption_black76(market_state, spec))
+        return price_swaption_black76(market_state, spec)

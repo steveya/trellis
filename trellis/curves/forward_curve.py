@@ -57,7 +57,7 @@ class ForwardCurve:
         discount_date = getattr(self._curve, "discount_date", None)
         if discount_date is None:
             raise AttributeError("Underlying discount curve has no date-aware discount method")
-        return float(discount_date(target_date))
+        return discount_date(target_date)
 
     def forward_rate_dates(
         self,
@@ -70,13 +70,11 @@ class ForwardCurve:
         """Date-aware forward rate when the underlying curve supports it."""
         curve_method = getattr(self._curve, "forward_rate_dates", None)
         if curve_method is not None:
-            return float(
-                curve_method(
-                    start_date,
-                    end_date,
-                    day_count=day_count,
-                    compounding=compounding,
-                )
+            return curve_method(
+                start_date,
+                end_date,
+                day_count=day_count,
+                compounding=compounding,
             )
         discount_date = getattr(self._curve, "discount_date", None)
         if discount_date is None:
@@ -84,10 +82,10 @@ class ForwardCurve:
         alpha = year_fraction(start_date, end_date, day_count)
         if alpha <= 0.0:
             raise ValueError("Forward accrual year fraction must be positive")
-        df1 = float(discount_date(start_date))
-        df2 = float(discount_date(end_date))
+        df1 = discount_date(start_date)
+        df2 = discount_date(end_date)
         if compounding == "simple":
-            return float((df1 / df2 - 1.0) / alpha)
+            return (df1 / df2 - 1.0) / alpha
         if compounding == "continuous":
-            return float(np.log(df1 / df2) / alpha)
+            return np.log(df1 / df2) / alpha
         raise ValueError(f"Unknown compounding: {compounding!r}")

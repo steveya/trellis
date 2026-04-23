@@ -138,13 +138,18 @@ class TestBootstrapSwaps:
         assert isinstance(result, BootstrapCalibrationResult)
         assert isinstance(result.diagnostics, BootstrapCalibrationDiagnostics)
         assert result.solve_result.metadata["backend_id"] == "scipy"
+        assert result.solve_result.metadata["derivative_method"] == "autodiff_vector_jacobian"
         assert result.solver_provenance.backend["backend_id"] == "scipy"
+        assert result.solver_provenance.backend["derivative_method"] == "autodiff_vector_jacobian"
         assert result.solver_replay_artifact.request["request_id"] == "rates_bootstrap_least_squares"
         assert result.diagnostics.max_abs_residual < 1e-8
         assert result.diagnostics.jacobian_rank == 3
         assert len(result.diagnostics.jacobian_matrix) == 3
         assert len(result.diagnostics.jacobian_matrix[0]) == 3
         assert result.to_payload()["solver_provenance"]["backend"]["backend_id"] == "scipy"
+        assert result.to_payload()["solver_provenance"]["backend"]["derivative_method"] == (
+            "autodiff_vector_jacobian"
+        )
 
     def test_bootstrap_respects_explicit_bundle_conventions(self):
         """Bundles should drive repricing instead of the old hard-coded swap glue."""

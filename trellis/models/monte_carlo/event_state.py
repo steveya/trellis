@@ -12,6 +12,21 @@ from trellis.models.monte_carlo.path_state import MonteCarloPathRequirement
 np = get_numpy()
 
 
+def _to_backend_array(values):
+    if hasattr(values, "_value"):
+        return values
+    return np.asarray(values)
+
+
+def _validation_view(values):
+    return getattr(values, "_value", values)
+
+
+def _maybe_copy_array(values):
+    copier = getattr(values, "copy", None)
+    return copier() if callable(copier) else values
+
+
 def event_step_indices(
     event_times: tuple[float, ...],
     T: float,
@@ -65,38 +80,42 @@ def _event_sort_key(event: "PathEventSpec") -> tuple[int, int, str, str]:
 
 
 def _coerce_observation_matrix(cross_section) -> np.ndarray:
-    values = np.asarray(cross_section, dtype=float)
-    if values.ndim == 1:
+    values = _to_backend_array(cross_section)
+    values_view = _validation_view(values)
+    if values_view.ndim == 1:
         values = values[:, np.newaxis]
-    if values.ndim != 2:
+        values_view = _validation_view(values)
+    if values_view.ndim != 2:
         raise ValueError(
-            f"Observation cross-sections must have rank 1 or 2; received shape {values.shape}."
+            f"Observation cross-sections must have rank 1 or 2; received shape {values_view.shape}."
         )
     return values
 
 
 def _coerce_event_vector(cross_section) -> np.ndarray:
-    values = np.asarray(cross_section, dtype=float)
-    if values.ndim == 1:
+    values = _to_backend_array(cross_section)
+    values_view = _validation_view(values)
+    if values_view.ndim == 1:
         return values
-    if values.ndim == 2 and values.shape[1] == 1:
+    if values_view.ndim == 2 and values_view.shape[1] == 1:
         return values[:, 0]
     raise ValueError(
-        f"Event cross-sections must be scalar-valued or have one column; received shape {values.shape}."
+        f"Event cross-sections must be scalar-valued or have one column; received shape {values_view.shape}."
     )
 
 
 def _coerce_reference_vector(initial_values, n_assets: int) -> np.ndarray:
-    reference = np.asarray(initial_values, dtype=float)
-    if reference.ndim == 0:
+    reference = _to_backend_array(initial_values)
+    reference_view = _validation_view(reference)
+    if reference_view.ndim == 0:
         if n_assets != 1:
             raise ValueError(
                 f"Scalar reference values can only be used for one-dimensional events; got {n_assets} assets."
             )
-        return np.asarray([float(reference)], dtype=float)
-    if reference.shape != (n_assets,):
+        return np.ones(1) * reference
+    if reference_view.shape != (n_assets,):
         raise ValueError(
-            f"Reference values must have shape ({n_assets},); got {reference.shape}."
+            f"Reference values must have shape ({n_assets},); got {reference_view.shape}."
         )
     return reference
 
@@ -307,15 +326,15 @@ def replay_path_event_timeline(
         raise ValueError("cross_sections must align one-to-one with event_timeline")
 
     ordered_pairs = sorted(zip(specs, cross_sections), key=lambda item: _event_sort_key(item[0]))
-    first_section = np.asarray(ordered_pairs[0][1], dtype=float)
-    n_paths = int(first_section.shape[0])
+    first_section = _to_backend_array(ordered_pairs[0][1])
+    n_paths = int(_validation_view(first_section).shape[0])
     n_steps = max(event.step for event in specs)
     state = PathEventState(
-        initial_values=np.asarray(initial_values, dtype=float).copy(),
+        initial_values=_maybe_copy_array(_to_backend_array(initial_values)),
         n_paths=n_paths,
         n_steps=n_steps,
         reducer_values={
-            str(name): np.asarray(values, dtype=float).copy()
+            str(name): _maybe_copy_array(_to_backend_array(values))
             for name, values in dict(reducer_values or {}).items()
         },
     )
@@ -413,14 +432,14 @@ def _apply_observation_event(
             priority=spec.priority,
             payload=spec.payload,
             selected_indices=None if selected_indices is None else np.asarray(selected_indices, dtype=int).copy(),
-            selected_values=None if selected_values is None else np.asarray(selected_values, dtype=float).copy(),
+            selected_values=None if selected_values is None else _maybe_copy_array(selected_values),
         ),
     )
     selected_indices_map = dict(state.selected_indices)
     selected_values_map = dict(state.selected_values)
     if selected_indices is not None and selected_values is not None:
         selected_indices_map[spec.name] = np.asarray(selected_indices, dtype=int).copy()
-        selected_values_map[spec.name] = np.asarray(selected_values, dtype=float).copy()
+        selected_values_map[spec.name] = _maybe_copy_array(selected_values)
 
     return PathEventState(
         initial_values=state.initial_values,
@@ -463,7 +482,7 @@ def _apply_barrier_event(
             step=spec.step,
             priority=spec.priority,
             payload=spec.payload,
-            barrier_hit=hit.copy(),
+            barrier_hit=_maybe_copy_array(hit),
         ),
     )
 
@@ -569,8 +588,8 @@ def _apply_exercise_event(
             step=spec.step,
             priority=spec.priority,
             payload=spec.payload,
-            exercise_triggered=triggered.copy(),
-            exercise_value=exercise_values.copy(),
+            exercise_triggered=_maybe_copy_array(triggered),
+            exercise_value=_maybe_copy_array(exercise_values),
         ),
     )
 
@@ -607,12 +626,12 @@ def _apply_settlement_event(
         locked_returns = (
             np.zeros(state.n_paths, dtype=float)
             if state.locked_returns is None
-            else np.asarray(state.locked_returns, dtype=float)
+            else _to_backend_array(state.locked_returns)
         )
         selected_counts = (
             np.zeros(state.n_paths, dtype=float)
             if state.selected_counts is None
-            else np.asarray(state.selected_counts, dtype=float)
+            else _to_backend_array(state.selected_counts)
         )
         settlement = _aggregate_locked_returns(locked_returns, selected_counts, rule)
     elif rule == "sum_locked_returns":
@@ -633,12 +652,16 @@ def _apply_settlement_event(
         exercise_values = state.exercise_values.get(exercise_event)
         if triggered is None or exercise_values is None:
             raise KeyError(f"settlement event {spec.name!r} requires exercise_event {exercise_event!r}")
-        settlement = np.where(np.asarray(triggered, dtype=bool), np.asarray(exercise_values, dtype=float), terminal_values)
+        settlement = np.where(
+            np.asarray(triggered, dtype=bool),
+            _to_backend_array(exercise_values),
+            terminal_values,
+        )
     elif rule == "discounted_swap_pv":
         settlement = _discounted_swap_pv_settlement(
             state,
             spec,
-            current_short_rate=np.asarray(terminal_values, dtype=float),
+            current_short_rate=_to_backend_array(terminal_values),
         )
     elif rule == "terminal_value":
         settlement = terminal_values
@@ -651,7 +674,7 @@ def _apply_settlement_event(
     if coupon_events is None:
         coupon_total = np.zeros(state.n_paths, dtype=float)
         for value in state.coupon_cashflows.values():
-            coupon_total = coupon_total + np.asarray(value, dtype=float)
+            coupon_total = coupon_total + _to_backend_array(value)
     else:
         if isinstance(coupon_events, str):
             coupon_event_names = (coupon_events,)
@@ -661,9 +684,9 @@ def _apply_settlement_event(
         for event_name in coupon_event_names:
             if event_name not in state.coupon_cashflows:
                 raise KeyError(f"settlement event {spec.name!r} requires coupon_event {event_name!r}")
-            coupon_total = coupon_total + np.asarray(state.coupon_cashflows[event_name], dtype=float)
+            coupon_total = coupon_total + _to_backend_array(state.coupon_cashflows[event_name])
 
-    settlement = np.asarray(settlement, dtype=float) + coupon_total
+    settlement = _to_backend_array(settlement) + coupon_total
 
     settlement_values = dict(state.settlement_values)
     settlement_values[spec.name] = settlement
@@ -674,7 +697,7 @@ def _apply_settlement_event(
             step=spec.step,
             priority=spec.priority,
             payload=spec.payload,
-            settlement_value=settlement.copy(),
+            settlement_value=_maybe_copy_array(settlement),
         ),
     )
 
@@ -745,7 +768,7 @@ def _discounted_swap_pv_settlement(
     strike = float(spec.payload.get("strike", 0.0))
     notional = float(spec.payload.get("notional", 1.0))
     payer_sign = 1.0 if bool(spec.payload.get("is_payer", True)) else -1.0
-    discount_to_exercise = np.asarray(state.reducer_values[reducer_name], dtype=float)
+    discount_to_exercise = _to_backend_array(state.reducer_values[reducer_name])
 
     tau = np.maximum(payment_times - exercise_time, 0.0)
     if abs(mean_reversion) < 1e-12:
@@ -754,7 +777,7 @@ def _discounted_swap_pv_settlement(
         B = (1.0 - np.exp(-mean_reversion * tau)) / mean_reversion
 
     anchor_ratio = anchor_discount_factors / anchor_discount_to_exercise
-    short_rate = np.asarray(current_short_rate, dtype=float)[:, np.newaxis]
+    short_rate = _to_backend_array(current_short_rate)[:, np.newaxis]
     bond_prices = anchor_ratio[np.newaxis, :] * np.exp(
         -B[np.newaxis, :] * (short_rate - anchor_short_rate)
     )

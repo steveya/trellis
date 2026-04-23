@@ -75,6 +75,11 @@ def _default_implied_vol_quote_map_spec() -> QuoteMapSpec:
     )
 
 
+_HESTON_PARAMETER_NAMES = ("kappa", "theta", "xi", "rho", "v0")
+_HESTON_LOWER_BOUNDS = raw_np.asarray((0.05, 0.005, 0.05, -0.999, 0.005), dtype=float)
+_HESTON_UPPER_BOUNDS = raw_np.asarray((5.0, 0.5, 2.0, 0.999, 0.5), dtype=float)
+
+
 @dataclass(frozen=True)
 class HestonSmilePoint:
     """One supported equity-vol smile point for Heston calibration."""
@@ -778,6 +783,64 @@ def _fit_diagnostics(
     )
 
 
+def _heston_parameter_bump(
+    params: raw_np.ndarray,
+    index: int,
+    *,
+    relative_step: float = 1e-3,
+    absolute_floor: float = 1e-4,
+) -> tuple[raw_np.ndarray, float]:
+    """Return one bounded finite-difference perturbation for a Heston parameter."""
+    base_value = float(params[index])
+    raw_step = max(abs(base_value) * relative_step, absolute_floor)
+    upper_room = float(_HESTON_UPPER_BOUNDS[index] - base_value)
+    lower_room = float(base_value - _HESTON_LOWER_BOUNDS[index])
+    if upper_room > 1e-12:
+        step = min(raw_step, upper_room)
+        shocked = raw_np.array(params, dtype=float, copy=True)
+        shocked[index] = base_value + step
+        return shocked, float(step)
+    if lower_room > 1e-12:
+        step = min(raw_step, lower_room)
+        shocked = raw_np.array(params, dtype=float, copy=True)
+        shocked[index] = base_value - step
+        return shocked, float(-step)
+    return raw_np.array(params, dtype=float, copy=True), 0.0
+
+
+def _heston_vol_jacobian(
+    surface: HestonSmileSurface,
+    params: Sequence[float],
+    *,
+    fft_points: int,
+    fft_eta: float,
+    fft_alpha: float,
+) -> raw_np.ndarray:
+    """Return a bounded finite-difference Jacobian of smile vols to Heston parameters."""
+    base_params = raw_np.asarray(params, dtype=float)
+    base_vols = _heston_model_vols(
+        surface,
+        base_params,
+        fft_points=fft_points,
+        fft_eta=fft_eta,
+        fft_alpha=fft_alpha,
+    )
+    jacobian_matrix = raw_np.zeros((len(surface.points), base_params.size), dtype=float)
+    for index in range(base_params.size):
+        shocked_params, signed_step = _heston_parameter_bump(base_params, index)
+        if abs(signed_step) <= 1e-12:
+            continue
+        shocked_vols = _heston_model_vols(
+            surface,
+            shocked_params,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            fft_alpha=fft_alpha,
+        )
+        jacobian_matrix[:, index] = (shocked_vols - base_vols) / signed_step
+    return jacobian_matrix
+
+
 def _heston_surface_model_vol_rows(
     surface: HestonSurfaceInput,
     params: Sequence[float],
@@ -813,6 +876,41 @@ def _heston_surface_model_vol_rows(
     return tuple(rows)
 
 
+def _heston_surface_vol_jacobian(
+    surface: HestonSurfaceInput,
+    params: Sequence[float],
+    *,
+    fft_points: int,
+    fft_eta: float,
+    fft_alpha: float,
+) -> raw_np.ndarray:
+    """Return a bounded finite-difference Jacobian of surface vols to Heston parameters."""
+    base_params = raw_np.asarray(params, dtype=float)
+    base_rows = _heston_surface_model_vol_rows(
+        surface,
+        base_params,
+        fft_points=fft_points,
+        fft_eta=fft_eta,
+        fft_alpha=fft_alpha,
+    )
+    base_vols = raw_np.concatenate(base_rows, dtype=float)
+    jacobian_matrix = raw_np.zeros((base_vols.size, base_params.size), dtype=float)
+    for index in range(base_params.size):
+        shocked_params, signed_step = _heston_parameter_bump(base_params, index)
+        if abs(signed_step) <= 1e-12:
+            continue
+        shocked_rows = _heston_surface_model_vol_rows(
+            surface,
+            shocked_params,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            fft_alpha=fft_alpha,
+        )
+        shocked_vols = raw_np.concatenate(shocked_rows, dtype=float)
+        jacobian_matrix[:, index] = (shocked_vols - base_vols) / signed_step
+    return jacobian_matrix
+
+
 def fit_heston_smile_surface(
     surface: HestonSmileSurface,
     *,
@@ -843,22 +941,30 @@ def fit_heston_smile_surface(
             fft_eta=fft_eta,
             fft_alpha=fft_alpha,
         ),
+        jacobian_fn=lambda params: _heston_vol_jacobian(
+            surface,
+            params,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            fft_alpha=fft_alpha,
+        ),
         metadata={
             "model_family": "heston",
             "surface_name": surface.surface_name,
             "fit_space": "implied_vol",
             "quote_map": surface.quote_map_spec.to_payload(),
+            "derivative_method": "finite_difference_vector_jacobian",
         },
     )
     request = SolveRequest(
         request_id="heston_smile_least_squares",
         problem_kind="least_squares",
-        parameter_names=("kappa", "theta", "xi", "rho", "v0"),
+        parameter_names=_HESTON_PARAMETER_NAMES,
         initial_guess=starting_point,
         objective=objective,
         bounds=SolveBounds(
-            lower=(0.05, 0.005, 0.05, -0.999, 0.005),
-            upper=(5.0, 0.5, 2.0, 0.999, 0.5),
+            lower=tuple(float(value) for value in _HESTON_LOWER_BOUNDS),
+            upper=tuple(float(value) for value in _HESTON_UPPER_BOUNDS),
         ),
         solver_hint="trf",
         warm_start=normalized_warm_start,
@@ -1006,22 +1112,30 @@ def fit_heston_surface(
         target_values=target_values,
         weights=tuple(1.0 for _ in labels),
         vector_objective_fn=vector_objective_fn,
+        jacobian_fn=lambda params: _heston_surface_vol_jacobian(
+            surface,
+            params,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            fft_alpha=fft_alpha,
+        ),
         metadata={
             "model_family": "heston",
             "surface_name": surface.surface_name,
             "fit_space": "implied_vol_surface",
             "quote_map": surface.quote_map_spec.to_payload(),
+            "derivative_method": "finite_difference_vector_jacobian",
         },
     )
     request = SolveRequest(
         request_id="heston_surface_least_squares",
         problem_kind="least_squares",
-        parameter_names=("kappa", "theta", "xi", "rho", "v0"),
+        parameter_names=_HESTON_PARAMETER_NAMES,
         initial_guess=starting_point,
         objective=objective,
         bounds=SolveBounds(
-            lower=(0.05, 0.005, 0.05, -0.999, 0.005),
-            upper=(5.0, 0.5, 2.0, 0.999, 0.5),
+            lower=tuple(float(value) for value in _HESTON_LOWER_BOUNDS),
+            upper=tuple(float(value) for value in _HESTON_UPPER_BOUNDS),
         ),
         solver_hint="trf",
         warm_start=normalized_warm_start,

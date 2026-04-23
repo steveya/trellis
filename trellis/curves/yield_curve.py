@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from trellis.curves.shocks import build_curve_shock_surface
 from trellis.core.differentiable import get_numpy
-from trellis.curves.interpolation import linear_interp
+from trellis.curves.interpolation import linear_interp, to_backend_array, validation_view
 
 np = get_numpy()
 
@@ -22,16 +22,18 @@ class YieldCurve:
 
     def __init__(self, tenors, rates):
         """Store tenor and zero-rate grids for interpolation-based discounting."""
-        self.tenors = np.asarray(tenors, dtype=float)
-        self.rates = np.asarray(rates, dtype=float)
-        if self.tenors.ndim != 1 or self.rates.ndim != 1:
+        self.tenors = to_backend_array(tenors)
+        self.rates = to_backend_array(rates)
+        tenors_view = validation_view(self.tenors)
+        rates_view = validation_view(self.rates)
+        if tenors_view.ndim != 1 or rates_view.ndim != 1:
             raise ValueError("YieldCurve tenors and rates must be one-dimensional")
-        if len(self.tenors) == 0:
+        if len(tenors_view) == 0:
             raise ValueError("YieldCurve requires at least one tenor/rate knot")
-        if len(self.tenors) != len(self.rates):
+        if len(tenors_view) != len(rates_view):
             raise ValueError("YieldCurve tenors and rates must have the same length")
-        for index in range(len(self.tenors) - 1):
-            if float(self.tenors[index + 1]) <= float(self.tenors[index]):
+        for index in range(len(tenors_view) - 1):
+            if tenors_view[index + 1] <= tenors_view[index]:
                 raise ValueError("YieldCurve tenors must be strictly increasing")
 
     # ------------------------------------------------------------------
@@ -39,13 +41,28 @@ class YieldCurve:
     # ------------------------------------------------------------------
 
     def zero_rate(self, t: float) -> float:
-        """Interpolated continuously compounded zero rate at time *t*."""
+        """Interpolated continuously compounded zero rate at time *t*.
+
+        The interpolation is differentiable in the stored node rates and only
+        piecewise differentiable in the query location ``t`` away from knot
+        boundaries.
+        """
         return linear_interp(t, self.tenors, self.rates)
 
     def discount(self, t: float) -> float:
         """Discount factor at time *t*: exp(-r(t) * t)."""
         r = self.zero_rate(t)
         return np.exp(-r * t)
+
+    @property
+    def risk_derivative_support(self) -> dict[str, dict[str, str]]:
+        """Declared runtime-risk support for the public curve surface."""
+        return {
+            "parallel_rate_bundle": {
+                "method": "autodiff_public_curve",
+                "parameterization": "zero_rate_nodes",
+            }
+        }
 
     # ------------------------------------------------------------------
     # Constructors

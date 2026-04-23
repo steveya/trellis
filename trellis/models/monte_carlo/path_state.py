@@ -12,6 +12,22 @@ from typing import Callable, Mapping
 
 import numpy as raw_np
 
+from trellis.core.differentiable import get_numpy
+
+np = get_numpy()
+
+
+def _to_backend_array(values):
+    if isinstance(values, raw_np.ndarray):
+        return values
+    if hasattr(values, "_value"):
+        return values
+    return raw_np.asarray(values, dtype=float)
+
+
+def _validation_view(values):
+    return getattr(values, "_value", values)
+
 
 def _normalize_steps(steps: tuple[int, ...]) -> tuple[int, ...]:
     """Return sorted, unique, non-negative observation steps."""
@@ -24,11 +40,13 @@ def _materialize_initial_cross_section(
     dtype,
 ):
     """Expand the initial state into one pathwise cross-section."""
-    initial_array = raw_np.asarray(initial_value, dtype=dtype)
-    if initial_array.ndim == 0:
-        return raw_np.full(n_paths, float(initial_array), dtype=dtype)
-    if initial_array.ndim == 1:
-        return raw_np.broadcast_to(initial_array, (n_paths, initial_array.shape[0])).copy()
+    del dtype
+    initial_array = _to_backend_array(initial_value)
+    initial_view = _validation_view(initial_array)
+    if initial_view.ndim == 0:
+        return np.ones(n_paths) * initial_array
+    if initial_view.ndim == 1:
+        return np.ones((n_paths, 1)) * initial_array[np.newaxis, :]
     raise ValueError("initial_value must be scalar or one-dimensional")
 
 
@@ -71,11 +89,11 @@ class PathReducer:
 
     def init(self, initial_values: raw_np.ndarray, n_steps: int) -> raw_np.ndarray:
         """Initialize the reducer accumulator from the starting cross-section."""
-        return raw_np.asarray(self.init_fn(initial_values, n_steps))
+        return _to_backend_array(self.init_fn(initial_values, n_steps))
 
     def update(self, accumulator: raw_np.ndarray, values: raw_np.ndarray, step: int) -> raw_np.ndarray:
         """Advance the accumulator with one new cross-section."""
-        return raw_np.asarray(self.update_fn(accumulator, values, step))
+        return _to_backend_array(self.update_fn(accumulator, values, step))
 
 
 @dataclass(frozen=True)
@@ -187,11 +205,11 @@ class StateAwarePayoff:
 
     def __call__(self, paths: raw_np.ndarray) -> raw_np.ndarray:
         """Evaluate the payoff from a full path matrix."""
-        return raw_np.asarray(self.evaluate_paths_fn(paths), dtype=float)
+        return _to_backend_array(self.evaluate_paths_fn(paths))
 
     def evaluate_state(self, state: MonteCarloPathState) -> raw_np.ndarray:
         """Evaluate the payoff from a reduced path state."""
-        return raw_np.asarray(self.evaluate_state_fn(state), dtype=float)
+        return _to_backend_array(self.evaluate_state_fn(state))
 
 
 def terminal_value_payoff(
@@ -202,10 +220,10 @@ def terminal_value_payoff(
     """Wrap a terminal-only payoff so the engine can skip full path storage."""
 
     def evaluate_paths(paths: raw_np.ndarray) -> raw_np.ndarray:
-        return raw_np.asarray(payoff_fn(paths[:, -1]), dtype=float)
+        return _to_backend_array(payoff_fn(paths[:, -1]))
 
     def evaluate_state(state: MonteCarloPathState) -> raw_np.ndarray:
-        return raw_np.asarray(payoff_fn(state.terminal_values), dtype=float)
+        return _to_backend_array(payoff_fn(state.terminal_values))
 
     return StateAwarePayoff(
         path_requirement=MonteCarloPathRequirement.terminal_only(),
@@ -256,4 +274,3 @@ def barrier_payoff(
         evaluate_state_fn=evaluate_state,
         name=name or "barrier_payoff",
     )
-

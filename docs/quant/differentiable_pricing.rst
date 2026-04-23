@@ -6,6 +6,8 @@ Trellis promotes autograd only where it has a clear payoff:
 - closed-form pricing kernels that currently drive real Greeks and calibration
 - cap/floor strips and FX/quanto analytics built on top of those kernels
 - flat-vol Vega extraction in ``Session.analyze()``
+- curve bootstrap calibration, where the repricing Jacobian is now traced from
+  the public repricing map instead of approximated inside the solver
 - SABR calibration, where a gradient is more useful than repeated finite-difference sweeps
 - binomial/trinomial tree pricing for smooth payoffs when the tree state is built
   from autograd-aware inputs
@@ -43,6 +45,49 @@ pricing logic available to both value and sensitivity workflows.
 Where Autograd Helps
 --------------------
 
+The checked support contract is intentionally explicit:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Surface
+     - Supported derivative lane
+     - Boundary
+   * - Public payoff valuation
+     - ``PricingValue`` scalar preserved through ``evaluate(...)`` and
+       ``price_payoff(...)``
+     - smooth payoffs only; reporting/serialization may still coerce to
+       ``float``
+   * - Public curves
+     - ``YieldCurve`` and ``CreditCurve`` node sensitivities through
+       ``autodiff_public_curve``
+     - node-value AD; query-location AD is only piecewise away from knots
+   * - Public vol surfaces
+     - ``GridVolSurface`` node sensitivities and bucketed runtime vega through
+       ``surface_bucket_bump``
+     - node-value AD for the object, explicit bucket bumps for runtime surface
+       risk
+   * - Flat volatility risk
+     - scalar vega through ``autodiff_flat_vol``
+     - flat surfaces only
+   * - Calibration
+     - rates bootstrap ``autodiff_vector_jacobian``, SABR
+       ``autodiff_scalar_gradient``, and Heston smile / full-surface
+       ``finite_difference_vector_jacobian``
+     - solver provenance records the derivative method that actually ran
+   * - Monte Carlo
+     - pathwise gradients through ``simulate_with_shocks(...)`` and
+       ``price_event_aware_monte_carlo(...)``
+     - explicit shocks plus smooth terminal/snapshot/event-replay contracts
+
+The backend capability surface lives in ``trellis.core.differentiable``.
+``get_backend_capabilities()`` currently reports ``backend_id="autograd"`` and
+support for ``grad``, ``jacobian``, and ``hessian``.  Future AAD-oriented hooks
+such as ``jvp``, ``vjp``, ``hessian_vector_product``, and ``portfolio_aad`` are
+named in that capability payload but intentionally report unsupported until a
+backend can supply them.  Call sites should use ``require_capability(...)``
+rather than assuming those operators exist.
+
 - Black76 and Garman-Kohlhagen calls/puts
 - FX vanilla pricing can be assembled explicitly from Black76 terminal basis
   claims via ``terminal_vanilla_from_basis(...)`` after mapping spot FX and
@@ -57,10 +102,24 @@ Where Autograd Helps
   ``trellis.models.analytical.quanto.price_quanto_option_raw``, and
   ``trellis.models.analytical.barrier.down_and_out_call_raw`` /
   ``trellis.models.analytical.barrier.down_and_in_call_raw``
+- public ``YieldCurve`` / ``CreditCurve`` node-value sensitivities and
+  ``GridVolSurface`` node-value sensitivities
+- runtime rate-risk extraction on public ``YieldCurve`` node grids, with
+  ``resolved_derivative_method="autodiff_public_curve"`` recorded on the
+  resulting analytics outputs
+- rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
+  matrix
 - flat-vol Vega extraction in the analytics layer
-- SABR calibration through a gradient-assisted objective
+- SABR calibration through an ``autodiff_scalar_gradient`` objective
+- supported Heston smile and full-surface calibration through an explicit
+  bounded ``finite_difference_vector_jacobian`` when the FFT/implied-vol stack
+  itself is not autograd-safe; the full-surface entrypoint is
+  ``fit_heston_surface``
 - simple binomial/trinomial tree rollback through ``backward_induction(..., differentiable=True)``
 - pathwise Monte Carlo pricing through ``simulate_with_shocks(..., differentiable=True)``
+- smooth terminal-only and event-replay state-aware Monte Carlo payoffs through
+  ``MonteCarloEngine.price(..., shocks=..., differentiable=True)`` and
+  ``price_event_aware_monte_carlo(..., shocks=..., differentiable=True)``
 
 These paths now use autograd-friendly primitives and avoid scalarization inside
 the traced region.
@@ -68,15 +127,18 @@ the traced region.
 Where Trellis Still Stays Forward-Only
 --------------------------------------
 
-- generic lattice calibration and reduced-storage Monte Carlo path-state accumulation
+- generic lattice calibration and true streaming reduced-storage Monte Carlo
+  path-state accumulation
 - Numba-accelerated tree, Monte Carlo, and PDE kernels
 - discontinuous payoffs that would need smoothing or a custom adjoint
 - broader European barrier families beyond the T09 route, which remain
   forward-only until a second consumer justifies shared barrier support
-- smile surfaces that are not naturally parameterized as a single differentiable
-  volatility scalar
-- reduced-storage state-aware Monte Carlo payoffs, which still coerce results
-  back to plain ``float`` arrays
+- scalar vega on unsupported smile surfaces, which now reports an explicit
+  representative-flat-vol fallback instead of silently pretending to be a
+  surface-native Greek
+- state-aware Monte Carlo contracts with barrier monitors or other
+  discontinuous event semantics, which still stay off the traced lane even
+  when explicit shocks are supplied
 - custom discretization schemes that are not autograd-aware themselves
 
 That split is deliberate: the compiled engines stay fast for production pricing,
@@ -86,19 +148,38 @@ Implementation Rules
 --------------------
 
 - use ``autograd.numpy`` via ``trellis.core.differentiable.get_numpy()``
+- query ``trellis.core.differentiable.get_backend_capabilities()`` before
+  relying on backend-specific derivative operators
 - avoid ``float(...)`` or other scalarization inside traced pricing code
 - for Monte Carlo gradients, pass explicit shocks so the path is deterministic
-- keep public adapters float-returning and expose raw resolved-input kernels as
-  ``*_raw`` helpers when gradients matter
+- keep the public pricing adapter trace-safe and reserve ``float(...)`` for
+  explicit reporting or solver boundaries; expose raw resolved-input kernels as
+  ``*_raw`` helpers when they improve reuse
+- keep generator prompts, cookbook templates, and payoff skeletons aligned to
+  that same public contract so learned routes preserve traced PVs by default
+- for piecewise-linear curves and surfaces, target node-value derivatives as
+  the supported contract and treat query-location derivatives as piecewise only
+  away from knot boundaries
 - keep Numba kernels as forward engines, not gradient engines
 - preserve the full ``MarketState`` when cloning a traced pricing state
 - prefer autodiff when it replaces bump/reprice loops, parallel DV01s, or
   optimizer Jacobians
+- when a runtime measure falls back to bumps, record that derivative-method
+  choice in the public result metadata instead of hiding it behind a plain
+  scalar
+- for calibration workflows, record the derivative method that actually ran in
+  ``solve_result.metadata`` and ``solver_provenance.backend`` so audit/replay
+  consumers can distinguish autograd, explicit finite differences, and solver
+  fallbacks
+- for state-aware Monte Carlo gradients, keep terminal/snapshot adapters
+  trace-safe and reject non-smooth barrier or exercise state contracts
+  explicitly instead of silently scalarizing them
 
 Implementation References
 -------------------------
 
 .. autofunction:: trellis.models.black.black76_call
+.. autofunction:: trellis.core.differentiable.get_backend_capabilities
 .. autofunction:: trellis.models.black.garman_kohlhagen_call
 .. autofunction:: trellis.models.analytical.fx.garman_kohlhagen_price_raw
 .. autofunction:: trellis.models.analytical.terminal_vanilla_from_basis
@@ -110,6 +191,7 @@ Implementation References
 .. automethod:: trellis.instruments.cap.CapPayoff.evaluate
 .. automethod:: trellis.analytics.measures.Vega.compute
 .. autofunction:: trellis.models.calibration.sabr_fit.calibrate_sabr
+.. autofunction:: trellis.models.calibration.heston_fit.fit_heston_surface
 .. autofunction:: trellis.models.trees.backward_induction.backward_induction
 .. automethod:: trellis.models.monte_carlo.engine.MonteCarloEngine.simulate_with_shocks
 .. automethod:: trellis.models.monte_carlo.engine.MonteCarloEngine.price

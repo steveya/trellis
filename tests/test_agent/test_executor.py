@@ -490,7 +490,7 @@ def test_deterministic_exact_binding_module_materializes_swaption_helper_wrapper
     )
 
     assert generated is not None
-    assert "return float(price_swaption_black76(market_state, spec))" in generated.code
+    assert "return price_swaption_black76(market_state, spec)" in generated.code
     assert "sigma=0.01" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
@@ -588,7 +588,7 @@ def test_deterministic_exact_binding_module_materializes_callable_bond_tree_wrap
     )
 
     assert generated is not None
-    assert 'return float(price_callable_bond_tree(market_state, spec, model="hull_white"))' in generated.code
+    assert 'return price_callable_bond_tree(market_state, spec, model="hull_white")' in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -618,7 +618,7 @@ def test_deterministic_exact_binding_module_materializes_callable_bond_pde_wrapp
     )
 
     assert generated is not None
-    assert "return float(price_callable_bond_pde(market_state, spec))" in generated.code
+    assert "return price_callable_bond_pde(market_state, spec)" in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -799,7 +799,7 @@ def test_deterministic_exact_binding_module_materializes_route_free_vanilla_blac
     assert "black76_call(forward, strike, sigma, T)" in generated.code
     assert "black76_put(forward, strike, sigma, T)" in generated.code
     assert "year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)" in generated.code
-    assert "return float(spec.notional) * df * float(undiscounted)" in generated.code
+    assert "return spec.notional * df * undiscounted" in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
