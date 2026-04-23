@@ -3,13 +3,20 @@
 ## Status
 
 Active execution mirror for the filed calibration-sleeve industrialization
-queue.
+queue, now coordinated with the Autograd Phase 2 implementation queue for
+portfolio AAD and derivative governance.
 
 The umbrella `QUA-946` and child tickets `QUA-947` through `QUA-956` are now
 filed in Linear. This document is the ordered repo-local mirror for that queue
 and should stay aligned with the live issue graph.
 
-Status mirror last synced: `2026-04-22`
+The adjacent Autograd Phase 2 plan is tracked by `QUA-966` through `QUA-971`.
+It should not duplicate calibration curve, surface, or cube plants. It should
+consume the stronger market objects produced by this calibration program and
+define truthful derivative operators, portfolio-scale sensitivity workflows,
+and runtime derivative reporting around those objects.
+
+Status mirror last synced: `2026-04-23`
 
 ## Linked Context
 
@@ -38,7 +45,15 @@ Status mirror last synced: `2026-04-22`
 - `QUA-955` Hybrid calibration: dependency DAG and first cross-asset slice
 - `QUA-956` Calibration validation: desk-like fixtures, perturbation
   diagnostics, and latency envelopes
+- `QUA-966` Autograd Phase 2: portfolio AAD and gradient governance
+- `QUA-967` Autograd backend: JVP VJP and HVP operator implementation
+- `QUA-968` Portfolio AAD: book-level reverse-mode sensitivity substrate
+- `QUA-969` Discontinuous Greeks: smoothing and custom-adjoint policy
+- `QUA-970` Gradient matrix: product-family autograd regression cohort
+- `QUA-971` Runtime derivatives: expanded method selection and reporting
 - `doc/plan/draft__calibration-documentation-and-architecture-alignment.md`
+- `doc/plan/draft__autograd-phase-2-aad-and-gradient-governance.md`
+- `docs/quant/differentiable_pricing.rst`
 
 ## Linear Ticket Mirror
 
@@ -48,6 +63,9 @@ Rules for coding agents:
 - This file is the repo-local mirror for subsequent agents.
 - Implement the earliest ticket in the ordered queue below whose status is not
   `Done` and whose hard prerequisites are satisfied.
+- Treat the Autograd Phase 2 mirror as an adjacent derivative-governance lane.
+  The combined queue below records cross-program sequencing, but the autograd
+  plan remains the detailed source for AD2 ticket scope.
 - `CAL.0A`, `CAL.0B`, `CAL.0C`, and `CAL.7` may run in parallel when their
   write scopes do not conflict.
 - Do not mark a row `Done` here before the corresponding Linear issue is
@@ -61,6 +79,7 @@ Rules for coding agents:
 | Ticket | Status |
 | --- | --- |
 | `QUA-946` Calibration sleeve: Trellis-native industrial hardening program | Backlog |
+| `QUA-966` Autograd Phase 2: portfolio AAD and gradient governance | Done |
 
 ### Ordered Queue
 
@@ -77,6 +96,36 @@ Rules for coding agents:
 | `CAL.6` | `QUA-955` | Backlog | first cross-asset calibration slice on explicit dependency DAGs | set the concrete upstream blockers during implementation once the first supported slice is chosen |
 | `CAL.7` | `QUA-956` | Backlog | desk-like fixtures, perturbation diagnostics, and latency envelopes | none; extend alongside the active implementation slices |
 
+### Adjacent Autograd Phase 2 Queue
+
+| Queue ID | Linear | Status | Scope | Hard prerequisites |
+| --- | --- | --- | --- | --- |
+| `AD2.1` | `QUA-967` | Backlog | JVP, VJP, HVP operator implementation or checked backend decision | `QUA-957`, `QUA-965` |
+| `AD2.2` | `QUA-968` | Backlog | book-level reverse-mode / portfolio AAD substrate | `AD2.1` |
+| `AD2.3` | `QUA-969` | Backlog | smoothing and custom-adjoint policy for discontinuous products | `QUA-957` |
+| `AD2.4` | `QUA-970` | Backlog | product-family gradient matrix and support-contract cohort expansion | consume `AD2.1` / `AD2.3` outcomes as they land |
+| `AD2.5` | `QUA-971` | Backlog | runtime derivative-method taxonomy and reporting integration | `AD2.1`, `AD2.4` |
+
+### Combined Implementation Queue
+
+This is the single cross-program pickup order for the remaining calibration
+and Autograd Phase 2 work. It preserves the domain boundaries: calibration
+builds market objects and dependency DAGs; Autograd Phase 2 builds derivative
+operators, book-level sensitivity flow, discontinuity policy, matrix coverage,
+and runtime reporting that consume those objects.
+
+| Queue ID | Linear | Lane | Status | Implementation objective | Hard prerequisites |
+| --- | --- | --- | --- | --- | --- |
+| `INT.1` | `QUA-954` | Calibration | Backlog | basket-credit base-correlation / tranche-correlation workflow consuming calibrated single-name curves | `CAL.4` / `QUA-953` |
+| `INT.2` | `QUA-967` | Autograd | Backlog | truthful JVP, VJP, and HVP backend operator support or a checked fail-closed backend decision | `QUA-957`, `QUA-965` |
+| `INT.3` | `QUA-956` | Validation | Backlog | first desk-like fixture, perturbation, and latency tranche for the newly supported calibration slices | none; run alongside `INT.1` / `INT.2` |
+| `INT.4` | `QUA-968` | Autograd | Backlog | first bounded book-level reverse-mode / portfolio AAD substrate over supported smooth routes | `INT.2` |
+| `INT.5` | `QUA-969` | Autograd | Backlog | governed discontinuous-Greek policy for one bounded barrier, digital, or event/exercise family | `QUA-957`; coordinate with `INT.7` |
+| `INT.6` | `QUA-970` | Autograd | Backlog | product-family derivative matrix covering analytical, curve, surface, MC, and calibration representatives | `QUA-957`; consume `INT.2` / `INT.5` outcomes |
+| `INT.7` | `QUA-971` | Autograd | Backlog | unified runtime derivative-method reporting across analytical, AD, AAD, JVP/VJP/HVP, bump, smoothed/custom-adjoint, and unsupported lanes | `INT.2`, `INT.6`; coordinate with `INT.4` / `INT.5` |
+| `INT.8` | `QUA-955` | Calibration | Backlog | first cross-asset calibration slice on explicit dependency DAGs, using calibrated market objects and derivative provenance where useful | concrete hybrid target chosen; upstream blockers set during audit |
+| `INT.9` | `QUA-946` | Closeout | Backlog | umbrella cleanup, docs maintenance, plan reconciliation, and follow-on ticket split | `CAL.5`, `CAL.6`, `CAL.7`, and relevant AD2 integration gates closed or explicitly deferred |
+
 ### Pickup Rule
 
 - start with `CAL.0A`, `CAL.0B`, or `CAL.0C`
@@ -88,6 +137,13 @@ Rules for coding agents:
   upstream blockers are explicit in the ticket
 - keep `CAL.7` moving alongside the active implementation slices so validation
   does not become a deferred cleanup bucket
+- do not start `AD2.2` before `AD2.1` lands a truthful backend operator
+  decision
+- do not start `AD2.5` before `AD2.1` and `AD2.4` define the operator and
+  matrix vocabulary that runtime reporting must expose
+- do not use Autograd Phase 2 as a substitute for missing calibration plants;
+  derivative work consumes calibrated curves, surfaces, cubes, and correlation
+  objects rather than rebuilding them privately
 
 ## Purpose
 
@@ -698,16 +754,26 @@ Acceptance bar:
 
 ## Recommended Build Order
 
-The practical implementation order should be:
+The completed implementation order through `CAL.4` was:
 
 1. Phase 0 correctness fixes
 2. Phase 1 equity-vol foundation
 3. Phase 2 rates curve and multi-curve hardening
 4. Phase 3 rates-vol program
 5. Phase 4 real single-name credit calibration
-6. Phase 5 basket-credit correlation calibration
-7. Phase 6 one narrow cross-asset slice
-8. Phase 7 benchmark hardening throughout
+
+The remaining integrated implementation order is:
+
+1. `QUA-954` basket-credit correlation calibration
+2. `QUA-967` truthful JVP/VJP/HVP backend operator decision
+3. `QUA-956` first validation tranche, run alongside the active slice
+4. `QUA-968` first bounded portfolio AAD substrate
+5. `QUA-969` governed discontinuous-Greek policy
+6. `QUA-970` product-family derivative matrix
+7. `QUA-971` unified runtime derivative reporting
+8. `QUA-955` one narrow cross-asset calibration slice once the concrete target
+   and blockers are explicit
+9. `QUA-946` umbrella closeout and documentation maintenance
 
 Reason:
 
@@ -716,8 +782,14 @@ Reason:
   stack
 - credit should not widen into basket and hybrid work until the single-name
   slice is mathematically real
+- portfolio AAD and richer derivative reporting need truthful backend hooks
+  before they can claim throughput or method-selection support
+- discontinuous products need explicit policy before they can appear in a
+  support matrix or runtime report as anything other than unsupported or bump
+  fallback
 - cross-asset calibration should be introduced only after at least one strong
-  surface exists in each linked asset class
+  surface exists in each linked asset class and the first derivative-governance
+  vocabulary is stable enough to report calibration and risk provenance
 
 ## Explicit Non-Goals For The First Tranche
 
@@ -734,15 +806,16 @@ they are actually desk-grade, then widen.
 
 ## Immediate Follow-On Execution Slice
 
-The first execution slice after this plan should be:
+The next execution slice after the `CAL.4` / `QUA-953` closeout should be:
 
-1. architecture and documentation alignment for the Trellis-native calibration
-   sleeve
-2. equity-vol correctness audit and hardening
-3. single-name credit rework from transform-based hazard mapping to pricer-based
-   CDS calibration
-4. curve bootstrap dependency and dated-instrument design for multi-curve rates
+1. `QUA-954`: add the basket-credit calibration workflow and materialized
+   correlation object that downstream basket-credit consumers can use.
+2. `QUA-967`: make the JVP/VJP/HVP backend capability surface executable
+   truth, or keep it fail-closed with a documented backend decision.
+3. `QUA-956`: start the validation tranche with fixtures and perturbation /
+   latency envelopes for the new credit and basket-credit calibration surface.
 
-Those three slices give the fastest improvement in actual calibration quality
-while preserving the typed calibration and replay substrate already in the
-repo.
+After those land, `QUA-968` through `QUA-971` should build the first
+portfolio-scale derivative lane and runtime reporting taxonomy, then `QUA-955`
+should choose and implement one concrete hybrid calibration slice on the same
+dependency and provenance model.

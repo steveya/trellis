@@ -31,12 +31,14 @@ Rules for coding agents:
   `LIMITATIONS.md` whenever the support contract changes.
 - Treat `QUA-946` as the adjacent calibration industrialization program rather
   than duplicating curve/surface/cube plant work here.
+- For cross-program pickup order, use the combined implementation queue in
+  `doc/plan/draft__calibration-sleeve-industrial-hardening-program.md`.
 
 ### Workstream Ticket
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-966` Autograd Phase 2: portfolio AAD and gradient governance | Backlog |
+| `QUA-966` Autograd Phase 2: portfolio AAD and gradient governance | Done |
 
 ### Ordered Queue
 
