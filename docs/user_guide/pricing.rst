@@ -160,8 +160,18 @@ tenor quotes in running-spread, standard-coupon-plus-upfront, or hazard form,
 records explicit CDS schedule and discount-plus-default potential binding
 metadata, reports hazard-governance diagnostics, and materializes the
 calibrated ``CreditCurve`` through the shared runtime binding surface. The
-current slice is intentionally bounded to reduced-form single-name credit;
-basket credit, index credit, and hybrid credit calibration remain out of scope.
+single-name slice is intentionally bounded to reduced-form single-name credit;
+index credit and hybrid credit calibration remain out of scope.
+
+Basket-credit calibration has a first bounded handoff path on top of that
+single-name curve result. Use
+``calibrate_homogeneous_basket_tranche_correlation_workflow(...)`` with a
+``MarketState`` that already carries the representative calibrated
+``CreditCurve``. The workflow fits exact-node tranche-implied correlations for
+homogeneous basket fixtures, records quote residual/root/monotonicity/
+smoothness diagnostics, and can materialize the fitted
+``correlation_surface`` back onto ``MarketState`` for basket-tranche pricing.
+It is not a heterogeneous portfolio or production base-correlation bootstrap.
 
 Those supported calibration paths now also have a checked replay/tolerance
 pack. In practice that means the workflow-level solver provenance, replay
@@ -1093,6 +1103,13 @@ contract even when trace producers emit slightly different context layouts.
 If the curves were bootstrapped from rate instruments, that source-selection
 step is still preserved: the snapshot holds the named bootstrapped curves and
 the runtime state records which one was actually used.
+
+Basket-credit tranche pricing can also consume a calibrated correlation
+surface from ``MarketState.correlation_surface`` when the contract does not
+provide an explicit correlation. Explicit contract-level correlation still
+wins; the materialized surface is the bounded fallback for exact
+maturity/attachment/detachment nodes produced by the homogeneous calibration
+workflow.
 
 Missing Data Errors
 -------------------

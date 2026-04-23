@@ -153,6 +153,7 @@ The shipped materialization kinds are intentionally narrow:
 - ``black_vol_surface``
 - ``local_vol_surface``
 - ``credit_curve``
+- ``correlation_surface``
 
 Each materialization writes the compatibility fields that existing pricing code
 already consumes, but it also records one typed provenance packet under
@@ -813,10 +814,60 @@ Like the other migrated calibration helpers, the credit workflow returns:
 - a reusable ``CreditCurve`` together with ``apply_to_market_state(...)`` for
   shared runtime materialization
 
-This slice still does not widen into basket credit, tranche calibration,
-structural-credit, hybrid credit-equity calibration, bid/ask governance,
-index-credit conventions, or a smoothed/regularized production CDS curve
-plant.
+The single-name slice still does not itself widen into structural-credit,
+hybrid credit-equity calibration, bid/ask governance, index-credit
+conventions, or a smoothed/regularized production CDS curve plant. Basket
+tranche correlation calibration is handled by the separate bounded workflow
+below.
+
+Basket Credit Tranche-Implied Correlation
+-----------------------------------------
+
+Trellis now has a bounded basket-credit calibration sleeve for homogeneous
+tranche fixtures. The entry point is
+``calibrate_homogeneous_basket_tranche_correlation_workflow(...)``. It consumes
+a ``MarketState`` that already carries a representative single-name
+``CreditCurve`` and a discount curve, normally by applying the result of the
+single-name CDS workflow first. The basket calibration does not infer or
+rebuild hidden marginal default curves.
+
+The supported quote axes are explicit:
+
+- maturity in years
+- attachment
+- detachment
+- quote value
+- quote family and style
+
+The first slice accepts the shipped quote-map vocabulary where it applies:
+``Price`` quotes for tranche present value or expected-loss-fraction targets,
+and ``Spread`` quotes for fair-spread-in-basis-points targets. These quote maps
+are identity maps in quote space; the pricing kernel is the existing
+homogeneous basket-credit tranche helper.
+
+For each quote, Trellis solves one tranche-implied correlation under the
+one-factor Gaussian copula by scanning the configured correlation interval and
+then applying a Brent root solve on a bracketed interval. The calibrated object
+is an exact-node ``BasketCreditCorrelationSurface`` keyed by maturity,
+attachment, and detachment. It can be materialized onto ``MarketState`` as
+``correlation_surface`` and then consumed by basket-tranche pricing when a
+contract does not provide an explicit correlation.
+
+The governance diagnostics are intentionally visible:
+
+- quote residuals in the original quote units
+- impossible quote / root-bracketing failures
+- simple tranche-bound sanity warnings
+- monotonicity warnings across fitted detachment or maturity slices
+- smoothness warnings when adjacent fitted correlations jump above the
+  configured threshold
+
+This is not a full production base-correlation bootstrap. Trellis does not yet
+fit heterogeneous single-name portfolios, index-credit conventions, bid/ask
+tranche surfaces, interpolated/smoothed base-correlation curves, or arbitrage
+repair across a market tranche grid. The supported claim is narrower:
+homogeneous representative-curve tranche-implied correlations with governed
+diagnostics and first-class runtime materialization.
 
 Implementation
 --------------
@@ -850,6 +901,7 @@ Implementation
 .. autofunction:: trellis.models.calibration.rates_vol_surface.calibrate_swaption_vol_cube_workflow
 .. autofunction:: trellis.models.calibration.rates_vol_surface.compare_sabr_to_swaption_cube_workflow
 .. autofunction:: trellis.models.calibration.credit.calibrate_single_name_credit_curve_workflow
+.. autofunction:: trellis.models.calibration.basket_credit.calibrate_homogeneous_basket_tranche_correlation_workflow
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileSurface
    :members:
 .. autoclass:: trellis.models.calibration.heston_fit.HestonSmileFitDiagnostics
@@ -911,6 +963,14 @@ Implementation
 .. autoclass:: trellis.models.calibration.credit.CreditHazardCalibrationQuote
    :members:
 .. autoclass:: trellis.models.calibration.credit.CreditHazardCalibrationResult
+   :members:
+.. autoclass:: trellis.models.calibration.basket_credit.BasketCreditTrancheQuote
+   :members:
+.. autoclass:: trellis.models.calibration.basket_credit.BasketCreditCorrelationSurface
+   :members:
+.. autoclass:: trellis.models.calibration.basket_credit.BasketCreditCalibrationDiagnostics
+   :members:
+.. autoclass:: trellis.models.calibration.basket_credit.BasketCreditCorrelationCalibrationResult
    :members:
 .. autoclass:: trellis.models.calibration.solve_request.SolveRequest
    :members:

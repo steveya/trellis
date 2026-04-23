@@ -39,6 +39,8 @@ class CreditBasketMarketStateLike(Protocol):
     settlement: date | None
     discount: DiscountCurveLike | None
     credit_curve: CreditCurveLike | None
+    correlation_surface: object | None
+    correlation_surfaces: dict[str, object] | None
 
 
 class CreditBasketNthSpecLike(Protocol):
@@ -66,6 +68,22 @@ class CreditLossDistributionSpecLike(Protocol):
     notional: float
     n_names: int
     end_date: date
+
+
+class CorrelationSurfaceLike(Protocol):
+    """Exact-node correlation surface consumed by bounded basket-credit helpers."""
+
+    def correlation_for(
+        self,
+        maturity_years: float,
+        attachment: float,
+        detachment: float,
+        *,
+        default: float | None = None,
+        tolerance: float = 1.0e-8,
+    ) -> float:
+        """Return a correlation for one maturity/tranche node."""
+        ...
 
 
 @dataclass(frozen=True)
@@ -119,7 +137,7 @@ def resolve_credit_basket_inputs(
         1.0 if horizon <= 0.0 else float(market_state.discount.discount(horizon))
     )
     n_names = max(int(spec.n_names), 2)
-    correlation = float(getattr(spec, "correlation", 0.3) or 0.3)
+    correlation = resolve_credit_basket_correlation(market_state, spec, horizon=horizon)
     recovery = float(getattr(spec, "recovery", 0.4) or 0.4)
 
     return ResolvedCreditBasketInputs(
@@ -133,6 +151,57 @@ def resolve_credit_basket_inputs(
         correlation=correlation,
         recovery=recovery,
     )
+
+
+def resolve_credit_basket_correlation(
+    market_state: CreditBasketMarketStateLike,
+    spec: CreditBasketNthSpecLike | CreditBasketTrancheSpecLike,
+    *,
+    horizon: float | None = None,
+) -> float:
+    """Resolve explicit or materialized basket-credit correlation for ``spec``.
+
+    Contract-level correlation wins. If it is absent and a calibrated
+    correlation surface is selected on ``MarketState``, tranche specs consume
+    the exact maturity/attachment/detachment node from that surface. Legacy
+    default ``0.3`` remains only for specs without explicit correlation and
+    without a selected surface.
+    """
+    explicit = getattr(spec, "correlation", None)
+    if explicit is not None:
+        return _validate_correlation(explicit)
+
+    surface = getattr(market_state, "correlation_surface", None)
+    surfaces = getattr(market_state, "correlation_surfaces", None)
+    if surface is None and surfaces and len(surfaces) == 1:
+        surface = next(iter(surfaces.values()))
+    if surface is None:
+        return 0.3
+
+    if not hasattr(spec, "attachment") or not hasattr(spec, "detachment"):
+        return 0.3
+    surface_maturity = getattr(spec, "maturity_years", None)
+    if surface_maturity is None:
+        settlement = market_state.settlement or market_state.as_of
+        if settlement is None:
+            raise ValueError("market_state must provide settlement or as_of for basket correlation lookup")
+        day_count = getattr(spec, "day_count", DayCountConvention.ACT_360)
+        surface_maturity = _credit_basket_surface_maturity(
+            settlement,
+            spec.end_date,
+            day_count,
+            fallback_horizon=horizon,
+        )
+
+    attachment = float(getattr(spec, "attachment"))
+    detachment = float(getattr(spec, "detachment"))
+    if hasattr(surface, "correlation_for"):
+        correlation = surface.correlation_for(float(surface_maturity), attachment, detachment)
+        return _validate_correlation(correlation)
+    if callable(surface):
+        correlation = surface(float(surface_maturity), attachment, detachment)
+        return _validate_correlation(correlation)
+    raise ValueError("selected basket-credit correlation surface is not consumable")
 
 
 def price_credit_basket_nth_to_default(
@@ -345,6 +414,23 @@ def _credit_basket_horizon(start: date, end: date, day_count: DayCountConvention
     return float(year_fraction(start, end, day_count))
 
 
+def _credit_basket_surface_maturity(
+    start: date,
+    end: date,
+    day_count: DayCountConvention,
+    *,
+    fallback_horizon: float | None = None,
+) -> float:
+    """Return the tranche-correlation surface tenor axis for exact-node lookup."""
+    if start.day == end.day:
+        month_count = (end.year - start.year) * 12 + (end.month - start.month)
+        if month_count >= 0:
+            return float(month_count) / 12.0
+    if fallback_horizon is not None:
+        return float(fallback_horizon)
+    return max(float(_credit_basket_horizon(start, end, day_count)), 0.0)
+
+
 def _normalized_copula_family(value: object) -> str:
     family = str(value or "gaussian").strip().lower().replace("-", "_")
     aliases = {
@@ -358,6 +444,14 @@ def _normalized_copula_family(value: object) -> str:
     if family not in {"gaussian", "student_t"}:
         raise ValueError(f"Unsupported copula family {value!r}")
     return family
+
+
+def _validate_correlation(value: object) -> float:
+    """Return one bounded one-factor correlation value."""
+    correlation = float(value)
+    if not raw_np.isfinite(correlation) or correlation < 0.0 or correlation >= 1.0:
+        raise ValueError("basket-credit correlation must satisfy 0 <= correlation < 1")
+    return correlation
 
 
 def _equicorrelation_matrix(n_names: int, correlation: float) -> raw_np.ndarray:
@@ -444,5 +538,6 @@ __all__ = [
     "price_credit_portfolio_loss_distribution_transform_proxy",
     "price_credit_basket_tranche",
     "price_credit_basket_tranche_result",
+    "resolve_credit_basket_correlation",
     "resolve_credit_basket_inputs",
 ]
