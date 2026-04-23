@@ -7,6 +7,7 @@ from datetime import date
 
 import pytest
 
+from trellis.core.date_utils import add_months
 from trellis.core.market_state import MarketState
 from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
@@ -73,7 +74,7 @@ def _tranche_quote(
     maturity_years: float = 5.0,
     quote_style: str = "expected_loss_fraction",
 ) -> BasketCreditTrancheQuote:
-    maturity = date(SETTLE.year + int(maturity_years), SETTLE.month, SETTLE.day)
+    maturity = add_months(SETTLE, max(int(round(float(maturity_years) * 12.0)), 1))
     spec = _TrancheSpec(
         notional=100_000_000.0,
         n_names=100,
@@ -275,6 +276,57 @@ def test_materialized_correlation_surface_is_consumed_by_downstream_tranche_help
 
     assert resolve_credit_basket_correlation(enriched, surface_backed_spec) == pytest.approx(
         0.41,
+        abs=2e-6,
+    )
+    surface_backed_price = price_credit_basket_tranche_result(enriched, surface_backed_spec)
+    explicit_price = price_credit_basket_tranche_result(market_state, explicit_spec)
+    assert surface_backed_price.expected_loss_fraction == pytest.approx(
+        explicit_price.expected_loss_fraction,
+        abs=1e-10,
+    )
+
+
+def test_materialized_correlation_surface_lookup_uses_fractional_quote_tenor_axis():
+    market_state = _base_market_state()
+    quote = _tranche_quote(
+        market_state,
+        attachment=0.03,
+        detachment=0.07,
+        correlation=0.37,
+        maturity_years=5.5,
+    )
+    result = calibrate_homogeneous_basket_tranche_correlation_workflow(
+        (quote,),
+        market_state,
+        n_names=100,
+        recovery=0.4,
+        notional=100_000_000.0,
+        surface_name="fractional_tranche_corr",
+    )
+
+    enriched = result.apply_to_market_state(market_state)
+    surface_backed_spec = _SurfaceBackedTrancheSpec(
+        notional=100_000_000.0,
+        n_names=100,
+        attachment=0.03,
+        detachment=0.07,
+        end_date=add_months(SETTLE, 66),
+    )
+    explicit_spec = _TrancheSpec(
+        notional=100_000_000.0,
+        n_names=100,
+        attachment=0.03,
+        detachment=0.07,
+        end_date=add_months(SETTLE, 66),
+        correlation=0.37,
+    )
+
+    assert result.surface.correlation_for(5.5, 0.03, 0.07) == pytest.approx(
+        0.37,
+        abs=2e-6,
+    )
+    assert resolve_credit_basket_correlation(enriched, surface_backed_spec) == pytest.approx(
+        0.37,
         abs=2e-6,
     )
     surface_backed_price = price_credit_basket_tranche_result(enriched, surface_backed_spec)

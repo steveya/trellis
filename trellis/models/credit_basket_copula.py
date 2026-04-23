@@ -180,20 +180,26 @@ def resolve_credit_basket_correlation(
 
     if not hasattr(spec, "attachment") or not hasattr(spec, "detachment"):
         return 0.3
-    if horizon is None:
+    surface_maturity = getattr(spec, "maturity_years", None)
+    if surface_maturity is None:
         settlement = market_state.settlement or market_state.as_of
         if settlement is None:
             raise ValueError("market_state must provide settlement or as_of for basket correlation lookup")
         day_count = getattr(spec, "day_count", DayCountConvention.ACT_360)
-        horizon = max(float(_credit_basket_horizon(settlement, spec.end_date, day_count)), 0.0)
+        surface_maturity = _credit_basket_surface_maturity(
+            settlement,
+            spec.end_date,
+            day_count,
+            fallback_horizon=horizon,
+        )
 
     attachment = float(getattr(spec, "attachment"))
     detachment = float(getattr(spec, "detachment"))
     if hasattr(surface, "correlation_for"):
-        correlation = surface.correlation_for(float(horizon), attachment, detachment)
+        correlation = surface.correlation_for(float(surface_maturity), attachment, detachment)
         return _validate_correlation(correlation)
     if callable(surface):
-        correlation = surface(float(horizon), attachment, detachment)
+        correlation = surface(float(surface_maturity), attachment, detachment)
         return _validate_correlation(correlation)
     raise ValueError("selected basket-credit correlation surface is not consumable")
 
@@ -406,6 +412,23 @@ def _credit_basket_horizon(start: date, end: date, day_count: DayCountConvention
     if (start.month, start.day) == (end.month, end.day):
         return float(end.year - start.year)
     return float(year_fraction(start, end, day_count))
+
+
+def _credit_basket_surface_maturity(
+    start: date,
+    end: date,
+    day_count: DayCountConvention,
+    *,
+    fallback_horizon: float | None = None,
+) -> float:
+    """Return the tranche-correlation surface tenor axis for exact-node lookup."""
+    if start.day == end.day:
+        month_count = (end.year - start.year) * 12 + (end.month - start.month)
+        if month_count >= 0:
+            return float(month_count) / 12.0
+    if fallback_horizon is not None:
+        return float(fallback_horizon)
+    return max(float(_credit_basket_horizon(start, end, day_count)), 0.0)
 
 
 def _normalized_copula_family(value: object) -> str:
