@@ -92,7 +92,7 @@ Rules for coding agents:
 | `CAL.2` | `QUA-951` | Done | dated-instrument multi-curve hardening and calibration dependency DAG | none; ordered after the Phase 0 slices |
 | `CAL.3` | `QUA-952` | Done | caplet stripping, swaption cube assembly, and rates-vol model diagnostics | `CAL.2` |
 | `CAL.4` | `QUA-953` | Done | schedule-aware single-name credit curve calibration | `CAL.0C` |
-| `CAL.5` | `QUA-954` | Backlog | basket-credit base-correlation workflow and tranche-surface governance | `CAL.4` |
+| `CAL.5` | `QUA-954` | Done | basket-credit base-correlation workflow and tranche-surface governance | `CAL.4` |
 | `CAL.6` | `QUA-955` | Backlog | first cross-asset calibration slice on explicit dependency DAGs | set the concrete upstream blockers during implementation once the first supported slice is chosen |
 | `CAL.7` | `QUA-956` | Backlog | desk-like fixtures, perturbation diagnostics, and latency envelopes | none; extend alongside the active implementation slices |
 
@@ -116,9 +116,9 @@ and runtime reporting that consume those objects.
 
 | Queue ID | Linear | Lane | Status | Implementation objective | Hard prerequisites |
 | --- | --- | --- | --- | --- | --- |
-| `INT.1` | `QUA-954` | Calibration | Backlog | basket-credit base-correlation / tranche-correlation workflow consuming calibrated single-name curves | `CAL.4` / `QUA-953` |
+| `INT.1` | `QUA-954` | Calibration | Done | basket-credit base-correlation / tranche-correlation workflow consuming calibrated single-name curves | `CAL.4` / `QUA-953` |
 | `INT.2` | `QUA-967` | Autograd | Done | truthful JVP, VJP, and HVP backend operator support or a checked fail-closed backend decision | `QUA-957`, `QUA-965` |
-| `INT.3` | `QUA-956` | Validation | Backlog | first desk-like fixture, perturbation, and latency tranche for the newly supported calibration slices | none; run alongside `INT.1` |
+| `INT.3` | `QUA-956` | Validation | Backlog | first desk-like fixture, perturbation, and latency tranche for the newly supported calibration slices | none; run after `INT.1` or alongside active implementation slices |
 | `INT.4` | `QUA-968` | Autograd | Backlog | first bounded book-level reverse-mode / portfolio AAD substrate over supported smooth routes | `INT.2` |
 | `INT.5` | `QUA-969` | Autograd | Backlog | governed discontinuous-Greek policy for one bounded barrier, digital, or event/exercise family | `QUA-957`; coordinate with `INT.7` |
 | `INT.6` | `QUA-970` | Autograd | Backlog | product-family derivative matrix covering analytical, curve, surface, MC, and calibration representatives | `QUA-957`; consume `INT.2` / `INT.5` outcomes |
@@ -754,25 +754,25 @@ Acceptance bar:
 
 ## Recommended Build Order
 
-The completed implementation order through `CAL.4` was:
+The completed implementation order through `CAL.5` was:
 
 1. Phase 0 correctness fixes
 2. Phase 1 equity-vol foundation
 3. Phase 2 rates curve and multi-curve hardening
 4. Phase 3 rates-vol program
 5. Phase 4 real single-name credit calibration
+6. Phase 5 bounded homogeneous basket-credit tranche-correlation calibration
 
 The remaining integrated implementation order is:
 
-1. `QUA-954` basket-credit correlation calibration
-2. `QUA-956` first validation tranche, run alongside the active slice
-3. `QUA-968` first bounded portfolio AAD substrate
-4. `QUA-969` governed discontinuous-Greek policy
-5. `QUA-970` product-family derivative matrix
-6. `QUA-971` unified runtime derivative reporting
-7. `QUA-955` one narrow cross-asset calibration slice once the concrete target
+1. `QUA-956` first validation tranche, run alongside the active slice
+2. `QUA-968` first bounded portfolio AAD substrate
+3. `QUA-969` governed discontinuous-Greek policy
+4. `QUA-970` product-family derivative matrix
+5. `QUA-971` unified runtime derivative reporting
+6. `QUA-955` one narrow cross-asset calibration slice once the concrete target
    and blockers are explicit
-8. `QUA-946` umbrella closeout and documentation maintenance
+7. `QUA-946` umbrella closeout and documentation maintenance
 
 `QUA-967` landed early as `AD2.1` / `INT.2`, so `QUA-968` can consume checked
 VJP/HVP support rather than reopening backend operator work.
@@ -808,14 +808,12 @@ they are actually desk-grade, then widen.
 
 ## Immediate Follow-On Execution Slice
 
-The next execution slice after the `CAL.4` / `QUA-953` closeout should be:
+The next execution slice after the `CAL.5` / `QUA-954` closeout should be:
 
-1. `QUA-954`: add the basket-credit calibration workflow and materialized
-   correlation object that downstream basket-credit consumers can use.
-2. `QUA-956`: start the validation tranche with fixtures and perturbation /
+1. `QUA-956`: start the validation tranche with fixtures and perturbation /
    latency envelopes for the new credit and basket-credit calibration surface.
 
-After those land, `QUA-968` through `QUA-971` should build the first
-portfolio-scale derivative lane and runtime reporting taxonomy, then `QUA-955`
-should choose and implement one concrete hybrid calibration slice on the same
-dependency and provenance model.
+Alongside or after that validation slice, `QUA-968` through `QUA-971` should
+build the first portfolio-scale derivative lane and runtime reporting taxonomy,
+then `QUA-955` should choose and implement one concrete hybrid calibration
+slice on the same dependency and provenance model.
