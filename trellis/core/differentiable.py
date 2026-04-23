@@ -87,13 +87,15 @@ _AUTOGRAD_CAPABILITIES = DifferentiableBackendCapabilities(
         "jacobian": True,
         "hessian": True,
         "jvp": False,
-        "vjp": False,
-        "hessian_vector_product": False,
+        "vjp": True,
+        "hessian_vector_product": True,
         "portfolio_aad": False,
     },
     notes=(
-        "Current backend supports scalar gradients, dense Jacobians, and dense Hessians.",
-        "JVP, VJP, HVP, and portfolio AAD are explicit future extension hooks.",
+        "Current backend supports scalar gradients, dense Jacobians, dense Hessians, VJP, and HVP.",
+        "HVP support is for scalar objectives on smooth interior regions.",
+        "JVP and portfolio AAD are explicit future extension hooks.",
+        "JVP remains disabled because stock autograd lacks JVP coverage for pricing primitives such as norm.cdf.",
     ),
 )
 
@@ -140,28 +142,66 @@ def jacobian(fn, argnum: int = 0):
     return autograd.jacobian(fn, argnum)
 
 
+def _as_call_args(primals, *, unpack_primals: bool):
+    """Normalize AD call arguments without unpacking unary tuple inputs by default."""
+    if not unpack_primals:
+        return (primals,)
+    if not isinstance(primals, tuple):
+        raise TypeError("unpack_primals=True requires primals to be a tuple")
+    return primals
+
+
 def jvp(fn, primals, tangents):
     """Future JVP hook.
 
-    The current ``autograd`` backend does not expose Trellis' desired JVP
-    surface.  This explicit placeholder prevents call sites from silently
-    assuming forward-mode support before a backend supplies it.
+    The current ``autograd`` backend exposes ``make_jvp`` but lacks forward-mode
+    rules for pricing primitives Trellis depends on, including
+    ``autograd.scipy.stats.norm.cdf``. This explicit placeholder prevents call
+    sites from silently assuming forward-mode support before Trellis owns the
+    missing primitive rules or adopts a backend with complete coverage.
     """
-    require_capability("jvp")
-    raise NotImplementedError(
-        "jvp is declared supported but no implementation is wired"
-    )
+    if not supports_capability("jvp"):
+        backend_id = get_backend_capabilities().backend_id
+        raise NotImplementedError(
+            f"differentiable backend {backend_id!r} does not support 'jvp'; "
+            "stock autograd make_jvp lacks a JVP rule for norm.cdf, so Trellis "
+            "keeps JVP fail-closed until it owns the required pricing primitive rules"
+        )
+    raise NotImplementedError("jvp is declared supported but no implementation is wired")
 
 
-def vjp(fn, primals):
-    """Future VJP hook that fails closed until a backend supplies it."""
+def vjp(fn, primals, argnum: int = 0, *, unpack_primals: bool = False):
+    """Return ``(value, pullback)`` for the VJP of *fn* at *primals*.
+
+    Tuple-valued unary primals are preserved by default. Set
+    ``unpack_primals=True`` when *primals* is the complete positional argument
+    tuple for an n-ary callable.
+    """
     require_capability("vjp")
-    raise NotImplementedError("vjp is declared supported but no implementation is wired")
+    pullback, value = autograd.make_vjp(fn, argnum)(
+        *_as_call_args(primals, unpack_primals=unpack_primals)
+    )
+    return value, pullback
 
 
-def hessian_vector_product(fn, primals, vector):
-    """Future Hessian-vector product hook that fails closed until supported."""
+def hessian_vector_product(
+    fn,
+    primals,
+    vector,
+    argnum: int = 0,
+    *,
+    unpack_primals: bool = False,
+):
+    """Return ``H @ vector`` for a scalar-objective Hessian at *primals*.
+
+    This is a reverse-over-reverse ``autograd`` HVP wrapper. It is intended for
+    scalar objectives on smooth interior regions; discontinuities, branch
+    singularities, or vector-valued objectives should fail rather than imply a
+    broader second-order support contract. Tuple-valued unary primals are
+    preserved by default; set ``unpack_primals=True`` for n-ary callables.
+    """
     require_capability("hessian_vector_product")
-    raise NotImplementedError(
-        "hessian_vector_product is declared supported but no implementation is wired"
+    return autograd.hessian_vector_product(fn, argnum)(
+        *_as_call_args(primals, unpack_primals=unpack_primals),
+        vector,
     )

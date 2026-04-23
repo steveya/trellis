@@ -82,11 +82,24 @@ The checked support contract is intentionally explicit:
 
 The backend capability surface lives in ``trellis.core.differentiable``.
 ``get_backend_capabilities()`` currently reports ``backend_id="autograd"`` and
-support for ``grad``, ``jacobian``, and ``hessian``.  Future AAD-oriented hooks
-such as ``jvp``, ``vjp``, ``hessian_vector_product``, and ``portfolio_aad`` are
-named in that capability payload but intentionally report unsupported until a
-backend can supply them.  Call sites should use ``require_capability(...)``
-rather than assuming those operators exist.
+the executable operator truth table ``grad=True``, ``jacobian=True``,
+``hessian=True``, ``vjp=True``, ``hessian_vector_product=True``,
+``jvp=False``, and ``portfolio_aad=False``. The ``vjp`` wrapper returns the
+primal value plus a pullback closure for vector-valued smooth functions.
+``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
+scalar-objective functions on smooth-interior regions. It is not a claim about
+branch singularities, discontinuous payoffs, or vector-valued objectives. For
+``vjp`` and ``hessian_vector_product``, tuple-valued unary primals are preserved
+by default; callers must opt into n-ary positional dispatch with
+``unpack_primals=True``.
+
+``jvp`` stays fail-closed for now. Although stock ``autograd`` exposes
+``make_jvp``, it does not define a JVP rule for pricing primitives Trellis
+depends on, including ``autograd.scipy.stats.norm.cdf`` (``norm.cdf``). Trellis
+therefore reports ``jvp=False`` until it either owns the missing normal-CDF
+pricing primitive rule or adopts a backend with complete forward-mode coverage.
+Call sites should use ``require_capability(...)`` rather than assuming those
+operators exist.
 
 The important contract is that the capability payload is executable truth, not
 roadmap language. If an operator is reported as supported, its public wrapper
@@ -169,9 +182,10 @@ organized around five concrete follow-on slices:
      - Goal
      - Boundary
    * - Backend operators
-     - implement or make a checked backend decision for ``jvp``, ``vjp``, and
-       ``hessian_vector_product``
-     - do not report support until the wrappers compute checked values
+     - ``vjp`` and scalar-objective ``hessian_vector_product`` are checked;
+       ``jvp`` remains a documented fail-closed backend decision
+     - do not report ``jvp`` or ``portfolio_aad`` support until the wrappers
+       compute checked values
    * - Portfolio AAD
      - add the first book-level reverse-mode sensitivity substrate
      - bounded supported books only; unsupported routes must be excluded or
