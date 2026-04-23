@@ -44,7 +44,7 @@ Rules for coding agents:
 
 | Queue ID | Linear | Status | Scope | Hard prerequisites |
 | --- | --- | --- | --- | --- |
-| `AD2.1` | `QUA-967` | Backlog | JVP, VJP, HVP operator implementation or checked backend decision | `QUA-957`, `QUA-965` |
+| `AD2.1` | `QUA-967` | Done | JVP, VJP, HVP operator implementation or checked backend decision | `QUA-957`, `QUA-965` |
 | `AD2.2` | `QUA-968` | Backlog | book-level reverse-mode / portfolio AAD substrate | `QUA-967` |
 | `AD2.3` | `QUA-969` | Backlog | smoothing and custom-adjoint policy for discontinuous products | `QUA-957` |
 | `AD2.4` | `QUA-970` | Backlog | product-family gradient matrix and support-contract cohort expansion | `QUA-957`; consume `QUA-967` / `QUA-969` outcomes as they land |
@@ -91,9 +91,11 @@ The desired Phase 2 end state is:
 
 ### Directional Operators
 
-The current backend supports scalar gradients, dense Jacobians, and dense
-Hessians. Phase 2 should add directional operators where they are mathematically
-and computationally useful:
+The current backend supports scalar gradients, dense Jacobians, dense Hessians,
+VJP, and scalar-objective HVP. JVP remains fail-closed because stock
+`autograd` lacks the required forward-mode coverage for pricing primitives such
+as `norm.cdf`. Phase 2 should use directional operators where they are
+mathematically and computationally useful:
 
 .. math::
 
