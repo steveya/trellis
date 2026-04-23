@@ -29,6 +29,10 @@ from trellis.models.monte_carlo.path_state import (
 
 np = get_numpy()
 
+_DISCONTINUOUS_DERIVATIVE_POLICY_VERSION = "mc_discontinuous_derivative_policy_v1"
+_DISCONTINUOUS_DERIVATIVE_POLICY = "fail_closed"
+_DISCONTINUOUS_DERIVATIVE_FALLBACK = "finite_difference_bump_reprice"
+
 
 def _to_backend_array(values):
     if isinstance(values, raw_np.ndarray):
@@ -145,10 +149,95 @@ def _replay_reducers(paths: raw_np.ndarray, requirement: MonteCarloPathRequireme
     return reducer_values
 
 
-def _validate_differentiable_state_requirement(requirement: MonteCarloPathRequirement) -> None:
-    if requirement.barrier_monitors:
+def _metadata_tuple(values) -> tuple[str, ...]:
+    if values is None:
+        return ()
+    if isinstance(values, str):
+        return (values,)
+    return tuple(str(value) for value in values)
+
+
+def _payoff_derivative_metadata(payoff_fn) -> dict[str, object]:
+    metadata = getattr(payoff_fn, "derivative_metadata", None)
+    if not metadata:
+        return {}
+    return dict(metadata)
+
+
+def _discontinuous_features(
+    requirement: MonteCarloPathRequirement | None,
+    payoff_metadata: dict[str, object] | None = None,
+) -> tuple[str, ...]:
+    features: list[str] = []
+    if requirement is not None and requirement.barrier_monitors:
+        features.append("barrier_monitor")
+    features.extend(_metadata_tuple((payoff_metadata or {}).get("discontinuous_features")))
+    return tuple(dict.fromkeys(features))
+
+
+def _unsupported_reason(features: tuple[str, ...], payoff_metadata: dict[str, object] | None = None) -> str:
+    explicit_reason = (payoff_metadata or {}).get("unsupported_reason")
+    if explicit_reason:
+        return str(explicit_reason)
+    if "barrier_monitor" in features:
+        return "barrier_monitor_discontinuity"
+    if "barrier_event" in features:
+        return "barrier_event_discontinuity"
+    if "exercise_event" in features:
+        return "exercise_event_discontinuity"
+    return "discontinuous_payoff"
+
+
+def describe_monte_carlo_derivative_policy(
+    requirement: MonteCarloPathRequirement | None = None,
+    *,
+    differentiable: bool = False,
+    payoff_metadata: dict[str, object] | None = None,
+) -> dict[str, object]:
+    """Return derivative-policy metadata for one Monte Carlo pricing request."""
+    features = _discontinuous_features(requirement, payoff_metadata)
+    if features:
+        return {
+            "resolved_derivative_method": (
+                "unsupported_discontinuous_pathwise"
+                if differentiable
+                else "forward_price_only"
+            ),
+            "pathwise_autodiff_supported": False,
+            "discontinuous_features": features,
+            "discontinuous_derivative_policy": _DISCONTINUOUS_DERIVATIVE_POLICY,
+            "fallback_derivative_method": _DISCONTINUOUS_DERIVATIVE_FALLBACK,
+            "unsupported_reason": _unsupported_reason(features, payoff_metadata),
+            "policy_version": _DISCONTINUOUS_DERIVATIVE_POLICY_VERSION,
+        }
+    return {
+        "resolved_derivative_method": "autodiff_pathwise" if differentiable else "forward_price_only",
+        "pathwise_autodiff_supported": bool(differentiable),
+        "discontinuous_features": (),
+        "policy_version": _DISCONTINUOUS_DERIVATIVE_POLICY_VERSION,
+    }
+
+
+def _validate_differentiable_state_requirement(
+    requirement: MonteCarloPathRequirement,
+    payoff_metadata: dict[str, object] | None = None,
+) -> None:
+    metadata = describe_monte_carlo_derivative_policy(
+        requirement,
+        differentiable=True,
+        payoff_metadata=payoff_metadata,
+    )
+    if metadata["pathwise_autodiff_supported"] is False:
+        reason = metadata["unsupported_reason"]
+        features = ", ".join(
+            str(feature).replace("_", "-")
+            for feature in metadata["discontinuous_features"]
+        )
         raise NotImplementedError(
-            "differentiable Monte Carlo does not support barrier-monitor state contracts",
+            "differentiable Monte Carlo does not support "
+            f"{features} state contracts; policy={metadata['discontinuous_derivative_policy']}; "
+            f"unsupported_reason={reason}; "
+            f"fallback_derivative_method={metadata['fallback_derivative_method']}",
         )
 
 
@@ -888,10 +977,12 @@ class MonteCarloEngine:
         """
         path_state = None
         paths = None
+        executed_requirement = None
 
         explicit_requirement = _coerce_path_requirement(storage_policy)
         declared_requirement = _payoff_path_requirement(payoff_fn)
         state_evaluator = getattr(payoff_fn, "evaluate_state", None)
+        payoff_metadata = _payoff_derivative_metadata(payoff_fn)
 
         if shocks is not None:
             if (
@@ -900,7 +991,7 @@ class MonteCarloEngine:
                 and (explicit_requirement is not None or declared_requirement is not None)
             ):
                 requirement = explicit_requirement or declared_requirement
-                _validate_differentiable_state_requirement(requirement)
+                _validate_differentiable_state_requirement(requirement, payoff_metadata)
                 simulated_paths = self.simulate_with_shocks(x0, T, shocks, differentiable=True)
                 path_state = _differentiable_path_state_from_paths(
                     simulated_paths,
@@ -910,6 +1001,7 @@ class MonteCarloEngine:
                 )
                 payoffs = state_evaluator(path_state)
                 paths = simulated_paths if return_paths else None
+                executed_requirement = requirement
             else:
                 paths = self.simulate_with_shocks(x0, T, shocks, differentiable=differentiable)
                 payoffs = payoff_fn(paths)
@@ -921,6 +1013,7 @@ class MonteCarloEngine:
             requirement = explicit_requirement or declared_requirement
             path_state = self.simulate_state(x0, T, requirement)
             payoffs = raw_np.asarray(state_evaluator(path_state), dtype=float)
+            executed_requirement = requirement
         else:
             if differentiable:
                 raise ValueError("differentiable=True requires explicit shocks for deterministic pathwise gradients")
@@ -946,4 +1039,9 @@ class MonteCarloEngine:
             "n_paths": self.n_paths,
             "paths": paths if return_paths else None,
             "path_state": path_state,
+            "derivative_metadata": describe_monte_carlo_derivative_policy(
+                executed_requirement,
+                differentiable=differentiable,
+                payoff_metadata=payoff_metadata,
+            ),
         }

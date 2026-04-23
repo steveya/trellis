@@ -202,6 +202,7 @@ class StateAwarePayoff:
     evaluate_paths_fn: Callable[[raw_np.ndarray], raw_np.ndarray]
     evaluate_state_fn: Callable[[MonteCarloPathState], raw_np.ndarray]
     name: str | None = None
+    derivative_metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __call__(self, paths: raw_np.ndarray) -> raw_np.ndarray:
         """Evaluate the payoff from a full path matrix."""
@@ -273,4 +274,8 @@ def barrier_payoff(
         evaluate_paths_fn=evaluate_paths,
         evaluate_state_fn=evaluate_state,
         name=name or "barrier_payoff",
+        derivative_metadata={
+            "discontinuous_features": ("barrier_monitor",),
+            "unsupported_reason": "barrier_monitor_discontinuity",
+        },
     )

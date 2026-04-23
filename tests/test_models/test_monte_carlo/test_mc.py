@@ -18,7 +18,10 @@ from trellis.models.processes.heston import (
     resolve_heston_runtime_binding,
 )
 from trellis.models.monte_carlo.discretization import euler_maruyama, exact_simulation, milstein
-from trellis.models.monte_carlo.engine import MonteCarloEngine
+from trellis.models.monte_carlo.engine import (
+    MonteCarloEngine,
+    describe_monte_carlo_derivative_policy,
+)
 import trellis.models.monte_carlo.local_vol as local_vol_module
 from trellis.models.monte_carlo.local_vol import (
     local_vol_european_vanilla_price,
@@ -590,6 +593,82 @@ class TestMonteCarloEngine:
                 differentiable=True,
                 return_paths=False,
             )
+
+    def test_barrier_monitor_derivative_policy_is_reported_on_forward_price(self):
+        """Barrier state pricing should disclose that pathwise AD is unsupported."""
+        S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
+        gbm = GBM(mu=r, sigma=sigma)
+        engine = MonteCarloEngine(gbm, n_paths=64, n_steps=8, seed=61, method="exact")
+        payoff = barrier_payoff(
+            barrier=95.0,
+            direction="down",
+            knock="out",
+            terminal_payoff_fn=lambda terminal: raw_np.maximum(terminal - K, 0.0),
+        )
+
+        result = engine.price(
+            S0,
+            T,
+            payoff,
+            discount_rate=r,
+            return_paths=False,
+        )
+
+        metadata = result["derivative_metadata"]
+        assert metadata["resolved_derivative_method"] == "forward_price_only"
+        assert metadata["pathwise_autodiff_supported"] is False
+        assert metadata["discontinuous_features"] == ("barrier_monitor",)
+        assert metadata["discontinuous_derivative_policy"] == "fail_closed"
+        assert metadata["fallback_derivative_method"] == "finite_difference_bump_reprice"
+
+    def test_barrier_monitor_derivative_policy_helper_names_fail_closed_lane(self):
+        payoff = barrier_payoff(
+            barrier=95.0,
+            direction="down",
+            knock="out",
+            terminal_payoff_fn=lambda terminal: raw_np.maximum(terminal - 100.0, 0.0),
+        )
+
+        metadata = describe_monte_carlo_derivative_policy(
+            payoff.path_requirement,
+            differentiable=True,
+        )
+
+        assert metadata["resolved_derivative_method"] == "unsupported_discontinuous_pathwise"
+        assert metadata["pathwise_autodiff_supported"] is False
+        assert metadata["unsupported_reason"] == "barrier_monitor_discontinuity"
+        assert metadata["policy_version"] == "mc_discontinuous_derivative_policy_v1"
+
+    def test_derivative_policy_reports_executed_path_payoff_branch(self):
+        """Unused storage policies must not override the executed pricing branch metadata."""
+        S0, K, r, sigma, T = 100.0, 100.0, 0.05, 0.20, 1.0
+        gbm = GBM(mu=r, sigma=sigma)
+        engine = MonteCarloEngine(gbm, n_paths=64, n_steps=8, seed=67, method="exact")
+        shocks = raw_np.random.default_rng(71).standard_normal((engine.n_paths, engine.n_steps))
+        unused_barrier_requirement = MonteCarloPathRequirement(
+            barrier_monitors=(
+                mc_engine_module.BarrierMonitor(
+                    name="unused",
+                    level=95.0,
+                    direction="down",
+                ),
+            ),
+        )
+
+        result = engine.price(
+            S0,
+            T,
+            lambda paths: np.maximum(paths[:, -1] - K, 0.0),
+            discount_rate=r,
+            storage_policy=unused_barrier_requirement,
+            shocks=shocks,
+            differentiable=True,
+        )
+
+        metadata = result["derivative_metadata"]
+        assert metadata["resolved_derivative_method"] == "autodiff_pathwise"
+        assert metadata["pathwise_autodiff_supported"] is True
+        assert metadata["discontinuous_features"] == ()
 
 
 class TestLocalVolMonteCarlo:
