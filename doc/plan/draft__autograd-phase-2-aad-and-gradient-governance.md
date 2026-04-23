@@ -46,7 +46,7 @@ Rules for coding agents:
 | --- | --- | --- | --- | --- |
 | `AD2.1` | `QUA-967` | Done | JVP, VJP, HVP operator implementation or checked backend decision | `QUA-957`, `QUA-965` |
 | `AD2.2` | `QUA-968` | Done | book-level reverse-mode / portfolio AAD substrate | `QUA-967` |
-| `AD2.3` | `QUA-969` | Backlog | smoothing and custom-adjoint policy for discontinuous products | `QUA-957` |
+| `AD2.3` | `QUA-969` | Done | smoothing and custom-adjoint policy for discontinuous products | `QUA-957` |
 | `AD2.4` | `QUA-970` | Backlog | product-family gradient matrix and support-contract cohort expansion | `QUA-957`; consume `QUA-967` / `QUA-969` outcomes as they land |
 | `AD2.5` | `QUA-971` | Backlog | runtime derivative-method taxonomy and reporting integration | `QUA-967`, `QUA-970` |
 
@@ -155,6 +155,14 @@ that ordinary autograd solves this. A route must choose one of:
 - governed smoothing with documented smoothing parameter
 - custom adjoint or alternative estimator with a reference test
 - analytical derivative where one exists
+
+`QUA-969` landed the first bounded governed policy. Monte Carlo barrier
+monitors plus barrier/exercise event replay now expose fail-closed
+discontinuous derivative metadata, declare finite-difference bump/reprice as
+the fallback method, and report metadata from the executed pricing branch
+rather than from unused storage-policy requests. This is a policy and reporting
+slice, not automatic discontinuous Greeks or universal smoothing/custom-adjoint
+support.
 
 ## Relationship To Calibration Industrialization
 
