@@ -96,6 +96,7 @@ def test_supported_calibration_benchmark_scenarios_cover_workflows():
         "heston_surface",
         "local_vol",
         "credit",
+        "basket_credit",
     }
     hull_white = scenario_map["hull_white"]
     assert hull_white.metadata["multi_curve_roles"]["discount_curve"] == "usd_ois"
@@ -120,3 +121,70 @@ def test_supported_calibration_benchmark_scenarios_cover_workflows():
     assert scenario_map["local_vol"].metadata["source_surface_name"] == "spx_heston_implied_vol"
     assert scenario_map["local_vol"].metadata["surface_name"] == "spx_local_vol"
     assert scenario_map["local_vol"].metadata["synthetic_generation_contract_version"] == "v2"
+    basket_credit = scenario_map["basket_credit"]
+    assert basket_credit.warm_runner is None
+    assert basket_credit.metadata["fixture_style"] == "desk_like"
+    assert basket_credit.metadata["surface_name"] == "benchmark_tranche_correlation"
+    assert basket_credit.metadata["quote_count"] == 6
+    assert basket_credit.metadata["tranche_count"] == 3
+    assert basket_credit.metadata["maturity_count"] == 2
+    assert basket_credit.metadata["linked_credit_curve"] == "benchmark_single_name_credit"
+    assert basket_credit.metadata["perturbation_diagnostic"]["label"] == "basket_credit_parallel_quote_up"
+    assert basket_credit.metadata["perturbation_diagnostic"]["max_abs_change"] > 0.0
+    assert basket_credit.metadata["perturbation_diagnostic"]["threshold_breaches"] == {}
+    assert basket_credit.metadata["latency_envelope"]["fixture_style"] == "desk_like"
+    assert basket_credit.metadata["latency_envelope"]["cold_mean_limit_seconds"] >= 5.0
+
+
+def test_perturbation_diagnostic_reports_metric_changes_and_breaches():
+    from trellis.models.calibration.benchmarking import diagnose_metric_perturbation
+
+    diagnostic = diagnose_metric_perturbation(
+        label="credit_parallel_spread_up",
+        perturbation_size=1.0e-4,
+        baseline_metrics={"hazard_5y": 0.025, "hazard_7y": 0.03},
+        perturbed_metrics={"hazard_5y": 0.0252, "hazard_7y": 0.031},
+        instability_thresholds={"hazard_5y": 0.001, "hazard_7y": 0.0005},
+    )
+    payload = diagnostic.to_dict()
+
+    assert payload["absolute_changes"]["hazard_5y"] == pytest.approx(0.0002)
+    assert payload["absolute_changes"]["hazard_7y"] == pytest.approx(0.001)
+    assert payload["max_abs_change"] == pytest.approx(0.001)
+    assert payload["threshold_breaches"]["hazard_7y"] == pytest.approx(0.001)
+
+
+def test_latency_envelope_payload_marks_pass_fail_against_case_measurements():
+    from trellis.models.calibration.benchmarking import (
+        CalibrationLatencyEnvelope,
+        evaluate_latency_envelope,
+    )
+
+    case = {
+        "workflow": "basket_credit",
+        "label": "desk_tranche_surface",
+        "metadata": {"quote_count": 6},
+        "cold": {"mean_seconds": 1.25, "max_seconds": 1.4},
+        "warm": None,
+    }
+    envelope = CalibrationLatencyEnvelope(
+        workflow="basket_credit",
+        label="desk_tranche_surface",
+        fixture_style="desk_like",
+        quote_count=6,
+        cold_mean_limit_seconds=2.0,
+        cold_max_limit_seconds=3.0,
+    )
+
+    payload = evaluate_latency_envelope(case, envelope)
+
+    assert payload["status"] == "pass"
+    assert payload["cold_mean_seconds"] == pytest.approx(1.25)
+    assert payload["cold_mean_limit_seconds"] == pytest.approx(2.0)
+
+    failing = evaluate_latency_envelope(
+        {**case, "cold": {"mean_seconds": 2.25, "max_seconds": 3.5}},
+        envelope,
+    )
+    assert failing["status"] == "fail"
+    assert set(failing["breaches"]) == {"cold_mean_seconds", "cold_max_seconds"}

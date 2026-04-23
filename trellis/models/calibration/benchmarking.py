@@ -96,6 +96,202 @@ class CalibrationBenchmarkArtifacts:
     text_path: Path
 
 
+@dataclass(frozen=True)
+class CalibrationPerturbationDiagnostic:
+    """Metric-level stability summary for one deterministic quote perturbation."""
+
+    label: str
+    perturbation_size: float
+    baseline_metrics: Mapping[str, float]
+    perturbed_metrics: Mapping[str, float]
+    absolute_changes: Mapping[str, float]
+    relative_changes: Mapping[str, float]
+    threshold_breaches: Mapping[str, float] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "perturbation_size", float(self.perturbation_size))
+        object.__setattr__(
+            self,
+            "baseline_metrics",
+            _freeze_mapping({key: float(value) for key, value in self.baseline_metrics.items()}),
+        )
+        object.__setattr__(
+            self,
+            "perturbed_metrics",
+            _freeze_mapping({key: float(value) for key, value in self.perturbed_metrics.items()}),
+        )
+        object.__setattr__(
+            self,
+            "absolute_changes",
+            _freeze_mapping({key: float(value) for key, value in self.absolute_changes.items()}),
+        )
+        object.__setattr__(
+            self,
+            "relative_changes",
+            _freeze_mapping({key: float(value) for key, value in self.relative_changes.items()}),
+        )
+        object.__setattr__(
+            self,
+            "threshold_breaches",
+            _freeze_mapping({key: float(value) for key, value in self.threshold_breaches.items()}),
+        )
+
+    @property
+    def max_abs_change(self) -> float:
+        """Return the largest absolute metric move."""
+        return max((abs(float(value)) for value in self.absolute_changes.values()), default=0.0)
+
+    @property
+    def max_relative_change(self) -> float:
+        """Return the largest relative metric move."""
+        return max((abs(float(value)) for value in self.relative_changes.values()), default=0.0)
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-friendly perturbation diagnostic payload."""
+        return {
+            "label": self.label,
+            "perturbation_size": float(self.perturbation_size),
+            "baseline_metrics": dict(self.baseline_metrics),
+            "perturbed_metrics": dict(self.perturbed_metrics),
+            "absolute_changes": dict(self.absolute_changes),
+            "relative_changes": dict(self.relative_changes),
+            "max_abs_change": float(self.max_abs_change),
+            "max_relative_change": float(self.max_relative_change),
+            "threshold_breaches": dict(self.threshold_breaches),
+            "status": "breach" if self.threshold_breaches else "pass",
+        }
+
+
+@dataclass(frozen=True)
+class CalibrationLatencyEnvelope:
+    """Explicit timing envelope for one calibration benchmark fixture."""
+
+    workflow: str
+    label: str
+    fixture_style: str
+    instrument_count: int | None = None
+    quote_count: int | None = None
+    cold_mean_limit_seconds: float = 0.0
+    cold_max_limit_seconds: float | None = None
+    warm_mean_limit_seconds: float | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "workflow", str(self.workflow))
+        object.__setattr__(self, "label", str(self.label))
+        object.__setattr__(self, "fixture_style", str(self.fixture_style))
+        if self.instrument_count is not None:
+            object.__setattr__(self, "instrument_count", int(self.instrument_count))
+        if self.quote_count is not None:
+            object.__setattr__(self, "quote_count", int(self.quote_count))
+        object.__setattr__(self, "cold_mean_limit_seconds", float(self.cold_mean_limit_seconds))
+        if self.cold_max_limit_seconds is not None:
+            object.__setattr__(self, "cold_max_limit_seconds", float(self.cold_max_limit_seconds))
+        if self.warm_mean_limit_seconds is not None:
+            object.__setattr__(self, "warm_mean_limit_seconds", float(self.warm_mean_limit_seconds))
+
+    def to_dict(self) -> dict[str, object]:
+        """Return the envelope thresholds as a JSON-friendly payload."""
+        return {
+            "workflow": self.workflow,
+            "label": self.label,
+            "fixture_style": self.fixture_style,
+            "instrument_count": self.instrument_count,
+            "quote_count": self.quote_count,
+            "cold_mean_limit_seconds": float(self.cold_mean_limit_seconds),
+            "cold_max_limit_seconds": self.cold_max_limit_seconds,
+            "warm_mean_limit_seconds": self.warm_mean_limit_seconds,
+        }
+
+
+@dataclass(frozen=True)
+class _BenchmarkBasketTrancheSpec:
+    """Local basket tranche spec for benchmark quote generation."""
+
+    notional: float
+    n_names: int
+    attachment: float
+    detachment: float
+    end_date: date
+    recovery: float = 0.4
+    correlation: float | None = None
+
+
+def diagnose_metric_perturbation(
+    *,
+    label: str,
+    perturbation_size: float,
+    baseline_metrics: Mapping[str, float],
+    perturbed_metrics: Mapping[str, float],
+    relative_floor: float = 1.0e-12,
+    instability_thresholds: Mapping[str, float] | None = None,
+) -> CalibrationPerturbationDiagnostic:
+    """Compare fitted metrics before and after a deterministic input perturbation."""
+    baseline_keys = set(baseline_metrics)
+    perturbed_keys = set(perturbed_metrics)
+    if baseline_keys != perturbed_keys:
+        missing = sorted(baseline_keys.symmetric_difference(perturbed_keys))
+        raise ValueError(f"baseline and perturbed metrics must use the same keys: {missing}")
+    thresholds = dict(instability_thresholds or {})
+    absolute_changes: dict[str, float] = {}
+    relative_changes: dict[str, float] = {}
+    threshold_breaches: dict[str, float] = {}
+    floor = max(float(relative_floor), 0.0)
+    for key in sorted(baseline_keys):
+        baseline_value = float(baseline_metrics[key])
+        perturbed_value = float(perturbed_metrics[key])
+        absolute_change = float(perturbed_value - baseline_value)
+        relative_change = float(absolute_change / max(abs(baseline_value), floor))
+        absolute_changes[key] = absolute_change
+        relative_changes[key] = relative_change
+        threshold = thresholds.get(key)
+        if threshold is not None and abs(absolute_change) > float(threshold):
+            threshold_breaches[key] = abs(absolute_change)
+    return CalibrationPerturbationDiagnostic(
+        label=label,
+        perturbation_size=float(perturbation_size),
+        baseline_metrics=baseline_metrics,
+        perturbed_metrics=perturbed_metrics,
+        absolute_changes=absolute_changes,
+        relative_changes=relative_changes,
+        threshold_breaches=threshold_breaches,
+    )
+
+
+def evaluate_latency_envelope(
+    case: Mapping[str, object],
+    envelope: CalibrationLatencyEnvelope,
+) -> dict[str, object]:
+    """Evaluate one benchmark case against its explicit latency envelope."""
+    cold = dict(case["cold"])
+    warm = case.get("warm")
+    cold_mean_seconds = float(cold["mean_seconds"])
+    cold_max_seconds = float(cold["max_seconds"])
+    breaches: dict[str, float] = {}
+    if cold_mean_seconds > float(envelope.cold_mean_limit_seconds):
+        breaches["cold_mean_seconds"] = cold_mean_seconds
+    if (
+        envelope.cold_max_limit_seconds is not None
+        and cold_max_seconds > float(envelope.cold_max_limit_seconds)
+    ):
+        breaches["cold_max_seconds"] = cold_max_seconds
+    warm_mean_seconds = None
+    if isinstance(warm, Mapping):
+        warm_mean_seconds = float(warm["mean_seconds"])
+        if (
+            envelope.warm_mean_limit_seconds is not None
+            and warm_mean_seconds > float(envelope.warm_mean_limit_seconds)
+        ):
+            breaches["warm_mean_seconds"] = warm_mean_seconds
+    return {
+        **envelope.to_dict(),
+        "cold_mean_seconds": cold_mean_seconds,
+        "cold_max_seconds": cold_max_seconds,
+        "warm_mean_seconds": warm_mean_seconds,
+        "breaches": breaches,
+        "status": "fail" if breaches else "pass",
+    }
+
+
 def benchmark_calibration_workflow(
     *,
     label: str,
@@ -178,7 +374,7 @@ def benchmark_calibration_scenario(
             if warm.mean_seconds > 0.0 else float("inf")
         )
 
-    return {
+    case = {
         "workflow": scenario.workflow,
         "label": scenario.label,
         "notes": list(scenario.notes),
@@ -187,6 +383,28 @@ def benchmark_calibration_scenario(
         "warm": None if warm is None else warm.to_dict(),
         "warm_speedup": None if warm_speedup is None else round(warm_speedup, 3),
     }
+    latency_payload = scenario.metadata.get("latency_envelope")
+    if isinstance(latency_payload, Mapping):
+        envelope = CalibrationLatencyEnvelope(
+            workflow=str(latency_payload.get("workflow") or scenario.workflow),
+            label=str(latency_payload.get("label") or scenario.label),
+            fixture_style=str(latency_payload.get("fixture_style") or scenario.metadata.get("fixture_style") or "synthetic"),
+            instrument_count=latency_payload.get("instrument_count"),  # type: ignore[arg-type]
+            quote_count=latency_payload.get("quote_count"),  # type: ignore[arg-type]
+            cold_mean_limit_seconds=float(latency_payload["cold_mean_limit_seconds"]),
+            cold_max_limit_seconds=(
+                None
+                if latency_payload.get("cold_max_limit_seconds") is None
+                else float(latency_payload["cold_max_limit_seconds"])
+            ),
+            warm_mean_limit_seconds=(
+                None
+                if latency_payload.get("warm_mean_limit_seconds") is None
+                else float(latency_payload["warm_mean_limit_seconds"])
+            ),
+        )
+        case["latency_envelope"] = evaluate_latency_envelope(case, envelope)
+    return case
 
 
 def build_calibration_benchmark_report(
@@ -216,6 +434,17 @@ def build_calibration_benchmark_report(
         "summary": {
             "workflow_count": len(cases),
             "warm_start_workflow_count": sum(1 for case in cases if case.get("warm") is not None),
+            "desk_like_workflow_count": sum(
+                1
+                for case in cases
+                if dict(case.get("metadata") or {}).get("fixture_style") == "desk_like"
+            ),
+            "perturbation_diagnostic_count": sum(
+                1
+                for case in cases
+                if isinstance(dict(case.get("metadata") or {}).get("perturbation_diagnostic"), Mapping)
+            ),
+            "latency_envelope_count": sum(1 for case in cases if isinstance(case.get("latency_envelope"), Mapping)),
             "cold_mean_seconds": round(float(raw_np.mean(cold_means)), 6) if cold_means else 0.0,
             "warm_mean_seconds": round(float(raw_np.mean(warm_means)), 6) if warm_means else 0.0,
             "average_warm_speedup": round(float(raw_np.mean(speedups)), 3) if speedups else None,
@@ -235,6 +464,9 @@ def render_calibration_benchmark_report(report: Mapping[str, object]) -> str:
         f"- Created at: `{report.get('created_at', '')}`",
         f"- Workflows: `{summary['workflow_count']}`",
         f"- Warm-start workflows: `{summary['warm_start_workflow_count']}`",
+        f"- Desk-like workflows: `{summary.get('desk_like_workflow_count', 0)}`",
+        f"- Perturbation diagnostics: `{summary.get('perturbation_diagnostic_count', 0)}`",
+        f"- Latency envelopes: `{summary.get('latency_envelope_count', 0)}`",
         f"- Avg cold mean seconds: `{summary['cold_mean_seconds']}`",
         f"- Avg warm mean seconds: `{summary['warm_mean_seconds']}`",
     ]
@@ -272,6 +504,21 @@ def render_calibration_benchmark_report(report: Mapping[str, object]) -> str:
             lines.append(f"- Warm speedup: `{case['warm_speedup']}`x")
         else:
             lines.append("- Warm start: `n/a`")
+        latency = case.get("latency_envelope")
+        if isinstance(latency, Mapping):
+            lines.append(
+                "- Latency envelope: "
+                f"`{latency['status']}` "
+                f"(cold mean `{latency['cold_mean_seconds']}` s <= "
+                f"`{latency['cold_mean_limit_seconds']}` s)"
+            )
+        perturbation = dict(case.get("metadata") or {}).get("perturbation_diagnostic")
+        if isinstance(perturbation, Mapping):
+            lines.append(
+                "- Perturbation diagnostic: "
+                f"`{perturbation.get('status')}` "
+                f"(max abs change `{perturbation.get('max_abs_change')}`)"
+            )
         metadata = case.get("metadata") or {}
         if metadata:
             lines.append(
@@ -329,6 +576,7 @@ def build_supported_calibration_benchmark_report(
 
 def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkScenario, ...]:
     """Return the checked calibration benchmark fixtures."""
+    from trellis.core.date_utils import add_months
     from trellis.core.market_state import MarketState
     from trellis.core.types import DayCountConvention, Frequency
     from trellis.curves.yield_curve import YieldCurve
@@ -337,6 +585,10 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     from trellis.instruments._agent.swaption import SwaptionSpec
     from trellis.instruments.cap import CapFloorSpec, CapPayoff
     from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, price_bermudan_swaption_tree
+    from trellis.models.calibration.basket_credit import (
+        BasketCreditTrancheQuote,
+        calibrate_homogeneous_basket_tranche_correlation_workflow,
+    )
     from trellis.models.calibration.credit import (
         CreditHazardCalibrationQuote,
         calibrate_single_name_credit_curve_workflow,
@@ -355,6 +607,7 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         calibrate_swaption_vol_cube_workflow,
     )
     from trellis.models.calibration.sabr_fit import calibrate_sabr_smile_workflow
+    from trellis.models.credit_basket_copula import price_credit_basket_tranche_result
     from trellis.models.processes.sabr import SABRProcess
     from trellis.models.rate_style_swaption import price_swaption_black76
     from trellis.models.vol_surface import FlatVol, GridVolSurface
@@ -608,6 +861,104 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         forecast_curve=forecast_curve_name or None,
         credit_curve=credit_curve_name,
     )
+    benchmark_credit_result = calibrate_single_name_credit_curve_workflow(
+        credit_quotes,
+        credit_state,
+        recovery=credit_recovery,
+        curve_name="benchmark_single_name_credit",
+    )
+    basket_credit_state = benchmark_credit_result.apply_to_market_state(credit_state)
+    basket_notional = 100_000_000.0
+    basket_n_names = 125
+    basket_maturities = (5.0, 7.0)
+    basket_tranches = ((0.0, 0.03), (0.03, 0.07), (0.07, 0.10))
+    basket_correlations = {
+        (5.0, 0.0, 0.03): 0.18,
+        (5.0, 0.03, 0.07): 0.24,
+        (5.0, 0.07, 0.10): 0.34,
+        (7.0, 0.0, 0.03): 0.39,
+        (7.0, 0.03, 0.07): 0.48,
+        (7.0, 0.07, 0.10): 0.54,
+    }
+
+    def basket_quote(
+        maturity_years: float,
+        attachment: float,
+        detachment: float,
+        correlation: float,
+    ) -> BasketCreditTrancheQuote:
+        spec = _BenchmarkBasketTrancheSpec(
+            notional=basket_notional,
+            n_names=basket_n_names,
+            attachment=attachment,
+            detachment=detachment,
+            end_date=add_months(settle, int(round(maturity_years * 12.0))),
+            recovery=credit_recovery,
+            correlation=correlation,
+        )
+        priced = price_credit_basket_tranche_result(basket_credit_state, spec)
+        return BasketCreditTrancheQuote(
+            maturity_years=maturity_years,
+            attachment=attachment,
+            detachment=detachment,
+            quote_value=float(priced.expected_loss_fraction),
+            quote_family="price",
+            quote_style="expected_loss_fraction",
+            label=f"{maturity_years:g}y_{attachment:.2f}_{detachment:.2f}",
+        )
+
+    basket_credit_quotes = tuple(
+        basket_quote(
+            maturity_years,
+            attachment,
+            detachment,
+            basket_correlations[(maturity_years, attachment, detachment)],
+        )
+        for maturity_years in basket_maturities
+        for attachment, detachment in basket_tranches
+    )
+
+    def basket_credit_calibration(quotes=basket_credit_quotes):
+        return calibrate_homogeneous_basket_tranche_correlation_workflow(
+            quotes,
+            basket_credit_state,
+            n_names=basket_n_names,
+            recovery=credit_recovery,
+            notional=basket_notional,
+            surface_name="benchmark_tranche_correlation",
+            smoothness_jump_threshold=0.35,
+        )
+
+    basket_credit_base_result = basket_credit_calibration()
+    basket_perturbed_quotes = tuple(
+        replace(quote, quote_value=float(quote.quote_value) * 1.0025)
+        for quote in basket_credit_quotes
+    )
+    basket_credit_perturbed_result = basket_credit_calibration(basket_perturbed_quotes)
+    basket_credit_diagnostic = diagnose_metric_perturbation(
+        label="basket_credit_parallel_quote_up",
+        perturbation_size=0.0025,
+        baseline_metrics={
+            point.quote_label: float(point.correlation)
+            for point in basket_credit_base_result.surface.points
+        },
+        perturbed_metrics={
+            point.quote_label: float(point.correlation)
+            for point in basket_credit_perturbed_result.surface.points
+        },
+        instability_thresholds={
+            point.quote_label: 0.08
+            for point in basket_credit_base_result.surface.points
+        },
+    ).to_dict()
+    basket_credit_latency_envelope = CalibrationLatencyEnvelope(
+        workflow="basket_credit",
+        label="desk_tranche_surface",
+        fixture_style="desk_like",
+        quote_count=len(basket_credit_quotes),
+        cold_mean_limit_seconds=6.0,
+        cold_max_limit_seconds=8.0,
+    ).to_dict()
 
     return (
         CalibrationBenchmarkScenario(
@@ -803,6 +1154,29 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 "curve_name": credit_curve_name,
             },
         ),
+        CalibrationBenchmarkScenario(
+            workflow="basket_credit",
+            label="desk_tranche_surface",
+            cold_runner=lambda: basket_credit_calibration(),
+            notes=(
+                "brentq_root_scan",
+                "homogeneous_basket_credit",
+                "desk_like_fixture",
+                "linked_single_name_credit_curve",
+            ),
+            metadata={
+                "fixture_style": "desk_like",
+                "quote_count": len(basket_credit_quotes),
+                "tranche_count": len(basket_tranches),
+                "maturity_count": len(basket_maturities),
+                "warm_start": False,
+                "surface_name": "benchmark_tranche_correlation",
+                "linked_credit_curve": "benchmark_single_name_credit",
+                "support_boundary": "homogeneous_representative_curve",
+                "perturbation_diagnostic": basket_credit_diagnostic,
+                "latency_envelope": basket_credit_latency_envelope,
+            },
+        ),
     )
 
 
@@ -818,9 +1192,13 @@ __all__ = [
     "CalibrationBenchmarkMeasurement",
     "CalibrationBenchmarkScenario",
     "CalibrationBenchmarkArtifacts",
+    "CalibrationLatencyEnvelope",
+    "CalibrationPerturbationDiagnostic",
     "benchmark_calibration_workflow",
     "benchmark_calibration_scenario",
     "build_calibration_benchmark_report",
+    "diagnose_metric_perturbation",
+    "evaluate_latency_envelope",
     "render_calibration_benchmark_report",
     "save_calibration_benchmark_report",
     "build_supported_calibration_benchmark_report",
