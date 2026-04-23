@@ -6,9 +6,11 @@ Active execution mirror for the filed calibration-sleeve industrialization
 queue, now coordinated with the Autograd Phase 2 implementation queue for
 portfolio AAD and derivative governance.
 
-The umbrella `QUA-946` and child tickets `QUA-947` through `QUA-956` are now
-filed in Linear. This document is the ordered repo-local mirror for that queue
-and should stay aligned with the live issue graph.
+The umbrella `QUA-946`, child tickets `QUA-947` through `QUA-956`, adjacent
+Autograd Phase 2 tickets `QUA-966` through `QUA-971`, and post-`QUA-955`
+hybrid follow-ons `QUA-972` / `QUA-973` are now filed in Linear. This
+document is the ordered repo-local mirror for that queue and should stay
+aligned with the live issue graph.
 
 The adjacent Autograd Phase 2 plan is tracked by `QUA-966` through `QUA-971`.
 It should not duplicate calibration curve, surface, or cube plants. It should
@@ -51,6 +53,9 @@ Status mirror last synced: `2026-04-23`
 - `QUA-969` Discontinuous Greeks: smoothing and custom-adjoint policy
 - `QUA-970` Gradient matrix: product-family autograd regression cohort
 - `QUA-971` Runtime derivatives: expanded method selection and reporting
+- `QUA-972` Hybrid validation: bounded quanto calibration fixtures and
+  diagnostics
+- `QUA-973` Hybrid derivative governance: bounded quanto matrix and reporting
 - `doc/plan/draft__calibration-documentation-and-architecture-alignment.md`
 - `doc/plan/draft__autograd-phase-2-aad-and-gradient-governance.md`
 - `docs/quant/differentiable_pricing.rst`
@@ -78,7 +83,7 @@ Rules for coding agents:
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-946` Calibration sleeve: Trellis-native industrial hardening program | Backlog |
+| `QUA-946` Calibration sleeve: Trellis-native industrial hardening program | In Progress |
 | `QUA-966` Autograd Phase 2: portfolio AAD and gradient governance | Done |
 
 ### Ordered Queue
@@ -93,7 +98,7 @@ Rules for coding agents:
 | `CAL.3` | `QUA-952` | Done | caplet stripping, swaption cube assembly, and rates-vol model diagnostics | `CAL.2` |
 | `CAL.4` | `QUA-953` | Done | schedule-aware single-name credit curve calibration | `CAL.0C` |
 | `CAL.5` | `QUA-954` | Done | basket-credit base-correlation workflow and tranche-surface governance | `CAL.4` |
-| `CAL.6` | `QUA-955` | Backlog | first cross-asset calibration slice on explicit dependency DAGs | set the concrete upstream blockers during implementation once the first supported slice is chosen |
+| `CAL.6` | `QUA-955` | Done | bounded rates + equity/FX quanto-correlation slice on explicit dependency DAGs and runtime materialization | `QUA-950`, `QUA-951`, `QUA-971` |
 | `CAL.7` | `QUA-956` | Done | desk-like fixtures, perturbation diagnostics, and latency envelopes | none; extend alongside the active implementation slices |
 
 ### Adjacent Autograd Phase 2 Queue
@@ -123,8 +128,10 @@ and runtime reporting that consume those objects.
 | `INT.5` | `QUA-969` | Autograd | Done | governed discontinuous-Greek policy for one bounded barrier, digital, or event/exercise family | `QUA-957`; coordinate with `INT.7` |
 | `INT.6` | `QUA-970` | Autograd | Done | product-family derivative matrix covering analytical, curve, surface, MC, and calibration representatives | `QUA-957`; consume `INT.2` / `INT.5` outcomes |
 | `INT.7` | `QUA-971` | Autograd | Done | unified runtime derivative-method reporting across analytical, AD, AAD, JVP/VJP/HVP, bump, smoothed/custom-adjoint, and unsupported lanes | `INT.2`, `INT.6`; coordinate with `INT.4` / `INT.5` |
-| `INT.8` | `QUA-955` | Calibration | Backlog | first cross-asset calibration slice on explicit dependency DAGs, using calibrated market objects and derivative provenance where useful | concrete hybrid target chosen; upstream blockers set during audit |
-| `INT.9` | `QUA-946` | Closeout | Backlog | umbrella cleanup, docs maintenance, plan reconciliation, and follow-on ticket split | `CAL.5`, `CAL.6`, `CAL.7`, and relevant AD2 integration gates closed or explicitly deferred |
+| `INT.8` | `QUA-955` | Calibration | Done | bounded rates + equity/FX quanto-correlation slice on explicit dependency DAGs, using calibrated market objects and existing derivative provenance where useful | `QUA-950`, `QUA-951`, `QUA-971` |
+| `INT.9` | `QUA-972` | Validation | Backlog | desk-like bounded quanto calibration fixtures, perturbation diagnostics, replay coverage, and latency envelopes for the shipped hybrid slice | `INT.8` |
+| `INT.10` | `QUA-973` | Autograd | Backlog | bounded hybrid derivative-matrix row and runtime/reporting governance for the shipped quanto slice | `INT.8`; consume `INT.4`, `INT.6`, `INT.7` |
+| `INT.11` | `QUA-946` | Closeout | In Progress | umbrella cleanup, docs maintenance, plan reconciliation, and follow-on ticket split | `INT.9`, `INT.10` landed or explicitly deferred in closeout |
 
 ### Pickup Rule
 
@@ -135,6 +142,11 @@ and runtime reporting that consume those objects.
 - do not start `CAL.5` before `CAL.4` closes
 - do not start `CAL.6` until the first supported hybrid slice and its concrete
   upstream blockers are explicit in the ticket
+- after `CAL.6` closes, start `INT.9` / `QUA-972` and `INT.10` / `QUA-973`
+  next; they may run in parallel once the bounded hybrid input and reporting
+  surfaces from `QUA-955` are stable
+- do not close `INT.11` / `QUA-946` until `INT.9` and `INT.10` are either
+  landed or explicitly deferred in the umbrella closeout note
 - keep `CAL.7` moving alongside the active implementation slices so validation
   does not become a deferred cleanup bucket
 - do not start `AD2.2` before `AD2.1` lands a truthful backend operator
@@ -754,7 +766,7 @@ Acceptance bar:
 
 ## Recommended Build Order
 
-The completed implementation order through `CAL.5`, plus the parallel
+The completed implementation order through `CAL.6`, plus the parallel
 validation and derivative-governance slices, was:
 
 1. Phase 0 correctness fixes
@@ -766,12 +778,14 @@ validation and derivative-governance slices, was:
 7. First desk-like calibration validation tranche
 8. First bounded discontinuous Monte Carlo derivative policy
 9. Unified runtime derivative-method taxonomy and reporting
+10. First bounded hybrid cross-asset calibration slice
 
 The remaining integrated implementation order is:
 
-1. `QUA-955` one narrow cross-asset calibration slice once the concrete target
-   and blockers are explicit
-2. `QUA-946` umbrella closeout and documentation maintenance
+1. `QUA-972` bounded hybrid validation tranche over the shipped quanto slice
+2. `QUA-973` bounded hybrid derivative-governance tranche over the same route
+3. `QUA-946` umbrella closeout and documentation maintenance once those
+   follow-ons land or are explicitly deferred
 
 `QUA-967` landed early as `AD2.1` / `INT.2`, and `QUA-968` consumed that
 checked VJP/HVP surface for the first bounded bond-book reverse-mode lane.
@@ -818,7 +832,15 @@ they are actually desk-grade, then widen.
 
 ## Immediate Follow-On Execution Slice
 
-The next execution slice after the `AD2.5` / `QUA-971` closeout should be:
+The next execution slice after the `CAL.6` / `QUA-955` closeout should be:
 
-1. `QUA-955`: choose and implement one concrete hybrid calibration slice on the
-   same dependency and provenance model.
+1. `QUA-972`: add the first desk-like bounded hybrid fixture pack, replay
+   coverage, perturbation diagnostics, and latency envelopes for the shipped
+   quanto-correlation route
+2. `QUA-973`: extend the finished derivative-matrix and runtime-reporting
+   contract onto the bounded hybrid slice without overstating AD/AAD support
+3. `QUA-946`: close the umbrella only after those two follow-ons land or are
+   explicitly deferred in the closeout note
+
+`QUA-972` and `QUA-973` may run in parallel once the `QUA-955` input schema,
+materialization payload, and runtime-reporting surface are treated as stable.
