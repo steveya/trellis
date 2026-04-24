@@ -10,6 +10,7 @@ Draft. Cross-cutting design document. Not yet an execution mirror.
 - QUA-905 — Phase 3 structural solver compiler
 - QUA-906 — Phase 4 route retirement / dispatch phaseout
 - `doc/plan/draft__external-prior-art-adoption-map.md`
+- `doc/plan/draft__fpml-interoperability-roadmap.md`
 - `doc/plan/draft__semantic-contract-target-and-trade-envelope.md`
 - `doc/plan/active__semantic-simulation-substrate.md`
 - `doc/plan/draft__valuation-result-identity-and-provenance.md`
@@ -72,6 +73,9 @@ These should not collapse into one unlabeled tuple.
 
 Examples:
 
+- `document -> fpml_confirmation["doc_17"]`
+- `package -> package["pkg_2"]`
+- `trade -> trade["uti_123"]`
 - `book -> position["swap_3"]`
 - `contract -> decomposition_leg[1]`
 - `scenario -> shocked_parallel_up`
@@ -221,7 +225,22 @@ Acceptance:
 - scenario/date/position/decomposition axes are distinguishable
 - downstream docs stop inventing ad hoc path encodings
 
-### P2 — Path-aware wrappers over current book and cube outputs
+### P2 — Imported document and package axes
+
+Objective:
+
+Reserve stable result-path segments for imported document, package, and
+trade identity before external interoperability work starts inventing ad
+hoc labels.
+
+Acceptance:
+
+- document / package / trade axes are distinct from semantic
+  decomposition and portfolio-position axes
+- imported identifiers can surface in results without being mistaken for
+  semantic contract identity
+
+### P3 — Path-aware wrappers over current book and cube outputs
 
 Objective:
 
@@ -233,7 +252,7 @@ Acceptance:
 - at least one current result family can expose stable typed paths
 - flat access remains available for ordinary workflows
 
-### P3 — Decomposition-aware result navigation
+### P4 — Decomposition-aware result navigation
 
 Objective:
 
@@ -245,7 +264,7 @@ Acceptance:
 - one decomposition-based workflow publishes path-aware sub-results
 - provenance can identify the originating structural subclaim
 
-### P4 — Identity and cube integration
+### P5 — Identity and cube integration
 
 Objective:
 

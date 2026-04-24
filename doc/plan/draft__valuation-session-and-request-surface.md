@@ -10,6 +10,7 @@ Draft. Cross-cutting design document. Not yet an execution mirror.
 - QUA-905 — Phase 3 structural solver compiler
 - QUA-906 — Phase 4 route retirement / dispatch phaseout
 - `doc/plan/draft__external-prior-art-adoption-map.md`
+- `doc/plan/draft__fpml-interoperability-roadmap.md`
 - `doc/plan/draft__semantic-contract-target-and-trade-envelope.md`
 - `doc/plan/draft__market-coordinate-overlay-and-shock-model.md`
 - `doc/plan/draft__valuation-result-identity-and-provenance.md`
@@ -140,6 +141,23 @@ Trellis should preserve that split explicitly. Otherwise one opaque
 
 Those should stay factored.
 
+### 6. Imported-document identity vs valuation policy
+
+External import metadata is not valuation policy.
+
+For example, an imported request may carry:
+
+- source format such as `fpml`
+- source view such as `confirmation` or `recordkeeping`
+- source version
+- document id or package id
+- extraction mode such as "raw confirmation" vs "derived current state"
+
+Those fields belong on the request or target/envelope side, not inside
+`ValuationContext`. They may matter for provenance, diagnostics, or
+reconciliation, but they must not become a second route-selection or
+valuation-policy surface.
+
 ## Candidate Surface
 
 Exact names may change, but the next useful shape is close to:
@@ -220,6 +238,11 @@ Session config and requested-output specs live on the valuation-policy
 side. Trade-envelope and position metadata live on the target side.
 Keeping those separate prevents the request surface from becoming a
 second product-classification mechanism.
+
+The same rule should hold for imported FpML and similar document-based
+entry points: document identity and import mode remain request-side or
+target-side metadata, while `ValuationContext` remains the resolved
+policy authority.
 
 ### `RiskMeasureOutput`
 
@@ -306,6 +329,21 @@ Acceptance:
 
 - cache/batch/async hints are explicit and typed
 - compiler selection and valuation identity do not depend on those hints
+
+### S5 — Imported-document request entry points
+
+Objective:
+
+Add explicit imported-document request metadata for sources such as
+bounded FpML confirmation or recordkeeping payloads without turning
+document labels into valuation-policy fields.
+
+Acceptance:
+
+- at least one imported-document request path resolves onto the same
+  `ValuationContext` surface used by native requests
+- document format, view, version, and extraction mode remain visible for
+  provenance without becoming solver selectors
 
 ## Risks To Avoid
 

@@ -10,6 +10,7 @@ Draft. Cross-cutting design note. Not yet an execution mirror.
 - QUA-904 — Phase 2 umbrella for payoff-expression Contract IR
 - QUA-905 — Phase 3 structural solver compiler
 - QUA-906 — Phase 4 route retirement / dispatch phaseout
+- `doc/plan/draft__fpml-interoperability-roadmap.md`
 - `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/draft__contract-ir-phase-2-ast-foundation.md`
 - `doc/plan/draft__contract-ir-phase-3-solver-compiler.md`
@@ -231,6 +232,45 @@ Where this should land:
 - `draft__leg-based-contract-ir-foundation.md`
 - `draft__semantic-contract-closure-program.md`
 
+### 7. FpML
+
+Primary lessons:
+
+- external message and document standards are broader than priceable
+  economics
+- view-specific payloads matter; confirmation, recordkeeping, reporting,
+  and lifecycle messages should not be collapsed into one internal
+  semantic object
+- current-state pricing requires an explicit distinction between
+  economic state, lifecycle metadata, and workflow metadata
+- representability in an external standard is not the same thing as
+  priceability inside Trellis
+
+Adopt in Trellis:
+
+- treat FpML as an external interoperability frontier, not internal
+  semantic authority
+- add bounded view-specific import adapters that normalize onto Trellis
+  semantic tracks plus a separate trade envelope
+- preserve source format, view, version, document id, and extraction
+  mode as provenance
+- keep imported workflow or lifecycle labels from becoming route
+  selectors
+
+Do **not** adopt:
+
+- the raw FpML XML schema as Trellis' internal IR
+- FpML message or wrapper names as semantic-family authority
+- the assumption that every FpML-representable payload is priceable or
+  even semantically closed in Trellis
+
+Where this should land:
+
+- `draft__fpml-interoperability-roadmap.md`
+- `draft__semantic-contract-target-and-trade-envelope.md`
+- `draft__valuation-session-and-request-surface.md`
+- `draft__portfolio-path-and-result-set-surface.md`
+
 ## Adoption Priority
 
 In order of immediate usefulness to the current Trellis program:
@@ -241,6 +281,11 @@ In order of immediate usefulness to the current Trellis program:
 4. ACTUS
 5. Peyton Jones
 6. Marlowe
+
+For the external-interoperability strand, FpML should be treated as
+co-equal with Strata once trade-envelope and imported-request boundary
+work starts, because it defines the external document boundary rather
+than Trellis' internal semantic authority.
 
 This is not a judgment of overall quality. It is a judgment of what
 most directly hardens the current closure and route-retirement program.

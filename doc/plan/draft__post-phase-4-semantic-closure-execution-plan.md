@@ -48,6 +48,7 @@ Status mirror last synced: `2026-04-21`
 - QUA-939 — minimal policy-state overlay surface
 - QUA-937 — readiness ledger for dynamic closure cohorts
 - QUA-938 — reusable masked-authority harness for later-family cutovers
+- `doc/plan/draft__fpml-interoperability-roadmap.md`
 - `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
@@ -71,6 +72,11 @@ The core rule is:
   product label
 - route retirement for later families inherits the Phase 3 / Phase 4
   authority model instead of inventing a second dispatch regime
+
+This execution mirror governs semantic closure inside Trellis. The
+separate downstream program for importing external FpML documents onto
+those closed families is tracked in
+`doc/plan/draft__fpml-interoperability-roadmap.md`.
 
 ## Why This Needs Its Own Execution Plan
 

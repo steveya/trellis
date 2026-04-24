@@ -23,6 +23,7 @@ Phase 4, quoted-observable, and leg-based planning strands.
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
 - `doc/plan/draft__event-state-control-contract-foundation.md`
 - `doc/plan/draft__post-phase-4-semantic-closure-execution-plan.md`
+- `doc/plan/draft__fpml-interoperability-roadmap.md`
 - `doc/plan/draft__semantic-contract-target-and-trade-envelope.md`
 - `doc/plan/draft__contract-ir-normalization-and-rewrite-discipline.md`
 
@@ -63,6 +64,28 @@ This is the sense in which Trellis can eventually price arbitrary
 derivatives that are decomposable *within Trellis*. "Arbitrary" means
 "arbitrary inside the supported semantic basis," not "arbitrary with no
 semantic closure boundary."
+
+## External Interoperability Frontier
+
+The same closure rule should govern external standards such as FpML.
+
+The useful ambition is not:
+
+- "anything FpML can represent is priceable"
+
+The useful ambition is:
+
+- if an imported FpML payload can be normalized into Trellis semantic
+  representations plus a separate trade envelope
+- and the required Trellis families are closed on representation,
+  decomposition, and lowering
+- and the relevant parity and provenance gates are satisfied
+- then Trellis can price that imported payload without introducing a
+  route-local product escape hatch
+
+So FpML compatibility is a downstream interoperability frontier, not a
+replacement for semantic closure. The delivery roadmap for that strand
+lives in `doc/plan/draft__fpml-interoperability-roadmap.md`.
 
 ## Prior-Art Guidance
 

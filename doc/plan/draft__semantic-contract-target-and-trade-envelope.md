@@ -10,6 +10,7 @@ Draft. Cross-cutting design document. Not yet an execution mirror.
 - QUA-905 — Phase 3 structural solver compiler
 - QUA-906 — Phase 4 route retirement / dispatch phaseout
 - `doc/plan/draft__external-prior-art-adoption-map.md`
+- `doc/plan/draft__fpml-interoperability-roadmap.md`
 - `doc/plan/draft__valuation-session-and-request-surface.md`
 - `doc/plan/draft__valuation-result-identity-and-provenance.md`
 - `doc/plan/draft__portfolio-path-and-result-set-surface.md`
@@ -51,6 +52,19 @@ split can simply reappear in other shapes:
 - counterparty or booking envelopes
 
 That would preserve the old architecture under a new name.
+
+This boundary is also the prerequisite for any serious FpML or similar
+external-document import. Imported confirmation, recordkeeping, or
+lifecycle payloads carry:
+
+- parties and identifiers
+- package and booking metadata
+- source-document identity
+- workflow or lifecycle annotations
+
+Without a named trade envelope, an import path will either pollute the
+semantic contract with non-economic metadata or let imported workflow
+labels become accidental route selectors.
 
 ## Core Distinctions
 
@@ -107,6 +121,12 @@ ContractTarget =
 TradeEnvelope =
     { trade_date: date | None
     ; counterparty: str | None
+    ; source_format: str | None
+    ; source_view: str | None
+    ; source_version: str | None
+    ; document_id: str | None
+    ; package_id: str | None
+    ; lifecycle_state: str | None
     ; identifiers: dict
     ; desk_tags: dict
     ; metadata: dict
@@ -199,8 +219,8 @@ authority.
 
 Acceptance:
 
-- at least one workflow can carry external ids or trade date separately
-  from contract meaning
+- at least one workflow, such as bounded FpML confirmation import, can
+  carry external ids or trade date separately from contract meaning
 - route-free selection remains invariant under envelope-only changes
 
 ### T3 — Position context and result-path alignment
