@@ -94,3 +94,39 @@ def test_load_task_manifest_materializes_market_from_scenario(tmp_path):
     assert task["market"]["benchmark_inputs"]["stock_price"] == 100.0
     assert task["market"]["benchmark_inputs"]["domestic_rate"] == 0.05
     assert task["market"]["scenario_digest"]
+
+
+def test_filter_loaded_tasks_supports_corpus_and_exact_id_selection():
+    from trellis.agent.task_manifests import filter_loaded_tasks
+
+    tasks = [
+        {"id": "F001", "status": "pending", "task_corpus": "benchmark_financepy"},
+        {"id": "P004", "status": "pending", "task_corpus": "extension"},
+        {"id": "P007", "status": "done", "task_corpus": "extension"},
+    ]
+
+    selected = filter_loaded_tasks(
+        tasks,
+        status="all",
+        corpora=("extension",),
+        task_ids=("P007", "P004"),
+    )
+
+    assert [task["id"] for task in selected] == ["P007", "P004"]
+
+
+def test_filter_loaded_tasks_respects_status_before_exact_id_selection():
+    from trellis.agent.task_manifests import filter_loaded_tasks
+
+    tasks = [
+        {"id": "P004", "status": "pending", "task_corpus": "extension"},
+        {"id": "P007", "status": "done", "task_corpus": "extension"},
+    ]
+
+    selected = filter_loaded_tasks(
+        tasks,
+        status="pending",
+        task_ids=("P007", "P004"),
+    )
+
+    assert [task["id"] for task in selected] == ["P004"]

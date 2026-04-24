@@ -1,0 +1,302 @@
+name: task-batch-report
+
+run-name: ${{ inputs.report_name }} by @${{ github.triggering_actor }}
+
+on:
+  workflow_dispatch:
+    inputs:
+      report_name:
+        description: Human-readable label for the batch report.
+        required: true
+        type: string
+        default: Manual task batch
+      selection_mode:
+        description: How to choose tasks for this run.
+        required: true
+        type: choice
+        options:
+          - ids
+          - range
+          - all
+        default: ids
+      task_ids:
+        description: Comma, space, or newline separated task ids when selection_mode=ids.
+        required: false
+        type: string
+      start_id:
+        description: Start task id when selection_mode=range.
+        required: false
+        type: string
+      end_id:
+        description: End task id when selection_mode=range.
+        required: false
+        type: string
+      corpora:
+        description: Optional comma or space separated corpora filter (benchmark_financepy, extension, market_construction, proof_legacy).
+        required: false
+        type: string
+      task_status:
+        description: Manifest status filter.
+        required: true
+        type: choice
+        options:
+          - all
+          - pending
+        default: all
+      validation:
+        description: Validation profile for the run.
+        required: true
+        type: choice
+        options:
+          - fast
+          - standard
+          - thorough
+        default: standard
+      model:
+        description: Model used for build and review stages.
+        required: true
+        type: string
+        default: gpt-5.4-mini
+      reuse:
+        description: Reuse existing generated modules when present.
+        required: true
+        type: boolean
+        default: true
+      fresh_build:
+        description: Force fresh generation instead of reuse-backed runs.
+        required: true
+        type: boolean
+        default: false
+      knowledge_light:
+        description: Use the compiler-first minimal knowledge profile.
+        required: true
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+env:
+  TASK_BATCH_ALLOWED_ACTOR: steveya
+
+jobs:
+  authorize-dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enforce single-user dispatch allowlist
+        run: |
+          if [ "${{ github.triggering_actor }}" != "${TASK_BATCH_ALLOWED_ACTOR}" ]; then
+            echo "::error::This workflow is restricted to @${TASK_BATCH_ALLOWED_ACTOR}. Triggered by @${{ github.triggering_actor }}."
+            exit 1
+          fi
+          echo "Authorized actor: @${{ github.triggering_actor }}"
+
+  run-task-batch:
+    needs:
+      - authorize-dispatch
+    runs-on: ubuntu-latest
+    environment:
+      name: paid-task-batch
+      deployment: false
+    env:
+      OPENAI_API_KEY: ${{ secrets.TASK_BATCH_OPENAI_API_KEY }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Assert OpenAI API key is configured
+        run: |
+          test -n "$OPENAI_API_KEY"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,agent,mcp,pipeline]"
+
+      - name: Build artifact paths
+        id: paths
+        env:
+          REPORT_NAME: ${{ inputs.report_name }}
+        run: |
+          slug="$(python - <<'PY'
+          import os
+          import re
+
+          name = str(os.environ.get("REPORT_NAME") or "").strip() or "task_batch"
+          slug = re.sub(r"[^a-z0-9]+", "_", name.lower()).strip("_") or "task_batch"
+          print(slug)
+          PY
+          )"
+          run_dir="task_runs/reports/${slug}_${{ github.run_id }}_${{ github.run_attempt }}"
+          echo "report_slug=${slug}" >> "$GITHUB_OUTPUT"
+          echo "run_dir=${run_dir}" >> "$GITHUB_OUTPUT"
+          echo "results_json=${run_dir}/results.json" >> "$GITHUB_OUTPUT"
+          echo "report_json=${run_dir}/task_batch_report.json" >> "$GITHUB_OUTPUT"
+          echo "report_md=${run_dir}/task_batch_report.md" >> "$GITHUB_OUTPUT"
+          echo "step_summary=${run_dir}/step_summary.md" >> "$GITHUB_OUTPUT"
+          mkdir -p "${run_dir}"
+
+      - name: Run selected task batch
+        env:
+          MODEL: ${{ inputs.model }}
+          VALIDATION: ${{ inputs.validation }}
+          TASK_STATUS: ${{ inputs.task_status }}
+          SELECTION_MODE: ${{ inputs.selection_mode }}
+          TASK_IDS: ${{ inputs.task_ids }}
+          START_ID: ${{ inputs.start_id }}
+          END_ID: ${{ inputs.end_id }}
+          CORPORA: ${{ inputs.corpora }}
+          REUSE: ${{ inputs.reuse }}
+          FRESH_BUILD: ${{ inputs.fresh_build }}
+          KNOWLEDGE_LIGHT: ${{ inputs.knowledge_light }}
+          RESULTS_JSON: ${{ steps.paths.outputs.results_json }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+
+
+          def split_multi(raw: str) -> list[str]:
+              text = str(raw or "").strip()
+              if not text:
+                  return []
+              return [item for item in re.split(r"[,\s]+", text) if item]
+
+
+          cmd = [
+              "python",
+              "scripts/run_tasks.py",
+              "--model",
+              os.environ["MODEL"],
+              "--validation",
+              os.environ["VALIDATION"],
+              "--status",
+              os.environ["TASK_STATUS"],
+              "--output",
+              os.environ["RESULTS_JSON"],
+          ]
+
+          if os.environ.get("REUSE", "").lower() == "true":
+              cmd.append("--reuse")
+          if os.environ.get("FRESH_BUILD", "").lower() == "true":
+              cmd.append("--fresh-build")
+          if os.environ.get("KNOWLEDGE_LIGHT", "").lower() == "true":
+              cmd.append("--knowledge-light")
+
+          for corpus in split_multi(os.environ.get("CORPORA", "")):
+              cmd.extend(["--corpus", corpus])
+
+          selection_mode = os.environ.get("SELECTION_MODE", "all").strip()
+          if selection_mode == "ids":
+              task_ids = split_multi(os.environ.get("TASK_IDS", ""))
+              if not task_ids:
+                  raise SystemExit("selection_mode=ids requires task_ids")
+              for task_id in task_ids:
+                  cmd.extend(["--task-id", task_id])
+          elif selection_mode == "range":
+              start_id = str(os.environ.get("START_ID") or "").strip()
+              end_id = str(os.environ.get("END_ID") or "").strip()
+              if not start_id or not end_id:
+                  raise SystemExit("selection_mode=range requires start_id and end_id")
+              cmd.extend([start_id, end_id])
+          else:
+              cmd.append("all")
+
+          print("Running:", " ".join(cmd))
+          subprocess.run(cmd, check=True)
+          PY
+
+      - name: Render portable task batch report
+        env:
+          REPORT_NAME: ${{ inputs.report_name }}
+          MODEL: ${{ inputs.model }}
+          VALIDATION: ${{ inputs.validation }}
+          TASK_STATUS: ${{ inputs.task_status }}
+          SELECTION_MODE: ${{ inputs.selection_mode }}
+          TASK_IDS: ${{ inputs.task_ids }}
+          START_ID: ${{ inputs.start_id }}
+          END_ID: ${{ inputs.end_id }}
+          CORPORA: ${{ inputs.corpora }}
+          REUSE: ${{ inputs.reuse }}
+          FRESH_BUILD: ${{ inputs.fresh_build }}
+          KNOWLEDGE_LIGHT: ${{ inputs.knowledge_light }}
+          RESULTS_JSON: ${{ steps.paths.outputs.results_json }}
+          REPORT_JSON: ${{ steps.paths.outputs.report_json }}
+          REPORT_MD: ${{ steps.paths.outputs.report_md }}
+          STEP_SUMMARY_PATH: ${{ steps.paths.outputs.step_summary }}
+        run: |
+          python - <<'PY'
+          import os
+          import re
+          import subprocess
+
+
+          def split_multi(raw: str) -> list[str]:
+              text = str(raw or "").strip()
+              if not text:
+                  return []
+              return [item for item in re.split(r"[,\s]+", text) if item]
+
+
+          cmd = [
+              "python",
+              "scripts/render_task_batch_report.py",
+              os.environ["RESULTS_JSON"],
+              "--collection-name",
+              os.environ["REPORT_NAME"],
+              "--model",
+              os.environ["MODEL"],
+              "--validation",
+              os.environ["VALIDATION"],
+              "--selection-mode",
+              os.environ["SELECTION_MODE"],
+              "--status",
+              os.environ["TASK_STATUS"],
+              "--output-json",
+              os.environ["REPORT_JSON"],
+              "--output-md",
+              os.environ["REPORT_MD"],
+              "--step-summary",
+              os.environ["STEP_SUMMARY_PATH"],
+          ]
+
+          if os.environ.get("REUSE", "").lower() == "true":
+              cmd.append("--reuse")
+          if os.environ.get("FRESH_BUILD", "").lower() == "true":
+              cmd.append("--fresh-build")
+          if os.environ.get("KNOWLEDGE_LIGHT", "").lower() == "true":
+              cmd.append("--knowledge-light")
+
+          for corpus in split_multi(os.environ.get("CORPORA", "")):
+              cmd.extend(["--corpus", corpus])
+          for task_id in split_multi(os.environ.get("TASK_IDS", "")):
+              cmd.extend(["--task-id", task_id])
+
+          start_id = str(os.environ.get("START_ID") or "").strip()
+          end_id = str(os.environ.get("END_ID") or "").strip()
+          if start_id:
+              cmd.extend(["--start-id", start_id])
+          if end_id:
+              cmd.extend(["--end-id", end_id])
+
+          print("Rendering:", " ".join(cmd))
+          subprocess.run(cmd, check=True)
+          PY
+
+      - name: Publish GitHub step summary
+        run: |
+          cat "${{ steps.paths.outputs.step_summary }}" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload task batch artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: task-batch-report-${{ steps.paths.outputs.report_slug }}
+          path: ${{ steps.paths.outputs.run_dir }}
+          if-no-files-found: error

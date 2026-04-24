@@ -58,6 +58,7 @@ Operational Scripts
 The repo ships a small task-operations toolchain:
 
 - ``scripts/run_tasks.py``: run a contiguous task block or all pending pricing tasks, optionally filtered by corpus
+- ``scripts/render_task_batch_report.py``: turn one ``task_results_*.json`` tranche into a portable Markdown/JSON scorecard for GitHub summaries or artifact upload
 - ``scripts/rerun_ids.py``: re-run specific task ids
 - ``scripts/benchmark_tasks.py``: benchmark cached generated payoffs without rebuilding
 - ``scripts/run_task_learning_benchmark.py``: run repeated non-canary passes at a fixed revision and emit a learning scorecard
@@ -84,6 +85,48 @@ still preserving the broader numerical/reference evidence before releases.
 GitHub Actions now runs that same PR surface as deterministic shards generated
 by ``scripts/pr_gate_shard.py`` plus a separate tier-2 contract job, so PR wall
 clock is no longer pinned to one serial pytest command.
+
+For ad hoc monitoring, ``.github/workflows/task-batch-report.yml`` exposes a
+manual ``workflow_dispatch`` runner for the pricing-task surface. It supports
+three selection modes:
+
+- ``ids`` for explicit task ids such as ``F001 P004 P006``
+- ``range`` for one contiguous id block such as ``F001`` through ``F015``
+- ``all`` for the full manifest surface after any status/corpus filter
+
+The workflow also accepts optional corpus filters, ``pending`` versus ``all``
+status selection, validation profile, reuse versus fresh-build controls, and
+the knowledge-light profile. Each manual run emits:
+
+- raw batch results JSON
+- the deterministic summary JSON from ``summarize_task_results(...)``
+- a portable Markdown plus JSON task-batch report
+- a compact Markdown summary appended to the GitHub Actions run summary
+
+The workflow is also explicitly gated on ``github.triggering_actor`` so only
+the allowed GitHub login can dispatch or re-run it. That is a spend-control
+guard for token-backed task batches; keep the allowed actor in the workflow
+file aligned with the repository owner. The job itself now runs inside the
+``paid-task-batch`` environment with ``deployment: false`` so the batch still
+uses environment protection rules and environment-scoped secrets without
+creating a deployment record.
+
+For the actual API key boundary, store the task-batch key as the environment
+secret ``TASK_BATCH_OPENAI_API_KEY`` on ``paid-task-batch``. The workflow no
+longer reads the repository-level ``OPENAI_API_KEY`` name. One exact CLI path
+is:
+
+``gh secret set --repo steveya/trellis --env paid-task-batch TASK_BATCH_OPENAI_API_KEY``
+
+and then paste the key value when prompted. Keep yourself as the required
+reviewer for that environment so the secret is withheld until you approve the
+job.
+
+The uploaded report artifact is the right first monitoring surface because it
+keeps the repo free of ad hoc benchmark noise while still leaving one durable
+Markdown table per triggered run. If you later want Trellis GitHub Pages to
+show the latest scorecard, publish that generated Markdown as a second step
+instead of checking every manual run into ``docs/benchmarks/``.
 
 Use ``scripts/should_run_canary.py`` before paying for the live canary subset.
 The helper reads local changed files from git status by default and recommends

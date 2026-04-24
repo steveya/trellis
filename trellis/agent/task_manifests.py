@@ -154,12 +154,39 @@ def filter_loaded_tasks(
     end_id: str | None = None,
     *,
     status: str | None = "pending",
+    corpora: Sequence[str] | None = None,
+    task_ids: Sequence[str] | None = None,
 ) -> list[dict[str, Any]]:
-    """Apply the legacy id-range/status filter semantics across a normalized task list."""
+    """Apply status/corpus/id selection semantics across a normalized task list."""
     filtered = list(tasks)
 
-    if status is not None:
+    if status not in {None, "all"}:
         filtered = [task for task in filtered if task.get("status") == status]
+
+    allowed_corpora = {
+        str(corpus).strip().lower()
+        for corpus in (corpora or ())
+        if str(corpus).strip()
+    }
+    if allowed_corpora:
+        filtered = [
+            task
+            for task in filtered
+            if str(task.get("task_corpus") or "").strip().lower() in allowed_corpora
+        ]
+
+    requested_task_ids = [
+        str(task_id).strip()
+        for task_id in (task_ids or ())
+        if str(task_id).strip()
+    ]
+    if requested_task_ids:
+        by_id = {
+            str(task.get("id") or "").strip(): task
+            for task in filtered
+            if str(task.get("id") or "").strip()
+        }
+        return [by_id[task_id] for task_id in requested_task_ids if task_id in by_id]
 
     if start_id and end_id:
         start_num = int(start_id.lstrip("TEFPN"))
