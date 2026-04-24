@@ -1,0 +1,2 @@
+{"event": "wait_started", "pid": 31580, "request_context": {}, "stage": null, "stage_metadata": {}, "thread_name": "Thread-1 (_worker)", "timeout_seconds": 0.01, "timestamp": "2026-04-24T03:45:46.859890+00:00", "wait_id": "1777002346859879938-139952054101696"}
+{"elapsed_seconds": 0.01, "event": "wait_timeout", "pid": 31580, "request_context": {}, "stage": null, "stage_metadata": {}, "thread_name": "Thread-1 (_worker)", "timeout_seconds": 0.01, "timestamp": "2026-04-24T03:45:46.870327+00:00", "wait_id": "1777002346859879938-139952054101696"}

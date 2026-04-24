@@ -334,6 +334,146 @@ def test_openai_chat_completion_create_disables_sdk_retries(monkeypatch):
     assert response["kwargs"]["model"] == "gpt-5-mini"
 
 
+def test_openai_chat_completion_create_routes_to_github_models(monkeypatch):
+    from trellis.agent.config import _openai_chat_completion_create
+
+    monkeypatch.setenv("GITHUB_MODELS_TOKEN", "ghm_test")
+    captured: dict[str, object] = {}
+    monkeypatch.setattr(
+        "trellis.agent.config._github_models_chat_completion_create",
+        lambda **kwargs: captured.update(kwargs) or {"choices": [{"message": {"content": "ok"}}]},
+    )
+    monkeypatch.setattr(
+        "trellis.agent.config._github_models_enabled",
+        lambda: True,
+    )
+
+    response = _openai_chat_completion_create(
+        model="gpt-5.4-mini",
+        messages=[{"role": "user", "content": "hello"}],
+        max_completion_tokens=128,
+        timeout_seconds=9.0,
+        response_format={"type": "json_object"},
+    )
+
+    assert response["choices"][0]["message"]["content"] == "ok"
+    assert captured["model"] == "gpt-5.4-mini"
+    assert captured["response_format"] == {"type": "json_object"}
+
+
+def test_github_models_chat_completion_create_shapes_request(monkeypatch):
+    from trellis.agent.config import _github_models_chat_completion_create
+
+    monkeypatch.setenv("GITHUB_MODELS_TOKEN", "ghm_test")
+    captured: dict[str, object] = {}
+
+    class FakeResponse:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, tb):
+            return False
+
+        def read(self):
+            return json.dumps(
+                {
+                    "choices": [{"message": {"content": "ok"}}],
+                    "usage": {"prompt_tokens": 3, "completion_tokens": 4, "total_tokens": 7},
+                }
+            ).encode("utf-8")
+
+    def fake_urlopen(request, timeout):
+        captured["url"] = request.full_url
+        captured["timeout"] = timeout
+        captured["headers"] = dict(request.header_items())
+        captured["payload"] = json.loads(request.data.decode("utf-8"))
+        return FakeResponse()
+
+    monkeypatch.setattr("trellis.agent.config.urllib.request.urlopen", fake_urlopen)
+
+    response = _github_models_chat_completion_create(
+        model="gpt-5.4-mini",
+        messages=[{"role": "user", "content": "hello"}],
+        max_completion_tokens=64,
+        timeout_seconds=6.0,
+        response_format={"type": "json_object"},
+    )
+
+    assert response["usage"]["total_tokens"] == 7
+    assert captured["url"] == "https://models.github.ai/inference/chat/completions"
+    assert captured["timeout"] == 6.0
+    assert captured["headers"]["Authorization"] == "Bearer ghm_test"
+    assert captured["payload"]["model"] == "openai/gpt-5.4-mini"
+    assert captured["payload"]["max_tokens"] == 64
+    assert captured["payload"]["response_format"] == {"type": "json_object"}
+
+
+def test_github_models_model_name_rejects_invalid_catalog_id(monkeypatch):
+    from trellis.agent.config import _github_models_model_name
+
+    monkeypatch.delenv("GITHUB_MODELS_OPENAI_MODEL", raising=False)
+
+    with pytest.raises(ValueError, match="Invalid GitHub Models catalog id"):
+        _github_models_model_name("openai/")
+
+
+def test_openai_generate_falls_back_to_sdk_without_github_models_token(monkeypatch):
+    from trellis.agent.config import _openai_generate
+
+    monkeypatch.delenv("GITHUB_MODELS_TOKEN", raising=False)
+    monkeypatch.setattr("trellis.agent.config._github_models_enabled", lambda: False)
+    monkeypatch.setattr("trellis.agent.config.time.sleep", lambda _: None)
+    monkeypatch.setattr(
+        "trellis.agent.config._run_with_wall_clock_timeout",
+        lambda request_fn, timeout_seconds: request_fn(),
+    )
+
+    class FakeMessage:
+        content = "fallback"
+
+    class FakeChoice:
+        message = FakeMessage()
+
+    class FakeResponse:
+        choices = [FakeChoice()]
+        usage = {"prompt_tokens": 2, "completion_tokens": 1, "total_tokens": 3}
+
+    monkeypatch.setattr(
+        "trellis.agent.config._github_models_chat_completion_create",
+        lambda **kwargs: pytest.fail("GitHub Models should not be used without a token"),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.config._openai_chat_completion_create",
+        lambda **kwargs: FakeResponse(),
+    )
+
+    text, usage = _openai_generate("return text", "gpt-5-mini")
+
+    assert text == "fallback"
+    assert usage["total_tokens"] == 3
+
+
+def test_extract_openai_message_content_serializes_unexpected_list_items():
+    from trellis.agent.config import _extract_openai_message_content
+
+    content = _extract_openai_message_content(
+        {
+            "choices": [
+                {
+                    "message": {
+                        "content": [
+                            {"type": "output_text", "text": "hello"},
+                            {"type": "note", "value": 3},
+                        ]
+                    }
+                }
+            ]
+        }
+    )
+
+    assert content == 'hello{"type": "note", "value": 3}'
+
+
 def test_llm_usage_session_tracks_stage_token_totals(monkeypatch):
     from trellis.agent.config import (
         llm_generate,

@@ -85,6 +85,21 @@ GitHub Actions now runs that same PR surface as deterministic shards generated
 by ``scripts/pr_gate_shard.py`` plus a separate tier-2 contract job, so PR wall
 clock is no longer pinned to one serial pytest command.
 
+There is also a manual ``task-batch-report`` workflow for paid task batches.
+That job runs behind the protected ``paid-task-batch`` environment and should
+receive a dedicated GitHub Models token through the environment secret
+``TASK_BATCH_GITHUB_MODELS_TOKEN``. The workflow exports that secret as
+``GITHUB_MODELS_TOKEN`` and keeps ``LLM_PROVIDER=openai``, so ordinary local
+runs still use the existing personal ``OPENAI_API_KEY`` path while the GitHub
+Actions batch job routes OpenAI-family requests through GitHub Models. If the
+GitHub Models token is absent, Trellis falls back to the normal personal OpenAI
+credential path instead of changing local operator behavior.
+Set that secret with:
+
+.. code-block:: bash
+
+   gh secret set --repo steveya/trellis --env paid-task-batch TASK_BATCH_GITHUB_MODELS_TOKEN
+
 Use ``scripts/should_run_canary.py`` before paying for the live canary subset.
 The helper reads local changed files from git status by default and recommends
 the focused ``core`` canary subset when runtime, pricing, task-manifest, or

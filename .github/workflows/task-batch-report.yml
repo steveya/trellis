@@ -1,0 +1,98 @@
+name: task-batch-report
+
+on:
+  workflow_dispatch:
+    inputs:
+      start_id:
+        description: First task id, or leave blank to run all selected tasks
+        required: false
+        type: string
+      end_id:
+        description: Last task id when running a contiguous range
+        required: false
+        type: string
+      corpus:
+        description: Optional corpus filter (benchmark_financepy, extension, market_construction, proof_legacy)
+        required: false
+        type: string
+      model:
+        description: Logical OpenAI-family model name
+        required: false
+        default: gpt-5.4-mini
+        type: string
+      validation:
+        description: Validation profile
+        required: false
+        default: standard
+        type: string
+      fresh_build:
+        description: Force fresh builds instead of deterministic reuse
+        required: false
+        default: true
+        type: boolean
+      knowledge_light:
+        description: Use the compiler-first minimal knowledge profile
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  run-task-batch:
+    name: run-task-batch
+    runs-on: ubuntu-latest
+    environment:
+      name: paid-task-batch
+      deployment: false
+    env:
+      LLM_PROVIDER: openai
+      GITHUB_MODELS_TOKEN: ${{ secrets.TASK_BATCH_GITHUB_MODELS_TOKEN }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev,agent,mcp,pipeline]"
+
+      - name: Run task batch
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p task_runs/github_actions
+          output_path="task_runs/github_actions/task_batch_${{ github.run_id }}.json"
+          args=(scripts/run_tasks.py --model "${{ inputs.model }}" --validation "${{ inputs.validation }}" --output "${output_path}")
+          if [[ "${{ inputs.fresh_build }}" == "true" ]]; then
+            args+=(--fresh-build)
+          else
+            args+=(--reuse)
+          fi
+          if [[ "${{ inputs.knowledge_light }}" == "true" ]]; then
+            args+=(--knowledge-light)
+          fi
+          if [[ -n "${{ inputs.corpus }}" ]]; then
+            args+=(--corpus "${{ inputs.corpus }}")
+          fi
+          if [[ -n "${{ inputs.start_id }}" && -n "${{ inputs.end_id }}" ]]; then
+            args+=("${{ inputs.start_id }}" "${{ inputs.end_id }}")
+          else
+            args+=(all)
+          fi
+          python "${args[@]}"
+
+      - name: Upload task batch artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: task-batch-${{ github.run_id }}
+          path: |
+            task_runs/github_actions/
+            task_runs/latest/

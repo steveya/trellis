@@ -7,6 +7,8 @@ import json
 import os
 import threading
 import time
+import urllib.error
+import urllib.request
 from contextlib import contextmanager
 from contextvars import ContextVar
 from datetime import datetime, timezone
@@ -49,6 +51,7 @@ ALLOWED_FIELD_TYPES = frozenset({
 OPENAI_TEXT_TIMEOUT_SECONDS = 45.0
 OPENAI_JSON_TIMEOUT_SECONDS = 30.0
 OPENAI_MAX_RETRIES = 2
+GITHUB_MODELS_API_BASE_URL = "https://models.github.ai"
 
 _LLM_USAGE_SESSION: ContextVar[list[dict[str, Any]] | None] = ContextVar(
     "llm_usage_session",
@@ -138,6 +141,25 @@ def get_provider() -> str:
     """Return the active LLM provider after loading environment overrides."""
     load_env()
     return os.environ.get("LLM_PROVIDER", DEFAULT_PROVIDER)
+
+
+def openai_credential_env_names() -> tuple[str, ...]:
+    """Return accepted OpenAI credential env vars in priority order."""
+    load_env()
+    token = os.environ.get("GITHUB_MODELS_TOKEN", "").strip()
+    if token:
+        return ("GITHUB_MODELS_TOKEN", "OPENAI_API_KEY")
+    return ("OPENAI_API_KEY",)
+
+
+def provider_credentials_configured(provider: str) -> bool:
+    """Return whether credentials for the selected provider are configured."""
+    load_env()
+    credential_envs = {
+        "anthropic": ("ANTHROPIC_API_KEY",),
+        "openai": openai_credential_env_names(),
+    }.get(provider, ())
+    return any(os.environ.get(name, "").strip() for name in credential_envs)
 
 
 def get_default_model() -> str:
@@ -448,7 +470,7 @@ def _openai_generate(
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
     )
-    return response.choices[0].message.content, _extract_openai_usage(response)
+    return _extract_openai_message_content(response), _extract_openai_usage(response)
 
 
 def _openai_generate_json(
@@ -475,7 +497,7 @@ def _openai_generate_json(
         timeout_seconds=timeout_seconds,
         max_retries=max_retries,
     )
-    return response.choices[0].message.content, _extract_openai_usage(response)
+    return _extract_openai_message_content(response), _extract_openai_usage(response)
 
 
 def _openai_chat_completion_create(
@@ -487,6 +509,15 @@ def _openai_chat_completion_create(
     response_format: dict[str, str] | None = None,
 ):
     """Invoke the OpenAI SDK with the chat-completions parameters Trellis expects."""
+    if _github_models_enabled():
+        return _github_models_chat_completion_create(
+            model=model,
+            messages=messages,
+            max_completion_tokens=max_completion_tokens,
+            timeout_seconds=timeout_seconds,
+            response_format=response_format,
+        )
+
     import openai
 
     client = openai.OpenAI(timeout=timeout_seconds, max_retries=0)
@@ -498,6 +529,126 @@ def _openai_chat_completion_create(
     if response_format is not None:
         kwargs["response_format"] = response_format
     return client.chat.completions.create(**kwargs)
+
+
+def _github_models_enabled() -> bool:
+    """Return whether OpenAI requests should route through GitHub Models."""
+    load_env()
+    return bool(os.environ.get("GITHUB_MODELS_TOKEN", "").strip())
+
+
+def _github_models_api_base_url() -> str:
+    """Return the GitHub Models API base URL."""
+    load_env()
+    return os.environ.get("GITHUB_MODELS_API_BASE_URL", GITHUB_MODELS_API_BASE_URL).rstrip("/")
+
+
+def _github_models_model_name(model: str) -> str:
+    """Normalize a logical OpenAI model name into a GitHub Models catalog id."""
+    load_env()
+    override = os.environ.get("GITHUB_MODELS_OPENAI_MODEL", "").strip()
+    if override:
+        return override
+    normalized = model.strip()
+    if "/" in normalized:
+        publisher, _, model_name = normalized.partition("/")
+        if publisher and model_name:
+            return normalized
+        raise ValueError(f"Invalid GitHub Models catalog id: {model!r}")
+    return f"openai/{normalized}"
+
+
+def _github_models_chat_completion_create(
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    max_completion_tokens: int,
+    timeout_seconds: float,
+    response_format: dict[str, str] | None = None,
+) -> dict[str, Any]:
+    """Invoke GitHub Models' chat-completions REST endpoint for one OpenAI-family request.
+
+    The request body follows GitHub Models' chat-completions contract, using a
+    catalog id such as ``openai/gpt-5.4-mini`` plus the standard message list
+    Trellis already builds for OpenAI SDK calls. The response is returned as the
+    decoded JSON object so downstream extraction can handle either SDK objects
+    or REST payloads. HTTP failures are re-raised with a bounded preview of the
+    response body for operator diagnosis without dumping the full payload.
+    """
+    token = os.environ.get("GITHUB_MODELS_TOKEN", "").strip()
+    if not token:
+        raise RuntimeError("GitHub Models token is not configured")
+
+    payload: dict[str, Any] = {
+        "model": _github_models_model_name(model),
+        "messages": messages,
+        "max_tokens": max_completion_tokens,
+    }
+    if response_format is not None:
+        payload["response_format"] = response_format
+
+    request = urllib.request.Request(
+        f"{_github_models_api_base_url()}/inference/chat/completions",
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+            "User-Agent": "trellis-github-models",
+            "X-GitHub-Api-Version": "2022-11-28",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise RuntimeError(
+            f"GitHub Models request failed with HTTP {exc.code}: "
+            f"detail_excerpt={_llm_response_preview(detail, limit=200)}"
+        ) from exc
+
+
+def _extract_openai_message_content(response: Any | dict[str, Any]) -> str:
+    """Extract one assistant message from SDK or GitHub Models dict responses."""
+    choices = getattr(response, "choices", None)
+    if choices is None and isinstance(response, dict):
+        choices = response.get("choices")
+    if not choices:
+        return ""
+
+    first_choice = choices[0]
+    if isinstance(first_choice, dict):
+        message = first_choice.get("message") or {}
+    else:
+        message = getattr(first_choice, "message", None)
+    if isinstance(message, dict):
+        content = message.get("content")
+    else:
+        content = getattr(message, "content", None)
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for item in content:
+            if isinstance(item, str):
+                parts.append(item)
+                continue
+            if isinstance(item, dict):
+                text = item.get("text")
+                if isinstance(text, str) and text:
+                    parts.append(text)
+                    continue
+                nested_content = item.get("content")
+                if isinstance(nested_content, str) and nested_content:
+                    parts.append(nested_content)
+                    continue
+                parts.append(_llm_response_preview(json.dumps(item, sort_keys=True), limit=200))
+                continue
+            parts.append(str(item))
+        return "".join(parts)
+    return ""
 
 
 def _openai_request_with_retry(
@@ -801,6 +952,8 @@ def _record_llm_usage(
 def _extract_openai_usage(response) -> dict[str, int | None]:
     """Normalize token usage from an OpenAI chat-completions response."""
     usage = getattr(response, "usage", None)
+    if usage is None and isinstance(response, dict):
+        usage = response.get("usage")
     prompt_tokens = _usage_value(usage, "prompt_tokens", "input_tokens")
     completion_tokens = _usage_value(usage, "completion_tokens", "output_tokens")
     total_tokens = _usage_value(usage, "total_tokens")

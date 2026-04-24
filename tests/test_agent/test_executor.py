@@ -337,6 +337,7 @@ def test_record_resolved_failures_fails_hard_on_missing_lesson_fields(monkeypatc
 def test_record_resolved_failures_skips_without_llm_credentials(monkeypatch, caplog):
     from trellis.agent.executor import _record_resolved_failures
 
+    monkeypatch.delenv("GITHUB_MODELS_TOKEN", raising=False)
     monkeypatch.delenv("OPENAI_API_KEY", raising=False)
     monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
     monkeypatch.setattr(
@@ -357,6 +358,40 @@ def test_record_resolved_failures_skips_without_llm_credentials(monkeypatch, cap
         )
 
     assert "Skipping resolved-failure lesson distillation" in caplog.text
+
+
+def test_record_resolved_failures_accepts_github_models_token(monkeypatch):
+    from trellis.agent.executor import _record_resolved_failures
+
+    recorded: dict[str, object] = {}
+    monkeypatch.setenv("GITHUB_MODELS_TOKEN", "ghm_test")
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
+    monkeypatch.setattr(
+        "trellis.agent.config.llm_generate_json",
+        lambda prompt, model=None: {
+            "category": "monte_carlo",
+            "title": "Use GitHub Models credentials",
+            "mistake": "The batch runner assumed only personal OpenAI keys were valid.",
+            "why": "Task-batch workflows can route OpenAI requests through GitHub Models instead.",
+            "detect": "Resolved-failure distillation is skipped even when a GitHub Models token is configured.",
+            "fix": "Treat GITHUB_MODELS_TOKEN as valid OpenAI-family credentials.",
+        },
+    )
+    monkeypatch.setattr(
+        "trellis.agent.test_resolution.record_lesson",
+        lambda lesson, **kwargs: recorded.update({"lesson": lesson, "kwargs": kwargs}) or "mc_001",
+    )
+
+    _record_resolved_failures(
+        ["example validation failure"],
+        "European call option",
+        SimpleNamespace(method="analytical"),
+        "gpt-5-mini",
+    )
+
+    assert recorded["lesson"].title == "Use GitHub Models credentials"
+    assert recorded["kwargs"]["method"] == "analytical"
 
 
 def test_diagnose_failure_reads_related_lessons_from_canonical_signatures(monkeypatch):

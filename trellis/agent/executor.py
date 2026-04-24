@@ -4593,18 +4593,23 @@ def _record_resolved_failures(
     import logging
     import os
 
-    from trellis.agent.config import get_provider, llm_generate_json
+    from trellis.agent.config import (
+        get_provider,
+        llm_generate_json,
+        openai_credential_env_names,
+        provider_credentials_configured,
+    )
     from trellis.agent.test_resolution import Lesson, record_lesson
 
     provider = get_provider()
-    credential_env = {
-        "anthropic": "ANTHROPIC_API_KEY",
-        "openai": "OPENAI_API_KEY",
-    }.get(provider, "")
-    if credential_env and not os.environ.get(credential_env):
+    credential_envs = {
+        "anthropic": ("ANTHROPIC_API_KEY",),
+        "openai": openai_credential_env_names(),
+    }.get(provider, ())
+    if credential_envs and not provider_credentials_configured(provider):
         logging.getLogger(__name__).warning(
             "Skipping resolved-failure lesson distillation because %s is not configured.",
-            credential_env,
+            " or ".join(credential_envs),
         )
         return
 

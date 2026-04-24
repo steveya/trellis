@@ -291,7 +291,14 @@ and loads values that are not already present in the process environment.
 Key variables in the current codebase include:
 
 - ``LLM_PROVIDER``: provider selector, currently ``openai`` or ``anthropic``
-- ``OPENAI_API_KEY`` / ``ANTHROPIC_API_KEY``: provider credentials
+- ``OPENAI_API_KEY`` / ``ANTHROPIC_API_KEY``: provider credentials for direct
+  SDK access
+- ``GITHUB_MODELS_TOKEN``: optional OpenAI-family task-batch credential; when
+  set, Trellis routes OpenAI requests through GitHub Models; when it is absent,
+  Trellis uses the direct ``OPENAI_API_KEY`` path instead
+- ``GITHUB_MODELS_OPENAI_MODEL``: optional override for the GitHub Models
+  catalog id used for OpenAI-family requests (for example
+  ``openai/gpt-5.4-mini``)
 - ``OPENAI_TEXT_TIMEOUT_SECONDS``, ``OPENAI_JSON_TIMEOUT_SECONDS``, ``OPENAI_MAX_RETRIES``: OpenAI request guards
 - ``FRED_API_KEY``: optional live-data access for FRED
 - ``GITHUB_REQUEST_AUDIT_TOKEN`` or ``GITHUB_TOKEN``: GitHub issue-sync auth
