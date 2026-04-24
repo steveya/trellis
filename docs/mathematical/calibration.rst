@@ -502,9 +502,13 @@ benchmark fixtures used for workflow validation:
   tranche-implied correlation workflow, and requires near-zero quote residuals
   with no root failures
 - Quanto-correlation replay now covers the bounded desk-like EUR/USD fixture,
-  checks the dependency DAG, repricing residuals, keyed-correlation
-  materialization, and missing-input diagnostics, and records the honest
-  finite-difference calibration derivative lane through ``solve_provenance``
+  checks the source and support-boundary payloads, quote count,
+  keyed-correlation list, repricing residuals, upstream ``quanto_flat_vol``
+  materialization reference, and records the honest finite-difference
+  calibration derivative lane through ``solve_provenance``. Dependency-order,
+  runtime parameter-set materialization, and missing-input diagnostics remain
+  covered by the targeted bounded-quanto calibration tests rather than by the
+  benchmark replay pack.
 
 The benchmark baseline in ``docs/benchmarks/calibration_workflows.{json,md}``
 complements those fit-quality gates with cold-start versus warm-start timing
@@ -528,7 +532,7 @@ diagnostic and a latency envelope for the cold-start solve, so
 quote-instability and performance drift are visible in the persisted artifact
 instead of being inferred from pass/fail replay alone.
 
-Those checked fixtures now read from the same bounded mock-snapshot contracts
+Most checked fixtures now read from the same bounded mock-snapshot contracts
 used by replay and proving paths instead of from a separate benchmark-only
 surface. The SABR canary reads the seeded ``usd_rates_smile`` surface and its
 rate-vol hints from ``prior_parameters.synthetic_generation_contract``. The
@@ -538,10 +542,11 @@ contract. The single-name credit canary continues to read spread/recovery
 inputs from the derived ``model_consistency_contract`` compatibility packet.
 The basket-credit canary layers its desk-like tranche surface on top of that
 single-name credit materialization to keep the representative-curve linkage
-explicit. The bounded quanto canary stays on the shipped hybrid contract: one
-materialized equity-style vol surface, one scalar keyed correlation bridge,
-and already-bound curves/spots rather than a broader cross-asset market-data
-plant.
+explicit. The bounded quanto canary is the exception: it uses an explicit
+benchmark ``MarketState`` with already-bound domestic/foreign curves,
+underlier and FX spots, one materialized equity-style vol surface, and one
+scalar keyed correlation bridge rather than claiming broader cross-asset
+mock-snapshot market-data coverage.
 
 This keeps the checked calibration boundary aligned with the same bounded
 synthetic market assumptions that task and proving workflows see at runtime.
