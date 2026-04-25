@@ -16,9 +16,9 @@ on:
         required: false
         type: string
       model:
-        description: Logical OpenAI-family model name
+        description: GitHub Actions OpenAI-family model name or GitHub Models catalog id
         required: false
-        default: gpt-5.4-mini
+        default: openai/gpt-4.1
         type: string
       validation:
         description: Validation profile
