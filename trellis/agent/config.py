@@ -22,6 +22,9 @@ DEFAULT_MODEL = {
     "openai": "gpt-5.4-mini",
     "anthropic": "claude-sonnet-4-6",
 }
+GITHUB_MODELS_DEFAULT_MODEL = {
+    "openai": "gpt-4.1",
+}
 STAGE_DEFAULT_MODEL = {
     "openai": {
         "decomposition": "gpt-5.4-mini",
@@ -164,13 +167,22 @@ def provider_credentials_configured(provider: str) -> bool:
 
 def get_default_model() -> str:
     """Return the default model name for the currently selected provider."""
-    return DEFAULT_MODEL.get(get_provider(), DEFAULT_MODEL["openai"])
+    provider = get_provider()
+    default_model = DEFAULT_MODEL.get(provider, DEFAULT_MODEL["openai"])
+    if provider == "openai" and _github_models_enabled():
+        load_env()
+        return os.environ.get(
+            "GITHUB_MODELS_OPENAI_DEFAULT_MODEL",
+            GITHUB_MODELS_DEFAULT_MODEL["openai"],
+        ).strip() or default_model
+    return default_model
 
 
 def get_model_for_stage(stage: str, requested_model: str | None = None) -> str:
     """Resolve the preferred model for one logical LLM stage."""
     provider = get_provider()
-    default_model = DEFAULT_MODEL.get(provider, DEFAULT_MODEL["openai"])
+    provider_default_model = DEFAULT_MODEL.get(provider, DEFAULT_MODEL["openai"])
+    default_model = get_default_model()
     requested_model = requested_model or default_model
 
     env_key = f"TRELLIS_MODEL_{stage.upper()}"
@@ -179,7 +191,17 @@ def get_model_for_stage(stage: str, requested_model: str | None = None) -> str:
     if override:
         return override
 
+    if (
+        provider == "openai"
+        and _github_models_enabled()
+        and requested_model == provider_default_model
+    ):
+        requested_model = default_model
+
     if requested_model != default_model:
+        return requested_model
+
+    if default_model != provider_default_model:
         return requested_model
 
     provider_defaults = STAGE_DEFAULT_MODEL.get(provider, {})

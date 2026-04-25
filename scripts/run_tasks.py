@@ -23,7 +23,7 @@ sys.path.insert(0, str(ROOT))
 
 os.environ.setdefault("LLM_PROVIDER", "openai")
 
-from trellis.agent.config import get_batch_token_budget, load_env
+from trellis.agent.config import get_batch_token_budget, get_default_model, load_env
 from trellis.agent.evals import summarize_task_results
 from trellis.agent.task_run_store import (
     TASK_RUN_LATEST_INDEX,
@@ -38,7 +38,7 @@ load_env()
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("ids", nargs="*", help="'all' or a start/end task id pair")
-    parser.add_argument("--model", default="gpt-5.4-mini")
+    parser.add_argument("--model", default=get_default_model())
     parser.add_argument(
         "--reuse",
         action="store_true",
@@ -70,13 +70,14 @@ def run_block(
     tasks: list[dict],
     output_file: str,
     *,
-    model: str = "gpt-5.4-mini",
+    model: str | None = None,
     force_rebuild: bool = True,
     fresh_build: bool = False,
     knowledge_light: bool = False,
     validation: str = "standard",
 ):
     """Run a block of tasks and save results incrementally."""
+    effective_model = model or get_default_model()
     market_state = build_market_state()
     results = []
     batch_token_budget = get_batch_token_budget()
@@ -84,7 +85,7 @@ def run_block(
 
     print(f"\n{'#' * 60}")
     print(f"# Running {len(tasks)} tasks → {output_file}")
-    print(f"# Model: {model}")
+    print(f"# Model: {effective_model}")
     print(f"# Force rebuild: {force_rebuild}")
     print(f"# Fresh build: {fresh_build}")
     print(f"# Knowledge light: {knowledge_light}")
@@ -97,7 +98,7 @@ def run_block(
         result = run_task(
             task,
             market_state,
-            model=model,
+            model=effective_model,
             force_rebuild=(force_rebuild or fresh_build),
             fresh_build=fresh_build,
             knowledge_profile="knowledge_light" if knowledge_light else None,

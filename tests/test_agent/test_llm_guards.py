@@ -550,10 +550,36 @@ def test_get_model_for_stage_uses_tiered_default_for_openai(monkeypatch):
 
     monkeypatch.setattr("trellis.agent.config.load_env", lambda: None)
     monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
+    monkeypatch.setattr("trellis.agent.config._github_models_enabled", lambda: False)
 
     assert get_model_for_stage("decomposition", "gpt-5.4-mini") == "gpt-5.4-mini"
     assert get_model_for_stage("code_generation", "gpt-5.4-mini") == "gpt-5.4-mini"
     assert get_model_for_stage("model_validator", "gpt-5.4-mini") == "gpt-5.4-mini"
+
+
+def test_get_default_model_uses_github_models_default_for_openai(monkeypatch):
+    from trellis.agent.config import get_default_model
+
+    monkeypatch.setattr("trellis.agent.config.load_env", lambda: None)
+    monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
+    monkeypatch.setattr("trellis.agent.config._github_models_enabled", lambda: True)
+    monkeypatch.delenv("GITHUB_MODELS_OPENAI_DEFAULT_MODEL", raising=False)
+
+    assert get_default_model() == "gpt-4.1"
+
+
+def test_get_model_for_stage_maps_local_openai_default_to_github_default(monkeypatch):
+    from trellis.agent.config import get_model_for_stage
+
+    monkeypatch.setattr("trellis.agent.config.load_env", lambda: None)
+    monkeypatch.setattr("trellis.agent.config.get_provider", lambda: "openai")
+    monkeypatch.setattr("trellis.agent.config._github_models_enabled", lambda: True)
+    monkeypatch.delenv("GITHUB_MODELS_OPENAI_DEFAULT_MODEL", raising=False)
+
+    assert get_model_for_stage("critic", "gpt-5.4-mini") == "gpt-4.1"
+    assert get_model_for_stage("code_generation", "gpt-5.4-mini") == "gpt-4.1"
+    assert get_model_for_stage("critic", "openai/gpt-4.1") == "openai/gpt-4.1"
+    assert get_model_for_stage("critic", "gpt-4o-mini") == "gpt-4o-mini"
 
 
 def test_enforce_llm_token_budget_raises_after_stage(monkeypatch):
