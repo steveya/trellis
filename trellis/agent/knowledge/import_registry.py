@@ -241,6 +241,7 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
         "trellis.models.",
         "trellis.core.",
         "trellis.curves.",
+        "trellis.execution",
     )
     exclude_prefixes = (
         "trellis.instruments._agent.",
@@ -269,6 +270,19 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
                 if getattr(obj, "__module__", "") == modname:
                     symbols.append(name)
 
+        if symbols:
+            registry[modname] = tuple(sorted(symbols))
+
+    for modname in ("trellis.execution",):
+        try:
+            mod = importlib.import_module(modname)
+        except Exception:
+            continue
+        symbols = tuple(
+            str(name)
+            for name in getattr(mod, "__all__", ())
+            if str(name).strip()
+        )
         if symbols:
             registry[modname] = tuple(sorted(symbols))
 

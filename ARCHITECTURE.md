@@ -52,6 +52,10 @@ maintenance around the deterministic engines.
 - `trellis/instruments/` contains hand-written reference instruments plus
   checked-in/generated agent adapters under `trellis/instruments/_agent/`.
 - `trellis/engine/` contains direct pricing and payoff-pricing entry points.
+- `trellis/execution/` contains the additive XIR execution seam between
+  semantic contract authority and numerical runtimes. Its current XIR.0 surface
+  is route-free and model-free, records empty unsupported execution artifacts
+  for upstream semantic objects, and does not change pricing behavior.
 - `trellis/analytics/` contains runtime measures, benchmarks, and explain/risk
   helpers.
 - `trellis/models/` contains the numerical engines and reusable quantitative
