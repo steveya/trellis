@@ -41,6 +41,32 @@ class PlatformTraceEvent:
 
 
 @dataclass(frozen=True)
+class CycleStageReport:
+    """Stable stage-level verdict projected from lifecycle events."""
+
+    stage: str
+    status: str
+    event: str
+    summary: str
+    details: dict[str, Any]
+
+
+@dataclass(frozen=True)
+class CycleReport:
+    """Compact governed-cycle report persisted with platform traces."""
+
+    request_id: str
+    status: str
+    outcome: str
+    success: bool | None
+    pricing_method: str | None
+    validation_contract_id: str | None
+    stage_statuses: dict[str, str]
+    stages: tuple[CycleStageReport, ...]
+    failure_count: int
+
+
+@dataclass(frozen=True)
 class PlatformTrace:
     """Structured view of a persisted platform request trace file."""
     request_id: str
@@ -69,6 +95,7 @@ class PlatformTrace:
     generation_boundary: dict[str, Any] | None = None
     semantic_role_ownership: dict[str, Any] | None = None
     validation_contract: dict[str, Any] | None = None
+    cycle_report: dict[str, Any] | None = None
     details: dict[str, Any] | None = None
     events: tuple[PlatformTraceEvent, ...] = ()
     linear_issue_id: str | None = None
@@ -131,6 +158,10 @@ def ensure_platform_trace(
     trace.setdefault("linear_issue", {})
     trace.setdefault("github_issue", {})
     trace.setdefault("token_usage", {})
+    trace["cycle_report"] = _cycle_report_summary(
+        trace,
+        _load_trace_event_dicts(path, trace=trace),
+    )
     _write_trace_summary_dict(path, trace)
     return path
 
@@ -172,6 +203,10 @@ def append_platform_trace_event(
         if issue_ref:
             trace[key] = issue_ref
 
+    trace["cycle_report"] = _cycle_report_summary(
+        trace,
+        _load_trace_event_dicts(path, trace=trace),
+    )
     _write_trace_summary_dict(path, trace)
     return path
 
@@ -243,6 +278,14 @@ def load_platform_trace_events(trace_path: str | Path) -> tuple[PlatformTraceEve
         for item in _load_trace_event_dicts(Path(trace_path))
     )
 
+
+def load_platform_trace_cycle_report(trace_path: str | Path) -> CycleReport:
+    """Load the first-class governed cycle report for one platform trace."""
+    path = Path(trace_path)
+    payload = _load_trace_payload_dict(path)
+    return _build_cycle_report(payload, list(payload.get("events") or ()))
+
+
 def load_platform_traces(
     *,
     root: Path | None = None,
@@ -292,6 +335,7 @@ def load_platform_traces(
                 generation_boundary=data.get("generation_boundary") or {},
                 semantic_role_ownership=data.get("semantic_role_ownership") or {},
                 validation_contract=data.get("validation_contract") or {},
+                cycle_report=data.get("cycle_report") or {},
                 details=data.get("details") or {},
                 events=events,
                 linear_issue_id=issue.get("id"),
@@ -402,6 +446,7 @@ def _base_trace_dict(compiled_request) -> dict[str, Any]:
         "validation_contract": dict(
             request_metadata.get("validation_contract") or {}
         ),
+        "cycle_report": {},
         "request_metadata": request_metadata,
         "token_usage": {},
     }
@@ -791,6 +836,246 @@ def _normalize_semantic_token(value: object) -> str:
     return str(value or "").strip().lower().replace(" ", "_")
 
 
+_CYCLE_STAGE_ORDER = {
+    "quant": 0,
+    "validation_bundle": 1,
+    "reference_oracle": 2,
+    "critic": 3,
+    "arbiter": 4,
+    "model_validator": 5,
+}
+
+_CYCLE_STAGE_EVENTS = {
+    "quant_selected_method": "quant",
+    "validation_bundle_selected": "validation_bundle",
+    "validation_bundle_executed": "validation_bundle",
+    "reference_oracle_executed": "reference_oracle",
+    "critic_completed": "critic",
+    "critic_failed": "critic",
+    "critic_skipped": "critic",
+    "arbiter_completed": "arbiter",
+    "model_validator_completed": "model_validator",
+    "model_validator_failed": "model_validator",
+    "model_validator_skipped": "model_validator",
+    "model_validator_llm_review_skipped": "model_validator",
+}
+
+
+def _cycle_report_summary(
+    trace: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Project a stable cycle report from trace metadata and lifecycle events."""
+    report = _build_cycle_report(trace, events)
+    return {
+        "request_id": report.request_id,
+        "status": report.status,
+        "outcome": report.outcome,
+        "success": report.success,
+        "pricing_method": report.pricing_method,
+        "validation_contract_id": report.validation_contract_id,
+        "stage_statuses": dict(report.stage_statuses),
+        "stages": [
+            {
+                "stage": stage.stage,
+                "status": stage.status,
+                "event": stage.event,
+                "summary": stage.summary,
+                "details": dict(stage.details),
+            }
+            for stage in report.stages
+        ],
+        "failure_count": report.failure_count,
+    }
+
+
+def _build_cycle_report(
+    trace: dict[str, Any],
+    events: list[dict[str, Any]],
+) -> CycleReport:
+    """Build the first-class cycle report object used by trace persistence."""
+    stage_reports: dict[str, CycleStageReport] = {}
+    pricing_method = _first_non_empty(trace.get("route_method"))
+    validation_contract_id = _validation_contract_id_from_payload(
+        trace.get("validation_contract")
+    )
+    failure_count = 0
+
+    for event_record in events:
+        event_name = str(event_record.get("event", "") or "")
+        stage = _CYCLE_STAGE_EVENTS.get(event_name)
+        if stage is None:
+            continue
+
+        details = dict(event_record.get("details") or {})
+        if stage == "quant":
+            pricing_method = _first_non_empty(details.get("method"), pricing_method)
+        event_contract_id = _validation_contract_id_from_payload(
+            details.get("validation_contract")
+        )
+        validation_contract_id = _first_non_empty(
+            event_contract_id,
+            validation_contract_id,
+        )
+
+        stage_status = _cycle_stage_status(
+            event_name,
+            str(event_record.get("status", "info") or "info"),
+            details,
+        )
+        failure_count += _failure_count_from_details(details)
+        stage_reports[stage] = CycleStageReport(
+            stage=stage,
+            status=stage_status,
+            event=event_name,
+            summary=_cycle_stage_summary(stage, details),
+            details=_cycle_stage_details(stage, details),
+        )
+
+    ordered_stages = tuple(
+        stage_reports[stage]
+        for stage in sorted(
+            stage_reports,
+            key=lambda item: _CYCLE_STAGE_ORDER.get(item, 999),
+        )
+    )
+    stage_statuses = {stage.stage: stage.status for stage in ordered_stages}
+    return CycleReport(
+        request_id=str(trace.get("request_id", "") or ""),
+        status=str(trace.get("status", "running") or "running"),
+        outcome=str(trace.get("outcome", "") or ""),
+        success=trace.get("success"),
+        pricing_method=pricing_method,
+        validation_contract_id=validation_contract_id,
+        stage_statuses=stage_statuses,
+        stages=ordered_stages,
+        failure_count=failure_count,
+    )
+
+
+def _cycle_stage_status(
+    event_name: str,
+    event_status: str,
+    details: dict[str, Any],
+) -> str:
+    """Map lifecycle event status and details onto stage verdict vocabulary."""
+    if event_name.endswith("_skipped"):
+        return "skipped"
+    if event_name in {"critic_failed", "model_validator_failed"}:
+        return "failed"
+    if event_status == "error":
+        return "failed"
+    if _failure_count_from_details(details) > 0:
+        return "failed"
+    return "passed"
+
+
+def _cycle_stage_summary(stage: str, details: dict[str, Any]) -> str:
+    """Create a compact human-readable stage summary for the cycle report."""
+    if stage == "quant":
+        method = _first_non_empty(details.get("method"), "unknown")
+        reason = _first_non_empty(details.get("selection_reason"))
+        return f"selected {method}" + (f" ({reason})" if reason else "")
+    if stage == "validation_bundle":
+        bundle_id = _first_non_empty(details.get("bundle_id"), "validation_bundle")
+        failures = _failure_count_from_details(details)
+        return f"{bundle_id}: {failures} failure(s)"
+    if stage == "reference_oracle":
+        oracle = dict(details.get("oracle") or {})
+        oracle_id = _first_non_empty(
+            oracle.get("oracle_id"),
+            details.get("oracle_id"),
+            "reference_oracle",
+        )
+        return str(oracle_id)
+    if stage == "critic":
+        if "reason" in details:
+            return str(details.get("reason") or "")
+        return f"{int(details.get('concern_count') or 0)} concern(s)"
+    if stage == "arbiter":
+        return f"{_failure_count_from_details(details)} failure(s)"
+    if stage == "model_validator":
+        if "reason" in details:
+            return str(details.get("reason") or "")
+        findings = int(details.get("finding_count") or 0)
+        blockers = int(details.get("blocker_count") or 0)
+        return f"{findings} finding(s), {blockers} blocker(s)"
+    return stage
+
+
+def _cycle_stage_details(stage: str, details: dict[str, Any]) -> dict[str, Any]:
+    """Keep stable, low-cardinality details for persisted cycle reports."""
+    allowed_by_stage = {
+        "quant": (
+            "method",
+            "selection_reason",
+            "assumption_summary",
+            "required_market_data",
+        ),
+        "validation_bundle": (
+            "bundle_id",
+            "executed_checks",
+            "skipped_checks",
+            "failure_count",
+        ),
+        "reference_oracle": ("oracle",),
+        "critic": (
+            "concern_count",
+            "critic_mode",
+            "available_check_ids",
+            "reason",
+        ),
+        "arbiter": ("validation", "failure_count"),
+        "model_validator": (
+            "finding_count",
+            "blocker_count",
+            "approved",
+            "llm_review",
+            "risk_level",
+            "reason",
+            "skip_reason",
+        ),
+    }
+    allowed = allowed_by_stage.get(stage, ())
+    return {
+        key: _normalize_yaml_value(details[key])
+        for key in allowed
+        if key in details
+    }
+
+
+def _failure_count_from_details(details: dict[str, Any]) -> int:
+    """Extract a normalized stage failure count from lifecycle details."""
+    for key in ("failure_count", "blocker_count"):
+        value = details.get(key)
+        if isinstance(value, int):
+            return max(value, 0)
+        if isinstance(value, float):
+            return max(int(value), 0)
+    failures = details.get("failures")
+    if isinstance(failures, list):
+        return len(failures)
+    return 0
+
+
+def _validation_contract_id_from_payload(payload: object) -> str | None:
+    """Return the stable validation contract id from a summary payload."""
+    if not isinstance(payload, dict):
+        return None
+    return _first_non_empty(payload.get("contract_id"), payload.get("id"))
+
+
+def _first_non_empty(*values: object) -> str | None:
+    """Return the first non-empty string-like value."""
+    for value in values:
+        if value is None:
+            continue
+        text = str(value).strip()
+        if text:
+            return text
+    return None
+
+
 def _load_trace_dict(path: Path) -> dict[str, Any]:
     """Load a trace payload with events, returning an empty mapping when absent."""
     return _load_trace_payload_dict(path)
@@ -823,6 +1108,8 @@ def _load_trace_payload_dict(path: Path) -> dict[str, Any]:
         return {}
     payload = dict(summary)
     payload["events"] = _load_trace_event_dicts(path, trace=summary)
+    if not payload.get("cycle_report"):
+        payload["cycle_report"] = _cycle_report_summary(payload, payload["events"])
     return payload
 
 
