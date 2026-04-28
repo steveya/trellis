@@ -50,7 +50,7 @@ Implementation queue:
 | 3 | `QUA-985` | Done | ARC.2 - executable critic and arbiter claims | `QUA-984` |
 | 4 | `QUA-986` | Done | ARC.3 - residual-risk model validation | `QUA-985` |
 | 5 | `QUA-987` | Done | ARC.4 - promotion and adoption governance | `QUA-986` |
-| 6 | `QUA-988` | Backlog | ARC.5 - product-grade cycle result surface | `QUA-987` |
+| 6 | `QUA-988` | Done | ARC.5 - product-grade cycle result surface | `QUA-987` |
 
 ## Purpose
 
