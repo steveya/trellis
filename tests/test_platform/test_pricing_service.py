@@ -102,3 +102,49 @@ def test_build_range_accrual_spec_preserves_explicit_zero_principal_redemption()
     )
 
     assert spec.principal_redemption == 0.0
+
+
+def test_desk_review_projects_agent_cycle_surface_for_approved_model_runs():
+    from trellis.platform.services.pricing_service import PricingService
+
+    run = SimpleNamespace(
+        run_id="run_cycle_surface",
+        status="succeeded",
+        result_summary={"price": 12.5},
+        warnings=(),
+        trade_identity={
+            "semantic_id": "vanilla_option",
+            "trade_type": "european_option",
+            "product": {},
+        },
+        selected_model={
+            "model_id": "vanilla_option_candidate",
+            "version": "v1",
+            "status": "approved",
+            "agent_cycle": {
+                "schema_version": "agent_cycle_result.v1",
+                "available": True,
+                "status": "passed",
+                "headline": "Governed agent-review cycle passed.",
+                "claim": {
+                    "certifies": ["governed agent-review cycle completed"],
+                    "does_not_certify": ["external model approval"],
+                },
+            },
+        },
+        selected_engine={"adapter_id": "black_scholes", "engine_id": "pricing_engine.local"},
+        provenance={},
+        market_snapshot_id="snapshot_cycle",
+        valuation_timestamp="2026-04-04",
+        policy_id="policy_bundle.production.default",
+        run_mode="production",
+    )
+
+    review = PricingService._desk_review_bundle(
+        run,
+        audit_uri="trellis://runs/run_cycle_surface/audit",
+    )
+
+    assert review["agent_cycle"]["status"] == "passed"
+    assert review["agent_cycle"]["headline"] == "Governed agent-review cycle passed."
+    assert "external model approval" in review["agent_cycle"]["claim"]["does_not_certify"]

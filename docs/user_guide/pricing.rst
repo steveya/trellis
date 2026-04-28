@@ -715,6 +715,14 @@ Important constraints:
 - deprecation removes execution eligibility without deleting the stored
   contract, code, validation, or lineage artifacts
 
+Approved model runs expose an ``agent_cycle`` review block inside
+``desk_review`` when approval-cycle evidence is available. Task-result payloads
+and benchmark scorecards expose the same stable surface. Treat it as
+governance evidence for the recorded quant/critic/arbiter/model-validator
+cycle, not as an external model-approval certificate, regulatory sign-off, xVA
+coverage claim, FpML coverage claim, or guarantee beyond the recorded
+validation scope.
+
 Governed Model Store And Replay Bundles
 ---------------------------------------
 

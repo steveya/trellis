@@ -1948,6 +1948,71 @@ events:
     assert payload["post_build_tracking"]["last_phase"] == "reflection_completed"
 
 
+def test_build_result_payload_exposes_product_agent_cycle_surface(tmp_path):
+    from trellis.agent.task_runtime import _build_result_payload
+
+    trace_path = tmp_path / "executor_build_cycle.yaml"
+    trace_path.write_text(
+        """
+request_id: executor_build_cycle
+status: succeeded
+outcome: build_completed
+cycle_report:
+  request_id: executor_build_cycle
+  status: succeeded
+  outcome: build_completed
+  success: true
+  pricing_method: analytical
+  validation_contract_id: validation:vanilla_option:analytical
+  stage_statuses:
+    quant: passed
+    validation_bundle: passed
+    critic: passed
+    arbiter: passed
+    model_validator: skipped
+  stages:
+    - stage: quant
+      status: passed
+      event: quant_selected_method
+      summary: selected analytical
+      details: {}
+  failure_count: 0
+  deterministic_blockers: []
+  conceptual_blockers: []
+  calibration_blockers: []
+  residual_limitations: []
+  residual_risks: []
+""".strip()
+    )
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.95
+        knowledge_gaps = []
+        payoff_cls = None
+        failures = []
+        agent_observations = []
+        knowledge_summary = {}
+        token_usage_summary = {}
+        platform_trace_path = str(trace_path)
+        platform_request_id = "executor_build_cycle"
+        analytical_trace_path = None
+        analytical_trace_text_path = None
+        audit_record_path = None
+        blocker_details = None
+        post_build_tracking = {}
+        reflection = {}
+
+    payload = _build_result_payload(FakeResult(), preferred_method="analytical")
+
+    assert payload["agent_cycle"]["status"] == "passed"
+    assert payload["agent_cycle"]["headline"] == "Governed agent-review cycle passed."
+    assert payload["agent_cycle"]["stage_statuses"]["arbiter"] == "passed"
+    assert "external model approval" in payload["agent_cycle"]["claim"]["does_not_certify"]
+    assert payload["build_observability"]["agent_cycle"] == payload["agent_cycle"]
+
+
 def test_build_result_payload_surfaces_lesson_contract():
     from trellis.agent.task_runtime import _build_result_payload
 

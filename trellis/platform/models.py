@@ -831,6 +831,7 @@ def evaluate_model_execution_gate(
     policy_bundle=None,
 ) -> ModelExecutionGateResult:
     """Evaluate lifecycle eligibility for one governed model id."""
+    from trellis.agent.cycle_surface import build_cycle_result_surface
     from trellis.platform.policies import get_policy_bundle
 
     bundle = policy_bundle or get_policy_bundle(
@@ -915,9 +916,40 @@ def evaluate_model_execution_gate(
             "engine_binding": dict(selected.engine_binding),
             "contract_summary": dict(selected.contract_summary),
             "methodology_summary": dict(selected.methodology_summary),
+            "agent_cycle": build_cycle_result_surface(
+                _cycle_report_for_version(selected),
+                promotion_governance=_cycle_governance_for_version(selected),
+            ),
         },
         rejections=rejections,
     )
+
+
+def _cycle_governance_for_version(version: ModelVersionRecord) -> Mapping[str, object] | None:
+    for transition in reversed(version.transitions):
+        metadata = dict(transition.metadata)
+        governance = metadata.get("cycle_promotion_governance")
+        if isinstance(governance, Mapping):
+            return governance
+    metadata_governance = version.metadata.get("cycle_promotion_governance")
+    if isinstance(metadata_governance, Mapping):
+        return metadata_governance
+    return None
+
+
+def _cycle_report_for_version(version: ModelVersionRecord) -> Mapping[str, object] | None:
+    for transition in reversed(version.transitions):
+        metadata = dict(transition.metadata)
+        report = metadata.get("cycle_report")
+        if isinstance(report, Mapping):
+            return report
+        governance = metadata.get("cycle_promotion_governance")
+        if isinstance(governance, Mapping) and isinstance(governance.get("cycle_report"), Mapping):
+            return governance.get("cycle_report")
+    metadata_report = version.metadata.get("cycle_report")
+    if isinstance(metadata_report, Mapping):
+        return metadata_report
+    return None
 
 
 def enforce_model_execution_gate(

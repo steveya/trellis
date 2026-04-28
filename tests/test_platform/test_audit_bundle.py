@@ -62,6 +62,27 @@ def test_run_ledger_build_audit_bundle_for_successful_run(tmp_path):
             "validation_contract": {
                 "bundle_id": "validation_bundle.vanilla_option.default",
             },
+            "cycle_report": {
+                "request_id": "request_success",
+                "status": "succeeded",
+                "outcome": "priced",
+                "success": True,
+                "pricing_method": "analytical",
+                "validation_contract_id": "validation_bundle.vanilla_option.default",
+                "stage_statuses": {
+                    "quant": "passed",
+                    "validation_bundle": "passed",
+                    "critic": "passed",
+                    "arbiter": "passed",
+                    "model_validator": "skipped",
+                },
+                "failure_count": 0,
+                "deterministic_blockers": [],
+                "conceptual_blockers": [],
+                "calibration_blockers": [],
+                "residual_limitations": [],
+                "residual_risks": [],
+            },
             "details": {
                 "result_type": "price_and_greeks",
             },
@@ -205,6 +226,7 @@ def test_run_ledger_build_audit_bundle_for_successful_run(tmp_path):
     assert bundle.diagnostics["blocker_codes"] == []
     assert bundle.diagnostics["diagnosis"]["headline"] == "Task completed successfully."
     assert bundle.artifacts["platform_trace"]["route_method"] == "analytical"
+    assert bundle.artifacts["platform_trace"]["agent_cycle"]["status"] == "passed"
     assert bundle.artifacts["model_audit"]["all_gates_passed"] is True
     assert bundle.artifacts["task_run"]["task_id"] == "T13"
 

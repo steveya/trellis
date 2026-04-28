@@ -185,6 +185,14 @@ under ``task_runs/financepy_benchmarks/`` with explicit ``run_started_at`` and
 knowledge, and campaign revisions. The runner also emits a repeated-run
 scorecard from the matching append-only history slice.
 
+Those repeated-run scorecards now include an ``agent_cycle`` block derived from
+the same product-facing cycle surface returned by task results. The aggregate
+tracks cycle-report availability, pass/fail/incomplete counts, stage trigger
+rates, model-validator execution/skips/failures, blocker-bucket totals, and
+residual limitation/risk counts. Use that block to monitor the
+quant/critic/arbiter/model-validator loop; raw trace prose is not the stable
+monitoring API.
+
 Negative-task benchmark runs do the same under
 ``task_runs/negative_benchmarks/`` so clarification and honest-block behavior
 can be tracked across repeated library and knowledge updates, again with a
