@@ -158,6 +158,170 @@ def test_platform_trace_writes_summary_yaml_and_append_only_events_log(tmp_path)
     assert traces[0].events == ()
 
 
+def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
+    from trellis.agent.platform_traces import (
+        append_platform_trace_event,
+        load_platform_trace_cycle_report,
+        load_platform_trace_payload,
+        load_platform_traces,
+    )
+
+    compiled = SimpleNamespace(
+        request=SimpleNamespace(
+            request_id="executor_cycle_report",
+            request_type="build",
+            entry_point="executor",
+            instrument_type="european_option",
+            metadata={
+                "validation_contract": {
+                    "contract_id": "validation:european_option:analytical",
+                    "bundle_id": "analytical:european_option",
+                }
+            },
+        ),
+        execution_plan=SimpleNamespace(
+            action="build_then_price",
+            route_method="analytical",
+            measures=(),
+            requires_build=True,
+        ),
+        pricing_plan=SimpleNamespace(sensitivity_support=None),
+        product_ir=SimpleNamespace(instrument="european_option"),
+        blocker_report=None,
+        knowledge_summary={},
+    )
+
+    trace_path = append_platform_trace_event(
+        compiled,
+        "quant_selected_method",
+        status="ok",
+        details={"method": "analytical", "selection_reason": "exact_binding"},
+        root=tmp_path,
+    )
+    append_platform_trace_event(
+        compiled,
+        "validation_bundle_executed",
+        status="ok",
+        details={
+            "bundle_id": "analytical:european_option",
+            "executed_checks": ["check_non_negativity"],
+            "failure_count": 0,
+            "validation_contract": {
+                "contract_id": "validation:european_option:analytical",
+                "bundle_id": "analytical:european_option",
+            },
+        },
+        root=tmp_path,
+    )
+    append_platform_trace_event(
+        compiled,
+        "critic_skipped",
+        status="info",
+        details={"reason": "low_risk_exact_binding", "critic_mode": "skip"},
+        root=tmp_path,
+    )
+    append_platform_trace_event(
+        compiled,
+        "arbiter_completed",
+        status="ok",
+        details={"failure_count": 0},
+        root=tmp_path,
+    )
+    append_platform_trace_event(
+        compiled,
+        "model_validator_skipped",
+        status="info",
+        details={"validation": "standard"},
+        root=tmp_path,
+    )
+    append_platform_trace_event(
+        compiled,
+        "build_completed",
+        status="ok",
+        success=True,
+        outcome="build_completed",
+        details={"attempts": 1},
+        root=tmp_path,
+    )
+
+    summary = yaml.safe_load(Path(trace_path).read_text())
+    report = load_platform_trace_cycle_report(trace_path)
+    payload = load_platform_trace_payload(trace_path)
+    traces = load_platform_traces(root=tmp_path)
+
+    cycle_report = summary["cycle_report"]
+    assert cycle_report == payload["cycle_report"]
+    assert traces[0].cycle_report == cycle_report
+    assert report.stage_statuses == cycle_report["stage_statuses"]
+    assert report.validation_contract_id == "validation:european_option:analytical"
+    assert cycle_report["request_id"] == "executor_cycle_report"
+    assert cycle_report["status"] == "succeeded"
+    assert cycle_report["outcome"] == "build_completed"
+    assert cycle_report["success"] is True
+    assert cycle_report["pricing_method"] == "analytical"
+    assert cycle_report["validation_contract_id"] == "validation:european_option:analytical"
+    assert cycle_report["stage_statuses"] == {
+        "quant": "passed",
+        "validation_bundle": "passed",
+        "critic": "skipped",
+        "arbiter": "passed",
+        "model_validator": "skipped",
+    }
+
+
+def test_platform_trace_cycle_report_marks_failed_stage(tmp_path):
+    from trellis.agent.platform_traces import (
+        append_platform_trace_event,
+        load_platform_trace_cycle_report,
+    )
+
+    compiled = SimpleNamespace(
+        request=SimpleNamespace(
+            request_id="executor_cycle_report_failed",
+            request_type="build",
+            entry_point="executor",
+            instrument_type="barrier_option",
+            metadata={},
+        ),
+        execution_plan=SimpleNamespace(
+            action="build_then_price",
+            route_method="monte_carlo",
+            measures=(),
+            requires_build=True,
+        ),
+        pricing_plan=SimpleNamespace(sensitivity_support=None),
+        product_ir=SimpleNamespace(instrument="barrier_option"),
+        blocker_report=None,
+        knowledge_summary={},
+    )
+
+    trace_path = append_platform_trace_event(
+        compiled,
+        "validation_bundle_executed",
+        status="error",
+        details={
+            "bundle_id": "monte_carlo:barrier_option",
+            "failure_count": 2,
+        },
+        root=tmp_path,
+    )
+    append_platform_trace_event(
+        compiled,
+        "build_completed",
+        status="error",
+        success=False,
+        outcome="ask_failed",
+        root=tmp_path,
+    )
+
+    report = load_platform_trace_cycle_report(trace_path)
+
+    assert report.status == "failed"
+    assert report.success is False
+    assert report.stage_statuses == {"validation_bundle": "failed"}
+    assert report.failure_count == 2
+
+
 def test_platform_trace_payload_reads_legacy_inline_events(tmp_path):
     from trellis.agent.platform_traces import (
         load_platform_trace_events,

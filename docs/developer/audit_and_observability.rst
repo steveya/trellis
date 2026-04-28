@@ -198,6 +198,36 @@ intentionally not a second source of truth:
 This keeps the trader-facing review surface thin while preserving the audit
 builder as the authoritative replay and observability package.
 
+Agent Cycle Report
+------------------
+
+Platform traces now carry a compact ``cycle_report`` projection for requests
+that pass through the agent build and validation loop. The report is derived
+from lifecycle events rather than a second decision path, so it remains an
+audit/read model over the existing quant, validation-bundle, reference-oracle,
+critic, arbiter, and model-validator stages.
+
+The cycle report records:
+
+- the request id, terminal trace status, outcome, and success flag
+- the quant-selected pricing method when the quant stage has emitted one
+- the compiled validation-contract id when it is available in trace metadata or
+  validation events
+- stable stage statuses such as ``passed``, ``failed``, and ``skipped``
+- compact stage summaries and low-cardinality details suitable for replay,
+  dashboards, and later promotion/adoption checks
+
+Use ``load_platform_trace_cycle_report(...)`` when code needs the typed
+``CycleReport`` object for one trace. Use ``load_platform_traces(...)`` when a
+summary view is enough; each loaded ``PlatformTrace`` includes the persisted
+``cycle_report`` dictionary.
+
+This is intentionally not a new validator. Pricing acceptance still comes from
+the deterministic validation contract, executable checks, arbiter verdicts, and
+model-validator findings. The cycle report makes those stage outcomes stable
+and inspectable so downstream tooling no longer has to infer governance state
+from ad hoc event strings.
+
 Governed Provider Provenance
 ----------------------------
 
