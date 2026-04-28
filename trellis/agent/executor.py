@@ -841,6 +841,7 @@ def build_payoff(
     from trellis.agent.planner import plan_build
     from trellis.agent.quant import (
         check_data_availability,
+        quant_challenger_packet_summary,
         select_pricing_method,
         select_pricing_method_for_product_ir,
     )
@@ -921,6 +922,7 @@ def build_payoff(
             model=model,
         )
     )
+    quant_challenger_packet = quant_challenger_packet_summary(pricing_plan)
     _record_platform_event(
         compiled_request,
         "quant_selected_method",
@@ -936,6 +938,7 @@ def build_payoff(
             "selection_reason": pricing_plan.selection_reason,
             "assumption_summary": list(pricing_plan.assumption_summary),
             "required_market_data": sorted(pricing_plan.required_market_data),
+            "challenger_packet": quant_challenger_packet,
             "sensitivity_support": (
                 pricing_plan.sensitivity_support.to_dict()
                 if pricing_plan.sensitivity_support is not None
@@ -960,6 +963,7 @@ def build_payoff(
             "reasoning": pricing_plan.reasoning,
             "selection_reason": pricing_plan.selection_reason,
             "assumption_summary": list(pricing_plan.assumption_summary),
+            "challenger_packet": quant_challenger_packet,
             "sensitivity_support": (
                 pricing_plan.sensitivity_support.to_dict()
                 if pricing_plan.sensitivity_support is not None
@@ -1859,9 +1863,14 @@ def _validate_build(
         route_binding_authority_data = dict(
             getattr(getattr(compiled_request, "request", None), "metadata", {}).get("route_binding_authority") or {}
         )
+    validation_method = (
+        getattr(pricing_plan, "method", None)
+        or getattr(getattr(compiled_request, "execution_plan", None), "route_method", None)
+        or "unknown"
+    )
     review_policy = determine_review_policy(
         validation=validation,
-        method=(pricing_plan.method if pricing_plan is not None else "unknown"),
+        method=validation_method,
         instrument_type=itype,
         product_ir=product_ir,
         validation_contract=validation_contract,
@@ -1991,7 +2000,7 @@ def _validate_build(
 
     validation_bundle = select_validation_bundle(
         instrument_type=itype,
-        method=(pricing_plan.method if pricing_plan is not None else "unknown"),
+        method=validation_method,
         product_ir=product_ir,
         semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
     )
@@ -2059,7 +2068,7 @@ def _validate_build(
     if not failures and _should_run_reference_oracle(compiled_request):
         oracle_spec = select_reference_oracle(
             instrument_type=itype,
-            method=(pricing_plan.method if pricing_plan is not None else "unknown"),
+            method=validation_method,
             product_ir=product_ir,
             semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
         )
@@ -2311,7 +2320,7 @@ def _validate_build(
                         market_state_factory=ms_factory,
                         code=code,
                         instrument_type=itype,
-                        method=spec_schema.requirements[0] if hasattr(spec_schema, 'requirements') else "unknown",
+                        method=validation_method,
                         knowledge_context=review_knowledge_text,
                         model=stage_model,
                         product_ir=product_ir,
@@ -2345,7 +2354,7 @@ def _validate_build(
                     market_state_factory=ms_factory,
                     code=code,
                     instrument_type=itype,
-                    method=spec_schema.requirements[0] if hasattr(spec_schema, 'requirements') else "unknown",
+                    method=validation_method,
                     knowledge_context="",
                     model=model,
                     product_ir=product_ir,

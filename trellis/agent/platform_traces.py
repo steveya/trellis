@@ -1011,6 +1011,7 @@ def _cycle_stage_details(stage: str, details: dict[str, Any]) -> dict[str, Any]:
             "selection_reason",
             "assumption_summary",
             "required_market_data",
+            "challenger_packet",
         ),
         "validation_bundle": (
             "bundle_id",

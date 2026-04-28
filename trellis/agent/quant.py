@@ -10,6 +10,7 @@ products.
 from __future__ import annotations
 
 from dataclasses import dataclass, replace
+from typing import Mapping
 import re
 
 from trellis.agent.knowledge import get_store
@@ -28,12 +29,41 @@ from trellis.core.capabilities import (
 
 
 @dataclass(frozen=True)
+class QuantMethodCandidate:
+    """One candidate method considered by the quant agent."""
+
+    method: str
+    status: str
+    rejection_reason: str = ""
+    priority_rank: int = 999
+    sensitivity_level: str | None = None
+    supported_measures: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class QuantChallengerPacket:
+    """Structured quant handoff for downstream review stages."""
+
+    selected_method: str
+    method_identity: str
+    route_family: str
+    selection_reason: str
+    candidate_methods: tuple[QuantMethodCandidate, ...]
+    assumption_basis: tuple[str, ...]
+    required_market_data: tuple[str, ...]
+    requested_measures: tuple[str, ...]
+    expected_executable_checks: tuple[str, ...]
+    residual_risk_handoff: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class PricingPlan:
     """Output of the quant agent's method selection step.
 
     Contains the chosen pricing method (e.g. 'analytical', 'monte_carlo'),
-    the modules that implement it, the market data it needs, and any
-    modeling constraints or assumptions.
+    the modules that implement it, the market data it needs, any modeling
+    constraints or assumptions, and the structured challenger packet consumed
+    by downstream validation stages.
     """
 
     method: str
@@ -45,6 +75,7 @@ class PricingPlan:
     sensitivity_support: SensitivitySupport | None = None
     selection_reason: str = ""
     assumption_summary: tuple[str, ...] = ()
+    challenger_packet: QuantChallengerPacket | Mapping[str, object] | None = None
 
 
 _DEFAULT_METHOD_MODULES = {
@@ -117,6 +148,18 @@ _METHOD_ASSUMPTION_SUMMARIES = {
 }
 
 
+def _normalize_string_tuple(values) -> tuple[str, ...]:
+    """Normalize arbitrary values into a deduplicated tuple of strings."""
+    if not values:
+        return ()
+    normalized: list[str] = []
+    for value in values:
+        text = str(getattr(value, "value", value)).strip()
+        if text and text not in normalized:
+            normalized.append(text)
+    return tuple(normalized)
+
+
 def _merge_unique_strings(*groups: tuple[str, ...] | list[str]) -> tuple[str, ...]:
     """Merge string collections while preserving order and dropping duplicates."""
     merged: list[str] = []
@@ -131,6 +174,300 @@ def _merge_unique_strings(*groups: tuple[str, ...] | list[str]) -> tuple[str, ..
 def _method_priority(method: str) -> int:
     """Return the default simplicity/latency rank for a method family."""
     return _METHOD_PRIORITY_ORDER.get(normalize_method(method), len(_METHOD_PRIORITY_ORDER))
+
+
+def _candidate_methods_from_packet(packet) -> tuple[str, ...]:
+    """Recover candidate method identities from an existing challenger packet."""
+    if packet is None:
+        return ()
+    if isinstance(packet, QuantChallengerPacket):
+        return tuple(candidate.method for candidate in packet.candidate_methods)
+    if isinstance(packet, Mapping):
+        candidates = packet.get("candidate_methods") or ()
+        methods: list[str] = []
+        for candidate in candidates:
+            if isinstance(candidate, Mapping):
+                method = normalize_method(candidate.get("method"))
+            else:
+                method = normalize_method(getattr(candidate, "method", None))
+            if method and method not in methods:
+                methods.append(method)
+        return tuple(methods)
+    return ()
+
+
+def _rejection_reason_for_candidate(
+    candidate_method: str,
+    selected_method: str,
+    *,
+    selection_reason: str,
+    requested_measures: tuple[str, ...],
+    selected_support: SensitivitySupport | None,
+) -> str:
+    """Return the stable reason a non-selected candidate lost."""
+    if candidate_method == selected_method:
+        return ""
+    if "explicit_preference" in selection_reason:
+        return "not_explicit_preference"
+    if requested_measures:
+        candidate_rank = rank_sensitivity_support(
+            support_for_method(candidate_method),
+            requested_measures,
+        )[:3]
+        selected_rank = rank_sensitivity_support(
+            selected_support or support_for_method(selected_method),
+            requested_measures,
+        )[:3]
+        if candidate_rank < selected_rank:
+            return "lower_requested_measure_support"
+        return "lower_measure_selection_rank"
+    return "higher_complexity_than_selected_default"
+
+
+def _candidate_summary_for_method(
+    method: str,
+    *,
+    selected_method: str,
+    selection_reason: str,
+    requested_measures: tuple[str, ...],
+    selected_support: SensitivitySupport | None,
+) -> QuantMethodCandidate:
+    """Build one structured candidate entry for the challenger packet."""
+    normalized = normalize_method(method)
+    support = support_for_method(normalized)
+    selected = normalized == selected_method
+    return QuantMethodCandidate(
+        method=normalized,
+        status="selected" if selected else "rejected",
+        rejection_reason="" if selected else _rejection_reason_for_candidate(
+            normalized,
+            selected_method,
+            selection_reason=selection_reason,
+            requested_measures=requested_measures,
+            selected_support=selected_support,
+        ),
+        priority_rank=_method_priority(normalized),
+        sensitivity_level=support.level,
+        supported_measures=tuple(support.supported_measures),
+    )
+
+
+def _ordered_candidate_methods(
+    selected_method: str,
+    candidate_methods: tuple[str, ...] | list[str] | None,
+) -> tuple[str, ...]:
+    """Return candidate methods with the selected method first, then simplicity order."""
+    methods: list[str] = []
+    for method in (selected_method, *(candidate_methods or ())):
+        normalized = normalize_method(method)
+        if normalized and normalized not in methods:
+            methods.append(normalized)
+    return tuple(
+        sorted(
+            methods,
+            key=lambda method: (
+                0 if method == selected_method else 1,
+                _method_priority(method),
+                method,
+            ),
+        )
+    )
+
+
+def _expected_executable_checks_for_packet(
+    *,
+    candidate_methods: tuple[str, ...],
+    requested_measures: tuple[str, ...],
+) -> tuple[str, ...]:
+    """Return quant-side executable checks expected downstream."""
+    checks = ["market_data_capability_check", "deterministic_validation_bundle"]
+    if len(candidate_methods) > 1:
+        checks.append("alternative_method_challenge")
+    if requested_measures:
+        checks.append("requested_measure_support_check")
+    return tuple(checks)
+
+
+def _residual_risk_handoff_for_packet(
+    *,
+    assumption_basis: tuple[str, ...],
+    sensitivity_support: SensitivitySupport | None,
+) -> tuple[str, ...]:
+    """Return quant-side residual risk ids for model-validation handoff."""
+    risk_assumptions = {
+        "multiple_valid_methods_available",
+        "multi_asset_context",
+        "schedule_dependent_product",
+        "path_dependent_product",
+        "early_exercise_sensitive_product",
+        "path_sampling_required",
+        "boundary_conditions_required",
+        "exercise_and_cashflow_discretization_acceptable",
+        "dependence_modeling_route",
+        "cashflow_schedule_required",
+        "local_vol_surface_driven_context",
+    }
+    risks = [
+        f"quant:{assumption}"
+        for assumption in assumption_basis
+        if assumption in risk_assumptions
+    ]
+    if sensitivity_support is not None and sensitivity_support.level == "experimental":
+        risks.append("quant:experimental_sensitivity_support")
+    return _merge_unique_strings(tuple(risks))
+
+
+def _build_challenger_packet(
+    *,
+    selected_method: str,
+    selection_reason: str,
+    assumption_basis: tuple[str, ...],
+    required_market_data,
+    candidate_methods: tuple[str, ...] | list[str] | None = None,
+    requested_measures: tuple[str, ...] | list[str] | None = None,
+    sensitivity_support: SensitivitySupport | None = None,
+) -> QuantChallengerPacket:
+    """Build the stable quant packet consumed by review and validation."""
+    method = normalize_method(selected_method)
+    requested = normalize_requested_measures(requested_measures)
+    ordered_candidates = _ordered_candidate_methods(method, candidate_methods)
+    normalized_assumptions = _normalize_string_tuple(assumption_basis)
+    return QuantChallengerPacket(
+        selected_method=method,
+        method_identity=method,
+        route_family=method,
+        selection_reason=selection_reason or "pricing_plan_selection",
+        candidate_methods=tuple(
+            _candidate_summary_for_method(
+                candidate,
+                selected_method=method,
+                selection_reason=selection_reason or "",
+                requested_measures=requested,
+                selected_support=sensitivity_support,
+            )
+            for candidate in ordered_candidates
+        ),
+        assumption_basis=normalized_assumptions,
+        required_market_data=_normalize_string_tuple(sorted(required_market_data or ())),
+        requested_measures=_normalize_string_tuple(requested),
+        expected_executable_checks=_expected_executable_checks_for_packet(
+            candidate_methods=ordered_candidates,
+            requested_measures=requested,
+        ),
+        residual_risk_handoff=_residual_risk_handoff_for_packet(
+            assumption_basis=normalized_assumptions,
+            sensitivity_support=sensitivity_support,
+        ),
+    )
+
+
+def _attach_challenger_packet(
+    plan: PricingPlan,
+    *,
+    candidate_methods: tuple[str, ...] | list[str] | None = None,
+    requested_measures: tuple[str, ...] | list[str] | None = None,
+) -> PricingPlan:
+    """Return ``plan`` with a fresh challenger packet matching its fields."""
+    candidates = tuple(candidate_methods or ()) or _candidate_methods_from_packet(
+        plan.challenger_packet
+    ) or (plan.method,)
+    packet = _build_challenger_packet(
+        selected_method=plan.method,
+        selection_reason=plan.selection_reason,
+        assumption_basis=plan.assumption_summary,
+        required_market_data=plan.required_market_data,
+        candidate_methods=candidates,
+        requested_measures=requested_measures,
+        sensitivity_support=plan.sensitivity_support,
+    )
+    return replace(plan, challenger_packet=packet)
+
+
+def quant_challenger_packet_summary(
+    pricing_plan: PricingPlan | None = None,
+    *,
+    packet: QuantChallengerPacket | Mapping[str, object] | None = None,
+    deterministic_check_ids: tuple[str, ...] | list[str] | None = None,
+    validation_contract_id: str | None = None,
+    route_family: str | None = None,
+    residual_risks: tuple[str, ...] | list[str] | None = None,
+) -> dict[str, object]:
+    """Return a YAML-safe quant challenger packet summary."""
+    raw_packet = packet or getattr(pricing_plan, "challenger_packet", None)
+    if raw_packet is None and pricing_plan is not None:
+        selected_method = getattr(pricing_plan, "method", "")
+        raw_packet = _build_challenger_packet(
+            selected_method=selected_method,
+            selection_reason=getattr(pricing_plan, "selection_reason", ""),
+            assumption_basis=tuple(getattr(pricing_plan, "assumption_summary", ()) or ()),
+            required_market_data=getattr(pricing_plan, "required_market_data", ()) or (),
+            candidate_methods=(selected_method,),
+            sensitivity_support=getattr(pricing_plan, "sensitivity_support", None),
+        )
+    if raw_packet is None:
+        return {}
+
+    if isinstance(raw_packet, QuantChallengerPacket):
+        payload = {
+            "selected_method": raw_packet.selected_method,
+            "method_identity": raw_packet.method_identity,
+            "route_family": raw_packet.route_family,
+            "selection_reason": raw_packet.selection_reason,
+            "candidate_methods": [
+                {
+                    "method": candidate.method,
+                    "status": candidate.status,
+                    "rejection_reason": candidate.rejection_reason,
+                    "priority_rank": candidate.priority_rank,
+                    "sensitivity_level": candidate.sensitivity_level,
+                    "supported_measures": list(candidate.supported_measures),
+                }
+                for candidate in raw_packet.candidate_methods
+            ],
+            "assumption_basis": list(raw_packet.assumption_basis),
+            "required_market_data": list(raw_packet.required_market_data),
+            "requested_measures": list(raw_packet.requested_measures),
+            "expected_executable_checks": list(raw_packet.expected_executable_checks),
+            "residual_risk_handoff": list(raw_packet.residual_risk_handoff),
+        }
+    else:
+        payload = dict(raw_packet)
+        payload["candidate_methods"] = [
+            dict(candidate) if isinstance(candidate, Mapping) else {
+                "method": getattr(candidate, "method", ""),
+                "status": getattr(candidate, "status", ""),
+                "rejection_reason": getattr(candidate, "rejection_reason", ""),
+            }
+            for candidate in payload.get("candidate_methods", ()) or ()
+        ]
+        for key in (
+            "assumption_basis",
+            "required_market_data",
+            "requested_measures",
+            "expected_executable_checks",
+            "residual_risk_handoff",
+        ):
+            payload[key] = list(payload.get(key) or ())
+
+    if route_family:
+        payload["route_family"] = route_family
+    if deterministic_check_ids:
+        payload["expected_executable_checks"] = list(
+            _merge_unique_strings(
+                tuple(payload.get("expected_executable_checks") or ()),
+                _normalize_string_tuple(deterministic_check_ids),
+            )
+        )
+    if residual_risks:
+        payload["residual_risk_handoff"] = list(
+            _merge_unique_strings(
+                tuple(payload.get("residual_risk_handoff") or ()),
+                tuple(f"validation:{risk}" for risk in _normalize_string_tuple(residual_risks)),
+            )
+        )
+    if validation_contract_id:
+        payload["validation_contract_id"] = validation_contract_id
+    return payload
 
 
 def _assumption_summary_for_method(
@@ -214,7 +551,7 @@ def _plan_from_decomposition(decomposition) -> PricingPlan:
     method = normalize_method(decomposition.method)
     selection_reason = "canonical_decomposition"
     assumption_summary = _assumption_summary_for_method(method)
-    return PricingPlan(
+    plan = PricingPlan(
         method=method,
         method_modules=list(decomposition.method_modules),
         required_market_data=normalize_market_data_requirements(
@@ -227,6 +564,7 @@ def _plan_from_decomposition(decomposition) -> PricingPlan:
         selection_reason=selection_reason,
         assumption_summary=assumption_summary,
     )
+    return _attach_challenger_packet(plan, candidate_methods=(method,))
 
 
 def _load_static_plans() -> dict[str, PricingPlan]:
@@ -354,6 +692,8 @@ def select_pricing_method_for_product_ir(
         plan,
         context_description,
         instrument_type=getattr(product_ir, "instrument", None),
+        candidate_methods=candidate_methods,
+        requested_measures=requested,
     )
 
 
@@ -454,20 +794,29 @@ def _prefer_transform_route_for_requested_sensitivities(
 def known_methods() -> tuple[str, ...]:
     """Return the canonical method-family labels understood by the quant agent."""
     return tuple(sorted(CANONICAL_METHODS))
+
+
 def _apply_contextual_overrides(
     plan: PricingPlan,
     description: str | None,
     *,
     instrument_type: str | None = None,
+    candidate_methods: tuple[str, ...] | list[str] | None = None,
+    requested_measures: tuple[str, ...] | list[str] | None = None,
 ) -> PricingPlan:
     """Apply conservative context-derived overrides without changing the core ontology."""
     plan = _apply_local_vol_overrides(
         plan,
         description,
         instrument_type=instrument_type,
+        requested_measures=requested_measures,
     )
     if not _looks_like_fx_option(description, instrument_type=instrument_type):
-        return plan
+        return _attach_challenger_packet(
+            plan,
+            candidate_methods=candidate_methods,
+            requested_measures=requested_measures,
+        )
 
     required_market_data = normalize_market_data_requirements(
         set(plan.required_market_data)
@@ -482,12 +831,16 @@ def _apply_contextual_overrides(
         plan.assumption_summary,
         ("fx_cross_currency_context", "garman_kohlhagen_or_equivalent_context"),
     )
-    return replace(
-        plan,
-        required_market_data=required_market_data,
-        reasoning=reasoning,
-        selection_reason=selection_reason,
-        assumption_summary=assumption_summary,
+    return _attach_challenger_packet(
+        replace(
+            plan,
+            required_market_data=required_market_data,
+            reasoning=reasoning,
+            selection_reason=selection_reason,
+            assumption_summary=assumption_summary,
+        ),
+        candidate_methods=candidate_methods,
+        requested_measures=requested_measures,
     )
 
 
@@ -505,6 +858,7 @@ def _apply_local_vol_overrides(
     description: str | None,
     *,
     instrument_type: str | None = None,
+    requested_measures: tuple[str, ...] | list[str] | None = None,
 ) -> PricingPlan:
     """Narrow vanilla local-vol requests onto the supported MC/PDE substrate."""
     if not _looks_like_local_vol_context(description, instrument_type=instrument_type):
@@ -554,15 +908,22 @@ def _apply_local_vol_overrides(
         ),
         preserved_context_tags,
     )
-    return replace(
-        plan,
-        method=method,
-        method_modules=method_modules,
-        required_market_data=required_market_data,
-        reasoning=reasoning,
-        sensitivity_support=support_for_method(method),
-        selection_reason=selection_reason,
-        assumption_summary=assumption_summary,
+    return _attach_challenger_packet(
+        replace(
+            plan,
+            method=method,
+            method_modules=method_modules,
+            required_market_data=required_market_data,
+            reasoning=reasoning,
+            sensitivity_support=support_for_method(method),
+            selection_reason=selection_reason,
+            assumption_summary=assumption_summary,
+        ),
+        candidate_methods=_merge_unique_strings(
+            _candidate_methods_from_packet(plan.challenger_packet),
+            (plan.method, method),
+        ),
+        requested_measures=requested_measures,
     )
 
 

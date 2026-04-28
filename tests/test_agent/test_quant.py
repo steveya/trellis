@@ -9,6 +9,7 @@ from trellis.agent.quant import (
     PricingPlan,
     STATIC_PLANS,
     check_data_availability,
+    quant_challenger_packet_summary,
     select_pricing_method,
     select_pricing_method_for_product_ir,
 )
@@ -246,6 +247,45 @@ class TestPricingPlan:
             "no_path_sampling_required",
         )
         assert "multiple_valid_methods_available" in plan.assumption_summary
+
+    def test_product_ir_multiple_candidates_emits_challenger_packet(self):
+        product_ir = SimpleNamespace(
+            instrument="synthetic_option",
+            required_market_data={"discount_curve", "black_vol_surface"},
+            candidate_engine_families=("pde", "monte_carlo", "tree", "analytical"),
+            multi_asset=False,
+            schedule_dependence=False,
+            state_dependence="static",
+            exercise_style="",
+        )
+
+        plan = select_pricing_method_for_product_ir(product_ir)
+        packet = plan.challenger_packet
+        summary = quant_challenger_packet_summary(plan)
+
+        assert packet is not None
+        assert packet.selected_method == "analytical"
+        assert summary["selected_method"] == "analytical"
+        assert summary["method_identity"] == "analytical"
+        assert summary["route_family"] == "analytical"
+        assert summary["candidate_methods"][0]["method"] == "analytical"
+        assert summary["candidate_methods"][0]["status"] == "selected"
+        rejected = {
+            item["method"]: item["rejection_reason"]
+            for item in summary["candidate_methods"]
+            if item["status"] == "rejected"
+        }
+        assert rejected == {
+            "rate_tree": "higher_complexity_than_selected_default",
+            "pde_solver": "higher_complexity_than_selected_default",
+            "monte_carlo": "higher_complexity_than_selected_default",
+        }
+        assert summary["assumption_basis"] == list(plan.assumption_summary)
+        assert summary["required_market_data"] == ["black_vol_surface", "discount_curve"]
+        assert "market_data_capability_check" in summary["expected_executable_checks"]
+        assert "deterministic_validation_bundle" in summary["expected_executable_checks"]
+        assert "alternative_method_challenge" in summary["expected_executable_checks"]
+        assert "quant:multiple_valid_methods_available" in summary["residual_risk_handoff"]
 
     def test_product_ir_sensitivity_request_prefers_rate_tree_for_callable_bond(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir

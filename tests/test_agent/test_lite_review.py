@@ -903,6 +903,100 @@ def test_validate_build_supports_quanto_monte_carlo_market_inputs():
     assert failures == []
 
 
+def test_validate_build_passes_quant_selected_method_to_model_validator(monkeypatch):
+    from trellis.agent.executor import _validate_build
+    from trellis.agent.quant import PricingPlan
+    from trellis.agent.validation_report import ValidationReport
+
+    class DummyPayoff:
+        pass
+
+    spec_schema = SimpleNamespace(
+        class_name="DummyPayoff",
+        spec_name="DummySpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[],
+    )
+    captured: dict[str, object] = {}
+
+    monkeypatch.setattr(
+        "trellis.agent.executor._make_test_payoff",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.executor._record_platform_event",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.executor._should_run_reference_oracle",
+        lambda *args, **kwargs: False,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.validation_bundles.select_validation_bundle",
+        lambda *args, **kwargs: SimpleNamespace(
+            bundle_id="analytical:european_option",
+            checks=(),
+            categories={},
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.validation_bundles.execute_validation_bundle",
+        lambda *args, **kwargs: SimpleNamespace(
+            failures=[],
+            failure_details=[],
+            executed_checks=(),
+            skipped_checks=(),
+        ),
+    )
+
+    def fake_validate_model(*, method, run_llm_review, **kwargs):
+        captured["method"] = method
+        captured["run_llm_review"] = run_llm_review
+        return ValidationReport(instrument="european_option", method=str(method))
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.validate_model",
+        fake_validate_model,
+    )
+
+    failures = _validate_build(
+        DummyPayoff,
+        code="def evaluate(self, market_state):\n    return 0.0\n",
+        description="European call option on equity",
+        spec_schema=spec_schema,
+        validation="thorough",
+        compiled_request=SimpleNamespace(
+            request=SimpleNamespace(metadata={}, request_id="validate_build_method_surface"),
+            generation_plan=None,
+            semantic_blueprint=None,
+            comparison_spec=None,
+            execution_plan=SimpleNamespace(route_method="direct_existing"),
+        ),
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.models.black"],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="european_option",
+            reasoning="test",
+        ),
+        product_ir=SimpleNamespace(
+            instrument="european_option",
+            payoff_traits=(),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            schedule_dependence=False,
+            model_family="equity_diffusion",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+        attempt_number=1,
+    )
+
+    assert failures == []
+    assert captured["method"] == "analytical"
+    assert captured["run_llm_review"] is False
+
+
 def test_format_validation_failure_feedback_includes_structured_diagnostics():
     from trellis.agent.executor import _format_validation_failure_feedback
     from trellis.agent.invariants import InvariantFailure

@@ -228,6 +228,36 @@ model-validator findings. The cycle report makes those stage outcomes stable
 and inspectable so downstream tooling no longer has to infer governance state
 from ad hoc event strings.
 
+Quant Challenger Packet
+-----------------------
+
+The quant stage now emits a structured ``quant_challenger_packet`` alongside
+the selected pricing method. The packet is the stable method-selection handoff
+for downstream validation, critic, arbiter, and model-validator stages.
+
+The packet records:
+
+- the normalized selected method and route-family identity
+- the ranked candidate methods considered by quant
+- rejection reason codes for non-selected alternatives
+- the assumption basis used by method selection
+- required market-data capabilities and requested sensitivity measures
+- expected executable checks that downstream validation should cover
+- residual risk ids that model validation can review without reconstructing
+  quant reasoning from prompt text
+
+Compiled validation contracts persist the same packet under
+``quant_challenger_packet`` and enrich it with the validation contract id and
+actual deterministic check ids selected for the route. Platform request
+metadata carries the same summary, and ``quant_selected_method`` trace events
+include the packet so ``cycle_report`` consumers can read the quant hypothesis
+directly from stage details.
+
+Model-validator LLM review receives the packet as structured JSON when it runs.
+It should treat the packet as the method-selection contract and focus on
+residual conceptual risk rather than rebuilding quant's method-choice rationale
+from loose prose.
+
 Governed Provider Provenance
 ----------------------------
 

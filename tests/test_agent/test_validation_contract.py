@@ -59,6 +59,18 @@ def test_compile_build_request_attaches_validation_contract_summary():
         compiled.request.metadata["validation_contract"]["deterministic_checks"][0]["check_id"]
         == contract.deterministic_checks[0].check_id
     )
+    packet = contract.quant_challenger_packet
+    assert packet["selected_method"] == contract.method
+    assert packet["method_identity"] == contract.method
+    assert packet["route_family"] == contract.route_family
+    assert "deterministic_validation_bundle" in packet["expected_executable_checks"]
+    assert "check_non_negativity" in packet["expected_executable_checks"]
+    assert "check_price_sanity" in packet["expected_executable_checks"]
+    assert packet["validation_contract_id"] == contract.contract_id
+    assert (
+        compiled.request.metadata["validation_contract"]["quant_challenger_packet"]
+        == packet
+    )
 
 
 def test_callable_bond_validation_contract_carries_reference_bound_relation():

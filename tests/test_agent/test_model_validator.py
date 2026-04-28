@@ -545,8 +545,15 @@ def test_validate_model_threads_validation_contract_residual_risks(monkeypatch):
 
     captured = {}
 
-    def fake_llm_review(*args, residual_risks=(), review_reason=None, **kwargs):
+    def fake_llm_review(
+        *args,
+        residual_risks=(),
+        quant_challenger_packet=None,
+        review_reason=None,
+        **kwargs,
+    ):
         captured["residual_risks"] = residual_risks
+        captured["quant_challenger_packet"] = quant_challenger_packet
         captured["review_reason"] = review_reason
         return []
 
@@ -567,12 +574,32 @@ def test_validate_model_threads_validation_contract_residual_risks(monkeypatch):
             method="rate_tree",
             bundle_id="rate_tree:callable_bond",
             residual_risks=("unsupported_paths_declared",),
+            quant_challenger_packet={
+                "selected_method": "rate_tree",
+                "candidate_methods": [
+                    {"method": "rate_tree", "status": "selected"},
+                    {
+                        "method": "analytical",
+                        "status": "rejected",
+                        "rejection_reason": "insufficient_contract_features",
+                    },
+                ],
+                "expected_executable_checks": ["deterministic_validation_bundle"],
+                "residual_risk_handoff": ["quant:early_exercise_sensitive_product"],
+            },
         ),
         run_llm_review=True,
     )
 
     assert report.findings == []
     assert captured["residual_risks"] == ("unsupported_paths_declared",)
+    assert captured["quant_challenger_packet"]["selected_method"] == "rate_tree"
+    assert (
+        captured["quant_challenger_packet"]["candidate_methods"][1][
+            "rejection_reason"
+        ]
+        == "insufficient_contract_features"
+    )
     assert captured["review_reason"] is None
 
 
