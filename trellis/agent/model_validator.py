@@ -88,6 +88,9 @@ def validate_model(
             knowledge_context=knowledge_context,
             generation_plan=generation_plan,
             residual_risks=_model_validator_residual_risks(validation_contract),
+            quant_challenger_packet=_model_validator_quant_challenger_packet(
+                validation_contract
+            ),
             review_reason=review_reason,
             model=model,
         )
@@ -140,6 +143,7 @@ def _llm_conceptual_review(
     knowledge_context: str = "",
     generation_plan=None,
     residual_risks: tuple[str, ...] = (),
+    quant_challenger_packet: dict[str, object] | None = None,
     review_reason: str | None = None,
     model: str | None = None,
 ) -> list[ValidationFinding]:
@@ -158,6 +162,14 @@ def _llm_conceptual_review(
             "\n## Residual Conceptual Risks\n"
             "Residual conceptual review only. Focus on the unresolved items below.\n"
             f"{residual_risk_lines}\n"
+        )
+    quant_packet_section = ""
+    if quant_challenger_packet:
+        quant_packet_section = (
+            "\n## Quant Challenger Packet\n"
+            "Use this as the method-selection contract. Do not reconstruct "
+            "quant reasoning from prose when these fields are present.\n"
+            f"```json\n{json.dumps(quant_challenger_packet, indent=2, sort_keys=True)}\n```\n"
         )
     review_reason_section = ""
     if review_reason:
@@ -182,6 +194,7 @@ reference bounds, or other validations already covered by the validation contrac
 {knowledge_section}
 {route_contract_section}
 {residual_risk_section}
+{quant_packet_section}
 {review_reason_section}
 
 ## Code to validate
@@ -258,3 +271,10 @@ def _model_validator_residual_risks(validation_contract) -> tuple[str, ...]:
     if validation_contract is None:
         return ()
     return tuple(getattr(validation_contract, "residual_risks", ()) or ())
+
+
+def _model_validator_quant_challenger_packet(validation_contract) -> dict[str, object]:
+    """Return the structured quant challenger packet attached to validation."""
+    if validation_contract is None:
+        return {}
+    return dict(getattr(validation_contract, "quant_challenger_packet", {}) or {})

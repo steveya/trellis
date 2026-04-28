@@ -195,7 +195,27 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
         compiled,
         "quant_selected_method",
         status="ok",
-        details={"method": "analytical", "selection_reason": "exact_binding"},
+        details={
+            "method": "analytical",
+            "selection_reason": "exact_binding",
+            "challenger_packet": {
+                "selected_method": "analytical",
+                "method_identity": "analytical",
+                "candidate_methods": [
+                    {"method": "analytical", "status": "selected"},
+                    {
+                        "method": "monte_carlo",
+                        "status": "rejected",
+                        "rejection_reason": "higher_complexity_than_selected_default",
+                    },
+                ],
+                "expected_executable_checks": [
+                    "market_data_capability_check",
+                    "deterministic_validation_bundle",
+                ],
+                "residual_risk_handoff": ["quant:multiple_valid_methods_available"],
+            },
+        },
         root=tmp_path,
     )
     append_platform_trace_event(
@@ -267,6 +287,13 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
         "arbiter": "passed",
         "model_validator": "skipped",
     }
+    quant_stage = next(
+        stage for stage in cycle_report["stages"] if stage["stage"] == "quant"
+    )
+    assert quant_stage["details"]["challenger_packet"]["selected_method"] == "analytical"
+    assert quant_stage["details"]["challenger_packet"]["candidate_methods"][1][
+        "method"
+    ] == "monte_carlo"
 
 
 def test_platform_trace_cycle_report_marks_failed_stage(tmp_path):

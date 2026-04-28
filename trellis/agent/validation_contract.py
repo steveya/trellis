@@ -9,6 +9,7 @@ from typing import Mapping
 from trellis.agent.assembly_tools import normalize_comparison_relation
 from trellis.agent.instrument_identity import resolve_authoritative_instrument_type
 from trellis.agent.knowledge.methods import normalize_method
+from trellis.agent.quant import quant_challenger_packet_summary
 from trellis.agent import validation_bundles
 
 _VOL_CHECK_INPUTS = frozenset({"black_vol_surface", "local_vol_surface"})
@@ -75,10 +76,16 @@ class CompiledValidationContract:
     lowering_errors: tuple[str, ...] = ()
     admissibility_failures: tuple[str, ...] = ()
     residual_risks: tuple[str, ...] = ()
+    quant_challenger_packet: Mapping[str, object] = field(default_factory=dict)
     review_hints: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self):
         """Freeze mutable mapping fields for stability in traces and tests."""
+        object.__setattr__(
+            self,
+            "quant_challenger_packet",
+            _freeze_mapping(self.quant_challenger_packet),
+        )
         object.__setattr__(self, "review_hints", _freeze_mapping(self.review_hints))
 
 
@@ -164,6 +171,14 @@ def compile_validation_contract(
         for check_id in bundle.checks
         if _check_supported_by_market_data(check_id, required_market_data)
     )
+    contract_id = f"{method}:{resolved_instrument}"
+    quant_challenger_packet = quant_challenger_packet_summary(
+        pricing_plan,
+        deterministic_check_ids=tuple(check.check_id for check in deterministic_checks),
+        validation_contract_id=contract_id,
+        route_family=route_family or method,
+        residual_risks=residual_risks,
+    )
     review_hints = {
         "has_residual_risks": bool(residual_risks),
         "has_lowering_errors": bool(lowering_errors),
@@ -172,9 +187,11 @@ def compile_validation_contract(
             relation.relation == "unspecified" for relation in comparison_relations
         ),
         "has_exact_validation_identity": bool(exact_bundle_id),
+        "has_quant_challenger_packet": bool(quant_challenger_packet),
+        "has_quant_alternatives": _has_quant_alternatives(quant_challenger_packet),
     }
     return CompiledValidationContract(
-        contract_id=f"{method}:{resolved_instrument}",
+        contract_id=contract_id,
         instrument_type=resolved_instrument,
         method=method,
         bundle_id=bundle.bundle_id,
@@ -189,6 +206,7 @@ def compile_validation_contract(
         lowering_errors=lowering_errors,
         admissibility_failures=admissibility_failures,
         residual_risks=residual_risks,
+        quant_challenger_packet=quant_challenger_packet,
         review_hints=review_hints,
     )
 
@@ -230,8 +248,17 @@ def validation_contract_summary(
         "lowering_errors": list(contract.lowering_errors),
         "admissibility_failures": list(contract.admissibility_failures),
         "residual_risks": list(contract.residual_risks),
+        "quant_challenger_packet": dict(contract.quant_challenger_packet),
         "review_hints": dict(contract.review_hints),
     }
+
+
+def _has_quant_alternatives(packet: Mapping[str, object]) -> bool:
+    """Return whether a quant challenger packet contains rejected alternatives."""
+    for candidate in packet.get("candidate_methods", ()) or ():
+        if isinstance(candidate, Mapping) and candidate.get("status") == "rejected":
+            return True
+    return False
 
 
 def _resolve_instrument_type(

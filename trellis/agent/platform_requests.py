@@ -1096,6 +1096,12 @@ def _finalize_compiled_request(
             artifact_kind=route_artifact,
             semantic_contract=semantic_contract is not None,
         )
+    if pricing_plan is not None:
+        from trellis.agent.quant import quant_challenger_packet_summary
+
+        quant_summary = quant_challenger_packet_summary(pricing_plan)
+        if quant_summary:
+            request_metadata["quant_challenger_packet"] = quant_summary
     validation_contract = None
     if any(
         item is not None
@@ -1118,6 +1124,9 @@ def _finalize_compiled_request(
         validation_summary = validation_contract_summary(validation_contract)
         if validation_summary is not None:
             request_metadata["validation_contract"] = validation_summary
+            quant_summary = validation_summary.get("quant_challenger_packet")
+            if quant_summary:
+                request_metadata["quant_challenger_packet"] = quant_summary
     if generation_plan is not None and semantic_blueprint is not None:
         generation_plan = enrich_generation_plan(
             generation_plan,
