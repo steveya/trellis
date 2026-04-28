@@ -3,7 +3,7 @@
 from datetime import date
 import pytest
 
-from trellis.agent.arbiter import run_critic_tests
+from trellis.agent.arbiter import run_critic_check_verdicts, run_critic_tests
 from trellis.agent.critic import CriticConcern, available_critic_checks
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import DeterministicCashflowPayoff
@@ -226,6 +226,25 @@ def test_available_critic_checks_can_be_restricted_by_validation_contract():
     ]
 
 
+def test_available_critic_checks_do_not_fall_back_when_contract_admits_no_claims():
+    from trellis.agent.validation_contract import CompiledValidationContract, ValidationCheckSpec
+
+    checks = available_critic_checks(
+        instrument_type="callable_bond",
+        validation_contract=CompiledValidationContract(
+            contract_id="rate_tree:callable_bond",
+            instrument_type="callable_bond",
+            method="rate_tree",
+            bundle_id="rate_tree:callable_bond",
+            deterministic_checks=(
+                ValidationCheckSpec("coupon_periods_settle_in_schedule_order", "route_specific"),
+            ),
+        ),
+    )
+
+    assert checks == []
+
+
 def test_run_critic_tests_respects_allowed_check_ids():
     concerns = [
         CriticConcern(
@@ -244,7 +263,59 @@ def test_run_critic_tests_respects_allowed_check_ids():
         allowed_check_ids={"volatility_input_usage"},
     )
 
-    assert failures == []
+    assert len(failures) == 1
+    assert "did not admit that executable claim" in failures[0]
+
+
+def test_run_critic_check_verdicts_fail_closed_on_unadmitted_checks():
+    concerns = [
+        CriticConcern(
+            "price_non_negative",
+            "price should stay non-negative",
+            "error",
+        ),
+    ]
+    bond = Bond(face=100, coupon=0.05, maturity_date=date(2034, 11, 15),
+                 maturity=10, frequency=2)
+    payoff = DeterministicCashflowPayoff(bond)
+
+    verdicts = run_critic_check_verdicts(
+        concerns,
+        payoff,
+        allowed_check_ids={"volatility_input_usage"},
+    )
+
+    assert len(verdicts) == 1
+    assert verdicts[0].check_id == "price_non_negative"
+    assert verdicts[0].status == "failed"
+    assert verdicts[0].reason == "check_not_admitted"
+    assert verdicts[0].executed is False
+
+
+def test_critique_marks_unadmitted_checks_invalid_when_menu_empty(monkeypatch):
+    from trellis.agent.critic import critique
+
+    def fake_llm_generate_json(*args, **kwargs):
+        return [
+            {
+                "check_id": "price_non_negative",
+                "description": "invented concern",
+                "severity": "error",
+            }
+        ]
+
+    monkeypatch.setattr("trellis.agent.critic.llm_generate_json", fake_llm_generate_json)
+
+    concerns = critique(
+        "class Demo: pass",
+        "Demo product",
+        available_checks=[],
+    )
+
+    assert len(concerns) == 1
+    assert concerns[0].check_id == "price_non_negative"
+    assert concerns[0].status == "invalid_selection"
+    assert concerns[0].severity == "error"
 
 
 class TestInvariantExpanded:

@@ -244,7 +244,17 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
         compiled,
         "arbiter_completed",
         status="ok",
-        details={"failure_count": 0},
+        details={
+            "failure_count": 0,
+            "verdicts": [
+                {
+                    "check_id": "price_non_negative",
+                    "status": "passed",
+                    "reason": "",
+                    "executed": True,
+                }
+            ],
+        },
         root=tmp_path,
     )
     append_platform_trace_event(
@@ -294,6 +304,11 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
     assert quant_stage["details"]["challenger_packet"]["candidate_methods"][1][
         "method"
     ] == "monte_carlo"
+    arbiter_stage = next(
+        stage for stage in cycle_report["stages"] if stage["stage"] == "arbiter"
+    )
+    assert arbiter_stage["details"]["verdicts"][0]["check_id"] == "price_non_negative"
+    assert arbiter_stage["details"]["verdicts"][0]["status"] == "passed"
 
 
 def test_platform_trace_cycle_report_marks_failed_stage(tmp_path):

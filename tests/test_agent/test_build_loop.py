@@ -863,10 +863,7 @@ def test_validate_build_critic_path_uses_stage_helpers_without_nameerror(monkeyp
     assert failures == []
     assert captured["stage"] == "critic"
     assert captured["metadata"]["model"] == "critic-model"
-    assert critic_call["available_checks"] == [
-        "price_non_negative",
-        "volatility_input_usage",
-    ]
+    assert critic_call["available_checks"] == []
     assert critic_call["json_max_retries"] is None
     assert critic_call["allow_text_fallback"] is True
     assert "get_model_for_stage" not in caplog.text

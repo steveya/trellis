@@ -75,6 +75,7 @@ def test_compile_build_request_attaches_validation_contract_summary():
 
 def test_callable_bond_validation_contract_carries_reference_bound_relation():
     from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.validation_contract import executable_claim_specs_for_contract
 
     compiled = compile_build_request(
         "Callable bond with annual coupons and issuer call dates 2026-01-15, 2027-01-15",
@@ -103,6 +104,18 @@ def test_callable_bond_validation_contract_carries_reference_bound_relation():
         "reference_factory",
         "market_state_factory",
     )
+    claim_specs = executable_claim_specs_for_contract(contract)
+    claim_ids = {claim.claim_id for claim in claim_specs}
+    assert "price_non_negative" in claim_ids
+    assert "volatility_input_usage" in claim_ids
+    callable_claim = next(
+        claim
+        for claim in claim_specs
+        if claim.claim_id == "callable_bound_vs_straight_bond"
+    )
+    assert callable_claim.validation_check_id == "check_bounded_by_reference"
+    assert callable_claim.relation == "<="
+    assert callable_claim.executable is True
 
 
 def test_puttable_bond_validation_contract_uses_lower_bound_relation():

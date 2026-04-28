@@ -132,7 +132,7 @@ def available_critic_checks(
         instrument=instrument,
         validation_contract=validation_contract,
     )
-    if contract_checks:
+    if validation_contract is not None:
         return contract_checks
 
     checks: list[CriticCheck] = []
@@ -167,32 +167,14 @@ def _checks_from_validation_contract(
     if validation_contract is None:
         return []
 
-    deterministic_checks = tuple(getattr(validation_contract, "deterministic_checks", ()) or ())
-    deterministic_ids = {
-        str(getattr(item, "check_id", "") or "").strip()
-        for item in deterministic_checks
-        if str(getattr(item, "check_id", "") or "").strip()
-    }
-    bound_relation = None
-    for item in deterministic_checks:
-        if str(getattr(item, "check_id", "") or "").strip() == "check_bounded_by_reference":
-            relation = str(getattr(item, "relation", "") or "").strip()
-            if relation:
-                bound_relation = relation
-                break
+    from trellis.agent.validation_contract import executable_claim_specs_for_contract
 
+    claim_specs = executable_claim_specs_for_contract(validation_contract)
     checks: list[CriticCheck] = []
-    if "check_non_negativity" in deterministic_ids:
-        checks.append(_CHECK_LIBRARY["price_non_negative"])
-    if {"check_vol_sensitivity", "check_vol_monotonicity"} & deterministic_ids:
-        checks.append(_CHECK_LIBRARY["volatility_input_usage"])
-    if "check_rate_monotonicity" in deterministic_ids:
-        checks.append(_CHECK_LIBRARY["rate_sensitivity_present"])
-    if "check_bounded_by_reference" in deterministic_ids:
-        if instrument == "puttable_bond" or bound_relation == ">=":
-            checks.append(_CHECK_LIBRARY["puttable_bound_vs_straight_bond"])
-        elif instrument == "callable_bond" or bound_relation == "<=":
-            checks.append(_CHECK_LIBRARY["callable_bound_vs_straight_bond"])
+    for claim in claim_specs:
+        check = _CHECK_LIBRARY.get(claim.claim_id)
+        if check is not None:
+            checks.append(check)
 
     seen: set[str] = set()
     deduped: list[CriticCheck] = []
@@ -319,6 +301,7 @@ def critique(
         data = json.loads(data)
 
     concerns = []
+    enforce_allowed_checks = available_checks is not None
     allowed_check_ids = {
         check.check_id
         for check in (available_checks or ())
@@ -330,7 +313,19 @@ def critique(
             check_id = str(item.get("check_id", "") or "").strip()
             if not check_id:
                 continue
-            if allowed_check_ids and check_id not in allowed_check_ids:
+            if enforce_allowed_checks and check_id not in allowed_check_ids:
+                concerns.append(
+                    CriticConcern(
+                        check_id=check_id,
+                        description=str(item.get("description", "") or "").strip(),
+                        severity="error",
+                        evidence=str(item.get("evidence", "") or "").strip(),
+                        remediation=(
+                            "Select only validation-contract-admitted executable checks."
+                        ),
+                        status="invalid_selection",
+                    )
+                )
                 continue
             concerns.append(
                 CriticConcern(
