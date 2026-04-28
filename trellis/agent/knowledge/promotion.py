@@ -21,6 +21,7 @@ from collections.abc import Mapping
 
 import yaml
 
+from trellis.agent.cycle_governance import evaluate_cycle_promotion_governance
 from trellis.agent.knowledge.import_registry import get_repo_revision
 from trellis.agent.knowledge.schema import (
     AdapterLifecycleRecord,
@@ -1246,6 +1247,58 @@ def summarize_adapter_lifecycle_records(
     return _serialize_adapter_lifecycle_summary(list(records))
 
 
+def _load_cycle_report_from_trace_path(trace_path: object) -> dict[str, object]:
+    """Load a persisted platform trace's cycle report when available."""
+    path_text = str(trace_path or "").strip()
+    if not path_text:
+        return {}
+    path = Path(path_text)
+    if not path.is_absolute():
+        path = _REPO_ROOT / path
+    if not path.is_file():
+        return {}
+    try:
+        payload = yaml.safe_load(path.read_text()) or {}
+    except Exception:
+        return {}
+    if not isinstance(payload, Mapping):
+        return {}
+    cycle_report = payload.get("cycle_report") or {}
+    return dict(cycle_report) if isinstance(cycle_report, Mapping) else {}
+
+
+def _cycle_report_from_candidate_data(data: Mapping[str, object]) -> dict[str, object]:
+    """Return the candidate's persisted cycle report, if any."""
+    for key in ("cycle_report", "cold_agent_cycle_report"):
+        value = data.get(key)
+        if isinstance(value, Mapping):
+            return dict(value)
+    benchmark_provenance = data.get("benchmark_provenance")
+    if isinstance(benchmark_provenance, Mapping):
+        value = benchmark_provenance.get("cycle_report") or benchmark_provenance.get(
+            "cold_agent_cycle_report"
+        )
+        if isinstance(value, Mapping):
+            return dict(value)
+    return {}
+
+
+def _cycle_report_from_benchmark_record(
+    benchmark_record: Mapping[str, object],
+) -> dict[str, object]:
+    """Return the benchmark run's agent cycle report, if the runner persisted it."""
+    for key in ("cold_agent_cycle_report", "cycle_report"):
+        value = benchmark_record.get(key)
+        if isinstance(value, Mapping):
+            return dict(value)
+    build_observability = benchmark_record.get("build_observability")
+    if isinstance(build_observability, Mapping):
+        value = build_observability.get("cycle_report")
+        if isinstance(value, Mapping):
+            return dict(value)
+    return {}
+
+
 def record_promotion_candidate(
     *,
     task_id: str,
@@ -1262,6 +1315,7 @@ def record_promotion_candidate(
     market_context: dict | None = None,
     cross_validation: dict | None = None,
     reference_target: bool = False,
+    cycle_report: Mapping[str, object] | None = None,
 ) -> str | None:
     """Persist a fresh-build candidate snapshot for later promotion review."""
     source = (code or "").strip()
@@ -1274,6 +1328,11 @@ def record_promotion_candidate(
     suffix = _safe_filename_fragment(comparison_target or preferred_method or "candidate")
     filename = f"{timestamp.strftime('%Y%m%d_%H%M%S')}_{task_id.lower()}_{suffix}.yaml"
     path = candidate_dir / filename
+    persisted_cycle_report = (
+        dict(cycle_report)
+        if isinstance(cycle_report, Mapping)
+        else _load_cycle_report_from_trace_path(platform_trace_path)
+    )
     payload = {
         "timestamp": timestamp.isoformat(),
         "task_id": task_id,
@@ -1288,6 +1347,7 @@ def record_promotion_candidate(
         "platform_request_id": platform_request_id,
         "platform_trace_path": platform_trace_path,
         "market_context": market_context or {},
+        "cycle_report": persisted_cycle_report,
         "cross_validation": cross_validation or {},
         "code_hash": hashlib.sha256(source.encode()).hexdigest()[:12],
         "code": source,
@@ -1352,6 +1412,7 @@ def record_benchmark_promotion_candidate(
         code_hash = record_artifact_hash
     else:
         code_hash = hashlib.sha256(source_bytes).hexdigest()
+    cycle_report = _cycle_report_from_benchmark_record(benchmark_record)
 
     # Dedup: if a previously emitted candidate for the same task already
     # carries the same `code_hash`, the generated artifact is byte-identical
@@ -1367,6 +1428,28 @@ def record_benchmark_promotion_candidate(
         if not isinstance(existing_payload, Mapping):
             continue
         if _hashes_equivalent(existing_payload.get("code_hash"), code_hash):
+            existing_cycle_report = existing_payload.get("cycle_report")
+            if cycle_report and (
+                not isinstance(existing_cycle_report, Mapping)
+                or not existing_cycle_report
+            ):
+                updated_payload = dict(existing_payload)
+                updated_payload["cycle_report"] = cycle_report
+                provenance = updated_payload.get("benchmark_provenance") or {}
+                if isinstance(provenance, Mapping):
+                    provenance = dict(provenance)
+                else:
+                    provenance = {}
+                provenance["cycle_report"] = cycle_report
+                updated_payload["benchmark_provenance"] = provenance
+                with open(existing_path, "w") as handle:
+                    yaml.safe_dump(
+                        _yaml_safe_data(updated_payload),
+                        handle,
+                        default_flow_style=False,
+                        sort_keys=False,
+                        allow_unicode=True,
+                    )
             return str(existing_path)
 
     filename = (
@@ -1404,6 +1487,7 @@ def record_benchmark_promotion_candidate(
         "market_context": {
             "market_scenario_id": str(benchmark_record.get("market_scenario_id") or ""),
         },
+        "cycle_report": cycle_report,
         "generated_artifact": generated_artifact,
         "benchmark_provenance": {
             "benchmark_kind": "financepy",
@@ -1416,6 +1500,7 @@ def record_benchmark_promotion_candidate(
             "status": str(benchmark_record.get("status") or ""),
             "comparison_summary": dict(benchmark_record.get("comparison_summary") or {}),
             "generated_artifact": generated_artifact,
+            "cycle_report": cycle_report,
         },
         "code_hash": code_hash,
         "code": source,
@@ -1747,6 +1832,9 @@ def promote_benchmark_candidate(
         "code_hash": computed_hash,
         "review_status": str(review.get("status") or ""),
         "review_path": str(review.get("review_path") or ""),
+        "cycle_promotion_governance": dict(
+            review.get("cycle_promotion_governance") or {}
+        ),
     }
 
     if not dry_run:
@@ -2141,8 +2229,44 @@ def review_promotion_candidate(
                 ),
             ]
         )
+    base_approved = all(check["passed"] for check in checks if check["blocking"])
+    adapter_lifecycle_stage = "deprecated" if base_approved else "stale"
+    adapter_lifecycle_snapshot = _adapter_lifecycle_snapshot(
+        adapter_records,
+        stage=adapter_lifecycle_stage,
+        adapter_id=recommended_module_path,
+        replacement=module_path,
+        repo_revision=adapter_repo_revision,
+    )
+    cycle_governance = evaluate_cycle_promotion_governance(
+        _cycle_report_from_candidate_data(data),
+        adapter_lifecycle=adapter_lifecycle_snapshot,
+    ).to_dict()
+    checks.append(
+        _review_check(
+            "cycle_promotion_governance",
+            bool(cycle_governance.get("eligible")),
+            "agent cycle report is promotion-eligible",
+            failure_detail=(
+                "agent cycle report is not promotion-eligible: "
+                + ", ".join(str(item) for item in cycle_governance.get("blockers", ()))
+            ),
+        )
+    )
     approved = all(check["passed"] for check in checks if check["blocking"])
-    adapter_lifecycle_stage = "deprecated" if approved else "stale"
+    if not approved and adapter_lifecycle_stage != "stale":
+        adapter_lifecycle_stage = "stale"
+        adapter_lifecycle_snapshot = _adapter_lifecycle_snapshot(
+            adapter_records,
+            stage=adapter_lifecycle_stage,
+            adapter_id=recommended_module_path,
+            replacement=module_path,
+            repo_revision=adapter_repo_revision,
+        )
+        cycle_governance = evaluate_cycle_promotion_governance(
+            _cycle_report_from_candidate_data(data),
+            adapter_lifecycle=adapter_lifecycle_snapshot,
+        ).to_dict()
     review = {
         "timestamp": datetime.now().isoformat(),
         "candidate_path": str(path),
@@ -2159,13 +2283,8 @@ def review_promotion_candidate(
         "status": "approved" if approved else "rejected",
         "approved": approved,
         "checks": checks,
-        "adapter_lifecycle": _adapter_lifecycle_snapshot(
-            adapter_records,
-            stage=adapter_lifecycle_stage,
-            adapter_id=recommended_module_path,
-            replacement=module_path,
-            repo_revision=adapter_repo_revision,
-        ),
+        "adapter_lifecycle": adapter_lifecycle_snapshot,
+        "cycle_promotion_governance": cycle_governance,
     }
     if persist:
         review["review_path"] = _record_promotion_review(review)
@@ -2213,6 +2332,9 @@ def adopt_promotion_candidate(
     existing_text = recommended_file.read_text() if recommended_file.exists() else ""
     existing_hash = hashlib.sha256(existing_text.encode()).hexdigest()[:12] if existing_text else ""
     previous_exists = recommended_file.exists()
+    review_cycle_governance = review.get("cycle_promotion_governance") or {}
+    if not isinstance(review_cycle_governance, Mapping):
+        review_cycle_governance = {}
     checks = [
         _review_check(
             "review_exists",
@@ -2225,6 +2347,12 @@ def adopt_promotion_candidate(
             bool(review.get("approved")),
             "review approved the candidate for adoption",
             failure_detail="review is not approved",
+        ),
+        _review_check(
+            "cycle_promotion_governance_eligible",
+            bool(review_cycle_governance.get("eligible")),
+            "review includes an eligible agent-cycle promotion governance artifact",
+            failure_detail="review is missing an eligible agent-cycle promotion governance artifact",
         ),
         _review_check(
             "candidate_exists",
@@ -2277,6 +2405,18 @@ def adopt_promotion_candidate(
     if adopted:
         recommended_file.parent.mkdir(parents=True, exist_ok=True)
         recommended_file.write_text(normalized_source)
+    adapter_lifecycle_snapshot = _adapter_lifecycle_snapshot(
+        adapter_raw_records,
+        stage=adapter_lifecycle_stage,
+        adapter_id=str(review.get("recommended_module_path") or ""),
+        replacement=str(review.get("module_path") or ""),
+        repo_revision=adapter_repo_revision,
+    )
+    adoption_cycle_governance = evaluate_cycle_promotion_governance(
+        _cycle_report_from_candidate_data(candidate)
+        or review_cycle_governance.get("cycle_report"),
+        adapter_lifecycle=adapter_lifecycle_snapshot,
+    ).to_dict()
     adoption = {
         "timestamp": datetime.now().isoformat(),
         "review_path": str(path),
@@ -2293,13 +2433,8 @@ def adopt_promotion_candidate(
         "previous_code_hash": existing_hash or None,
         "adopted_code_hash": snapshot_hash or None,
         "checks": checks,
-        "adapter_lifecycle": _adapter_lifecycle_snapshot(
-            adapter_raw_records,
-            stage=adapter_lifecycle_stage,
-            adapter_id=str(review.get("recommended_module_path") or ""),
-            replacement=str(review.get("module_path") or ""),
-            repo_revision=adapter_repo_revision,
-        ),
+        "adapter_lifecycle": adapter_lifecycle_snapshot,
+        "cycle_promotion_governance": adoption_cycle_governance,
     }
     if persist:
         adoption["adoption_path"] = _record_promotion_adoption(adoption)

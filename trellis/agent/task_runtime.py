@@ -1028,6 +1028,9 @@ def _trace_observability(trace_path: str | None) -> dict[str, Any]:
         "trace_status": trace.get("status"),
         "trace_outcome": trace.get("outcome"),
     }
+    cycle_report = trace.get("cycle_report")
+    if isinstance(cycle_report, dict):
+        observability["cycle_report"] = cycle_report
     details = dict(trace.get("details") or {})
     candidates: list[dict[str, Any]] = [details]
     for item in trace.get("events", []):

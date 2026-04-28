@@ -314,6 +314,35 @@ The persisted ``cycle_report`` also separates outcome buckets:
 Downstream promotion and adoption logic should consume these separated buckets
 rather than parsing free-form model-validator text.
 
+Cycle-Governed Promotion And Adoption
+-------------------------------------
+
+Promotion and adoption gates now use the stable ``cycle_report`` as a governed
+input. ``trellis.agent.cycle_governance.evaluate_cycle_promotion_governance``
+is the shared deterministic evaluator for this handoff.
+
+For ``_agent`` adapter promotion:
+
+- promotion-candidate YAML records the cycle report from the source platform
+  trace or FinancePy benchmark cold-agent run
+- promotion review artifacts persist ``cycle_promotion_governance`` next to the
+  existing deterministic checks and adapter lifecycle snapshot
+- adoption requires the review to contain an eligible cycle-governance artifact
+  and persists the refreshed governance result in the adoption artifact
+- stale, deprecated, and archived adapter lifecycle counts are surfaced as
+  governance warnings rather than hidden prompt-only state
+
+For governed MCP model lifecycle work, transition to ``approved`` now requires
+an eligible cycle report in the transition metadata. ``validated`` still means
+the deterministic model-version validation passed; ``approved`` means the
+version also has a clean agent-cycle governance record suitable for production
+execution eligibility.
+
+Audit and Linear/GitHub lifecycle comments render a compact ``Cycle Report``
+section when trace or event details contain ``cycle_report`` or
+``cycle_promotion_governance``. Comments should cite those stable fields rather
+than embedding full nested event payloads.
+
 Governed Provider Provenance
 ----------------------------
 

@@ -228,6 +228,7 @@ class ModelService:
         validation_store=None,
     ) -> dict[str, object]:
         """Apply one explicit governed lifecycle transition to a stored version."""
+        from trellis.agent.cycle_governance import evaluate_cycle_promotion_governance
         from trellis.mcp.errors import TrellisMcpError
 
         current = self.registry.get_version(model_id, version)
@@ -268,6 +269,41 @@ class ModelService:
                     details={"model_id": model_id, "version": version, "to_status": normalized_status.value},
                 )
 
+        transition_metadata = dict(metadata or {})
+        if normalized_status is ModelLifecycleStatus.APPROVED:
+            supplied_governance = transition_metadata.get("cycle_promotion_governance")
+            supplied_report = transition_metadata.get("cycle_report")
+            if isinstance(supplied_governance, Mapping) and not isinstance(supplied_report, Mapping):
+                maybe_report = supplied_governance.get("cycle_report")
+                if isinstance(maybe_report, Mapping):
+                    supplied_report = maybe_report
+            governance = evaluate_cycle_promotion_governance(
+                supplied_report if isinstance(supplied_report, Mapping) else None,
+            ).to_dict()
+            if not bool(governance.get("eligible")):
+                raise TrellisMcpError(
+                    code="cycle_governance_required",
+                    message=(
+                        "Lifecycle transition to 'approved' requires an eligible "
+                        "agent cycle report with no blocking deterministic, "
+                        "conceptual, or calibration outcomes."
+                    ),
+                    details={
+                        "model_id": model_id,
+                        "version": version,
+                        "to_status": normalized_status.value,
+                        "cycle_promotion_governance": governance,
+                    },
+                )
+            transition_metadata["cycle_promotion_governance"] = governance
+        elif isinstance(transition_metadata.get("cycle_report"), Mapping):
+            transition_metadata["cycle_promotion_governance"] = (
+                evaluate_cycle_promotion_governance(
+                    transition_metadata.get("cycle_report"),
+                    require_cycle_report=False,
+                ).to_dict()
+            )
+
         try:
             updated = self.registry.transition_version(
                 model_id,
@@ -276,7 +312,7 @@ class ModelService:
                 actor=actor,
                 reason=reason,
                 notes=notes,
-                metadata=metadata,
+                metadata=transition_metadata,
             )
         except Exception as exc:
             raise TrellisMcpError(

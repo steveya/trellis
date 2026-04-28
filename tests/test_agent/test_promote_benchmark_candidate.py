@@ -32,6 +32,30 @@ def _patch_promotion_paths(monkeypatch, knowledge_root: Path) -> None:
     monkeypatch.setattr(promotion_mod, "_REPO_ROOT", repo_root)
 
 
+def _cycle_report() -> dict[str, object]:
+    return {
+        "request_id": "executor_benchmark_candidate",
+        "status": "succeeded",
+        "outcome": "build_completed",
+        "success": True,
+        "pricing_method": "analytical",
+        "validation_contract_id": "validation:barrier_option:analytical",
+        "stage_statuses": {
+            "quant": "passed",
+            "validation_bundle": "passed",
+            "critic": "passed",
+            "arbiter": "passed",
+            "model_validator": "skipped",
+        },
+        "failure_count": 0,
+        "deterministic_blockers": [],
+        "conceptual_blockers": [],
+        "calibration_blockers": [],
+        "residual_limitations": [],
+        "residual_risks": [],
+    }
+
+
 def _prepare_record_and_candidate(
     tmp_path: Path,
     monkeypatch,
@@ -76,6 +100,7 @@ def _prepare_record_and_candidate(
             "compared_outputs": ("price",),
             "output_deviation_pct": {"price": 0.1},
         },
+        "cold_agent_cycle_report": _cycle_report(),
         "generated_artifact": {
             "module_name": f"trellis_benchmarks._fresh.{task_id.lower()}.analytical.barrieroption",
             "class_name": "BarrierOptionPayoff",
@@ -134,6 +159,10 @@ def test_promote_benchmark_candidate_writes_agent_adapter_with_admission_log(
         "trellis.instruments._agent.barrieroption"
     )
     assert payload["code_hash"] == hashlib.sha256(target_path.read_bytes()).hexdigest()
+    assert payload["cycle_promotion_governance"]["eligible"] is True
+    assert payload["cycle_promotion_governance"]["cycle_report"]["request_id"] == (
+        "executor_benchmark_candidate"
+    )
 
 
 def test_promote_benchmark_candidate_dry_run_leaves_filesystem_untouched(
@@ -171,6 +200,26 @@ def test_promote_benchmark_candidate_fails_closed_on_hash_mismatch(tmp_path, mon
         promote_benchmark_candidate(candidate_path, repo_root=tmp_path)
 
     assert "hash" in str(exc_info.value).lower()
+    target_path = tmp_path / "trellis" / "instruments" / "_agent" / "barrieroption.py"
+    assert not target_path.exists()
+
+
+def test_promote_benchmark_candidate_fails_closed_without_cycle_report(tmp_path, monkeypatch):
+    from trellis.agent.knowledge.promotion import (
+        PromotionAdmissionError,
+        promote_benchmark_candidate,
+    )
+
+    candidate_path, _record = _prepare_record_and_candidate(tmp_path, monkeypatch)
+    candidate = yaml.safe_load(candidate_path.read_text())
+    candidate.pop("cycle_report", None)
+    candidate["benchmark_provenance"].pop("cycle_report", None)
+    candidate_path.write_text(yaml.safe_dump(candidate, sort_keys=False))
+
+    with pytest.raises(PromotionAdmissionError) as exc_info:
+        promote_benchmark_candidate(candidate_path, repo_root=tmp_path)
+
+    assert "cycle_promotion_governance" in str(exc_info.value)
     target_path = tmp_path / "trellis" / "instruments" / "_agent" / "barrieroption.py"
     assert not target_path.exists()
 

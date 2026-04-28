@@ -81,6 +81,30 @@ def _candidate_payload() -> dict[str, object]:
     }
 
 
+def _cycle_report() -> dict[str, object]:
+    return {
+        "request_id": "executor_mcp_candidate",
+        "status": "succeeded",
+        "outcome": "build_completed",
+        "success": True,
+        "pricing_method": "analytical",
+        "validation_contract_id": "validation:vanilla_option:analytical",
+        "stage_statuses": {
+            "quant": "passed",
+            "validation_bundle": "passed",
+            "critic": "passed",
+            "arbiter": "passed",
+            "model_validator": "skipped",
+        },
+        "failure_count": 0,
+        "deterministic_blockers": [],
+        "conceptual_blockers": [],
+        "calibration_blockers": [],
+        "residual_limitations": [],
+        "residual_risks": [],
+    }
+
+
 def test_generate_candidate_creates_draft_version_and_persists_artifacts(tmp_path):
     from trellis.mcp.server import bootstrap_mcp_server
 
@@ -220,6 +244,7 @@ def test_promote_controls_execution_eligibility_and_deprecation(tmp_path):
             "to_status": "approved",
             "actor": "reviewer",
             "reason": "manual_approval",
+            "metadata": {"cycle_report": _cycle_report()},
         },
     )
     assert approved["version"]["status"] == "approved"

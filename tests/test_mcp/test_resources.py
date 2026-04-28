@@ -75,6 +75,30 @@ def _candidate_payload() -> dict[str, object]:
     }
 
 
+def _cycle_report() -> dict[str, object]:
+    return {
+        "request_id": "executor_resource_candidate",
+        "status": "succeeded",
+        "outcome": "build_completed",
+        "success": True,
+        "pricing_method": "analytical",
+        "validation_contract_id": "validation:vanilla_option:analytical",
+        "stage_statuses": {
+            "quant": "passed",
+            "validation_bundle": "passed",
+            "critic": "passed",
+            "arbiter": "passed",
+            "model_validator": "skipped",
+        },
+        "failure_count": 0,
+        "deterministic_blockers": [],
+        "conceptual_blockers": [],
+        "calibration_blockers": [],
+        "residual_limitations": [],
+        "residual_risks": [],
+    }
+
+
 def test_resource_templates_and_model_policy_resources(tmp_path):
     from trellis.mcp.server import bootstrap_mcp_server
 
@@ -153,6 +177,7 @@ def test_run_and_snapshot_resources_resolve_from_persisted_state(tmp_path):
             "to_status": "approved",
             "actor": "reviewer",
             "reason": "manual_approval",
+            "metadata": {"cycle_report": _cycle_report()},
         },
     )
     server.call_tool(

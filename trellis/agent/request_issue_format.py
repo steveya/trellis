@@ -101,7 +101,14 @@ def build_issue_body(
         if details:
             lines.extend(["", "## Trigger Details"])
             for key in sorted(details):
+                if key in {"cycle_report", "cycle_promotion_governance"}:
+                    continue
                 lines.append(f"- {key}: `{details[key]}`")
+
+    cycle_lines = _cycle_report_lines(trace, event_record)
+    if cycle_lines:
+        lines.extend(["", "## Cycle Report"])
+        lines.extend(cycle_lines)
 
     description = (request.description or "").strip()
     if description:
@@ -160,7 +167,14 @@ def build_event_comment(
 
     details = event_record.get("details") or {}
     for key in sorted(details):
+        if key in {"cycle_report", "cycle_promotion_governance"}:
+            continue
         lines.append(f"- {key}: `{details[key]}`")
+
+    cycle_lines = _cycle_report_lines(trace, event_record)
+    if cycle_lines:
+        lines.extend(["", "## Cycle Report"])
+        lines.extend(cycle_lines)
 
     outcome = trace.get("outcome")
     if outcome:
@@ -272,6 +286,100 @@ def _metadata_value(compiled_request, trace: dict[str, Any] | None, key: str) ->
         if isinstance(metadata, Mapping):
             return metadata.get(key)
     return None
+
+
+def _cycle_report_lines(
+    trace: dict[str, Any],
+    event_record: dict[str, Any] | None,
+) -> list[str]:
+    cycle_report = _nested_mapping(trace, event_record, "cycle_report")
+    governance = _nested_mapping(trace, event_record, "cycle_promotion_governance")
+    if not cycle_report and not governance:
+        return []
+
+    lines: list[str] = []
+    if cycle_report:
+        lines.append(f"- cycle_success: `{cycle_report.get('success')}`")
+        if cycle_report.get("status"):
+            lines.append(f"- cycle_status: `{cycle_report.get('status')}`")
+        if cycle_report.get("outcome"):
+            lines.append(f"- cycle_outcome: `{cycle_report.get('outcome')}`")
+        if cycle_report.get("pricing_method"):
+            lines.append(f"- pricing_method: `{cycle_report.get('pricing_method')}`")
+        if cycle_report.get("validation_contract_id"):
+            lines.append(
+                f"- validation_contract_id: `{cycle_report.get('validation_contract_id')}`"
+            )
+        stage_statuses = cycle_report.get("stage_statuses") or {}
+        if isinstance(stage_statuses, Mapping) and stage_statuses:
+            rendered = ", ".join(
+                f"{key}={stage_statuses[key]}" for key in sorted(stage_statuses)
+            )
+            lines.append(f"- cycle_stage_statuses: `{rendered}`")
+        for bucket in (
+            "deterministic_blockers",
+            "conceptual_blockers",
+            "calibration_blockers",
+            "residual_limitations",
+        ):
+            count = _count_items(cycle_report.get(bucket))
+            if count:
+                lines.append(f"- {bucket}: `{count}`")
+        residual_risks = _string_values(cycle_report.get("residual_risks"))
+        if residual_risks:
+            lines.append(f"- residual_risks: `{', '.join(residual_risks)}`")
+
+    if governance:
+        if "eligible" in governance:
+            lines.append(f"- promotion_eligible: `{governance.get('eligible')}`")
+        if governance.get("decision"):
+            lines.append(f"- promotion_decision: `{governance.get('decision')}`")
+        blockers = _string_values(governance.get("blockers"))
+        if blockers:
+            lines.append(f"- promotion_blockers: `{', '.join(blockers)}`")
+        warnings = _string_values(governance.get("warnings"))
+        if warnings:
+            lines.append(f"- promotion_warnings: `{', '.join(warnings)}`")
+    return lines
+
+
+def _nested_mapping(
+    trace: dict[str, Any],
+    event_record: dict[str, Any] | None,
+    key: str,
+) -> dict[str, Any]:
+    details = {}
+    if event_record is not None:
+        raw_details = event_record.get("details") or {}
+        if isinstance(raw_details, Mapping):
+            details = raw_details
+    value = details.get(key)
+    if isinstance(value, Mapping):
+        return dict(value)
+    value = trace.get(key)
+    if isinstance(value, Mapping):
+        return dict(value)
+    return {}
+
+
+def _count_items(value: object) -> int:
+    if isinstance(value, Mapping):
+        return len(value)
+    if isinstance(value, (list, tuple, set, frozenset)):
+        return len(value)
+    return 0
+
+
+def _string_values(value: object) -> list[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        values = [value]
+    elif isinstance(value, (list, tuple, set, frozenset)):
+        values = list(value)
+    else:
+        values = [value]
+    return [str(item).strip() for item in values if str(item).strip()]
 
 
 def _compact(text: object, limit: int) -> str:
