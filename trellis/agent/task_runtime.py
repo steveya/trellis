@@ -1009,19 +1009,27 @@ def _runtime_contract_metadata(
 
 def _trace_observability(trace_path: str | None) -> dict[str, Any]:
     """Extract replay-relevant guardrail status from a persisted platform trace."""
+    from trellis.agent.cycle_surface import build_cycle_result_surface
+
     if not trace_path:
-        return {}
+        return {"agent_cycle": build_cycle_result_surface(None)}
 
     path = Path(trace_path)
     if not path.exists():
-        return {"trace_path": str(path)}
+        return {
+            "trace_path": str(path),
+            "agent_cycle": build_cycle_result_surface(None),
+        }
 
     try:
         import yaml
 
         trace = yaml.safe_load(path.read_text()) or {}
     except Exception:
-        return {"trace_path": str(path)}
+        return {
+            "trace_path": str(path),
+            "agent_cycle": build_cycle_result_surface(None),
+        }
 
     observability: dict[str, Any] = {
         "trace_path": str(path),
@@ -1031,6 +1039,9 @@ def _trace_observability(trace_path: str | None) -> dict[str, Any]:
     cycle_report = trace.get("cycle_report")
     if isinstance(cycle_report, dict):
         observability["cycle_report"] = cycle_report
+        observability["agent_cycle"] = build_cycle_result_surface(cycle_report)
+    else:
+        observability["agent_cycle"] = build_cycle_result_surface(None)
     details = dict(trace.get("details") or {})
     candidates: list[dict[str, Any]] = [details]
     for item in trace.get("events", []):
@@ -1620,6 +1631,9 @@ def _build_result_payload(
     """Project a BuildResult-like object into a stable task result payload."""
     from trellis.agent.task_run_store import summarize_task_learning
 
+    build_observability = _trace_observability(
+        getattr(result, "platform_trace_path", None)
+    )
     payload = {
         "success": result.success,
         "attempts": result.attempts,
@@ -1639,9 +1653,8 @@ def _build_result_payload(
         "analytical_trace_text_path": getattr(result, "analytical_trace_text_path", None),
         "audit_record_path": getattr(result, "audit_record_path", None),
         "generated_artifact": _generated_artifact_from_result(result),
-        "build_observability": _trace_observability(
-            getattr(result, "platform_trace_path", None)
-        ),
+        "build_observability": build_observability,
+        "agent_cycle": dict(build_observability.get("agent_cycle") or {}),
         "blocker_details": getattr(result, "blocker_details", None),
         "post_build_tracking": dict(getattr(result, "post_build_tracking", {}) or {}),
         "reflection": {

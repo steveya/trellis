@@ -8,6 +8,7 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Any, Mapping
 
+from trellis.agent.cycle_surface import build_cycle_result_surface
 from trellis.agent.model_audit import load_model_audit_record
 from trellis.agent.platform_traces import load_platform_trace_payload
 from trellis.agent.task_run_store import load_task_run_record
@@ -276,6 +277,7 @@ def _summary_for(loaded_artifacts: list[dict[str, object]], *artifact_kinds: str
 
 def _summarize_platform_trace(payload: Mapping[str, object]) -> dict[str, object]:
     """Return the canonical audit-facing summary for one platform trace."""
+    cycle_report = _to_mapping(payload.get("cycle_report"))
     return {
         "request_id": str(payload.get("request_id", "")).strip(),
         "request_type": str(payload.get("request_type", "")).strip(),
@@ -294,6 +296,8 @@ def _summarize_platform_trace(payload: Mapping[str, object]) -> dict[str, object
         "semantic_checkpoint": _to_mapping(payload.get("semantic_checkpoint")),
         "generation_boundary": _to_mapping(payload.get("generation_boundary")),
         "validation_contract": _to_mapping(payload.get("validation_contract")),
+        "cycle_report": cycle_report,
+        "agent_cycle": build_cycle_result_surface(cycle_report or None),
     }
 
 

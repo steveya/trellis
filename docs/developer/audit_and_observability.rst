@@ -228,6 +228,36 @@ model-validator findings. The cycle report makes those stage outcomes stable
 and inspectable so downstream tooling no longer has to infer governance state
 from ad hoc event strings.
 
+Agent Cycle Result Surface
+--------------------------
+
+``trellis.agent.cycle_surface`` projects raw ``cycle_report`` payloads into the
+product-facing ``agent_cycle`` surface. This is the stable API/read-model that
+task results, governed model execution, desk review bundles, audit summaries,
+and benchmark scorecards should expose.
+
+The surface records:
+
+- ``status`` as ``passed``, ``failed``, ``incomplete``, or ``not_available``
+- a short operator-readable ``headline`` and ``summary``
+- normalized ``stage_statuses`` and compact ``stage_summary`` rows
+- deterministic, conceptual, calibration, residual-limitation, and residual-risk
+  evidence counts
+- promotion eligibility when a ``cycle_promotion_governance`` artifact is
+  available
+- explicit ``claim`` / ``does_not_certify`` text so UI and MCP callers do not
+  overstate the result
+
+The safe claim is narrow: the governed quant/critic/arbiter/model-validator
+cycle completed and its recorded evidence is inspectable. It does not certify
+external model approval, regulatory approval, xVA coverage, FpML product
+coverage, or correctness beyond the recorded validation scope.
+
+Benchmark history scorecards aggregate the same surface under
+``agent_cycle``. Use those aggregate counts for trigger-rate questions such as
+how often model validation ran, how often a stage failed, and how many runs had
+residual limitations. Do not parse raw trace event prose for those metrics.
+
 Quant Challenger Packet
 -----------------------
 

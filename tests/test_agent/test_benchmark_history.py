@@ -173,6 +173,86 @@ def test_build_benchmark_history_scorecard_tracks_regression():
     assert report["tasks"][0]["token_total_delta"] == 40
 
 
+def test_benchmark_history_scorecard_reports_agent_cycle_behavior():
+    def cycle_report(*, success: bool = True, model_validator: str = "skipped"):
+        return {
+            "request_id": "executor_benchmark_cycle",
+            "status": "succeeded" if success else "failed",
+            "outcome": "build_completed" if success else "request_failed",
+            "success": success,
+            "pricing_method": "analytical",
+            "validation_contract_id": "validation:vanilla_option:analytical",
+            "stage_statuses": {
+                "quant": "passed",
+                "validation_bundle": "passed",
+                "critic": "passed",
+                "arbiter": "passed",
+                "model_validator": model_validator,
+            },
+            "failure_count": 0 if success else 1,
+            "deterministic_blockers": (
+                [] if success else [{"source": "arbiter", "check_id": "price_bound"}]
+            ),
+            "conceptual_blockers": [],
+            "calibration_blockers": [],
+            "residual_limitations": [{"risk_id": "model_validator:advisory"}],
+            "residual_risks": ["model_validator:advisory"],
+        }
+
+    records = [
+        {
+            "task_id": "F001",
+            "title": "Vanilla",
+            "task_corpus": "benchmark_financepy",
+            "run_id": "run_1",
+            "run_started_at": "2026-04-14T01:00:00+00:00",
+            "execution_mode": "cold_agent_plus_financepy_reference",
+            "comparison_summary": {"status": "passed"},
+            "cold_agent_cycle_report": cycle_report(success=True),
+        },
+        {
+            "task_id": "F002",
+            "title": "Barrier",
+            "task_corpus": "benchmark_financepy",
+            "run_id": "run_2",
+            "run_started_at": "2026-04-14T01:01:00+00:00",
+            "execution_mode": "cold_agent_plus_financepy_reference",
+            "comparison_summary": {"status": "failed"},
+            "cold_agent_cycle_report": cycle_report(
+                success=False,
+                model_validator="failed",
+            ),
+        },
+        {
+            "task_id": "F003",
+            "title": "Missing cycle",
+            "task_corpus": "benchmark_financepy",
+            "run_id": "run_3",
+            "run_started_at": "2026-04-14T01:02:00+00:00",
+            "execution_mode": "cold_agent_plus_financepy_reference",
+            "comparison_summary": {"status": "failed"},
+        },
+    ]
+
+    report = build_benchmark_history_scorecard(
+        scorecard_name="cycle_scorecard",
+        benchmark_kind="financepy",
+        benchmark_runs=records,
+    )
+
+    assert report["agent_cycle"]["available_count"] == 2
+    assert report["agent_cycle"]["not_available_count"] == 1
+    assert report["agent_cycle"]["passed_count"] == 1
+    assert report["agent_cycle"]["failed_count"] == 1
+    assert report["agent_cycle"]["stage_trigger_rates"]["model_validator"]["triggered_count"] == 2
+    assert report["agent_cycle"]["blocker_counts"]["deterministic_blockers"] == 1
+    assert report["tasks"][0]["latest"]["agent_cycle"]["status"] == "passed"
+
+    rendered = render_benchmark_history_scorecard(report)
+    assert "Agent Cycle Behavior" in rendered
+    assert "Model validator trigger rate" in rendered
+
+
 def test_benchmark_history_exposes_public_helpers():
     """The history helpers used by per-corpus scorecards are now public.
 

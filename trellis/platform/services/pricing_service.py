@@ -824,6 +824,7 @@ class PricingService:
         warning_pack = PricingService._warning_pack(run.warnings)
         schedule_summary = PricingService._schedule_summary(run.trade_identity, result=result)
         scenario_summary = PricingService._scenario_summary(result)
+        agent_cycle = PricingService._agent_cycle_summary(run)
         return {
             "trade_summary": trade_summary,
             "route_summary": route_summary,
@@ -831,6 +832,7 @@ class PricingService:
             "warning_pack": warning_pack,
             "schedule_summary": schedule_summary,
             "scenario_summary": scenario_summary,
+            "agent_cycle": agent_cycle,
             "driver_narrative": PricingService._driver_narrative(
                 trade_summary=trade_summary,
                 route_summary=route_summary,
@@ -850,6 +852,16 @@ class PricingService:
             ),
             "audit_refs": PricingService._audit_refs(run, audit_uri=audit_uri),
         }
+
+    @staticmethod
+    def _agent_cycle_summary(run) -> dict[str, object]:
+        from trellis.agent.cycle_surface import build_cycle_result_surface
+
+        selected_model = dict(getattr(run, "selected_model", {}) or {})
+        agent_cycle = selected_model.get("agent_cycle")
+        if isinstance(agent_cycle, Mapping) and agent_cycle:
+            return dict(agent_cycle)
+        return build_cycle_result_surface(None)
 
     @staticmethod
     def _trade_summary(trade_identity: Mapping[str, object]) -> dict[str, object]:

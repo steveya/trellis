@@ -10,6 +10,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from trellis.agent.cycle_surface import (
+    build_cycle_result_surface,
+    summarize_cycle_behavior,
+)
+
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_SCORECARD_ROOT = ROOT / "task_runs" / "benchmark_scorecards"
@@ -94,6 +99,7 @@ def build_benchmark_history_scorecard(
         "regressed_count": regressed_count,
         "unchanged_count": len(task_summaries) - improved_count - regressed_count,
         "latest_pass_count": latest_pass_count,
+        "agent_cycle": summarize_cycle_behavior(benchmark_runs),
         "tasks": task_summaries,
         "notes": list(notes or ()),
     }
@@ -114,10 +120,29 @@ def render_benchmark_history_scorecard(report: Mapping[str, Any]) -> str:
         lines.extend(["", "## Notes"])
         lines.extend(f"- {note}" for note in report["notes"])
 
+    agent_cycle = dict(report.get("agent_cycle") or {})
+    if agent_cycle:
+        model_validator = dict(
+            dict(agent_cycle.get("stage_trigger_rates") or {}).get("model_validator") or {}
+        )
+        lines.extend(
+            [
+                "",
+                "## Agent Cycle Behavior",
+                f"- Cycle reports available: `{agent_cycle.get('available_count', 0)}` / `{agent_cycle.get('run_count', 0)}`",
+                f"- Cycle passed: `{agent_cycle.get('passed_count', 0)}`",
+                f"- Cycle failed: `{agent_cycle.get('failed_count', 0)}`",
+                f"- Cycle not available: `{agent_cycle.get('not_available_count', 0)}`",
+                f"- Model validator trigger rate: `{float(model_validator.get('trigger_rate') or 0.0):.2%}` (`{model_validator.get('triggered_count', 0)}` runs)",
+                f"- Residual limitations: `{agent_cycle.get('residual_limitations_count', 0)}`",
+            ]
+        )
+
     lines.extend(["", "## Task History"])
     for task in report.get("tasks") or ():
         first = dict(task.get("first") or {})
         latest = dict(task.get("latest") or {})
+        latest_agent_cycle = dict(latest.get("agent_cycle") or {})
         lines.extend(
             [
                 "",
@@ -129,6 +154,7 @@ def render_benchmark_history_scorecard(report: Mapping[str, Any]) -> str:
                 f"- Elapsed delta: `{task.get('elapsed_seconds_delta', 0.0):+.6f}`",
                 f"- Token delta: `{task.get('token_total_delta', 0):+d}`",
                 f"- Execution modes: `{', '.join(task.get('execution_modes', ())) or 'none'}`",
+                f"- Agent cycle: `{latest_agent_cycle.get('status', 'not_available')}`",
             ]
         )
     return "\n".join(lines) + "\n"
@@ -218,6 +244,9 @@ def _task_run_snapshot(record: Mapping[str, Any], *, benchmark_kind: str) -> dic
         "passed": _record_passed(record, benchmark_kind=benchmark_kind),
         "elapsed_seconds": _elapsed_seconds(record),
         "token_total": _token_total(record),
+        "agent_cycle": build_cycle_result_surface(
+            _cycle_report_for_record(record)
+        ),
     }
 
 
@@ -255,6 +284,21 @@ def _token_total(record: Mapping[str, Any]) -> int:
     if isinstance(record.get("cold_agent_token_usage"), Mapping):
         return int(dict(record.get("cold_agent_token_usage") or {}).get("total_tokens") or 0)
     return int(dict(record.get("token_usage_summary") or {}).get("total_tokens") or 0)
+
+
+def _cycle_report_for_record(record: Mapping[str, Any]) -> Mapping[str, Any] | None:
+    cycle_report = record.get("cold_agent_cycle_report")
+    if isinstance(cycle_report, Mapping) and cycle_report:
+        return cycle_report
+    cycle_report = record.get("cycle_report")
+    if isinstance(cycle_report, Mapping) and cycle_report:
+        return cycle_report
+    observability = record.get("build_observability")
+    if isinstance(observability, Mapping):
+        cycle_report = observability.get("cycle_report")
+        if isinstance(cycle_report, Mapping) and cycle_report:
+            return cycle_report
+    return None
 
 
 def _transition_label(first_passed: bool, latest_passed: bool) -> str:

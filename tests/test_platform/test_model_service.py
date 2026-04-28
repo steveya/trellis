@@ -173,3 +173,20 @@ def test_approval_requires_cycle_promotion_governance(tmp_path):
     assert approved["version"]["status"] == "approved"
     assert governance["eligible"] is True
     assert governance["cycle_report"]["request_id"] == "executor_model_candidate"
+
+    from trellis.platform.context import build_execution_context
+    from trellis.platform.models import evaluate_model_execution_gate
+
+    gate = evaluate_model_execution_gate(
+        registry=registry,
+        model_id="vanilla_option_candidate",
+        execution_context=build_execution_context(
+            session_id="sess_cycle_surface",
+            run_mode="production",
+        ),
+    )
+
+    assert gate.allowed is True
+    assert gate.selected_model["agent_cycle"]["status"] == "passed"
+    assert gate.selected_model["agent_cycle"]["promotion"]["eligible"] is True
+    assert "external model approval" in gate.selected_model["agent_cycle"]["claim"]["does_not_certify"]
