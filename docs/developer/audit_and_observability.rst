@@ -258,6 +258,28 @@ It should treat the packet as the method-selection contract and focus on
 residual conceptual risk rather than rebuilding quant's method-choice rationale
 from loose prose.
 
+Executable Critic And Arbiter Claims
+------------------------------------
+
+Compiled validation contracts now own the admitted executable-claim surface for
+the critic and arbiter loop. Each ``ValidationCheckSpec`` that can be reviewed
+by critic and executed by arbiter is projected into an ``ExecutableClaimSpec``.
+The critic menu is derived from those claim specs when a validation contract is
+present; it does not fall back to instrument heuristics if the contract admits
+no executable claims.
+
+This makes an empty critic menu meaningful: it means the route has no admitted
+critic-selectable deterministic claims for this pass, not wildcard permission.
+If the LLM critic still emits an unavailable ``check_id``, the concern is
+marked ``invalid_selection`` and the arbiter records a failed, non-executed
+verdict rather than silently dropping or executing an unsupported check.
+
+Arbiter verdicts are now structured records with ``check_id``, ``status``,
+``reason``, ``executed``, ``detail``, and compatible failure-message fields.
+The ``arbiter_completed`` trace event and the derived ``cycle_report`` preserve
+those verdicts so operators can distinguish deterministic failures from
+fail-closed invalid critic selections.
+
 Governed Provider Provenance
 ----------------------------
 

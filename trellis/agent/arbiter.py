@@ -19,6 +19,20 @@ from trellis.models.vol_surface import FlatVol
 SETTLE = date(2024, 11, 15)
 
 
+@dataclass(frozen=True)
+class CriticCheckVerdict:
+    """Structured arbiter verdict for one critic-selected executable claim."""
+
+    check_id: str
+    status: str
+    reason: str
+    executed: bool
+    severity: str
+    description: str
+    message: str = ""
+    detail: str = ""
+
+
 @dataclass
 class ValidationResult:
     """Aggregate outcome of invariant checks plus critic-authored test cases."""
@@ -43,7 +57,26 @@ def run_critic_tests(
 
     Returns list of failure messages (empty = all passed).
     """
-    failures = []
+    return [
+        verdict.message
+        for verdict in run_critic_check_verdicts(
+            concerns,
+            payoff,
+            spec_kwargs=spec_kwargs,
+            allowed_check_ids=allowed_check_ids,
+        )
+        if verdict.status == "failed" and verdict.message
+    ]
+
+
+def run_critic_check_verdicts(
+    concerns: list,
+    payoff,
+    spec_kwargs: dict | None = None,
+    *,
+    allowed_check_ids: set[str] | None = None,
+) -> tuple[CriticCheckVerdict, ...]:
+    """Execute critic-selected checks and return structured arbiter verdicts."""
 
     # Build test environment
     ms = MarketState(
@@ -99,19 +132,93 @@ def run_critic_tests(
         "Bond": Bond,
     }
 
+    verdicts: list[CriticCheckVerdict] = []
     for concern in concerns:
-        if concern.severity != "error":
-            continue
         check_id = str(getattr(concern, "check_id", "") or "").strip()
+        severity = str(getattr(concern, "severity", "") or "").strip()
+        if severity != "error":
+            verdicts.append(
+                _critic_verdict(
+                    concern,
+                    status="skipped",
+                    reason="non_error_severity",
+                    executed=False,
+                    detail="Only error-severity critic concerns are executable.",
+                )
+            )
+            continue
         if allowed_check_ids is not None and check_id not in allowed_check_ids:
+            verdicts.append(
+                _critic_verdict(
+                    concern,
+                    status="failed",
+                    reason="check_not_admitted",
+                    executed=False,
+                    detail=(
+                        f"Critic selected `{check_id}`, but the validation contract "
+                        "did not admit that executable claim."
+                    ),
+                )
+            )
             continue
-        dispatched = _run_structured_critic_check(concern, namespace)
-        if dispatched is not None:
-            if dispatched:
-                failures.append(_format_structured_failure(concern, dispatched))
+        checker = _CRITIC_CHECK_DISPATCH.get(check_id)
+        if checker is None:
+            verdicts.append(
+                _critic_verdict(
+                    concern,
+                    status="failed",
+                    reason="unsupported_check",
+                    executed=False,
+                    detail=f"No deterministic arbiter dispatch is registered for `{check_id}`.",
+                )
+            )
             continue
+        try:
+            detail = checker(namespace)
+        except Exception as exc:
+            verdicts.append(
+                _critic_verdict(
+                    concern,
+                    status="failed",
+                    reason="checker_exception",
+                    executed=True,
+                    detail=f"{type(exc).__name__}: {exc}",
+                )
+            )
+            continue
+        verdicts.append(
+            _critic_verdict(
+                concern,
+                status="failed" if detail else "passed",
+                reason="deterministic_check_failed" if detail else "",
+                executed=True,
+                detail=detail,
+            )
+        )
 
-    return failures
+    return tuple(verdicts)
+
+
+def _critic_verdict(
+    concern,
+    *,
+    status: str,
+    reason: str,
+    executed: bool,
+    detail: str = "",
+) -> CriticCheckVerdict:
+    """Build one structured arbiter verdict and compatible failure message."""
+    message = _format_structured_failure(concern, detail) if status == "failed" else ""
+    return CriticCheckVerdict(
+        check_id=str(getattr(concern, "check_id", "") or "").strip(),
+        status=status,
+        reason=reason,
+        executed=executed,
+        severity=str(getattr(concern, "severity", "") or "").strip(),
+        description=str(getattr(concern, "description", "") or "").strip(),
+        message=message,
+        detail=detail,
+    )
 
 
 def _format_structured_failure(concern, detail: str) -> str:

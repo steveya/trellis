@@ -1026,7 +1026,7 @@ def _cycle_stage_details(stage: str, details: dict[str, Any]) -> dict[str, Any]:
             "available_check_ids",
             "reason",
         ),
-        "arbiter": ("validation", "failure_count"),
+        "arbiter": ("validation", "failure_count", "verdicts"),
         "model_validator": (
             "finding_count",
             "blocker_count",

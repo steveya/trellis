@@ -58,6 +58,17 @@ class ValidationRelationSpec:
 
 
 @dataclass(frozen=True)
+class ExecutableClaimSpec:
+    """One validation-admitted claim that critic may select and arbiter may run."""
+
+    claim_id: str
+    validation_check_id: str
+    category: str
+    relation: str | None = None
+    executable: bool = True
+
+
+@dataclass(frozen=True)
 class CompiledValidationContract:
     """Compiled validation state derived from route, lowering, and semantics."""
 
@@ -245,6 +256,16 @@ def validation_contract_summary(
             }
             for relation in contract.comparison_relations
         ],
+        "executable_claims": [
+            {
+                "claim_id": claim.claim_id,
+                "validation_check_id": claim.validation_check_id,
+                "category": claim.category,
+                "relation": claim.relation,
+                "executable": claim.executable,
+            }
+            for claim in executable_claim_specs_for_contract(contract)
+        ],
         "lowering_errors": list(contract.lowering_errors),
         "admissibility_failures": list(contract.admissibility_failures),
         "residual_risks": list(contract.residual_risks),
@@ -259,6 +280,63 @@ def _has_quant_alternatives(packet: Mapping[str, object]) -> bool:
         if isinstance(candidate, Mapping) and candidate.get("status") == "rejected":
             return True
     return False
+
+
+def executable_claim_specs_for_contract(
+    contract: CompiledValidationContract | None,
+) -> tuple[ExecutableClaimSpec, ...]:
+    """Return critic/arbiter executable claims admitted by validation."""
+    if contract is None:
+        return ()
+
+    instrument = str(getattr(contract, "instrument_type", "") or "").strip().lower()
+    specs: list[ExecutableClaimSpec] = []
+    seen: set[str] = set()
+    for check in getattr(contract, "deterministic_checks", ()) or ():
+        check_id = str(getattr(check, "check_id", "") or "").strip()
+        if not check_id:
+            continue
+        category = str(getattr(check, "category", "") or "").strip()
+        relation = getattr(check, "relation", None)
+        claim_id = _claim_id_for_validation_check(
+            check_id,
+            instrument=instrument,
+            relation=None if relation is None else str(relation),
+        )
+        if claim_id is None or claim_id in seen:
+            continue
+        seen.add(claim_id)
+        specs.append(
+            ExecutableClaimSpec(
+                claim_id=claim_id,
+                validation_check_id=check_id,
+                category=category,
+                relation=relation,
+                executable=True,
+            )
+        )
+    return tuple(specs)
+
+
+def _claim_id_for_validation_check(
+    check_id: str,
+    *,
+    instrument: str,
+    relation: str | None,
+) -> str | None:
+    """Map validation check ids onto bounded critic/arbiter claim ids."""
+    if check_id == "check_non_negativity":
+        return "price_non_negative"
+    if check_id in {"check_vol_sensitivity", "check_vol_monotonicity"}:
+        return "volatility_input_usage"
+    if check_id == "check_rate_monotonicity":
+        return "rate_sensitivity_present"
+    if check_id == "check_bounded_by_reference":
+        if instrument == "puttable_bond" or relation == ">=":
+            return "puttable_bound_vs_straight_bond"
+        if instrument == "callable_bond" or relation == "<=":
+            return "callable_bound_vs_straight_bond"
+    return None
 
 
 def _resolve_instrument_type(

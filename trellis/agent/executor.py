@@ -2127,6 +2127,7 @@ def _validate_build(
     critic_text_max_retries = getattr(review_policy, "critic_text_max_retries", None)
 
     # Standard: run critic
+    arbiter_verdicts = ()
     if (
         validation in ("standard", "thorough")
         and getattr(review_policy, "run_critic", False)
@@ -2148,7 +2149,7 @@ def _validate_build(
         review_prompt_surface = review_context.knowledge_surface
         try:
             from trellis.agent.critic import available_critic_checks, critique
-            from trellis.agent.arbiter import run_critic_tests
+            from trellis.agent.arbiter import run_critic_check_verdicts
             critic_checks = available_critic_checks(
                 instrument_type=itype,
                 method=getattr(pricing_plan, "method", None),
@@ -2210,11 +2211,16 @@ def _validate_build(
                         "remediation": concern.remediation,
                     },
                 )
-            critic_failures = run_critic_tests(
+            arbiter_verdicts = run_critic_check_verdicts(
                 concerns,
                 test_payoff,
                 allowed_check_ids={check.check_id for check in critic_checks},
             )
+            critic_failures = [
+                verdict.message
+                for verdict in arbiter_verdicts
+                if verdict.status == "failed" and verdict.message
+            ]
             failures.extend(critic_failures)
             for failure in critic_failures:
                 _append_agent_observation(
@@ -2280,6 +2286,7 @@ def _validate_build(
         details={
             "validation": validation,
             "failure_count": len(failures),
+            "verdicts": [asdict(verdict) for verdict in arbiter_verdicts],
         },
     )
 
