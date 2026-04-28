@@ -296,6 +296,56 @@ def test_llm_conceptual_review_includes_residual_risk_focus(monkeypatch):
     assert "Do not repeat deterministic checks" in captured["prompt"]
 
 
+def test_llm_conceptual_review_includes_executed_deterministic_evidence(monkeypatch):
+    from trellis.agent.model_validator import _llm_conceptual_review
+
+    captured = {}
+
+    monkeypatch.setattr(
+        "trellis.agent.config.get_default_model",
+        lambda: "fake-model",
+    )
+
+    def fake_llm_generate_json(prompt, model=None):
+        captured["prompt"] = prompt
+        return []
+
+    monkeypatch.setattr("trellis.agent.config.llm_generate_json", fake_llm_generate_json)
+
+    findings = _llm_conceptual_review(
+        code="def price():\n    return 0.0",
+        instrument_type="swaption",
+        method="analytical",
+        deterministic_evidence_packet={
+            "validation_bundle": {
+                "executed_checks": ["check_non_negativity"],
+                "failure_count": 0,
+            },
+            "reference_oracle": {
+                "oracle_id": "swaption_black76_exact",
+                "passed": True,
+            },
+            "arbiter": {
+                "verdicts": [
+                    {
+                        "check_id": "price_non_negative",
+                        "status": "passed",
+                        "executed": True,
+                    }
+                ]
+            },
+        },
+        model="fake-model",
+    )
+
+    assert findings == []
+    assert "Executed Deterministic Evidence" in captured["prompt"]
+    assert "check_non_negativity" in captured["prompt"]
+    assert "swaption_black76_exact" in captured["prompt"]
+    assert "price_non_negative" in captured["prompt"]
+    assert "Do not convert passed deterministic evidence into prose findings" in captured["prompt"]
+
+
 def test_determine_review_policy_skips_llm_for_low_risk_supported_vanilla():
     from trellis.agent.review_policy import determine_review_policy
 
@@ -601,6 +651,47 @@ def test_validate_model_threads_validation_contract_residual_risks(monkeypatch):
         == "insufficient_contract_features"
     )
     assert captured["review_reason"] is None
+
+
+def test_validate_model_threads_deterministic_evidence_packet(monkeypatch):
+    from trellis.agent.model_validator import validate_model
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_sensitivity_signs",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.model_validator.check_benchmark",
+        lambda *args, **kwargs: [],
+    )
+
+    captured = {}
+
+    def fake_llm_review(*args, deterministic_evidence_packet=None, **kwargs):
+        captured["deterministic_evidence_packet"] = deterministic_evidence_packet
+        return []
+
+    monkeypatch.setattr(
+        "trellis.agent.model_validator._llm_conceptual_review",
+        fake_llm_review,
+    )
+
+    packet = {
+        "validation_bundle": {"executed_checks": ["check_price_sanity"]},
+        "arbiter": {"verdicts": [{"check_id": "price_non_negative", "status": "passed"}]},
+    }
+    report = validate_model(
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda rate, vol: object(),
+        code="def price():\n    return 1.0",
+        instrument_type="callable_bond",
+        method="rate_tree",
+        deterministic_evidence_packet=packet,
+        run_llm_review=True,
+    )
+
+    assert report.findings == []
+    assert captured["deterministic_evidence_packet"] == packet
 
 
 def test_validate_model_for_request_threads_generation_plan(monkeypatch):

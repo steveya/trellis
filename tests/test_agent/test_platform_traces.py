@@ -311,6 +311,112 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
     assert arbiter_stage["details"]["verdicts"][0]["status"] == "passed"
 
 
+def test_platform_trace_cycle_report_classifies_residual_risk_buckets(tmp_path):
+    from trellis.agent.platform_traces import (
+        append_platform_trace_event,
+        load_platform_trace_cycle_report,
+    )
+
+    compiled = SimpleNamespace(
+        request=SimpleNamespace(
+            request_id="executor_cycle_report_risk_buckets",
+            request_type="build",
+            entry_point="executor",
+            instrument_type="callable_bond",
+            metadata={},
+        ),
+        execution_plan=SimpleNamespace(
+            action="build_then_price",
+            route_method="rate_tree",
+            measures=(),
+            requires_build=True,
+        ),
+        pricing_plan=SimpleNamespace(sensitivity_support=None),
+        product_ir=SimpleNamespace(instrument="callable_bond"),
+        blocker_report=None,
+        knowledge_summary={},
+    )
+
+    trace_path = append_platform_trace_event(
+        compiled,
+        "validation_bundle_executed",
+        status="ok",
+        details={
+            "bundle_id": "rate_tree:callable_bond",
+            "executed_checks": ["check_bounded_by_reference"],
+            "failure_count": 0,
+            "validation_contract": {
+                "contract_id": "rate_tree:callable_bond",
+                "residual_risks": ["unsupported_paths_declared"],
+            },
+        },
+        root=tmp_path,
+    )
+    append_platform_trace_event(
+        compiled,
+        "arbiter_completed",
+        status="error",
+        details={
+            "failure_count": 1,
+            "verdicts": [
+                {
+                    "check_id": "callable_bound_vs_straight_bond",
+                    "status": "failed",
+                    "reason": "deterministic_check_failed",
+                    "executed": True,
+                    "detail": "price exceeded straight-bond bound",
+                }
+            ],
+        },
+        root=tmp_path,
+    )
+    append_platform_trace_event(
+        compiled,
+        "model_validator_completed",
+        status="error",
+        details={
+            "finding_count": 3,
+            "blocker_count": 2,
+            "approved": False,
+            "llm_review": True,
+            "risk_level": "high",
+            "residual_risks": ["unsupported_paths_declared"],
+            "findings": [
+                {
+                    "id": "MV-L001",
+                    "severity": "high",
+                    "category": "conceptual",
+                    "description": "exercise model omits notice-period state",
+                },
+                {
+                    "id": "MV-L002",
+                    "severity": "critical",
+                    "category": "calibration",
+                    "description": "tree is not calibrated to the curve",
+                },
+                {
+                    "id": "MV-L003",
+                    "severity": "medium",
+                    "category": "limitation",
+                    "description": "single-factor curve limitation",
+                },
+            ],
+        },
+        root=tmp_path,
+    )
+
+    report = load_platform_trace_cycle_report(trace_path)
+
+    assert report.residual_risks == ("unsupported_paths_declared",)
+    assert report.deterministic_blockers[0]["check_id"] == "callable_bound_vs_straight_bond"
+    assert report.conceptual_blockers[0]["id"] == "MV-L001"
+    assert report.calibration_blockers[0]["id"] == "MV-L002"
+    assert {item["source"] for item in report.residual_limitations} == {
+        "validation_contract",
+        "model_validator",
+    }
+
+
 def test_platform_trace_cycle_report_marks_failed_stage(tmp_path):
     from trellis.agent.platform_traces import (
         append_platform_trace_event,

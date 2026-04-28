@@ -12,7 +12,9 @@ Issues formal findings (Critical/High/Medium/Low) that the builder must remediat
 
 from __future__ import annotations
 
+from dataclasses import asdict, is_dataclass
 import json
+from typing import Any, Mapping
 
 from trellis.agent.review_policy import determine_review_policy
 from trellis.agent.validation_report import ValidationFinding, ValidationReport
@@ -34,6 +36,7 @@ def validate_model(
     product_ir=None,
     generation_plan=None,
     validation_contract=None,
+    deterministic_evidence_packet: Mapping[str, object] | None = None,
     review_reason: str | None = None,
     run_llm_review: bool | None = None,
 ) -> ValidationReport:
@@ -91,6 +94,7 @@ def validate_model(
             quant_challenger_packet=_model_validator_quant_challenger_packet(
                 validation_contract
             ),
+            deterministic_evidence_packet=deterministic_evidence_packet,
             review_reason=review_reason,
             model=model,
         )
@@ -132,6 +136,11 @@ def validate_model_for_request(
         product_ir=compiled_request.product_ir,
         generation_plan=getattr(compiled_request, "generation_plan", None),
         validation_contract=getattr(compiled_request, "validation_contract", None),
+        deterministic_evidence_packet=getattr(
+            compiled_request,
+            "deterministic_evidence_packet",
+            None,
+        ),
         review_reason=None,
     )
 
@@ -144,6 +153,7 @@ def _llm_conceptual_review(
     generation_plan=None,
     residual_risks: tuple[str, ...] = (),
     quant_challenger_packet: dict[str, object] | None = None,
+    deterministic_evidence_packet: Mapping[str, object] | None = None,
     review_reason: str | None = None,
     model: str | None = None,
 ) -> list[ValidationFinding]:
@@ -171,6 +181,15 @@ def _llm_conceptual_review(
             "quant reasoning from prose when these fields are present.\n"
             f"```json\n{json.dumps(quant_challenger_packet, indent=2, sort_keys=True)}\n```\n"
         )
+    deterministic_evidence_section = ""
+    if deterministic_evidence_packet:
+        deterministic_evidence_section = (
+            "\n## Executed Deterministic Evidence\n"
+            "These checks already own deterministic validation claims. "
+            "Do not convert passed deterministic evidence into prose findings. "
+            "Only review residual conceptual and calibration risks left after this evidence.\n"
+            f"```json\n{json.dumps(dict(deterministic_evidence_packet), indent=2, sort_keys=True)}\n```\n"
+        )
     review_reason_section = ""
     if review_reason:
         review_reason_section = f"\n## Review Trigger\n- `{review_reason}`\n"
@@ -195,6 +214,7 @@ reference bounds, or other validations already covered by the validation contrac
 {route_contract_section}
 {residual_risk_section}
 {quant_packet_section}
+{deterministic_evidence_section}
 {review_reason_section}
 
 ## Code to validate
@@ -278,3 +298,232 @@ def _model_validator_quant_challenger_packet(validation_contract) -> dict[str, o
     if validation_contract is None:
         return {}
     return dict(getattr(validation_contract, "quant_challenger_packet", {}) or {})
+
+
+def build_model_validation_evidence_packet(
+    *,
+    validation_contract=None,
+    validation_bundle_execution=None,
+    reference_oracle=None,
+    arbiter_verdicts=(),
+) -> dict[str, object]:
+    """Build the deterministic evidence packet handed to model validation."""
+    contract_summary = _validation_contract_evidence_summary(validation_contract)
+    bundle_summary = _validation_bundle_execution_summary(validation_bundle_execution)
+    oracle_summary = _summary_dict(reference_oracle)
+    arbiter_summary = _arbiter_evidence_summary(arbiter_verdicts)
+    packet: dict[str, object] = {}
+    if contract_summary:
+        packet["validation_contract"] = contract_summary
+    if bundle_summary:
+        packet["validation_bundle"] = bundle_summary
+    if oracle_summary:
+        packet["reference_oracle"] = oracle_summary
+    if arbiter_summary:
+        packet["arbiter"] = arbiter_summary
+    deterministic_blockers = _deterministic_blockers_from_packet(packet)
+    if deterministic_blockers:
+        packet["deterministic_blockers"] = deterministic_blockers
+    return packet
+
+
+def classify_model_validation_findings(
+    findings,
+) -> dict[str, list[dict[str, object]]]:
+    """Classify model-validator findings into residual report buckets."""
+    classification = {
+        "conceptual_blockers": [],
+        "calibration_blockers": [],
+        "residual_limitations": [],
+    }
+    for finding in findings or ():
+        summary = _finding_summary(finding)
+        severity = str(summary.get("severity", "") or "").strip().lower()
+        category = str(summary.get("category", "") or "").strip().lower()
+        is_blocker = severity in {"critical", "high"}
+        if category == "calibration" and is_blocker:
+            classification["calibration_blockers"].append(summary)
+        elif category == "conceptual" and is_blocker:
+            classification["conceptual_blockers"].append(summary)
+        elif category in {"limitation", "residual_limitation"} or not is_blocker:
+            classification["residual_limitations"].append(summary)
+        elif is_blocker:
+            classification["conceptual_blockers"].append(summary)
+    return classification
+
+
+def _validation_contract_evidence_summary(validation_contract) -> dict[str, object]:
+    """Project the validation contract fields relevant to residual review."""
+    if validation_contract is None:
+        return {}
+    return {
+        "contract_id": getattr(validation_contract, "contract_id", ""),
+        "deterministic_checks": [
+            {
+                "check_id": getattr(check, "check_id", ""),
+                "category": getattr(check, "category", ""),
+                "relation": getattr(check, "relation", None),
+            }
+            for check in getattr(validation_contract, "deterministic_checks", ()) or ()
+        ],
+        "comparison_relations": [
+            {
+                "target_id": getattr(relation, "target_id", ""),
+                "relation": getattr(relation, "relation", ""),
+                "source": getattr(relation, "source", ""),
+            }
+            for relation in getattr(validation_contract, "comparison_relations", ()) or ()
+        ],
+        "lowering_errors": list(getattr(validation_contract, "lowering_errors", ()) or ()),
+        "admissibility_failures": list(
+            getattr(validation_contract, "admissibility_failures", ()) or ()
+        ),
+        "residual_risks": list(getattr(validation_contract, "residual_risks", ()) or ()),
+    }
+
+
+def _validation_bundle_execution_summary(execution) -> dict[str, object]:
+    """Project validation-bundle execution into prompt-safe primitives."""
+    if execution is None:
+        return {}
+    data = _summary_dict(execution)
+    failures = list(data.get("failures") or ())
+    failure_details = [
+        _summary_dict(item) for item in data.get("failure_details") or ()
+    ]
+    failure_count = len(failures)
+    if not failures and isinstance(data.get("failure_count"), (int, float)):
+        failure_count = max(int(data.get("failure_count") or 0), 0)
+    return {
+        "executed_checks": list(data.get("executed_checks") or ()),
+        "skipped_checks": list(data.get("skipped_checks") or ()),
+        "failure_count": failure_count,
+        "failures": failures,
+        "failure_details": failure_details,
+    }
+
+
+def _arbiter_evidence_summary(arbiter_verdicts) -> dict[str, object]:
+    """Project arbiter verdicts into prompt-safe primitives."""
+    verdicts = [_summary_dict(verdict) for verdict in arbiter_verdicts or ()]
+    if not verdicts:
+        return {}
+    return {
+        "verdicts": verdicts,
+        "failure_count": sum(
+            1 for verdict in verdicts if verdict.get("status") == "failed"
+        ),
+        "executed_count": sum(1 for verdict in verdicts if verdict.get("executed")),
+    }
+
+
+def _deterministic_blockers_from_packet(
+    packet: Mapping[str, object],
+) -> list[dict[str, object]]:
+    """Return deterministic blockers already owned outside model validation."""
+    blockers: list[dict[str, object]] = []
+    contract = dict(packet.get("validation_contract") or {})
+    for key in ("lowering_errors", "admissibility_failures"):
+        for item in contract.get(key) or ():
+            blockers.append({"source": "validation_contract", "kind": key, "message": item})
+
+    bundle = dict(packet.get("validation_bundle") or {})
+    for detail in bundle.get("failure_details") or ():
+        data = dict(detail or {})
+        blockers.append({
+            "source": "validation_bundle",
+            "check_id": data.get("check") or data.get("check_id"),
+            "message": data.get("message") or data.get("exception_message") or "",
+        })
+    if bundle.get("failure_count") and not bundle.get("failure_details"):
+        blockers.append({
+            "source": "validation_bundle",
+            "failure_count": bundle.get("failure_count"),
+        })
+
+    oracle = dict(packet.get("reference_oracle") or {})
+    if oracle and not bool(oracle.get("passed", True)):
+        blockers.append({
+            "source": "reference_oracle",
+            "oracle_id": oracle.get("oracle_id"),
+            "message": oracle.get("failure_message") or "",
+        })
+
+    arbiter = dict(packet.get("arbiter") or {})
+    for verdict in arbiter.get("verdicts") or ():
+        data = dict(verdict or {})
+        if data.get("status") == "failed":
+            blockers.append({
+                "source": "arbiter",
+                "check_id": data.get("check_id"),
+                "reason": data.get("reason"),
+                "message": data.get("message") or data.get("detail") or "",
+            })
+    return blockers
+
+
+def _finding_summary(finding) -> dict[str, object]:
+    """Project one ValidationFinding or finding-like mapping into primitives."""
+    if isinstance(finding, Mapping):
+        data = dict(finding)
+    elif is_dataclass(finding):
+        data = asdict(finding)
+    else:
+        data = {
+            "id": getattr(finding, "id", ""),
+            "severity": getattr(finding, "severity", ""),
+            "category": getattr(finding, "category", ""),
+            "description": getattr(finding, "description", ""),
+            "evidence": getattr(finding, "evidence", ""),
+            "remediation": getattr(finding, "remediation", ""),
+        }
+    return {
+        "source": "model_validator",
+        "id": data.get("id", ""),
+        "severity": data.get("severity", ""),
+        "category": data.get("category", ""),
+        "description": data.get("description", ""),
+        "evidence": data.get("evidence", ""),
+        "remediation": data.get("remediation", ""),
+    }
+
+
+def _summary_dict(value) -> dict[str, Any]:
+    """Return a shallow primitive dictionary for dataclasses and mappings."""
+    if value is None:
+        return {}
+    if isinstance(value, Mapping):
+        return dict(value)
+    if is_dataclass(value):
+        return asdict(value)
+    data: dict[str, Any] = {}
+    for key in (
+        "contract_id",
+        "executed_checks",
+        "skipped_checks",
+        "failures",
+        "failure_details",
+        "failure_count",
+        "oracle_id",
+        "instrument_type",
+        "method",
+        "source",
+        "relation",
+        "tolerance",
+        "passed",
+        "sampled_prices",
+        "max_abs_deviation",
+        "max_rel_deviation",
+        "failure_message",
+        "check_id",
+        "status",
+        "reason",
+        "executed",
+        "severity",
+        "description",
+        "message",
+        "detail",
+    ):
+        if hasattr(value, key):
+            data[key] = getattr(value, key)
+    return data

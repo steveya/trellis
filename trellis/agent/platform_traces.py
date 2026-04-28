@@ -64,6 +64,11 @@ class CycleReport:
     stage_statuses: dict[str, str]
     stages: tuple[CycleStageReport, ...]
     failure_count: int
+    deterministic_blockers: tuple[dict[str, Any], ...] = ()
+    conceptual_blockers: tuple[dict[str, Any], ...] = ()
+    calibration_blockers: tuple[dict[str, Any], ...] = ()
+    residual_limitations: tuple[dict[str, Any], ...] = ()
+    residual_risks: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -886,6 +891,13 @@ def _cycle_report_summary(
             for stage in report.stages
         ],
         "failure_count": report.failure_count,
+        "deterministic_blockers": [
+            dict(item) for item in report.deterministic_blockers
+        ],
+        "conceptual_blockers": [dict(item) for item in report.conceptual_blockers],
+        "calibration_blockers": [dict(item) for item in report.calibration_blockers],
+        "residual_limitations": [dict(item) for item in report.residual_limitations],
+        "residual_risks": list(report.residual_risks),
     }
 
 
@@ -900,6 +912,11 @@ def _build_cycle_report(
         trace.get("validation_contract")
     )
     failure_count = 0
+    deterministic_blockers: list[dict[str, Any]] = []
+    conceptual_blockers: list[dict[str, Any]] = []
+    calibration_blockers: list[dict[str, Any]] = []
+    residual_limitations: list[dict[str, Any]] = []
+    residual_risks: list[str] = []
 
     for event_record in events:
         event_name = str(event_record.get("event", "") or "")
@@ -908,6 +925,7 @@ def _build_cycle_report(
             continue
 
         details = dict(event_record.get("details") or {})
+        event_status = str(event_record.get("status", "info") or "info")
         if stage == "quant":
             pricing_method = _first_non_empty(details.get("method"), pricing_method)
         event_contract_id = _validation_contract_id_from_payload(
@@ -917,10 +935,29 @@ def _build_cycle_report(
             event_contract_id,
             validation_contract_id,
         )
+        _extend_unique_strings(residual_risks, _residual_risks_from_details(details))
+        _extend_unique_dicts(
+            deterministic_blockers,
+            _deterministic_blockers_from_event(event_name, event_status, details),
+        )
+        if stage == "model_validator":
+            classification = _model_validator_classification_from_details(details)
+            _extend_unique_dicts(
+                conceptual_blockers,
+                classification.get("conceptual_blockers", ()),
+            )
+            _extend_unique_dicts(
+                calibration_blockers,
+                classification.get("calibration_blockers", ()),
+            )
+            _extend_unique_dicts(
+                residual_limitations,
+                classification.get("residual_limitations", ()),
+            )
 
         stage_status = _cycle_stage_status(
             event_name,
-            str(event_record.get("status", "info") or "info"),
+            event_status,
             details,
         )
         failure_count += _failure_count_from_details(details)
@@ -940,6 +977,20 @@ def _build_cycle_report(
         )
     )
     stage_statuses = {stage.stage: stage.status for stage in ordered_stages}
+    for risk in residual_risks:
+        risk_source = (
+            "quant_challenger_packet"
+            if str(risk).startswith("quant:")
+            else "validation_contract"
+        )
+        _extend_unique_dicts(
+            residual_limitations,
+            [{
+                "source": risk_source,
+                "risk_id": risk,
+                "category": "residual_limitation",
+            }],
+        )
     return CycleReport(
         request_id=str(trace.get("request_id", "") or ""),
         status=str(trace.get("status", "running") or "running"),
@@ -950,6 +1001,11 @@ def _build_cycle_report(
         stage_statuses=stage_statuses,
         stages=ordered_stages,
         failure_count=failure_count,
+        deterministic_blockers=tuple(deterministic_blockers),
+        conceptual_blockers=tuple(conceptual_blockers),
+        calibration_blockers=tuple(calibration_blockers),
+        residual_limitations=tuple(residual_limitations),
+        residual_risks=tuple(residual_risks),
     )
 
 
@@ -1033,6 +1089,8 @@ def _cycle_stage_details(stage: str, details: dict[str, Any]) -> dict[str, Any]:
             "approved",
             "llm_review",
             "risk_level",
+            "residual_risks",
+            "finding_classification",
             "reason",
             "skip_reason",
         ),
@@ -1057,6 +1115,164 @@ def _failure_count_from_details(details: dict[str, Any]) -> int:
     if isinstance(failures, list):
         return len(failures)
     return 0
+
+
+def _residual_risks_from_details(details: dict[str, Any]) -> tuple[str, ...]:
+    """Extract residual risk ids from lifecycle details."""
+    risks: list[str] = []
+    for value in details.get("residual_risks") or ():
+        _append_unique_string(risks, value)
+    contract = details.get("validation_contract")
+    if isinstance(contract, dict):
+        for value in contract.get("residual_risks") or ():
+            _append_unique_string(risks, value)
+    quant_packet = details.get("challenger_packet")
+    if isinstance(quant_packet, dict):
+        for value in quant_packet.get("residual_risk_handoff") or ():
+            _append_unique_string(risks, value)
+    return tuple(risks)
+
+
+def _deterministic_blockers_from_event(
+    event_name: str,
+    event_status: str,
+    details: dict[str, Any],
+) -> tuple[dict[str, Any], ...]:
+    """Return deterministic blockers already owned by non-LLM validation layers."""
+    blockers: list[dict[str, Any]] = []
+    contract = details.get("validation_contract")
+    if isinstance(contract, dict):
+        for key in ("lowering_errors", "admissibility_failures"):
+            for item in contract.get(key) or ():
+                blockers.append({
+                    "source": "validation_contract",
+                    "kind": key,
+                    "message": str(item),
+                })
+
+    if event_name == "validation_bundle_executed" and _failure_count_from_details(details) > 0:
+        failure_details = details.get("failure_details")
+        if isinstance(failure_details, list) and failure_details:
+            for item in failure_details:
+                data = dict(item or {}) if isinstance(item, dict) else {"message": str(item)}
+                blockers.append({
+                    "source": "validation_bundle",
+                    "check_id": data.get("check") or data.get("check_id"),
+                    "message": data.get("message") or data.get("exception_message") or "",
+                })
+        else:
+            blockers.append({
+                "source": "validation_bundle",
+                "failure_count": _failure_count_from_details(details),
+            })
+
+    if event_name == "reference_oracle_executed":
+        oracle = details.get("oracle")
+        oracle_data = dict(oracle or {}) if isinstance(oracle, dict) else {}
+        if event_status == "error" or not bool(oracle_data.get("passed", True)):
+            blockers.append({
+                "source": "reference_oracle",
+                "oracle_id": oracle_data.get("oracle_id"),
+                "message": oracle_data.get("failure_message") or "",
+            })
+
+    if event_name == "arbiter_completed":
+        for verdict in details.get("verdicts") or ():
+            data = dict(verdict or {}) if isinstance(verdict, dict) else {}
+            if data.get("status") == "failed":
+                blockers.append({
+                    "source": "arbiter",
+                    "check_id": data.get("check_id"),
+                    "reason": data.get("reason"),
+                    "message": data.get("message") or data.get("detail") or "",
+                })
+    return tuple(blockers)
+
+
+def _model_validator_classification_from_details(
+    details: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]]:
+    """Classify model-validator details into cycle-report risk buckets."""
+    existing = details.get("finding_classification")
+    if isinstance(existing, dict):
+        return {
+            "conceptual_blockers": [
+                _model_validator_finding_summary(item)
+                for item in existing.get("conceptual_blockers") or ()
+            ],
+            "calibration_blockers": [
+                _model_validator_finding_summary(item)
+                for item in existing.get("calibration_blockers") or ()
+            ],
+            "residual_limitations": [
+                _model_validator_finding_summary(item)
+                for item in existing.get("residual_limitations") or ()
+            ],
+        }
+
+    classification = {
+        "conceptual_blockers": [],
+        "calibration_blockers": [],
+        "residual_limitations": [],
+    }
+    for item in details.get("findings") or ():
+        finding = _model_validator_finding_summary(item)
+        severity = str(finding.get("severity", "") or "").strip().lower()
+        category = str(finding.get("category", "") or "").strip().lower()
+        is_blocker = severity in {"critical", "high"}
+        if category == "calibration" and is_blocker:
+            classification["calibration_blockers"].append(finding)
+        elif category == "conceptual" and is_blocker:
+            classification["conceptual_blockers"].append(finding)
+        elif category in {"limitation", "residual_limitation"} or not is_blocker:
+            classification["residual_limitations"].append(finding)
+        elif is_blocker:
+            classification["conceptual_blockers"].append(finding)
+    return classification
+
+
+def _model_validator_finding_summary(item: object) -> dict[str, Any]:
+    """Normalize one model-validator finding-like object."""
+    data = dict(item or {}) if isinstance(item, dict) else {"description": str(item)}
+    data.setdefault("source", "model_validator")
+    return {
+        key: _normalize_yaml_value(value)
+        for key, value in data.items()
+        if key in {
+            "source",
+            "id",
+            "severity",
+            "category",
+            "description",
+            "evidence",
+            "remediation",
+            "risk_id",
+        }
+    }
+
+
+def _append_unique_string(target: list[str], value: object) -> None:
+    """Append a normalized string if it is not already present."""
+    text = str(value or "").strip()
+    if text and text not in target:
+        target.append(text)
+
+
+def _extend_unique_strings(target: list[str], values) -> None:
+    """Append normalized strings while preserving order."""
+    for value in values or ():
+        _append_unique_string(target, value)
+
+
+def _extend_unique_dicts(target: list[dict[str, Any]], values) -> None:
+    """Append dictionaries while preserving first occurrence."""
+    seen = {json.dumps(item, sort_keys=True, default=str) for item in target}
+    for value in values or ():
+        item = _normalize_yaml_value(dict(value or {}))
+        marker = json.dumps(item, sort_keys=True, default=str)
+        if marker not in seen:
+            target.append(item)
+            seen.add(marker)
 
 
 def _validation_contract_id_from_payload(payload: object) -> str | None:

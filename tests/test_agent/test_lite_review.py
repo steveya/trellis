@@ -812,6 +812,128 @@ def test_validate_build_skips_llm_reviewer_stages_after_deterministic_failures(m
     assert failures == ["deterministic gate failure"]
 
 
+def test_validate_build_skips_model_validator_after_arbiter_deterministic_failure(monkeypatch):
+    from trellis.agent.arbiter import CriticCheckVerdict
+    from trellis.agent.critic import CriticCheck, CriticConcern
+    from trellis.agent.executor import _validate_build
+    from trellis.agent.quant import PricingPlan
+
+    class DummyPayoff:
+        pass
+
+    spec_schema = SimpleNamespace(
+        class_name="DummyPayoff",
+        spec_name="DummySpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[],
+    )
+
+    monkeypatch.setattr(
+        "trellis.agent.executor._make_test_payoff",
+        lambda *args, **kwargs: object(),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.executor._record_platform_event",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.executor._should_run_reference_oracle",
+        lambda *args, **kwargs: False,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.validation_bundles.select_validation_bundle",
+        lambda *args, **kwargs: SimpleNamespace(
+            bundle_id="rate_tree:callable_bond",
+            checks=(),
+            categories={},
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.validation_bundles.execute_validation_bundle",
+        lambda *args, **kwargs: SimpleNamespace(
+            failures=[],
+            failure_details=[],
+            executed_checks=(),
+            skipped_checks=(),
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.critic.available_critic_checks",
+        lambda *args, **kwargs: [
+            CriticCheck(
+                check_id="price_non_negative",
+                title="Price should remain non-negative",
+                when_to_use="test",
+                deterministic_contract="test",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.critic.critique",
+        lambda *args, **kwargs: [
+            CriticConcern(
+                check_id="price_non_negative",
+                description="Price could be negative",
+                severity="error",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.arbiter.run_critic_check_verdicts",
+        lambda *args, **kwargs: (
+            CriticCheckVerdict(
+                check_id="price_non_negative",
+                status="failed",
+                reason="deterministic_check_failed",
+                executed=True,
+                severity="error",
+                description="Price could be negative",
+                message="arbiter deterministic failure",
+                detail="price=-1.0",
+            ),
+        ),
+    )
+
+    calls = {"model_validator": 0}
+
+    def fake_validate_model(*args, **kwargs):
+        from trellis.agent.validation_report import ValidationReport
+
+        calls["model_validator"] += 1
+        return ValidationReport(instrument="callable_bond", method="rate_tree")
+
+    monkeypatch.setattr("trellis.agent.model_validator.validate_model", fake_validate_model)
+
+    failures = _validate_build(
+        DummyPayoff,
+        code="def evaluate(self, market_state):\n    return -1.0\n",
+        description="Callable bond with issuer call",
+        spec_schema=spec_schema,
+        validation="thorough",
+        pricing_plan=PricingPlan(
+            method="rate_tree",
+            method_modules=["trellis.models.trees.lattice"],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="callable_bond",
+            reasoning="test",
+        ),
+        product_ir=SimpleNamespace(
+            instrument="callable_bond",
+            payoff_traits=("callable",),
+            exercise_style="issuer_call",
+            state_dependence="schedule_dependent",
+            schedule_dependence=True,
+            model_family="interest_rate",
+            unresolved_primitives=(),
+            supported=True,
+        ),
+        attempt_number=1,
+    )
+
+    assert failures == ["arbiter deterministic failure"]
+    assert calls["model_validator"] == 0
+
+
 def test_validate_build_uses_quanto_family_validation_bundle(monkeypatch):
     from trellis.agent.executor import _validate_build
     from trellis.agent.platform_requests import compile_build_request
