@@ -46,7 +46,7 @@ Implementation queue:
 | Order | Ticket | Status | Objective | Hard blocker |
 | --- | --- | --- | --- | --- |
 | 1 | `QUA-983` | Done | ARC.0 - explicit cycle report contract | none |
-| 2 | `QUA-984` | In Progress | ARC.1 - quant challenger packet | `QUA-983` |
+| 2 | `QUA-984` | Done | ARC.1 - quant challenger packet | `QUA-983` |
 | 3 | `QUA-985` | Backlog | ARC.2 - executable critic and arbiter claims | `QUA-984` |
 | 4 | `QUA-986` | Backlog | ARC.3 - residual-risk model validation | `QUA-985` |
 | 5 | `QUA-987` | Backlog | ARC.4 - promotion and adoption governance | `QUA-986` |
