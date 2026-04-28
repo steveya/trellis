@@ -17,6 +17,39 @@ def _patch_promotion_paths(monkeypatch, root: Path) -> None:
     monkeypatch.setattr(promotion_mod, "_REPO_ROOT", root.parents[2])
 
 
+def _cycle_report(*, success: bool = True, failed_stage: str | None = None) -> dict[str, object]:
+    stage_statuses = {
+        "quant": "passed",
+        "validation_bundle": "passed",
+        "critic": "passed",
+        "arbiter": "passed",
+        "model_validator": "skipped",
+    }
+    if failed_stage is not None:
+        stage_statuses[failed_stage] = "failed"
+    return {
+        "request_id": "executor_build_demo",
+        "status": "succeeded" if success and failed_stage is None else "failed",
+        "outcome": "build_completed" if success and failed_stage is None else "request_failed",
+        "success": success and failed_stage is None,
+        "pricing_method": "analytical",
+        "validation_contract_id": "validation:demo:analytical",
+        "stage_statuses": stage_statuses,
+        "failure_count": 0 if success and failed_stage is None else 1,
+        "deterministic_blockers": [] if failed_stage is None else [
+            {
+                "source": "arbiter",
+                "check_id": "demo_bound",
+                "reason": "deterministic_check_failed",
+            }
+        ],
+        "conceptual_blockers": [],
+        "calibration_blockers": [],
+        "residual_limitations": [],
+        "residual_risks": ["comparison_relations_unspecified"],
+    }
+
+
 def _write_candidate(
     root: Path,
     name: str,
@@ -26,6 +59,7 @@ def _write_candidate(
     cross_status: str = "passed",
     deviation: float = 0.2,
     code: str | None = None,
+    cycle_report: dict[str, object] | None = None,
 ) -> Path:
     traces = root / "traces"
     candidate_dir = traces / "promotion_candidates"
@@ -58,6 +92,7 @@ def _write_candidate(
         "platform_request_id": "executor_build_demo",
         "platform_trace_path": str(platform_trace),
         "market_context": {"source": "mock"},
+        "cycle_report": cycle_report or _cycle_report(),
         "cross_validation": {
             "status": cross_status,
             "prices": {comparison_target: 101.0},
@@ -83,6 +118,7 @@ def _write_benchmark_record(
     preferred_method: str = "analytical",
     module_name: str = "trellis_benchmarks._fresh.f009.analytical.barrieroption",
     admission_target_module_name: str = "trellis.instruments._agent.barrieroption",
+    cycle_report: dict[str, object] | None = None,
 ) -> dict[str, object]:
     report_root = root.parents[2] / "task_runs" / "financepy_benchmarks"
     generated_dir = report_root / "generated" / task_id.lower() / preferred_method
@@ -115,6 +151,7 @@ def _write_benchmark_record(
             "compared_outputs": ("price",),
             "output_deviation_pct": {"price": 0.1},
         },
+        "cold_agent_cycle_report": cycle_report or _cycle_report(),
         "generated_artifact": {
             "module_name": module_name,
             "class_name": "BarrierOptionPayoff",
@@ -229,6 +266,7 @@ def test_record_benchmark_promotion_candidate_captures_run_and_artifact_provenan
     assert payload["validation_source"] == "financepy_benchmark"
     assert payload["benchmark_provenance"]["benchmark_run_id"] == record["run_id"]
     assert payload["benchmark_provenance"]["benchmark_record_path"] == record["history_path"]
+    assert payload["cycle_report"]["request_id"] == "executor_build_demo"
     assert payload["generated_artifact"]["module_name"] == record["generated_artifact"]["module_name"]
     assert payload["admission_target_module_name"] == "trellis.instruments._agent.barrieroption"
 
@@ -249,7 +287,30 @@ def test_review_promotion_candidate_approves_financepy_benchmark_candidate(monke
     assert review["status"] == "approved"
     assert review["validation_source"] == "financepy_benchmark"
     assert review["recommended_module_path"] == "trellis.instruments._agent.barrieroption"
+    assert review["cycle_promotion_governance"]["eligible"] is True
+    assert review["cycle_promotion_governance"]["cycle_report"]["request_id"] == "executor_build_demo"
     assert all(check["passed"] for check in review["checks"] if check["blocking"])
+
+
+def test_review_promotion_candidate_rejects_failed_cycle_report(monkeypatch, tmp_path):
+    from trellis.agent.knowledge.promotion import review_promotion_candidate
+
+    knowledge_root = tmp_path / "trellis" / "agent" / "knowledge"
+    _patch_promotion_paths(monkeypatch, knowledge_root)
+    candidate_path = _write_candidate(
+        knowledge_root,
+        "candidate_failed_cycle.yaml",
+        cycle_report=_cycle_report(success=False, failed_stage="arbiter"),
+    )
+
+    review = review_promotion_candidate(candidate_path)
+
+    assert review["status"] == "rejected"
+    governance = review["cycle_promotion_governance"]
+    assert governance["eligible"] is False
+    assert "cycle_stage_failed:arbiter" in governance["blockers"]
+    failed = {check["name"] for check in review["checks"] if not check["passed"] and check["blocking"]}
+    assert "cycle_promotion_governance" in failed
 
 
 def test_review_promotion_candidate_rejects_benchmark_hash_mismatch(monkeypatch, tmp_path):
@@ -320,6 +381,7 @@ def test_adopt_promotion_candidate_writes_financepy_benchmark_candidate_to_admis
     adoption = adopt_promotion_candidate(review["review_path"])
 
     assert adoption["status"] == "adopted"
+    assert adoption["cycle_promotion_governance"]["eligible"] is True
     assert target_path.read_text() == (yaml.safe_load(Path(candidate_path).read_text())["code"]).rstrip() + "\n"
 
 
@@ -355,6 +417,7 @@ def test_adopt_promotion_candidate_writes_approved_candidate_to_target(monkeypat
     assert adoption["status"] == "adopted"
     assert adoption["adopted"] is True
     assert adoption["changed"] is True
+    assert adoption["cycle_promotion_governance"]["eligible"] is True
     assert target_path.read_text() == (yaml.safe_load(candidate_path.read_text())["code"]).rstrip() + "\n"
     assert Path(adoption["adoption_path"]).exists()
 
@@ -481,6 +544,7 @@ def test_review_and_adopt_promotion_candidate_propagate_adapter_lifecycle_state(
     assert review_lifecycle["raw"]["summary"]["stale_adapter_count"] == 1
     assert review_lifecycle["resolved"]["summary"]["deprecated_adapter_count"] == 1
     assert review_lifecycle["resolved"]["summary"]["stale_adapter_count"] == 0
+    assert review["cycle_promotion_governance"]["adapter_lifecycle"]["status_counts"]["deprecated"] == 1
 
     review_payload = build_shared_knowledge_payload({})
     assert review_payload["summary"]["deprecated_adapter_count"] == 1
@@ -496,6 +560,7 @@ def test_review_and_adopt_promotion_candidate_propagate_adapter_lifecycle_state(
     assert adoption_lifecycle["raw"]["summary"]["stale_adapter_count"] == 1
     assert adoption_lifecycle["resolved"]["summary"]["archived_adapter_count"] == 1
     assert adoption_lifecycle["resolved"]["summary"]["stale_adapter_count"] == 0
+    assert adoption["cycle_promotion_governance"]["adapter_lifecycle"]["status_counts"]["archived"] == 1
 
     adoption_payload = build_shared_knowledge_payload({})
     assert adoption_payload["summary"]["archived_adapter_count"] == 1

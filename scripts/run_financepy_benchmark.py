@@ -294,6 +294,10 @@ def _execute_single_benchmark_task(
         "status": status,
         "cold_agent_elapsed_seconds": round(float(cold_result.get("elapsed_seconds") or 0.0), 6),
         "cold_agent_token_usage": dict(cold_result.get("token_usage_summary") or {}),
+        "cold_agent_platform_trace_path": str(cold_result.get("platform_trace_path") or ""),
+        "cold_agent_cycle_report": dict(
+            (cold_result.get("build_observability") or {}).get("cycle_report") or {}
+        ),
         "warm_agent_mean_seconds": None if warm_result is None else warm_result.get("mean_seconds"),
         "warm_agent_last_price": None if warm_result is None else warm_result.get("last_price"),
         "warm_agent_execution_mode": (

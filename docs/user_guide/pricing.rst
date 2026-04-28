@@ -708,6 +708,9 @@ Important constraints:
 
 - draft generation does not make a model execution-eligible
 - deterministic validation does not auto-approve a model
+- approval requires an eligible agent-cycle report in the promotion metadata,
+  so production eligibility depends on both deterministic validation and the
+  quant/critic/arbiter/model-validator cycle outcome
 - production pricing still requires an explicitly approved model version
 - deprecation removes execution eligibility without deleting the stored
   contract, code, validation, or lineage artifacts
@@ -744,6 +747,8 @@ Versioning constraints matter here:
 
 - every governed model version needs its own validation result before it can be
   promoted
+- every approved version needs its own cycle-governance evidence; a clean cycle
+  from a parent or previous implementation is not reused automatically
 - promotion uses the latest validation for that exact version, not any
   historical pass from an earlier validation run or parent version
 - metadata-only revisions still keep a version-specific code resource so later

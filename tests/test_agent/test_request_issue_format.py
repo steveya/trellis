@@ -73,6 +73,77 @@ def test_issue_format_includes_task_and_target_context():
     assert "- ownership_role: `quant`" in comment
 
 
+def test_issue_format_includes_cycle_report_and_promotion_governance():
+    from trellis.agent.platform_requests import PlatformRequest
+    from trellis.agent.request_issue_format import build_event_comment, build_issue_body
+
+    request = PlatformRequest(
+        request_id="executor_build_cycle",
+        request_type="build",
+        entry_point="executor",
+        description="Build a callable bond pricer",
+        instrument_type="callable_bond",
+        metadata={"task_id": "F099", "task_title": "Callable bond cycle gate"},
+    )
+    compiled = SimpleNamespace(request=request)
+    cycle_report = {
+        "request_id": "executor_build_cycle",
+        "status": "failed",
+        "outcome": "request_failed",
+        "success": False,
+        "pricing_method": "rate_tree",
+        "validation_contract_id": "validation:callable_bond:rate_tree",
+        "stage_statuses": {
+            "quant": "passed",
+            "validation_bundle": "passed",
+            "arbiter": "failed",
+            "model_validator": "skipped",
+        },
+        "deterministic_blockers": [{"check_id": "callable_bound"}],
+        "conceptual_blockers": [],
+        "calibration_blockers": [],
+        "residual_limitations": [{"risk_id": "single_factor_curve"}],
+        "residual_risks": ["unsupported_paths_declared"],
+    }
+    governance = {
+        "eligible": False,
+        "decision": "blocked",
+        "blockers": ["cycle_stage_failed:arbiter"],
+        "warnings": ["residual_risks_present"],
+    }
+    trace = {
+        "action": "build_then_price",
+        "route_method": "rate_tree",
+        "requires_build": True,
+        "outcome": "request_failed",
+        "cycle_report": cycle_report,
+        "cycle_promotion_governance": governance,
+        "request_metadata": dict(request.metadata),
+    }
+    event = {
+        "event": "request_failed",
+        "status": "error",
+        "details": {
+            "reason": "arbiter_failed",
+            "cycle_report": cycle_report,
+            "cycle_promotion_governance": governance,
+        },
+    }
+
+    body = build_issue_body(trace, compiled, event)
+    comment = build_event_comment(trace, event)
+
+    assert "## Cycle Report" in body
+    assert "- cycle_success: `False`" in body
+    assert "- cycle_stage_statuses: `arbiter=failed, model_validator=skipped, quant=passed, validation_bundle=passed`" in body
+    assert "- deterministic_blockers: `1`" in body
+    assert "- residual_risks: `unsupported_paths_declared`" in body
+    assert "- promotion_eligible: `False`" in body
+    assert "- promotion_blockers: `cycle_stage_failed:arbiter`" in body
+    assert "## Cycle Report" in comment
+    assert "- promotion_eligible: `False`" in comment
+
+
 def test_stress_follow_on_format_includes_repeat_context_and_artifacts():
     from trellis.agent.request_issue_format import (
         build_stress_follow_on_body,

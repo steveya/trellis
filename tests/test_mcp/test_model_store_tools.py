@@ -75,6 +75,30 @@ def _candidate_payload() -> dict[str, object]:
     }
 
 
+def _cycle_report() -> dict[str, object]:
+    return {
+        "request_id": "executor_model_store_candidate",
+        "status": "succeeded",
+        "outcome": "build_completed",
+        "success": True,
+        "pricing_method": "analytical",
+        "validation_contract_id": "validation:vanilla_option:analytical",
+        "stage_statuses": {
+            "quant": "passed",
+            "validation_bundle": "passed",
+            "critic": "passed",
+            "arbiter": "passed",
+            "model_validator": "skipped",
+        },
+        "failure_count": 0,
+        "deterministic_blockers": [],
+        "conceptual_blockers": [],
+        "calibration_blockers": [],
+        "residual_limitations": [],
+        "residual_risks": [],
+    }
+
+
 def test_persist_versions_list_history_and_diff(tmp_path):
     from trellis.mcp.server import bootstrap_mcp_server
 
@@ -206,6 +230,7 @@ def test_persist_run_creates_reproducibility_bundle_and_attaches_it_to_run(tmp_p
             "to_status": "approved",
             "actor": "reviewer",
             "reason": "manual_approval",
+            "metadata": {"cycle_report": _cycle_report()},
         },
     )
     server.call_tool(
@@ -290,6 +315,7 @@ def test_persist_run_embeds_concrete_market_snapshot_for_live_provider_run(tmp_p
             "to_status": "approved",
             "actor": "reviewer",
             "reason": "manual_approval",
+            "metadata": {"cycle_report": _cycle_report()},
         },
     )
     server.call_tool(

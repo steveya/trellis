@@ -45,6 +45,30 @@ def _seed_registry(tmp_path):
     return registry
 
 
+def _cycle_report(*, success: bool = True) -> dict[str, object]:
+    return {
+        "request_id": "executor_model_candidate",
+        "status": "succeeded" if success else "failed",
+        "outcome": "build_completed" if success else "request_failed",
+        "success": success,
+        "pricing_method": "analytical",
+        "validation_contract_id": "validation:vanilla_option:analytical",
+        "stage_statuses": {
+            "quant": "passed",
+            "validation_bundle": "passed",
+            "critic": "passed",
+            "arbiter": "passed" if success else "failed",
+            "model_validator": "skipped",
+        },
+        "failure_count": 0 if success else 1,
+        "deterministic_blockers": [] if success else [{"check_id": "call_bound"}],
+        "conceptual_blockers": [],
+        "calibration_blockers": [],
+        "residual_limitations": [],
+        "residual_risks": [],
+    }
+
+
 def test_promote_requires_latest_validation_to_pass(tmp_path):
     from trellis.mcp.errors import TrellisMcpError
     from trellis.platform.services.model_service import ModelService
@@ -92,3 +116,60 @@ def test_promote_requires_latest_validation_to_pass(tmp_path):
             validation_store=validation_store,
         )
     assert excinfo.value.code == "validation_required"
+
+
+def test_approval_requires_cycle_promotion_governance(tmp_path):
+    from trellis.mcp.errors import TrellisMcpError
+    from trellis.platform.services.model_service import ModelService
+    from trellis.platform.services.validation_service import ValidationService
+    from trellis.platform.storage import ValidationStore
+
+    registry = _seed_registry(tmp_path)
+    validation_store = ValidationStore(tmp_path / "validations")
+    validation_service = ValidationService(
+        registry=registry,
+        validation_store=validation_store,
+    )
+    model_service = ModelService(registry=registry)
+    validation_service.validate_model(
+        model_id="vanilla_option_candidate",
+        version="v1",
+        actor="validator",
+        reason="initial_validation",
+    )
+    model_service.promote_version(
+        model_id="vanilla_option_candidate",
+        version="v1",
+        to_status="validated",
+        actor="reviewer",
+        reason="validation_review_complete",
+        validation_store=validation_store,
+    )
+
+    with pytest.raises(TrellisMcpError) as excinfo:
+        model_service.promote_version(
+            model_id="vanilla_option_candidate",
+            version="v1",
+            to_status="approved",
+            actor="reviewer",
+            reason="manual_approval_without_cycle",
+            validation_store=validation_store,
+        )
+
+    assert excinfo.value.code == "cycle_governance_required"
+
+    approved = model_service.promote_version(
+        model_id="vanilla_option_candidate",
+        version="v1",
+        to_status="approved",
+        actor="reviewer",
+        reason="manual_approval",
+        metadata={"cycle_report": _cycle_report()},
+        validation_store=validation_store,
+    )
+
+    transition = approved["version"]["transitions"][-1]
+    governance = transition["metadata"]["cycle_promotion_governance"]
+    assert approved["version"]["status"] == "approved"
+    assert governance["eligible"] is True
+    assert governance["cycle_report"]["request_id"] == "executor_model_candidate"
