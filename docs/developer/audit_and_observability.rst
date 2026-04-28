@@ -280,6 +280,40 @@ The ``arbiter_completed`` trace event and the derived ``cycle_report`` preserve
 those verdicts so operators can distinguish deterministic failures from
 fail-closed invalid critic selections.
 
+Residual-Risk Model Validation
+------------------------------
+
+Model validation is the final residual review layer, not a second generic
+reviewer. When the thorough path reaches model validation, the executor passes a
+structured deterministic evidence packet containing:
+
+- the compiled validation-contract checks, relations, blockers, and residual
+  risk ids
+- validation-bundle executed checks, skipped checks, and failure diagnostics
+- reference-oracle identity, relation, tolerance, sampled deviations, and pass
+  status when an oracle ran
+- structured arbiter verdicts for critic-selected executable claims
+
+The model-validator prompt renders this packet as ``Executed Deterministic
+Evidence`` and explicitly asks the reviewer not to convert passed deterministic
+evidence into prose findings. If the validation bundle, reference oracle, or
+arbiter has already produced a deterministic failure, the executor records a
+model-validator skip event instead of running residual prose review.
+
+The persisted ``cycle_report`` also separates outcome buckets:
+
+- ``deterministic_blockers`` for validation-contract, bundle, oracle, and arbiter
+  failures
+- ``conceptual_blockers`` for high/critical residual conceptual findings
+- ``calibration_blockers`` for high/critical residual calibration findings
+- ``residual_limitations`` for validation-contract or quant residual risks and
+  non-blocking model-validator limitation findings
+- ``residual_risks`` for the stable residual-risk ids handed forward by the
+  validation contract and quant challenger packet
+
+Downstream promotion and adoption logic should consume these separated buckets
+rather than parsing free-form model-validator text.
+
 Governed Provider Provenance
 ----------------------------
 

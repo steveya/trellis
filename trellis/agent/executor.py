@@ -2290,10 +2290,28 @@ def _validate_build(
         },
     )
 
+    deterministic_review_blocked = bool(failures)
+    deterministic_review_block_reason = (
+        "deterministic_validation_failed" if deterministic_review_blocked else None
+    )
+    model_validation_evidence_packet = {}
+    if validation == "thorough":
+        from trellis.agent.model_validator import build_model_validation_evidence_packet
+
+        model_validation_evidence_packet = build_model_validation_evidence_packet(
+            validation_contract=validation_contract,
+            validation_bundle_execution=bundle_execution,
+            reference_oracle=oracle_summary if oracle_execution is not None else None,
+            arbiter_verdicts=arbiter_verdicts,
+        )
+
     # Thorough: run model validator (MRM-style)
-    if validation == "thorough" and not deterministic_gate_failed:
+    if validation == "thorough" and not deterministic_review_blocked:
         try:
-            from trellis.agent.model_validator import validate_model
+            from trellis.agent.model_validator import (
+                classify_model_validation_findings,
+                validate_model,
+            )
 
             if review_policy.run_model_validator_llm and not review_knowledge_text:
                 review_context = _resolve_knowledge_context_for_attempt(
@@ -2333,6 +2351,7 @@ def _validate_build(
                         product_ir=product_ir,
                         generation_plan=getattr(compiled_request, "generation_plan", None),
                         validation_contract=validation_contract,
+                        deterministic_evidence_packet=model_validation_evidence_packet,
                         review_reason=review_policy.model_validator_reason,
                         run_llm_review=True,
                     )
@@ -2367,6 +2386,7 @@ def _validate_build(
                     product_ir=product_ir,
                     generation_plan=getattr(compiled_request, "generation_plan", None),
                     validation_contract=validation_contract,
+                    deterministic_evidence_packet=model_validation_evidence_packet,
                     review_reason=review_policy.model_validator_reason,
                     run_llm_review=False,
                 )
@@ -2396,6 +2416,7 @@ def _validate_build(
                 finding for finding in report.findings
                 if finding.severity in ("critical", "high")
             ]
+            finding_classification = classify_model_validation_findings(report.findings)
             _record_platform_event(
                 compiled_request,
                 "model_validator_completed",
@@ -2417,6 +2438,15 @@ def _validate_build(
                     "approved": report.approved,
                     "llm_review": review_policy.run_model_validator_llm,
                     "risk_level": review_policy.risk_level,
+                    "residual_risks": list(
+                        dict(model_validation_evidence_packet.get("validation_contract") or {}).get(
+                            "residual_risks",
+                            (),
+                        )
+                    ),
+                    "deterministic_evidence": model_validation_evidence_packet,
+                    "findings": [asdict(finding) for finding in report.findings],
+                    "finding_classification": finding_classification,
                     "skip_reason": (
                         None if review_policy.run_model_validator_llm
                         else review_policy.model_validator_reason
@@ -2443,8 +2473,9 @@ def _validate_build(
             status="info",
             details={
                 "risk_level": review_policy.risk_level,
-                "reason": deterministic_gate_reason,
+                "reason": deterministic_review_block_reason,
                 "failure_count": len(failures),
+                "deterministic_evidence": model_validation_evidence_packet,
             },
         )
 
