@@ -86,3 +86,17 @@ def test_price_nth_to_default_basket_matches_reference_payoff():
     reference_pv = NthToDefaultPayoff(spec).evaluate(market_state)
 
     assert helper_pv == reference_pv
+
+
+def test_price_nth_to_default_basket_accepts_generated_default_probability_aliases():
+    pv = price_nth_to_default_basket(
+        notional=1_000_000.0,
+        n_names=4,
+        n_th=2,
+        maturity=5.0,
+        default_prob=0.12,
+        correlation=0.3,
+        recovery=0.4,
+    )
+
+    assert pv > 0.0

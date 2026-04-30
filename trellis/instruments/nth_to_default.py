@@ -79,25 +79,30 @@ def price_nth_to_default_basket(
     notional: float,
     n_names: int,
     n_th: int,
-    horizon: float,
-    correlation: float,
-    recovery: float,
-    credit_curve,
-    discount_curve,
+    horizon: float | None = None,
+    correlation: float = 0.3,
+    recovery: float = 0.4,
+    credit_curve=None,
+    discount_curve=None,
+    maturity: float | None = None,
+    default_prob: float | None = None,
 ) -> float:
     """Price a helper-backed nth-to-default basket from curve inputs and contract terms."""
-    T = float(horizon)
+    T = float(horizon if horizon is not None else maturity if maturity is not None else 0.0)
     if T <= 0:
         return 0.0
 
-    default_prob = terminal_default_probability(credit_curve, T)
+    if default_prob is None:
+        if credit_curve is None:
+            raise ValueError("credit_curve is required when default_prob is not supplied")
+        default_prob = terminal_default_probability(credit_curve, T)
     trigger_prob = nth_to_default_probability(
         n_names,
         n_th,
-        default_prob,
+        float(default_prob),
         correlation,
     )
-    df = float(discount_curve.discount(T))
+    df = 1.0 if discount_curve is None else float(discount_curve.discount(T))
     return float(
         protection_payment_pv(
             ProtectionPayment(

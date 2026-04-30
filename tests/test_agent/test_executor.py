@@ -530,6 +530,99 @@ def test_deterministic_exact_binding_module_materializes_cap_strip_helper_wrappe
 
 
 @pytest.mark.parametrize(
+    ("comparison_target", "binding_ref", "helper_name"),
+    [
+        (
+            "analytical",
+            "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",
+            "price_rate_cap_floor_strip_analytical",
+        ),
+        (
+            "monte_carlo",
+            "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo",
+            "price_rate_cap_floor_strip_monte_carlo",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_cap_strip_comparison_wrappers(
+    comparison_target,
+    binding_ref,
+    helper_name,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(binding_ref,),
+        primitive_plan=None,
+        method=comparison_target,
+        instrument_type="cap",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cap"],
+        "Callable cap/floor collar comparison exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert f"{helper_name}(" in generated.code
+    assert 'coupon_dates=getattr(spec, "coupon_dates", None)' in generated.code
+    assert 'cap_strike=getattr(spec, "cap_strike", None)' in generated.code
+    assert 'floor_strike=getattr(spec, "floor_strike", None)' in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_make_test_payoff_reconciles_stale_schema_against_payoff_dataclass(monkeypatch):
+    from trellis.agent.executor import _make_test_payoff
+
+    module_name = "test_stale_schema_payoff_module"
+    module = ModuleType(module_name)
+    monkeypatch.setitem(sys.modules, module_name, module)
+    exec(
+        """
+from dataclasses import dataclass
+
+@dataclass(frozen=True)
+class CallableCapFloorCollarSpec:
+    notional: float
+
+class CallableCapFloorCollar:
+    def __init__(self, spec: CallableCapFloorCollarSpec):
+        self.spec = spec
+""",
+        module.__dict__,
+    )
+
+    stale_schema = SimpleNamespace(
+        spec_name="CallableCapFloorCollarSpec",
+        fields=[
+            SimpleNamespace(name="notional", type="float", default=None),
+            SimpleNamespace(name="discount_curve_name", type="str | None", default=None),
+        ],
+    )
+
+    payoff = _make_test_payoff(
+        module.CallableCapFloorCollar,
+        stale_schema,
+        date(2024, 11, 15),
+        spec_overrides={"discount_curve_name": "usd_ois"},
+    )
+
+    assert payoff.spec.notional == pytest.approx(100.0)
+    assert not hasattr(payoff.spec, "discount_curve_name")
+
+
+@pytest.mark.parametrize(
     ("description", "expected_defaults"),
     [
         (

@@ -279,6 +279,93 @@ def test_rate_cap_floor_strip_helpers_preserve_explicit_period_schedule():
     assert price == pytest.approx(expected)
 
 
+def test_rate_cap_floor_strip_accepts_generated_schedule_alias_collar_fields():
+    market_state = _market_state(rate=0.05, vol=0.20)
+    accrual_dates = (
+        date(2025, 2, 15),
+        date(2025, 5, 15),
+        date(2025, 8, 15),
+    )
+    coupon_dates = (
+        date(2025, 5, 16),
+        date(2025, 8, 18),
+    )
+    periods = (
+        CapFloorPeriod(
+            start_date=accrual_dates[0],
+            end_date=accrual_dates[1],
+            payment_date=coupon_dates[0],
+            fixing_date=accrual_dates[0],
+        ),
+        CapFloorPeriod(
+            start_date=accrual_dates[1],
+            end_date=accrual_dates[2],
+            payment_date=coupon_dates[1],
+            fixing_date=accrual_dates[1],
+        ),
+    )
+
+    alias_price = price_rate_cap_floor_strip_analytical(
+        market_state=market_state,
+        notional=1_000_000.0,
+        strike=0.04,
+        start_date=accrual_dates[0],
+        end_date=accrual_dates[-1],
+        accrual_dates=accrual_dates,
+        coupon_dates=coupon_dates,
+        cap_strike=0.04,
+        floor_strike=0.02,
+        call_price=1_000.0,
+        exercise_dates=(date(2026, 11, 15),),
+        is_payer=True,
+        day_count=DayCountConvention.ACT_360,
+        frequency=Frequency.QUARTERLY,
+    )
+    expected = price_rate_cap_floor_strip_analytical(
+        market_state=market_state,
+        notional=1_000_000.0,
+        strike=0.04,
+        start_date=accrual_dates[0],
+        end_date=accrual_dates[-1],
+        periods=periods,
+        instrument_class="cap",
+        day_count=DayCountConvention.ACT_360,
+        frequency=Frequency.QUARTERLY,
+    ) - price_rate_cap_floor_strip_analytical(
+        market_state=market_state,
+        notional=1_000_000.0,
+        strike=0.02,
+        start_date=accrual_dates[0],
+        end_date=accrual_dates[-1],
+        periods=periods,
+        instrument_class="floor",
+        day_count=DayCountConvention.ACT_360,
+        frequency=Frequency.QUARTERLY,
+    )
+
+    monte_carlo_alias_price = price_rate_cap_floor_strip_monte_carlo(
+        market_state=market_state,
+        notional=1_000_000.0,
+        strike=0.04,
+        start_date=accrual_dates[0],
+        end_date=accrual_dates[-1],
+        accrual_dates=accrual_dates,
+        coupon_dates=coupon_dates,
+        cap_strike=0.04,
+        floor_strike=0.02,
+        call_price=1_000.0,
+        exercise_dates=(date(2026, 11, 15),),
+        is_payer=True,
+        day_count=DayCountConvention.ACT_360,
+        frequency=Frequency.QUARTERLY,
+        n_paths=30000,
+        seed=23,
+    )
+
+    assert alias_price == pytest.approx(expected)
+    assert monte_carlo_alias_price == pytest.approx(alias_price, rel=0.25)
+
+
 def test_rate_cap_floor_strip_includes_known_first_fixing_intrinsic():
     market_state = _market_state(rate=0.05, vol=0.20)
     today_start = _cap_spec(start_date=SETTLE, end_date=date(2025, 11, 15))

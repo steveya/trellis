@@ -129,6 +129,8 @@ _RATE_CAP_FLOOR_PRIMS: tuple[PrimitiveRef, ...] = (
         "price_rate_cap_floor_strip_analytical",
         "route_helper",
     ),
+    PrimitiveRef("trellis.models.black", "black76_call", "pricing_kernel"),
+    PrimitiveRef("trellis.models.black", "black76_put", "pricing_kernel"),
 )
 
 _DEFAULT_PRIMS: tuple[PrimitiveRef, ...] = (

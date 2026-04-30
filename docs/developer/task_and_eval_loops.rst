@@ -96,7 +96,10 @@ three selection modes:
 
 The workflow also accepts optional corpus filters, ``pending`` versus ``all``
 status selection, validation profile, reuse versus fresh-build controls, and
-the knowledge-light profile. Each manual run emits:
+the knowledge-light profile. The GitHub Actions default model is
+``openai/gpt-4.1`` because GitHub Models expects catalog model IDs such as
+``openai/gpt-4.1`` rather than direct OpenAI API model names such as
+``gpt-5.4-mini``. Each manual run emits:
 
 - raw batch results JSON
 - the deterministic summary JSON from ``summarize_task_results(...)``
@@ -108,19 +111,16 @@ the allowed GitHub login can dispatch or re-run it. That is a spend-control
 guard for token-backed task batches; keep the allowed actor in the workflow
 file aligned with the repository owner. The job itself now runs inside the
 ``paid-task-batch`` environment with ``deployment: false`` so the batch still
-uses environment protection rules and environment-scoped secrets without
-creating a deployment record.
+uses environment protection rules without creating a deployment record.
 
-For the actual API key boundary, store the task-batch key as the environment
-secret ``TASK_BATCH_OPENAI_API_KEY`` on ``paid-task-batch``. The workflow no
-longer reads the repository-level ``OPENAI_API_KEY`` name. One exact CLI path
-is:
-
-``gh secret set --repo steveya/trellis --env paid-task-batch TASK_BATCH_OPENAI_API_KEY``
-
-and then paste the key value when prompted. Keep yourself as the required
-reviewer for that environment so the secret is withheld until you approve the
-job.
+The hosted workflow is wired to GitHub Models, not the direct OpenAI API. It
+uses the Actions ``GITHUB_TOKEN`` as ``OPENAI_API_KEY``, sets
+``OPENAI_BASE_URL=https://models.github.ai/inference``, and grants only
+``models: read`` plus ``contents: read`` permissions. Keep yourself as the
+required reviewer for the ``paid-task-batch`` environment so the job is still
+withheld until you approve it. Local runs can continue to use the direct
+OpenAI API by leaving ``OPENAI_BASE_URL`` unset and providing a normal
+``OPENAI_API_KEY``.
 
 The uploaded report artifact is the right first monitoring surface because it
 keeps the repo free of ad hoc benchmark noise while still leaving one durable

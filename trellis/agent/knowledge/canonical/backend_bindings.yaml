@@ -434,6 +434,12 @@ bindings:
           - module: trellis.models.rate_cap_floor
             symbol: price_rate_cap_floor_strip_analytical
             role: route_helper
+          - module: trellis.models.black
+            symbol: black76_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_put
+            role: pricing_kernel
       - when:
           payoff_family: basket_option
           payoff_traits: [two_asset_terminal_basket]

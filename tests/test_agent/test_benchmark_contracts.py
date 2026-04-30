@@ -84,6 +84,59 @@ def test_benchmark_request_description_surfaces_cap_model_specific_terms():
     assert "SABR parameters: alpha=0.025, beta=0.5, nu=0.35, rho=-0.2." in sabr_description
 
 
+def test_extension_rainbow_overrides_keep_expiry_after_final_exercise_date():
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml", root=ROOT)
+    }
+
+    rainbow = benchmark_spec_overrides(tasks["P001"], root=ROOT)
+
+    assert rainbow["expiry_date"] == date(2025, 12, 15)
+    assert rainbow["observation_dates"] == (
+        date(2025, 3, 15),
+        date(2025, 6, 15),
+        date(2025, 9, 15),
+        date(2025, 12, 15),
+    )
+    assert rainbow["exercise_dates"] == (
+        date(2025, 6, 15),
+        date(2025, 9, 15),
+        date(2025, 12, 15),
+    )
+
+
+def test_extension_rainbow_overrides_bind_underliers_from_market_scenario():
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml", root=ROOT)
+    }
+
+    rainbow = benchmark_spec_overrides(tasks["P001"], root=ROOT)
+
+    assert rainbow["underliers"] == "AAPL,MSFT"
+    assert rainbow["constituents"] == "AAPL,MSFT"
+    assert rainbow["spots"] == "100.0,95.0"
+    assert rainbow["vols"] == "0.2,0.25"
+
+
+def test_extension_rainbow_overrides_reject_vector_underlier_mismatch():
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml", root=ROOT)
+    }
+    bad_task = {
+        **tasks["P001"],
+        "extension_contract": {
+            **tasks["P001"]["extension_contract"],
+            "underliers": ["AAPL"],
+        },
+    }
+
+    with pytest.raises(ValueError, match="underlier count"):
+        benchmark_spec_overrides(bad_task, root=ROOT)
+
+
 def test_benchmark_spec_overrides_cover_fx_rates_cap_and_swaption_contracts():
     tasks = _benchmark_tasks()
 

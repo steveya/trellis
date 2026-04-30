@@ -311,6 +311,7 @@ def test_openai_chat_completion_create_disables_sdk_retries(monkeypatch):
     from trellis.agent.config import _openai_chat_completion_create
 
     captured: dict[str, object] = {}
+    monkeypatch.delenv("OPENAI_BASE_URL", raising=False)
 
     class FakeClient:
         def __init__(self, **kwargs):
@@ -332,6 +333,45 @@ def test_openai_chat_completion_create_disables_sdk_retries(monkeypatch):
 
     assert captured == {"timeout": 9.0, "max_retries": 0}
     assert response["kwargs"]["model"] == "gpt-5-mini"
+    assert response["kwargs"]["max_completion_tokens"] == 128
+    assert "max_tokens" not in response["kwargs"]
+
+
+def test_openai_chat_completion_create_uses_github_models_shape(monkeypatch):
+    from trellis.agent.config import _openai_chat_completion_create
+
+    captured: dict[str, object] = {}
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://models.github.ai/inference")
+
+    class FakeClient:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+            self.chat = SimpleNamespace(
+                completions=SimpleNamespace(
+                    create=lambda **kwargs: {"kwargs": kwargs},
+                )
+            )
+
+    monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(OpenAI=FakeClient))
+
+    response = _openai_chat_completion_create(
+        model="openai/gpt-4.1",
+        messages=[{"role": "user", "content": "hello"}],
+        max_completion_tokens=128,
+        timeout_seconds=9.0,
+        response_format={"type": "json_object"},
+    )
+
+    assert captured["timeout"] == 9.0
+    assert captured["max_retries"] == 0
+    assert captured["default_headers"] == {
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2026-03-10",
+    }
+    assert response["kwargs"]["model"] == "openai/gpt-4.1"
+    assert response["kwargs"]["max_tokens"] == 128
+    assert "max_completion_tokens" not in response["kwargs"]
+    assert response["kwargs"]["response_format"] == {"type": "json_object"}
 
 
 def test_llm_usage_session_tracks_stage_token_totals(monkeypatch):

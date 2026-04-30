@@ -43,6 +43,27 @@ class TestGaussianCopula:
             assert raw_np.mean(U[:, j]) == pytest.approx(0.5, abs=0.02)
             assert raw_np.std(U[:, j]) == pytest.approx(1.0 / raw_np.sqrt(12), abs=0.02)
 
+    def test_scalar_correlation_with_explicit_name_count(self):
+        gc = GaussianCopula(correlation=0.25, n_names=4)
+
+        U = gc.sample_uniforms(1000, rng=raw_np.random.default_rng(11))
+
+        assert U.shape == (1000, 4)
+        assert raw_np.all(U >= 0.0)
+        assert raw_np.all(U <= 1.0)
+
+    def test_scalar_correlation_lazy_name_count_from_default_rates(self):
+        gc = GaussianCopula(correlation=0.25)
+
+        default_times = gc.sample_default_times(
+            raw_np.array([0.02, 0.03, 0.04]),
+            16,
+            rng=raw_np.random.default_rng(13),
+        )
+
+        assert default_times.shape == (16, 3)
+        assert raw_np.all(default_times > 0.0)
+
 
 # ---------------------------------------------------------------------------
 # StudentTCopula
