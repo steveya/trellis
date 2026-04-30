@@ -2568,6 +2568,30 @@ def _make_test_payoff(
     if spec_cls is None:
         raise RuntimeError(f"Cannot find {spec_schema.spec_name} in loaded modules")
 
+    if is_dataclass(spec_cls):
+        actual_field_names = {field.name for field in fields(spec_cls)}
+        schema_field_names = {
+            str(getattr(field, "name", "") or "")
+            for field in getattr(spec_schema, "fields", ())
+            if str(getattr(field, "name", "") or "")
+        }
+        if schema_field_names and not schema_field_names.issubset(actual_field_names):
+            spec_schema = SimpleNamespace(
+                spec_name=spec_cls.__name__,
+                fields=[
+                    SimpleNamespace(
+                        name=field.name,
+                        type=_runtime_annotation_to_field_type(field.type),
+                        default=(
+                            None
+                            if field.default is MISSING and field.default_factory is MISSING
+                            else repr(field.default if field.default is not MISSING else None)
+                        ),
+                    )
+                    for field in fields(spec_cls)
+                ],
+            )
+
     # Build kwargs from field definitions with test defaults
     from trellis.core.types import DayCountConvention, Frequency
 
@@ -3369,6 +3393,81 @@ def _deterministic_exact_binding_evaluate_body(
     basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
     instrument_type = str(getattr(generation_plan, "instrument_type", "") or "").strip().lower()
     route_free_exact_binding = getattr(generation_plan, "primitive_plan", None) is None
+    if (
+        comparison_target == "analytical"
+        and instrument_type in {"cap", "floor", "period_rate_option_strip"}
+        and "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical" in refs
+    ):
+        default_kind = "floor" if instrument_type == "floor" else "cap"
+        return textwrap.dedent(
+            f"""\
+            spec = self._spec
+            return price_rate_cap_floor_strip_analytical(
+                market_state=market_state,
+                instrument_class=getattr(spec, "instrument_class", None) or "{default_kind}",
+                coupon_dates=getattr(spec, "coupon_dates", None) or getattr(spec, "payment_dates", None),
+                accrual_dates=getattr(spec, "accrual_dates", None),
+                cap_strike=getattr(spec, "cap_strike", None),
+                floor_strike=getattr(spec, "floor_strike", None),
+                call_price=getattr(spec, "call_price", None) or getattr(spec, "call_strike", None),
+                exercise_dates=getattr(spec, "exercise_dates", None) or getattr(spec, "call_dates", None),
+                is_payer=getattr(spec, "is_payer", None),
+                notional=getattr(spec, "notional", None),
+                strike=(
+                    getattr(spec, "strike", None)
+                    or getattr(spec, "cap_strike", None)
+                    or getattr(spec, "floor_strike", None)
+                ),
+                start_date=getattr(spec, "start_date", None),
+                end_date=getattr(spec, "end_date", None),
+                frequency=getattr(spec, "frequency", None),
+                day_count=getattr(spec, "day_count", None),
+                rate_index=getattr(spec, "rate_index", None),
+                calendar_name=getattr(spec, "calendar_name", None),
+                business_day_adjustment=getattr(spec, "business_day_adjustment", None),
+                model=getattr(spec, "model", None),
+                shift=getattr(spec, "shift", None),
+                sabr=getattr(spec, "sabr", None),
+            )
+            """
+        ).rstrip()
+    if (
+        comparison_target == "monte_carlo"
+        and instrument_type in {"cap", "floor", "period_rate_option_strip"}
+        and "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo" in refs
+    ):
+        default_kind = "floor" if instrument_type == "floor" else "cap"
+        return textwrap.dedent(
+            f"""\
+            spec = self._spec
+            return price_rate_cap_floor_strip_monte_carlo(
+                market_state=market_state,
+                instrument_class=getattr(spec, "instrument_class", None) or "{default_kind}",
+                coupon_dates=getattr(spec, "coupon_dates", None) or getattr(spec, "payment_dates", None),
+                accrual_dates=getattr(spec, "accrual_dates", None),
+                cap_strike=getattr(spec, "cap_strike", None),
+                floor_strike=getattr(spec, "floor_strike", None),
+                call_price=getattr(spec, "call_price", None) or getattr(spec, "call_strike", None),
+                exercise_dates=getattr(spec, "exercise_dates", None) or getattr(spec, "call_dates", None),
+                is_payer=getattr(spec, "is_payer", None),
+                n_paths=20000,
+                seed=42,
+                notional=getattr(spec, "notional", None),
+                strike=(
+                    getattr(spec, "strike", None)
+                    or getattr(spec, "cap_strike", None)
+                    or getattr(spec, "floor_strike", None)
+                ),
+                start_date=getattr(spec, "start_date", None),
+                end_date=getattr(spec, "end_date", None),
+                frequency=getattr(spec, "frequency", None),
+                day_count=getattr(spec, "day_count", None),
+                rate_index=getattr(spec, "rate_index", None),
+                calendar_name=getattr(spec, "calendar_name", None),
+                business_day_adjustment=getattr(spec, "business_day_adjustment", None),
+            )
+            """
+        ).rstrip()
     if (
         comparison_target is None
         and instrument_type in {"cap", "floor"}

@@ -10,7 +10,9 @@ implementation sequencing.
 - QUA-887 — Semantic contract: contract-IR compiler (root umbrella)
 - QUA-886 — Semantic simulation substrate: factor-state valuation,
   market projection, and future-value cube
+- QUA-989 — P001 route-free Bermudan rainbow proof
 - `doc/plan/draft__semantic-contract-closure-program.md`
+- `doc/plan/active__p001-semantic-execution-proof.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
 - `doc/plan/draft__event-state-control-contract-foundation.md`
 - `doc/plan/draft__external-prior-art-adoption-map.md`
@@ -33,6 +35,7 @@ implementation sequencing.
 ## Linked Linear
 
 - `QUA-975` - Semantic execution: contract execution IR and visitor framework
+- `QUA-989` - Semantic execution proof: P001 route-free Bermudan rainbow
 
 ## Linear Ticket Mirror
 

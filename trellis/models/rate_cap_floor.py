@@ -149,6 +149,41 @@ def _business_day_adjustment_from_name(name: str | None) -> BusinessDayAdjustmen
     return BusinessDayAdjustment(normalized)
 
 
+def _periods_from_schedule_aliases(
+    *,
+    accrual_dates: tuple[date, ...] | list[date] | None = None,
+    coupon_dates: tuple[date, ...] | list[date] | None = None,
+) -> tuple[CapFloorPeriod, ...] | None:
+    accrual = tuple(accrual_dates or ())
+    coupons = tuple(coupon_dates or ())
+    if not accrual and not coupons:
+        return None
+    if len(accrual) < 2:
+        raise ValueError("accrual_dates must contain at least start and end dates")
+
+    period_count = len(accrual) - 1
+    if not coupons:
+        payments = accrual[1:]
+    elif len(coupons) == period_count:
+        payments = coupons
+    elif len(coupons) == len(accrual):
+        payments = coupons[1:]
+    else:
+        raise ValueError(
+            "coupon_dates must have one date per accrual period or one date per accrual boundary"
+        )
+
+    return tuple(
+        CapFloorPeriod(
+            start_date=accrual[index],
+            end_date=accrual[index + 1],
+            payment_date=payments[index],
+            fixing_date=accrual[index],
+        )
+        for index in range(period_count)
+    )
+
+
 def _resolve_cap_floor_terms(
     market_state: MarketState,
     spec: CapFloorSpec,
@@ -333,6 +368,13 @@ def price_rate_cap_floor_strip_analytical(
     *,
     instrument_class: str = "cap",
     periods: tuple[CapFloorPeriod, ...] | None = None,
+    coupon_dates: tuple[date, ...] | list[date] | None = None,
+    accrual_dates: tuple[date, ...] | list[date] | None = None,
+    cap_strike: float | None = None,
+    floor_strike: float | None = None,
+    call_price: float | None = None,
+    exercise_dates: tuple[date, ...] | list[date] | None = None,
+    is_payer: bool | None = None,
     notional: float | None = None,
     strike: float | None = None,
     start_date=None,
@@ -347,6 +389,55 @@ def price_rate_cap_floor_strip_analytical(
     sabr: dict[str, float] | None = None,
 ) -> float:
     """Price a cap/floor strip as a sum of discounted Black-76 caplets/floorlets."""
+    del call_price, exercise_dates
+    resolved_periods = periods or _periods_from_schedule_aliases(
+        accrual_dates=accrual_dates,
+        coupon_dates=coupon_dates,
+    )
+    if cap_strike is not None or floor_strike is not None:
+        cap_value = 0.0
+        floor_value = 0.0
+        if cap_strike is not None:
+            cap_value = price_rate_cap_floor_strip_analytical(
+                market_state,
+                spec,
+                instrument_class="cap",
+                periods=resolved_periods,
+                notional=notional,
+                strike=float(cap_strike),
+                start_date=start_date,
+                end_date=end_date,
+                frequency=frequency,
+                day_count=day_count,
+                rate_index=rate_index,
+                calendar_name=calendar_name,
+                business_day_adjustment=business_day_adjustment,
+                model=model,
+                shift=shift,
+                sabr=sabr,
+            )
+        if floor_strike is not None:
+            floor_value = price_rate_cap_floor_strip_analytical(
+                market_state,
+                spec,
+                instrument_class="floor",
+                periods=resolved_periods,
+                notional=notional,
+                strike=float(floor_strike),
+                start_date=start_date,
+                end_date=end_date,
+                frequency=frequency,
+                day_count=day_count,
+                rate_index=rate_index,
+                calendar_name=calendar_name,
+                business_day_adjustment=business_day_adjustment,
+                model=model,
+                shift=shift,
+                sabr=sabr,
+            )
+        payer = True if is_payer is None else bool(is_payer)
+        return float(cap_value - floor_value if payer else floor_value - cap_value)
+
     spec = _coerce_cap_floor_spec(
         spec,
         notional=notional,
@@ -363,7 +454,7 @@ def price_rate_cap_floor_strip_analytical(
         sabr=sabr,
     )
     kind = _normalize_instrument_class(instrument_class)
-    terms = _resolve_cap_floor_terms(market_state, spec, periods=periods)
+    terms = _resolve_cap_floor_terms(market_state, spec, periods=resolved_periods)
     if not terms:
         return 0.0
 
@@ -402,6 +493,13 @@ def price_rate_cap_floor_strip_monte_carlo(
     *,
     instrument_class: str = "cap",
     periods: tuple[CapFloorPeriod, ...] | None = None,
+    coupon_dates: tuple[date, ...] | list[date] | None = None,
+    accrual_dates: tuple[date, ...] | list[date] | None = None,
+    cap_strike: float | None = None,
+    floor_strike: float | None = None,
+    call_price: float | None = None,
+    exercise_dates: tuple[date, ...] | list[date] | None = None,
+    is_payer: bool | None = None,
     n_paths: int = 10_000,
     seed: int | None = None,
     n_steps: int = 0,
@@ -422,6 +520,53 @@ def price_rate_cap_floor_strip_monte_carlo(
 ) -> float:
     """Price a cap/floor strip by Monte Carlo on the caplet-strip forward surface."""
     del n_steps, mean_reversion, sigma, discount_curve, forward_curve, vol
+    del call_price, exercise_dates
+    resolved_periods = periods or _periods_from_schedule_aliases(
+        accrual_dates=accrual_dates,
+        coupon_dates=coupon_dates,
+    )
+    if cap_strike is not None or floor_strike is not None:
+        cap_value = 0.0
+        floor_value = 0.0
+        if cap_strike is not None:
+            cap_value = price_rate_cap_floor_strip_monte_carlo(
+                market_state,
+                spec,
+                instrument_class="cap",
+                periods=resolved_periods,
+                n_paths=n_paths,
+                seed=seed,
+                notional=notional,
+                strike=float(cap_strike),
+                start_date=start_date,
+                end_date=end_date,
+                frequency=frequency,
+                day_count=day_count,
+                rate_index=rate_index,
+                calendar_name=calendar_name,
+                business_day_adjustment=business_day_adjustment,
+            )
+        if floor_strike is not None:
+            floor_value = price_rate_cap_floor_strip_monte_carlo(
+                market_state,
+                spec,
+                instrument_class="floor",
+                periods=resolved_periods,
+                n_paths=n_paths,
+                seed=seed,
+                notional=notional,
+                strike=float(floor_strike),
+                start_date=start_date,
+                end_date=end_date,
+                frequency=frequency,
+                day_count=day_count,
+                rate_index=rate_index,
+                calendar_name=calendar_name,
+                business_day_adjustment=business_day_adjustment,
+            )
+        payer = True if is_payer is None else bool(is_payer)
+        return float(cap_value - floor_value if payer else floor_value - cap_value)
+
     spec = _coerce_cap_floor_spec(
         spec,
         notional=notional,
@@ -435,7 +580,7 @@ def price_rate_cap_floor_strip_monte_carlo(
         business_day_adjustment=business_day_adjustment,
     )
     kind = _normalize_instrument_class(instrument_class)
-    terms = _resolve_cap_floor_terms(market_state, spec, periods=periods)
+    terms = _resolve_cap_floor_terms(market_state, spec, periods=resolved_periods)
     if not terms:
         return 0.0
 

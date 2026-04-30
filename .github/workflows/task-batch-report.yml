@@ -56,7 +56,7 @@ on:
         description: Model used for build and review stages.
         required: true
         type: string
-        default: gpt-5.4-mini
+        default: openai/gpt-4.1
       reuse:
         description: Reuse existing generated modules when present.
         required: true
@@ -75,9 +75,11 @@ on:
 
 permissions:
   contents: read
+  models: read
 
 env:
   TASK_BATCH_ALLOWED_ACTOR: steveya
+  GITHUB_MODELS_BASE_URL: https://models.github.ai/inference
 
 jobs:
   authorize-dispatch:
@@ -99,7 +101,9 @@ jobs:
       name: paid-task-batch
       deployment: false
     env:
-      OPENAI_API_KEY: ${{ secrets.TASK_BATCH_OPENAI_API_KEY }}
+      OPENAI_API_KEY: ${{ github.token }}
+      OPENAI_BASE_URL: ${{ env.GITHUB_MODELS_BASE_URL }}
+      GITHUB_MODELS_API_VERSION: "2026-03-10"
     steps:
       - name: Check out repository
         uses: actions/checkout@v4

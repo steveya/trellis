@@ -56,6 +56,10 @@ _DIRECT_OVERRIDE_KEYS: tuple[str, ...] = (
     "inner_option_type",
     "running_extreme",
     "realized_variance",
+    "cap_strike",
+    "floor_strike",
+    "call_price",
+    "spread",
 )
 
 _FREQUENCY_MAP: dict[str, Frequency] = {
@@ -122,6 +126,17 @@ _BENCHMARK_PRODUCT_INSTRUMENT_TYPES: dict[str, str] = {
 def benchmark_contract(task: Mapping[str, Any]) -> dict[str, Any]:
     """Return the normalized benchmark contract payload for one task."""
     raw = task.get("benchmark_contract")
+    if not isinstance(raw, Mapping):
+        return {}
+    return dict(raw)
+
+
+def _spec_override_contract(task: Mapping[str, Any]) -> dict[str, Any]:
+    """Return the declared contract payload used for runtime spec overrides."""
+    contract = benchmark_contract(task)
+    if contract:
+        return contract
+    raw = task.get("extension_contract")
     if not isinstance(raw, Mapping):
         return {}
     return dict(raw)
@@ -199,8 +214,8 @@ def benchmark_spec_overrides(
     *,
     root=None,
 ) -> dict[str, Any]:
-    """Return shared product-aware spec overrides implied by one benchmark contract."""
-    contract = benchmark_contract(task)
+    """Return shared product-aware spec overrides implied by a declared task contract."""
+    contract = _spec_override_contract(task)
     if not contract:
         return {}
     scenario_contract = (
@@ -254,6 +269,16 @@ def benchmark_spec_overrides(
         if parsed is not None:
             overrides[spec_key] = parsed
 
+    for contract_key, spec_key in (
+        ("callable_dates", "exercise_dates"),
+        ("exercise_dates", "exercise_dates"),
+        ("coupon_dates", "coupon_dates"),
+        ("accrual_dates", "accrual_dates"),
+    ):
+        parsed_dates = _parse_date_sequence(contract.get(contract_key))
+        if parsed_dates:
+            overrides[spec_key] = parsed_dates
+
     product = str(contract.get("product") or "").strip().lower()
     if product == "fx_vanilla":
         overrides.update(
@@ -263,7 +288,7 @@ def benchmark_spec_overrides(
                 valuation_date=valuation_date,
             )
         )
-    elif product == "period_rate_option_strip":
+    elif product in {"period_rate_option_strip", "rate_cap_floor_collar"}:
         overrides.update(
             _rate_cap_floor_overrides(
                 contract,
@@ -294,7 +319,15 @@ def benchmark_spec_overrides(
     elif product == "variance_swap":
         overrides.update(_variance_swap_overrides(contract, valuation_date=valuation_date))
     elif product == "rainbow_option":
-        overrides.update(_rainbow_option_overrides(contract, valuation_date=valuation_date))
+        overrides.update(
+            _rainbow_option_overrides(
+                contract,
+                valuation_date=valuation_date,
+                scenario_contract=scenario_contract,
+            )
+        )
+    elif product == "nth_to_default":
+        overrides.update(_nth_to_default_overrides(contract, valuation_date=valuation_date))
 
     return {key: value for key, value in overrides.items() if value is not None}
 
@@ -685,24 +718,121 @@ def _cds_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict
     }
 
 
-def _rainbow_option_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:
+def _nth_to_default_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:
+    basket_names = contract.get("basket_names") or contract.get("names")
+    n_names = len(basket_names) if isinstance(basket_names, (list, tuple)) else None
+    return {
+        "notional": _float_or_none(contract.get("notional")),
+        "n_names": n_names,
+        "n_th": int(contract.get("nth") or contract.get("n_th") or 1),
+        "end_date": _end_date_from_contract(contract, start_date=valuation_date),
+        "correlation": _float_or_none(contract.get("correlation")),
+        "recovery": _float_or_none(contract.get("recovery_rate") or contract.get("recovery")),
+    }
+
+
+def _rainbow_option_overrides(
+    contract: Mapping[str, Any],
+    *,
+    valuation_date: date,
+    scenario_contract: MarketScenarioContract | None,
+) -> dict[str, Any]:
     payoff = str(contract.get("payoff") or "").strip().lower()
     basket_style = {
         "best_of_call": "best_of",
         "worst_of_call": "worst_of",
         "spread_call": "spread",
     }.get(payoff, "best_of")
+    observation_dates = _parse_date_sequence(contract.get("observation_dates"))
+    exercise_dates = _parse_date_sequence(contract.get("exercise_dates"))
+    expiry_years = _float_or_none(contract.get("expiry_years"))
+    if expiry_years not in {None, 0.0}:
+        expiry_date = valuation_date + timedelta(days=round(float(expiry_years) * 365.0))
+    else:
+        expiry_candidates = observation_dates + exercise_dates
+        expiry_date = max(expiry_candidates) if expiry_candidates else valuation_date
+    underliers = _rainbow_underlier_names(contract, scenario_contract=scenario_contract)
+    _validate_rainbow_vector_dimensions(contract, underliers=underliers)
+    underlier_csv = ",".join(underliers)
     return {
         "notional": _float_or_none(contract.get("notional")) or 1.0,
-        "underliers": ",".join(str(name) for name in (contract.get("underliers") or ("Asset1", "Asset2"))),
+        "underliers": underlier_csv,
+        "constituents": underlier_csv,
         "spots": ",".join(str(value) for value in (contract.get("spots") or ())),
         "strike": _float_or_none(contract.get("strike")),
-        "expiry_date": valuation_date + timedelta(days=round(float(contract.get("expiry_years") or 0.0) * 365.0)),
+        "expiry_date": expiry_date,
+        "observation_dates": observation_dates or None,
+        "exercise_dates": exercise_dates or None,
         "correlation": _correlation_text(contract.get("correlation")),
         "dividend_yields": ",".join(str(value) for value in (contract.get("dividend_rates") or ())),
         "basket_style": basket_style,
         "option_type": "call",
     }
+
+
+def _rainbow_underlier_names(
+    contract: Mapping[str, Any],
+    *,
+    scenario_contract: MarketScenarioContract | None,
+) -> tuple[str, ...]:
+    explicit = _string_sequence(contract.get("underliers"))
+    if not explicit:
+        explicit = _string_sequence(contract.get("constituents"))
+    if explicit:
+        return explicit
+
+    scenario_underliers = (
+        tuple(underlier.name for underlier in scenario_contract.underliers)
+        if scenario_contract is not None
+        else ()
+    )
+    if scenario_underliers:
+        return scenario_underliers
+
+    raise ValueError(
+        "rainbow_option requires named underliers from the contract or market scenario"
+    )
+
+
+def _validate_rainbow_vector_dimensions(
+    contract: Mapping[str, Any],
+    *,
+    underliers: tuple[str, ...],
+) -> None:
+    n_underliers = len(underliers)
+    if n_underliers == 0:
+        raise ValueError("rainbow_option underlier count must be greater than zero")
+
+    num_assets = contract.get("num_assets")
+    if num_assets not in {None, ""} and int(num_assets) != n_underliers:
+        raise ValueError(
+            "rainbow_option underlier count mismatch: "
+            f"num_assets={int(num_assets)} but underliers={n_underliers}"
+        )
+
+    for key in ("spots", "volatilities", "dividend_rates", "weights"):
+        values = _raw_sequence(contract.get(key))
+        if values and len(values) != n_underliers:
+            raise ValueError(
+                "rainbow_option underlier count mismatch for "
+                f"{key}: {len(values)} values for {n_underliers} underliers"
+            )
+
+    correlation = contract.get("correlation")
+    if isinstance(correlation, (list, tuple)) and correlation:
+        if isinstance(correlation[0], (list, tuple)):
+            row_count = len(correlation)
+            col_counts = {len(row) for row in correlation if isinstance(row, (list, tuple))}
+            if row_count != n_underliers or col_counts != {n_underliers}:
+                raise ValueError(
+                    "rainbow_option underlier count mismatch for correlation: "
+                    f"expected {n_underliers}x{n_underliers}"
+                )
+        elif len(correlation) != n_underliers:
+            raise ValueError(
+                "rainbow_option underlier count mismatch for correlation: "
+                f"{len(correlation)} values for {n_underliers} underliers"
+            )
 
 
 def _cliquet_option_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:
@@ -752,6 +882,25 @@ def _correlation_text(value: object | None) -> str | None:
     if value in {None, ""}:
         return None
     return str(value)
+
+
+def _raw_sequence(value: object | None) -> tuple[object, ...]:
+    if value is None or value == "":
+        return ()
+    if isinstance(value, (list, tuple)):
+        return tuple(value)
+    if isinstance(value, str):
+        items = value.replace(";", ",").split(",")
+        return tuple(item.strip() for item in items if item.strip())
+    return (value,)
+
+
+def _string_sequence(value: object | None) -> tuple[str, ...]:
+    return tuple(
+        str(item).strip()
+        for item in _raw_sequence(value)
+        if str(item).strip()
+    )
 
 
 def _observation_dates_from_contract(contract: Mapping[str, Any], *, valuation_date: date) -> tuple[date, ...]:

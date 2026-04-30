@@ -17,6 +17,7 @@ Draft. Cross-cutting design note. Not yet an execution mirror.
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
+- `doc/plan/draft__contract-execution-ir-and-visitor-framework.md`
 - `doc/plan/draft__market-coordinate-overlay-and-shock-model.md`
 - `doc/plan/draft__valuation-result-identity-and-provenance.md`
 - `doc/plan/draft__valuation-session-and-request-surface.md`
@@ -232,7 +233,39 @@ Where this should land:
 - `draft__leg-based-contract-ir-foundation.md`
 - `draft__semantic-contract-closure-program.md`
 
-### 7. FpML
+### 7. Antoine Savine / Financial Cash-Flow Scripting
+
+Primary lessons:
+
+- a product execution substrate can be narrower and more reusable than a
+  product taxonomy
+- execution trees become much more valuable when preprocessing and
+  transformation passes are first-class
+- schedule extraction, aggregation, compression, and later xVA-style
+  decoration should sit on one reusable execution surface rather than be
+  rediscovered product-by-product
+
+Adopt in Trellis:
+
+- add a bounded internal execution IR beneath the semantic sibling IRs
+- add reusable visitor passes for schedule extraction, requirement
+  derivation, event compilation, and simulation/future-value bridging
+- use that execution surface as a shared runtime/compiler layer for
+  repricing and later institutional workflows
+
+Do **not** adopt:
+
+- a raw scripting tree as Trellis' top semantic authority
+- collapsing valuation policy or market binding into the execution IR
+- treating execution passes as a replacement for typed semantic closure
+
+Where this should land:
+
+- `draft__contract-execution-ir-and-visitor-framework.md`
+- `draft__leg-based-contract-ir-foundation.md`
+- `active__semantic-simulation-substrate.md`
+
+### 8. FpML
 
 Primary lessons:
 
@@ -281,6 +314,7 @@ In order of immediate usefulness to the current Trellis program:
 4. ACTUS
 5. Peyton Jones
 6. Marlowe
+7. Savine
 
 For the external-interoperability strand, FpML should be treated as
 co-equal with Strata once trade-envelope and imported-request boundary

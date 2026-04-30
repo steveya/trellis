@@ -489,15 +489,33 @@ def _openai_chat_completion_create(
     """Invoke the OpenAI SDK with the chat-completions parameters Trellis expects."""
     import openai
 
-    client = openai.OpenAI(timeout=timeout_seconds, max_retries=0)
+    client_kwargs: dict[str, Any] = {"timeout": timeout_seconds, "max_retries": 0}
+    if _using_github_models_endpoint():
+        client_kwargs["default_headers"] = {
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": os.environ.get(
+                "GITHUB_MODELS_API_VERSION",
+                "2026-03-10",
+            ),
+        }
+    client = openai.OpenAI(**client_kwargs)
     kwargs = {
         "model": model,
         "messages": messages,
-        "max_completion_tokens": max_completion_tokens,
     }
+    token_limit_key = (
+        "max_tokens" if _using_github_models_endpoint() else "max_completion_tokens"
+    )
+    kwargs[token_limit_key] = max_completion_tokens
     if response_format is not None:
         kwargs["response_format"] = response_format
     return client.chat.completions.create(**kwargs)
+
+
+def _using_github_models_endpoint() -> bool:
+    """Return whether the OpenAI-compatible client is pointed at GitHub Models."""
+    base_url = os.environ.get("OPENAI_BASE_URL", "").strip().lower()
+    return "models.github.ai" in base_url
 
 
 def _openai_request_with_retry(
