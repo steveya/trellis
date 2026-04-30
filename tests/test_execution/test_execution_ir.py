@@ -5,6 +5,7 @@ from dataclasses import FrozenInstanceError, asdict, is_dataclass
 import pytest
 
 from trellis.execution import (
+    BermudanBestOfBasketLatticeControls,
     BermudanBestOfBasketMCControls,
     BermudanBestOfBasketMCInputs,
     ContractExecutionIR,
@@ -16,6 +17,7 @@ from trellis.execution import (
     compile_bermudan_best_of_basket_execution_ir,
     compile_contract_execution_ir,
     contract_execution_summary,
+    price_bermudan_best_of_basket_lattice,
     price_bermudan_best_of_basket_monte_carlo,
 )
 from trellis.execution.compiler import UnsupportedExecutionSemantics
@@ -276,14 +278,23 @@ def test_p001_execution_capability_admission_admits_mc_and_blocks_lattice():
     lattice = admit_execution_capabilities(ir, method="lattice")
     assert lattice.admitted is False
     assert lattice.required_capabilities == (
-        "multi_asset_product_state_lattice",
+        "multi_asset_bermudan_state_grid",
         "bermudan_holder_exercise",
         "best_of_basket_payoff",
     )
-    assert lattice.blockers[0].blocker_id == "missing_multi_asset_product_state_lattice"
-    assert lattice.blockers[0].missing_primitive == "multi_asset_product_state_lattice"
+    assert lattice.blockers[0].blocker_id == "missing_multi_asset_bermudan_state_grid"
+    assert lattice.blockers[0].missing_primitive == "multi_asset_bermudan_state_grid"
     assert "short-rate lattice is not compatible" in lattice.blockers[0].message
     assert "build_rate_lattice" not in repr(lattice)
+
+    product_grid = admit_execution_capabilities(
+        ir,
+        method="lattice",
+        available_primitives=("multi_asset_bermudan_state_grid",),
+    )
+    assert product_grid.admitted is True
+    assert product_grid.engine_family == "lattice"
+    assert "multi_asset_bermudan_state_grid" in product_grid.matched_capabilities
 
 
 def test_p001_benchmark_capability_admission_is_method_specific():
@@ -313,7 +324,7 @@ def test_p001_benchmark_capability_admission_is_method_specific():
 
     assert monte_carlo.admitted is True
     assert lattice.admitted is False
-    assert lattice.blockers[0].blocker_id == "missing_multi_asset_product_state_lattice"
+    assert lattice.blockers[0].blocker_id == "missing_multi_asset_bermudan_state_grid"
 
 
 def test_p001_monte_carlo_visitor_prices_route_free_execution_ir():
@@ -396,3 +407,75 @@ def test_p001_benchmark_monte_carlo_execution_uses_scenario_inputs():
     assert result.provenance["source_semantic_id"] == "P001"
     assert result.provenance["scenario_id"] == "equity_rainbow_two_asset"
     assert result.provenance["underliers"] == ("AAPL", "MSFT")
+
+
+def test_p001_lattice_visitor_prices_route_free_execution_ir():
+    from datetime import date
+
+    ir = compile_bermudan_best_of_basket_execution_ir(
+        semantic_id="P001",
+        underliers=("AAPL", "MSFT"),
+        strike=100.0,
+        notional=1.0,
+        expiry_date=date(2025, 12, 15),
+        observation_dates=(
+            date(2025, 3, 15),
+            date(2025, 6, 15),
+            date(2025, 9, 15),
+            date(2025, 12, 15),
+        ),
+        exercise_dates=(
+            date(2025, 6, 15),
+            date(2025, 9, 15),
+            date(2025, 12, 15),
+        ),
+    )
+
+    result = price_bermudan_best_of_basket_lattice(
+        ir,
+        BermudanBestOfBasketMCInputs(
+            valuation_date=date(2024, 11, 15),
+            spot_values={"AAPL": 100.0, "MSFT": 95.0},
+            volatilities={"AAPL": 0.20, "MSFT": 0.25},
+            carry_rates={"AAPL": 0.0, "MSFT": 0.0},
+            correlation_matrix=((1.0, 0.35), (0.35, 1.0)),
+            risk_free_rate=0.05,
+        ),
+        controls=BermudanBestOfBasketLatticeControls(n_steps=48),
+    )
+
+    assert 5.0 < result.price < 30.0
+    assert result.provenance["source_semantic_id"] == "P001"
+    assert result.provenance["method"] == "lattice"
+    assert result.provenance["pricing_authority"] == "execution_ir_visitor"
+    assert result.provenance["primitive"] == "multi_asset_bermudan_state_grid"
+    assert result.provenance["route_ids"] == ()
+    assert result.diagnostics["rollback_policy"] == "bermudan_max"
+    assert "build_rate_lattice" not in repr(result.provenance)
+    assert "state_space" not in repr(result.provenance)
+
+
+def test_p001_benchmark_lattice_execution_uses_product_state_grid():
+    from pathlib import Path
+
+    from trellis.agent.benchmark_contracts import (
+        benchmark_contract_lattice_execution,
+    )
+    from trellis.agent.task_manifests import load_task_manifest
+
+    root = Path(__file__).resolve().parents[2]
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml", root=root)
+    }
+
+    result = benchmark_contract_lattice_execution(
+        tasks["P001"],
+        root=root,
+        controls=BermudanBestOfBasketLatticeControls(n_steps=48),
+    )
+
+    assert result.price > 0.0
+    assert result.provenance["source_semantic_id"] == "P001"
+    assert result.provenance["scenario_id"] == "equity_rainbow_two_asset"
+    assert result.provenance["primitive"] == "multi_asset_bermudan_state_grid"

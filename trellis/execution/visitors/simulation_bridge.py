@@ -17,6 +17,10 @@ from trellis.models.monte_carlo.engine import MonteCarloEngine
 from trellis.models.monte_carlo.event_state import event_step_indices
 from trellis.models.monte_carlo.lsm import longstaff_schwartz_multistate_result
 from trellis.models.processes.correlated_gbm import CorrelatedGBM
+from trellis.models.trees.product_lattice import (
+    build_product_spot_lattice_2d,
+    rollback_product_lattice_2d,
+)
 
 
 @dataclass(frozen=True)
@@ -71,6 +75,19 @@ class BermudanBestOfBasketMCControls:
 
 
 @dataclass(frozen=True)
+class BermudanBestOfBasketLatticeControls:
+    """Product-state lattice controls for the Bermudan basket visitor."""
+
+    n_steps: int = 96
+
+    def __post_init__(self) -> None:
+        n_steps = int(self.n_steps)
+        if n_steps <= 0:
+            raise ValueError("n_steps must be positive")
+        object.__setattr__(self, "n_steps", n_steps)
+
+
+@dataclass(frozen=True)
 class BermudanBestOfBasketMCResult:
     """Audited MC visitor result for a Bermudan best-of basket execution IR."""
 
@@ -91,6 +108,31 @@ class BermudanBestOfBasketMCResult:
         self,
         values: Mapping[str, object],
     ) -> "BermudanBestOfBasketMCResult":
+        """Return a copy with additional provenance fields."""
+        provenance = dict(self.provenance)
+        provenance.update(dict(values))
+        return replace(self, provenance=provenance)
+
+
+@dataclass(frozen=True)
+class BermudanBestOfBasketLatticeResult:
+    """Audited lattice visitor result for a Bermudan best-of basket IR."""
+
+    price: float
+    currency: str
+    diagnostics: Mapping[str, object] = field(default_factory=dict)
+    provenance: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "price", float(self.price))
+        object.__setattr__(self, "currency", str(self.currency or "").strip().upper())
+        object.__setattr__(self, "diagnostics", _mapping_proxy(self.diagnostics))
+        object.__setattr__(self, "provenance", _mapping_proxy(self.provenance))
+
+    def with_provenance(
+        self,
+        values: Mapping[str, object],
+    ) -> "BermudanBestOfBasketLatticeResult":
         """Return a copy with additional provenance fields."""
         provenance = dict(self.provenance)
         provenance.update(dict(values))
@@ -217,6 +259,122 @@ def price_bermudan_best_of_basket_monte_carlo(
             maturity=maturity,
             admission=admission,
             policy_class=policy_class,
+        ),
+    )
+
+
+def price_bermudan_best_of_basket_lattice(
+    ir: ContractExecutionIR,
+    inputs: BermudanBestOfBasketMCInputs,
+    *,
+    controls: BermudanBestOfBasketLatticeControls | None = None,
+) -> BermudanBestOfBasketLatticeResult:
+    """Price a two-underlier Bermudan best-of basket on a product-state grid."""
+    if not isinstance(ir, ContractExecutionIR):
+        raise TypeError("ir must be a ContractExecutionIR")
+    controls = controls or BermudanBestOfBasketLatticeControls()
+    admission = admit_execution_capabilities(
+        ir,
+        method="lattice",
+        available_primitives=("multi_asset_bermudan_state_grid",),
+    )
+    if not admission.admitted:
+        blocker_ids = tuple(blocker.blocker_id for blocker in admission.blockers)
+        raise ValueError(
+            "execution IR is not admitted for lattice; "
+            f"blockers={blocker_ids!r}"
+        )
+
+    source_metadata = _metadata_dict(ir.source_track.source_metadata)
+    underliers = _ordered_underliers(ir)
+    if len(underliers) != 2:
+        raise ValueError("product-state lattice visitor currently requires exactly two underliers")
+    strike_metadata = source_metadata.get("strike")
+    if strike_metadata in {None, ""}:
+        strike_metadata = _strike_from_settlement(ir)
+    strike = float(strike_metadata)
+    notional = float(source_metadata.get("notional", 1.0))
+    currency = str(source_metadata.get("currency", _currency_from_settlement(ir)) or "USD")
+    expiry_date = _expiry_date(ir)
+    exercise_dates = _exercise_dates(ir) or (expiry_date,)
+    observation_dates = _observation_dates(ir)
+
+    spot_vector = _aligned_vector(inputs.spot_values, underliers, "spot_values")
+    vol_vector = _aligned_vector(inputs.volatilities, underliers, "volatilities")
+    carry_vector = tuple(
+        float(inputs.carry_rates.get(underlier, 0.0))
+        for underlier in underliers
+    )
+    correlation_matrix = _validated_correlation_matrix(
+        inputs.correlation_matrix,
+        len(underliers),
+    )
+    maturity = year_fraction(inputs.valuation_date, expiry_date, inputs.day_count)
+    if maturity <= 0.0:
+        intrinsic = notional * max(max(spot_vector) - strike, 0.0)
+        return BermudanBestOfBasketLatticeResult(
+            price=intrinsic,
+            currency=currency,
+            diagnostics={
+                "rollback_policy": "intrinsic",
+                "exercise_steps_count": 0.0,
+                "exercised_nodes": 0.0,
+            },
+            provenance=_lattice_provenance(
+                ir,
+                controls,
+                underliers=underliers,
+                observation_dates=observation_dates,
+                exercise_dates=exercise_dates,
+                expiry_date=expiry_date,
+                maturity=maturity,
+                admission=admission,
+            ),
+        )
+
+    exercise_times = tuple(
+        year_fraction(inputs.valuation_date, exercise_date, inputs.day_count)
+        for exercise_date in exercise_dates
+        if exercise_date > inputs.valuation_date
+    )
+    exercise_steps = event_step_indices(exercise_times, maturity, controls.n_steps)
+    lattice, build_diagnostics = build_product_spot_lattice_2d(
+        spots=(spot_vector[0], spot_vector[1]),
+        rate=inputs.risk_free_rate,
+        sigmas=(vol_vector[0], vol_vector[1]),
+        maturity=maturity,
+        n_steps=controls.n_steps,
+        correlation=float(correlation_matrix[0][1]),
+        carry=(carry_vector[0], carry_vector[1]),
+    )
+
+    def best_of_call(_step, _node, _lattice, state):
+        return max(max(float(state[0]), float(state[1])) - strike, 0.0)
+
+    lattice_price, rollback_diagnostics = rollback_product_lattice_2d(
+        lattice,
+        terminal_payoff=best_of_call,
+        exercise_value=best_of_call,
+        exercise_steps=exercise_steps,
+    )
+    diagnostics = {
+        **build_diagnostics,
+        **rollback_diagnostics,
+        "exercise_steps": exercise_steps,
+    }
+    return BermudanBestOfBasketLatticeResult(
+        price=notional * lattice_price,
+        currency=currency,
+        diagnostics=diagnostics,
+        provenance=_lattice_provenance(
+            ir,
+            controls,
+            underliers=underliers,
+            observation_dates=observation_dates,
+            exercise_dates=exercise_dates,
+            expiry_date=expiry_date,
+            maturity=maturity,
+            admission=admission,
         ),
     )
 
@@ -406,9 +564,43 @@ def _provenance(
     }
 
 
+def _lattice_provenance(
+    ir: ContractExecutionIR,
+    controls: BermudanBestOfBasketLatticeControls,
+    *,
+    underliers: tuple[str, ...],
+    observation_dates: tuple[date, ...],
+    exercise_dates: tuple[date, ...],
+    expiry_date: date,
+    maturity: float,
+    admission: object,
+) -> Mapping[str, object]:
+    return {
+        "source_semantic_id": ir.source_track.semantic_id,
+        "source_ref": ir.source_track.source_ref,
+        "product_family": ir.source_track.product_family,
+        "method": "lattice",
+        "engine_family": "lattice",
+        "primitive": "multi_asset_bermudan_state_grid",
+        "pricing_authority": "execution_ir_visitor",
+        "underliers": underliers,
+        "observation_dates": observation_dates,
+        "exercise_dates": exercise_dates,
+        "expiry_date": expiry_date,
+        "maturity": float(maturity),
+        "n_steps": controls.n_steps,
+        "route_ids": (),
+        "required_capabilities": tuple(getattr(admission, "required_capabilities", ())),
+        "matched_capabilities": tuple(getattr(admission, "matched_capabilities", ())),
+    }
+
+
 __all__ = [
+    "BermudanBestOfBasketLatticeControls",
+    "BermudanBestOfBasketLatticeResult",
     "BermudanBestOfBasketMCControls",
     "BermudanBestOfBasketMCInputs",
     "BermudanBestOfBasketMCResult",
+    "price_bermudan_best_of_basket_lattice",
     "price_bermudan_best_of_basket_monte_carlo",
 ]

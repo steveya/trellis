@@ -137,10 +137,14 @@ def build_product_spot_lattice_2d(
     maturity: float,
     n_steps: int,
     correlation: float = 0.0,
+    carry: tuple[float, float] | None = None,
 ) -> tuple[ProductRecombiningLattice2D, dict[str, float]]:
     """Build a two-factor recombining CRR-style product lattice."""
     if len(spots) != 2 or len(sigmas) != 2:
         raise ValueError("Two-factor spot lattices require two spots and two sigmas")
+    carry_values = tuple(float(value) for value in (carry or (0.0, 0.0)))
+    if len(carry_values) != 2:
+        raise ValueError("Two-factor spot lattices require two carry inputs")
 
     dt = float(maturity) / max(int(n_steps), 1)
     lattice = ProductRecombiningLattice2D(int(n_steps), dt)
@@ -149,9 +153,10 @@ def build_product_spot_lattice_2d(
     d_1 = 1.0 / max(u_1, 1e-12)
     u_2 = exp(sigma_2 * sqrt(dt))
     d_2 = 1.0 / max(u_2, 1e-12)
-    growth = exp(float(rate) * dt)
-    p_1 = (growth - d_1) / (u_1 - d_1)
-    p_2 = (growth - d_2) / (u_2 - d_2)
+    growth_1 = exp((float(rate) - carry_values[0]) * dt)
+    growth_2 = exp((float(rate) - carry_values[1]) * dt)
+    p_1 = (growth_1 - d_1) / (u_1 - d_1)
+    p_2 = (growth_2 - d_2) / (u_2 - d_2)
 
     positivity_violations = 0
     correlation_clips = 0
@@ -208,7 +213,75 @@ def build_product_spot_lattice_2d(
     return lattice, diagnostics
 
 
+def rollback_product_lattice_2d(
+    lattice: ProductRecombiningLattice2D,
+    *,
+    terminal_payoff,
+    exercise_value=None,
+    exercise_steps: tuple[int, ...] | list[int] = (),
+) -> tuple[float, dict[str, float]]:
+    """Roll back a two-factor lattice with optional Bermudan exercise."""
+    exercise_step_set = {
+        int(step)
+        for step in exercise_steps
+        if 0 <= int(step) <= lattice.n_steps
+    }
+    terminal_step = lattice.n_steps
+    current = raw_np.empty(lattice.n_nodes(terminal_step), dtype=float)
+    for node in range(lattice.n_nodes(terminal_step)):
+        current[node] = float(
+            terminal_payoff(
+                terminal_step,
+                node,
+                lattice,
+                lattice.get_state(terminal_step, node),
+            )
+        )
+
+    exercised_nodes = 0
+    for step in range(lattice.n_steps - 1, -1, -1):
+        width = step + 1
+        n_nodes = width * width
+        discounts = lattice._discounts[step, :n_nodes]
+        probs = lattice._probs[step, :n_nodes, :]
+        if NUMBA_AVAILABLE:
+            continuation = _product_binomial_2d_continuation_numba(
+                current,
+                discounts,
+                probs,
+                width,
+            )
+        else:
+            continuation = _product_binomial_2d_continuation_numpy(
+                current,
+                discounts,
+                probs,
+                width,
+            )
+        if exercise_value is not None and step in exercise_step_set:
+            exercise = raw_np.empty(n_nodes, dtype=float)
+            for node in range(n_nodes):
+                exercise[node] = float(
+                    exercise_value(
+                        step,
+                        node,
+                        lattice,
+                        lattice.get_state(step, node),
+                    )
+                )
+            exercised_nodes += int(raw_np.count_nonzero(exercise > continuation))
+            continuation = raw_np.maximum(continuation, exercise)
+        current = continuation
+    return float(current[0]), {
+        "rollback_policy": "bermudan_max" if exercise_value is not None else "terminal_only",
+        "exercise_steps_count": float(len(exercise_step_set)),
+        "exercised_nodes": float(exercised_nodes),
+        "n_steps": float(lattice.n_steps),
+    }
+
+
 __all__ = [
     "ProductRecombiningLattice2D",
     "build_product_spot_lattice_2d",
+    "rollback_product_lattice_2d",
 ]
