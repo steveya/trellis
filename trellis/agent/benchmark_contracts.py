@@ -25,6 +25,8 @@ from trellis.conventions.calendar import (
 from trellis.core.date_utils import add_months
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.execution import (
+    BermudanBestOfBasketLatticeControls,
+    BermudanBestOfBasketLatticeResult,
     BermudanBestOfBasketMCControls,
     BermudanBestOfBasketMCInputs,
     BermudanBestOfBasketMCResult,
@@ -32,6 +34,7 @@ from trellis.execution import (
     ExecutionCapabilityAdmission,
     admit_execution_capabilities,
     compile_bermudan_best_of_basket_execution_ir,
+    price_bermudan_best_of_basket_lattice,
     price_bermudan_best_of_basket_monte_carlo,
 )
 
@@ -411,6 +414,38 @@ def benchmark_contract_monte_carlo_execution(
         else market_scenario_contract_from_task(task)
     )
     result = price_bermudan_best_of_basket_monte_carlo(
+        ir,
+        _benchmark_bermudan_basket_mc_inputs(
+            task,
+            root=root,
+            scenario_contract=scenario_contract,
+        ),
+        controls=controls,
+    )
+    if scenario_contract is None:
+        return result
+    return result.with_provenance(
+        {
+            "scenario_id": scenario_contract.scenario_id,
+            "scenario_digest": scenario_contract.scenario_digest,
+        }
+    )
+
+
+def benchmark_contract_lattice_execution(
+    task: Mapping[str, Any],
+    *,
+    root=None,
+    controls: BermudanBestOfBasketLatticeControls | None = None,
+) -> BermudanBestOfBasketLatticeResult:
+    """Price the supported benchmark execution IR through the lattice visitor."""
+    ir = benchmark_contract_execution_ir(task, root=root)
+    scenario_contract = (
+        market_scenario_contract_from_task(task, root=root)
+        if root is not None
+        else market_scenario_contract_from_task(task)
+    )
+    result = price_bermudan_best_of_basket_lattice(
         ir,
         _benchmark_bermudan_basket_mc_inputs(
             task,
@@ -1382,6 +1417,7 @@ __all__ = [
     "benchmark_contract",
     "benchmark_contract_execution_admission",
     "benchmark_contract_execution_ir",
+    "benchmark_contract_lattice_execution",
     "benchmark_contract_monte_carlo_execution",
     "benchmark_preferred_method",
     "benchmark_request_description",

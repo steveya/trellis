@@ -44,13 +44,18 @@ from trellis.execution.ir import (
 )
 from trellis.execution.summary import contract_execution_summary
 from trellis.execution.visitors import (
+    BermudanBestOfBasketLatticeControls,
+    BermudanBestOfBasketLatticeResult,
     BermudanBestOfBasketMCControls,
     BermudanBestOfBasketMCInputs,
     BermudanBestOfBasketMCResult,
+    price_bermudan_best_of_basket_lattice,
     price_bermudan_best_of_basket_monte_carlo,
 )
 
 __all__ = [
+    "BermudanBestOfBasketLatticeControls",
+    "BermudanBestOfBasketLatticeResult",
     "BermudanBestOfBasketMCControls",
     "BermudanBestOfBasketMCInputs",
     "BermudanBestOfBasketMCResult",
@@ -91,5 +96,6 @@ __all__ = [
     "compile_static_leg_execution_ir",
     "contract_execution_summary",
     "infer_source_track",
+    "price_bermudan_best_of_basket_lattice",
     "price_bermudan_best_of_basket_monte_carlo",
 ]

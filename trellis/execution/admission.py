@@ -112,16 +112,21 @@ def _admit_bermudan_best_of_basket(
 
     if method in {"lattice", "rate_tree"}:
         required = (
-            "multi_asset_product_state_lattice",
+            "multi_asset_bermudan_state_grid",
             "bermudan_holder_exercise",
             "best_of_basket_payoff",
         )
-        if "multi_asset_product_state_lattice" in available_primitives:
+        if (
+            "multi_asset_bermudan_state_grid" in available_primitives
+            or "multi_asset_product_state_lattice" in available_primitives
+        ):
             return ExecutionCapabilityAdmission(
                 method="lattice",
                 admitted=True,
                 required_capabilities=required,
-                matched_capabilities=required,
+                matched_capabilities=required + ("multi_asset_product_state_lattice",)
+                if "multi_asset_product_state_lattice" in available_primitives
+                else required,
                 engine_family="lattice",
                 source_semantic_id=ir.source_track.semantic_id,
                 product_family=ir.source_track.product_family,
@@ -133,13 +138,13 @@ def _admit_bermudan_best_of_basket(
             matched_capabilities=("bermudan_holder_exercise", "best_of_basket_payoff"),
             blockers=(
                 ExecutionCapabilityBlocker(
-                    blocker_id="missing_multi_asset_product_state_lattice",
+                    blocker_id="missing_multi_asset_bermudan_state_grid",
                     method="lattice",
-                    missing_primitive="multi_asset_product_state_lattice",
+                    missing_primitive="multi_asset_bermudan_state_grid",
                     message=(
-                        "P001 lattice admission requires a multi-asset/product-state "
-                        "lattice; short-rate lattice is not compatible with the "
-                        "named best-of basket execution IR."
+                        "P001 lattice admission requires a multi-asset Bermudan "
+                        "state grid; short-rate lattice is not compatible with "
+                        "the named best-of basket execution IR."
                     ),
                 ),
             ),

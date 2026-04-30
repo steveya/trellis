@@ -87,9 +87,14 @@ multi-asset GBM process, maps holder decision dates to simulation steps, and
 uses the reusable multi-state Longstaff-Schwartz helper for Bermudan exercise.
 The result carries audit provenance including the semantic id, underlier order,
 exercise schedule, admitted capabilities, simulation controls, and the
-``execution_ir_visitor`` pricing authority marker. It deliberately does not
-claim lattice support; that path still requires a compatible product-state
-lattice or the structured blocker above.
+``execution_ir_visitor`` pricing authority marker.
+
+The bounded two-underlier lattice path is now also checked through
+``price_bermudan_best_of_basket_lattice(...)``. That visitor admits the
+``multi_asset_bermudan_state_grid`` primitive, builds a two-factor product
+spot lattice, and performs generic Bermudan max rollback over the execution IR
+exercise dates. It is intentionally not a short-rate lattice alias and does not
+call ``build_rate_lattice``.
 
 Current Surface
 ---------------
