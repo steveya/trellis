@@ -10,6 +10,7 @@ from trellis.execution import (
     KnownCashflowObligation,
     RequirementHints,
     SourceTrack,
+    admit_execution_capabilities,
     compile_bermudan_best_of_basket_execution_ir,
     compile_contract_execution_ir,
     contract_execution_summary,
@@ -235,3 +236,78 @@ def test_p001_benchmark_task_compiles_to_route_free_execution_ir():
     assert "Asset1" not in payload_text
     assert "Asset2" not in payload_text
     assert contract_execution_summary(ir)["route_ids"] == ()
+
+
+def test_p001_execution_capability_admission_admits_mc_and_blocks_lattice():
+    from datetime import date
+
+    ir = compile_bermudan_best_of_basket_execution_ir(
+        semantic_id="P001",
+        underliers=("AAPL", "MSFT"),
+        strike=100.0,
+        expiry_date=date(2025, 12, 15),
+        observation_dates=(
+            date(2025, 3, 15),
+            date(2025, 6, 15),
+            date(2025, 9, 15),
+            date(2025, 12, 15),
+        ),
+        exercise_dates=(
+            date(2025, 6, 15),
+            date(2025, 9, 15),
+            date(2025, 12, 15),
+        ),
+    )
+
+    monte_carlo = admit_execution_capabilities(ir, method="monte_carlo")
+    assert monte_carlo.admitted is True
+    assert monte_carlo.blockers == ()
+    assert monte_carlo.required_capabilities == (
+        "multi_asset_correlated_diffusion",
+        "correlation_matrix",
+        "path_simulation",
+        "bermudan_holder_exercise",
+        "best_of_basket_payoff",
+    )
+
+    lattice = admit_execution_capabilities(ir, method="lattice")
+    assert lattice.admitted is False
+    assert lattice.required_capabilities == (
+        "multi_asset_product_state_lattice",
+        "bermudan_holder_exercise",
+        "best_of_basket_payoff",
+    )
+    assert lattice.blockers[0].blocker_id == "missing_multi_asset_product_state_lattice"
+    assert lattice.blockers[0].missing_primitive == "multi_asset_product_state_lattice"
+    assert "short-rate lattice is not compatible" in lattice.blockers[0].message
+    assert "build_rate_lattice" not in repr(lattice)
+
+
+def test_p001_benchmark_capability_admission_is_method_specific():
+    from pathlib import Path
+
+    from trellis.agent.benchmark_contracts import (
+        benchmark_contract_execution_admission,
+    )
+    from trellis.agent.task_manifests import load_task_manifest
+
+    root = Path(__file__).resolve().parents[2]
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml", root=root)
+    }
+
+    monte_carlo = benchmark_contract_execution_admission(
+        tasks["P001"],
+        method="monte_carlo",
+        root=root,
+    )
+    lattice = benchmark_contract_execution_admission(
+        tasks["P001"],
+        method="lattice",
+        root=root,
+    )
+
+    assert monte_carlo.admitted is True
+    assert lattice.admitted is False
+    assert lattice.blockers[0].blocker_id == "missing_multi_asset_product_state_lattice"

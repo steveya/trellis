@@ -1,5 +1,10 @@
 """Execution-layer seam between semantic authority and numerical runtimes."""
 
+from trellis.execution.admission import (
+    ExecutionCapabilityAdmission,
+    ExecutionCapabilityBlocker,
+    admit_execution_capabilities,
+)
 from trellis.execution.compiler import (
     UnsupportedExecutionSemantics,
     compile_bermudan_best_of_basket_execution_ir,
@@ -46,6 +51,8 @@ __all__ = [
     "CurveQuoteObservableRef",
     "DecisionAction",
     "DecisionProgram",
+    "ExecutionCapabilityAdmission",
+    "ExecutionCapabilityBlocker",
     "ExecutionEvent",
     "ExecutionEventPlan",
     "ExecutionIRWellFormednessError",
@@ -66,6 +73,7 @@ __all__ = [
     "SurfaceQuoteObservableRef",
     "SwapRateObservableRef",
     "UnsupportedExecutionSemantics",
+    "admit_execution_capabilities",
     "compile_bermudan_best_of_basket_execution_ir",
     "compile_contract_execution_ir",
     "compile_contract_ir_execution_ir",

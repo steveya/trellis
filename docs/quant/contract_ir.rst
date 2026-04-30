@@ -68,8 +68,16 @@ best-of basket compiler:
 The emitted ``ContractExecutionIR`` carries named spot and volatility
 observables, a correlation-matrix requirement, observation events, holder-max
 Bermudan decision actions, and a best-of-call settlement expression. That is
-semantic/operator authority only; Monte Carlo and lattice engine admission
-remain downstream work.
+semantic/operator authority only; pricing visitors remain downstream work.
+
+The companion ``admit_execution_capabilities(...)`` helper performs the first
+method-specific admission over that execution artifact. For the bounded P001
+shape, Monte Carlo admission requires multi-asset correlated diffusion,
+correlation, path simulation, Bermudan holder exercise, and best-of basket
+payoff semantics. Lattice admission requires a compatible
+multi-asset/product-state lattice; absent that primitive it returns a
+structured ``missing_multi_asset_product_state_lattice`` blocker instead of
+falling through to short-rate lattice construction.
 
 Current Surface
 ---------------
