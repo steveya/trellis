@@ -68,7 +68,8 @@ best-of basket compiler:
 The emitted ``ContractExecutionIR`` carries named spot and volatility
 observables, a correlation-matrix requirement, observation events, holder-max
 Bermudan decision actions, and a best-of-call settlement expression. That is
-semantic/operator authority only; pricing visitors remain downstream work.
+semantic/operator authority; pricing visitors must consume the IR rather than a
+generated product adapter schema.
 
 The companion ``admit_execution_capabilities(...)`` helper performs the first
 method-specific admission over that execution artifact. For the bounded P001
@@ -78,6 +79,17 @@ payoff semantics. Lattice admission requires a compatible
 multi-asset/product-state lattice; absent that primitive it returns a
 structured ``missing_multi_asset_product_state_lattice`` blocker instead of
 falling through to short-rate lattice construction.
+
+The first checked execution visitor for that artifact is
+``price_bermudan_best_of_basket_monte_carlo(...)``. It takes the
+``ContractExecutionIR`` plus explicit named market inputs, builds a correlated
+multi-asset GBM process, maps holder decision dates to simulation steps, and
+uses the reusable multi-state Longstaff-Schwartz helper for Bermudan exercise.
+The result carries audit provenance including the semantic id, underlier order,
+exercise schedule, admitted capabilities, simulation controls, and the
+``execution_ir_visitor`` pricing authority marker. It deliberately does not
+claim lattice support; that path still requires a compatible product-state
+lattice or the structured blocker above.
 
 Current Surface
 ---------------
