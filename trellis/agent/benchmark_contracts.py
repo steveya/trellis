@@ -24,7 +24,12 @@ from trellis.conventions.calendar import (
 )
 from trellis.core.date_utils import add_months
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.execution import ContractExecutionIR, compile_bermudan_best_of_basket_execution_ir
+from trellis.execution import (
+    ContractExecutionIR,
+    ExecutionCapabilityAdmission,
+    admit_execution_capabilities,
+    compile_bermudan_best_of_basket_execution_ir,
+)
 
 
 _DIRECT_OVERRIDE_KEYS: tuple[str, ...] = (
@@ -372,6 +377,19 @@ def benchmark_contract_execution_ir(
         requested_outputs=_requested_outputs_from_task(task),
         validation_policy=str(task.get("validation_policy") or ""),
         source_ref=f"benchmark_task:{task.get('id') or product}",
+    )
+
+
+def benchmark_contract_execution_admission(
+    task: Mapping[str, Any],
+    *,
+    method: str,
+    root=None,
+) -> ExecutionCapabilityAdmission:
+    """Compile a supported benchmark task and admit one execution method."""
+    return admit_execution_capabilities(
+        benchmark_contract_execution_ir(task, root=root),
+        method=method,
     )
 
 
@@ -1181,6 +1199,7 @@ def _business_day_adjustment(value: object | None) -> BusinessDayAdjustment:
 
 __all__ = [
     "benchmark_contract",
+    "benchmark_contract_execution_admission",
     "benchmark_contract_execution_ir",
     "benchmark_preferred_method",
     "benchmark_request_description",
