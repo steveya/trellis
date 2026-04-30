@@ -62,7 +62,13 @@ from trellis.models.monte_carlo.ranked_observation_payoffs import (
     recommended_ranked_observation_basket_mc_engine_kwargs,
     terminal_ranked_observation_basket_payoff,
 )
-from trellis.models.monte_carlo.lsm import longstaff_schwartz, longstaff_schwartz_result
+from trellis.models.monte_carlo.lsm import (
+    longstaff_schwartz,
+    longstaff_schwartz_multistate,
+    longstaff_schwartz_multistate_result,
+    longstaff_schwartz_result,
+    multistate_polynomial_basis,
+)
 from trellis.models.monte_carlo.path_state import (
     BarrierMonitor,
     MonteCarloPathRequirement,

@@ -92,6 +92,120 @@ def longstaff_schwartz_result(
     )
 
 
+def multistate_polynomial_basis(states: raw_np.ndarray) -> raw_np.ndarray:
+    """Default quadratic basis for vector-state continuation regression."""
+    x = raw_np.asarray(states, dtype=float)
+    if x.ndim == 1:
+        return polynomial_basis(x)
+    if x.ndim != 2:
+        raise ValueError(
+            f"continuation states must have rank 1 or 2; got shape {x.shape}"
+        )
+    columns = [raw_np.ones(x.shape[0], dtype=float)]
+    for index in range(x.shape[1]):
+        column = x[:, index]
+        columns.append(column)
+        columns.append(column ** 2)
+    if x.shape[1] > 1:
+        maximum = raw_np.max(x, axis=1)
+        average = raw_np.mean(x, axis=1)
+        columns.extend([maximum, maximum ** 2, average])
+    return raw_np.column_stack(columns)
+
+
+def longstaff_schwartz_multistate_result(
+    paths: raw_np.ndarray,
+    exercise_dates: list[int],
+    payoff_fn,
+    discount_rate: float,
+    dt: float,
+    basis_fn=None,
+    continuation_estimator=None,
+) -> EarlyExercisePolicyResult:
+    """Run Longstaff-Schwartz on scalar or vector-state paths."""
+    path_array = raw_np.asarray(paths, dtype=float)
+    if path_array.ndim == 2:
+        return longstaff_schwartz_result(
+            path_array,
+            exercise_dates,
+            payoff_fn,
+            discount_rate,
+            dt,
+            basis_fn=basis_fn,
+            continuation_estimator=continuation_estimator,
+        )
+    if path_array.ndim != 3:
+        raise ValueError(
+            f"paths must have rank 2 or 3; received shape {path_array.shape}."
+        )
+
+    n_paths, n_steps_plus_1, _ = path_array.shape
+    n_steps = n_steps_plus_1 - 1
+    df_step = raw_np.exp(-discount_rate * dt)
+    discount_powers = df_step ** raw_np.arange(n_steps + 1)
+    effective_exercise_steps = normalize_exercise_steps(exercise_dates, n_steps)
+    exercise_steps = sorted(effective_exercise_steps, reverse=True)
+
+    if continuation_estimator is None:
+        continuation_estimator = default_continuation_estimator(
+            basis_fn=basis_fn or multistate_polynomial_basis
+        )
+
+    cashflows = raw_np.zeros(n_paths)
+    cashflow_time = raw_np.full(n_paths, n_steps, dtype=int)
+    regression_failures = 0
+
+    if n_steps in exercise_steps:
+        cashflows = raw_np.asarray(payoff_fn(path_array[:, -1, :]), dtype=float)
+        cashflow_time[:] = n_steps
+
+    for step in exercise_steps:
+        if step >= n_steps:
+            continue
+
+        state = path_array[:, step, :]
+        exercise = raw_np.asarray(payoff_fn(state), dtype=float)
+
+        itm_indices = raw_np.flatnonzero(exercise > 0.0)
+        if itm_indices.size == 0:
+            continue
+
+        state_itm = state[itm_indices]
+        exercise_itm = exercise[itm_indices]
+        steps_ahead = cashflow_time[itm_indices] - step
+        discounted_cf = cashflows[itm_indices] * discount_powers[steps_ahead]
+
+        continuation, failed = continuation_estimator.fit_predict(
+            state_itm,
+            discounted_cf,
+        )
+        regression_failures += int(failed)
+
+        exercise_now = exercise_itm > continuation
+        if not raw_np.any(exercise_now):
+            continue
+        ex_indices = itm_indices[exercise_now]
+
+        cashflows[ex_indices] = exercise_itm[exercise_now]
+        cashflow_time[ex_indices] = step
+
+    total_discount = discount_powers[cashflow_time]
+    price = float(raw_np.mean(cashflows * total_discount))
+    diagnostics = EarlyExerciseDiagnostics(
+        policy_class="longstaff_schwartz_multistate",
+        exercise_dates_count=len(effective_exercise_steps),
+        exercised_paths_fraction=float(raw_np.mean(cashflow_time < n_steps)),
+        regression_failures=regression_failures,
+        estimator_name=getattr(continuation_estimator, "name", None),
+    )
+    return EarlyExercisePolicyResult(
+        policy_class="longstaff_schwartz_multistate",
+        price_lower=price,
+        price_upper=None,
+        diagnostics=diagnostics,
+    )
+
+
 def longstaff_schwartz(
     paths: raw_np.ndarray,
     exercise_dates: list[int],
@@ -103,6 +217,27 @@ def longstaff_schwartz(
 ) -> float:
     """Longstaff-Schwartz least-squares Monte Carlo lower-bound price."""
     return longstaff_schwartz_result(
+        paths,
+        exercise_dates,
+        payoff_fn,
+        discount_rate,
+        dt,
+        basis_fn=basis_fn,
+        continuation_estimator=continuation_estimator,
+    ).price_lower
+
+
+def longstaff_schwartz_multistate(
+    paths: raw_np.ndarray,
+    exercise_dates: list[int],
+    payoff_fn,
+    discount_rate: float,
+    dt: float,
+    basis_fn=None,
+    continuation_estimator=None,
+) -> float:
+    """Longstaff-Schwartz lower-bound price for vector-state paths."""
+    return longstaff_schwartz_multistate_result(
         paths,
         exercise_dates,
         payoff_fn,

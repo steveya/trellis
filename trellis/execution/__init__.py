@@ -43,8 +43,17 @@ from trellis.execution.ir import (
     SwapRateObservableRef,
 )
 from trellis.execution.summary import contract_execution_summary
+from trellis.execution.visitors import (
+    BermudanBestOfBasketMCControls,
+    BermudanBestOfBasketMCInputs,
+    BermudanBestOfBasketMCResult,
+    price_bermudan_best_of_basket_monte_carlo,
+)
 
 __all__ = [
+    "BermudanBestOfBasketMCControls",
+    "BermudanBestOfBasketMCInputs",
+    "BermudanBestOfBasketMCResult",
     "ContractExecutionIR",
     "ContingentSettlement",
     "CouponLegExecution",
@@ -82,4 +91,5 @@ __all__ = [
     "compile_static_leg_execution_ir",
     "contract_execution_summary",
     "infer_source_track",
+    "price_bermudan_best_of_basket_monte_carlo",
 ]

@@ -18,8 +18,8 @@ Status mirror last synced: `2026-04-30`.
 | 0 | `QUA-989` | Backlog | umbrella proof for route-free `P001` semantic execution | `QUA-975` |
 | 1 | `QUA-990` | Done | deterministic underlier binding and fail-closed guardrails | none |
 | 2 | `QUA-991` | Done | operator IR for Bermudan best-of contract | `QUA-990` |
-| 3 | `QUA-992` | In Progress | capability admission for MC and lattice | `QUA-991` |
-| 4 | `QUA-993` | Backlog | generic multi-asset Bermudan MC visitor | `QUA-992` |
+| 3 | `QUA-992` | Done | capability admission for MC and lattice | `QUA-991` |
+| 4 | `QUA-993` | In Progress | generic multi-asset Bermudan MC visitor | `QUA-992` |
 | 5 | `QUA-994` | Backlog | lattice state-grid admission or generic executor | `QUA-992` |
 | 6 | `QUA-995` | Backlog | demote `_agent` adapter to execution shim and close proof | `QUA-993`, `QUA-994` |
 
@@ -60,8 +60,9 @@ typed missing-primitive blocker.
 
 ## Current Slice
 
-`QUA-992` adds method-specific admission over the `P001` execution IR.
-Monte Carlo should admit only with multi-asset correlated diffusion and
-Bermudan holder-exercise capabilities, while lattice should fail closed
-with a structured missing multi-asset/product-state lattice blocker unless
-a compatible grid primitive exists.
+`QUA-993` adds the generic Monte Carlo visitor for the admitted `P001`
+execution IR. It should consume named observables, correlation, carry,
+exercise dates, and best-of payoff semantics from the route-free artifact,
+then price through correlated multi-asset GBM plus reusable multi-state
+Longstaff-Schwartz exercise logic without using `_agent/rainbow_option.py`
+as product authority.

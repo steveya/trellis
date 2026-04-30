@@ -25,10 +25,14 @@ from trellis.conventions.calendar import (
 from trellis.core.date_utils import add_months
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.execution import (
+    BermudanBestOfBasketMCControls,
+    BermudanBestOfBasketMCInputs,
+    BermudanBestOfBasketMCResult,
     ContractExecutionIR,
     ExecutionCapabilityAdmission,
     admit_execution_capabilities,
     compile_bermudan_best_of_basket_execution_ir,
+    price_bermudan_best_of_basket_monte_carlo,
 )
 
 
@@ -391,6 +395,183 @@ def benchmark_contract_execution_admission(
         benchmark_contract_execution_ir(task, root=root),
         method=method,
     )
+
+
+def benchmark_contract_monte_carlo_execution(
+    task: Mapping[str, Any],
+    *,
+    root=None,
+    controls: BermudanBestOfBasketMCControls | None = None,
+) -> BermudanBestOfBasketMCResult:
+    """Price the supported benchmark execution IR through the MC visitor."""
+    ir = benchmark_contract_execution_ir(task, root=root)
+    scenario_contract = (
+        market_scenario_contract_from_task(task, root=root)
+        if root is not None
+        else market_scenario_contract_from_task(task)
+    )
+    result = price_bermudan_best_of_basket_monte_carlo(
+        ir,
+        _benchmark_bermudan_basket_mc_inputs(
+            task,
+            root=root,
+            scenario_contract=scenario_contract,
+        ),
+        controls=controls,
+    )
+    if scenario_contract is None:
+        return result
+    return result.with_provenance(
+        {
+            "scenario_id": scenario_contract.scenario_id,
+            "scenario_digest": scenario_contract.scenario_digest,
+        }
+    )
+
+
+def _benchmark_bermudan_basket_mc_inputs(
+    task: Mapping[str, Any],
+    *,
+    root=None,
+    scenario_contract: MarketScenarioContract | None,
+) -> BermudanBestOfBasketMCInputs:
+    contract = _spec_override_contract(task)
+    overrides = benchmark_spec_overrides(task, root=root)
+    underliers = _string_sequence(
+        overrides.get("underliers") or overrides.get("constituents")
+    )
+    if not underliers:
+        raise ValueError("benchmark MC execution requires named underliers")
+
+    valuation_date = _valuation_date(contract, scenario_contract)
+    scenario_underliers = {
+        underlier.name: underlier
+        for underlier in (scenario_contract.underliers if scenario_contract is not None else ())
+    }
+    spots = _named_float_payload(
+        underliers,
+        overrides.get("spots"),
+        scenario_values={
+            name: scenario_underliers[name].spot
+            for name in underliers
+            if name in scenario_underliers
+        },
+        label="spots",
+    )
+    vols = _named_float_payload(
+        underliers,
+        overrides.get("vols"),
+        scenario_values={
+            name: scenario_underliers[name].volatility
+            for name in underliers
+            if name in scenario_underliers
+            and scenario_underliers[name].volatility is not None
+        },
+        label="vols",
+    )
+    carries = _named_float_payload(
+        underliers,
+        overrides.get("dividend_yields"),
+        scenario_values={
+            name: scenario_underliers[name].carry_rate
+            for name in underliers
+            if name in scenario_underliers
+        },
+        label="dividend_yields",
+        default=0.0,
+    )
+    correlation = _correlation_matrix_payload(
+        overrides.get("correlation"),
+        scenario_contract=scenario_contract,
+        n_assets=len(underliers),
+    )
+    risk_free_rate = (
+        scenario_contract.domestic_rate
+        if scenario_contract is not None and scenario_contract.domestic_rate is not None
+        else _float_or_none(overrides.get("risk_free_rate"))
+    )
+    return BermudanBestOfBasketMCInputs(
+        valuation_date=valuation_date,
+        spot_values=spots,
+        volatilities=vols,
+        carry_rates=carries,
+        correlation_matrix=correlation,
+        risk_free_rate=float(risk_free_rate or 0.0),
+    )
+
+
+def _named_float_payload(
+    names: tuple[str, ...],
+    value: object,
+    *,
+    scenario_values: Mapping[str, object],
+    label: str,
+    default: float | None = None,
+) -> dict[str, float]:
+    vector = _float_sequence(value)
+    result: dict[str, float] = {}
+    if vector:
+        if len(vector) != len(names):
+            raise ValueError(
+                f"{label} vector length {len(vector)} does not match underlier count {len(names)}"
+            )
+        result.update(dict(zip(names, vector, strict=True)))
+    for name in names:
+        if name in result:
+            continue
+        scenario_value = scenario_values.get(name)
+        if scenario_value is not None:
+            result[name] = float(scenario_value)
+        elif default is not None:
+            result[name] = float(default)
+    missing = tuple(name for name in names if name not in result)
+    if missing:
+        raise ValueError(f"benchmark MC execution missing {label} for {missing!r}")
+    return result
+
+
+def _float_sequence(value: object | None) -> tuple[float, ...]:
+    return tuple(float(item) for item in _raw_sequence(value))
+
+
+def _correlation_matrix_payload(
+    value: object,
+    *,
+    scenario_contract: MarketScenarioContract | None,
+    n_assets: int,
+) -> tuple[tuple[float, ...], ...]:
+    matrix = _parse_correlation_matrix(value)
+    if matrix:
+        return matrix
+    if scenario_contract is not None and scenario_contract.correlation_source:
+        scenario_matrix = scenario_contract.correlation_source.get("matrix")
+        matrix = _parse_correlation_matrix(scenario_matrix)
+        if matrix:
+            return matrix
+    return tuple(
+        tuple(1.0 if row == col else 0.0 for col in range(n_assets))
+        for row in range(n_assets)
+    )
+
+
+def _parse_correlation_matrix(value: object | None) -> tuple[tuple[float, ...], ...]:
+    if value is None:
+        return ()
+    if isinstance(value, str) and not value.strip():
+        return ()
+    if isinstance(value, str):
+        rows = tuple(row.strip() for row in value.split(";") if row.strip())
+        if rows:
+            return tuple(
+                tuple(float(cell.strip()) for cell in row.split(",") if cell.strip())
+                for row in rows
+            )
+    if isinstance(value, (list, tuple)) and value:
+        if isinstance(value[0], (list, tuple)):
+            return tuple(tuple(float(cell) for cell in row) for row in value)
+        values = tuple(float(cell) for cell in value)
+        return tuple((cell,) for cell in values)
+    return ()
 
 
 def _requested_outputs_from_task(task: Mapping[str, Any]) -> tuple[str, ...]:
@@ -1201,6 +1382,7 @@ __all__ = [
     "benchmark_contract",
     "benchmark_contract_execution_admission",
     "benchmark_contract_execution_ir",
+    "benchmark_contract_monte_carlo_execution",
     "benchmark_preferred_method",
     "benchmark_request_description",
     "benchmark_spec_overrides",
