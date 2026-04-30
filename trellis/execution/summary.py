@@ -51,9 +51,25 @@ def contract_execution_summary(ir: ContractExecutionIR) -> dict[str, object]:
             for observable in ir.observables
         ),
         "event_count": len(ir.event_plan.events),
+        "event_kinds": _ordered(
+            getattr(event, "event_kind", "")
+            for event in ir.event_plan.events
+        ),
         "state_field_count": len(ir.state_schema.fields),
+        "state_fields": _ordered(
+            getattr(field, "name", "")
+            for field in ir.state_schema.fields
+        ),
         "decision_action_count": len(ir.decision_program.actions),
+        "decision_action_types": _ordered(
+            getattr(action, "action_type", "")
+            for action in ir.decision_program.actions
+        ),
         "settlement_step_count": len(ir.settlement_program.steps),
+        "settlement_kinds": _ordered(
+            getattr(step, "settlement_kind", "")
+            for step in ir.settlement_program.steps
+        ),
         "requirement_markets": _ordered(ir.requirement_hints.market_inputs),
         "requirement_states": _ordered(ir.requirement_hints.state_variables),
         "timeline_roles": _ordered(ir.requirement_hints.timeline_roles),

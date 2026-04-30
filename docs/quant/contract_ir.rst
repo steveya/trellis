@@ -41,6 +41,36 @@ Leg-based and dynamic contracts now have separate sibling semantic homes:
 - :doc:`static_leg_contract_ir` for static scheduled coupon/cashflow products
 - :doc:`dynamic_contract_ir` for event/state/control wrappers over static bases
 
+Execution IR Bridge
+-------------------
+
+``trellis.execution`` is the route-free, model-free execution seam that sits
+downstream of the semantic contract and structural IR surfaces. It records
+contractual execution structure such as observables, event timelines,
+decision programs, settlement expressions, and route-free market requirements.
+It does not select a pricing route, model family, measure, or discounting
+policy.
+
+The first concrete exotic proof shape is the bounded P001-style Bermudan
+best-of basket compiler:
+
+.. code-block:: python
+
+   compile_bermudan_best_of_basket_execution_ir(
+       semantic_id="P001",
+       underliers=("AAPL", "MSFT"),
+       strike=100.0,
+       expiry_date=expiry,
+       observation_dates=observations,
+       exercise_dates=exercises,
+   )
+
+The emitted ``ContractExecutionIR`` carries named spot and volatility
+observables, a correlation-matrix requirement, observation events, holder-max
+Bermudan decision actions, and a best-of-call settlement expression. That is
+semantic/operator authority only; Monte Carlo and lattice engine admission
+remain downstream work.
+
 Current Surface
 ---------------
 

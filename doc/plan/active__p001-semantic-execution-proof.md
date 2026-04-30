@@ -4,7 +4,7 @@
 
 Active execution mirror for `QUA-989`.
 
-Status mirror last synced: `2026-04-29`.
+Status mirror last synced: `2026-04-30`.
 
 ## Linked Linear
 
@@ -16,8 +16,8 @@ Status mirror last synced: `2026-04-29`.
 | Order | Ticket | Status | Objective | Hard blocker |
 | --- | --- | --- | --- | --- |
 | 0 | `QUA-989` | Backlog | umbrella proof for route-free `P001` semantic execution | `QUA-975` |
-| 1 | `QUA-990` | In Progress | deterministic underlier binding and fail-closed guardrails | none |
-| 2 | `QUA-991` | Backlog | operator IR for Bermudan best-of contract | `QUA-990` |
+| 1 | `QUA-990` | Done | deterministic underlier binding and fail-closed guardrails | none |
+| 2 | `QUA-991` | In Progress | operator IR for Bermudan best-of contract | `QUA-990` |
 | 3 | `QUA-992` | Backlog | capability admission for MC and lattice | `QUA-991` |
 | 4 | `QUA-993` | Backlog | generic multi-asset Bermudan MC visitor | `QUA-992` |
 | 5 | `QUA-994` | Backlog | lattice state-grid admission or generic executor | `QUA-992` |
@@ -60,6 +60,7 @@ typed missing-primitive blocker.
 
 ## Current Slice
 
-`QUA-990` starts the proof by fixing the input boundary. It should make
-the named underlier universe deterministic before any compiler or generated
-adapter code runs.
+`QUA-991` adds the first concrete operator representation for `P001`.
+It should express named spot observables, best-of call payoff semantics,
+observation and exercise schedules, holder-max Bermudan decisions, and
+route-free market requirements without selecting a pricing route.

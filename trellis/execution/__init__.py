@@ -2,6 +2,7 @@
 
 from trellis.execution.compiler import (
     UnsupportedExecutionSemantics,
+    compile_bermudan_best_of_basket_execution_ir,
     compile_contract_execution_ir,
     compile_contract_ir_execution_ir,
     compile_dynamic_execution_ir,
@@ -65,6 +66,7 @@ __all__ = [
     "SurfaceQuoteObservableRef",
     "SwapRateObservableRef",
     "UnsupportedExecutionSemantics",
+    "compile_bermudan_best_of_basket_execution_ir",
     "compile_contract_execution_ir",
     "compile_contract_ir_execution_ir",
     "compile_dynamic_execution_ir",
