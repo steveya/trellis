@@ -10,6 +10,7 @@ from trellis.execution import (
     KnownCashflowObligation,
     RequirementHints,
     SourceTrack,
+    compile_bermudan_best_of_basket_execution_ir,
     compile_contract_execution_ir,
     contract_execution_summary,
 )
@@ -59,9 +60,13 @@ def test_execution_ir_is_importable_frozen_and_summary_serializable():
         "observable_count": 0,
         "observable_kinds": (),
         "event_count": 0,
+        "event_kinds": (),
         "state_field_count": 0,
+        "state_fields": (),
         "decision_action_count": 0,
+        "decision_action_types": (),
         "settlement_step_count": 0,
+        "settlement_kinds": (),
         "requirement_markets": ("discount_curve:USD",),
         "requirement_states": (),
         "timeline_roles": ("payment",),
@@ -140,3 +145,93 @@ def test_execution_symbols_are_visible_to_import_registry():
     assert module_exists("trellis.execution")
     assert "ContractExecutionIR" in list_module_exports("trellis.execution")
     assert "compile_contract_execution_ir" in list_module_exports("trellis.execution")
+
+
+def test_bermudan_best_of_basket_execution_ir_records_operator_shape():
+    from datetime import date
+
+    ir = compile_bermudan_best_of_basket_execution_ir(
+        semantic_id="P001",
+        underliers=("AAPL", "MSFT"),
+        strike=100.0,
+        expiry_date=date(2025, 12, 15),
+        observation_dates=(
+            date(2025, 3, 15),
+            date(2025, 6, 15),
+            date(2025, 9, 15),
+            date(2025, 12, 15),
+        ),
+        exercise_dates=(
+            date(2025, 6, 15),
+            date(2025, 9, 15),
+            date(2025, 12, 15),
+        ),
+        requested_outputs=("price", "greeks", "bounds"),
+    )
+
+    assert ir.source_track.semantic_id == "P001"
+    assert ir.source_track.product_family == "bermudan_best_of_basket"
+    assert ir.source_track.instrument_class == "basket_option"
+    assert tuple(
+        observable.source_ref
+        for observable in ir.observables
+        if observable.observable_kind == "spot"
+    ) == ("market.spot:AAPL", "market.spot:MSFT")
+    assert tuple(event.event_kind for event in ir.event_plan.events).count("observation") == 4
+    assert tuple(event.event_kind for event in ir.event_plan.events).count("decision") == 3
+    assert tuple(action.action_type for action in ir.decision_program.actions) == (
+        "holder_max",
+        "holder_max",
+        "holder_max",
+    )
+    assert ir.settlement_program.steps[0].expression == (
+        "notional * max(max(spot[AAPL], spot[MSFT]) - 100.0, 0.0)"
+    )
+
+    summary = contract_execution_summary(ir)
+    assert summary["route_ids"] == ()
+    assert summary["model_families"] == ()
+    assert summary["observable_kinds"] == (
+        "correlation_matrix",
+        "curve_quote",
+        "spot",
+        "surface_quote",
+    )
+    assert summary["decision_action_types"] == ("holder_max",)
+    assert summary["settlement_kinds"] == ("best_of_call_payoff",)
+    assert summary["requirement_markets"] == (
+        "black_vol_surface:AAPL",
+        "black_vol_surface:MSFT",
+        "correlation_matrix:AAPL,MSFT",
+        "discount_curve:USD",
+        "spot:AAPL",
+        "spot:MSFT",
+    )
+
+
+def test_p001_benchmark_task_compiles_to_route_free_execution_ir():
+    from pathlib import Path
+    from dataclasses import asdict
+
+    from trellis.agent.benchmark_contracts import benchmark_contract_execution_ir
+    from trellis.agent.task_manifests import load_task_manifest
+
+    root = Path(__file__).resolve().parents[2]
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml", root=root)
+    }
+
+    ir = benchmark_contract_execution_ir(tasks["P001"], root=root)
+    payload_text = repr(asdict(ir))
+
+    assert ir.source_track.semantic_id == "P001"
+    assert ir.execution_metadata.metadata == (
+        ("requested_outputs", ("price", "greeks", "bounds", "comparison")),
+        ("validation_policy", "invariants_and_cross_method"),
+    )
+    assert "market.spot:AAPL" in payload_text
+    assert "market.spot:MSFT" in payload_text
+    assert "Asset1" not in payload_text
+    assert "Asset2" not in payload_text
+    assert contract_execution_summary(ir)["route_ids"] == ()

@@ -24,6 +24,7 @@ from trellis.conventions.calendar import (
 )
 from trellis.core.date_utils import add_months
 from trellis.core.types import DayCountConvention, Frequency
+from trellis.execution import ContractExecutionIR, compile_bermudan_best_of_basket_execution_ir
 
 
 _DIRECT_OVERRIDE_KEYS: tuple[str, ...] = (
@@ -330,6 +331,65 @@ def benchmark_spec_overrides(
         overrides.update(_nth_to_default_overrides(contract, valuation_date=valuation_date))
 
     return {key: value for key, value in overrides.items() if value is not None}
+
+
+def benchmark_contract_execution_ir(
+    task: Mapping[str, Any],
+    *,
+    root=None,
+) -> ContractExecutionIR:
+    """Compile a supported benchmark task into route-free execution IR."""
+    contract = _spec_override_contract(task)
+    product = str(contract.get("product") or "").strip().lower()
+    style = str(contract.get("style") or "").strip().lower()
+    payoff = str(contract.get("payoff") or "").strip().lower()
+    if (product, style, payoff) != ("rainbow_option", "bermudan", "best_of_call"):
+        raise ValueError(
+            "benchmark execution IR currently supports only the P001 "
+            "Bermudan best-of rainbow proof shape"
+        )
+
+    overrides = benchmark_spec_overrides(task, root=root)
+    underliers = _string_sequence(
+        overrides.get("underliers") or overrides.get("constituents")
+    )
+    if not underliers:
+        raise ValueError("benchmark execution IR requires named underliers")
+
+    strike = overrides.get("strike")
+    if strike is None:
+        raise ValueError("benchmark execution IR requires a strike")
+
+    return compile_bermudan_best_of_basket_execution_ir(
+        semantic_id=str(task.get("id") or product),
+        underliers=underliers,
+        strike=float(strike),
+        expiry_date=overrides.get("expiry_date"),
+        observation_dates=tuple(overrides.get("observation_dates") or ()),
+        exercise_dates=tuple(overrides.get("exercise_dates") or ()),
+        notional=float(overrides.get("notional") or 1.0),
+        currency=str(contract.get("currency") or "USD"),
+        requested_outputs=_requested_outputs_from_task(task),
+        validation_policy=str(task.get("validation_policy") or ""),
+        source_ref=f"benchmark_task:{task.get('id') or product}",
+    )
+
+
+def _requested_outputs_from_task(task: Mapping[str, Any]) -> tuple[str, ...]:
+    text = " ".join(
+        str(task.get(key) or "")
+        for key in ("title", "description", "validation_policy")
+    ).lower()
+    outputs: list[str] = []
+    if "price" in text:
+        outputs.append("price")
+    if "greek" in text:
+        outputs.append("greeks")
+    if "bound" in text:
+        outputs.append("bounds")
+    if "compare" in text or "cross_method" in text:
+        outputs.append("comparison")
+    return tuple(output for output in outputs if output)
 
 
 def _benchmark_summary_line(contract: Mapping[str, Any]) -> str:
@@ -1121,6 +1181,7 @@ def _business_day_adjustment(value: object | None) -> BusinessDayAdjustment:
 
 __all__ = [
     "benchmark_contract",
+    "benchmark_contract_execution_ir",
     "benchmark_preferred_method",
     "benchmark_request_description",
     "benchmark_spec_overrides",
