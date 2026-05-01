@@ -1957,6 +1957,47 @@ def test_build_payoff_fresh_build_still_uses_deterministic_exact_binding(monkeyp
         )
 
 
+def test_p001_semantic_execution_shim_source_is_thin_adapter():
+    from trellis.agent.codegen_guardrails import validate_generated_imports
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_semantic_execution_shim_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        method="rate_tree",
+        instrument_type="rainbow_option",
+        primitive_plan=SimpleNamespace(blockers=(), route="exercise_lattice"),
+        approved_modules=(
+            "trellis.core.market_state",
+            "trellis.core.payoff",
+            "trellis.core.types",
+            "trellis.execution",
+        ),
+    )
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["rainbow_option"],
+        "P001 Bermudan best-of rainbow proof",
+        generation_plan=generation_plan,
+    )
+
+    generated = _materialize_semantic_execution_shim_module(
+        skeleton,
+        generation_plan,
+        request_metadata={"task_id": "P001"},
+        comparison_target="rate_tree",
+    )
+
+    assert generated is not None
+    assert "price_bermudan_best_of_basket_from_compat_spec" in generated.code
+    assert 'method="lattice"' in generated.code
+    assert "build_rate_lattice" not in generated.code
+    assert "state_space" not in generated.code
+    assert "from trellis.models." not in generated.code
+    assert validate_generated_imports(generated.code, generation_plan).ok
+
+
 def test_build_payoff_fresh_build_bypasses_cached_generated_module_even_without_deterministic_route(
     monkeypatch,
 ):

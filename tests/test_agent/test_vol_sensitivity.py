@@ -1,5 +1,6 @@
 """Test that the vol sensitivity invariant catches vol-insensitive pricers."""
 
+from dataclasses import dataclass
 from datetime import date
 
 import pytest
@@ -123,3 +124,62 @@ class TestVolSensitivityInvariant:
             _sabr_market_state,
         )
         assert failures == []
+
+    def test_bumps_explicit_vector_vol_spec_when_payoff_uses_spec_vols(self):
+        """Generated vector-vol specs should be tested by bumping the spec field."""
+
+        @dataclass(frozen=True)
+        class VectorVolSpec:
+            vols: str
+
+        class ExplicitVectorVolPayoff:
+            def __init__(self, spec):
+                self._spec = spec
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "black_vol_surface"}
+
+            def evaluate(self, market_state):
+                del market_state
+                return 10.0 + sum(float(item) for item in self._spec.vols.split(",")) * 100.0
+
+        failures = check_vol_sensitivity(
+            lambda: ExplicitVectorVolPayoff(VectorVolSpec(vols="0.20,0.25")),
+            _ms,
+        )
+        assert failures == []
+
+    def test_explicit_vector_vol_spec_still_fails_when_payoff_ignores_vols(self):
+        """Spec-local vol authority is not a blanket skip for vega validation."""
+
+        @dataclass(frozen=True)
+        class VectorVolSpec:
+            vols: str
+
+        class ExplicitVectorVolInsensitivePayoff:
+            def __init__(self, spec):
+                self._spec = spec
+
+            @property
+            def spec(self):
+                return self._spec
+
+            @property
+            def requirements(self):
+                return {"discount_curve", "black_vol_surface"}
+
+            def evaluate(self, market_state):
+                del market_state
+                return 42.0
+
+        failures = check_vol_sensitivity(
+            lambda: ExplicitVectorVolInsensitivePayoff(VectorVolSpec(vols="0.20,0.25")),
+            _ms,
+        )
+        assert len(failures) == 1
+        assert "non-zero vega" in failures[0]

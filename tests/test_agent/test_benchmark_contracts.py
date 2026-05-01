@@ -118,6 +118,7 @@ def test_extension_rainbow_overrides_bind_underliers_from_market_scenario():
     assert rainbow["constituents"] == "AAPL,MSFT"
     assert rainbow["spots"] == "100.0,95.0"
     assert rainbow["vols"] == "0.2,0.25"
+    assert rainbow["risk_free_rate"] == pytest.approx(0.05)
 
 
 def test_extension_rainbow_overrides_reject_vector_underlier_mismatch():

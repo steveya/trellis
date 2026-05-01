@@ -479,3 +479,52 @@ def test_p001_benchmark_lattice_execution_uses_product_state_grid():
     assert result.provenance["source_semantic_id"] == "P001"
     assert result.provenance["scenario_id"] == "equity_rainbow_two_asset"
     assert result.provenance["primitive"] == "multi_asset_bermudan_state_grid"
+
+
+def test_p001_compat_agent_shim_delegates_to_semantic_execution_visitors():
+    from datetime import date
+    from types import SimpleNamespace
+
+    from trellis.execution import price_bermudan_best_of_basket_from_compat_spec
+
+    spec = SimpleNamespace(
+        notional=1.0,
+        underliers="AAPL,MSFT",
+        spots="100.0,95.0",
+        vols="0.2,0.25",
+        dividend_yields="0.0,0.0",
+        correlation="1.0,0.35;0.35,1.0",
+        strike=100.0,
+        expiry_date=date(2025, 12, 15),
+        observation_dates=(
+            date(2025, 3, 15),
+            date(2025, 6, 15),
+            date(2025, 9, 15),
+            date(2025, 12, 15),
+        ),
+        exercise_dates=(
+            date(2025, 6, 15),
+            date(2025, 9, 15),
+            date(2025, 12, 15),
+        ),
+        risk_free_rate=0.05,
+        n_paths=2048,
+        n_steps=64,
+        seed=19,
+        lattice_n_steps=32,
+    )
+    market_state = SimpleNamespace(settlement=date(2024, 11, 15), discount=None)
+
+    mc_price = price_bermudan_best_of_basket_from_compat_spec(
+        market_state,
+        spec,
+        method="monte_carlo",
+    )
+    lattice_price = price_bermudan_best_of_basket_from_compat_spec(
+        market_state,
+        spec,
+        method="lattice",
+    )
+
+    assert 5.0 < mc_price < 30.0
+    assert 5.0 < lattice_price < 30.0
