@@ -2,9 +2,9 @@
 
 ## Status
 
-Active execution mirror for `QUA-989`.
+Completed execution mirror for `QUA-989`.
 
-Status mirror last synced: `2026-04-30`.
+Status mirror last synced: `2026-05-01`.
 
 ## Linked Linear
 
@@ -15,13 +15,13 @@ Status mirror last synced: `2026-04-30`.
 
 | Order | Ticket | Status | Objective | Hard blocker |
 | --- | --- | --- | --- | --- |
-| 0 | `QUA-989` | Backlog | umbrella proof for route-free `P001` semantic execution | `QUA-975` |
+| 0 | `QUA-989` | Done | umbrella proof for route-free `P001` semantic execution | `QUA-975` |
 | 1 | `QUA-990` | Done | deterministic underlier binding and fail-closed guardrails | none |
 | 2 | `QUA-991` | Done | operator IR for Bermudan best-of contract | `QUA-990` |
 | 3 | `QUA-992` | Done | capability admission for MC and lattice | `QUA-991` |
 | 4 | `QUA-993` | Done | generic multi-asset Bermudan MC visitor | `QUA-992` |
 | 5 | `QUA-994` | Done | lattice state-grid admission or generic executor | `QUA-992` |
-| 6 | `QUA-995` | In Progress | demote `_agent` adapter to execution shim and close proof | `QUA-993`, `QUA-994` |
+| 6 | `QUA-995` | Done | demote `_agent` adapter to execution shim and close proof | `QUA-993`, `QUA-994` |
 
 ## Objective
 
@@ -58,7 +58,7 @@ typed missing-primitive blocker.
 - `_agent/rainbow_option.py`, if present, contains no product-local pricing
   formula or market binding authority
 
-## Current Slice
+## Closeout
 
 `QUA-995` closes the bounded `P001` proof by demoting the generated
 `_agent/rainbowoption.py` artifact to a compatibility shim. The shim delegates
@@ -67,3 +67,7 @@ legacy adapter spec into execution IR and then dispatches to the checked
 Monte Carlo or lattice execution visitor. The focused task replay now passes
 both comparison targets: Monte Carlo `16.351660882611306`, lattice
 `16.597284916802067`, both within the 5% internal comparison tolerance.
+
+`QUA-989` is closed in Linear after all child slices completed and PR #701
+merged. The broader execution-IR umbrella `QUA-975` remains open for reusable
+framework work beyond the bounded `P001` proof.

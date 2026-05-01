@@ -12,7 +12,7 @@ implementation sequencing.
   market projection, and future-value cube
 - QUA-989 — P001 route-free Bermudan rainbow proof
 - `doc/plan/draft__semantic-contract-closure-program.md`
-- `doc/plan/active__p001-semantic-execution-proof.md`
+- `doc/plan/done__p001-semantic-execution-proof.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
 - `doc/plan/draft__event-state-control-contract-foundation.md`
 - `doc/plan/draft__external-prior-art-adoption-map.md`
