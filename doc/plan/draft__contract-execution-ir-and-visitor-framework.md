@@ -39,7 +39,7 @@ implementation sequencing.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-04-28`.
+Status mirror last synced: `2026-05-01`.
 
 Umbrella:
 
@@ -52,7 +52,7 @@ Implementation queue:
 | Order | Ticket | Status | Objective | Hard blocker |
 | --- | --- | --- | --- | --- |
 | 1 | `QUA-976` | Done | XIR.0 - execution seam and authority boundary | none |
-| 2 | `QUA-977` | Backlog | XIR.1 - static-leg execution visitors and repricing slice | `QUA-976` |
+| 2 | `QUA-977` | Done | XIR.1 - static-leg execution visitors and repricing slice | `QUA-976` |
 | 3 | `QUA-978` | Backlog | XIR.2 - execution-backed payoff and adapter migration | `QUA-977` |
 | 4 | `QUA-979` | Backlog | XIR.3 - dynamic execution bridge for callable structures | `QUA-978` |
 | 5 | `QUA-980` | Backlog | XIR.4 - simulation and future-value bridge | `QUA-979` |
