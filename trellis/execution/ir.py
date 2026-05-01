@@ -176,6 +176,7 @@ class CouponLegExecution:
     currency: str = ""
     schedule_role: str = ""
     formula_ref: str = ""
+    metadata: Mapping[str, object] | MetadataItems | None = None
     obligation_kind: str = field(default="coupon_leg", init=False)
 
     def __post_init__(self) -> None:
@@ -184,6 +185,7 @@ class CouponLegExecution:
         object.__setattr__(self, "currency", _upper_text(self.currency))
         object.__setattr__(self, "schedule_role", _lower_text(self.schedule_role))
         object.__setattr__(self, "formula_ref", _text(self.formula_ref))
+        object.__setattr__(self, "metadata", _metadata_items(self.metadata))
 
 
 @dataclass(frozen=True)
@@ -195,6 +197,7 @@ class PeriodRateOptionStripExecution:
     currency: str = ""
     schedule_role: str = ""
     option_style: str = ""
+    metadata: Mapping[str, object] | MetadataItems | None = None
     obligation_kind: str = field(default="period_rate_option_strip", init=False)
 
     def __post_init__(self) -> None:
@@ -203,6 +206,7 @@ class PeriodRateOptionStripExecution:
         object.__setattr__(self, "currency", _upper_text(self.currency))
         object.__setattr__(self, "schedule_role", _lower_text(self.schedule_role))
         object.__setattr__(self, "option_style", _lower_text(self.option_style))
+        object.__setattr__(self, "metadata", _metadata_items(self.metadata))
 
 
 @dataclass(frozen=True)

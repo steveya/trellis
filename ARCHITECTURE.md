@@ -53,9 +53,10 @@ maintenance around the deterministic engines.
   checked-in/generated agent adapters under `trellis/instruments/_agent/`.
 - `trellis/engine/` contains direct pricing and payoff-pricing entry points.
 - `trellis/execution/` contains the additive XIR execution seam between
-  semantic contract authority and numerical runtimes. Its current XIR.0 surface
-  is route-free and model-free, records empty unsupported execution artifacts
-  for upstream semantic objects, and does not change pricing behavior.
+  semantic contract authority and numerical runtimes. It is route-free and
+  model-free at the semantic boundary, keeps unsupported lowerings explicit, and
+  now has bounded checked visitors for the P001 Bermudan best-of basket proof
+  plus the admitted static-leg execution cohort.
 - `trellis/analytics/` contains runtime measures, benchmarks, and explain/risk
   helpers.
 - `trellis/models/` contains the numerical engines and reusable quantitative

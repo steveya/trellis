@@ -85,13 +85,14 @@ For the scheduled cap/floor family, decomposition now emits a
 Wrapper labels such as ``cap`` and ``floor`` remain compatibility inputs
 only; the emitted semantic object is the scheduled strip itself.
 
-This remains a bounded expansion, not yet a full authoritative
-execution lane:
+This remains a bounded expansion, not a generic leg-product lane:
 
 - route-free decomposition is now present for the bounded admitted
   request surface
 - executable static-leg lowering for that strip family now exists on
   the checked analytical and Monte Carlo cap/floor helpers
+- the admitted cohort can now lower into ``ContractExecutionIR`` and price
+  through the static execution runtime
 - fresh-build authority and the `F003`-`F005` parity repair now run on
   the deterministic exact-binding build path for that family
 - caplets/floorlets and other unsupported strip variants still fail
@@ -135,6 +136,33 @@ All of those declarations can now materialize checked repository engines:
 - float-float basis swaps -> ``trellis.models.rate_basis_swap.price_rate_basis_swap``
 - fixed coupon bond -> ``trellis.instruments.bond.Bond`` kwargs
 
+Execution IR Runtime
+--------------------
+
+``trellis.execution.compiler.compile_static_leg_execution_ir(...)`` now lowers
+the same admitted static-leg cohort into a route-free ``ContractExecutionIR``.
+The lowered artifact records:
+
+- coupon-leg, known-cashflow, or period-rate-option-strip obligations
+- fixing and payment events derived from the semantic leg periods
+- discount, forward, and volatility requirement hints
+- a settlement program that sums the execution obligations
+
+The first visitor/runtime set is intentionally small:
+
+- ``execution_event_schedule(...)`` returns a stable event schedule projection
+- ``derive_requirement_hints(...)`` derives route-free market and timeline
+  requirements from the execution artifact
+- ``known_cashflow_obligations(...)`` exposes deterministic cashflow
+  obligations for cashflow expansion checks
+- ``price_static_leg_execution_ir(...)`` prices the bounded cohort directly
+  from the execution artifact and can reuse the same compiled IR across market
+  bumps
+
+This runtime is a checked static proving lane. It does not migrate generated
+``_agent`` wrappers yet; that belongs to the next execution-backed payoff and
+adapter migration slice.
+
 For the scheduled strip family, the lowering boundary is:
 
 - structural core terms come from ``PeriodRateOptionStripLeg`` itself
@@ -153,15 +181,15 @@ The basis-swap family is now materially executable in the bounded slice:
 - it materializes a checked floating-vs-floating swap helper with
   explicit coupon periods, day-count conventions, rate-index references,
   and spreads
+- it lowers into execution IR with explicit coupon obligations, fixing events,
+  payment events, and forward-curve requirements
 - the current executable lane is still bounded to two constant-notional
   floating legs on term/overnight indices
-- it is still not the authoritative fresh-build path; it is a checked
-  bounded lowering lane inside the static-leg program
 
 That boundary is deliberate. Static-leg selection exists now so later compiler
-work can bind against semantic structure, but the support contract does not yet
-pretend that the whole leg cohort has already cut over to route-free
-authoritative execution.
+work can bind against semantic structure, but the support contract still does
+not pretend that the whole leg cohort has cut over to generic route-free
+execution.
 
 Relationship To The Dynamic Track
 ---------------------------------
