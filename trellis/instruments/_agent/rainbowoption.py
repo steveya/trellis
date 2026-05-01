@@ -77,7 +77,7 @@ Implementation target: rate_tree."""
 
     @property
     def requirements(self) -> set[str]:
-        return {}
+        return set()
 
     def evaluate(self, market_state: MarketState) -> PricingValue:
         spec = self._spec
