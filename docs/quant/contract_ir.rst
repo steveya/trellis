@@ -105,6 +105,16 @@ execution paths importable while preventing generated product-local formulas,
 ``state_space`` guesses, or short-rate lattice calls from re-entering the P001
 proof.
 
+The first static-leg execution slice is also now represented through this
+package. ``compile_static_leg_execution_ir(...)`` lowers admitted
+``StaticLegContractIR`` contracts into ``ContractExecutionIR`` with coupon,
+known-cashflow, or period-rate-option-strip obligations, deterministic fixing
+and payment events, route-free requirement hints, and settlement steps.
+``price_static_leg_execution_ir(...)`` prices the bounded static cohort from the
+execution artifact. That support covers the admitted fixed-float swap, basis
+swap, fixed coupon bond, and scheduled period-rate-option strip shapes; it does
+not imply dynamic wrapper or generic leg-product coverage.
+
 Current Surface
 ---------------
 
