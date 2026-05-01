@@ -96,6 +96,13 @@ through ``trellis.models.fx_vanilla``. The checked-in adapters under
 over those semantic-facing helpers rather than separate pricing
 implementations.
 
+The P001 Bermudan best-of-two rainbow proof is also exposed this way for
+task compatibility. Its checked-in ``_agent`` adapter delegates to the
+``trellis.execution`` Bermudan best-of basket shim, which reuses the route-free
+execution IR Monte Carlo and lattice visitors. This is a bounded proof for the
+named AAPL/MSFT two-underlier task, not a general multi-asset Bermudan rainbow
+product claim.
+
 Rates Calibration
 -----------------
 

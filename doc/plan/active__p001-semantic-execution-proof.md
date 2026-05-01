@@ -20,8 +20,8 @@ Status mirror last synced: `2026-04-30`.
 | 2 | `QUA-991` | Done | operator IR for Bermudan best-of contract | `QUA-990` |
 | 3 | `QUA-992` | Done | capability admission for MC and lattice | `QUA-991` |
 | 4 | `QUA-993` | Done | generic multi-asset Bermudan MC visitor | `QUA-992` |
-| 5 | `QUA-994` | In Progress | lattice state-grid admission or generic executor | `QUA-992` |
-| 6 | `QUA-995` | Backlog | demote `_agent` adapter to execution shim and close proof | `QUA-993`, `QUA-994` |
+| 5 | `QUA-994` | Done | lattice state-grid admission or generic executor | `QUA-992` |
+| 6 | `QUA-995` | In Progress | demote `_agent` adapter to execution shim and close proof | `QUA-993`, `QUA-994` |
 
 ## Objective
 
@@ -60,8 +60,10 @@ typed missing-primitive blocker.
 
 ## Current Slice
 
-`QUA-994` resolves the lattice side of the `P001` execution proof. The target
-is a generic two-underlier product-state grid visitor that admits
-`multi_asset_bermudan_state_grid`, rolls back holder exercise over named
-best-of state values, and proves the path does not call short-rate lattice APIs
-or `_agent/rainbow_option.py` product authority.
+`QUA-995` closes the bounded `P001` proof by demoting the generated
+`_agent/rainbowoption.py` artifact to a compatibility shim. The shim delegates
+to `price_bermudan_best_of_basket_from_compat_spec(...)`, which recompiles the
+legacy adapter spec into execution IR and then dispatches to the checked
+Monte Carlo or lattice execution visitor. The focused task replay now passes
+both comparison targets: Monte Carlo `16.351660882611306`, lattice
+`16.597284916802067`, both within the 5% internal comparison tolerance.

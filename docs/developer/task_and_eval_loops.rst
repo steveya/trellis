@@ -441,6 +441,15 @@ supported analytical and Monte Carlo slices, and the checked-in adapters under
 ``trellis.instruments._agent`` are intentionally thin shells over those
 helpers instead of separate implementations.
 
+The bounded P001 Bermudan rainbow proof uses the same compatibility-shell
+discipline, but its target is execution IR rather than an exact helper module.
+``trellis.instruments._agent.rainbowoption`` delegates to
+``trellis.execution.price_bermudan_best_of_basket_from_compat_spec(...)`` for
+both Monte Carlo and lattice task targets. Task validation treats explicit
+vector vol fields on that generated spec as the volatility authority when it
+runs vega checks, so the proof validates the actual shim inputs instead of a
+market-state flat-vol field the shim does not consume.
+
 Fresh-build proving keeps a stricter boundary than ordinary supported-route
 reuse. When a task or canary is run with ``fresh_build=True``, the executor
 now skips deterministic exact-binding materialization so the run still has to

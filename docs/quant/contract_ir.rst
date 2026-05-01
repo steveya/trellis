@@ -96,6 +96,15 @@ spot lattice, and performs generic Bermudan max rollback over the execution IR
 exercise dates. It is intentionally not a short-rate lattice alias and does not
 call ``build_rate_lattice``.
 
+The legacy ``_agent`` surface for the same proof is a compatibility shim, not
+pricing authority. ``trellis.instruments._agent.rainbowoption`` delegates to
+``price_bermudan_best_of_basket_from_compat_spec(...)``, which converts the
+adapter spec back into the checked execution IR visitor inputs and then calls
+the Monte Carlo or product-state lattice visitor. The shim keeps old task
+execution paths importable while preventing generated product-local formulas,
+``state_space`` guesses, or short-rate lattice calls from re-entering the P001
+proof.
+
 Current Surface
 ---------------
 

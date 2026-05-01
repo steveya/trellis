@@ -354,7 +354,11 @@ def validate_semantics(
             ),
         ))
 
-    thin_adapter_calls = any(call.startswith("trellis.instruments.") for call in signals.resolved_calls)
+    thin_adapter_calls = any(
+        call.startswith("trellis.instruments.")
+        or call == "trellis.execution.price_bermudan_best_of_basket_from_compat_spec"
+        for call in signals.resolved_calls
+    )
     helper_backed_thin_adapter = thin_adapter_calls or (
         helper_only_required_route and helper_route_calls_present
     )

@@ -121,6 +121,9 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.copulas.student_t",
         "trellis.models.copulas.factor",
     ),
+    "rainbow_option": (
+        "trellis.execution",
+    ),
     "credit_default_swap": (),
 }
 

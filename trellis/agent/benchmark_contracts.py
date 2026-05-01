@@ -1048,6 +1048,9 @@ def _rainbow_option_overrides(
     underliers = _rainbow_underlier_names(contract, scenario_contract=scenario_contract)
     _validate_rainbow_vector_dimensions(contract, underliers=underliers)
     underlier_csv = ",".join(underliers)
+    risk_free_rate = _float_or_none(contract.get("domestic_rate"))
+    if risk_free_rate is None:
+        risk_free_rate = _float_or_none(contract.get("risk_free_rate"))
     return {
         "notional": _float_or_none(contract.get("notional")) or 1.0,
         "underliers": underlier_csv,
@@ -1061,6 +1064,7 @@ def _rainbow_option_overrides(
         "dividend_yields": ",".join(str(value) for value in (contract.get("dividend_rates") or ())),
         "basket_style": basket_style,
         "option_type": "call",
+        "risk_free_rate": risk_free_rate,
     }
 
 

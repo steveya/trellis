@@ -186,8 +186,18 @@ def _cds_spread_unit_hint(payoff: Payoff) -> tuple[str, dict[str, float | str]]:
 
 def _parse_float_vector(raw: object) -> tuple[float, ...]:
     """Parse a comma-delimited float vector used by simple generated specs."""
-    if raw in {None, ""}:
+    if raw is None:
         return ()
+    if isinstance(raw, str) and raw == "":
+        return ()
+    if isinstance(raw, (tuple, list)):
+        values: list[float] = []
+        for item in raw:
+            try:
+                values.append(float(item))
+            except (TypeError, ValueError):
+                continue
+        return tuple(values)
     values: list[float] = []
     for token in str(raw).split(","):
         piece = token.strip()
@@ -198,6 +208,35 @@ def _parse_float_vector(raw: object) -> tuple[float, ...]:
         except ValueError:
             continue
     return tuple(values)
+
+
+def _format_explicit_vol_vector(raw: object, value: float) -> object:
+    """Return a same-shaped flat vol vector for a generated-spec vol field."""
+    values = _parse_float_vector(raw)
+    if not values:
+        return None
+    bumped = tuple(float(value) for _ in values)
+    if isinstance(raw, str):
+        return ",".join(str(item) for item in bumped)
+    if isinstance(raw, tuple):
+        return bumped
+    if isinstance(raw, list):
+        return list(bumped)
+    return bumped
+
+
+def _explicit_vol_spec_update(payoff: Payoff, value: float) -> dict[str, object]:
+    """Build a spec update when volatility authority lives on the payoff spec."""
+    spec = _extract_spec(payoff)
+    if spec is None:
+        return {}
+    for attr in ("vols", "volatilities"):
+        if not hasattr(spec, attr):
+            continue
+        bumped = _format_explicit_vol_vector(getattr(spec, attr), value)
+        if bumped is not None:
+            return {attr: bumped}
+    return {}
 
 
 def _parse_name_vector(raw: object) -> tuple[str, ...]:
@@ -665,8 +704,18 @@ def check_vol_sensitivity(
         sample_payoff = payoff_factory()
         if _payoff_uses_explicit_vol_model_parameters(sample_payoff):
             return _emit_failures(failures, return_diagnostics=return_diagnostics)
-        p_low = price_payoff(sample_payoff, market_state_factory(vol=vol_low))
-        p_high = price_payoff(payoff_factory(), market_state_factory(vol=vol_high))
+        explicit_low = _explicit_vol_spec_update(sample_payoff, vol_low)
+        if explicit_low:
+            low_payoff = _clone_payoff_with_spec_updates(sample_payoff, **explicit_low)
+            high_payoff = _clone_payoff_with_spec_updates(
+                payoff_factory(),
+                **_explicit_vol_spec_update(sample_payoff, vol_high),
+            )
+        else:
+            low_payoff = sample_payoff
+            high_payoff = payoff_factory()
+        p_low = price_payoff(low_payoff, market_state_factory(vol=vol_low))
+        p_high = price_payoff(high_payoff, market_state_factory(vol=vol_high))
         base = max(abs(p_low), abs(p_high), 1.0)
         change = abs(p_high - p_low) / base
         if change < min_change_pct:
