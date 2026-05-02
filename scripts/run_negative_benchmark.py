@@ -94,6 +94,7 @@ def main(argv: list[str] | None = None) -> int:
     campaign_id = str(args.campaign_id or args.report_name).strip()
     market_state = build_market_state()
     benchmark_runs: list[dict[str, object]] = []
+    task_run_storage_root = output_root / "task_run_records"
 
     for task in tasks:
         run_started_at = datetime.now(timezone.utc).isoformat()
@@ -103,6 +104,8 @@ def main(argv: list[str] | None = None) -> int:
             model=args.model,
             force_rebuild=True,
             validation=args.validation,
+            task_run_storage_root=task_run_storage_root,
+            task_run_storage_layout="standalone",
         )
         evaluation = evaluate_negative_task_result(task, result)
         run_completed_at = datetime.now(timezone.utc).isoformat()

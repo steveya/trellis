@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import os
 from pathlib import Path
 from statistics import median
-from typing import Any, Mapping
+from typing import Any, Mapping, Literal
 
 import yaml
 
@@ -42,25 +42,31 @@ def persist_task_run_record(
     result: dict[str, Any],
     *,
     root: Path = ROOT,
+    storage_layout: Literal["repo", "standalone"] = "repo",
     persisted_at: datetime | None = None,
 ) -> dict[str, str]:
     """Write a full task-run record to both the history archive and the latest-result snapshot."""
     persisted_at = persisted_at or datetime.now(timezone.utc)
     record = build_task_run_record(task, result, persisted_at=persisted_at)
 
-    history_root = root / "task_runs" / "history" / str(task["id"])
-    latest_root = root / "task_runs" / "latest"
-    latest_index_path = root / "task_results_latest.json"
+    task_run_root, latest_index_path = _task_run_storage_roots(root, storage_layout=storage_layout)
+    history_root = task_run_root / "history" / str(task["id"])
+    latest_root = task_run_root / "latest"
     history_root.mkdir(parents=True, exist_ok=True)
     latest_root.mkdir(parents=True, exist_ok=True)
 
+    run_id = _reserve_history_run_id(
+        history_root=history_root,
+        run_id=str(record["run_id"]),
+        persisted_at=persisted_at,
+    )
+    record["run_id"] = run_id
     history_path = history_root / f"{record['run_id']}.json"
     latest_path = latest_root / f"{task['id']}.json"
-    diagnosis_history_packet_path = (
-        root / DIAGNOSIS_HISTORY_ROOT.relative_to(ROOT) / str(task["id"]) / f"{record['run_id']}.json"
-    )
+    diagnosis_root = task_run_root / "diagnostics"
+    diagnosis_history_packet_path = diagnosis_root / "history" / str(task["id"]) / f"{record['run_id']}.json"
     diagnosis_history_dossier_path = diagnosis_history_packet_path.with_suffix(".md")
-    diagnosis_latest_packet_path = root / DIAGNOSIS_LATEST_ROOT.relative_to(ROOT) / f"{task['id']}.json"
+    diagnosis_latest_packet_path = diagnosis_root / "latest" / f"{task['id']}.json"
     diagnosis_latest_dossier_path = diagnosis_latest_packet_path.with_suffix(".md")
 
     record["storage"] = {
@@ -87,7 +93,11 @@ def persist_task_run_record(
         diagnosis_persist_skipped = f"env:{_SKIP_TASK_DIAGNOSIS_PERSIST_ENV}"
     else:
         try:
-            diagnosis = save_task_diagnosis_artifacts(record, root=root)
+            diagnosis = save_task_diagnosis_artifacts(
+                record,
+                root=root,
+                storage_layout=storage_layout,
+            )
         except Exception as exc:
             diagnosis_error = str(exc)[:200]
 
@@ -248,7 +258,8 @@ def persist_canary_batch_record(
     history_path = history_root / f"{batch_id}.json"
     latest_path = latest_root / f"{_scope_slug_to_latest_key(scope_slug, execution_mode, validation, knowledge_profile, model)}.json"
     history_path.write_text(json.dumps(record, indent=2, default=str))
-    latest_path.write_text(json.dumps(record, indent=2, default=str))
+    if not synthetic_source:
+        latest_path.write_text(json.dumps(record, indent=2, default=str))
     return {
         "batch_id": batch_id,
         "history_path": str(history_path),
@@ -584,6 +595,39 @@ def _run_id(result: dict[str, Any], persisted_at: datetime) -> str:
             .replace("+", "_")
         )
     return persisted_at.strftime("%Y%m%dT%H%M%S%fZ")
+
+
+def _reserve_history_run_id(
+    *,
+    history_root: Path,
+    run_id: str,
+    persisted_at: datetime,
+) -> str:
+    """Preserve append-only history even when a rerun reuses the same logical start time."""
+    history_path = history_root / f"{run_id}.json"
+    if not history_path.exists():
+        return run_id
+
+    suffix = persisted_at.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+    candidate = f"{run_id}__{suffix}"
+    counter = 2
+    while (history_root / f"{candidate}.json").exists():
+        candidate = f"{run_id}__{suffix}_{counter}"
+        counter += 1
+    return candidate
+
+
+def _task_run_storage_roots(
+    root: Path,
+    *,
+    storage_layout: Literal["repo", "standalone"],
+) -> tuple[Path, Path]:
+    """Return the task-run root plus latest-index path for one storage layout."""
+    if storage_layout == "repo":
+        return root / "task_runs", root / "task_results_latest.json"
+    if storage_layout == "standalone":
+        return root, root / "task_results_latest.json"
+    raise ValueError(f"Unsupported task-run storage layout: {storage_layout}")
 
 
 def _build_method_runs(result: dict[str, Any]) -> dict[str, Any]:

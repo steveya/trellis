@@ -171,6 +171,7 @@ def run_learning_benchmark(
             pass_number=pass_number,
             fresh_build=fresh_build,
             knowledge_light=knowledge_light,
+            task_run_storage_root=output_root / "task_run_records" / label,
         )
         output_path.write_text(json.dumps(results, indent=2, default=str))
         summary = summarize_task_results(results)
@@ -234,6 +235,7 @@ def _run_learning_pass(
     pass_number: int,
     fresh_build: bool,
     knowledge_light: bool,
+    task_run_storage_root: Path,
 ) -> list[dict[str, Any]]:
     market_state = build_market_state()
     results: list[dict[str, Any]] = []
@@ -248,6 +250,8 @@ def _run_learning_pass(
             fresh_build=fresh_build,
             knowledge_profile="knowledge_light" if knowledge_light else None,
             validation=validation,
+            task_run_storage_root=task_run_storage_root,
+            task_run_storage_layout="standalone",
         )
         payload = dict(result)
         payload["learning_benchmark_name"] = benchmark_name

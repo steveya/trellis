@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, datetime
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 import sys
 
@@ -824,7 +825,7 @@ def test_run_task_persists_latest_record(monkeypatch):
     def fake_build(**kwargs):
         return FakeResult()
 
-    def fake_persist(task, result):
+    def fake_persist(task, result, *, root, storage_layout, persisted_at=None):
         persisted["task"] = task
         persisted["result"] = dict(result)
         return {
@@ -915,7 +916,7 @@ def test_run_task_marks_cassette_replay_runs_and_persists_metadata(monkeypatch, 
         seen["llm_text"] = critic.llm_generate(prompt)
         return FakeResult()
 
-    def fake_persist(task, result):
+    def fake_persist(task, result, *, root, storage_layout, persisted_at=None):
         persisted["task"] = task
         persisted["result"] = dict(result)
         return {
@@ -961,6 +962,64 @@ def test_run_task_marks_cassette_replay_runs_and_persists_metadata(monkeypatch, 
     assert persisted["result"]["llm_cassette"]["path"] == str(cassette_path)
     assert result["task_diagnosis_packet_path"] == "/tmp/task_runs/diagnostics/history/T13/run.json"
     assert result["task_diagnosis_dossier_path"] == "/tmp/task_runs/diagnostics/history/T13/run.md"
+
+
+def test_run_task_forwards_isolated_task_run_storage(monkeypatch):
+    from trellis.agent.task_runtime import run_task
+
+    persisted: dict[str, object] = {}
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.8
+        knowledge_gaps = []
+        payoff_cls = type("FakePayoff", (), {})
+        failures = []
+        reflection = {}
+
+    def fake_build(**kwargs):
+        return FakeResult()
+
+    def fake_persist(task, result, *, root, storage_layout, persisted_at=None):
+        persisted["task"] = task
+        persisted["result"] = dict(result)
+        persisted["root"] = root
+        persisted["storage_layout"] = storage_layout
+        return {
+            "history_path": "/tmp/task_run_records/history/T13/run.json",
+            "latest_path": "/tmp/task_run_records/latest/T13.json",
+            "latest_index_path": "/tmp/task_run_records/task_results_latest.json",
+            "diagnosis_packet_path": "/tmp/task_run_records/diagnostics/history/T13/run.json",
+            "diagnosis_dossier_path": "/tmp/task_run_records/diagnostics/history/T13/run.md",
+            "latest_diagnosis_packet_path": "/tmp/task_run_records/diagnostics/latest/T13.json",
+            "latest_diagnosis_dossier_path": "/tmp/task_run_records/diagnostics/latest/T13.md",
+            "diagnosis_headline": "Demo task completed successfully.",
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+            "diagnosis_persist_error": "",
+            "diagnosis_persist_skipped": "",
+        }
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        fake_persist,
+    )
+
+    isolated_root = Path("/tmp/task_run_records")
+    result = run_task(
+        {"id": "T13", "title": "European call: theta-method convergence order"},
+        market_state=object(),
+        build_fn=fake_build,
+        task_run_storage_root=isolated_root,
+        task_run_storage_layout="standalone",
+    )
+
+    assert persisted["task"]["id"] == "T13"
+    assert persisted["root"] == isolated_root
+    assert persisted["storage_layout"] == "standalone"
+    assert result["task_run_latest_path"] == "/tmp/task_run_records/latest/T13.json"
 
 
 def test_run_task_uses_single_construct_as_preferred_method():

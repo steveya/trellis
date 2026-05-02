@@ -65,7 +65,7 @@ The repo ships a small task-operations toolchain:
 - ``scripts/run_financepy_benchmark.py``: run the FinancePy parity corpus with timestamped run-history persistence
 - ``scripts/run_negative_benchmark.py``: run the clarification / honest-block corpus with timestamped run-history persistence
 - ``scripts/run_benchmark_history_scorecard.py``: build a repeated-run scorecard from append-only FinancePy or negative benchmark history
-- ``scripts/remediate.py``: analyze failures, categorize knowledge gaps, and patch common knowledge issues
+- ``scripts/remediate.py``: analyze failures from the latest canonical task-run surface by default, or inspect root-level ``task_results_*.json`` tranches with ``--source tranches``
 - ``scripts/evaluate_shared_memory.py``: compare two task-result tranches and render a shared-memory improvement report
 - ``scripts/should_run_canary.py``: decide whether current local changes justify the focused core canary gate
 - ``scripts/test_hygiene.py``: report stale skip/xfail/quarantine markers for local test-hygiene triage
@@ -185,6 +185,10 @@ under ``task_runs/financepy_benchmarks/`` with explicit ``run_started_at`` and
 knowledge, and campaign revisions. The runner also emits a repeated-run
 scorecard from the matching append-only history slice.
 
+Those benchmark runs now keep any per-task run/diagnosis packets under an
+isolated local store at ``task_runs/financepy_benchmarks/task_run_records/``
+instead of rewriting the repo-wide canonical ``task_runs/latest`` surface.
+
 Those repeated-run scorecards now include an ``agent_cycle`` block derived from
 the same product-facing cycle surface returned by task results. The aggregate
 tracks cycle-report availability, pass/fail/incomplete counts, stage trigger
@@ -196,7 +200,9 @@ monitoring API.
 Negative-task benchmark runs do the same under
 ``task_runs/negative_benchmarks/`` so clarification and honest-block behavior
 can be tracked across repeated library and knowledge updates, again with a
-scorecard generated from append-only history.
+scorecard generated from append-only history. Their per-task run packets now
+live under ``task_runs/negative_benchmarks/task_run_records/`` for the same
+reason.
 
 Every canary batch now also writes a dedicated aggregate telemetry record under
 ``task_runs/canary_batches/``:
@@ -233,7 +239,9 @@ Use those loaders, not ad hoc scans over ``task_runs/history/``, when you want
 to compare canary latency, token, or attempt trends over time. The batch store
 excludes ordinary ad hoc task runs by construction and can filter replay-backed
 history out of the benchmark view. Root-level pytest runs are also marked as
-synthetic so they do not become accidental benchmark baselines.
+synthetic so they do not become accidental benchmark baselines, and synthetic
+pytest batches no longer rewrite the stable ``task_runs/canary_batches/latest``
+comparison files.
 
 To compare against the ``2026-04-09`` full curated rerun baseline, treat that
 date's documented ``14/14`` pass as the historical anchor and compare fresh
@@ -308,6 +316,8 @@ Each pass writes:
 - a raw task-result file under ``task_runs/learning_benchmarks/raw/``
 - a pass summary JSON beside that raw file
 - a Markdown plus JSON scorecard under ``task_runs/learning_benchmarks/reports/``
+- an isolated per-pass task-run ledger under
+  ``task_runs/learning_benchmarks/task_run_records/``
 
 The scorecard reports:
 

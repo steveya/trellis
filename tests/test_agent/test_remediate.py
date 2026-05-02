@@ -37,11 +37,37 @@ def test_load_all_results_handles_list_and_summary_index_formats(tmp_path, monke
 
     monkeypatch.setattr(remediate, "ROOT", tmp_path)
 
-    results = remediate.load_all_results()
+    results = remediate.load_all_results(source="tranches")
 
     assert [r["task_id"] for r in results] == ["T001", "T002", "T100", "T101"]
     assert all(isinstance(r, dict) for r in results)
     assert all("success" in r for r in results)
+
+
+def test_load_all_results_defaults_to_latest_canonical_runs(monkeypatch):
+    monkeypatch.setattr(
+        remediate,
+        "load_latest_task_run_records",
+        lambda *, root: [
+            {
+                "task_id": "T013",
+                "result": {"task_id": "T013", "success": True, "failures": []},
+            },
+            {
+                "task_id": "T014",
+                "result": {"task_id": "T014", "success": False, "failures": ["boom"]},
+            },
+            {
+                "task_id": "summary_only",
+                "result": {"note": "not a task result"},
+            },
+        ],
+    )
+
+    results = remediate.load_all_results()
+
+    assert [r["task_id"] for r in results] == ["T013", "T014"]
+    assert [r["success"] for r in results] == [True, False]
 
 
 def test_analyze_failures_uses_nested_method_failure_text():

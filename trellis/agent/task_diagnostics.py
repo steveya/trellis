@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Mapping, Literal
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -417,6 +417,7 @@ def save_task_diagnosis_artifacts(
     record: Mapping[str, Any],
     *,
     root: Path = ROOT,
+    storage_layout: Literal["repo", "standalone"] = "repo",
 ) -> TaskDiagnosisArtifacts:
     """Persist a packet and dossier alongside the run record."""
     packet = build_task_diagnosis_packet(record)
@@ -427,8 +428,15 @@ def save_task_diagnosis_artifacts(
     if not run_id:
         raise ValueError("run_id is required to persist diagnosis artifacts")
 
-    history_root = root / "task_runs" / "diagnostics" / "history" / task_id
-    latest_root = root / "task_runs" / "diagnostics" / "latest"
+    if storage_layout == "repo":
+        diagnosis_root = root / "task_runs" / "diagnostics"
+    elif storage_layout == "standalone":
+        diagnosis_root = root / "diagnostics"
+    else:
+        raise ValueError(f"Unsupported task diagnosis storage layout: {storage_layout}")
+
+    history_root = diagnosis_root / "history" / task_id
+    latest_root = diagnosis_root / "latest"
     history_root.mkdir(parents=True, exist_ok=True)
     latest_root.mkdir(parents=True, exist_ok=True)
 

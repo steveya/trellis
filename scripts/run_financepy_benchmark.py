@@ -155,6 +155,7 @@ def _execute_single_benchmark_task(
         requested_policy=args.execution_policy,
     )
     fresh_generated = execution_policy == "fresh_generated"
+    task_run_storage_root = output_root / "task_run_records"
     cold_result = run_task(
         task,
         market_state,
@@ -162,6 +163,8 @@ def _execute_single_benchmark_task(
         force_rebuild=args.force_rebuild,
         fresh_build=fresh_generated,
         validation=args.validation,
+        task_run_storage_root=task_run_storage_root,
+        task_run_storage_layout="standalone",
     )
     warm_result: dict[str, Any] | None = None
     financepy_result: dict[str, Any] | None = None
