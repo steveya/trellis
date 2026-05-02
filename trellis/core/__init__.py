@@ -15,6 +15,7 @@ from trellis.core.market_state import MarketState, MissingCapabilityError
 from trellis.core.payoff import (
     Cashflows,
     DeterministicCashflowPayoff,
+    ExecutionBackedPayoff,
     Payoff,
     PresentValue,
 )
@@ -43,6 +44,7 @@ __all__ = [
     "MissingCapabilityError",
     "Payoff",
     "DeterministicCashflowPayoff",
+    "ExecutionBackedPayoff",
     "Cashflows",
     "PresentValue",
     "ContractAwareMapping",

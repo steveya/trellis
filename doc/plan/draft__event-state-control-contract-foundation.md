@@ -24,7 +24,7 @@ yet tied to a filed Linear child issue.
 - `doc/plan/done__semantic-platform-hardening.md`
 - `doc/plan/done__event-aware-pde-lane.md`
 - `doc/plan/done__event-aware-monte-carlo-lane.md`
-- `doc/plan/active__semantic-simulation-substrate.md`
+- `doc/plan/done__semantic-simulation-substrate.md`
 - existing repo surfaces:
   - `trellis.agent.event_machine`
   - `trellis.agent.dsl_algebra`

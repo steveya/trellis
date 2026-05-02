@@ -12,7 +12,7 @@ events and running state but no true holder/issuer optimization.
 - `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/done__event-aware-pde-lane.md`
 - `doc/plan/done__event-aware-monte-carlo-lane.md`
-- `doc/plan/active__semantic-simulation-substrate.md`
+- `doc/plan/done__semantic-simulation-substrate.md`
 - existing repo surfaces:
   - `trellis.agent.event_machine`
   - `trellis.agent.semantic_contract_compiler`

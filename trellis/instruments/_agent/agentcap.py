@@ -30,7 +30,9 @@ from datetime import date
 from trellis.core.date_utils import build_payment_timeline
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.rate_cap_floor import price_rate_cap_floor_strip_analytical
+from trellis.instruments._agent._period_rate_option_static_leg import (
+    build_period_rate_option_execution_payoff,
+)
 
 
 
@@ -119,20 +121,10 @@ Implementation target: analytical."""
         )
         if not timeline:
             return 0.0
-        return float(
-            price_rate_cap_floor_strip_analytical(
-                market_state,
-                spec=spec,
-                instrument_class="cap",
-                notional=spec.notional,
-                strike=spec.strike,
-                start_date=spec.start_date,
-                end_date=spec.end_date,
-                frequency=spec.frequency,
-                day_count=spec.day_count,
-                rate_index=spec.rate_index,
-                model=spec.model,
-                shift=spec.shift,
-                sabr=spec.sabr,
-            )
+        payoff = build_period_rate_option_execution_payoff(
+            spec,
+            timeline,
+            option_side="call",
+            label="agent_cap_timeline",
         )
+        return float(payoff.evaluate(market_state))

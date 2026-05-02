@@ -60,9 +60,12 @@ The cap/floor-strip representation boundary is now also explicit at the
 leg level:
 
 - ``period_rate_option_strip`` is the canonical semantic family
-- ``cap`` / ``floor`` remain wrapper-level compatibility shells
+- ``cap`` / ``floor`` remain compatibility inputs rather than canonical
+  semantic family names
 - emitted semantic metadata and lowering IR now stay on
   ``period_rate_option_strip`` across task, semantic, and static-leg surfaces
+- the admitted ``_agent`` cap/floor wrappers now delegate through the same
+  static-leg execution-backed runtime instead of carrying bespoke repricers
 
 In other words, a schedule-driven cap or floor is represented here as a
 strip of period rate options rather than as a helper-shaped wrapper name.
@@ -158,10 +161,14 @@ The first visitor/runtime set is intentionally small:
 - ``price_static_leg_execution_ir(...)`` prices the bounded cohort directly
   from the execution artifact and can reuse the same compiled IR across market
   bumps
+- ``trellis.core.payoff.ExecutionBackedPayoff`` exposes that execution artifact
+  through the public payoff boundary so ``price_payoff(...)`` can consume the
+  admitted static-leg runtime without route ids
 
-This runtime is a checked static proving lane. It does not migrate generated
-``_agent`` wrappers yet; that belongs to the next execution-backed payoff and
-adapter migration slice.
+This runtime is still a checked static proving lane, but the admitted
+cap/floor ``_agent`` wrappers now use it as thin compatibility shells.
+Richer static-leg wrapper families and generic dynamic-wrapper execution
+remain later work.
 
 For the scheduled strip family, the lowering boundary is:
 

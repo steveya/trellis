@@ -12,7 +12,7 @@ Draft. Cross-cutting design document. Not yet an execution mirror.
 - `doc/plan/draft__external-prior-art-adoption-map.md`
 - `doc/plan/draft__fpml-interoperability-roadmap.md`
 - `doc/plan/draft__semantic-contract-target-and-trade-envelope.md`
-- `doc/plan/active__semantic-simulation-substrate.md`
+- `doc/plan/done__semantic-simulation-substrate.md`
 - `doc/plan/draft__valuation-result-identity-and-provenance.md`
 - existing repo surfaces:
   - `trellis.book.Book`

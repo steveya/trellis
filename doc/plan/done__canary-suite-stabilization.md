@@ -222,7 +222,7 @@ Note:
   comparison wrappers rather than introducing a swaption-specific Monte Carlo
   lane.
 - `QUA-708` and `QUA-709` are now satisfied through the helper-layer extraction
-  workstream in `doc/plan/active__general-helper-layer-extraction.md`. `T40` stays on
+  workstream in `doc/plan/done__general-helper-layer-extraction.md`. `T40` stays on
   the reusable transform and MC helper surfaces, and `T49` stays on the
   semantic-facing basket-credit helper layer rather than the older raw
   nth-to-default boundary.
