@@ -13,7 +13,9 @@ from datetime import date
 from trellis.core.date_utils import build_payment_timeline
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.black import black76_call, black76_put
+from trellis.instruments._agent._period_rate_option_static_leg import (
+    build_period_rate_option_execution_payoff,
+)
 
 
 
@@ -65,47 +67,10 @@ Implementation target: black76_cap."""
         )
         if not timeline:
             return 0.0
-
-        try:
-            forward_curve = (
-                market_state.forecast_forward_curve(spec.rate_index)
-                if spec.rate_index is not None
-                else market_state.forecast_forward_curve()
-            )
-        except Exception:
-            forward_curve = getattr(market_state, "forward_curve", None)
-
-        total_pv = 0.0
-        for period in timeline:
-            if period.payment_date <= market_state.settlement:
-                continue
-
-            accrual = float(period.accrual_fraction or 0.0)
-            if accrual <= 0.0:
-                continue
-
-            t_start = max(float(period.t_start or 0.0), 0.0)
-            t_pay = max(float(period.t_payment or 0.0), 0.0)
-            option_time = t_pay
-
-            if forward_curve is not None and hasattr(forward_curve, "forward_rate"):
-                try:
-                    fwd = forward_curve.forward_rate(max(t_start, 1e-6), t_pay)
-                except TypeError:
-                    fwd = forward_curve.forward_rate(option_time)
-            elif forward_curve is not None and hasattr(forward_curve, "rate"):
-                fwd = forward_curve.rate(option_time)
-            else:
-                raise ValueError("MarketState does not provide a usable forward rate curve")
-
-            df = market_state.discount.discount(t_pay)
-            vol = market_state.vol_surface.black_vol(option_time, spec.strike)
-
-            if fwd >= spec.strike:
-                undiscounted = black76_call(fwd, spec.strike, vol, option_time)
-            else:
-                undiscounted = black76_put(fwd, spec.strike, vol, option_time)
-
-            total_pv += spec.notional * accrual * df * undiscounted
-
-        return float(total_pv)
+        payoff = build_period_rate_option_execution_payoff(
+            spec,
+            timeline,
+            option_side="put",
+            label="agent_floor_timeline",
+        )
+        return float(payoff.evaluate(market_state))

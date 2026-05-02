@@ -7,7 +7,7 @@ claimed by this document.
 
 ## Linked Context
 
-- `doc/plan/draft__contract-execution-ir-and-visitor-framework.md`
+- `doc/plan/active__contract-execution-ir-and-visitor-framework.md`
 - `doc/plan/draft__event-state-control-contract-foundation.md`
 - `doc/plan/draft__automatic-event-state-lowering-plan.md`
 - `doc/plan/draft__contract-ir-arithmetic-asian-solver-follow-on.md`

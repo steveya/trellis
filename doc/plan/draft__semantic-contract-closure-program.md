@@ -21,7 +21,7 @@ Phase 4, quoted-observable, and leg-based planning strands.
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
-- `doc/plan/draft__contract-execution-ir-and-visitor-framework.md`
+- `doc/plan/active__contract-execution-ir-and-visitor-framework.md`
 - `doc/plan/draft__event-state-control-contract-foundation.md`
 - `doc/plan/draft__post-phase-4-semantic-closure-execution-plan.md`
 - `doc/plan/draft__fpml-interoperability-roadmap.md`

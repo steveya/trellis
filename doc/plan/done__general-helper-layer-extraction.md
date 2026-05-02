@@ -315,9 +315,8 @@ Acceptance:
 
 ## Immediate Next Step
 
-Proceed to `QUA-745`.
-
-The remaining work in this plan is closeout and hardening:
+This plan is complete. `QUA-745` landed the closeout and hardening slice,
+so the archive remains here as the reference execution mirror.
 
 - sync the doc/observability tranche to the new helper boundaries
 - keep the acceptance set stable in subsequent full canary reruns

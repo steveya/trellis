@@ -1,7 +1,8 @@
-"""Regression tests for QUA-477 timeline-builder adoption."""
+"""Regression tests for compatibility-wrapper schedule and execution adoption."""
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -11,10 +12,12 @@ from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments._agent.agentcap import AgentCapPayoff, AgentCapSpec
+from trellis.instruments._agent.agentfloor import AgentFloorPayoff, AgentFloorSpec
 from trellis.instruments._agent.swaption import SwaptionPayoff, SwaptionSpec
-from trellis.instruments.cap import CapFloorSpec, CapPayoff
+from trellis.instruments.cap import CapFloorSpec, CapPayoff, FloorPayoff
 from trellis.models.black import black76_call
 from trellis.models.calibration.rates import swaption_terms
+from trellis.models.rate_cap_floor import price_rate_cap_floor_strip_analytical
 from trellis.models.vol_surface import FlatVol
 
 
@@ -56,6 +59,69 @@ def test_agent_cap_matches_reference_cap_payoff_after_timeline_migration():
             rate_index=spec.rate_index,
         )
     ).evaluate(market_state)
+
+    assert agent_price == pytest.approx(reference_price)
+
+
+def test_agent_floor_matches_reference_floor_payoff_after_execution_migration():
+    spec = AgentFloorSpec(
+        notional=1_000_000,
+        strike=0.05,
+        start_date=date(2025, 2, 15),
+        end_date=date(2027, 2, 15),
+        frequency=Frequency.QUARTERLY,
+        day_count=DayCountConvention.ACT_360,
+        rate_index="USD-SOFR-3M",
+    )
+    market_state = _market_state()
+
+    agent_price = AgentFloorPayoff(spec).evaluate(market_state)
+    reference_price = FloorPayoff(
+        CapFloorSpec(
+            notional=spec.notional,
+            strike=spec.strike,
+            start_date=spec.start_date,
+            end_date=spec.end_date,
+            frequency=spec.frequency,
+            day_count=spec.day_count,
+            rate_index=spec.rate_index,
+        )
+    ).evaluate(market_state)
+
+    assert agent_price == pytest.approx(reference_price)
+
+
+def test_agent_cap_preserves_shifted_black_terms_after_execution_migration():
+    spec = AgentCapSpec(
+        notional=1_000_000,
+        strike=0.04,
+        start_date=date(2025, 2, 15),
+        end_date=date(2028, 2, 15),
+        frequency=Frequency.QUARTERLY,
+        day_count=DayCountConvention.ACT_360,
+        rate_index="USD-SOFR-3M",
+        model="shifted_black",
+        shift=0.01,
+    )
+    market_state = replace(
+        _market_state(rate=0.035, vol=0.22),
+        model_parameters={"shift": 0.01, "shifted_black_vol": 0.24},
+    )
+
+    agent_price = AgentCapPayoff(spec).evaluate(market_state)
+    reference_price = price_rate_cap_floor_strip_analytical(
+        market_state,
+        instrument_class="cap",
+        notional=spec.notional,
+        strike=spec.strike,
+        start_date=spec.start_date,
+        end_date=spec.end_date,
+        frequency=spec.frequency,
+        day_count=spec.day_count,
+        rate_index=spec.rate_index,
+        model=spec.model,
+        shift=spec.shift,
+    )
 
     assert agent_price == pytest.approx(reference_price)
 

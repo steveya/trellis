@@ -9,6 +9,7 @@ from typing import Mapping
 from trellis.conventions.day_count import DayCountConvention
 from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
+from trellis.core.types import Frequency
 from trellis.execution.ir import (
     ContractExecutionIR,
     CouponLegExecution,
@@ -22,6 +23,7 @@ def price_static_leg_execution_ir(
     market_state: MarketState,
     *,
     method: str | None = None,
+    terms: Mapping[str, object] | None = None,
 ) -> float:
     """Price a bounded static-leg execution IR from its lowered obligations."""
     if not isinstance(ir, ContractExecutionIR):
@@ -45,6 +47,7 @@ def price_static_leg_execution_ir(
                 obligation,
                 market_state,
                 method=method or _source_metadata(ir).get("requested_method"),
+                terms=terms,
             )
         else:
             raise ValueError(
@@ -151,6 +154,7 @@ def _price_period_rate_option_strip(
     market_state: MarketState,
     *,
     method: object,
+    terms: Mapping[str, object] | None = None,
 ) -> float:
     from trellis.models.rate_cap_floor import (
         CapFloorPeriod,
@@ -175,13 +179,35 @@ def _price_period_rate_option_strip(
         "strike": float(metadata["strike"]),
         "start_date": periods[0].start_date if periods else None,
         "end_date": periods[-1].end_date if periods else None,
+        "frequency": _frequency_enum(metadata.get("payment_frequency")),
         "day_count": _day_count(metadata.get("day_count")),
         "rate_index": str(metadata.get("rate_index") or ""),
     }
+    normalized_terms = dict(terms or {})
+    for key in ("calendar_name", "business_day_adjustment"):
+        if normalized_terms.get(key) is not None:
+            kwargs[key] = normalized_terms[key]
+    if normalized_terms.get("reconstruct_from_spec_schedule"):
+        kwargs.pop("periods", None)
     normalized_method = str(method or "analytical").strip().lower().replace("-", "_")
     if normalized_method == "monte_carlo":
+        for key in (
+            "n_paths",
+            "seed",
+            "n_steps",
+            "mean_reversion",
+            "sigma",
+            "discount_curve",
+            "forward_curve",
+            "vol",
+        ):
+            if normalized_terms.get(key) is not None:
+                kwargs[key] = normalized_terms[key]
         price = price_rate_cap_floor_strip_monte_carlo(market_state, **kwargs)
     else:
+        for key in ("model", "shift", "sabr"):
+            if normalized_terms.get(key) is not None:
+                kwargs[key] = normalized_terms[key]
         price = price_rate_cap_floor_strip_analytical(market_state, **kwargs)
     return _direction_sign(str(metadata.get("direction") or "receive")) * float(price)
 
@@ -272,6 +298,21 @@ def _frequency_per_year(value: object) -> int:
 
 def _direction_sign(direction: str) -> float:
     return 1.0 if direction == "receive" else -1.0
+
+
+def _frequency_enum(value: object) -> Frequency:
+    text = str(value or "").strip().lower().replace("-", "_")
+    mapping = {
+        "annual": Frequency.ANNUAL,
+        "semiannual": Frequency.SEMI_ANNUAL,
+        "semi_annual": Frequency.SEMI_ANNUAL,
+        "quarterly": Frequency.QUARTERLY,
+        "monthly": Frequency.MONTHLY,
+    }
+    try:
+        return mapping[text]
+    except KeyError as exc:
+        raise ValueError(f"Unsupported execution payment frequency {value!r}") from exc
 
 
 def _metadata_dict(items: object) -> Mapping[str, object]:

@@ -2,8 +2,8 @@
 
 ## Status
 
-Draft execution mirror. Linear epic and phased child queue filed for
-implementation sequencing.
+Active execution mirror. The phased Linear queue is live and `QUA-978`
+is the current review-ready implementation slice.
 
 ## Linked Context
 
@@ -16,7 +16,7 @@ implementation sequencing.
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
 - `doc/plan/draft__event-state-control-contract-foundation.md`
 - `doc/plan/draft__external-prior-art-adoption-map.md`
-- `doc/plan/active__semantic-simulation-substrate.md`
+- `doc/plan/done__semantic-simulation-substrate.md`
 - `docs/quant/contract_algebra.rst`
 - `docs/quant/contract_ir.rst`
 - `docs/quant/static_leg_contract_ir.rst`
@@ -39,13 +39,13 @@ implementation sequencing.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-05-01`.
+Status mirror last synced: `2026-05-02`.
 
 Umbrella:
 
 | Ticket | Status | Scope |
 | --- | --- | --- |
-| `QUA-975` | Backlog | Semantic execution: contract execution IR and visitor framework |
+| `QUA-975` | In Progress | Semantic execution: contract execution IR and visitor framework |
 
 Implementation queue:
 
@@ -53,7 +53,7 @@ Implementation queue:
 | --- | --- | --- | --- | --- |
 | 1 | `QUA-976` | Done | XIR.0 - execution seam and authority boundary | none |
 | 2 | `QUA-977` | Done | XIR.1 - static-leg execution visitors and repricing slice | `QUA-976` |
-| 3 | `QUA-978` | Backlog | XIR.2 - execution-backed payoff and adapter migration | `QUA-977` |
+| 3 | `QUA-978` | In Review | XIR.2 - execution-backed payoff and adapter migration | `QUA-977` |
 | 4 | `QUA-979` | Backlog | XIR.3 - dynamic execution bridge for callable structures | `QUA-978` |
 | 5 | `QUA-980` | Backlog | XIR.4 - simulation and future-value bridge | `QUA-979` |
 | 6 | `QUA-981` | Backlog | XIR.5 - aggregation and xVA precursor visitors | `QUA-980` |

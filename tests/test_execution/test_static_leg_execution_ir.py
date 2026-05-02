@@ -23,6 +23,7 @@ from trellis.agent.static_leg_contract import (
 )
 from trellis.conventions.day_count import DayCountConvention
 from trellis.core.market_state import MarketState
+from trellis.core.payoff import ExecutionBackedPayoff
 from trellis.core.types import Frequency
 from trellis.curves.date_aware_flat_curve import DateAwareFlatYieldCurve
 from trellis.curves.yield_curve import YieldCurve
@@ -421,6 +422,21 @@ def test_static_leg_runtime_matches_existing_checked_helpers(contract_factory, l
 
     assert price_static_leg_execution_ir(ir, market) == pytest.approx(
         legacy_price(contract, market),
+        rel=1e-12,
+        abs=1e-8,
+    )
+
+
+def test_execution_backed_payoff_prices_static_leg_ir_through_public_payoff_boundary():
+    contract = _fixed_float_swap()
+    market = _market_state()
+    ir = compile_static_leg_execution_ir(contract)
+    payoff = ExecutionBackedPayoff(ir)
+
+    assert payoff.execution_ir is ir
+    assert payoff.requirements == {"discount_curve", "forward_curve"}
+    assert price_payoff(payoff, market) == pytest.approx(
+        price_static_leg_execution_ir(ir, market),
         rel=1e-12,
         abs=1e-8,
     )

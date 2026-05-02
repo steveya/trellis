@@ -264,7 +264,7 @@ This order matters:
 This workstream is a concrete follow-on under:
 
 - `doc/plan/done__semantic-platform-hardening.md`
-- `doc/plan/active__general-helper-layer-extraction.md`
+- `doc/plan/done__general-helper-layer-extraction.md`
 
 It also becomes the durable `T01` recovery path for:
 

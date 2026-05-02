@@ -13,8 +13,10 @@ This module also provides base classes for two common pricing patterns:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
 from datetime import date
-from typing import Any, Generic, Protocol, TypeAlias, TypeVar, runtime_checkable
+from types import MappingProxyType
+from typing import Any, Generic, Mapping, Protocol, TypeAlias, TypeVar, runtime_checkable
 
 from trellis.core.date_utils import year_fraction
 from trellis.core.differentiable import get_numpy
@@ -259,6 +261,66 @@ class MonteCarloPathPayoff(ResolvedInputPayoff[SpecT, ResolvedT], ABC):
             self.pathwise_payoff(paths, resolved),
             resolved,
         )
+
+
+@dataclass(frozen=True)
+class ExecutionBackedPayoff:
+    """Public payoff adapter for bounded execution IR authorities."""
+
+    execution_ir: object
+    method: str | None = None
+    execution_terms: Mapping[str, object] | None = None
+
+    def __post_init__(self) -> None:
+        from trellis.execution.ir import ContractExecutionIR
+
+        if not isinstance(self.execution_ir, ContractExecutionIR):
+            raise TypeError("execution_ir must be a ContractExecutionIR")
+        object.__setattr__(
+            self,
+            "execution_terms",
+            MappingProxyType(dict(self.execution_terms or {})),
+        )
+
+    @property
+    def requirements(self) -> set[str]:
+        from trellis.execution.visitors.requirements import derive_requirement_hints
+
+        hints = derive_requirement_hints(self.execution_ir)
+        return {
+            _normalize_execution_requirement(requirement)
+            for requirement in hints.market_inputs
+            if _normalize_execution_requirement(requirement)
+        }
+
+    def evaluate(self, market_state: MarketState) -> PricingValue:
+        source_kind = self.execution_ir.source_track.source_kind
+        if source_kind == "static_leg_contract_ir":
+            from trellis.execution.runtime import price_static_leg_execution_ir
+
+            return price_static_leg_execution_ir(
+                self.execution_ir,
+                market_state,
+                method=self.method,
+                terms=self.execution_terms,
+            )
+        raise ValueError(
+            f"ExecutionBackedPayoff does not support source_kind {source_kind!r}"
+        )
+
+
+def _normalize_execution_requirement(requirement: object) -> str:
+    from trellis.core.capabilities import normalize_market_data_requirements
+
+    label = str(requirement or "").strip()
+    if not label:
+        return ""
+    if normalize_market_data_requirements((label,)):
+        return label
+    prefix = label.split(":", 1)[0].strip()
+    if prefix and normalize_market_data_requirements((prefix,)):
+        return prefix
+    return label
 
 
 class DeterministicCashflowPayoff:

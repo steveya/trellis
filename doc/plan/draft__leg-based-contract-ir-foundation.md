@@ -17,7 +17,7 @@ yet tied to a filed Linear child issue.
 - `doc/plan/draft__contract-ir-phase-3-solver-compiler.md`
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
-- `doc/plan/draft__contract-execution-ir-and-visitor-framework.md`
+- `doc/plan/active__contract-execution-ir-and-visitor-framework.md`
 - `doc/plan/draft__event-state-control-contract-foundation.md`
 - `docs/unified_pricing_engine_model_grammar.md`
 - Existing implementation surfaces:
@@ -36,7 +36,7 @@ eventually compile these products from semantic IR rather than from
 hard-coded per-instrument routes.
 
 The companion execution-layer plan lives in
-`doc/plan/draft__contract-execution-ir-and-visitor-framework.md`. This
+`doc/plan/active__contract-execution-ir-and-visitor-framework.md`. This
 document is about semantic representation closure for leg products; the
 execution-IR plan is about the reusable runtime/compiler substrate that
 should sit below that semantic authority.

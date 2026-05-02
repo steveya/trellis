@@ -78,6 +78,14 @@ main labels are:
 - ``spot``
 - ``local_vol_surface``
 
+The execution layer also now has a public payoff adapter:
+``trellis.core.ExecutionBackedPayoff`` wraps an admitted
+``trellis.execution.ContractExecutionIR`` and lets ``price_payoff(...)``
+price it through the same capability-checked public boundary as ordinary
+hand-written payoffs. The admitted cap/floor wrappers under
+``trellis.instruments._agent`` now use that execution-backed path as thin
+compatibility shells rather than carrying separate local repricers.
+
 FX Vanilla Options
 ------------------
 

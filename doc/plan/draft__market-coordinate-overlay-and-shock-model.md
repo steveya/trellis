@@ -11,7 +11,7 @@ Draft. Cross-cutting design document. Not yet an execution mirror.
 - QUA-906 — Phase 4 route retirement / dispatch phaseout
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__valuation-result-identity-and-provenance.md`
-- `doc/plan/active__semantic-simulation-substrate.md`
+- `doc/plan/done__semantic-simulation-substrate.md`
 - existing repo surfaces:
   - `trellis.core.market_state.MarketState`
   - `trellis.curves.scenario_packs`
