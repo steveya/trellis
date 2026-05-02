@@ -874,6 +874,81 @@ def test_persist_canary_batch_record_writes_history_and_latest_views(tmp_path):
     )
 
 
+def test_persist_task_run_record_appends_on_run_id_collision(tmp_path):
+    from trellis.agent.task_run_store import load_task_run_record, persist_task_run_record
+
+    task = {"id": "T13", "title": "European call: theta-method convergence order"}
+    first = persist_task_run_record(
+        task,
+        {
+            "task_id": "T13",
+            "title": task["title"],
+            "success": True,
+            "start_time": "2026-03-24T12:00:00",
+            "elapsed_seconds": 1.0,
+            "reflection": {},
+        },
+        root=tmp_path,
+        persisted_at=datetime(2026, 4, 10, 12, 0, tzinfo=timezone.utc),
+    )
+    second = persist_task_run_record(
+        task,
+        {
+            "task_id": "T13",
+            "title": task["title"],
+            "success": False,
+            "start_time": "2026-03-24T12:00:00",
+            "error": "rerun changed the outcome",
+            "elapsed_seconds": 2.0,
+            "reflection": {},
+        },
+        root=tmp_path,
+        persisted_at=datetime(2026, 4, 10, 12, 5, tzinfo=timezone.utc),
+    )
+
+    assert first["history_path"] != second["history_path"]
+    assert Path(first["history_path"]).exists()
+    assert Path(second["history_path"]).exists()
+
+    first_record = load_task_run_record(first["history_path"])
+    second_record = load_task_run_record(second["history_path"])
+    latest_record = load_task_run_record(second["latest_path"])
+
+    assert first_record["summary"]["success"] is True
+    assert second_record["summary"]["success"] is False
+    assert first_record["run_id"] == "20260324T120000"
+    assert second_record["run_id"].startswith("20260324T120000__")
+    assert latest_record["summary"]["success"] is False
+
+
+def test_persist_task_run_record_supports_standalone_storage_layout(tmp_path):
+    from trellis.agent.task_run_store import persist_task_run_record
+
+    persisted = persist_task_run_record(
+        {"id": "T13", "title": "European call: theta-method convergence order"},
+        {
+            "task_id": "T13",
+            "title": "European call: theta-method convergence order",
+            "success": True,
+            "start_time": "2026-03-24T12:00:00",
+            "reflection": {},
+        },
+        root=tmp_path,
+        storage_layout="standalone",
+        persisted_at=datetime(2026, 4, 10, 12, 0, tzinfo=timezone.utc),
+    )
+
+    assert persisted["history_path"] == str(tmp_path / "history" / "T13" / "20260324T120000.json")
+    assert persisted["latest_path"] == str(tmp_path / "latest" / "T13.json")
+    assert persisted["latest_index_path"] == str(tmp_path / "task_results_latest.json")
+    assert persisted["diagnosis_packet_path"] == str(tmp_path / "diagnostics" / "history" / "T13" / "20260324T120000.json")
+    assert persisted["latest_diagnosis_packet_path"] == str(tmp_path / "diagnostics" / "latest" / "T13.json")
+    assert Path(persisted["history_path"]).exists()
+    assert Path(persisted["latest_path"]).exists()
+    assert Path(persisted["diagnosis_packet_path"]).exists()
+    assert Path(persisted["latest_diagnosis_packet_path"]).exists()
+
+
 def test_load_canary_task_history_excludes_replay_runs_from_benchmark_view(tmp_path):
     from trellis.agent.task_run_store import (
         load_canary_task_history,
@@ -936,6 +1011,45 @@ def test_load_canary_task_history_excludes_replay_runs_from_benchmark_view(tmp_p
     assert len(benchmark_history) == 1
     assert benchmark_history[0]["execution_mode"] == "live"
     assert benchmark_history[0]["benchmark_eligible"] is True
+
+
+def test_persist_canary_batch_record_skips_latest_view_for_synthetic_batches(monkeypatch, tmp_path):
+    from trellis.agent.task_run_store import persist_canary_batch_record
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store._synthetic_canary_source",
+        lambda root: "pytest",
+    )
+
+    persisted = persist_canary_batch_record(
+        canaries=[{"id": "T13", "engine_family": "pde", "complexity": "simple"}],
+        meta={"version": 3},
+        results=[
+            {
+                "task_id": "T13",
+                "canary_id": "T13",
+                "success": True,
+                "elapsed_seconds": 4.0,
+                "attempts": 2,
+                "token_usage_summary": {"total_tokens": 300},
+            }
+        ],
+        model="gpt-5.4-mini",
+        validation="standard",
+        knowledge_light=False,
+        replay=False,
+        requested_task_id=None,
+        requested_subset=None,
+        root=tmp_path,
+        started_at=datetime(2026, 4, 10, 12, 0, tzinfo=timezone.utc),
+        finished_at=datetime(2026, 4, 10, 12, 1, tzinfo=timezone.utc),
+    )
+
+    assert Path(persisted["history_path"]).exists()
+    assert persisted["latest_path"].endswith(
+        "/task_runs/canary_batches/latest/live__full_curated__standard__default__gpt-5.4-mini.json"
+    )
+    assert not Path(persisted["latest_path"]).exists()
 
 
 def test_collect_trace_summaries_reads_analytical_trace_json(tmp_path):

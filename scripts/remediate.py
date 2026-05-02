@@ -2,11 +2,12 @@
 
 Usage:
     python scripts/remediate.py                   # analyze + fix + re-run
-    python scripts/remediate.py --analyze-only     # just show what's wrong
+    python scripts/remediate.py --analyze-only    # just show what's wrong
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import sys
 from collections import Counter
@@ -15,9 +16,34 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
+from trellis.agent.task_run_store import load_latest_task_run_records
 
-def load_all_results() -> list[dict]:
-    """Load all task result files."""
+
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--analyze-only", action="store_true")
+    parser.add_argument(
+        "--source",
+        choices=("latest", "tranches"),
+        default="latest",
+        help="Select canonical latest task runs or root-level task_results tranches.",
+    )
+    return parser.parse_args(argv)
+
+
+def load_all_results(*, source: str = "latest") -> list[dict]:
+    """Load concrete task results from the selected evidence source."""
+    if source == "latest":
+        results = []
+        for record in load_latest_task_run_records(root=ROOT):
+            payload = record.get("result")
+            if _is_result_record(payload):
+                results.append(dict(payload))
+        return results
+
+    if source != "tranches":
+        raise ValueError(f"Unsupported remediation results source: {source}")
+
     results = []
     for f in sorted(ROOT.glob("task_results_*.json")):
         with open(f) as fh:
@@ -524,10 +550,10 @@ def rerun_failed(results: list[dict], model: str = "gpt-5.4-mini"):
 
 
 def main():
-    analyze_only = "--analyze-only" in sys.argv
+    args = _parse_args(sys.argv[1:])
 
     print("Loading results...")
-    results = load_all_results()
+    results = load_all_results(source=args.source)
     if not results:
         print("No results found. Run tasks first.")
         return
@@ -538,7 +564,7 @@ def main():
     categories = analyze_failures(results)
     print_analysis(categories)
 
-    if analyze_only:
+    if args.analyze_only:
         return
 
     print(f"\n{'='*60}")

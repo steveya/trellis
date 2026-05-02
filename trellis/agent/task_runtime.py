@@ -1083,6 +1083,8 @@ def run_task(
     now_fn: Callable[[], datetime] = datetime.now,
     payoff_factory: Callable[[type, object, date], Any] | None = None,
     price_fn: Callable[[Any, Any], float] | None = None,
+    task_run_storage_root: Path | None = None,
+    task_run_storage_layout: str = "repo",
 ) -> dict:
     """Execute one task through the knowledge-aware build pipeline."""
     from trellis.agent.cassette import current_llm_cassette_context
@@ -1419,7 +1421,14 @@ def run_task(
     result_data["run_completed_at"] = now_fn().isoformat()
 
     try:
-        persisted = persist_task_run_record(task, result_data)
+        persist_root = task_run_storage_root or ROOT
+        persist_layout = task_run_storage_layout if task_run_storage_root is not None else "repo"
+        persisted = persist_task_run_record(
+            task,
+            result_data,
+            root=persist_root,
+            storage_layout=persist_layout,
+        )
         result_data["task_run_history_path"] = persisted["history_path"]
         result_data["task_run_latest_path"] = persisted["latest_path"]
         result_data["task_run_latest_index_path"] = persisted["latest_index_path"]
