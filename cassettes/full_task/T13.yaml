@@ -1,5 +1,5 @@
 meta:
-  recorded_at: '2026-04-14T14:54:40.419732+00:00'
+  recorded_at: '2026-05-02T02:29:14.385799+00:00'
   provider: openai
   model: gpt-5.4-mini
   total_calls: 4
@@ -8,9 +8,11 @@ calls:
 - seq: 0
   function: llm_generate
   stage: code_generation
-  prompt_hash: fd1cb0f1627c23ef746e61731ab935d8b86dd70227503a008daf4708a9b19db9
-  response_text: "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
-    \n        return float(price_vanilla_equity_option_pde(market_state, spec, theta=0.5))"
+  prompt_hash: 0c10d7c0794e8c4840bb685bfe21829b8a144342221948da2d3625c64792d9be
+  response_text: "spec = self._spec\n        from trellis.models.equity_option_pde\
+    \ import price_vanilla_equity_option_pde\n\n        price = price_vanilla_equity_option_pde(\n\
+    \            market_state,\n            spec,\n            theta=0.5,\n      \
+    \  )\n        return price"
   prompt_text: "You are implementing the evaluate() method for `EuropeanOptionAnalyticalPayoff`\
     \ in the Trellis pricing library.\n\n## Complete module (skeleton — everything\
     \ is fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a\
@@ -22,40 +24,40 @@ calls:
     Preferred method family: pde_solver\n\nImplementation target: theta_0.5.\"\"\"\
     \n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\
     from datetime import date\n\nfrom trellis.core.market_state import MarketState\n\
-    from trellis.core.types import DayCountConvention\nfrom trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde\n\n\n\n@dataclass(frozen=True)\nclass\
-    \ EuropeanOptionSpec:\n    \"\"\"Specification for Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_0.5\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_0.5.\"\"\"\n    notional:\
-    \ float\n    spot: float\n    strike: float\n    expiry_date: date\n    option_type:\
-    \ str = 'call'\n    day_count: DayCountConvention = DayCountConvention.ACT_365\n\
-    \n\nclass EuropeanOptionAnalyticalPayoff:\n    \"\"\"Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_0.5\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_0.5.\"\"\"\n\n   \
-    \ def __init__(self, spec: EuropeanOptionSpec):\n        self._spec = spec\n\n\
-    \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
-    \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
-    , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        raise NotImplementedError(\"evaluate\
-    \ not yet implemented\")\n\n```\n\n## Your task\nWrite ONLY the body of the `evaluate()`\
-    \ method. The signature is already defined:\n\n    def evaluate(self, market_state:\
-    \ MarketState) -> float:\n\n## Spec fields available via self._spec\n- `self._spec.notional`\
-    \ (float): Notional / number of shares\n- `self._spec.spot` (float): Current spot\
-    \ price\n- `self._spec.strike` (float): Option strike price\n- `self._spec.expiry_date`\
-    \ (date): Option expiry date\n- `self._spec.option_type` (str): Option type: 'call'\
-    \ or 'put'\n- `self._spec.day_count` (DayCountConvention): Day count convention\n\
-    \n## Pricing Method (selected by the quant agent — you MUST use this)\nMethod:\
-    \ **pde_solver**\nReasoning: product_ir_compiler\nSelection basis and assumptions:\n\
-    - Selection basis: `explicit_preference`\n- Assumptions / defaulted context:\n\
-    \  - `simplest_valid_assumption_set`\n  - `finite_difference_discretization_route`\n\
+    from trellis.core.payoff import PricingValue\nfrom trellis.core.types import DayCountConvention\n\
+    from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
+    \n\n\n@dataclass(frozen=True)\nclass EuropeanOptionSpec:\n    \"\"\"Specification\
+    \ for Build a pricer for: European call: theta-method convergence order measurement\n\
+    \nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0\
+    \ (pde_solver), black_scholes (analytical)\nCross-validation harness:\n  internal\
+    \ targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n  external\
+    \ targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+    \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
+    \ theta_0.5.\"\"\"\n    notional: float\n    spot: float\n    strike: float\n\
+    \    expiry_date: date\n    option_type: str = 'call'\n    day_count: DayCountConvention\
+    \ = DayCountConvention.ACT_365\n\n\nclass EuropeanOptionAnalyticalPayoff:\n  \
+    \  \"\"\"Build a pricer for: European call: theta-method convergence order measurement\n\
+    \nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0\
+    \ (pde_solver), black_scholes (analytical)\nCross-validation harness:\n  internal\
+    \ targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n  external\
+    \ targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+    \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
+    \ theta_0.5.\"\"\"\n\n    def __init__(self, spec: EuropeanOptionSpec):\n    \
+    \    self._spec = spec\n\n    @property\n    def spec(self) -> EuropeanOptionSpec:\n\
+    \        return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n\
+    \        return {\"black_vol_surface\", \"discount_curve\"}\n\n    def evaluate(self,\
+    \ market_state: MarketState) -> PricingValue:\n        spec = self._spec\n   \
+    \     raise NotImplementedError(\"evaluate not yet implemented\")\n\n```\n\n##\
+    \ Your task\nWrite ONLY the body of the `evaluate()` method. The signature is\
+    \ already\ndefined in the skeleton.\n\n## Spec fields available via self._spec\n\
+    - `self._spec.notional` (float): Notional / number of shares\n- `self._spec.spot`\
+    \ (float): Current spot price\n- `self._spec.strike` (float): Option strike price\n\
+    - `self._spec.expiry_date` (date): Option expiry date\n- `self._spec.option_type`\
+    \ (str): Option type: 'call' or 'put'\n- `self._spec.day_count` (DayCountConvention):\
+    \ Day count convention\n\n## Pricing Method (selected by the quant agent — you\
+    \ MUST use this)\nMethod: **pde_solver**\nReasoning: product_ir_compiler\nSelection\
+    \ basis and assumptions:\n- Selection basis: `explicit_preference`\n- Assumptions\
+    \ / defaulted context:\n  - `simplest_valid_assumption_set`\n  - `finite_difference_discretization_route`\n\
     \  - `boundary_conditions_required`\n  - `multiple_valid_methods_available`\n\
     Route-bound modules to import and use:\n- `trellis.models.equity_option_pde`\n\
     \nYou MUST import and use these route-bound modules in your implementation.\n\
@@ -223,9 +225,16 @@ calls:
     \ assembly, theta-method solve, and interpolation back to spot to the checked-in\
     \ helper.\n- Only fall back to direct `Grid + BlackScholesOperator + theta_method_1d`\
     \ assembly when the payoff or boundary contract genuinely differs from plain vanilla\
-    \ European call/put.\n## Conventions\n- evaluate() returns a FLOAT — the present\
-    \ value (PV) of the instrument\n- You MUST handle all discounting internally —\
-    \ use `market_state.discount.discount(t)`\n- For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`\n\
+    \ European call/put.\n## Conventions\n- evaluate() returns the present-value scalar\
+    \ (PV) of the instrument\n- On smooth autodiff-compatible routes that scalar may\
+    \ be traced by the active differentiable backend\n- Do not wrap the final present\
+    \ value in `float(...)` solely because `evaluate()` is public\n- Prefer the raw-kernel-plus-wrapper\
+    \ pattern when the route has a reusable resolved-input kernel: keep market resolution\
+    \ in `evaluate()`, keep reusable math in the raw helper, and preserve the same\
+    \ traced PV through both surfaces\n- If a plain Python `float` is required, convert\
+    \ only at an explicit reporting or solver boundary, not at the payoff adapter\
+    \ boundary\n- You MUST handle all discounting internally — use `market_state.discount.discount(t)`\n\
+    - For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`\n\
     - For vol: `market_state.vol_surface.black_vol(T, strike)`\n- For discount factors:\
     \ `market_state.discount.discount(t)`\n- `market_state.fx_rates[pair]` returns\
     \ an `FXRate` wrapper; extract `.spot` before scalar arithmetic or process seeding\n\
@@ -293,16 +302,16 @@ calls:
     \ data is extracted once, then fed into a pricing formula.\n- MonteCarloPathPayoff:\
     \ for simulation-based pricing where paths are\n  generated and payoffs are computed\
     \ per path then averaged.\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom\
-    \ abc import ABC, abstractmethod\nfrom datetime import date\nfrom typing import\
-    \ Generic, Protocol, TypeVar, runtime_checkable\n\nfrom trellis.core.date_utils\
-    \ import year_fraction\nfrom trellis.core.differentiable import get_numpy\nfrom\
-    \ trellis.core.market_state import MarketState\nfrom trellis.core.types import\
-    \ DayCountC\n# [truncated reference]\n```\n\n### Date utilities used by generated\
-    \ payoffs\n```python\n\"\"\"Date utilities: day count conventions, schedule generation,\
-    \ year fractions.\"\"\"\n\nfrom __future__ import annotations\n\nimport calendar\n\
-    from collections.abc import Iterable\nfrom datetime import date, datetime, timedelta\n\
-    from typing import Union\n\nfrom trellis.core.types import (\n    ContractTimeline,\n\
-    \    DayCountConvention,\n    EventSchedule,\n    Frequency,\n    TimelineRole,\n\
+    \ abc import ABC, abstractmethod\nfrom dataclasses import dataclass\nfrom datetime\
+    \ import date\nfrom types import MappingProxyType\nfrom typing import Any, Generic,\
+    \ Mapping, Protocol, TypeAlias, TypeVar, runtime_checkable\n\nfrom trellis.core.date_utils\
+    \ import year_fraction\nfrom trellis.core.differentiable import get_nu\n# [truncated\
+    \ reference]\n```\n\n### Date utilities used by generated payoffs\n```python\n\
+    \"\"\"Date utilities: day count conventions, schedule generation, year fractions.\"\
+    \"\"\n\nfrom __future__ import annotations\n\nimport calendar\nfrom collections.abc\
+    \ import Iterable\nfrom datetime import date, datetime, timedelta\nfrom typing\
+    \ import Union\n\nfrom trellis.core.types import (\n    ContractTimeline,\n  \
+    \  DayCountConvention,\n    EventSchedule,\n    Frequency,\n    TimelineRole,\n\
     )\n\nDateLike = Union[date, datetime]\nExplicitDateInput = ContractTimeline |\
     \ EventSchedule | Iterable[DateLike | str] | str\n\n\ndef _to_date(d: DateLike)\
     \ -> date:\n    \"\"\"Normalize ``date``/``datetime`` inputs to plain ``date``\
@@ -345,18 +354,19 @@ calls:
 - seq: 1
   function: llm_generate_json
   stage: critic
-  prompt_hash: 6f4eb17def00ed87bf1c574ef64c9eebbf08277aadc318914d7cd145e258f711
-  response_text: '{"check_id": "volatility_input_usage", "description": "PDE pricer
-    may ignore required market volatility inputs because the route helper is called
-    with only market_state and spec, with no explicit evidence that the spec/state
-    satisfy the compiled vol binding obligations.", "severity": "warning", "evidence":
-    "evaluate() simply returns price_vanilla_equity_option_pde(market_state, spec,
-    theta=0.5). The implementation never references expiry_black_vol or any volatility
-    field, despite the contract requiring black_vol_surface / expiry_black_vol as
-    market bindings/state obligations.", "remediation": "Ensure the passed MarketState/spec
-    expose and route the required volatility surface inputs into the PDE helper, and
-    verify the pricing result changes materially when flat vol is shifted from 5%
-    to 40%.", "status": "suspect"}'
+  prompt_hash: 9fbc8b63dfe6b7a816a6fd3870cc255389a5bce6352f31b24e3363079d7c72b4
+  response_text: '{"check_id": "volatility_input_usage", "description": "No explicit
+    handling of the volatility input or PDE grid resolution is visible, so the route
+    may be insensitive to vol changes or be using a default/incorrect surface mapping.",
+    "severity": "warning", "evidence": "evaluate() directly forwards market_state
+    and spec to price_vanilla_equity_option_pde(theta=0.5) without any visible validation
+    that the PDE backend is actually wired to black_vol_surface/expiry_black_vol or
+    that the volatility surface is used in pricing. Given the contract’s known failure
+    mode, this is a plausible vol-insensitivity risk.", "remediation": "Verify the
+    exact backend consumes the market_state volatility inputs and the option expiry
+    state correctly; if the wrapper is not already doing this, pass the required market-state
+    fields explicitly and ensure the PDE uses the volatility surface rather than a
+    fixed/default sigma.", "status": "suspect"}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -368,43 +378,46 @@ calls:
     \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
     \ theta_0.5.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import\
     \ dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state import\
-    \ MarketState\nfrom trellis.core.types import DayCountConvention\nfrom trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde\n\n\n\n@dataclass(frozen=True)\nclass\
-    \ EuropeanOptionSpec:\n    \"\"\"Specification for Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_0.5\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_0.5.\"\"\"\n    notional:\
-    \ float\n    spot: float\n    strike: float\n    expiry_date: date\n    option_type:\
-    \ str = 'call'\n    day_count: DayCountConvention = DayCountConvention.ACT_365\n\
-    \n\nclass EuropeanOptionAnalyticalPayoff:\n    \"\"\"Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_0.5\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_0.5.\"\"\"\n\n   \
-    \ def __init__(self, spec: EuropeanOptionSpec):\n        self._spec = spec\n\n\
-    \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
-    \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
-    , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        return float(price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=0.5))\n\n```\n\n## Instrument description\nBuild a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_0.5\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_0.5\n\n## Shared Knowledge\n\
-    ## Distilled Review Memory\n\n- Review principles:\n  - `P1`: Always calibrate\
-    \ rate trees to the discount curve before pricing\n  - `P2`: Callable bonds need\
-    \ issuer_call lattice control, discrete coupons, and exercise=par+coupon\n  -\
-    \ `P3`: Convert vol units at the boundary between market data and model\n- Review\
-    \ checkpoints:\n  - GRID: Use at least 200 spatial points and 200+ time steps.\
-    \ For barrier options, use non-uniform grid concentrated near the barrier.\n \
-    \ - BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
+    \ MarketState\nfrom trellis.core.payoff import PricingValue\nfrom trellis.core.types\
+    \ import DayCountConvention\nfrom trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
+    \n\n\n@dataclass(frozen=True)\nclass EuropeanOptionSpec:\n    \"\"\"Specification\
+    \ for Build a pricer for: European call: theta-method convergence order measurement\n\
+    \nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0\
+    \ (pde_solver), black_scholes (analytical)\nCross-validation harness:\n  internal\
+    \ targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n  external\
+    \ targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+    \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
+    \ theta_0.5.\"\"\"\n    notional: float\n    spot: float\n    strike: float\n\
+    \    expiry_date: date\n    option_type: str = 'call'\n    day_count: DayCountConvention\
+    \ = DayCountConvention.ACT_365\n\n\nclass EuropeanOptionAnalyticalPayoff:\n  \
+    \  \"\"\"Build a pricer for: European call: theta-method convergence order measurement\n\
+    \nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0\
+    \ (pde_solver), black_scholes (analytical)\nCross-validation harness:\n  internal\
+    \ targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n  external\
+    \ targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+    \ target: theta_0.5\nPreferred method family: pde_solver\n\nImplementation target:\
+    \ theta_0.5.\"\"\"\n\n    def __init__(self, spec: EuropeanOptionSpec):\n    \
+    \    self._spec = spec\n\n    @property\n    def spec(self) -> EuropeanOptionSpec:\n\
+    \        return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n\
+    \        return {\"black_vol_surface\", \"discount_curve\"}\n\n    def evaluate(self,\
+    \ market_state: MarketState) -> PricingValue:\n        spec = self._spec\n   \
+    \     spec = self._spec\n        from trellis.models.equity_option_pde import\
+    \ price_vanilla_equity_option_pde\n\n        price = price_vanilla_equity_option_pde(\n\
+    \            market_state,\n            spec,\n            theta=0.5,\n      \
+    \  )\n        return price\n\n```\n\n## Instrument description\nBuild a pricer\
+    \ for: European call: theta-method convergence order measurement\n\nConstruct\
+    \ methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver),\
+    \ black_scholes (analytical)\nCross-validation harness:\n  internal targets: theta_0.5,\
+    \ theta_1.0\n  analytical benchmark: black_scholes\n  external targets: quantlib\n\
+    New component: convergence_order_diagnostic\n\nImplementation target: theta_0.5\n\
+    Preferred method family: pde_solver\n\nImplementation target: theta_0.5\n\n##\
+    \ Shared Knowledge\n## Distilled Review Memory\n\n- Review principles:\n  - `P1`:\
+    \ Always calibrate rate trees to the discount curve before pricing\n  - `P2`:\
+    \ Callable bonds need issuer_call lattice control, discrete coupons, and exercise=par+coupon\n\
+    \  - `P3`: Convert vol units at the boundary between market data and model\n-\
+    \ Review checkpoints:\n  - GRID: Use at least 200 spatial points and 200+ time\
+    \ steps. For barrier options, use non-uniform grid concentrated near the barrier.\n\
+    \  - BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
     \ for calls. For puts: V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.\n  - STABILITY: Crank-Nicolson\
     \ (theta=0.5) is second-order but may oscillate near discontinuities. Use Rannacher\
     \ smoothing (2-4 implicit steps at start) for digital/barrier payoffs.\n- Canonical\
@@ -468,14 +481,20 @@ calls:
 - seq: 2
   function: llm_generate
   stage: code_generation
-  prompt_hash: 419b595dfb473ebb72c719338807a6744b8d43228a784ef69b6bcf75a9fa5456
-  response_text: "spec = self._spec\n\n        if self._spec.option_type not in {\"\
-    call\", \"put\"}:\n            raise ValueError(f\"Unsupported option_type: {spec.option_type!r}\"\
-    )\n\n        if market_state.vol_surface is None:\n            raise ValueError(\"\
-    market_state.vol_surface is required for PDE pricing\")\n        if market_state.discount\
-    \ is None:\n            raise ValueError(\"market_state.discount is required for\
-    \ PDE pricing\")\n\n        from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
-    \n        return float(price_vanilla_equity_option_pde(market_state, spec, theta=1.0))"
+  prompt_hash: eed40a503ddcc2efa7758963c4b370b0f3b93fd10c31b0188aea964ca5bb6863
+  response_text: "import math\n\n        from trellis.models.equity_option_pde import\
+    \ price_vanilla_equity_option_pde\n        from trellis.core.date_utils import\
+    \ year_fraction\n\n        spec = self._spec\n\n        if not market_state.vol_surface\
+    \ or not market_state.discount:\n            raise ValueError(\"MarketState must\
+    \ provide both black_vol_surface and discount_curve\")\n\n        T = year_fraction(market_state.as_of,\
+    \ spec.expiry_date, spec.day_count)\n        if T < 0:\n            raise ValueError(\"\
+    expiry_date must not be before market_state.as_of\")\n\n        vol = market_state.vol_surface.black_vol(T,\
+    \ spec.strike)\n        discount_factor = market_state.discount.discount(T)\n\
+    \        if discount_factor <= 0:\n            raise ValueError(\"discount factor\
+    \ must be positive\")\n\n        r = -math.log(discount_factor) / T if T > 0 else\
+    \ 0.0\n\n        # Thin adapter to the checked-in PDE helper; use theta=1.0 as\
+    \ selected.\n        return price_vanilla_equity_option_pde(\n            market_state,\n\
+    \            spec,\n            theta=1.0,\n        )"
   prompt_text: "You are implementing the evaluate() method for `EuropeanOptionAnalyticalPayoff`\
     \ in the Trellis pricing library.\n\n## Complete module (skeleton — everything\
     \ is fixed except evaluate)\n```python\n\"\"\"Agent-generated payoff: Build a\
@@ -487,40 +506,40 @@ calls:
     Preferred method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\
     \n\nfrom __future__ import annotations\n\nfrom dataclasses import dataclass\n\
     from datetime import date\n\nfrom trellis.core.market_state import MarketState\n\
-    from trellis.core.types import DayCountConvention\nfrom trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde\n\n\n\n@dataclass(frozen=True)\nclass\
-    \ EuropeanOptionSpec:\n    \"\"\"Specification for Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\n    notional:\
-    \ float\n    spot: float\n    strike: float\n    expiry_date: date\n    option_type:\
-    \ str = 'call'\n    day_count: DayCountConvention = DayCountConvention.ACT_365\n\
-    \n\nclass EuropeanOptionAnalyticalPayoff:\n    \"\"\"Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\n\n   \
-    \ def __init__(self, spec: EuropeanOptionSpec):\n        self._spec = spec\n\n\
-    \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
-    \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
-    , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        raise NotImplementedError(\"evaluate\
-    \ not yet implemented\")\n\n```\n\n## Your task\nWrite ONLY the body of the `evaluate()`\
-    \ method. The signature is already defined:\n\n    def evaluate(self, market_state:\
-    \ MarketState) -> float:\n\n## Spec fields available via self._spec\n- `self._spec.notional`\
-    \ (float): Notional / number of shares\n- `self._spec.spot` (float): Current spot\
-    \ price\n- `self._spec.strike` (float): Option strike price\n- `self._spec.expiry_date`\
-    \ (date): Option expiry date\n- `self._spec.option_type` (str): Option type: 'call'\
-    \ or 'put'\n- `self._spec.day_count` (DayCountConvention): Day count convention\n\
-    \n## Pricing Method (selected by the quant agent — you MUST use this)\nMethod:\
-    \ **pde_solver**\nReasoning: product_ir_compiler\nSelection basis and assumptions:\n\
-    - Selection basis: `explicit_preference`\n- Assumptions / defaulted context:\n\
-    \  - `simplest_valid_assumption_set`\n  - `finite_difference_discretization_route`\n\
+    from trellis.core.payoff import PricingValue\nfrom trellis.core.types import DayCountConvention\n\
+    from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
+    \n\n\n@dataclass(frozen=True)\nclass EuropeanOptionSpec:\n    \"\"\"Specification\
+    \ for Build a pricer for: European call: theta-method convergence order measurement\n\
+    \nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0\
+    \ (pde_solver), black_scholes (analytical)\nCross-validation harness:\n  internal\
+    \ targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n  external\
+    \ targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+    \ target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation target:\
+    \ theta_1.0.\"\"\"\n    notional: float\n    spot: float\n    strike: float\n\
+    \    expiry_date: date\n    option_type: str = 'call'\n    day_count: DayCountConvention\
+    \ = DayCountConvention.ACT_365\n\n\nclass EuropeanOptionAnalyticalPayoff:\n  \
+    \  \"\"\"Build a pricer for: European call: theta-method convergence order measurement\n\
+    \nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0\
+    \ (pde_solver), black_scholes (analytical)\nCross-validation harness:\n  internal\
+    \ targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n  external\
+    \ targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+    \ target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation target:\
+    \ theta_1.0.\"\"\"\n\n    def __init__(self, spec: EuropeanOptionSpec):\n    \
+    \    self._spec = spec\n\n    @property\n    def spec(self) -> EuropeanOptionSpec:\n\
+    \        return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n\
+    \        return {\"black_vol_surface\", \"discount_curve\"}\n\n    def evaluate(self,\
+    \ market_state: MarketState) -> PricingValue:\n        spec = self._spec\n   \
+    \     raise NotImplementedError(\"evaluate not yet implemented\")\n\n```\n\n##\
+    \ Your task\nWrite ONLY the body of the `evaluate()` method. The signature is\
+    \ already\ndefined in the skeleton.\n\n## Spec fields available via self._spec\n\
+    - `self._spec.notional` (float): Notional / number of shares\n- `self._spec.spot`\
+    \ (float): Current spot price\n- `self._spec.strike` (float): Option strike price\n\
+    - `self._spec.expiry_date` (date): Option expiry date\n- `self._spec.option_type`\
+    \ (str): Option type: 'call' or 'put'\n- `self._spec.day_count` (DayCountConvention):\
+    \ Day count convention\n\n## Pricing Method (selected by the quant agent — you\
+    \ MUST use this)\nMethod: **pde_solver**\nReasoning: product_ir_compiler\nSelection\
+    \ basis and assumptions:\n- Selection basis: `explicit_preference`\n- Assumptions\
+    \ / defaulted context:\n  - `simplest_valid_assumption_set`\n  - `finite_difference_discretization_route`\n\
     \  - `boundary_conditions_required`\n  - `multiple_valid_methods_available`\n\
     Route-bound modules to import and use:\n- `trellis.models.equity_option_pde`\n\
     \nYou MUST import and use these route-bound modules in your implementation.\n\
@@ -688,9 +707,16 @@ calls:
     \ assembly, theta-method solve, and interpolation back to spot to the checked-in\
     \ helper.\n- Only fall back to direct `Grid + BlackScholesOperator + theta_method_1d`\
     \ assembly when the payoff or boundary contract genuinely differs from plain vanilla\
-    \ European call/put.\n## Conventions\n- evaluate() returns a FLOAT — the present\
-    \ value (PV) of the instrument\n- You MUST handle all discounting internally —\
-    \ use `market_state.discount.discount(t)`\n- For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`\n\
+    \ European call/put.\n## Conventions\n- evaluate() returns the present-value scalar\
+    \ (PV) of the instrument\n- On smooth autodiff-compatible routes that scalar may\
+    \ be traced by the active differentiable backend\n- Do not wrap the final present\
+    \ value in `float(...)` solely because `evaluate()` is public\n- Prefer the raw-kernel-plus-wrapper\
+    \ pattern when the route has a reusable resolved-input kernel: keep market resolution\
+    \ in `evaluate()`, keep reusable math in the raw helper, and preserve the same\
+    \ traced PV through both surfaces\n- If a plain Python `float` is required, convert\
+    \ only at an explicit reporting or solver boundary, not at the payoff adapter\
+    \ boundary\n- You MUST handle all discounting internally — use `market_state.discount.discount(t)`\n\
+    - For forward rates: `market_state.forecast_forward_curve(self._spec.rate_index)`\n\
     - For vol: `market_state.vol_surface.black_vol(T, strike)`\n- For discount factors:\
     \ `market_state.discount.discount(t)`\n- `market_state.fx_rates[pair]` returns\
     \ an `FXRate` wrapper; extract `.spot` before scalar arithmetic or process seeding\n\
@@ -758,16 +784,16 @@ calls:
     \ data is extracted once, then fed into a pricing formula.\n- MonteCarloPathPayoff:\
     \ for simulation-based pricing where paths are\n  generated and payoffs are computed\
     \ per path then averaged.\n\"\"\"\n\nfrom __future__ import annotations\n\nfrom\
-    \ abc import ABC, abstractmethod\nfrom datetime import date\nfrom typing import\
-    \ Generic, Protocol, TypeVar, runtime_checkable\n\nfrom trellis.core.date_utils\
-    \ import year_fraction\nfrom trellis.core.differentiable import get_numpy\nfrom\
-    \ trellis.core.market_state import MarketState\nfrom trellis.core.types import\
-    \ DayCountC\n# [truncated reference]\n```\n\n### Date utilities used by generated\
-    \ payoffs\n```python\n\"\"\"Date utilities: day count conventions, schedule generation,\
-    \ year fractions.\"\"\"\n\nfrom __future__ import annotations\n\nimport calendar\n\
-    from collections.abc import Iterable\nfrom datetime import date, datetime, timedelta\n\
-    from typing import Union\n\nfrom trellis.core.types import (\n    ContractTimeline,\n\
-    \    DayCountConvention,\n    EventSchedule,\n    Frequency,\n    TimelineRole,\n\
+    \ abc import ABC, abstractmethod\nfrom dataclasses import dataclass\nfrom datetime\
+    \ import date\nfrom types import MappingProxyType\nfrom typing import Any, Generic,\
+    \ Mapping, Protocol, TypeAlias, TypeVar, runtime_checkable\n\nfrom trellis.core.date_utils\
+    \ import year_fraction\nfrom trellis.core.differentiable import get_nu\n# [truncated\
+    \ reference]\n```\n\n### Date utilities used by generated payoffs\n```python\n\
+    \"\"\"Date utilities: day count conventions, schedule generation, year fractions.\"\
+    \"\"\n\nfrom __future__ import annotations\n\nimport calendar\nfrom collections.abc\
+    \ import Iterable\nfrom datetime import date, datetime, timedelta\nfrom typing\
+    \ import Union\n\nfrom trellis.core.types import (\n    ContractTimeline,\n  \
+    \  DayCountConvention,\n    EventSchedule,\n    Frequency,\n    TimelineRole,\n\
     )\n\nDateLike = Union[date, datetime]\nExplicitDateInput = ContractTimeline |\
     \ EventSchedule | Iterable[DateLike | str] | str\n\n\ndef _to_date(d: DateLike)\
     \ -> date:\n    \"\"\"Normalize ``date``/``datetime`` inputs to plain ``date``\
@@ -810,19 +836,17 @@ calls:
 - seq: 3
   function: llm_generate_json
   stage: critic
-  prompt_hash: 697ed0854accac1e8905527d002146f6c550e3d7f9af3c23a68c6a2f8f79a05d
+  prompt_hash: 87a168e076cf7cdb83225e034b73db70a80818078bf866d525d3c0990cf42ed4
   response_text: '{"check_id": "volatility_input_usage", "description": "Volatility
-    likely bypassed or flattened because the implementation hard-codes a route helper
-    call without passing any explicit grid controls or validating expiry-vol input,
-    which is a common failure mode for the PDE wrapper to become weakly sensitive
-    to vol changes.", "severity": "warning", "evidence": "`evaluate()` just forwards
-    `market_state` and `spec` to `price_vanilla_equity_option_pde(..., theta=1.0)`
-    after only checking that `market_state.vol_surface` is not None. The code does
-    not extract or transform vol data, and the route contract flags `expiry_black_vol`
-    as an obligation. If the helper ignores or misreads the vol surface, the output
-    can become nearly vol-insensitive.", "remediation": "Ensure the PDE route consumes
-    the correct expiry volatility from `market_state` and that the market-state binding
-    supplies the option expiry vol explicitly to the backend helper.", "status": "suspect"}'
+    is computed from the market state but never used in the pricing call, so the option
+    price may be nearly insensitive to vol changes.", "severity": "error", "evidence":
+    "In evaluate(), `vol = market_state.vol_surface.black_vol(T, spec.strike)` is
+    assigned, but the only pricing action is `price_vanilla_equity_option_pde(market_state,
+    spec, theta=1.0)`. No vol value is passed through or otherwise consumed before
+    returning.", "remediation": "Ensure the selected PDE backend receives and uses
+    the market volatility data (either via a spec/market_state field the backend reads,
+    or by passing the correct calibrated vol input explicitly) so price responds materially
+    to vol changes.", "status": "suspect"}'
   prompt_text: "You are a quantitative model validator reviewing agent-generated pricing\
     \ code.\nYour job is to find deterministic review concerns, not to praise. Be\
     \ adversarial.\n\n## Code to review\n```python\n\"\"\"Agent-generated payoff:\
@@ -834,49 +858,55 @@ calls:
     \ target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation target:\
     \ theta_1.0.\"\"\"\n\nfrom __future__ import annotations\n\nfrom dataclasses import\
     \ dataclass\nfrom datetime import date\n\nfrom trellis.core.market_state import\
-    \ MarketState\nfrom trellis.core.types import DayCountConvention\nfrom trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde\n\n\n\n@dataclass(frozen=True)\nclass\
-    \ EuropeanOptionSpec:\n    \"\"\"Specification for Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\n    notional:\
-    \ float\n    spot: float\n    strike: float\n    expiry_date: date\n    option_type:\
-    \ str = 'call'\n    day_count: DayCountConvention = DayCountConvention.ACT_365\n\
-    \n\nclass EuropeanOptionAnalyticalPayoff:\n    \"\"\"Build a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0.\"\"\"\n\n   \
-    \ def __init__(self, spec: EuropeanOptionSpec):\n        self._spec = spec\n\n\
-    \    @property\n    def spec(self) -> EuropeanOptionSpec:\n        return self._spec\n\
-    \n    @property\n    def requirements(self) -> set[str]:\n        return {\"black_vol_surface\"\
-    , \"discount_curve\"}\n\n    def evaluate(self, market_state: MarketState) ->\
-    \ float:\n        spec = self._spec\n        spec = self._spec\n\n        if self._spec.option_type\
-    \ not in {\"call\", \"put\"}:\n            raise ValueError(f\"Unsupported option_type:\
-    \ {spec.option_type!r}\")\n\n        if market_state.vol_surface is None:\n  \
-    \          raise ValueError(\"market_state.vol_surface is required for PDE pricing\"\
-    )\n        if market_state.discount is None:\n            raise ValueError(\"\
-    market_state.discount is required for PDE pricing\")\n\n        from trellis.models.equity_option_pde\
-    \ import price_vanilla_equity_option_pde\n\n        return float(price_vanilla_equity_option_pde(market_state,\
-    \ spec, theta=1.0))\n\n```\n\n## Instrument description\nBuild a pricer for: European\
-    \ call: theta-method convergence order measurement\n\nConstruct methods: pde_solver\n\
-    Comparison targets: theta_0.5 (pde_solver), theta_1.0 (pde_solver), black_scholes\
-    \ (analytical)\nCross-validation harness:\n  internal targets: theta_0.5, theta_1.0\n\
-    \  analytical benchmark: black_scholes\n  external targets: quantlib\nNew component:\
-    \ convergence_order_diagnostic\n\nImplementation target: theta_1.0\nPreferred\
-    \ method family: pde_solver\n\nImplementation target: theta_1.0\n\n## Shared Knowledge\n\
-    ## Distilled Review Memory\n\n- Review principles:\n  - `P1`: Always calibrate\
-    \ rate trees to the discount curve before pricing\n  - `P2`: Callable bonds need\
-    \ issuer_call lattice control, discrete coupons, and exercise=par+coupon\n  -\
-    \ `P3`: Convert vol units at the boundary between market data and model\n- Review\
-    \ checkpoints:\n  - GRID: Use at least 200 spatial points and 200+ time steps.\
-    \ For barrier options, use non-uniform grid concentrated near the barrier.\n \
-    \ - BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
+    \ MarketState\nfrom trellis.core.payoff import PricingValue\nfrom trellis.core.types\
+    \ import DayCountConvention\nfrom trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
+    import math\n\n\n\n@dataclass(frozen=True)\nclass EuropeanOptionSpec:\n    \"\"\
+    \"Specification for Build a pricer for: European call: theta-method convergence\
+    \ order measurement\n\nConstruct methods: pde_solver\nComparison targets: theta_0.5\
+    \ (pde_solver), theta_1.0 (pde_solver), black_scholes (analytical)\nCross-validation\
+    \ harness:\n  internal targets: theta_0.5, theta_1.0\n  analytical benchmark:\
+    \ black_scholes\n  external targets: quantlib\nNew component: convergence_order_diagnostic\n\
+    \nImplementation target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation\
+    \ target: theta_1.0.\"\"\"\n    notional: float\n    spot: float\n    strike:\
+    \ float\n    expiry_date: date\n    option_type: str = 'call'\n    day_count:\
+    \ DayCountConvention = DayCountConvention.ACT_365\n\n\nclass EuropeanOptionAnalyticalPayoff:\n\
+    \    \"\"\"Build a pricer for: European call: theta-method convergence order measurement\n\
+    \nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0\
+    \ (pde_solver), black_scholes (analytical)\nCross-validation harness:\n  internal\
+    \ targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n  external\
+    \ targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+    \ target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation target:\
+    \ theta_1.0.\"\"\"\n\n    def __init__(self, spec: EuropeanOptionSpec):\n    \
+    \    self._spec = spec\n\n    @property\n    def spec(self) -> EuropeanOptionSpec:\n\
+    \        return self._spec\n\n    @property\n    def requirements(self) -> set[str]:\n\
+    \        return {\"black_vol_surface\", \"discount_curve\"}\n\n    def evaluate(self,\
+    \ market_state: MarketState) -> PricingValue:\n        spec = self._spec\n   \
+    \     from trellis.models.equity_option_pde import price_vanilla_equity_option_pde\n\
+    \        from trellis.core.date_utils import year_fraction\n\n        spec = self._spec\n\
+    \n        if not market_state.vol_surface or not market_state.discount:\n    \
+    \        raise ValueError(\"MarketState must provide both black_vol_surface and\
+    \ discount_curve\")\n\n        T = year_fraction(market_state.as_of, spec.expiry_date,\
+    \ spec.day_count)\n        if T < 0:\n            raise ValueError(\"expiry_date\
+    \ must not be before market_state.as_of\")\n\n        vol = market_state.vol_surface.black_vol(T,\
+    \ spec.strike)\n        discount_factor = market_state.discount.discount(T)\n\
+    \        if discount_factor <= 0:\n            raise ValueError(\"discount factor\
+    \ must be positive\")\n\n        r = -math.log(discount_factor) / T if T > 0 else\
+    \ 0.0\n\n        # Thin adapter to the checked-in PDE helper; use theta=1.0 as\
+    \ selected.\n        return price_vanilla_equity_option_pde(\n        market_state,\n\
+    \        spec,\n        theta=1.0,\n        )\n\n```\n\n## Instrument description\n\
+    Build a pricer for: European call: theta-method convergence order measurement\n\
+    \nConstruct methods: pde_solver\nComparison targets: theta_0.5 (pde_solver), theta_1.0\
+    \ (pde_solver), black_scholes (analytical)\nCross-validation harness:\n  internal\
+    \ targets: theta_0.5, theta_1.0\n  analytical benchmark: black_scholes\n  external\
+    \ targets: quantlib\nNew component: convergence_order_diagnostic\n\nImplementation\
+    \ target: theta_1.0\nPreferred method family: pde_solver\n\nImplementation target:\
+    \ theta_1.0\n\n## Shared Knowledge\n## Distilled Review Memory\n\n- Review principles:\n\
+    \  - `P1`: Always calibrate rate trees to the discount curve before pricing\n\
+    \  - `P2`: Callable bonds need issuer_call lattice control, discrete coupons,\
+    \ and exercise=par+coupon\n  - `P3`: Convert vol units at the boundary between\
+    \ market data and model\n- Review checkpoints:\n  - GRID: Use at least 200 spatial\
+    \ points and 200+ time steps. For barrier options, use non-uniform grid concentrated\
+    \ near the barrier.\n  - BOUNDARY CONDITIONS: Set V(0,t)=0 for calls, V(S_max,t)=S_max-K*exp(-r*(T-t))\
     \ for calls. For puts: V(0,t)=K*exp(-r*(T-t)), V(S_max,t)=0.\n  - STABILITY: Crank-Nicolson\
     \ (theta=0.5) is second-order but may oscillate near discontinuities. Use Rannacher\
     \ smoothing (2-4 implicit steps at start) for digital/barrier payoffs.\n- Canonical\
