@@ -3,7 +3,7 @@
 ## Status
 
 Active execution mirror. The phased Linear queue is live and `QUA-978`
-is the current landed implementation slice.
+is the current review-ready implementation slice.
 
 ## Linked Context
 
@@ -53,7 +53,7 @@ Implementation queue:
 | --- | --- | --- | --- | --- |
 | 1 | `QUA-976` | Done | XIR.0 - execution seam and authority boundary | none |
 | 2 | `QUA-977` | Done | XIR.1 - static-leg execution visitors and repricing slice | `QUA-976` |
-| 3 | `QUA-978` | In Progress | XIR.2 - execution-backed payoff and adapter migration | `QUA-977` |
+| 3 | `QUA-978` | In Review | XIR.2 - execution-backed payoff and adapter migration | `QUA-977` |
 | 4 | `QUA-979` | Backlog | XIR.3 - dynamic execution bridge for callable structures | `QUA-978` |
 | 5 | `QUA-980` | Backlog | XIR.4 - simulation and future-value bridge | `QUA-979` |
 | 6 | `QUA-981` | Backlog | XIR.5 - aggregation and xVA precursor visitors | `QUA-980` |
