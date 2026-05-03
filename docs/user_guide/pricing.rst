@@ -84,7 +84,11 @@ The execution layer also now has a public payoff adapter:
 price it through the same capability-checked public boundary as ordinary
 hand-written payoffs. The admitted cap/floor wrappers under
 ``trellis.instruments._agent`` now use that execution-backed path as thin
-compatibility shells rather than carrying separate local repricers.
+compatibility shells rather than carrying separate local repricers. The same
+public execution boundary now also supports the bounded callable-bond dynamic
+execution slice, so an admitted callable-bond ``DynamicContractIR`` can execute
+through the shared payoff surface once it has been lowered into
+``ContractExecutionIR``.
 
 FX Vanilla Options
 ------------------
@@ -513,6 +517,16 @@ straight-bond reference PV, and generic lattice/PDE event assembly. That keeps
 the callable-bond user surface stable while letting later short-rate claim
 families reuse the same helper substrate instead of copying callable-bond-local
  glue code.
+
+The execution layer now also exposes that callable structure directly for the
+bounded proving slice. ``trellis.execution.compile_dynamic_execution_ir(...)``
+can lower an admitted callable-bond ``DynamicContractIR`` into a route-free
+execution artifact, and
+``trellis.execution.runtime.price_dynamic_execution_ir(...)`` can then execute
+that artifact on the checked lattice or PDE callable-bond helpers. This is
+still intentionally narrow: it proves issuer-callable fixed coupon bonds over a
+static-leg base, not generic dynamic-wrapper execution across all dynamic
+families.
 
 Callable-bond trade runs now also expose ``result.oas_duration`` plus
 ``result.callable_scenario_explain``. The scenario explain payload is the

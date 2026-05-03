@@ -1,6 +1,9 @@
 """Execution visitors that lower route-free IR into numerical runtimes."""
 
 from trellis.execution.visitors.cashflow_expand import known_cashflow_obligations
+from trellis.execution.visitors.event_compile import (
+    compile_callable_bond_spec_from_execution_ir,
+)
 from trellis.execution.visitors.normalize import normalize_execution_ir
 from trellis.execution.visitors.requirements import derive_requirement_hints
 from trellis.execution.visitors.schedule import (
@@ -24,6 +27,7 @@ __all__ = [
     "BermudanBestOfBasketMCInputs",
     "BermudanBestOfBasketMCResult",
     "ExecutionScheduleEntry",
+    "compile_callable_bond_spec_from_execution_ir",
     "derive_requirement_hints",
     "execution_event_schedule",
     "known_cashflow_obligations",
