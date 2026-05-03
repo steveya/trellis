@@ -18,6 +18,37 @@ from trellis.execution.ir import (
 )
 
 
+def price_dynamic_execution_ir(
+    ir: ContractExecutionIR,
+    market_state: MarketState,
+    *,
+    method: str | None = None,
+    terms: Mapping[str, object] | None = None,
+) -> float:
+    """Price one bounded dynamic execution IR through its admitted engine lane."""
+    if not isinstance(ir, ContractExecutionIR):
+        raise TypeError("ir must be a ContractExecutionIR")
+    if ir.source_track.source_kind != "dynamic_contract_ir":
+        raise ValueError("price_dynamic_execution_ir requires a dynamic execution IR")
+    if ir.execution_metadata.unsupported_reasons:
+        raise ValueError(
+            "Cannot price unsupported execution IR: "
+            f"{ir.execution_metadata.unsupported_reasons!r}"
+        )
+
+    if ir.source_track.product_family == "callable_bond":
+        return _price_callable_bond_execution_ir(
+            ir,
+            market_state,
+            method=method,
+            terms=terms,
+        )
+    raise ValueError(
+        "Unsupported dynamic execution product family "
+        f"{ir.source_track.product_family!r}"
+    )
+
+
 def price_static_leg_execution_ir(
     ir: ContractExecutionIR,
     market_state: MarketState,
@@ -54,6 +85,57 @@ def price_static_leg_execution_ir(
                 f"Unsupported static-leg execution obligation {type(obligation).__name__}"
             )
     return float(total)
+
+
+def _price_callable_bond_execution_ir(
+    ir: ContractExecutionIR,
+    market_state: MarketState,
+    *,
+    method: str | None = None,
+    terms: Mapping[str, object] | None = None,
+) -> float:
+    from trellis.execution.visitors.event_compile import (
+        compile_callable_bond_spec_from_execution_ir,
+    )
+    from trellis.models.callable_bond_pde import price_callable_bond_pde
+    from trellis.models.callable_bond_tree import price_callable_bond_tree
+
+    spec = compile_callable_bond_spec_from_execution_ir(ir)
+    normalized_terms = dict(terms or {})
+    normalized_method = _normalized_dynamic_method(method)
+    if normalized_method == "lattice":
+        return float(
+            price_callable_bond_tree(
+                market_state,
+                spec,
+                model=str(normalized_terms.get("model") or "hull_white"),
+                mean_reversion=_optional_float(normalized_terms.get("mean_reversion")),
+                sigma=_optional_float(normalized_terms.get("sigma")),
+                n_steps=_optional_int(normalized_terms.get("n_steps")),
+            )
+        )
+    if normalized_method == "pde":
+        return float(
+            price_callable_bond_pde(
+                market_state,
+                spec,
+                mean_reversion=_optional_float(normalized_terms.get("mean_reversion")),
+                sigma=_optional_float(normalized_terms.get("sigma")),
+                theta=(
+                    0.5
+                    if normalized_terms.get("theta") is None
+                    else float(normalized_terms["theta"])
+                ),
+                n_r=_optional_int(normalized_terms.get("n_r")),
+                n_t=_optional_int(normalized_terms.get("n_t")),
+                r_min=_optional_float(normalized_terms.get("r_min")),
+                r_max=_optional_float(normalized_terms.get("r_max")),
+            )
+        )
+    raise ValueError(
+        "callable-bond dynamic execution currently admits only lattice and pde methods; "
+        f"method={method!r}"
+    )
 
 
 def _price_known_cashflow(
@@ -315,6 +397,27 @@ def _frequency_enum(value: object) -> Frequency:
         raise ValueError(f"Unsupported execution payment frequency {value!r}") from exc
 
 
+def _optional_float(value: object | None) -> float | None:
+    if value is None:
+        return None
+    return float(value)
+
+
+def _optional_int(value: object | None) -> int | None:
+    if value is None:
+        return None
+    return int(value)
+
+
+def _normalized_dynamic_method(method: object) -> str:
+    text = str(method or "lattice").strip().lower().replace("-", "_").replace(" ", "_")
+    if text in {"rate_tree", "tree", "lattice"}:
+        return "lattice"
+    if text in {"pde", "pde_solver", "event_aware_pde"}:
+        return "pde"
+    return text
+
+
 def _metadata_dict(items: object) -> Mapping[str, object]:
     try:
         return MappingProxyType(dict(items or ()))
@@ -329,4 +432,4 @@ def _source_metadata(ir: ContractExecutionIR) -> Mapping[str, object]:
         return MappingProxyType({})
 
 
-__all__ = ["price_static_leg_execution_ir"]
+__all__ = ["price_dynamic_execution_ir", "price_static_leg_execution_ir"]

@@ -2,8 +2,10 @@
 
 Most entrypoints remain conservative and return explicit unsupported execution
 artifacts unless a bounded lowering has been admitted. The static-leg compiler
-now lowers the first checked cohort into route-free execution artifacts, while
-generic and dynamic semantic inputs still fail closed at the execution seam.
+now lowers the first checked cohort into route-free execution artifacts, and
+the dynamic compiler now admits the bounded callable-bond discrete-control
+cohort while keeping broader dynamic families fail-closed at the execution
+seam.
 """
 
 from __future__ import annotations
@@ -619,6 +621,15 @@ def compile_dynamic_execution_ir(
     fail_on_unsupported: bool = False,
 ) -> ContractExecutionIR:
     """Compile a DynamicContractIR onto the XIR.0 seam."""
+    try:
+        from trellis.agent.dynamic_contract_ir import DynamicContractIR
+    except ImportError:  # pragma: no cover - defensive import boundary
+        DynamicContractIR = None
+    if DynamicContractIR is not None and isinstance(dynamic_contract_ir, DynamicContractIR):
+        return lower_dynamic_contract_ir_to_execution_ir(
+            dynamic_contract_ir,
+            fail_on_unsupported=fail_on_unsupported,
+        )
     return compile_contract_execution_ir(
         dynamic_contract_ir,
         source_track=infer_source_track(
@@ -627,6 +638,350 @@ def compile_dynamic_execution_ir(
         ),
         fail_on_unsupported=fail_on_unsupported,
     )
+
+
+def lower_dynamic_contract_ir_to_execution_ir(
+    dynamic_contract_ir: object,
+    *,
+    fail_on_unsupported: bool = False,
+) -> ContractExecutionIR:
+    """Lower an admitted DynamicContractIR cohort into execution IR."""
+    from trellis.agent.dynamic_contract_ir import DecisionEvent, DynamicContractIR
+    from trellis.agent.dynamic_lane_admission import (
+        DiscreteControlLaneAdmission,
+        DynamicLaneAdmissionError,
+        compile_dynamic_lane_admission,
+    )
+
+    if not isinstance(dynamic_contract_ir, DynamicContractIR):
+        raise TypeError("dynamic_contract_ir must be a DynamicContractIR")
+
+    try:
+        admission = compile_dynamic_lane_admission(dynamic_contract_ir)
+    except DynamicLaneAdmissionError as exc:
+        reason = f"dynamic execution lowering not admitted: {exc}"
+        source_track = infer_source_track(
+            dynamic_contract_ir,
+            default_source_kind="dynamic_contract_ir",
+        )
+        if fail_on_unsupported:
+            raise UnsupportedExecutionSemantics(reason) from exc
+        return ContractExecutionIR.empty(
+            source_track=source_track,
+            unsupported_reasons=(reason,),
+            tags=("dynamic", "unsupported_dynamic_execution"),
+        )
+
+    if not isinstance(admission, DiscreteControlLaneAdmission) or admission.semantic_family != "callable_bond":
+        reason = (
+            "dynamic execution lowering not admitted: only the bounded "
+            "callable-bond discrete-control cohort is executable today; "
+            f"semantic_family={admission.semantic_family!r}"
+        )
+        source_track = infer_source_track(
+            dynamic_contract_ir,
+            default_source_kind="dynamic_contract_ir",
+        )
+        if fail_on_unsupported:
+            raise UnsupportedExecutionSemantics(reason)
+        return ContractExecutionIR.empty(
+            source_track=source_track,
+            unsupported_reasons=(reason,),
+            tags=("dynamic", "unsupported_dynamic_execution"),
+        )
+
+    try:
+        terms = _extract_callable_bond_execution_terms(dynamic_contract_ir)
+        base_execution_ir = lower_static_leg_contract_ir_to_execution_ir(
+            dynamic_contract_ir.base_contract,
+            fail_on_unsupported=True,
+        )
+    except (NotImplementedError, UnsupportedExecutionSemantics, ValueError, TypeError) as exc:
+        reason = f"dynamic execution lowering not admitted: {exc}"
+        source_track = infer_source_track(
+            dynamic_contract_ir,
+            default_source_kind="dynamic_contract_ir",
+        )
+        if fail_on_unsupported:
+            raise UnsupportedExecutionSemantics(reason) from exc
+        return ContractExecutionIR.empty(
+            source_track=source_track,
+            unsupported_reasons=(reason,),
+            tags=("dynamic", "unsupported_dynamic_execution"),
+        )
+
+    events = list(base_execution_ir.event_plan.events)
+    decision_events: list[DecisionEvent] = []
+    event_dates: dict[str, object] = {}
+    seen_event_ids = {event.event_id for event in events}
+    for bucket in dynamic_contract_ir.event_program.buckets:
+        for event in bucket.events:
+            event_dates[event.label] = bucket.event_date
+            if not isinstance(event, DecisionEvent):
+                continue
+            decision_events.append(event)
+            execution_event = ExecutionEvent(
+                event_id=f"decision:{event.label}",
+                event_kind="decision",
+                schedule_role=event.schedule_role,
+                phase=event.phase,
+                event_date=bucket.event_date,
+                metadata={
+                    "controller_role": event.controller_role,
+                    "action_names": tuple(action.action_name for action in event.action_set),
+                },
+            )
+            if execution_event.event_id not in seen_event_ids:
+                seen_event_ids.add(execution_event.event_id)
+                events.append(execution_event)
+    for rule in dynamic_contract_ir.event_program.termination_rules:
+        execution_event = ExecutionEvent(
+            event_id=f"termination:{rule.label}",
+            event_kind="termination",
+            schedule_role="call_date",
+            phase="termination",
+            event_date=event_dates.get(rule.event_label),
+            metadata={
+                "trigger": rule.trigger,
+                "settlement_expression": rule.settlement_expression,
+                "event_label": rule.event_label,
+            },
+        )
+        if execution_event.event_id not in seen_event_ids:
+            seen_event_ids.add(execution_event.event_id)
+            events.append(execution_event)
+
+    decision_actions = tuple(
+        DecisionAction(
+            action_id=f"{action.action_name}:{event.label}",
+            action_type=action.action_type,
+            controller_role=event.controller_role,
+            schedule_role=event.schedule_role,
+            state_updates=("contract_alive", "call_decision"),
+        )
+        for event in decision_events
+        for action in event.action_set
+    )
+
+    observables = list(base_execution_ir.observables)
+    if not any(
+        observable.observable_id == f"black_vol_surface:{terms['currency']}"
+        for observable in observables
+    ):
+        observables.append(
+            SurfaceQuoteObservableRef(
+                observable_id=f"black_vol_surface:{terms['currency']}",
+                source_ref=f"market.black_vol_surface:{terms['currency']}",
+                currency=terms["currency"],
+                tags=("volatility", "dynamic_execution"),
+            )
+        )
+
+    market_inputs = set(base_execution_ir.requirement_hints.market_inputs)
+    market_inputs.add(f"black_vol_surface:{terms['currency']}")
+    state_variables = set(base_execution_ir.requirement_hints.state_variables)
+    state_variables.update({"contract_alive", "call_decision"})
+    timeline_roles = set(base_execution_ir.requirement_hints.timeline_roles)
+    timeline_roles.add("call_date")
+
+    semantic_id = (
+        infer_source_track(
+            dynamic_contract_ir,
+            default_source_kind="dynamic_contract_ir",
+        ).semantic_id
+        or "callable_bond"
+    )
+
+    return ContractExecutionIR(
+        source_track=SourceTrack(
+            source_kind="dynamic_contract_ir",
+            semantic_id=semantic_id,
+            product_family="callable_bond",
+            instrument_class="callable_bond",
+            source_ref=f"dynamic_contract_ir:{semantic_id}",
+            source_metadata={
+                "semantic_family": "callable_bond",
+                "notional": terms["notional"],
+                "coupon": terms["coupon"],
+                "start_date": terms["start_date"],
+                "end_date": terms["end_date"],
+                "call_dates": terms["call_dates"],
+                "call_price_quoted": terms["call_price_quoted"],
+                "call_price_cash": terms["call_price_cash"],
+                "currency": terms["currency"],
+                "frequency": terms["frequency"],
+                "day_count": terms["day_count"],
+                "controller_role": admission.controller_role,
+                "decision_style": admission.decision_style,
+            },
+        ),
+        obligations=base_execution_ir.obligations,
+        observables=tuple(observables),
+        event_plan=ExecutionEventPlan(
+            events=tuple(
+                sorted(
+                    events,
+                    key=lambda event: (event.event_date is None, event.event_date, event.phase, event.event_id),
+                )
+            ),
+            phase_order=("payment", "decision", "termination"),
+        ),
+        state_schema=ExecutionStateSchema(
+            fields=(
+                ExecutionStateField(
+                    name="contract_alive",
+                    domain="boolean",
+                    initial_value=True,
+                    tags=("dynamic_execution", "decision_state"),
+                ),
+                ExecutionStateField(
+                    name="call_decision",
+                    domain="enum",
+                    initial_value="continue",
+                    tags=("dynamic_execution", "decision_state"),
+                ),
+            ),
+        ),
+        decision_program=DecisionProgram(
+            actions=decision_actions,
+            controller_role=admission.controller_role,
+        ),
+        settlement_program=SettlementProgram(
+            steps=(
+                SettlementStep(
+                    step_id="callable_bond_embedded_contract",
+                    settlement_kind="embedded_fixed_income_contract",
+                    expression="min(straight_bond_continuation, issuer_call_redemption)",
+                    currency=terms["currency"],
+                    payment_date_role="payment_dates",
+                ),
+                SettlementStep(
+                    step_id="issuer_call_redemption",
+                    settlement_kind="issuer_call_redemption",
+                    expression=str(terms["call_price_cash"]),
+                    currency=terms["currency"],
+                    payment_date_role="call_date",
+                ),
+            ),
+        ),
+        requirement_hints=RequirementHints(
+            market_inputs=frozenset(market_inputs),
+            state_variables=frozenset(state_variables),
+            timeline_roles=frozenset(timeline_roles),
+        ),
+        execution_metadata=ExecutionMetadata(
+            tags=(
+                "route_free_dynamic_execution",
+                "callable_bond",
+                "discrete_control",
+            ),
+            metadata={
+                "candidate_numerical_lanes": admission.candidate_numerical_lanes,
+                "benchmark_cohort_id": admission.benchmark_plan.cohort_id,
+                "benchmark_proving_family": admission.benchmark_plan.proving_family,
+                "benchmark_validation_mode": admission.benchmark_plan.validation_mode,
+                "reference_notes": admission.benchmark_plan.reference_notes,
+            },
+        ),
+    )
+
+
+def _extract_callable_bond_execution_terms(dynamic_contract_ir: object) -> dict[str, object]:
+    from trellis.agent.dynamic_contract_ir import DecisionEvent, DynamicContractIR
+    from trellis.agent.static_leg_contract import (
+        CouponLeg,
+        FixedCouponFormula,
+        KnownCashflowLeg,
+        StaticLegContractIR,
+    )
+
+    if not isinstance(dynamic_contract_ir, DynamicContractIR):
+        raise TypeError("dynamic_contract_ir must be a DynamicContractIR")
+    if not isinstance(dynamic_contract_ir.base_contract, StaticLegContractIR):
+        raise UnsupportedExecutionSemantics(
+            "callable-bond dynamic execution requires a StaticLegContractIR base contract"
+        )
+    if str(dynamic_contract_ir.base_track or "").strip().lower() != "static_leg":
+        raise UnsupportedExecutionSemantics(
+            "callable-bond dynamic execution requires a static-leg base track"
+        )
+
+    coupon_legs = [
+        signed_leg.leg
+        for signed_leg in dynamic_contract_ir.base_contract.legs
+        if isinstance(signed_leg.leg, CouponLeg)
+    ]
+    redemption_legs = [
+        signed_leg.leg
+        for signed_leg in dynamic_contract_ir.base_contract.legs
+        if isinstance(signed_leg.leg, KnownCashflowLeg)
+    ]
+    if len(coupon_legs) != 1 or len(redemption_legs) != 1:
+        raise UnsupportedExecutionSemantics(
+            "callable-bond dynamic execution requires one coupon leg and one redemption leg"
+        )
+
+    coupon_leg = coupon_legs[0]
+    if not isinstance(coupon_leg.coupon_formula, FixedCouponFormula):
+        raise UnsupportedExecutionSemantics(
+            "callable-bond dynamic execution requires a fixed coupon leg"
+        )
+    if len(redemption_legs[0].cashflows) != 1:
+        raise UnsupportedExecutionSemantics(
+            "callable-bond dynamic execution requires one redemption cashflow"
+        )
+
+    redemption = redemption_legs[0].cashflows[0]
+    notional = _constant_notional(coupon_leg)
+    if abs(float(redemption.amount) - notional) > 1e-12:
+        raise UnsupportedExecutionSemantics(
+            "callable-bond dynamic execution requires redemption to match notional"
+        )
+    coupon = float(coupon_leg.coupon_formula.rate)
+    if abs(coupon) > 1.0:
+        raise UnsupportedExecutionSemantics(
+            "callable-bond dynamic execution requires coupon rate semantics in decimal form"
+        )
+
+    decision_events = [
+        event
+        for bucket in dynamic_contract_ir.event_program.buckets
+        for event in bucket.events
+        if isinstance(event, DecisionEvent)
+    ]
+    if not decision_events:
+        raise UnsupportedExecutionSemantics(
+            "callable-bond dynamic execution requires explicit decision events"
+        )
+    for event in decision_events:
+        action_names = {action.action_name for action in event.action_set}
+        if event.controller_role != "issuer" or action_names != {"continue", "redeem"}:
+            raise UnsupportedExecutionSemantics(
+                "callable-bond dynamic execution requires issuer decision events with redeem/continue actions"
+            )
+
+    call_dates = tuple(
+        bucket.event_date
+        for bucket in dynamic_contract_ir.event_program.buckets
+        if any(isinstance(event, DecisionEvent) for event in bucket.events)
+    )
+    if any(call_date >= redemption.payment_date for call_date in call_dates):
+        raise UnsupportedExecutionSemantics(
+            "callable-bond dynamic execution requires call dates strictly before maturity"
+        )
+
+    return {
+        "notional": notional,
+        "coupon": coupon,
+        "start_date": coupon_leg.coupon_periods[0].accrual_start,
+        "end_date": redemption.payment_date,
+        "call_dates": call_dates,
+        "call_price_quoted": 100.0,
+        "call_price_cash": notional,
+        "currency": coupon_leg.currency,
+        "frequency": coupon_leg.payment_frequency,
+        "day_count": coupon_leg.day_count,
+    }
 
 
 def compile_bermudan_best_of_basket_execution_ir(

@@ -304,6 +304,15 @@ class ExecutionBackedPayoff:
                 method=self.method,
                 terms=self.execution_terms,
             )
+        if source_kind == "dynamic_contract_ir":
+            from trellis.execution.runtime import price_dynamic_execution_ir
+
+            return price_dynamic_execution_ir(
+                self.execution_ir,
+                market_state,
+                method=self.method,
+                terms=self.execution_terms,
+            )
         raise ValueError(
             f"ExecutionBackedPayoff does not support source_kind {source_kind!r}"
         )

@@ -45,7 +45,10 @@ from trellis.execution.ir import (
 )
 from trellis.execution.shims import price_bermudan_best_of_basket_from_compat_spec
 from trellis.execution.summary import contract_execution_summary
-from trellis.execution.runtime import price_static_leg_execution_ir
+from trellis.execution.runtime import (
+    price_dynamic_execution_ir,
+    price_static_leg_execution_ir,
+)
 from trellis.execution.visitors import (
     BermudanBestOfBasketLatticeControls,
     BermudanBestOfBasketLatticeResult,
@@ -53,6 +56,7 @@ from trellis.execution.visitors import (
     BermudanBestOfBasketMCInputs,
     BermudanBestOfBasketMCResult,
     ExecutionScheduleEntry,
+    compile_callable_bond_spec_from_execution_ir,
     derive_requirement_hints,
     execution_event_schedule,
     known_cashflow_obligations,
@@ -96,6 +100,7 @@ __all__ = [
     "SwapRateObservableRef",
     "UnsupportedExecutionSemantics",
     "admit_execution_capabilities",
+    "compile_callable_bond_spec_from_execution_ir",
     "compile_bermudan_best_of_basket_execution_ir",
     "compile_contract_execution_ir",
     "compile_contract_ir_execution_ir",
@@ -112,5 +117,6 @@ __all__ = [
     "price_bermudan_best_of_basket_from_compat_spec",
     "price_bermudan_best_of_basket_lattice",
     "price_bermudan_best_of_basket_monte_carlo",
+    "price_dynamic_execution_ir",
     "price_static_leg_execution_ir",
 ]

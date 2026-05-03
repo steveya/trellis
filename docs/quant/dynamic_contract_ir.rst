@@ -174,13 +174,25 @@ The dynamic track is no longer merely representational: Trellis now has
 admitted lane contracts and benchmark-plan packets for one proving cohort in
 each of the automatic, discrete, and continuous control classes.
 
-It is still not an executable fresh-build pricing path. The current support
-contract is:
+It is still not a generic executable fresh-build pricing path. The current
+support contract is:
 
 - dynamic semantics are representable and classifiable
 - one bounded proving cohort per lane can be admitted structurally
 - benchmark or parity plans are attached at admission time
-- route-free executable pricing for those lanes remains future work
+- the callable-bond discrete-control cohort can now lower from
+  ``DynamicContractIR`` into ``trellis.execution.ContractExecutionIR``
+- that bounded callable-bond execution artifact can now compile back onto the
+  checked callable-bond tree/PDE helper inputs and execute through
+  ``trellis.execution.runtime.price_dynamic_execution_ir(...)`` or the public
+  ``trellis.core.ExecutionBackedPayoff`` surface
+- automatic event/state products, swing-style inventory control, continuous
+  financial control, and insurance overlays remain non-executable at the
+  route-free execution layer today
+
+In other words, the dynamic slice now has one real executable proving lane:
+issuer-callable fixed coupon bonds over a static-leg base. The other admitted
+families are still structural or benchmark-plan-only contracts.
 
 Later-Family Route-Retirement Readiness
 ---------------------------------------
@@ -237,6 +249,8 @@ This bounded dynamic slice still does not provide:
 - authoritative fresh-build pricing compiler integration for the admitted lanes
 - quoted-observable dynamic hybrids such as callable CMS-spread range-accrual
   structures
+- executable route-free pricing for autocallable/TARN automatic-event cohorts,
+  swing options, or GMWB-style continuous control
 - executable insurance overlays such as mortality, lapse, or fee behavior on
   top of the financial-control core
 

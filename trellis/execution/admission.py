@@ -64,6 +64,11 @@ def admit_execution_capabilities(
             method=normalized_method,
             available_primitives=_tuple_text(available_primitives),
         )
+    if _is_callable_bond(ir):
+        return _admit_callable_bond(
+            ir,
+            method=normalized_method,
+        )
     return ExecutionCapabilityAdmission(
         method=normalized_method,
         admitted=False,
@@ -235,6 +240,127 @@ def _is_bermudan_best_of_basket(ir: ContractExecutionIR) -> bool:
     )
 
 
+def _is_callable_bond(ir: ContractExecutionIR) -> bool:
+    return (
+        ir.source_track.product_family == "callable_bond"
+        and any(
+            step.settlement_kind == "embedded_fixed_income_contract"
+            for step in ir.settlement_program.steps
+        )
+        and {"continue", "terminate"}.issubset(
+            {
+                action.action_type
+                for action in ir.decision_program.actions
+            }
+        )
+    )
+
+
+def _admit_callable_bond(
+    ir: ContractExecutionIR,
+    *,
+    method: str,
+) -> ExecutionCapabilityAdmission:
+    blockers = _callable_bond_shape_blockers(ir, method=method)
+    if method in {"lattice"}:
+        required = (
+            "embedded_fixed_income_schedule",
+            "issuer_call_discrete_control",
+            "one_factor_short_rate_lattice",
+        )
+        return ExecutionCapabilityAdmission(
+            method=method,
+            admitted=not blockers,
+            required_capabilities=required,
+            matched_capabilities=() if blockers else required,
+            blockers=blockers,
+            engine_family="lattice",
+            source_semantic_id=ir.source_track.semantic_id,
+            product_family=ir.source_track.product_family,
+        )
+    if method in {"pde", "event_aware_pde", "pde_solver"}:
+        required = (
+            "embedded_fixed_income_schedule",
+            "issuer_call_discrete_control",
+            "one_factor_short_rate_event_pde",
+        )
+        return ExecutionCapabilityAdmission(
+            method="pde",
+            admitted=not blockers,
+            required_capabilities=required,
+            matched_capabilities=() if blockers else required,
+            blockers=blockers,
+            engine_family="pde",
+            source_semantic_id=ir.source_track.semantic_id,
+            product_family=ir.source_track.product_family,
+        )
+    return ExecutionCapabilityAdmission(
+        method=method,
+        admitted=False,
+        required_capabilities=(),
+        blockers=(
+            ExecutionCapabilityBlocker(
+                blocker_id="unsupported_execution_method",
+                method=method,
+                missing_primitive="execution_method_profile",
+                message=(
+                    "Callable-bond dynamic execution currently admits only "
+                    "lattice and pde capability profiles."
+                ),
+            ),
+        ),
+        source_semantic_id=ir.source_track.semantic_id,
+        product_family=ir.source_track.product_family,
+    )
+
+
+def _callable_bond_shape_blockers(
+    ir: ContractExecutionIR,
+    *,
+    method: str,
+) -> tuple[ExecutionCapabilityBlocker, ...]:
+    blockers: list[ExecutionCapabilityBlocker] = []
+    if _observable_count(ir, "curve_quote") < 1:
+        blockers.append(
+            ExecutionCapabilityBlocker(
+                blocker_id="missing_discount_curve_observable",
+                method=method,
+                missing_primitive="discount_curve_observable",
+                message="Callable-bond execution requires a discount-curve observable.",
+            )
+        )
+    if _observable_count(ir, "surface_quote") < 1:
+        blockers.append(
+            ExecutionCapabilityBlocker(
+                blocker_id="missing_rates_vol_observable",
+                method=method,
+                missing_primitive="surface_quote_observable",
+                message="Callable-bond execution requires a bounded rate-volatility observable.",
+            )
+        )
+    if not {"continue", "terminate"}.issubset(
+        {action.action_type for action in ir.decision_program.actions}
+    ):
+        blockers.append(
+            ExecutionCapabilityBlocker(
+                blocker_id="missing_issuer_call_control",
+                method=method,
+                missing_primitive="issuer_call_discrete_control",
+                message="Callable-bond execution requires issuer continue/terminate control semantics.",
+            )
+        )
+    if not any(event.event_kind == "payment" for event in ir.event_plan.events):
+        blockers.append(
+            ExecutionCapabilityBlocker(
+                blocker_id="missing_payment_timeline",
+                method=method,
+                missing_primitive="embedded_fixed_income_schedule",
+                message="Callable-bond execution requires payment events from the base fixed-income schedule.",
+            )
+        )
+    return tuple(blockers)
+
+
 def _observable_count(ir: ContractExecutionIR, observable_kind: str) -> int:
     return sum(
         1
@@ -249,6 +375,8 @@ def _normalize_method(method: object) -> str:
         return "monte_carlo"
     if text == "rate_tree":
         return "lattice"
+    if text in {"event_aware_pde", "pde_solver"}:
+        return "pde"
     return text
 
 
