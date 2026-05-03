@@ -2,8 +2,8 @@
 
 ## Status
 
-Active execution mirror. The phased Linear queue is live, `QUA-978`
-has merged, and `QUA-979` is the next implementation slice.
+Active execution mirror. The phased Linear queue is live, `QUA-979`
+has merged, and `QUA-980` is the next implementation slice.
 
 ## Linked Context
 
@@ -39,7 +39,7 @@ has merged, and `QUA-979` is the next implementation slice.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-05-02`.
+Status mirror last synced: `2026-05-03`.
 
 Umbrella:
 
@@ -54,7 +54,7 @@ Implementation queue:
 | 1 | `QUA-976` | Done | XIR.0 - execution seam and authority boundary | none |
 | 2 | `QUA-977` | Done | XIR.1 - static-leg execution visitors and repricing slice | `QUA-976` |
 | 3 | `QUA-978` | Done | XIR.2 - execution-backed payoff and adapter migration | `QUA-977` |
-| 4 | `QUA-979` | Backlog | XIR.3 - dynamic execution bridge for callable structures | `QUA-978` |
+| 4 | `QUA-979` | Done | XIR.3 - dynamic execution bridge for callable structures | `QUA-978` |
 | 5 | `QUA-980` | Backlog | XIR.4 - simulation and future-value bridge | `QUA-979` |
 | 6 | `QUA-981` | Backlog | XIR.5 - aggregation and xVA precursor visitors | `QUA-980` |
 
