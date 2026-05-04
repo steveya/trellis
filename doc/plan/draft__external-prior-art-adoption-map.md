@@ -17,7 +17,7 @@ Draft. Cross-cutting design note. Not yet an execution mirror.
 - `doc/plan/draft__contract-ir-phase-4-route-retirement.md`
 - `doc/plan/draft__quoted-observable-contract-ir-foundation.md`
 - `doc/plan/draft__leg-based-contract-ir-foundation.md`
-- `doc/plan/active__contract-execution-ir-and-visitor-framework.md`
+- `doc/plan/done__contract-execution-ir-and-visitor-framework.md`
 - `doc/plan/draft__market-coordinate-overlay-and-shock-model.md`
 - `doc/plan/draft__valuation-result-identity-and-provenance.md`
 - `doc/plan/draft__valuation-session-and-request-surface.md`
@@ -261,7 +261,7 @@ Do **not** adopt:
 
 Where this should land:
 
-- `active__contract-execution-ir-and-visitor-framework.md`
+- `done__contract-execution-ir-and-visitor-framework.md`
 - `draft__leg-based-contract-ir-foundation.md`
 - `done__semantic-simulation-substrate.md`
 

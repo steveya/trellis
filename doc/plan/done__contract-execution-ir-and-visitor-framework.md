@@ -2,8 +2,9 @@
 
 ## Status
 
-Active execution mirror. The phased Linear queue is live, `QUA-979`
-has merged, and `QUA-980` is the next implementation slice.
+Completed execution mirror for `QUA-975`.
+
+Status mirror last synced: `2026-05-04`.
 
 ## Linked Context
 
@@ -39,13 +40,11 @@ has merged, and `QUA-980` is the next implementation slice.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-05-03`.
-
 Umbrella:
 
 | Ticket | Status | Scope |
 | --- | --- | --- |
-| `QUA-975` | In Progress | Semantic execution: contract execution IR and visitor framework |
+| `QUA-975` | Done | Semantic execution: contract execution IR and visitor framework |
 
 Implementation queue:
 
@@ -55,8 +54,23 @@ Implementation queue:
 | 2 | `QUA-977` | Done | XIR.1 - static-leg execution visitors and repricing slice | `QUA-976` |
 | 3 | `QUA-978` | Done | XIR.2 - execution-backed payoff and adapter migration | `QUA-977` |
 | 4 | `QUA-979` | Done | XIR.3 - dynamic execution bridge for callable structures | `QUA-978` |
-| 5 | `QUA-980` | Backlog | XIR.4 - simulation and future-value bridge | `QUA-979` |
-| 6 | `QUA-981` | Backlog | XIR.5 - aggregation and xVA precursor visitors | `QUA-980` |
+| 5 | `QUA-980` | Done | XIR.4 - simulation and future-value bridge | `QUA-979` |
+| 6 | `QUA-981` | Done | XIR.5 - aggregation and xVA precursor visitors | `QUA-980` |
+
+## Closeout
+
+`QUA-980` finished the execution-to-simulation bridge for the admitted
+swap cohort by compiling `ContractExecutionIR` into the checked
+future-value workflow. `QUA-981` added reusable discounted and
+future-value execution summaries so repricing, diagnostics, and later
+institutional consumers can read the same execution artifact.
+
+With those final slices merged, `QUA-975` is complete. Trellis now has
+one bounded execution substrate spanning static repricing, execution-
+backed payoff reuse, callable dynamic lowering, future-value bridging,
+and first-pass aggregation visitors for the admitted cohort. The
+remaining semantic-closure work now lives in the downstream draft
+tracks, not in this execution-framework umbrella.
 
 ## Purpose
 
