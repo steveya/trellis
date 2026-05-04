@@ -31,6 +31,7 @@ from trellis.agent.valuation_context import build_valuation_context
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.analytical.equity_exotics import price_equity_variance_swap_analytical
+from trellis.models.asian_option import price_arithmetic_asian_option_monte_carlo
 from trellis.models.basket_option import price_basket_option_analytical
 from trellis.models.black import (
     black76_asset_or_nothing_call,
@@ -148,6 +149,10 @@ def _basket_reference(decision, market_state: MarketState) -> float:
 
 def _variance_reference(decision, market_state: MarketState) -> float:
     return float(price_equity_variance_swap_analytical(market_state, decision.call_kwargs["spec"]))
+
+
+def _asian_monte_carlo_reference(decision, market_state: MarketState) -> float:
+    return float(price_arithmetic_asian_option_monte_carlo(market_state, decision.call_kwargs["spec"]))
 
 
 def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
@@ -270,6 +275,18 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             expected_shadow_status="no_match",
             expected_declaration_id="",
             reference_price=None,
+            market_state_factory=_variance_market_state,
+        ),
+        ContractIRSolverParityCase(
+            case_id="asian_call_monte_carlo",
+            family_id="asian_option",
+            description="Arithmetic Asian call on SPX monthly average over 2025 strike 4500",
+            instrument_type="asian_option",
+            preferred_method="monte_carlo",
+            expected_source="request_decomposition",
+            expected_shadow_status="bound",
+            expected_declaration_id="helper_arithmetic_asian_option_monte_carlo",
+            reference_price=_asian_monte_carlo_reference,
             market_state_factory=_variance_market_state,
         ),
     )
@@ -419,7 +436,7 @@ def _family_notes(case_results: list[dict[str, object]]) -> list[str]:
     notes: list[str] = []
     if any(result["family_id"] == "asian_option" for result in case_results):
         notes.append(
-            "Arithmetic Asians remain an explicit Phase 3 blocker: ContractIR decomposition exists, but the structural solver returns an intentional no-match until a checked arithmetic-Asian solver surface is admitted."
+            "Arithmetic Asians remain an explicit Phase 3 blocker: ContractIR decomposition exists, one bounded arithmetic-Asian Monte Carlo helper is now admitted, but the structural solver still returns an intentional no-match for unsupported method families until a checked analytical surface is admitted."
         )
     if any(
         result.get("shadow_status") == "bound"

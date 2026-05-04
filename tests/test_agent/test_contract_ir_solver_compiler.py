@@ -733,6 +733,30 @@ class TestContractIRSolverCompiler:
                 preferred_method="analytical",
             )
 
+    def test_asian_contract_binds_bounded_monte_carlo_lane(self):
+        market_state = _variance_market_state()
+        context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+
+        decision = compile_contract_ir_solver(
+            _asian_contract_ir(),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="monte_carlo",
+        )
+
+        assert decision.declaration_id == "helper_arithmetic_asian_option_monte_carlo"
+        assert decision.callable_ref == "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo"
+        spec = decision.call_kwargs["spec"]
+        assert spec.underlier == "SPX"
+        assert spec.option_type == "call"
+        assert spec.observation_dates == (
+            date(2025, 1, 31),
+            date(2025, 2, 28),
+            date(2025, 3, 31),
+            date(2025, 4, 30),
+        )
+        assert execute_contract_ir_solver_decision(decision) > 0.0
+
     def test_semantic_blueprint_attaches_contract_ir_shadow_when_market_is_bound(self):
         market_state = _equity_market_state()
         contract = make_vanilla_option_contract(

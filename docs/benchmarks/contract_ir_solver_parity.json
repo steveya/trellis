@@ -1,21 +1,21 @@
 {
-  "generated_at": "2026-04-20T04:31:31.628551+00:00",
-  "repo_revision": "d5213965728815ea1b4202d6dc8bbb6419717467",
+  "generated_at": "2026-05-04T13:43:35.848318+00:00",
+  "repo_revision": "0b98959395a61b32f6a34ea1e9154ffbbe0e8c90",
   "status": "completed",
   "families": [
     {
       "family_id": "asian_option",
-      "case_count": 1,
+      "case_count": 2,
       "representation_closed": true,
       "decomposition_closed": true,
       "lowering_closed": false,
       "parity_closed": false,
       "provenance_closed": false,
-      "exact_authority_closed": false,
+      "exact_authority_closed": true,
       "phase4_candidate": false,
       "blocked": true,
       "notes": [
-        "Arithmetic Asians remain an explicit Phase 3 blocker: ContractIR decomposition exists, but the structural solver returns an intentional no-match until a checked arithmetic-Asian solver surface is admitted."
+        "Arithmetic Asians remain an explicit Phase 3 blocker: ContractIR decomposition exists, one bounded arithmetic-Asian Monte Carlo helper is now admitted, but the structural solver still returns an intentional no-match for unsupported method families until a checked analytical surface is admitted."
       ],
       "cases": [
         {
@@ -47,6 +47,42 @@
           "product_ir_instrument": "asian_option",
           "product_ir_payoff_family": "asian_option",
           "passed": true
+        },
+        {
+          "case_id": "asian_call_monte_carlo",
+          "family_id": "asian_option",
+          "description": "Arithmetic Asian call on SPX monthly average over 2025 strike 4500",
+          "instrument_type": "asian_option",
+          "preferred_method": "monte_carlo",
+          "expected_source": "request_decomposition",
+          "expected_shadow_status": "bound",
+          "expected_declaration_id": "helper_arithmetic_asian_option_monte_carlo",
+          "source": "request_decomposition",
+          "shadow_status": "bound",
+          "shadow_error": null,
+          "legacy_route_id": null,
+          "legacy_route_family": "monte_carlo",
+          "legacy_exact_target_refs": [
+            "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo"
+          ],
+          "legacy_exact_target_contains_structural_callable": true,
+          "selection_declaration_id": "helper_arithmetic_asian_option_monte_carlo",
+          "route_free_authority": true,
+          "selection_matches_structural_declaration": true,
+          "authoritative_exact_binding": true,
+          "authority_kind": "exact_backend_fit",
+          "semantic_contract_present": false,
+          "semantic_blueprint_present": false,
+          "product_ir_instrument": "asian_option",
+          "product_ir_payoff_family": "asian_option",
+          "passed": true,
+          "structural_contract_ir": "ContractIR(payoff=Max(args=(Sub(lhs=ArithmeticMean(expr=Spot(underlier_id='SPX'), schedule=FiniteSchedule(dates=(datetime.date(2025, 1, 31), datetime.date(2025, 2, 28), datetime.date(2025, 3, 31), datetime.date(2025, 4, 30), datetime.date(2025, 5, 31), datetime.date(2025, 6, 30), datetime.date(2025, 7, 31), datetime.date(2025, 8, 31), datetime.date(2025, 9, 30), datetime.date(2025, 10, 31), datetime.date(2025, 11, 30), datetime.date(2025, 12, 31)))), rhs=Strike(value=4500.0)), Constant(value=0.0))), exercise=Exercise(style='european', schedule=Singleton(t=datetime.date(2025, 12, 31))), observation=Observation(kind='schedule', schedule=FiniteSchedule(dates=(datetime.date(2025, 1, 31), datetime.date(2025, 2, 28), datetime.date(2025, 3, 31), datetime.date(2025, 4, 30), datetime.date(2025, 5, 31), datetime.date(2025, 6, 30), datetime.date(2025, 7, 31), datetime.date(2025, 8, 31), datetime.date(2025, 9, 30), datetime.date(2025, 10, 31), datetime.date(2025, 11, 30), datetime.date(2025, 12, 31)))), underlying=Underlying(spec=EquitySpot(name='SPX', dynamics='gbm')))",
+          "declaration_id": "helper_arithmetic_asian_option_monte_carlo",
+          "callable_ref": "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo",
+          "structural_price": 632.5420227089422,
+          "reference_price": 632.5420227089422,
+          "abs_diff": 0.0,
+          "rel_diff": 0.0
         }
       ]
     },
@@ -454,7 +490,7 @@
     "families": 6,
     "phase4_candidates": 5,
     "blocked_families": 1,
-    "passed_cases": 10,
+    "passed_cases": 11,
     "failed_cases": 0
   }
 }

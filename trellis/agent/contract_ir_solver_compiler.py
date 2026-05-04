@@ -40,6 +40,7 @@ from trellis.agent.contract_pattern import (
     ConstantPattern,
     ContractPattern,
     ExercisePattern,
+    ObservationPattern,
     PayoffPattern,
     SpotPattern,
     StrikePattern,
@@ -261,6 +262,20 @@ def _vol_at(market_state: MarketState, maturity: float, strike: float) -> float:
     if market_state.vol_surface is None:
         raise ValueError("Structural compiler requires market_state.vol_surface")
     return float(market_state.vol_surface.black_vol(max(float(maturity), 1e-6), float(strike)))
+
+
+def _resolve_underlier_carry_rate(market_state: MarketState, underlier_id: str) -> float:
+    params = dict(getattr(market_state, "model_parameters", None) or {})
+    underlier_carry = dict(params.get("underlier_carry_rates") or {})
+    for key in (
+        underlier_id,
+        underlier_id.upper(),
+        underlier_id.lower(),
+        underlier_id.replace(" ", "_"),
+    ):
+        if key in underlier_carry:
+            return float(underlier_carry[key])
+    return 0.0
 
 
 def _rate_curve_frequency(schedule: FiniteSchedule | None) -> Frequency | None:
@@ -1291,6 +1306,89 @@ def _variance_helper_adapter(
     }
 
 
+@dataclass(frozen=True)
+class _StructuralArithmeticAsianMonteCarloSpec:
+    notional: float
+    underlier: str
+    strike: float
+    expiry_date: date
+    observation_dates: tuple[date, ...]
+    option_type: str
+    day_count: DayCountConvention
+    dividend_yield: float = 0.0
+    n_paths: int = 50_000
+    seed: int | None = 42
+
+
+def _arithmetic_asian_call_monte_carlo_binding_adapter(
+    *,
+    contract_ir: ContractIR,
+    term_environment: ContractIRTermEnvironment,
+    valuation_context: ValuationContext | None,
+    market_state: MarketState,
+    bindings: dict[str, object],
+) -> dict[str, object]:
+    expiry = contract_ir.exercise.schedule
+    if not isinstance(expiry, Singleton):
+        raise ValueError("Arithmetic Asian adapter requires European singleton exercise")
+    averaging_schedule = bindings.get("averaging_schedule")
+    if not isinstance(averaging_schedule, FiniteSchedule):
+        raise ValueError("Arithmetic Asian adapter requires a finite averaging schedule")
+    observation_schedule = getattr(contract_ir.observation, "schedule", None)
+    if contract_ir.observation.kind != "schedule" or not isinstance(observation_schedule, FiniteSchedule):
+        raise ValueError("Arithmetic Asian adapter requires schedule-based observations")
+    if tuple(observation_schedule.dates) != tuple(averaging_schedule.dates):
+        raise ValueError("Arithmetic Asian adapter requires observation schedule parity with the averaging schedule")
+    if averaging_schedule.dates[-1] != expiry.t:
+        raise ValueError("Arithmetic Asian adapter requires expiry-aligned averaging dates")
+    underlier = str(bindings["u"])
+    explicit_dividend_yield_key = "dividend_yield"
+    explicit_dividend_yield = term_environment.raw_term_fields.get(explicit_dividend_yield_key)
+    if explicit_dividend_yield in {None, ""}:
+        explicit_dividend_yield_key = "carry_rate"
+        explicit_dividend_yield = term_environment.raw_term_fields.get(explicit_dividend_yield_key)
+    dividend_yield = (
+        _resolve_underlier_carry_rate(market_state, underlier)
+        if explicit_dividend_yield in {None, ""}
+        else float(explicit_dividend_yield)
+    )
+    n_paths = max(
+        int(
+            term_environment.raw_term_fields.get("n_paths")
+            or term_environment.raw_term_fields.get("n_simulations")
+            or 50_000
+        ),
+        1,
+    )
+    seed_term = term_environment.raw_term_fields.get("seed")
+    seed = 42 if seed_term in {None, ""} else int(seed_term)
+    spec = _StructuralArithmeticAsianMonteCarloSpec(
+        notional=float(term_environment.cash_settlement.notional),
+        underlier=underlier,
+        strike=float(bindings["k"]),
+        expiry_date=expiry.t,
+        observation_dates=tuple(averaging_schedule.dates),
+        option_type="call",
+        day_count=term_environment.accrual_conventions.day_count,
+        dividend_yield=dividend_yield,
+        n_paths=n_paths,
+        seed=seed,
+    )
+    coordinates = ["spot", "discount_curve", "black_vol_surface"]
+    if explicit_dividend_yield not in {None, ""}:
+        coordinates.append(f"term_fields.{explicit_dividend_yield_key}")
+    elif abs(dividend_yield) > 0.0:
+        coordinates.append("model_parameters.underlier_carry_rates")
+    return {
+        "call_kwargs": {
+            "market_state": market_state,
+            "spec": spec,
+        },
+        "value_scale": 1.0,
+        "resolved_market_coordinates": tuple(coordinates),
+    }
+
+
 def _pattern_max_ramp(lhs, rhs) -> ContractPattern:
     return ContractPattern(
         payoff=PayoffPattern(
@@ -1675,6 +1773,47 @@ def _default_registry() -> ContractIRSolverRegistry:
             ),
             precedence=40,
         ),
+        ContractIRSolverDeclaration(
+            authority=ContractIRSolverSelectionAuthority(
+                contract_pattern=ContractPattern(
+                    payoff=PayoffPattern(
+                        kind="max",
+                        args=(
+                            PayoffPattern(
+                                kind="sub",
+                                args=(
+                                    PayoffPattern(
+                                        kind="arithmetic_mean",
+                                        args=(
+                                            SpotPattern(underlier=Wildcard("u")),
+                                            Wildcard("averaging_schedule"),
+                                        ),
+                                    ),
+                                    StrikePattern(value=Wildcard("k")),
+                                ),
+                            ),
+                            ConstantPattern(value=0.0),
+                        ),
+                    ),
+                    exercise=ExercisePattern(style="european"),
+                    observation=ObservationPattern(kind="schedule"),
+                    underlying=UnderlyingPattern(kind="equity_diffusion"),
+                ),
+                admissible_methods=("monte_carlo",),
+                required_term_groups=("cash_settlement", "accrual_conventions"),
+            ),
+            materialization=ContractIRSolverMaterialization(
+                callable_ref="trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo",
+                call_style="helper_call",
+                adapter_ref="trellis.agent.contract_ir_solver_compiler._arithmetic_asian_call_monte_carlo_adapter",
+            ),
+            provenance=ContractIRSolverProvenance(
+                declaration_id="helper_arithmetic_asian_option_monte_carlo",
+                validation_bundle_id="asian_option_contract",
+                helper_refs=("trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo",),
+            ),
+            precedence=39,
+        ),
     )
     return build_contract_ir_solver_registry(declarations)
 
@@ -1721,6 +1860,10 @@ def _basket_put_adapter(**kwargs) -> dict[str, object]:
 
 def _variance_swap_adapter(**kwargs) -> dict[str, object]:
     return _variance_helper_adapter(**kwargs)
+
+
+def _arithmetic_asian_call_monte_carlo_adapter(**kwargs) -> dict[str, object]:
+    return _arithmetic_asian_call_monte_carlo_binding_adapter(**kwargs)
 
 
 _DEFAULT_REGISTRY: ContractIRSolverRegistry | None = None

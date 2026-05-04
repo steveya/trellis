@@ -384,8 +384,8 @@ The current cutover is intentionally bounded:
   cohort that can already decompose into ``ContractIR``
 - unmigrated, under-specified, or structurally unsupported requests still fall
   back to the compatibility route path
-- arithmetic Asians remain fail-closed on the structural compiler path because
-  there is still no checked exact helper surface for that family
+- arithmetic Asians now have one bounded structural Monte Carlo call lane, but
+  analytical closure and broader family retirement remain explicitly blocked
 
 Normalized Term Environment
 ---------------------------
@@ -511,18 +511,19 @@ selection, parity, and provenance evidence to be considered phase-4-ready.
 Explicit Phase 3 Non-goals
 --------------------------
 
-Arithmetic Asians remain representable in ``ContractIR`` but are still an
-explicit no-match for the structural solver. The current checked repository
+Arithmetic Asians remain representable in ``ContractIR`` and now admit one
+bounded structural Monte Carlo call lane, but they are still an explicit
+no-match for unsupported method families. The current checked repository still
 does not expose a dedicated analytical arithmetic-Asian helper that meets the
-Phase 3 migration contract, so those products remain on the legacy route path.
+Phase 3 migration contract, so broad family retirement remains out of scope.
 
 That distinction is deliberate:
 
 - ``ContractIR`` representation coverage is broader than the current migrated
   solver wave
 - "IR exists" must not be read as "the family is already route-free"
-- explicit ``shadow_status = "no_match"`` is part of the governed blocker
-  surface, not an incidental omission
+- a bounded ``shadow_status = "bound"`` Monte Carlo lane does not erase the
+  remaining analytical ``no_match`` blocker surface
 
 Phase 4 is the retirement phase. Phase 3 only proves that the admitted
 families can already price through the structural compiler with parity and
