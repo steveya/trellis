@@ -461,6 +461,30 @@ semantics. The cube remains upstream of institutional counterparty analytics:
 supported values are pre-netting, pre-collateral, and
 pre-``CVA``/``DVA``/``FVA``.
 
+The execution layer now has its first bridge onto that substrate as well.
+For the admitted fixed-float IRS cohort,
+``trellis.execution.visitors.simulation_bridge`` can:
+
+- compile the route-free execution artifact back onto ``SwapSpec``
+- project the same execution artifact onto ``FactorStateSimulationIR``
+- emit the same checked ``FutureValueCube`` through
+  ``build_future_value_cube_from_execution_ir(...)``
+
+That closes the first repricing/future-value reuse loop at the execution seam
+without claiming generic static-leg or xVA-style exposure coverage.
+
+The execution seam now also has the first aggregation-oriented precursor passes
+on top of that bridge:
+
+- ``summarize_discounted_execution_ir(...)`` for deterministic present-value
+  rolls and schedule-aware summary output
+- ``summarize_future_value_execution_ir(...)`` for expected-value and
+  exposure-shape summaries backed by the same execution-fed
+  ``FutureValueCube``
+
+These are explicit reporting precursors, not a claim that Trellis now has a
+full netting, collateral, or xVA engine.
+
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,
 rebuild-based rates sensitivities/scenarios, bucketed vega, and spot-risk
