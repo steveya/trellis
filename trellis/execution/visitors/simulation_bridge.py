@@ -1,7 +1,8 @@
-"""Monte Carlo visitors for route-free execution IR artifacts."""
+"""Simulation and Monte Carlo visitors for route-free execution IR artifacts."""
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field, replace
 from datetime import date
 from types import MappingProxyType
@@ -9,10 +10,28 @@ from typing import Mapping, Sequence
 
 import numpy as raw_np
 
+from trellis.agent.family_lowering_ir import (
+    ConditionalValuationSpec,
+    ControlProgramIR,
+    EventProgramIR,
+    FactorStateSimulationIR,
+    MCMeasureSpec,
+    ObservationProgramSpec,
+    SemanticEventSpec,
+    SemanticEventTimeSpec,
+    SimulatedMarketProjectionSpec,
+    SimulationFactorSpec,
+    SimulationProcessBundleSpec,
+    SimulationStateSpec,
+    StateTransitionSpec,
+)
+from trellis.book import FutureValueCube, FutureValueCubeMetadata
 from trellis.core.date_utils import year_fraction
-from trellis.core.types import DayCountConvention
+from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention, Frequency
 from trellis.execution.admission import admit_execution_capabilities
-from trellis.execution.ir import ContractExecutionIR
+from trellis.execution.ir import ContractExecutionIR, CouponLegExecution
+from trellis.instruments.swap import SwapSpec
 from trellis.models.monte_carlo.engine import MonteCarloEngine
 from trellis.models.monte_carlo.event_state import event_step_indices
 from trellis.models.monte_carlo.lsm import longstaff_schwartz_multistate_result
@@ -21,6 +40,232 @@ from trellis.models.trees.product_lattice import (
     build_product_spot_lattice_2d,
     rollback_product_lattice_2d,
 )
+
+
+def compile_swap_spec_from_execution_ir(ir: ContractExecutionIR) -> SwapSpec:
+    """Compile a bounded fixed-float swap execution IR back into `SwapSpec`."""
+    _require_fixed_float_swap_execution_ir(ir)
+    coupon_legs = tuple(
+        obligation
+        for obligation in ir.obligations
+        if isinstance(obligation, CouponLegExecution)
+    )
+    if len(coupon_legs) != 2:
+        raise ValueError(
+            "fixed_float_swap future-value bridge requires exactly two coupon legs"
+        )
+
+    fixed_leg = _select_coupon_leg(coupon_legs, formula_kind="fixed")
+    floating_leg = _select_coupon_leg(coupon_legs, formula_kind="floating")
+    fixed_metadata = _metadata_dict(fixed_leg.metadata)
+    floating_metadata = _metadata_dict(floating_leg.metadata)
+
+    fixed_notional = float(fixed_metadata.get("notional", 0.0))
+    floating_notional = float(floating_metadata.get("notional", 0.0))
+    if abs(fixed_notional - floating_notional) > 1e-12:
+        raise ValueError(
+            "fixed_float_swap future-value bridge requires matching constant notionals"
+        )
+
+    fixed_periods = tuple(fixed_metadata.get("periods") or ())
+    floating_periods = tuple(floating_metadata.get("periods") or ())
+    if not fixed_periods or not floating_periods:
+        raise ValueError(
+            "fixed_float_swap future-value bridge requires explicit fixed and floating periods"
+        )
+
+    fixed_start = _coerce_date(fixed_periods[0][0], "fixed_start_date")
+    fixed_end = _coerce_date(fixed_periods[-1][1], "fixed_end_date")
+    floating_start = _coerce_date(floating_periods[0][0], "floating_start_date")
+    floating_end = _coerce_date(floating_periods[-1][1], "floating_end_date")
+    if fixed_start != floating_start or fixed_end != floating_end:
+        raise ValueError(
+            "fixed_float_swap future-value bridge requires aligned fixed and floating schedules"
+        )
+
+    fixed_direction = str(fixed_metadata.get("direction") or "").strip().lower()
+    if fixed_direction not in {"pay", "receive"}:
+        raise ValueError(
+            "fixed_float_swap future-value bridge requires a fixed-leg direction"
+        )
+
+    rate_index = str(floating_metadata.get("rate_index") or "").strip()
+    if not rate_index:
+        raise ValueError(
+            "fixed_float_swap future-value bridge requires a floating rate index"
+        )
+
+    return SwapSpec(
+        notional=fixed_notional,
+        fixed_rate=float(fixed_metadata.get("fixed_rate", 0.0)),
+        start_date=fixed_start,
+        end_date=fixed_end,
+        fixed_frequency=_frequency_enum(fixed_metadata.get("payment_frequency")),
+        float_frequency=_frequency_enum(floating_metadata.get("payment_frequency")),
+        fixed_day_count=_day_count_enum(fixed_metadata.get("day_count")),
+        float_day_count=_day_count_enum(floating_metadata.get("day_count")),
+        rate_index=rate_index,
+        is_payer=fixed_direction == "pay",
+    )
+
+
+def compile_factor_state_simulation_ir_from_execution_ir(
+    ir: ContractExecutionIR,
+) -> FactorStateSimulationIR:
+    """Project a bounded execution IR onto the reusable simulation substrate."""
+    spec = compile_swap_spec_from_execution_ir(ir)
+    observables = tuple(sorted(ir.observables, key=lambda item: item.observable_id))
+    fixing_transitions = tuple(
+        StateTransitionSpec(
+            transition_kind="record_fixing",
+            observable_id=_floating_observable_id(ir),
+            state_binding=_event_state_binding(event),
+            phase=str(event.phase or "fixing"),
+        )
+        for event in ir.event_plan.events
+        if event.event_kind == "fixing"
+    )
+
+    return FactorStateSimulationIR(
+        route_id="simulation_substrate",
+        route_family="simulation",
+        engine_family="simulation",
+        product_instrument="interest_rate_swap",
+        payoff_family="conditional_valuation",
+        required_input_ids=tuple(sorted(ir.requirement_hints.market_inputs)),
+        market_data_requirements=frozenset(ir.requirement_hints.market_inputs),
+        timeline_roles=frozenset(ir.requirement_hints.timeline_roles),
+        requested_outputs=("future_value_cube",),
+        reporting_currency=_currency_from_settlement(ir),
+        state_spec=SimulationStateSpec(
+            dimension=1,
+            state_layout="scalar",
+            state_tags=("markov", "factor_state", "short_rate"),
+            coordinate_chart="physical",
+            factors=(
+                SimulationFactorSpec(
+                    factor_name="short_rate",
+                    factor_role="discount_curve_state",
+                    units="rate",
+                ),
+            ),
+        ),
+        process_spec=SimulationProcessBundleSpec(
+            process_family="hull_white_1f",
+            factor_dimension=1,
+            simulation_method="exact",
+            calibration_symbol="resolve_hull_white_monte_carlo_process_inputs",
+            process_tags=("rates", "future_value"),
+        ),
+        projection_spec=SimulatedMarketProjectionSpec(
+            projection_family="hull_white_1f_rate_projection",
+            output_kind="projected_market_view",
+            target_market="interest_rate_curves",
+            state_fields=("short_rate",),
+        ),
+        observation_program=ObservationProgramSpec(
+            observable_ids=tuple(observable.observable_id for observable in observables),
+            observable_kinds=tuple(observable.observable_kind for observable in observables),
+            state_transitions=fixing_transitions,
+            phase_sequence=("observation", "fixing", "payment", "valuation"),
+            terminal_value_symbol="clean_future_value",
+        ),
+        conditional_valuation=ConditionalValuationSpec(
+            valuation_style="exact",
+            model_family="pathwise_projection",
+            basis_family="swap_cashflow_discounting",
+            supports_exact=True,
+            requires_train_eval_split=False,
+        ),
+        event_program=_compile_simulation_event_program(ir, spec),
+        control_program=ControlProgramIR(
+            control_style="identity",
+            controller_role="none",
+        ),
+        measure_spec=MCMeasureSpec(
+            measure_family="risk_neutral",
+            numeraire_binding="discount_curve",
+        ),
+        helper_symbol="price_interest_rate_swap_future_value_cube",
+        market_mapping="execution_ir_to_hull_white_swap_future_value",
+    )
+
+
+def build_future_value_cube_from_execution_ir(
+    ir: ContractExecutionIR,
+    market_state: MarketState,
+    *,
+    position_name: str | None = None,
+    n_paths: int = 10_000,
+    n_steps: int = 120,
+    seed: int | None = None,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
+) -> FutureValueCube:
+    """Build a bounded future-value cube directly from execution IR."""
+    family_ir = compile_factor_state_simulation_ir_from_execution_ir(ir)
+    spec = compile_swap_spec_from_execution_ir(ir)
+    resolved_name = str(
+        position_name
+        or ir.source_track.semantic_id
+        or ir.source_track.product_family
+        or "execution_position"
+    ).strip()
+    if not resolved_name:
+        resolved_name = "execution_position"
+
+    from trellis.models.monte_carlo.simulation_substrate import (
+        price_interest_rate_swap_future_value_cube,
+    )
+
+    cube = price_interest_rate_swap_future_value_cube(
+        name=resolved_name,
+        spec=spec,
+        market_state=market_state,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        seed=seed,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+    )
+    compute_plan = cube.compute_plan
+    compute_plan.update(
+        {
+            "bridge_family": "execution_ir",
+            "execution_source_kind": ir.source_track.source_kind,
+            "execution_product_family": ir.source_track.product_family,
+            "execution_semantic_id": ir.source_track.semantic_id,
+            "simulation_helper_symbol": family_ir.helper_symbol,
+        }
+    )
+    position_provenance = cube.position_provenance
+    payload = dict(position_provenance.get(resolved_name, {}))
+    payload.update(
+        {
+            "execution_source_kind": ir.source_track.source_kind,
+            "execution_product_family": ir.source_track.product_family,
+            "execution_semantic_id": ir.source_track.semantic_id,
+            "bridge_family": "execution_ir",
+        }
+    )
+    position_provenance[resolved_name] = payload
+
+    return FutureValueCube(
+        cube.values,
+        position_names=cube.position_names,
+        observation_times=cube.observation_times,
+        observation_dates=cube.observation_dates,
+        metadata=FutureValueCubeMetadata(
+            measure=cube.measure,
+            numeraire=cube.numeraire,
+            value_semantics=cube.value_semantics,
+            phase_semantics=cube.phase_semantics,
+            state_names=cube.state_names,
+            process_family=cube.process_family,
+            compute_plan=compute_plan,
+            position_provenance=position_provenance,
+        ),
+    )
 
 
 @dataclass(frozen=True)
@@ -400,11 +645,190 @@ def _mapping_proxy(values: Mapping[str, object]) -> Mapping[str, object]:
     return MappingProxyType(dict(sorted(dict(values or {}).items())))
 
 
+def _require_fixed_float_swap_execution_ir(ir: ContractExecutionIR) -> None:
+    if not isinstance(ir, ContractExecutionIR):
+        raise TypeError("ir must be a ContractExecutionIR")
+    if ir.source_track.source_kind != "static_leg_contract_ir":
+        raise ValueError(
+            "future-value bridge currently requires a static_leg_contract_ir execution IR"
+        )
+    if ir.source_track.product_family != "fixed_float_swap":
+        raise ValueError(
+            "future-value bridge currently admits only fixed_float_swap execution IR"
+        )
+    if ir.execution_metadata.unsupported_reasons:
+        raise ValueError(
+            "Cannot bridge unsupported execution IR: "
+            f"{ir.execution_metadata.unsupported_reasons!r}"
+        )
+
+
 def _metadata_dict(items: object) -> dict[str, object]:
     try:
         return dict(items or ())
     except (TypeError, ValueError):
         return {}
+
+
+def _select_coupon_leg(
+    coupon_legs: tuple[CouponLegExecution, ...],
+    *,
+    formula_kind: str,
+) -> CouponLegExecution:
+    matches = [
+        leg
+        for leg in coupon_legs
+        if str(_metadata_dict(leg.metadata).get("formula_kind") or "").strip().lower()
+        == formula_kind
+    ]
+    if len(matches) != 1:
+        raise ValueError(
+            "fixed_float_swap future-value bridge requires exactly one "
+            f"{formula_kind} coupon leg"
+        )
+    return matches[0]
+
+
+def _frequency_enum(value: object) -> Frequency:
+    normalized = str(value or "").strip().lower().replace("-", "_")
+    mapping = {
+        "annual": Frequency.ANNUAL,
+        "semiannual": Frequency.SEMI_ANNUAL,
+        "quarterly": Frequency.QUARTERLY,
+        "monthly": Frequency.MONTHLY,
+    }
+    try:
+        return mapping[normalized]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unsupported future-value bridge payment frequency {value!r}"
+        ) from exc
+
+
+def _day_count_enum(value: object) -> DayCountConvention:
+    normalized = str(value or "").strip().upper().replace("_", "/")
+    mapping = {
+        "ACT/360": DayCountConvention.ACT_360,
+        "ACT/365": DayCountConvention.ACT_365,
+        "ACT/ACT": DayCountConvention.ACT_ACT,
+        "30/360": DayCountConvention.THIRTY_360,
+    }
+    try:
+        return mapping[normalized]
+    except KeyError as exc:
+        raise ValueError(
+            f"Unsupported future-value bridge day count {value!r}"
+        ) from exc
+
+
+def _floating_observable_id(ir: ContractExecutionIR) -> str:
+    for observable in ir.observables:
+        if observable.observable_kind == "forward_rate":
+            return observable.observable_id
+    raise ValueError(
+        "fixed_float_swap future-value bridge requires a forward-rate observable"
+    )
+
+
+def _event_state_binding(event) -> str:
+    metadata = _metadata_dict(event.metadata)
+    leg_id = str(metadata.get("leg_id") or "").strip()
+    period_index = int(metadata.get("period_index", 0))
+    return f"{leg_id}:{period_index}"
+
+
+def _compile_simulation_event_program(
+    ir: ContractExecutionIR,
+    spec: SwapSpec,
+) -> EventProgramIR:
+    by_date: "OrderedDict[date, dict[str, object]]" = OrderedDict()
+    start_date = spec.start_date
+    start_bucket = by_date.setdefault(
+        start_date,
+        {
+            "schedule_roles": [],
+            "phase_sequence": [],
+            "events": [],
+        },
+    )
+    _append_unique(start_bucket["schedule_roles"], "observation_dates")
+    _append_unique(start_bucket["phase_sequence"], "observation")
+    start_bucket["events"].append(
+        SemanticEventSpec(
+            event_name="observation:start",
+            event_kind="observation",
+            schedule_role="observation_dates",
+            phase="observation",
+            value_semantics="future_value_anchor",
+            state_binding="short_rate",
+        )
+    )
+
+    phase_rank = {
+        phase: index
+        for index, phase in enumerate(ir.event_plan.phase_order)
+    }
+    ordered_events = sorted(
+        ir.event_plan.events,
+        key=lambda event: (
+            _coerce_date(event.event_date, "event_date"),
+            phase_rank.get(str(event.phase or ""), len(phase_rank)),
+            event.event_id,
+        ),
+    )
+    for event in ordered_events:
+        event_date = _coerce_date(event.event_date, "event_date")
+        bucket = by_date.setdefault(
+            event_date,
+            {
+                "schedule_roles": [],
+                "phase_sequence": [],
+                "events": [],
+            },
+        )
+        _append_unique(bucket["schedule_roles"], str(event.schedule_role or "").strip())
+        _append_unique(bucket["phase_sequence"], str(event.phase or "").strip())
+        bucket["events"].append(
+            SemanticEventSpec(
+                event_name=event.event_id,
+                event_kind=event.event_kind,
+                schedule_role=event.schedule_role,
+                phase=event.phase,
+                value_semantics=_value_semantics(event.event_kind),
+                state_binding=_event_state_binding(event),
+            )
+        )
+
+    timeline = []
+    for event_date, payload in by_date.items():
+        timeline.append(
+            SemanticEventTimeSpec(
+                event_date=event_date.isoformat(),
+                schedule_roles=tuple(
+                    item for item in payload["schedule_roles"] if item
+                ),
+                phase_sequence=tuple(
+                    item for item in payload["phase_sequence"] if item
+                ),
+                events=tuple(payload["events"]),
+            )
+        )
+    return EventProgramIR(timeline=tuple(timeline))
+
+
+def _append_unique(values: list[str], value: str) -> None:
+    text = str(value or "").strip()
+    if text and text not in values:
+        values.append(text)
+
+
+def _value_semantics(event_kind: str) -> str:
+    mapping = {
+        "observation": "future_value_anchor",
+        "fixing": "projected_forward_reset",
+        "payment": "scheduled_cashflow",
+    }
+    return mapping.get(str(event_kind or "").strip().lower(), "execution_event")
 
 
 def _ordered_underliers(ir: ContractExecutionIR) -> tuple[str, ...]:
@@ -601,6 +1025,9 @@ __all__ = [
     "BermudanBestOfBasketMCControls",
     "BermudanBestOfBasketMCInputs",
     "BermudanBestOfBasketMCResult",
+    "build_future_value_cube_from_execution_ir",
+    "compile_factor_state_simulation_ir_from_execution_ir",
+    "compile_swap_spec_from_execution_ir",
     "price_bermudan_best_of_basket_lattice",
     "price_bermudan_best_of_basket_monte_carlo",
 ]

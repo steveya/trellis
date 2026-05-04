@@ -903,6 +903,30 @@ semantics on the shared floating-boundary observation grid. It is useful for
 checked future-value workflows and validation projections, but it is not yet a
 netting, collateral, or xVA engine.
 
+The same swap workflow can now start from the admitted route-free execution
+artifact instead of a hand-built ``SwapSpec``:
+
+.. code-block:: python
+
+   from trellis.execution import (
+       build_future_value_cube_from_execution_ir,
+       compile_static_leg_execution_ir,
+   )
+
+   execution_ir = compile_static_leg_execution_ir(static_leg_swap_contract_ir)
+   cube = build_future_value_cube_from_execution_ir(
+       execution_ir,
+       market_state,
+       position_name="payer_swap",
+       n_paths=4000,
+       n_steps=120,
+       seed=7,
+   )
+
+Today that execution-backed future-value bridge is intentionally limited to the
+admitted vanilla fixed-float IRS cohort. Basis swaps, bonds, scheduled strips,
+and broader xVA-style aggregation are still later work.
+
 For multiple swaps on one shared simulation, use
 ``price_interest_rate_swap_portfolio_future_value_cube(...)`` and provide a
 name-to-``SwapSpec`` mapping or a ``Book`` of ``SwapPayoff`` positions. The

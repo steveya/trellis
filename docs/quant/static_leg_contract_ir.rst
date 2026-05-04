@@ -164,6 +164,12 @@ The first visitor/runtime set is intentionally small:
 - ``trellis.core.payoff.ExecutionBackedPayoff`` exposes that execution artifact
   through the public payoff boundary so ``price_payoff(...)`` can consume the
   admitted static-leg runtime without route ids
+- ``compile_factor_state_simulation_ir_from_execution_ir(...)`` projects the
+  admitted fixed-float swap execution artifact onto the typed
+  ``FactorStateSimulationIR`` future-value substrate contract
+- ``build_future_value_cube_from_execution_ir(...)`` reuses that same
+  fixed-float swap execution artifact to emit a ``FutureValueCube`` through the
+  checked Hull-White swap future-value runtime
 
 This runtime is still a checked static proving lane, but the admitted
 cap/floor ``_agent`` wrappers now use it as thin compatibility shells.
@@ -192,6 +198,16 @@ The basis-swap family is now materially executable in the bounded slice:
   payment events, and forward-curve requirements
 - the current executable lane is still bounded to two constant-notional
   floating legs on term/overnight indices
+
+The future-value bridge is intentionally narrower than the repricing lane:
+
+- today it admits only the vanilla fixed-float IRS execution cohort
+- it recompiles the route-free execution artifact onto ``SwapSpec`` plus the
+  typed ``FactorStateSimulationIR`` contract
+- it then reuses the checked swap future-value substrate rather than inventing
+  a second swap-local exposure representation
+- basis swaps, bonds, and scheduled rate-option strips still do not have a
+  route-free execution-to-future-value bridge
 
 That boundary is deliberate. Static-leg selection exists now so later compiler
 work can bind against semantic structure, but the support contract still does

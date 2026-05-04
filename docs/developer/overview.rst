@@ -232,6 +232,13 @@ That substrate should be treated as the new reusable base for later netting,
 collateral, and xVA work, not as evidence that those downstream analytics
 already exist.
 
+The execution seam now has its first checked bridge onto that substrate.
+``trellis.execution.visitors.simulation_bridge`` can take the admitted
+fixed-float swap ``ContractExecutionIR``, recompile it onto ``SwapSpec`` plus
+``FactorStateSimulationIR``, and emit the same ``FutureValueCube`` contract
+through the existing swap future-value runtime. That keeps the first supported
+repricing and future-value workflows on one shared execution authority packet.
+
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,
 rebuild-based rates-risk, bucketed-vega, and spot-risk workflows through the
