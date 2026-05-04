@@ -2,8 +2,9 @@
 
 ## Status
 
-Draft. Parking-lot design document. Not yet an execution mirror and not
-yet tied to a filed Linear child issue.
+Foundation note with the first executable lowering slice now filed and
+implemented under `QUA-999`. The broader quoted-observable track remains a
+future-family planning surface.
 
 ## Linked Context
 
@@ -11,6 +12,7 @@ yet tied to a filed Linear child issue.
 - QUA-904 — Phase 2 umbrella for payoff-expression Contract IR
 - QUA-905 — Phase 3 structural solver compiler
 - QUA-906 — Phase 4 route retirement / dispatch phaseout
+- QUA-999 — executable terminal linear quote-spread helper bindings
 - `doc/plan/draft__semantic-contract-closure-program.md`
 - `doc/plan/draft__contract-ir-phase-2-ast-foundation.md`
 - `doc/plan/draft__contract-ir-phase-3-solver-compiler.md`
@@ -277,14 +279,17 @@ Concretely:
 
 ## First Implementable Slice
 
-When this track is eventually promoted from parking lot to active work,
-the first useful scope should stay narrow:
+The first executable scope is intentionally narrow:
 
 1. Terminal linear quote-spread payoffs on curve quotes
 2. Terminal linear skew / spread payoffs on surface quotes
 3. Options on those quoted spreads only when a checked lowering surface
    already exists or can be assembled transparently from existing
    checked primitives
+
+`QUA-999` implements items 1 and 2 through checked helpers in
+`trellis.models.quoted_observable` and structural declarations in
+`trellis.agent.quoted_observable_admission`. Item 3 remains deferred.
 
 Deferred from that first slice:
 
@@ -343,11 +348,10 @@ Examples:
 
 ## Next Steps
 
-1. Keep this document as the parking-lot spec for the quoted-observable
-   track while the payoff-expression Phase 3 / Phase 4 work lands.
-2. Use this document and the leg-based companion doc together when
+1. Use this document and the leg-based companion doc together when
    classifying future "spread" or "basis" products.
-3. Use the event/state/control companion doc when a quote-linked
+2. Use the event/state/control companion doc when a quote-linked
    product also has scheduled coupons, state, or callability.
-4. File a future Linear child issue under QUA-887 for the first active
-   quoted-observable slice.
+3. File separate Linear child issues for options on quoted spreads,
+   path-dependent quote products, or market-coordinate overlay / shock-model
+   integration rather than widening `QUA-999`.

@@ -1442,6 +1442,10 @@ def _weighted_spot(weight_name: str, underlier_name: str):
 
 
 def _default_registry() -> ContractIRSolverRegistry:
+    from trellis.agent.quoted_observable_admission import (
+        quoted_observable_solver_declarations,
+    )
+
     declarations = (
         ContractIRSolverDeclaration(
             authority=ContractIRSolverSelectionAuthority(
@@ -1925,6 +1929,7 @@ def _default_registry() -> ContractIRSolverRegistry:
             ),
             precedence=37,
         ),
+        *quoted_observable_solver_declarations(),
     )
     return build_contract_ir_solver_registry(declarations)
 

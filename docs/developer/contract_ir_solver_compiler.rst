@@ -86,11 +86,19 @@ The default Phase 3 registry admits:
    ``price_arithmetic_asian_option_analytical``
 7. Expiry-aligned arithmetic-Asian call Monte Carlo via
    ``price_arithmetic_asian_option_monte_carlo``
+8. Terminal linear curve-spread and surface-spread quoted-observable helpers
+   via ``trellis.models.quoted_observable``
 
 Arithmetic Asians are still only partially admitted. The compiler now binds a
 bounded analytical approximation plus one bounded Monte Carlo call lane for the
 checked European schedule-based equity-diffusion cohort, but broader
 family-general route retirement remains outside the admitted support contract.
+
+Quoted-observable support is also intentionally bounded. The default registry
+admits only terminal linear ``CurveQuote`` spread and ``SurfaceQuote`` spread /
+vol-skew payoff trees. Options on those quote spreads, path-dependent quote
+products, quote-linked coupon notes, and broad market-coordinate overlay
+integration remain outside this executable cohort.
 
 Failure And Ambiguity Policy
 ----------------------------
