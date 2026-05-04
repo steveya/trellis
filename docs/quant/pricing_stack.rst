@@ -473,6 +473,18 @@ For the admitted fixed-float IRS cohort,
 That closes the first repricing/future-value reuse loop at the execution seam
 without claiming generic static-leg or xVA-style exposure coverage.
 
+The execution seam now also has the first aggregation-oriented precursor passes
+on top of that bridge:
+
+- ``summarize_discounted_execution_ir(...)`` for deterministic present-value
+  rolls and schedule-aware summary output
+- ``summarize_future_value_execution_ir(...)`` for expected-value and
+  exposure-shape summaries backed by the same execution-fed
+  ``FutureValueCube``
+
+These are explicit reporting precursors, not a claim that Trellis now has a
+full netting, collateral, or xVA engine.
+
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,
 rebuild-based rates sensitivities/scenarios, bucketed vega, and spot-risk

@@ -170,6 +170,10 @@ The first visitor/runtime set is intentionally small:
 - ``build_future_value_cube_from_execution_ir(...)`` reuses that same
   fixed-float swap execution artifact to emit a ``FutureValueCube`` through the
   checked Hull-White swap future-value runtime
+- ``summarize_discounted_execution_ir(...)`` and
+  ``summarize_future_value_execution_ir(...)`` now expose the same execution
+  artifact as discounted and future-value precursor summaries for later
+  validation, reporting, and xVA-adjacent workflows
 
 This runtime is still a checked static proving lane, but the admitted
 cap/floor ``_agent`` wrappers now use it as thin compatibility shells.

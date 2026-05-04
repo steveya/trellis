@@ -55,6 +55,8 @@ from trellis.execution.visitors import (
     BermudanBestOfBasketMCControls,
     BermudanBestOfBasketMCInputs,
     BermudanBestOfBasketMCResult,
+    DiscountedExecutionSummary,
+    FutureValueExecutionSummary,
     build_future_value_cube_from_execution_ir,
     ExecutionScheduleEntry,
     compile_callable_bond_spec_from_execution_ir,
@@ -66,6 +68,8 @@ from trellis.execution.visitors import (
     normalize_execution_ir,
     price_bermudan_best_of_basket_lattice,
     price_bermudan_best_of_basket_monte_carlo,
+    summarize_discounted_execution_ir,
+    summarize_future_value_execution_ir,
 )
 
 __all__ = [
@@ -78,6 +82,7 @@ __all__ = [
     "ContingentSettlement",
     "CouponLegExecution",
     "CurveQuoteObservableRef",
+    "DiscountedExecutionSummary",
     "DecisionAction",
     "DecisionProgram",
     "ExecutionCapabilityAdmission",
@@ -90,6 +95,7 @@ __all__ = [
     "ExecutionStateField",
     "ExecutionStateSchema",
     "ForwardRateObservableRef",
+    "FutureValueExecutionSummary",
     "KnownCashflowObligation",
     "ObservableBinding",
     "PeriodRateOptionStripExecution",
@@ -125,4 +131,6 @@ __all__ = [
     "price_bermudan_best_of_basket_monte_carlo",
     "price_dynamic_execution_ir",
     "price_static_leg_execution_ir",
+    "summarize_discounted_execution_ir",
+    "summarize_future_value_execution_ir",
 ]

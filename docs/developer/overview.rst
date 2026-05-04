@@ -239,6 +239,16 @@ fixed-float swap ``ContractExecutionIR``, recompile it onto ``SwapSpec`` plus
 through the existing swap future-value runtime. That keeps the first supported
 repricing and future-value workflows on one shared execution authority packet.
 
+On top of that bridge, ``trellis.execution.visitors.aggregation`` now exposes
+the first execution-backed reporting precursors:
+
+- deterministic discounted summaries from the same execution pricing runtime
+- future-value / exposure-shape summaries backed by the same execution-fed
+  ``FutureValueCube``
+
+Those visitors are the new substrate for later netting/xVA orchestration, not
+evidence that those downstream engines already exist.
+
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,
 rebuild-based rates-risk, bucketed-vega, and spot-risk workflows through the
