@@ -1,13 +1,13 @@
 # ContractIR Structural Compiler Parity
 
-- Generated at: `2026-05-04T13:43:35.848318+00:00`
-- Repo revision: `0b98959395a61b32f6a34ea1e9154ffbbe0e8c90`
+- Generated at: `2026-05-04T17:18:54.553180+00:00`
+- Repo revision: `ec988607163a8d5643b26f71d5209dbf90a59d23`
 
 ## Family Summary
 
 | Family | Rep | Dec | Low | Parity | Prov | Exact authority | Phase 4 candidate |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| asian_option | True | True | False | False | False | True | False |
+| asian_option | True | True | True | True | True | True | True |
 | basket_option | True | True | True | True | True | True | True |
 | digital_option | True | True | True | True | True | True | True |
 | rate_style_swaption | True | True | True | True | True | True | True |
@@ -16,12 +16,14 @@
 
 ## asian_option
 
-- Arithmetic Asians remain an explicit Phase 3 blocker: ContractIR decomposition exists, one bounded arithmetic-Asian Monte Carlo helper is now admitted, but the structural solver still returns an intentional no-match for unsupported method families until a checked analytical surface is admitted.
+- Arithmetic Asians now admit bounded analytical approximation and Monte Carlo structural lanes for European schedule-based equity-diffusion payoffs; broader family retirement remains governed by the admitted schedule-driven support contract.
 
 | Case | Source | Shadow | Declaration | Route | Exact-target contains callable | Passed |
 | --- | --- | --- | --- | --- | --- | --- |
-| asian_call_blocked | request_decomposition | no_match |  |  | None | True |
-- `asian_call_blocked` blocker: `ContractIRSolverNoMatchError` — No admissible structural ContractIR solver declaration was found for method 'analytical' and outputs ('price',).
+| asian_call_analytical | request_decomposition | bound | helper_arithmetic_asian_option_analytical_call |  | True | True |
+- `asian_call_analytical` value parity: structural=`635.2555626779794` reference=`635.2555626779794` abs_diff=`0.0`
+| asian_put_analytical | request_decomposition | bound | helper_arithmetic_asian_option_analytical_put |  | True | True |
+- `asian_put_analytical` value parity: structural=`0.38122467688092687` reference=`0.38122467688092687` abs_diff=`0.0`
 | asian_call_monte_carlo | request_decomposition | bound | helper_arithmetic_asian_option_monte_carlo |  | True | True |
 - `asian_call_monte_carlo` value parity: structural=`632.5420227089422` reference=`632.5420227089422` abs_diff=`0.0`
 

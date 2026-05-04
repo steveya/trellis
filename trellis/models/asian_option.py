@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import math
 from typing import Protocol
 
 import numpy as raw_np
@@ -45,6 +46,17 @@ class ArithmeticAsianOptionMonteCarloResult:
     std_error: float
     n_paths: int
     seed: int | None
+    observation_count: int
+
+
+@dataclass(frozen=True)
+class ArithmeticAsianOptionAnalyticalResult:
+    """Structured result for the bounded arithmetic-Asian analytical lane."""
+
+    price: float
+    matched_mean: float
+    matched_second_moment: float
+    effective_lognormal_vol: float
     observation_count: int
 
 
@@ -193,6 +205,97 @@ def price_asian_option_monte_carlo(
     return float(price_asian_option_monte_carlo_result(market_state, spec).price)
 
 
+def price_arithmetic_asian_option_analytical_result(
+    market_state: MarketState,
+    spec: ArithmeticAsianOptionSpecLike,
+) -> ArithmeticAsianOptionAnalyticalResult:
+    """Price one bounded arithmetic Asian through discrete moment matching."""
+    settlement = market_state.settlement or market_state.as_of
+    if settlement is None:
+        raise ValueError("Arithmetic Asian analytical helper requires market_state.settlement or as_of")
+
+    day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
+    strike = float(getattr(spec, "strike"))
+    expiry_date = getattr(spec, "expiry_date")
+    maturity = max(float(year_fraction(settlement, expiry_date, day_count)), 0.0)
+    if market_state.discount is None:
+        raise ValueError("Arithmetic Asian analytical helper requires market_state.discount")
+    if market_state.vol_surface is None:
+        raise ValueError("Arithmetic Asian analytical helper requires market_state.vol_surface")
+
+    observation_times = _resolve_observation_times(
+        settlement=settlement,
+        expiry_date=expiry_date,
+        day_count=day_count,
+        maturity=maturity,
+        spec=spec,
+    )
+    spot = _resolve_spot(market_state, spec)
+    if spot <= 0.0:
+        raise ValueError("Arithmetic Asian analytical helper requires strictly positive spot")
+
+    notional = float(getattr(spec, "notional", 1.0))
+    option_type = normalized_option_type(getattr(spec, "option_type", "call"))
+    dividend_yield = float(getattr(spec, "dividend_yield", 0.0) or 0.0)
+    rate = float(market_state.discount.zero_rate(max(maturity, 1e-6)))
+    sigma = float(market_state.vol_surface.black_vol(max(maturity, 1e-6), strike))
+    if sigma < 0.0:
+        raise ValueError(
+            f"Arithmetic Asian analytical helper requires non-negative volatility, got {sigma}"
+        )
+
+    if maturity <= 0.0:
+        intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
+        return ArithmeticAsianOptionAnalyticalResult(
+            price=notional * intrinsic,
+            matched_mean=spot,
+            matched_second_moment=spot * spot,
+            effective_lognormal_vol=0.0,
+            observation_count=len(observation_times),
+        )
+
+    matched_mean = _arithmetic_average_first_moment(
+        spot=spot,
+        rate=rate,
+        dividend_yield=dividend_yield,
+        observation_times=observation_times,
+    )
+    matched_second_moment = _arithmetic_average_second_moment(
+        spot=spot,
+        rate=rate,
+        dividend_yield=dividend_yield,
+        sigma=sigma,
+        observation_times=observation_times,
+    )
+    effective_lognormal_var = max(
+        math.log(max(matched_second_moment, 1e-300) / max(matched_mean * matched_mean, 1e-300)),
+        0.0,
+    )
+    price = notional * _discounted_lognormal_option_price(
+        matched_mean=matched_mean,
+        matched_lognormal_var=effective_lognormal_var,
+        strike=strike,
+        maturity=maturity,
+        rate=rate,
+        option_type=option_type,
+    )
+    return ArithmeticAsianOptionAnalyticalResult(
+        price=price,
+        matched_mean=matched_mean,
+        matched_second_moment=matched_second_moment,
+        effective_lognormal_vol=math.sqrt(effective_lognormal_var / maturity),
+        observation_count=len(observation_times),
+    )
+
+
+def price_arithmetic_asian_option_analytical(
+    market_state: MarketState,
+    spec: ArithmeticAsianOptionSpecLike,
+) -> float:
+    """Return the scalar bounded arithmetic-Asian analytical approximation."""
+    return float(price_arithmetic_asian_option_analytical_result(market_state, spec).price)
+
+
 def price_arithmetic_asian_option_monte_carlo(
     market_state: MarketState,
     spec: ArithmeticAsianOptionSpecLike,
@@ -246,11 +349,80 @@ def _resolve_observation_times(
     return tuple(float(value) for value in raw_np.linspace(0.0, maturity, n_observations))
 
 
+def _arithmetic_average_first_moment(
+    *,
+    spot: float,
+    rate: float,
+    dividend_yield: float,
+    observation_times: tuple[float, ...],
+) -> float:
+    count = len(observation_times)
+    if count == 0:
+        raise ValueError("Arithmetic Asian helper requires at least one observation time")
+    growth = raw_np.exp((rate - dividend_yield) * raw_np.asarray(observation_times, dtype=float))
+    return float(spot * raw_np.mean(growth))
+
+
+def _arithmetic_average_second_moment(
+    *,
+    spot: float,
+    rate: float,
+    dividend_yield: float,
+    sigma: float,
+    observation_times: tuple[float, ...],
+) -> float:
+    count = len(observation_times)
+    if count == 0:
+        raise ValueError("Arithmetic Asian helper requires at least one observation time")
+    total = 0.0
+    drift = rate - dividend_yield
+    for left_time in observation_times:
+        for right_time in observation_times:
+            total += math.exp(
+                drift * (left_time + right_time) + sigma * sigma * min(left_time, right_time)
+            )
+    return spot * spot * total / float(count * count)
+
+
+def _discounted_lognormal_option_price(
+    *,
+    matched_mean: float,
+    matched_lognormal_var: float,
+    strike: float,
+    maturity: float,
+    rate: float,
+    option_type: str,
+) -> float:
+    discount = math.exp(-rate * maturity)
+    if strike <= 0.0:
+        if option_type == "put":
+            return 0.0
+        return discount * (matched_mean - strike)
+    if matched_lognormal_var <= 1e-14:
+        intrinsic = max(matched_mean - strike, 0.0)
+        if option_type == "put":
+            intrinsic = max(strike - matched_mean, 0.0)
+        return discount * intrinsic
+    std = math.sqrt(matched_lognormal_var)
+    d1 = (math.log(matched_mean / strike) + 0.5 * matched_lognormal_var) / std
+    d2 = d1 - std
+    if option_type == "put":
+        return discount * (strike * _normal_cdf(-d2) - matched_mean * _normal_cdf(-d1))
+    return discount * (matched_mean * _normal_cdf(d1) - strike * _normal_cdf(d2))
+
+
+def _normal_cdf(value: float) -> float:
+    return 0.5 * (1.0 + math.erf(value / math.sqrt(2.0)))
+
+
 __all__ = [
     "AsianOptionMonteCarloResult",
     "AsianOptionMonteCarloSpecLike",
+    "ArithmeticAsianOptionAnalyticalResult",
     "ArithmeticAsianOptionMonteCarloResult",
     "ArithmeticAsianOptionSpecLike",
+    "price_arithmetic_asian_option_analytical",
+    "price_arithmetic_asian_option_analytical_result",
     "price_asian_option_monte_carlo",
     "price_asian_option_monte_carlo_result",
     "price_arithmetic_asian_option_monte_carlo",

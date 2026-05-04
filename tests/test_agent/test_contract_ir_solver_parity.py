@@ -120,7 +120,7 @@ def test_compile_build_request_records_request_decomposition_shadow_for_variance
     assert compiler["shadow_error"] is None
 
 
-def test_compile_build_request_records_explicit_asian_no_match_blocker():
+def test_compile_build_request_records_bounded_asian_analytical_shadow():
     compiled = compile_build_request(
         "Arithmetic Asian call on SPX monthly average over 2025 strike 4500",
         instrument_type="asian_option",
@@ -132,9 +132,30 @@ def test_compile_build_request_records_explicit_asian_no_match_blocker():
 
     assert compiled.semantic_blueprint is None
     assert compiler["source"] == "request_decomposition"
-    assert compiler["shadow_status"] == "no_match"
-    assert compiler["contract_ir_solver_shadow"] is None
-    assert compiler["shadow_error"]["error_type"] == "ContractIRSolverNoMatchError"
+    assert compiler["shadow_status"] == "bound"
+    assert compiler["contract_ir_solver_shadow"]["declaration_id"] == (
+        "helper_arithmetic_asian_option_analytical_call"
+    )
+    assert compiler["shadow_error"] is None
+
+
+def test_compile_build_request_records_bounded_asian_put_analytical_shadow():
+    compiled = compile_build_request(
+        "Arithmetic Asian put on SPX weekly average from 2025-01-03 to 2025-01-31 strike 4500",
+        instrument_type="asian_option",
+        market_snapshot=_variance_market_state(),
+        preferred_method="analytical",
+    )
+
+    compiler = compiled.request.metadata["contract_ir_compiler"]
+
+    assert compiled.semantic_blueprint is None
+    assert compiler["source"] == "request_decomposition"
+    assert compiler["shadow_status"] == "bound"
+    assert compiler["contract_ir_solver_shadow"]["declaration_id"] == (
+        "helper_arithmetic_asian_option_analytical_put"
+    )
+    assert compiler["shadow_error"] is None
 
 
 def test_compile_build_request_records_bounded_asian_monte_carlo_shadow():
@@ -156,7 +177,7 @@ def test_compile_build_request_records_bounded_asian_monte_carlo_shadow():
     assert compiler["shadow_error"] is None
 
 
-def test_contract_ir_solver_parity_report_flags_asian_blocker_and_candidate_families():
+def test_contract_ir_solver_parity_report_promotes_bounded_asian_family():
     report = build_contract_ir_solver_parity_report()
 
     families = {entry["family_id"]: entry for entry in report["families"]}
@@ -169,8 +190,13 @@ def test_contract_ir_solver_parity_report_flags_asian_blocker_and_candidate_fami
     assert families["digital_option"]["parity_closed"] is True
     assert families["rate_style_swaption"]["parity_closed"] is True
     assert families["variance_swap"]["parity_closed"] is True
-    assert families["asian_option"]["blocked"] is True
-    assert families["asian_option"]["phase4_candidate"] is False
+    assert families["asian_option"]["blocked"] is False
+    assert families["asian_option"]["parity_closed"] is True
+    assert families["asian_option"]["exact_authority_closed"] is True
+    assert families["asian_option"]["phase4_candidate"] is True
+    assert all(case["route_free_authority"] is True for case in families["asian_option"]["cases"])
+    assert any(case["case_id"] == "asian_call_analytical" for case in families["asian_option"]["cases"])
     assert any(case["case_id"] == "asian_call_monte_carlo" for case in families["asian_option"]["cases"])
-    assert report["totals"]["phase4_candidates"] == 5
-    assert any("Arithmetic Asians remain an explicit Phase 3 blocker" in note for note in families["asian_option"]["notes"])
+    assert any(case["case_id"] == "asian_put_analytical" for case in families["asian_option"]["cases"])
+    assert report["totals"]["phase4_candidates"] == 6
+    assert any("bounded analytical approximation" in note for note in families["asian_option"]["notes"])

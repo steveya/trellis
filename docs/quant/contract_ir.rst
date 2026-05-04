@@ -511,19 +511,19 @@ selection, parity, and provenance evidence to be considered phase-4-ready.
 Explicit Phase 3 Non-goals
 --------------------------
 
-Arithmetic Asians remain representable in ``ContractIR`` and now admit one
-bounded structural Monte Carlo call lane, but they are still an explicit
-no-match for unsupported method families. The current checked repository still
-does not expose a dedicated analytical arithmetic-Asian helper that meets the
-Phase 3 migration contract, so broad family retirement remains out of scope.
+Arithmetic Asians are now representable in ``ContractIR`` and admit bounded
+structural analytical and Monte Carlo lanes for European schedule-based equity
+diffusion payoffs. The checked helper surface uses a discrete moment-matched
+lognormal approximation for the analytical lane, so the support contract is
+still bounded and explicit rather than universal.
 
 That distinction is deliberate:
 
 - ``ContractIR`` representation coverage is broader than the current migrated
   solver wave
 - "IR exists" must not be read as "the family is already route-free"
-- a bounded ``shadow_status = "bound"`` Monte Carlo lane does not erase the
-  remaining analytical ``no_match`` blocker surface
+- a bounded admitted structural lane does not imply generic arithmetic-Asian
+  support outside the checked European schedule-based cohort
 
 Phase 4 is the retirement phase. Phase 3 only proves that the admitted
 families can already price through the structural compiler with parity and

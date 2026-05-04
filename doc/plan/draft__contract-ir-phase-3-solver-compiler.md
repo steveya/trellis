@@ -100,11 +100,11 @@ Phase-3-first-wave families cleanly:
 5. Equity variance swaps via
    `trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical`
 
-Arithmetic Asians remain in Contract IR scope, but they are NOT a
-first-wave Phase 3 migration target because the current checked model
-surface does not expose a dedicated analytical arithmetic-Asian helper.
-They stay on the legacy route path until a real solver declaration
-surface exists.
+Arithmetic Asians were initially held out of the first-wave Phase 3
+migration until a checked analytical helper existed. That bounded helper
+now exists, so the admitted European schedule-based equity-diffusion
+cohort can bind structurally through the Phase 3 compiler. Broader family
+generalization remains separate from that bounded closeout.
 
 That distinction matters. "IR can represent it" is not the same as
 "Phase 3 can migrate it safely."
@@ -495,17 +495,19 @@ the current helper. It must not silently upgrade the meaning of
 `VarianceObservable` to a different replication formula inside the
 compiler.
 
-### 6. Arithmetic Asians are explicit blockers
+### 6. Arithmetic Asians now have a bounded structural closeout
 
-`ArithmeticMean(...)` is a valid Phase 2 IR node, but there is no
-dedicated analytical arithmetic-Asian helper currently exposed in
-`trellis/models/`.
+`ArithmeticMean(...)` is a valid Phase 2 IR node, and the checked
+repository now exposes bounded analytical and Monte Carlo arithmetic-Asian
+helpers in `trellis/models/`.
 
-So the Phase 3 plan must carry an explicit blocker:
+So the current Phase 3 contract is:
 
 - Asian IR family is representable and matchable
-- Asian fresh-build structural dispatch is deferred until a checked
-  solver declaration surface exists
+- bounded fresh-build structural dispatch exists for the admitted
+  European schedule-based equity-diffusion cohort
+- broader family-general support remains a separate follow-on rather than
+  a hidden route-local fallback
 
 That is not a design failure. It is disciplined scope control.
 

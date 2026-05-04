@@ -1307,7 +1307,7 @@ def _variance_helper_adapter(
 
 
 @dataclass(frozen=True)
-class _StructuralArithmeticAsianMonteCarloSpec:
+class _StructuralArithmeticAsianSpec:
     notional: float
     underlier: str
     strike: float
@@ -1320,13 +1320,15 @@ class _StructuralArithmeticAsianMonteCarloSpec:
     seed: int | None = 42
 
 
-def _arithmetic_asian_call_monte_carlo_binding_adapter(
+def _arithmetic_asian_binding_adapter(
     *,
     contract_ir: ContractIR,
     term_environment: ContractIRTermEnvironment,
     valuation_context: ValuationContext | None,
     market_state: MarketState,
     bindings: dict[str, object],
+    option_type: str,
+    include_monte_carlo_controls: bool,
 ) -> dict[str, object]:
     expiry = contract_ir.exercise.schedule
     if not isinstance(expiry, Singleton):
@@ -1352,23 +1354,26 @@ def _arithmetic_asian_call_monte_carlo_binding_adapter(
         if explicit_dividend_yield in {None, ""}
         else float(explicit_dividend_yield)
     )
-    n_paths = max(
-        int(
-            term_environment.raw_term_fields.get("n_paths")
-            or term_environment.raw_term_fields.get("n_simulations")
-            or 50_000
-        ),
-        1,
-    )
-    seed_term = term_environment.raw_term_fields.get("seed")
-    seed = 42 if seed_term in {None, ""} else int(seed_term)
-    spec = _StructuralArithmeticAsianMonteCarloSpec(
+    n_paths = 50_000
+    seed: int | None = 42
+    if include_monte_carlo_controls:
+        n_paths = max(
+            int(
+                term_environment.raw_term_fields.get("n_paths")
+                or term_environment.raw_term_fields.get("n_simulations")
+                or 50_000
+            ),
+            1,
+        )
+        seed_term = term_environment.raw_term_fields.get("seed")
+        seed = 42 if seed_term in {None, ""} else int(seed_term)
+    spec = _StructuralArithmeticAsianSpec(
         notional=float(term_environment.cash_settlement.notional),
         underlier=underlier,
         strike=float(bindings["k"]),
         expiry_date=expiry.t,
         observation_dates=tuple(averaging_schedule.dates),
-        option_type="call",
+        option_type=option_type,
         day_count=term_environment.accrual_conventions.day_count,
         dividend_yield=dividend_yield,
         n_paths=n_paths,
@@ -1387,6 +1392,30 @@ def _arithmetic_asian_call_monte_carlo_binding_adapter(
         "value_scale": 1.0,
         "resolved_market_coordinates": tuple(coordinates),
     }
+
+
+def _arithmetic_asian_call_analytical_binding_adapter(**kwargs) -> dict[str, object]:
+    return _arithmetic_asian_binding_adapter(
+        option_type="call",
+        include_monte_carlo_controls=False,
+        **kwargs,
+    )
+
+
+def _arithmetic_asian_put_analytical_binding_adapter(**kwargs) -> dict[str, object]:
+    return _arithmetic_asian_binding_adapter(
+        option_type="put",
+        include_monte_carlo_controls=False,
+        **kwargs,
+    )
+
+
+def _arithmetic_asian_call_monte_carlo_binding_adapter(**kwargs) -> dict[str, object]:
+    return _arithmetic_asian_binding_adapter(
+        option_type="call",
+        include_monte_carlo_controls=True,
+        **kwargs,
+    )
 
 
 def _pattern_max_ramp(lhs, rhs) -> ContractPattern:
@@ -1799,6 +1828,88 @@ def _default_registry() -> ContractIRSolverRegistry:
                     observation=ObservationPattern(kind="schedule"),
                     underlying=UnderlyingPattern(kind="equity_diffusion"),
                 ),
+                admissible_methods=("analytical",),
+                required_term_groups=("cash_settlement", "accrual_conventions"),
+            ),
+            materialization=ContractIRSolverMaterialization(
+                callable_ref="trellis.models.asian_option.price_arithmetic_asian_option_analytical",
+                call_style="helper_call",
+                adapter_ref="trellis.agent.contract_ir_solver_compiler._arithmetic_asian_call_analytical_adapter",
+            ),
+            provenance=ContractIRSolverProvenance(
+                declaration_id="helper_arithmetic_asian_option_analytical_call",
+                validation_bundle_id="asian_option_contract",
+                helper_refs=("trellis.models.asian_option.price_arithmetic_asian_option_analytical",),
+            ),
+            precedence=39,
+        ),
+        ContractIRSolverDeclaration(
+            authority=ContractIRSolverSelectionAuthority(
+                contract_pattern=ContractPattern(
+                    payoff=PayoffPattern(
+                        kind="max",
+                        args=(
+                            PayoffPattern(
+                                kind="sub",
+                                args=(
+                                    StrikePattern(value=Wildcard("k")),
+                                    PayoffPattern(
+                                        kind="arithmetic_mean",
+                                        args=(
+                                            SpotPattern(underlier=Wildcard("u")),
+                                            Wildcard("averaging_schedule"),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            ConstantPattern(value=0.0),
+                        ),
+                    ),
+                    exercise=ExercisePattern(style="european"),
+                    observation=ObservationPattern(kind="schedule"),
+                    underlying=UnderlyingPattern(kind="equity_diffusion"),
+                ),
+                admissible_methods=("analytical",),
+                required_term_groups=("cash_settlement", "accrual_conventions"),
+            ),
+            materialization=ContractIRSolverMaterialization(
+                callable_ref="trellis.models.asian_option.price_arithmetic_asian_option_analytical",
+                call_style="helper_call",
+                adapter_ref="trellis.agent.contract_ir_solver_compiler._arithmetic_asian_put_analytical_adapter",
+            ),
+            provenance=ContractIRSolverProvenance(
+                declaration_id="helper_arithmetic_asian_option_analytical_put",
+                validation_bundle_id="asian_option_contract",
+                helper_refs=("trellis.models.asian_option.price_arithmetic_asian_option_analytical",),
+            ),
+            precedence=38,
+        ),
+        ContractIRSolverDeclaration(
+            authority=ContractIRSolverSelectionAuthority(
+                contract_pattern=ContractPattern(
+                    payoff=PayoffPattern(
+                        kind="max",
+                        args=(
+                            PayoffPattern(
+                                kind="sub",
+                                args=(
+                                    PayoffPattern(
+                                        kind="arithmetic_mean",
+                                        args=(
+                                            SpotPattern(underlier=Wildcard("u")),
+                                            Wildcard("averaging_schedule"),
+                                        ),
+                                    ),
+                                    StrikePattern(value=Wildcard("k")),
+                                ),
+                            ),
+                            ConstantPattern(value=0.0),
+                        ),
+                    ),
+                    exercise=ExercisePattern(style="european"),
+                    observation=ObservationPattern(kind="schedule"),
+                    underlying=UnderlyingPattern(kind="equity_diffusion"),
+                ),
                 admissible_methods=("monte_carlo",),
                 required_term_groups=("cash_settlement", "accrual_conventions"),
             ),
@@ -1812,7 +1923,7 @@ def _default_registry() -> ContractIRSolverRegistry:
                 validation_bundle_id="asian_option_contract",
                 helper_refs=("trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo",),
             ),
-            precedence=39,
+            precedence=37,
         ),
     )
     return build_contract_ir_solver_registry(declarations)
@@ -1860,6 +1971,14 @@ def _basket_put_adapter(**kwargs) -> dict[str, object]:
 
 def _variance_swap_adapter(**kwargs) -> dict[str, object]:
     return _variance_helper_adapter(**kwargs)
+
+
+def _arithmetic_asian_call_analytical_adapter(**kwargs) -> dict[str, object]:
+    return _arithmetic_asian_call_analytical_binding_adapter(**kwargs)
+
+
+def _arithmetic_asian_put_analytical_adapter(**kwargs) -> dict[str, object]:
+    return _arithmetic_asian_put_analytical_binding_adapter(**kwargs)
 
 
 def _arithmetic_asian_call_monte_carlo_adapter(**kwargs) -> dict[str, object]:

@@ -31,7 +31,10 @@ from trellis.agent.valuation_context import build_valuation_context
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.analytical.equity_exotics import price_equity_variance_swap_analytical
-from trellis.models.asian_option import price_arithmetic_asian_option_monte_carlo
+from trellis.models.asian_option import (
+    price_arithmetic_asian_option_analytical,
+    price_arithmetic_asian_option_monte_carlo,
+)
 from trellis.models.basket_option import price_basket_option_analytical
 from trellis.models.black import (
     black76_asset_or_nothing_call,
@@ -155,6 +158,10 @@ def _asian_monte_carlo_reference(decision, market_state: MarketState) -> float:
     return float(price_arithmetic_asian_option_monte_carlo(market_state, decision.call_kwargs["spec"]))
 
 
+def _asian_analytical_reference(decision, market_state: MarketState) -> float:
+    return float(price_arithmetic_asian_option_analytical(market_state, decision.call_kwargs["spec"]))
+
+
 def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
     return (
         ContractIRSolverParityCase(
@@ -266,16 +273,32 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             market_state_factory=_variance_market_state,
         ),
         ContractIRSolverParityCase(
-            case_id="asian_call_blocked",
+            case_id="asian_call_analytical",
             family_id="asian_option",
             description="Arithmetic Asian call on SPX monthly average over 2025 strike 4500",
             instrument_type="asian_option",
             preferred_method="analytical",
             expected_source="request_decomposition",
-            expected_shadow_status="no_match",
-            expected_declaration_id="",
-            reference_price=None,
+            expected_shadow_status="bound",
+            expected_declaration_id="helper_arithmetic_asian_option_analytical_call",
+            reference_price=_asian_analytical_reference,
             market_state_factory=_variance_market_state,
+            tolerance_abs=1e-12,
+            tolerance_rel=1e-12,
+        ),
+        ContractIRSolverParityCase(
+            case_id="asian_put_analytical",
+            family_id="asian_option",
+            description="Arithmetic Asian put on SPX weekly average from 2025-01-03 to 2025-01-31 strike 4500",
+            instrument_type="asian_option",
+            preferred_method="analytical",
+            expected_source="request_decomposition",
+            expected_shadow_status="bound",
+            expected_declaration_id="helper_arithmetic_asian_option_analytical_put",
+            reference_price=_asian_analytical_reference,
+            market_state_factory=_variance_market_state,
+            tolerance_abs=1e-12,
+            tolerance_rel=1e-12,
         ),
         ContractIRSolverParityCase(
             case_id="asian_call_monte_carlo",
@@ -434,9 +457,14 @@ def _run_case(case: ContractIRSolverParityCase) -> dict[str, object]:
 
 def _family_notes(case_results: list[dict[str, object]]) -> list[str]:
     notes: list[str] = []
-    if any(result["family_id"] == "asian_option" for result in case_results):
+    asian_results = [result for result in case_results if result["family_id"] == "asian_option"]
+    if asian_results and any(result.get("shadow_status") == "no_match" for result in asian_results):
         notes.append(
             "Arithmetic Asians remain an explicit Phase 3 blocker: ContractIR decomposition exists, one bounded arithmetic-Asian Monte Carlo helper is now admitted, but the structural solver still returns an intentional no-match for unsupported method families until a checked analytical surface is admitted."
+        )
+    elif asian_results:
+        notes.append(
+            "Arithmetic Asians now admit bounded analytical approximation and Monte Carlo structural lanes for European schedule-based equity-diffusion payoffs; broader family retirement remains governed by the admitted schedule-driven support contract."
         )
     if any(
         result.get("shadow_status") == "bound"
@@ -479,19 +507,13 @@ def build_contract_ir_solver_parity_report() -> dict[str, object]:
             for item in bound_results
         )
         phase4_candidate = (
-            family_id != "asian_option"
-            and representation_closed
+            representation_closed
             and decomposition_closed
             and lowering_closed
             and parity_closed
             and provenance_closed
             and exact_authority_closed
         )
-        if family_id == "asian_option":
-            lowering_closed = False
-            parity_closed = False
-            provenance_closed = False
-            phase4_candidate = False
         family_entries.append(
             {
                 "family_id": family_id,

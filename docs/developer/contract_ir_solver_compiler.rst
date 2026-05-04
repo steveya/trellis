@@ -82,12 +82,15 @@ The default Phase 3 registry admits:
 3. European payer / receiver swaptions via ``price_swaption_black76``
 4. Two-asset analytical basket / spread call / put helpers
 5. Equity variance swaps via ``price_equity_variance_swap_analytical``
-6. Expiry-aligned arithmetic-Asian call Monte Carlo via
+6. Bounded arithmetic-Asian analytical call / put helpers via
+   ``price_arithmetic_asian_option_analytical``
+7. Expiry-aligned arithmetic-Asian call Monte Carlo via
    ``price_arithmetic_asian_option_monte_carlo``
 
-Arithmetic Asians are still only partially admitted. The compiler now binds one
-bounded Monte Carlo call lane, but it still fails closed for unsupported method
-families such as the unimplemented analytical surface.
+Arithmetic Asians are still only partially admitted. The compiler now binds a
+bounded analytical approximation plus one bounded Monte Carlo call lane for the
+checked European schedule-based equity-diffusion cohort, but broader
+family-general route retirement remains outside the admitted support contract.
 
 Failure And Ambiguity Policy
 ----------------------------
