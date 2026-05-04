@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 import pytest
@@ -377,3 +377,51 @@ def test_quanto_monte_carlo_helpers_build_joint_process_and_initial_state():
     assert engine_kwargs["seed"] == 123
     assert engine_kwargs["n_steps"] >= 16
     assert payoff == pytest.approx([2.0, 0.0])
+
+
+def test_asian_monte_carlo_helper_matches_compat_adapter_price_for_arithmetic_average():
+    from trellis.instruments._agent.asianoption import AsianOptionPayoff, AsianOptionSpec
+    from trellis.models.asian_option import price_asian_option_monte_carlo
+
+    spec = AsianOptionSpec(
+        notional=100_000,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        averaging_type="arithmetic",
+        option_type="call",
+        n_observations=12,
+    )
+    market_state = _market_state()
+
+    helper_pv = price_asian_option_monte_carlo(
+        market_state,
+        replace(spec, notional=spec.notional / spec.spot),
+    )
+    adapter_pv = AsianOptionPayoff(spec).evaluate(market_state)
+
+    assert helper_pv == pytest.approx(adapter_pv, rel=1e-12)
+
+
+def test_asian_monte_carlo_helper_matches_compat_adapter_price_for_geometric_average():
+    from trellis.instruments._agent.asianoption import AsianOptionPayoff, AsianOptionSpec
+    from trellis.models.asian_option import price_asian_option_monte_carlo
+
+    spec = AsianOptionSpec(
+        notional=100_000,
+        spot=100.0,
+        strike=95.0,
+        expiry_date=date(2025, 11, 15),
+        averaging_type="geometric",
+        option_type="put",
+        n_observations=12,
+    )
+    market_state = _market_state()
+
+    helper_pv = price_asian_option_monte_carlo(
+        market_state,
+        replace(spec, notional=spec.notional / spec.spot),
+    )
+    adapter_pv = AsianOptionPayoff(spec).evaluate(market_state)
+
+    assert helper_pv == pytest.approx(adapter_pv, rel=1e-12)
