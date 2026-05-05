@@ -33,6 +33,21 @@ def test_find_symbol_modules_returns_garman_kohlhagen_kernel_module():
     assert "trellis.models.black" in modules
 
 
+def test_quoted_observable_helpers_are_visible_to_import_registry():
+    module = "trellis.models.quoted_observable"
+
+    assert module_exists(module)
+    assert "price_curve_quote_spread_analytical" in list_module_exports(module)
+    assert "price_surface_quote_spread_analytical" in list_module_exports(module)
+    assert find_symbol_modules("price_curve_quote_spread_analytical") == (module,)
+    assert find_symbol_modules("price_surface_quote_spread_analytical") == (module,)
+    assert is_valid_import(module, "QuotedObservableSpreadResult")
+
+    registry_text = get_import_registry()
+    assert "from trellis.models.quoted_observable import" in registry_text
+    assert "price_curve_quote_spread_analytical" in registry_text
+
+
 def test_resolve_import_candidates_handles_known_and_unknown_symbols():
     candidates = resolve_import_candidates(["theta_method_1d", "definitely_not_real"])
     assert "trellis.models.pde.theta_method" in candidates["theta_method_1d"]
@@ -65,6 +80,8 @@ def test_static_registry_fallback_covers_route_minimization_modules(monkeypatch)
 
     assert "trellis.models.equity_option_transforms" in snapshot
     assert "price_vanilla_equity_option_transform" in snapshot["trellis.models.equity_option_transforms"]
+    assert "trellis.models.quoted_observable" in snapshot
+    assert "price_curve_quote_spread_analytical" in snapshot["trellis.models.quoted_observable"]
     assert "trellis.models.credit_basket_copula" in snapshot
     assert "price_credit_basket_tranche" in snapshot["trellis.models.credit_basket_copula"]
     assert "trellis.models.transforms.single_state_diffusion" in snapshot

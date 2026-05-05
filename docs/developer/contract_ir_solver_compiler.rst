@@ -82,9 +82,23 @@ The default Phase 3 registry admits:
 3. European payer / receiver swaptions via ``price_swaption_black76``
 4. Two-asset analytical basket / spread call / put helpers
 5. Equity variance swaps via ``price_equity_variance_swap_analytical``
+6. Bounded arithmetic-Asian analytical call / put helpers via
+   ``price_arithmetic_asian_option_analytical``
+7. Expiry-aligned arithmetic-Asian call Monte Carlo via
+   ``price_arithmetic_asian_option_monte_carlo``
+8. Terminal linear curve-spread and surface-spread quoted-observable helpers
+   via ``trellis.models.quoted_observable``
 
-Arithmetic Asians are intentionally excluded. The compiler fails closed on
-that family until a checked solver surface exists.
+Arithmetic Asians are still only partially admitted. The compiler now binds a
+bounded analytical approximation plus one bounded Monte Carlo call lane for the
+checked European schedule-based equity-diffusion cohort, but broader
+family-general route retirement remains outside the admitted support contract.
+
+Quoted-observable support is also intentionally bounded. The default registry
+admits only terminal linear ``CurveQuote`` spread and ``SurfaceQuote`` spread /
+vol-skew payoff trees. Options on those quote spreads, path-dependent quote
+products, quote-linked coupon notes, and broad market-coordinate overlay
+integration remain outside this executable cohort.
 
 Failure And Ambiguity Policy
 ----------------------------

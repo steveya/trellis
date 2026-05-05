@@ -450,6 +450,7 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
         "Models — Calibration": [],
         "Models — Cashflow Engine": [],
         "Models — Vol Surface": [],
+        "Models — Quoted Observable": [],
         "Instruments (reference)": [],
     }
 
@@ -486,6 +487,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Cashflow Engine"].append(line)
         elif "trellis.models.vol" in mod:
             groups["Models — Vol Surface"].append(line)
+        elif "trellis.models.quoted_observable" in mod:
+            groups["Models — Quoted Observable"].append(line)
         elif "trellis.instruments" in mod:
             groups["Instruments (reference)"].append(line)
 
@@ -519,6 +522,7 @@ from trellis.models.black import black76_call, black76_put, black76_asset_or_not
 from trellis.models.analytical import terminal_vanilla_from_basis
 from trellis.models.analytical.jamshidian import zcb_option_hw
 from trellis.models.analytical.barrier import barrier_option_price, down_and_out_call, down_and_in_call
+from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
 

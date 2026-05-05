@@ -341,21 +341,23 @@ without needing a direct hard-coded route by instrument name.
 Quoted-Observable Admission
 ---------------------------
 
-The first quoted-observable closure slice is intentionally selection-only.
+The first quoted-observable closure slice is now executable for a bounded
+terminal linear cohort.
 
 ``trellis.agent.quoted_observable_admission.select_quoted_observable_lowering(...)``
 reuses the same declaration / registry substrate as the Phase 3 structural
-solver compiler, but only for bounded structural admission of:
+solver compiler for:
 
 - terminal linear curve-spread payoffs on explicit ``CurveQuote`` leaves
 - terminal linear surface-spread / vol-skew payoffs on explicit
   ``SurfaceQuote`` leaves
 
-That surface proves the route-free authority boundary for quoted-observable
-contracts without claiming an executable checked pricer that does not exist
-yet. Options on quoted spreads, path-dependent quote products, and
-quote-linked coupon structures remain outside the admitted lowering cohort in
-this slice.
+Those declarations bind onto checked helpers in
+``trellis.models.quoted_observable`` and can project route-free exact backend
+authority through ``compile_build_request(...)`` for admitted requests. Options
+on quoted spreads, path-dependent quote products, quote-linked coupon
+structures, and generic market-coordinate overlay / shock-model integration
+remain outside the admitted lowering cohort in this slice.
 
 Phase 3 / Phase 4 Structural Solver Compiler
 --------------------------------------------
@@ -384,8 +386,12 @@ The current cutover is intentionally bounded:
   cohort that can already decompose into ``ContractIR``
 - unmigrated, under-specified, or structurally unsupported requests still fall
   back to the compatibility route path
-- arithmetic Asians remain fail-closed on the structural compiler path because
-  there is still no checked exact helper surface for that family
+- arithmetic Asians now have bounded structural analytical call / put helpers
+  plus the earlier Monte Carlo call lane, while broader family retirement
+  remains explicitly bounded
+- quoted-observable terminal linear curve-spread and surface-spread payoffs now
+  have checked executable helper bindings, while quote options and dynamic
+  quote-linked structures remain blocked
 
 Normalized Term Environment
 ---------------------------
@@ -424,6 +430,11 @@ The current bounded structural-solver wave covers:
    ``trellis.models.basket_option.price_basket_option_analytical``
 5. Equity variance swaps through
    ``trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical``
+6. Bounded arithmetic Asians through
+   ``trellis.models.asian_option.price_arithmetic_asian_option_analytical`` and
+   ``trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo``
+7. Terminal linear quoted-observable spreads through
+   ``trellis.models.quoted_observable``
 
 The equity vanilla / digital lane intentionally mirrors the current checked
 zero-carry parity contract:
@@ -511,18 +522,19 @@ selection, parity, and provenance evidence to be considered phase-4-ready.
 Explicit Phase 3 Non-goals
 --------------------------
 
-Arithmetic Asians remain representable in ``ContractIR`` but are still an
-explicit no-match for the structural solver. The current checked repository
-does not expose a dedicated analytical arithmetic-Asian helper that meets the
-Phase 3 migration contract, so those products remain on the legacy route path.
+Arithmetic Asians are now representable in ``ContractIR`` and admit bounded
+structural analytical and Monte Carlo lanes for European schedule-based equity
+diffusion payoffs. The checked helper surface uses a discrete moment-matched
+lognormal approximation for the analytical lane, so the support contract is
+still bounded and explicit rather than universal.
 
 That distinction is deliberate:
 
 - ``ContractIR`` representation coverage is broader than the current migrated
   solver wave
 - "IR exists" must not be read as "the family is already route-free"
-- explicit ``shadow_status = "no_match"`` is part of the governed blocker
-  surface, not an incidental omission
+- a bounded admitted structural lane does not imply generic arithmetic-Asian
+  support outside the checked European schedule-based cohort
 
 Phase 4 is the retirement phase. Phase 3 only proves that the admitted
 families can already price through the structural compiler with parity and

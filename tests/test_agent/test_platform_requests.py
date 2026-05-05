@@ -1155,6 +1155,84 @@ def test_compile_build_request_emits_exact_authority_for_explicit_terminal_baske
     ]
 
 
+def test_compile_build_request_emits_exact_authority_for_terminal_curve_spread_request():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+
+    compiled = compile_build_request(
+        "Terminal curve-spread payoff on USD_SWAP par rate 10Y minus 2Y, notional 1000000, expiry 2026-06-30",
+        instrument_type="quoted_observable",
+        preferred_method="analytical",
+        market_snapshot=MarketState(
+            as_of=date(2025, 1, 1),
+            settlement=date(2025, 1, 1),
+            discount=YieldCurve([0.0, 2.0, 10.0], [0.02, 0.025, 0.03]),
+            selected_curve_names={"discount_curve": "USD_SWAP"},
+        ),
+    )
+
+    compiler_summary = compiled.request.metadata["contract_ir_compiler"]
+
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "quoted_observable"
+    assert compiler_summary["contract_ir_solver_selection"]["declaration_id"] == (
+        "quoted_observable_curve_spread_linear"
+    )
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.backend_binding_id == (
+        "trellis.models.quoted_observable.price_curve_quote_spread_analytical"
+    )
+    authority = compiled.request.metadata["route_binding_authority"]
+    assert authority["route_id"] is None
+    assert authority["authority_kind"] == "exact_backend_fit"
+    assert authority["backend_binding"]["exact_target_refs"] == [
+        "trellis.models.quoted_observable.price_curve_quote_spread_analytical"
+    ]
+
+
+def test_compile_build_request_emits_exact_authority_for_terminal_surface_spread_request():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+
+    class _SurfaceSmile:
+        def black_vol(self, expiry: float, strike: float) -> float:
+            return 0.18 + 0.01 * float(expiry) + 0.0005 * float(strike)
+
+    compiled = compile_build_request(
+        "Terminal vol-skew payoff on SPX_IV black vol 1Y 90% moneyness minus 1Y 110% moneyness, notional 100000, expiry 2026-06-30",
+        instrument_type="quoted_observable",
+        preferred_method="analytical",
+        market_snapshot=MarketState(
+            as_of=date(2025, 1, 1),
+            settlement=date(2025, 1, 1),
+            discount=YieldCurve.flat(0.03),
+            spot=100.0,
+            vol_surface=_SurfaceSmile(),
+            selected_curve_names={"vol_surface": "SPX_IV"},
+        ),
+    )
+
+    compiler_summary = compiled.request.metadata["contract_ir_compiler"]
+
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.instrument == "quoted_observable"
+    assert compiler_summary["contract_ir_solver_selection"]["declaration_id"] == (
+        "quoted_observable_surface_spread_linear"
+    )
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.backend_binding_id == (
+        "trellis.models.quoted_observable.price_surface_quote_spread_analytical"
+    )
+    authority = compiled.request.metadata["route_binding_authority"]
+    assert authority["route_id"] is None
+    assert authority["authority_kind"] == "exact_backend_fit"
+    assert authority["backend_binding"]["exact_target_refs"] == [
+        "trellis.models.quoted_observable.price_surface_quote_spread_analytical"
+    ]
+
+
 def test_compile_build_request_ignores_non_semantic_wrapper_metadata_for_route_free_vanilla():
     from trellis.agent.platform_requests import compile_build_request
 

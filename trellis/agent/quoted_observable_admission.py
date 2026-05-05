@@ -1,12 +1,14 @@
-"""Selection-only lowering admission for bounded quoted-observable contracts.
+"""Executable lowering admission for bounded quoted-observable contracts.
 
-This slice deliberately stops at structural admission. It reuses the shared
-Phase 3 declaration substrate so quoted-observable contracts can prove their
-route-free authority surface without pretending that a checked pricer already
-exists for arbitrary future curve/surface quote products.
+This slice reuses the shared Phase 3 declaration substrate so quoted-observable
+contracts can prove executable route-free authority for the first bounded
+cohort: terminal linear curve-spread and surface-spread payoffs.
 """
 
 from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import date
 
 from trellis.agent.contract_pattern import (
     ConstantPattern,
@@ -17,7 +19,7 @@ from trellis.agent.contract_pattern import (
     UnderlyingPattern,
     Wildcard,
 )
-from trellis.agent.contract_ir import ContractIR
+from trellis.agent.contract_ir import ContractIR, Singleton
 from trellis.agent.contract_ir_solver_compiler import (
     ContractIRSolverSelection,
     select_contract_ir_solver,
@@ -33,14 +35,96 @@ from trellis.agent.contract_ir_solver_registry import (
 )
 
 
-def _unimplemented_quoted_observable_lowering(**kwargs):
-    raise NotImplementedError(
-        "Quoted-observable admission is selection-only in QUA-928; no checked executable lowering is landed yet."
+@dataclass(frozen=True)
+class _CurveSpreadSpec:
+    notional: float
+    curve_id: str
+    lhs_coordinate: object
+    rhs_coordinate: object
+    convention: str
+    expiry_date: date
+    day_count: object
+
+
+@dataclass(frozen=True)
+class _SurfaceSpreadSpec:
+    notional: float
+    surface_id: str
+    lhs_coordinate: object
+    rhs_coordinate: object
+    convention: str
+    expiry_date: date
+    day_count: object
+
+
+def _curve_quote_adapter(
+    *,
+    contract_ir,
+    term_environment,
+    valuation_context,
+    market_state,
+    bindings: dict[str, object],
+) -> dict[str, object]:
+    exercise = contract_ir.exercise.schedule
+    observation = contract_ir.observation.schedule
+    if getattr(contract_ir.observation, "kind", "") != "terminal":
+        raise ValueError("Quoted-observable curve spread lowering requires terminal observation")
+    if not isinstance(exercise, Singleton) or not isinstance(observation, Singleton):
+        raise ValueError("Quoted-observable curve spread lowering requires European singleton exercise")
+    if observation.t != exercise.t:
+        raise ValueError("Quoted-observable curve spread lowering requires expiry-aligned observation")
+    spec = _CurveSpreadSpec(
+        notional=float(bindings["notional"]),
+        curve_id=str(bindings["curve_id"]),
+        lhs_coordinate=bindings["lhs_coordinate"],
+        rhs_coordinate=bindings["rhs_coordinate"],
+        convention=str(bindings["convention"]),
+        expiry_date=observation.t,
+        day_count=term_environment.accrual_conventions.day_count,
     )
+    return {
+        "call_kwargs": {
+            "market_state": market_state,
+            "spec": spec,
+        },
+        "value_scale": 1.0,
+        "resolved_market_coordinates": ("discount_curve",),
+    }
 
 
-def _quote_admission_adapter(**kwargs) -> dict[str, object]:
-    return {"call_kwargs": {}}
+def _surface_quote_adapter(
+    *,
+    contract_ir,
+    term_environment,
+    valuation_context,
+    market_state,
+    bindings: dict[str, object],
+) -> dict[str, object]:
+    exercise = contract_ir.exercise.schedule
+    observation = contract_ir.observation.schedule
+    if getattr(contract_ir.observation, "kind", "") != "terminal":
+        raise ValueError("Quoted-observable surface spread lowering requires terminal observation")
+    if not isinstance(exercise, Singleton) or not isinstance(observation, Singleton):
+        raise ValueError("Quoted-observable surface spread lowering requires European singleton exercise")
+    if observation.t != exercise.t:
+        raise ValueError("Quoted-observable surface spread lowering requires expiry-aligned observation")
+    spec = _SurfaceSpreadSpec(
+        notional=float(bindings["notional"]),
+        surface_id=str(bindings["surface_id"]),
+        lhs_coordinate=bindings["lhs_coordinate"],
+        rhs_coordinate=bindings["rhs_coordinate"],
+        convention=str(bindings["convention"]),
+        expiry_date=observation.t,
+        day_count=term_environment.accrual_conventions.day_count,
+    )
+    return {
+        "call_kwargs": {
+            "market_state": market_state,
+            "spec": spec,
+        },
+        "value_scale": 1.0,
+        "resolved_market_coordinates": ("discount_curve", "black_vol_surface", "spot"),
+    }
 
 
 def _curve_spread_pattern() -> ContractPattern:
@@ -113,8 +197,10 @@ def _surface_spread_pattern() -> ContractPattern:
     )
 
 
-def _default_registry() -> ContractIRSolverRegistry:
-    declarations = (
+def quoted_observable_solver_declarations() -> tuple[ContractIRSolverDeclaration, ...]:
+    """Return the bounded quoted-observable structural solver declarations."""
+
+    return (
         ContractIRSolverDeclaration(
             authority=ContractIRSolverSelectionAuthority(
                 contract_pattern=_curve_spread_pattern(),
@@ -122,13 +208,14 @@ def _default_registry() -> ContractIRSolverRegistry:
                 required_term_groups=("cash_settlement", "accrual_conventions"),
             ),
             materialization=ContractIRSolverMaterialization(
-                callable_ref="trellis.agent.quoted_observable_admission._unimplemented_quoted_observable_lowering",
+                callable_ref="trellis.models.quoted_observable.price_curve_quote_spread_analytical",
                 call_style="helper_call",
-                adapter_ref="trellis.agent.quoted_observable_admission._quote_admission_adapter",
+                adapter_ref="trellis.agent.quoted_observable_admission._curve_quote_adapter",
             ),
             provenance=ContractIRSolverProvenance(
                 declaration_id="quoted_observable_curve_spread_linear",
                 validation_bundle_id="quoted_observable_admission_curve_linear",
+                helper_refs=("trellis.models.quoted_observable.price_curve_quote_spread_analytical",),
             ),
             market_requirements=ContractIRSolverMarketRequirements(
                 required_coordinate_kinds=("curve_quote",),
@@ -142,13 +229,14 @@ def _default_registry() -> ContractIRSolverRegistry:
                 required_term_groups=("cash_settlement", "accrual_conventions"),
             ),
             materialization=ContractIRSolverMaterialization(
-                callable_ref="trellis.agent.quoted_observable_admission._unimplemented_quoted_observable_lowering",
+                callable_ref="trellis.models.quoted_observable.price_surface_quote_spread_analytical",
                 call_style="helper_call",
-                adapter_ref="trellis.agent.quoted_observable_admission._quote_admission_adapter",
+                adapter_ref="trellis.agent.quoted_observable_admission._surface_quote_adapter",
             ),
             provenance=ContractIRSolverProvenance(
                 declaration_id="quoted_observable_surface_spread_linear",
                 validation_bundle_id="quoted_observable_admission_surface_linear",
+                helper_refs=("trellis.models.quoted_observable.price_surface_quote_spread_analytical",),
             ),
             market_requirements=ContractIRSolverMarketRequirements(
                 required_coordinate_kinds=("surface_quote",),
@@ -156,6 +244,10 @@ def _default_registry() -> ContractIRSolverRegistry:
             precedence=19,
         ),
     )
+
+
+def _default_registry() -> ContractIRSolverRegistry:
+    declarations = quoted_observable_solver_declarations()
     return build_contract_ir_solver_registry(declarations)
 
 
@@ -192,5 +284,6 @@ def select_quoted_observable_lowering(
 
 __all__ = [
     "default_quoted_observable_admission_registry",
+    "quoted_observable_solver_declarations",
     "select_quoted_observable_lowering",
 ]

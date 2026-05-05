@@ -23,6 +23,8 @@ from trellis.agent.contract_ir import (
     VolPoint,
 )
 from trellis.agent.contract_ir_solver_compiler import ContractIRSolverNoMatchError
+from trellis.core.market_state import MarketState
+from trellis.curves.yield_curve import YieldCurve
 from trellis.agent.quoted_observable_admission import (
     default_quoted_observable_admission_registry,
     select_quoted_observable_lowering,
@@ -90,6 +92,7 @@ class TestQuotedObservableAdmission:
     def test_curve_spread_selection_uses_bounded_quote_admission_registry(self):
         selection = select_quoted_observable_lowering(_curve_spread_contract_ir())
         assert selection.declaration_id == "quoted_observable_curve_spread_linear"
+        assert selection.callable_ref == "trellis.models.quoted_observable.price_curve_quote_spread_analytical"
         assert selection.required_coordinate_kinds == ("curve_quote",)
         assert selection.consumed_term_groups == (
             "cash_settlement",
@@ -99,6 +102,7 @@ class TestQuotedObservableAdmission:
     def test_surface_spread_selection_uses_bounded_quote_admission_registry(self):
         selection = select_quoted_observable_lowering(_surface_spread_contract_ir())
         assert selection.declaration_id == "quoted_observable_surface_spread_linear"
+        assert selection.callable_ref == "trellis.models.quoted_observable.price_surface_quote_spread_analytical"
         assert selection.required_coordinate_kinds == ("surface_quote",)
         assert selection.consumed_term_groups == (
             "cash_settlement",
@@ -116,3 +120,40 @@ class TestQuotedObservableAdmission:
             "quoted_observable_curve_spread_linear",
             "quoted_observable_surface_spread_linear",
         )
+
+    def test_default_structural_registry_admits_bounded_quoted_observable_helpers(self):
+        from trellis.agent.contract_ir_solver_compiler import select_contract_ir_solver
+
+        selection = select_contract_ir_solver(
+            _surface_spread_contract_ir(),
+            preferred_method="analytical",
+        )
+
+        assert selection.declaration_id == "quoted_observable_surface_spread_linear"
+        assert selection.callable_ref == (
+            "trellis.models.quoted_observable.price_surface_quote_spread_analytical"
+        )
+
+    def test_curve_spread_lowering_executes_through_checked_helper(self):
+        from trellis.agent.contract_ir_solver_compiler import (
+            build_contract_ir_term_environment,
+            compile_contract_ir_solver,
+            execute_contract_ir_solver_decision,
+        )
+
+        market_state = MarketState(
+            as_of=date(2025, 1, 1),
+            settlement=date(2025, 1, 1),
+            discount=YieldCurve([0.0, 2.0, 10.0], [0.02, 0.025, 0.03]),
+            selected_curve_names={"discount_curve": "USD_SWAP"},
+        )
+        decision = compile_contract_ir_solver(
+            _curve_spread_contract_ir(),
+            term_environment=build_contract_ir_term_environment(None),
+            market_state=market_state,
+            preferred_method="analytical",
+            registry=default_quoted_observable_admission_registry(),
+        )
+
+        assert decision.declaration_id == "quoted_observable_curve_spread_linear"
+        assert execute_contract_ir_solver_decision(decision) != 0.0

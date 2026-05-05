@@ -304,6 +304,28 @@ def _asian_contract_ir() -> ContractIR:
     )
 
 
+def _asian_put_contract_ir() -> ContractIR:
+    averaging = _finite_schedule(
+        "2025-01-03",
+        "2025-01-10",
+        "2025-01-17",
+        "2025-01-24",
+        "2025-01-31",
+    )
+    expiry = Singleton(date(2025, 1, 31))
+    return ContractIR(
+        payoff=Max(
+            (
+                Sub(Strike(4550.0), ArithmeticMean(Spot("SPX"), averaging)),
+                Constant(0.0),
+            )
+        ),
+        exercise=Exercise(style="european", schedule=expiry),
+        observation=Observation(kind="schedule", schedule=averaging),
+        underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+    )
+
+
 def _equity_market_state(*, underlier: str = "AAPL", spot: float = 165.0, rate: float = 0.03, vol: float = 0.2) -> MarketState:
     return MarketState(
         as_of=date(2025, 1, 1),
@@ -721,17 +743,78 @@ class TestContractIRSolverCompiler:
                 requested_outputs=("price", "delta"),
             )
 
-    def test_asian_contract_remains_explicitly_unmigrated(self):
+    def test_asian_call_contract_binds_bounded_analytical_lane(self):
         market_state = _variance_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
 
-        with pytest.raises(ContractIRSolverNoMatchError):
-            compile_contract_ir_solver(
-                _asian_contract_ir(),
-                valuation_context=context,
-                market_state=market_state,
-                preferred_method="analytical",
-            )
+        decision = compile_contract_ir_solver(
+            _asian_contract_ir(),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="analytical",
+        )
+
+        assert decision.declaration_id == "helper_arithmetic_asian_option_analytical_call"
+        assert decision.callable_ref == "trellis.models.asian_option.price_arithmetic_asian_option_analytical"
+        spec = decision.call_kwargs["spec"]
+        assert spec.underlier == "SPX"
+        assert spec.option_type == "call"
+        assert spec.observation_dates == (
+            date(2025, 1, 31),
+            date(2025, 2, 28),
+            date(2025, 3, 31),
+            date(2025, 4, 30),
+        )
+        assert execute_contract_ir_solver_decision(decision) > 0.0
+
+    def test_asian_put_contract_binds_bounded_analytical_lane(self):
+        market_state = _variance_market_state()
+        context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+
+        decision = compile_contract_ir_solver(
+            _asian_put_contract_ir(),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="analytical",
+        )
+
+        assert decision.declaration_id == "helper_arithmetic_asian_option_analytical_put"
+        assert decision.callable_ref == "trellis.models.asian_option.price_arithmetic_asian_option_analytical"
+        spec = decision.call_kwargs["spec"]
+        assert spec.underlier == "SPX"
+        assert spec.option_type == "put"
+        assert spec.observation_dates == (
+            date(2025, 1, 3),
+            date(2025, 1, 10),
+            date(2025, 1, 17),
+            date(2025, 1, 24),
+            date(2025, 1, 31),
+        )
+        assert execute_contract_ir_solver_decision(decision) >= 0.0
+
+    def test_asian_contract_binds_bounded_monte_carlo_lane(self):
+        market_state = _variance_market_state()
+        context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+
+        decision = compile_contract_ir_solver(
+            _asian_contract_ir(),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="monte_carlo",
+        )
+
+        assert decision.declaration_id == "helper_arithmetic_asian_option_monte_carlo"
+        assert decision.callable_ref == "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo"
+        spec = decision.call_kwargs["spec"]
+        assert spec.underlier == "SPX"
+        assert spec.option_type == "call"
+        assert spec.observation_dates == (
+            date(2025, 1, 31),
+            date(2025, 2, 28),
+            date(2025, 3, 31),
+            date(2025, 4, 30),
+        )
+        assert execute_contract_ir_solver_decision(decision) > 0.0
 
     def test_semantic_blueprint_attaches_contract_ir_shadow_when_market_is_bound(self):
         market_state = _equity_market_state()
