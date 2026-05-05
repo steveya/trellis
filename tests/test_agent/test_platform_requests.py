@@ -1210,6 +1210,7 @@ def test_compile_build_request_emits_exact_authority_for_terminal_surface_spread
             discount=YieldCurve.flat(0.03),
             spot=100.0,
             vol_surface=_SurfaceSmile(),
+            selected_curve_names={"vol_surface": "SPX_IV"},
         ),
     )
 

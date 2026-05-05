@@ -70,6 +70,7 @@ def test_surface_quote_spread_helper_discounts_terminal_vol_difference():
         discount=YieldCurve.flat(0.03),
         spot=100.0,
         vol_surface=_SurfaceSmile(),
+        selected_curve_names={"vol_surface": "SPX_IV"},
     )
     spec = _SurfaceSpreadSpec(
         notional=100_000.0,
@@ -85,6 +86,52 @@ def test_surface_quote_spread_helper_discounts_terminal_vol_difference():
     assert price < 0.0
 
 
+def test_curve_quote_spread_helper_rejects_unknown_curve_id_without_fallback():
+    from trellis.models.quoted_observable import price_curve_quote_spread_analytical
+
+    market_state = MarketState(
+        as_of=date(2025, 1, 1),
+        settlement=date(2025, 1, 1),
+        discount=YieldCurve.flat(0.03),
+        selected_curve_names={"discount_curve": "USD_OIS"},
+    )
+    spec = _CurveSpreadSpec(
+        notional=1_000_000.0,
+        curve_id="USD_SWAP",
+        lhs_coordinate=ParRateTenor("10Y"),
+        rhs_coordinate=ParRateTenor("2Y"),
+        convention="par_rate",
+        expiry_date=date(2026, 6, 30),
+    )
+
+    with pytest.raises(ValueError, match="could not resolve curve 'USD_SWAP'"):
+        price_curve_quote_spread_analytical(market_state, spec)
+
+
+def test_surface_quote_spread_helper_rejects_unknown_surface_id_without_fallback():
+    from trellis.models.quoted_observable import price_surface_quote_spread_analytical
+
+    market_state = MarketState(
+        as_of=date(2025, 1, 1),
+        settlement=date(2025, 1, 1),
+        discount=YieldCurve.flat(0.03),
+        spot=100.0,
+        vol_surface=_SurfaceSmile(),
+        selected_curve_names={"vol_surface": "NDX_IV"},
+    )
+    spec = _SurfaceSpreadSpec(
+        notional=100_000.0,
+        surface_id="SPX_IV",
+        lhs_coordinate=VolPoint("1Y", 0.90, "moneyness"),
+        rhs_coordinate=VolPoint("1Y", 1.10, "moneyness"),
+        convention="black_vol",
+        expiry_date=date(2026, 6, 30),
+    )
+
+    with pytest.raises(ValueError, match="could not resolve surface 'SPX_IV'"):
+        price_surface_quote_spread_analytical(market_state, spec)
+
+
 def test_surface_quote_spread_helper_rejects_unsupported_surface_coordinate_kind():
     from trellis.agent.contract_ir import VolDeltaPoint
     from trellis.models.quoted_observable import price_surface_quote_spread_analytical
@@ -95,6 +142,7 @@ def test_surface_quote_spread_helper_rejects_unsupported_surface_coordinate_kind
         discount=YieldCurve.flat(0.03),
         spot=100.0,
         vol_surface=_SurfaceSmile(),
+        selected_curve_names={"vol_surface": "SPX_IV"},
     )
     spec = _SurfaceSpreadSpec(
         notional=100_000.0,

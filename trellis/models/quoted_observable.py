@@ -81,17 +81,18 @@ def price_surface_quote_spread_analytical_result(
         raise ValueError("Surface-quote spread helper requires market_state.settlement or as_of")
     if market_state.discount is None:
         raise ValueError("Surface-quote spread helper requires market_state.discount")
-    if market_state.vol_surface is None:
-        raise ValueError("Surface-quote spread helper requires market_state.vol_surface")
+    surface = _resolve_surface_source(market_state, str(getattr(spec, "surface_id", "") or ""))
     expiry_date = getattr(spec, "expiry_date")
     day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
     maturity = max(float(year_fraction(settlement, expiry_date, day_count)), 0.0)
     lhs_quote = _resolve_surface_quote(
+        surface,
         market_state,
         getattr(spec, "lhs_coordinate"),
         getattr(spec, "convention", ""),
     )
     rhs_quote = _resolve_surface_quote(
+        surface,
         market_state,
         getattr(spec, "rhs_coordinate"),
         getattr(spec, "convention", ""),
@@ -125,6 +126,8 @@ def _resolve_curve_source(market_state: MarketState, curve_id: str):
         and market_state.discount is not None
     ):
         return market_state.discount
+    if curve_id:
+        raise ValueError(f"Curve-quote spread helper could not resolve curve {curve_id!r}")
     if market_state.discount is not None:
         return market_state.discount
     raise ValueError(f"Curve-quote spread helper could not resolve curve {curve_id!r}")
@@ -152,7 +155,25 @@ def _resolve_curve_quote(curve, coordinate: object, convention: str) -> float:
     raise ValueError("Curve-quote spread helper requires a tenor or forward-rate interval coordinate")
 
 
-def _resolve_surface_quote(market_state: MarketState, coordinate: object, convention: str) -> float:
+def _resolve_surface_source(market_state: MarketState, surface_id: str):
+    if market_state.vol_surface is None:
+        raise ValueError("Surface-quote spread helper requires market_state.vol_surface")
+    if not surface_id:
+        return market_state.vol_surface
+    selected_names = {
+        str(name)
+        for name in (
+            market_state.selected_curve_name("vol_surface"),
+            market_state.selected_curve_name("black_vol_surface"),
+        )
+        if name
+    }
+    if surface_id in selected_names:
+        return market_state.vol_surface
+    raise ValueError(f"Surface-quote spread helper could not resolve surface {surface_id!r}")
+
+
+def _resolve_surface_quote(surface, market_state: MarketState, coordinate: object, convention: str) -> float:
     normalized_convention = str(convention or "").strip().lower()
     if normalized_convention != "black_vol":
         raise ValueError(
@@ -180,7 +201,7 @@ def _resolve_surface_quote(market_state: MarketState, coordinate: object, conven
         raise ValueError(
             f"Surface-quote spread helper supports only 'moneyness' or 'strike', got {strike_style!r}"
         )
-    return float(market_state.vol_surface.black_vol(max(expiry, 1e-6), strike))
+    return float(surface.black_vol(max(expiry, 1e-6), strike))
 
 
 def _par_rate_from_discount_curve(curve, tenor_years: float) -> float:
