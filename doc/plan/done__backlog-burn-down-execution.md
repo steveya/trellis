@@ -9,7 +9,7 @@ This program turns the audited backlog into a strict execution order with
 reviewable delivery slices, validation gates, and closeout rules that match
 `AGENTS.md`.
 
-Status mirror last synced: `2026-04-11`
+Status mirror last synced: `2026-05-06`
 
 Current status:
 
@@ -31,13 +31,16 @@ Current status:
 - `QUA-545` is complete as the short-term learning-evidence slice: repeated
   non-canary passes, a fixed-revision scorecard, and explicit attribution for
   knowledge-assisted improvements versus residual gaps.
+- `QUA-417` is complete as a stale/no-op closeout. The route YAML audit found
+  no demonstrably redundant optional primitive flags worth removing: the
+  explicit `required: false` metadata is consumed by validation, prompt,
+  lowering, and lane-obligation surfaces, and one optional registry symbol is
+  intentionally not validated as a required export.
 - Wave 1 is complete.
 - Wave 2 is complete.
 - Wave 3 is complete.
-- Wave 4 is complete except for the low-priority `QUA-417` maintenance tail.
-- `QUA-417` has been rewritten as a low-priority route-registry maintenance
-  cleanup rather than a core burn-down tranche.
-- The next actionable ticket in queue order is `QUA-417`.
+- Wave 4 is complete.
+- The backlog burn-down queue has no remaining actionable ticket.
 
 ## Operating Rules
 
@@ -67,8 +70,8 @@ These tickets are actionable backlog burn-down work:
 9. `QUA-447` semantic template follow-on for the lesson-to-test path
 10. `QUA-545` short-term learning evidence: repeated non-canary passes and a
     knowledge-reuse scorecard
-11. `QUA-417` route registry cleanup: collapse redundant optional utility
-    bindings
+11. `QUA-417` route registry cleanup: audit redundant optional utility
+    bindings, closed as stale/no-op after repo-grounded validation
 
 ## Out of Scope
 
@@ -149,7 +152,7 @@ Current note:
 | Order | Ticket | Expected artifact |
 | --- | --- | --- |
 | 10 | `QUA-545` | Non-canary multi-pass learning scorecard with explicit attribution |
-| 11 | `QUA-417` | Route-registry metadata compaction for optional utility bindings |
+| 11 | `QUA-417` | No-op route YAML optional-primitive audit and stale closeout |
 
 ## Ticket Selection Rule
 
@@ -171,8 +174,9 @@ rewritten as maintenance cleanup. `QUA-544` then improved the knowledge-light
 proving tranche to `3/3` success and split the remaining `KL01`
 first-pass retrieval miss into `QUA-779`, which is now also complete.
 `QUA-429` and `QUA-447` then landed the deterministic lesson-to-test path,
-and `QUA-545` added the repeated-pass non-canary learning benchmark, so the
-active queue now moves next to `QUA-417`.
+`QUA-545` added the repeated-pass non-canary learning benchmark, and
+`QUA-417` closed the maintenance tail as stale after confirming there was no
+behavior-neutral route YAML compaction left to land.
 
 Current architectural note:
 
@@ -192,12 +196,13 @@ Current architectural note:
 
 Plain-English goal:
 
-- keep the last backlog tail focused on low-priority route cleanup now that the
-  short-term learning benchmark exists and the broader learning loop can be
-  measured directly
+- preserve the completed burn-down execution record and the final no-op
+  route-YAML audit so future agents do not reopen stale cleanup scope
 
 Primary files and surfaces:
 
+- `trellis/agent/route_registry.py`
+- `trellis/agent/knowledge/canonical/routes.yaml`
 - `trellis/agent/task_learning_benchmark.py`
 - `scripts/run_task_learning_benchmark.py`
 - `docs/developer/task_and_eval_loops.rst`

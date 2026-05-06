@@ -156,7 +156,7 @@ quant software, not merely another memory feature.
 **Primary repo sources:**
 
 - `docs/platform_loop_workstream.md`
-- `doc/plan/active__backlog-burn-down-execution.md`
+- `doc/plan/done__backlog-burn-down-execution.md`
 - `doc/plan/draft__lesson-store-refactor.md`
 - `trellis/agent/knowledge/store.py`
 - `trellis/agent/knowledge/retrieval.py`
