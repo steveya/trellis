@@ -2937,6 +2937,7 @@ def _route_matches_product_ir(route, ir: ProductIR) -> bool:
     payoff_family = getattr(ir, "payoff_family", "")
     payoff_traits = set(getattr(ir, "payoff_traits", ()) or ())
     model_family = getattr(ir, "model_family", "")
+    has_specific_model_family = str(model_family or "").strip() not in {"", "generic", "unknown"}
     required_market_data = set(getattr(ir, "required_market_data", ()) or ())
 
     if route.exclude_instruments and instrument in route.exclude_instruments:
@@ -2947,6 +2948,7 @@ def _route_matches_product_ir(route, ir: ProductIR) -> bool:
         return False
     if (
         getattr(route, "match_model_family", None) is not None
+        and has_specific_model_family
         and model_family not in route.match_model_family
     ):
         return False

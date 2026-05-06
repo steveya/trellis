@@ -514,6 +514,14 @@ class TestCreditRoutes:
         new = _new_routes(registry, "monte_carlo", self.NTD_IR, pricing_plan=plan)
         assert new == ("credit_basket_nth_to_default",)
 
+    def test_nth_to_default_minimal_ir_still_matches_for_gap_audits(self, registry):
+        ir = ProductIR(instrument="nth_to_default", payoff_family="nth_to_default")
+        plan = _make_plan("monte_carlo", market_data={"discount_curve", "credit_curve"})
+
+        new = _new_routes(registry, "monte_carlo", ir, pricing_plan=plan)
+
+        assert new == ("credit_basket_nth_to_default",)
+
     def test_nth_to_default_route_no_longer_matches_by_instrument(self, registry):
         spec = find_route_by_id("credit_basket_nth_to_default", registry)
 
@@ -1748,6 +1756,17 @@ class TestFallbackRoutes:
             model_family="equity_diffusion",
         )
         new = _new_routes(registry, "pde_solver", ir)
+        assert new == ("vanilla_equity_theta_pde", "pde_theta_1d")
+
+    def test_vanilla_equity_pde_minimal_ir_still_matches_for_gap_audits(self, registry):
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+        )
+
+        new = _new_routes(registry, "pde_solver", ir)
+
         assert new == ("vanilla_equity_theta_pde", "pde_theta_1d")
 
     def test_copula_candidate(self, registry):

@@ -789,6 +789,7 @@ def match_candidate_routes(
     payoff_family = getattr(product_ir, "payoff_family", "") if product_ir is not None else ""
     payoff_traits = set(getattr(product_ir, "payoff_traits", ())) if product_ir is not None else set()
     model_family = getattr(product_ir, "model_family", "") if product_ir is not None else ""
+    has_specific_model_family = str(model_family or "").strip() not in {"", "generic", "unknown"}
     required_market_data = set()
     if pricing_plan is not None:
         required_market_data = set(getattr(pricing_plan, "required_market_data", ()) or ())
@@ -850,7 +851,11 @@ def match_candidate_routes(
             continue
         if route.exclude_exercise and exercise in route.exclude_exercise:
             continue
-        if route.match_model_family is not None and model_family not in route.match_model_family:
+        if (
+            route.match_model_family is not None
+            and has_specific_model_family
+            and model_family not in route.match_model_family
+        ):
             continue
 
         # Required market data match.  Skipped in gap-audit mode because
