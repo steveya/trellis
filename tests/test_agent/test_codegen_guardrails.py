@@ -853,7 +853,7 @@ def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
         ),
     ],
 )
-def test_absorbed_black76_nested_composite_route_uses_exact_helper_binding(
+def test_absorbed_black76_structural_exotic_route_uses_exact_helper_binding(
     instrument_type,
     expected_helper_ref,
 ):
@@ -870,7 +870,7 @@ def test_absorbed_black76_nested_composite_route_uses_exact_helper_binding(
         inspected_modules=("trellis.models.analytical.equity_exotics",),
         product_ir=ProductIR(
             instrument=instrument_type,
-            payoff_family="composite_option",
+            payoff_family=instrument_type,
             payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
             exercise_style="european",
             state_dependence="terminal_markov",

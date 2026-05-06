@@ -490,14 +490,14 @@ class TestLegacyBindingCatalogRegression:
                         f"malformed when-clause: {cp.when!r}"
                     )
 
-    def test_analytical_black76_uses_dsl_form_for_two_swaption_clauses(self):
-        """QUA-921 migration lock: the two swaption-structural
-        ``analytical_black76`` clauses in ``backend_bindings.yaml`` are DSL
-        form.  The other three clauses (vanilla, period_rate_option_strip,
-        basket) and the ``default`` sentinel intentionally stay legacy
-        (see the module docstring in
-        ``test_backend_bindings_black76_dsl_parity.py`` for the per-clause
-        rationale).
+    def test_analytical_black76_uses_dsl_form_for_structural_clauses(self):
+        """QUA-921 / QUA-900 migration lock: the swaption and absorbed
+        analytical-exotic ``analytical_black76`` clauses in
+        ``backend_bindings.yaml`` are DSL form.  The vanilla,
+        period_rate_option_strip, basket, and ``default`` sentinel clauses
+        intentionally stay legacy (see the module docstring in
+        ``test_backend_bindings_black76_dsl_parity.py`` for the remaining
+        per-clause rationale).
 
         This regression lock prevents an accidental revert of the migration
         (``backend_bindings.yaml`` edited back to string-tag form) from
@@ -514,23 +514,37 @@ class TestLegacyBindingCatalogRegression:
         dsl_forms = [
             cp for cp in binding.conditional_primitives if cp.contract_pattern is not None
         ]
-        # Two structural DSL clauses landed by QUA-921:
-        #   - swaption + bermudan
-        #   - swaption + european
-        assert len(dsl_forms) == 2, (
-            f"analytical_black76 binding should carry exactly two DSL "
-            f"structural clauses after QUA-921, found {len(dsl_forms)}"
+        # QUA-921 landed two swaption DSL clauses; QUA-900 moved the
+        # absorbed analytical exotics to structural DSL payoff tags too.
+        assert len(dsl_forms) == 9, (
+            f"analytical_black76 binding should carry exactly nine DSL "
+            f"structural clauses after QUA-900, found {len(dsl_forms)}"
         )
 
-        # Spot-check the two DSL patterns are the expected swaption shapes.
         dsl_kinds = {
             cp.contract_pattern.payoff.kind for cp in dsl_forms  # type: ignore[union-attr]
         }
-        assert dsl_kinds == {"swaption_payoff"}, (
-            f"expected both DSL clauses to use 'swaption_payoff', got "
-            f"{dsl_kinds}"
-        )
+        assert dsl_kinds == {
+            "barrier_payoff",
+            "chooser_payoff",
+            "cliquet_payoff",
+            "compound_payoff",
+            "digital_payoff",
+            "lookback_payoff",
+            "swaption_payoff",
+            "variance_payoff",
+        }
         dsl_styles = set()
+        expected_absorbed_styles = {
+            "barrier_payoff": "european",
+            "chooser_payoff": "european",
+            "cliquet_payoff": "european",
+            "compound_payoff": "european",
+            "digital_payoff": "european",
+            "lookback_payoff": "european",
+            "variance_payoff": "none",
+        }
+        absorbed_styles = {}
         for cp in dsl_forms:
             exercise = cp.contract_pattern.exercise  # type: ignore[union-attr]
             if exercise is not None:
@@ -543,7 +557,11 @@ class TestLegacyBindingCatalogRegression:
                 )
                 if style_value is not None:
                     dsl_styles.add(style_value)
-        assert dsl_styles == {"bermudan", "european"}, (
-            f"expected DSL clauses to cover {{'bermudan', 'european'}} "
+                    kind = cp.contract_pattern.payoff.kind  # type: ignore[union-attr]
+                    if kind in expected_absorbed_styles:
+                        absorbed_styles[kind] = style_value
+        assert dsl_styles == {"bermudan", "european", "none"}, (
+            f"expected DSL clauses to cover {{'bermudan', 'european', 'none'}} "
             f"exercise styles, got {dsl_styles}"
         )
+        assert absorbed_styles == expected_absorbed_styles

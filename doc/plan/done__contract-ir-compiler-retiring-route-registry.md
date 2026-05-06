@@ -2,9 +2,9 @@
 
 ## Status
 
-Active. Live execution mirror for `QUA-887`.
+Done. Execution mirror for the `QUA-887` structural-dispatch closeout slice.
 
-Status mirror last synced: `2026-04-18`
+Status mirror last synced: `2026-05-06`
 
 ## Linked Linear
 
@@ -15,23 +15,25 @@ Status mirror last synced: `2026-04-18`
 - QUA-902 — Semantic dispatch: normalize CDS onto event-triggered two-legged
   contract family (Done)
 - QUA-900 — Semantic dispatch: rate and exotic analytical routes stop matching
-  by instrument
+  by instrument (Done)
 - QUA-901 — Semantic dispatch: residual instrument-keyed MC and PDE routes stop
-  matching by instrument
+  matching by instrument (Done)
 
 ## Purpose
 
-This plan is the live execution mirror for staged retirement of
-instrument-keyed route matching under `QUA-887`. The goal is to retire
-`ProductIR.instrument -> route_id` as the primary dispatch key and replace it
-with structural / pattern-based dispatch that composes with the existing
-semantic compiler, family IRs, and backend-binding surfaces.
+This plan records the completed staged retirement of positive instrument-keyed
+route matching under `QUA-887`. The closeout removes
+`ProductIR.instrument -> route_id` as the primary dispatch key for the canonical
+route registry and replaces it with structural / pattern-based dispatch that
+composes with the existing semantic compiler, family IRs, and backend-binding
+surfaces.
 
 `QUA-902` landed the foundational normalization slice. It froze one execution
 decision before broader route migration: single-name CDS now compiles and
 routes as an `event_triggered_two_legged_contract`, not as a product-shaped
-`credit_default_swap` computational family. The next front-of-queue slice is
-`QUA-900`.
+`credit_default_swap` computational family. `QUA-900` and `QUA-901` then
+closed the residual analytical, credit, Monte Carlo, QMC, and PDE route
+surfaces that still used positive `match.instruments` dispatch.
 
 ## Framing
 
@@ -62,10 +64,10 @@ What is already in the code (so the plan is not starting from zero):
   already emits dual views: legacy route/module hints and a conservative
   `dsl_lowering` companion. This is the natural splice point for a Contract
   IR dispatch.
-- `routes.yaml` has 30 routes, of which 14 are instrument-dispatch
-  (`match.instruments: [X]`), 5 use `match.methods` only, and 6 use
-  `conditional_primitives` — a pattern-style when-clause dispatch that
-  already works.
+- `routes.yaml` now has 19 canonical routes. None use positive
+  `match.instruments` dispatch; residual product-name guards are hard
+  `exclude_instruments` vetoes on generic fallback routes, not primary
+  dispatch keys.
 
 ## Execution Decisions
 
@@ -85,15 +87,14 @@ What is already in the code (so the plan is not starting from zero):
 | Ticket | Status | Scope |
 | --- | --- | --- |
 | `QUA-902` | Done | normalize CDS semantic/routing/lowering surfaces onto `event_triggered_two_legged_contract` and migrate both CDS helper-backed routes off product-shaped family matching |
-| `QUA-900` | Backlog | migrate the remaining low-complexity analytical instrument-keyed routes |
-| `QUA-901` | Backlog | migrate the residual MC / PDE / credit routes that still dispatch by instrument |
+| `QUA-900` | Done | migrate the remaining low-complexity analytical instrument-keyed routes |
+| `QUA-901` | Done | migrate the residual MC / PDE / credit routes that still dispatch by instrument |
 
 Pickup rule:
 
-- start with the first non-`Done` ticket in the queue
-- keep each slice parity-gated and reviewable
-- do not start additive Contract IR AST work until the structural-dispatch
-  queue above is materially landed or deliberately split further
+- the structural-dispatch queue above is complete
+- additive ContractIR follow-ons such as QUA-923 and QUA-924 remain separate
+  backlog work and are not part of this route-dispatch closeout
 
 ## Why Prior Attempts Stalled
 
@@ -492,44 +493,22 @@ attempts stalled.
    include the parity test output (old vs. new path for all affected
    fixtures and benchmarks) in the PR description.
 
-## Open Questions For The Reviewer
+## Closeout
 
-These are the places where the author is least certain and where
-outside judgment would help most.
+- QUA-902 normalized the CDS computational family onto
+  `event_triggered_two_legged_contract`.
+- QUA-900 collapsed the residual analytical exotic routes into structural
+  Black76 / short-rate pattern dispatch and synchronized backend-binding
+  authority.
+- QUA-901 removed the remaining positive `match.instruments` entries from the
+  credit basket and vanilla equity PDE route surfaces and added route-level
+  `model_family` matching.
+- The canonical registry now fails the route-registry regression if any route
+  reintroduces positive instrument matching.
+- `ProductIR.instrument` remains available for semantic identity, traces,
+  diagnostics, and compatibility; it is no longer the canonical route-registry
+  dispatch key.
 
-1. Should Phase 1 and Phase 2 overlap? Phase 1 uses pattern-keyed
-   `conditional_primitives` inside `routes.yaml`. Phase 2 introduces a
-   proper Contract IR. Is there a path where Phase 1's patterns are
-   Contract IR patterns from the start, rather than two separate layers?
-   This could collapse Phases 1 and 2 but might overconstrain Phase 1.
-2. What is the smallest possible Phase 2? The current pick is vanilla +
-   variance + digital + asian (four). Could it be two (vanilla +
-   variance)? The fewer the scope, the more likely the phase lands, but
-   below some threshold the Contract IR does not prove its generality.
-3. Kernel normalization — decorator vs. subtyping. The proposal uses
-   `@solves_pattern(ir, adapter_fn)`. Alternative: kernels implement a
-   `Pricer[IR]` protocol with an `apply(ir, market_state) -> float`
-   method. Protocol-based is more discoverable; decorator-based is more
-   additive. Which does the codebase's conventions prefer?
-4. Relationship to QUA-792. This plan assumes Contract IR completes
-   what QUA-792 started. Is that the right framing, or should the
-   Contract IR compiler be a parallel epic that feeds into QUA-792
-   epic 5 (exotic composition proof)? The reviewer may see this
-   differently.
-5. Parity tolerance ε. FinancePy parity runs use 1–3% tolerance today.
-   For dual-path parity (old vs. new Trellis paths) ε should probably be
-   much lower — around 1e-10 relative, since both paths should produce
-   bit-identical outputs when the math is equivalent. Kernels with Monte
-   Carlo components have RNG state, so ε has to be strategy-dependent.
-   Worth deciding up front.
-
-## Next Steps
-
-- Land this document as a draft plan doc for review.
-- Collect reviewer feedback on the five open questions.
-- Promote to `active__contract-ir-compiler-retiring-route-registry.md`
-  once the framing is endorsed and the first implementation ticket is
-  queued.
-- The first implementation ticket is the smallest Phase 1 slice: one
-  instrument-keyed route converted to a pattern declaration, with its
-  parity test.
+Follow-on work remains outside this closeout: QUA-923 and QUA-924 continue the
+broader ContractIR foundation and fixture-hardening program, but they do not
+block closing the instrument-keyed route-dispatch epic.

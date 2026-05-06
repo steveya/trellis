@@ -203,6 +203,7 @@ class RouteSpec:
     discovered_from: str | None = None
     reuse_module_paths: tuple[str, ...] = ()
     successful_builds: int = 0
+    match_model_family: tuple[str, ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -641,6 +642,7 @@ def _parse_route(raw: dict) -> RouteSpec:
         exclude_exercise=_str_tuple(match.get("exclude_exercise")),
         match_payoff_family=_optional_str_tuple(match.get("payoff_family")),
         match_payoff_traits=_optional_str_tuple(match.get("payoff_traits")),
+        match_model_family=_optional_str_tuple(match.get("model_family")),
         match_required_market_data=_optional_str_tuple(match.get("required_market_data")),
         exclude_required_market_data=_optional_str_tuple(match.get("exclude_required_market_data")),
         primitives=tuple(_parse_primitive(p) for p in raw.get("primitives", ())),
@@ -786,6 +788,8 @@ def match_candidate_routes(
     exercise = getattr(product_ir, "exercise_style", "none") if product_ir is not None else "none"
     payoff_family = getattr(product_ir, "payoff_family", "") if product_ir is not None else ""
     payoff_traits = set(getattr(product_ir, "payoff_traits", ())) if product_ir is not None else set()
+    model_family = getattr(product_ir, "model_family", "") if product_ir is not None else ""
+    has_specific_model_family = str(model_family or "").strip() not in {"", "generic", "unknown"}
     required_market_data = set()
     if pricing_plan is not None:
         required_market_data = set(getattr(pricing_plan, "required_market_data", ()) or ())
@@ -813,9 +817,10 @@ def match_candidate_routes(
         if not capability.ok:
             continue
 
-        # Instrument/payoff family/payoff traits — OR match
+        # Instrument/payoff family/payoff traits — OR match. Model family and
+        # exercise filters are separate structural refinements below.
         # The old _candidate_routes checks instrument OR payoff_family OR
-        # payoff_traits with OR semantics.  Any positive match qualifies;
+        # payoff_traits with OR semantics. Any positive match qualifies;
         # exclusions are always AND (hard veto).
         if route.exclude_instruments and instrument in route.exclude_instruments:
             continue
@@ -845,6 +850,12 @@ def match_candidate_routes(
         if route.match_exercise is not None and exercise not in route.match_exercise:
             continue
         if route.exclude_exercise and exercise in route.exclude_exercise:
+            continue
+        if (
+            route.match_model_family is not None
+            and has_specific_model_family
+            and model_family not in route.match_model_family
+        ):
             continue
 
         # Required market data match.  Skipped in gap-audit mode because

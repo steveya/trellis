@@ -2334,6 +2334,21 @@ def _infer_instrument(description: str, instrument_type: str | None) -> str | No
         ("american_option", ("american_option", "american option")),
         ("barrier_option", ("barrier_option", "barrier option")),
         ("asian_option", ("asian_option", "asian option")),
+        (
+            "digital_option",
+            (
+                "digital_option",
+                "digital option",
+                "cash_or_nothing",
+                "cash or nothing",
+                "asset_or_nothing",
+                "asset or nothing",
+            ),
+        ),
+        ("lookback_option", ("lookback_option", "lookback option", "lookback")),
+        ("chooser_option", ("chooser_option", "chooser option", "chooser")),
+        ("compound_option", ("compound_option", "compound option")),
+        ("cliquet_option", ("cliquet_option", "cliquet option", "cliquet")),
         ("heston_option", ("heston_option", "heston option", "heston")),
         ("variance_swap", ("variance_swap", "variance swap")),
         (
@@ -2484,7 +2499,17 @@ def _traits_from_text(desc: str) -> tuple[str, ...]:
     trait_aliases = {
         "asian": ("asian",),
         "barrier": ("barrier",),
+        "digital": (
+            "digital",
+            "cash_or_nothing",
+            "asset_or_nothing",
+            "cash-or-nothing",
+            "asset-or-nothing",
+        ),
         "lookback": ("lookback",),
+        "chooser": ("chooser",),
+        "compound": ("compound",),
+        "cliquet": ("cliquet",),
         "callable": ("callable",),
         "puttable": ("puttable",),
         "bermudan": ("bermudan",),
@@ -2638,11 +2663,21 @@ def _payoff_family_for(
         return "asian_option"
     if instrument in {"barrier_option"}:
         return "barrier_option"
+    if instrument in {
+        "digital_option",
+        "lookback_option",
+        "chooser_option",
+        "compound_option",
+        "cliquet_option",
+    }:
+        return instrument
     if instrument in {"american_put", "american_option", "european_option", "heston_option"}:
         return "vanilla_option"
     if instrument == "credit_loss_distribution":
         return "credit_loss_distribution"
-    if instrument in {"cdo", "nth_to_default"}:
+    if instrument == "nth_to_default":
+        return "nth_to_default"
+    if instrument == "cdo":
         return "credit_basket"
     if instrument == "mbs":
         return "mortgage_pool"
@@ -2670,6 +2705,11 @@ def _exercise_style_for(
         "swaption",
         "barrier_option",
         "asian_option",
+        "digital_option",
+        "lookback_option",
+        "chooser_option",
+        "compound_option",
+        "cliquet_option",
         "european_option",
         "heston_option",
     }:
@@ -2679,7 +2719,19 @@ def _exercise_style_for(
 
 def _schedule_dependence_for(instrument: str, payoff_traits: tuple[str, ...]) -> bool:
     """Return whether the product is schedule dependent."""
-    if instrument in {"american_put", "american_option", "european_option", "heston_option", "asian_option", "barrier_option"}:
+    if instrument in {
+        "american_put",
+        "american_option",
+        "european_option",
+        "heston_option",
+        "asian_option",
+        "barrier_option",
+        "digital_option",
+        "lookback_option",
+        "chooser_option",
+        "compound_option",
+        "cliquet_option",
+    }:
         return False
     if any(
         trait in payoff_traits
@@ -2734,7 +2786,18 @@ def _model_family_for(
         return "credit_copula"
     if method == "waterfall" or instrument == "mbs":
         return "cashflow_structured"
-    if "option" in desc or instrument in {"barrier_option", "asian_option", "american_put", "american_option", "european_option"}:
+    if "option" in desc or instrument in {
+        "barrier_option",
+        "asian_option",
+        "american_put",
+        "american_option",
+        "european_option",
+        "digital_option",
+        "lookback_option",
+        "chooser_option",
+        "compound_option",
+        "cliquet_option",
+    }:
         return "equity_diffusion"
     return "generic"
 
@@ -2831,6 +2894,8 @@ def _augment_ir_with_promoted_route_support(ir: ProductIR) -> ProductIR:
             continue
         if not _route_matches_product_ir(route, ir):
             continue
+        if not _route_contributes_promoted_support(route, ir):
+            continue
         # QUA-909: a route whose scorer declares ``non_european_penalty`` is
         # signaling that it is a lower-bound / fallback approximation for
         # non-European exercise styles and must not be advertised as a
@@ -2849,12 +2914,7 @@ def _augment_ir_with_promoted_route_support(ir: ProductIR) -> ProductIR:
                 continue
 
         route_family = str(getattr(route, "route_family", "") or "").strip()
-        if (
-            route_family
-            and getattr(route, "match_instruments", None) is not None
-            and ir.instrument in route.match_instruments
-            and route_family not in route_families
-        ):
+        if route_family and route_family not in route_families:
             route_families.append(route_family)
 
         for engine_family in _candidate_engine_families_from_route(route.engine_family):
@@ -2876,6 +2936,8 @@ def _route_matches_product_ir(route, ir: ProductIR) -> bool:
     exercise = getattr(ir, "exercise_style", "none")
     payoff_family = getattr(ir, "payoff_family", "")
     payoff_traits = set(getattr(ir, "payoff_traits", ()) or ())
+    model_family = getattr(ir, "model_family", "")
+    has_specific_model_family = str(model_family or "").strip() not in {"", "generic", "unknown"}
     required_market_data = set(getattr(ir, "required_market_data", ()) or ())
 
     if route.exclude_instruments and instrument in route.exclude_instruments:
@@ -2883,6 +2945,12 @@ def _route_matches_product_ir(route, ir: ProductIR) -> bool:
     if route.match_exercise is not None and exercise not in route.match_exercise:
         return False
     if route.exclude_exercise and exercise in route.exclude_exercise:
+        return False
+    if (
+        getattr(route, "match_model_family", None) is not None
+        and has_specific_model_family
+        and model_family not in route.match_model_family
+    ):
         return False
     if route.match_required_market_data is not None and not all(
         item in required_market_data for item in route.match_required_market_data
@@ -2906,6 +2974,41 @@ def _route_matches_product_ir(route, ir: ProductIR) -> bool:
     if has_positive_filter and not (instrument_ok or payoff_family_ok or payoff_traits_ok):
         return False
     return has_positive_filter
+
+
+_STRUCTURAL_PROMOTED_SUPPORT_PAYOFFS: dict[str, frozenset[str]] = {
+    "analytical_black76": frozenset(
+        {
+            "barrier_option",
+            "digital_option",
+            "lookback_option",
+            "chooser_option",
+            "compound_option",
+            "cliquet_option",
+            "variance_swap",
+        }
+    ),
+    "short_rate_bond_option": frozenset({"zcb_option"}),
+    "credit_default_swap": frozenset({EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY}),
+    "credit_basket_nth_to_default": frozenset({"nth_to_default"}),
+    "vanilla_equity_theta_pde": frozenset({"vanilla_option"}),
+}
+
+
+def _route_contributes_promoted_support(route, ir: ProductIR) -> bool:
+    """Return whether a matched route should augment ProductIR support hints."""
+    instrument = getattr(ir, "instrument", None)
+    if (
+        getattr(route, "match_instruments", None) is not None
+        and instrument in route.match_instruments
+    ):
+        return True
+
+    structural_payoffs = _STRUCTURAL_PROMOTED_SUPPORT_PAYOFFS.get(
+        str(getattr(route, "id", "") or "").strip()
+    )
+    payoff_family = str(getattr(ir, "payoff_family", "") or "").strip()
+    return bool(structural_payoffs and payoff_family in structural_payoffs)
 
 
 def _candidate_engine_families_from_route(engine_family: str) -> tuple[str, ...]:
