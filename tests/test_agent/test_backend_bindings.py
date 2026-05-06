@@ -241,7 +241,7 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
         pytest.param(
             ProductIR(
                 instrument="digital_option",
-                payoff_family="composite_option",
+                payoff_family="digital_option",
                 payoff_traits=(
                     "discounting",
                     "terminal_markov",
@@ -261,7 +261,7 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
         pytest.param(
             ProductIR(
                 instrument="lookback_option",
-                payoff_family="composite_option",
+                payoff_family="lookback_option",
                 payoff_traits=(
                     "discounting",
                     "path_dependent",
@@ -281,7 +281,7 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
         pytest.param(
             ProductIR(
                 instrument="chooser_option",
-                payoff_family="composite_option",
+                payoff_family="chooser_option",
                 payoff_traits=(
                     "discounting",
                     "terminal_markov",
@@ -301,7 +301,7 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
         pytest.param(
             ProductIR(
                 instrument="compound_option",
-                payoff_family="composite_option",
+                payoff_family="compound_option",
                 payoff_traits=(
                     "discounting",
                     "terminal_markov",
@@ -321,7 +321,7 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
         pytest.param(
             ProductIR(
                 instrument="cliquet_option",
-                payoff_family="composite_option",
+                payoff_family="cliquet_option",
                 payoff_traits=("vanilla_option",),
                 exercise_style="european",
                 state_dependence="terminal_markov",

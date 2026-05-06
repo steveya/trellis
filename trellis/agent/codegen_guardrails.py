@@ -1813,7 +1813,11 @@ def _route_score(
         if resolved_roles.intersection(model_support_roles):
             score += 1.0
 
-        capability = evaluate_route_capability_match(spec, product_ir)
+        capability = evaluate_route_capability_match(
+            spec,
+            product_ir,
+            method=scoring_method,
+        )
         if capability.ok:
             score += 1.0 + 0.25 * len(capability.matched_predicates)
         else:

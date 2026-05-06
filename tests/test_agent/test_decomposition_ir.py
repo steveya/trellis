@@ -74,6 +74,47 @@ class TestProductIR:
         assert "pde_solver" in ir.route_families
         assert ir.supported is True
 
+    def test_ir_for_absorbed_analytical_exotics_uses_specific_payoff_families(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        cases = (
+            (
+                "Cash-or-nothing digital call on AAPL paying 1 if spot exceeds 150 at expiry",
+                "digital_option",
+                "digital_option",
+            ),
+            (
+                "Fixed-strike lookback option on AAPL expiring 2025-11-15",
+                "lookback_option",
+                "lookback_option",
+            ),
+            (
+                "Chooser option on AAPL strike 150 expiring 2025-11-15",
+                "chooser_option",
+                "chooser_option",
+            ),
+            (
+                "Compound option on AAPL strike 150 expiring 2025-11-15",
+                "compound_option",
+                "compound_option",
+            ),
+            (
+                "Cliquet option on AAPL with annual reset dates",
+                "cliquet_option",
+                "cliquet_option",
+            ),
+        )
+
+        for description, instrument_type, expected_family in cases:
+            ir = decompose_to_ir(description, instrument_type=instrument_type)
+            assert ir.instrument == instrument_type
+            assert ir.payoff_family == expected_family
+            assert ir.exercise_style == "european"
+            inferred = decompose_to_ir(description)
+            assert inferred.instrument == instrument_type
+            assert inferred.payoff_family == expected_family
+            assert inferred.exercise_style == "european"
+
     def test_ir_for_callable_bond(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 

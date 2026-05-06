@@ -1173,7 +1173,7 @@ class TestAnalyticalRoutes:
     )
     DIGITAL_IR = ProductIR(
         instrument="digital_option",
-        payoff_family="composite_option",
+        payoff_family="digital_option",
         payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
         exercise_style="european",
         state_dependence="terminal_markov",
@@ -1181,7 +1181,7 @@ class TestAnalyticalRoutes:
     )
     LOOKBACK_IR = ProductIR(
         instrument="lookback_option",
-        payoff_family="composite_option",
+        payoff_family="lookback_option",
         payoff_traits=("discounting", "path_dependent", "vol_surface_dependence"),
         exercise_style="european",
         state_dependence="path_dependent",
@@ -1189,7 +1189,7 @@ class TestAnalyticalRoutes:
     )
     CHOOSER_IR = ProductIR(
         instrument="chooser_option",
-        payoff_family="composite_option",
+        payoff_family="chooser_option",
         payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
         exercise_style="european",
         state_dependence="terminal_markov",
@@ -1197,7 +1197,7 @@ class TestAnalyticalRoutes:
     )
     COMPOUND_IR = ProductIR(
         instrument="compound_option",
-        payoff_family="composite_option",
+        payoff_family="compound_option",
         payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
         exercise_style="european",
         state_dependence="terminal_markov",
@@ -1205,7 +1205,7 @@ class TestAnalyticalRoutes:
     )
     CLIQUET_IR = ProductIR(
         instrument="cliquet_option",
-        payoff_family="composite_option",
+        payoff_family="cliquet_option",
         payoff_traits=("vanilla_option",),
         exercise_style="european",
         state_dependence="terminal_markov",
@@ -1231,6 +1231,17 @@ class TestAnalyticalRoutes:
         "analytical",
         market_data={"discount_curve", "black_vol_surface"},
     )
+
+    def test_analytical_black76_absorbed_exotics_do_not_match_by_instrument(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+
+        assert spec.match_instruments is None
+        legacy_instrument_conditions = [
+            cond.when
+            for cond in spec.conditional_primitives
+            if isinstance(cond.when, dict) and "instrument" in cond.when
+        ]
+        assert legacy_instrument_conditions == []
 
     def test_swaption_candidate(self, registry):
         new = _new_routes(
@@ -1279,6 +1290,22 @@ class TestAnalyticalRoutes:
             registry, "analytical", self.COMPOUND_IR, pricing_plan=self.BLACK76_PLAN,
         )
         assert new == ("analytical_black76",)
+
+    def test_unknown_composite_candidate_does_not_widen_into_black76(self, registry):
+        unknown_ir = ProductIR(
+            instrument="unknown_composite_option",
+            payoff_family="composite_option",
+            payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        )
+
+        new = _new_routes(
+            registry, "analytical", unknown_ir, pricing_plan=self.BLACK76_PLAN,
+        )
+
+        assert "analytical_black76" not in new
 
     def test_zcb_candidate(self, registry):
         # QUA-915: ZCB option family collapsed into short_rate_bond_option.

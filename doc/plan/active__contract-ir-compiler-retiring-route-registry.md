@@ -4,7 +4,7 @@
 
 Active. Live execution mirror for `QUA-887`.
 
-Status mirror last synced: `2026-04-18`
+Status mirror last synced: `2026-05-05`
 
 ## Linked Linear
 
@@ -85,7 +85,7 @@ What is already in the code (so the plan is not starting from zero):
 | Ticket | Status | Scope |
 | --- | --- | --- |
 | `QUA-902` | Done | normalize CDS semantic/routing/lowering surfaces onto `event_triggered_two_legged_contract` and migrate both CDS helper-backed routes off product-shaped family matching |
-| `QUA-900` | Backlog | migrate the remaining low-complexity analytical instrument-keyed routes |
+| `QUA-900` | In Progress | migrate the remaining low-complexity analytical instrument-keyed routes |
 | `QUA-901` | Backlog | migrate the residual MC / PDE / credit routes that still dispatch by instrument |
 
 Pickup rule:
