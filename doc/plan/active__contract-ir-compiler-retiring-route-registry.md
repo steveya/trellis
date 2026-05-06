@@ -86,7 +86,7 @@ What is already in the code (so the plan is not starting from zero):
 | --- | --- | --- |
 | `QUA-902` | Done | normalize CDS semantic/routing/lowering surfaces onto `event_triggered_two_legged_contract` and migrate both CDS helper-backed routes off product-shaped family matching |
 | `QUA-900` | In Progress | migrate the remaining low-complexity analytical instrument-keyed routes |
-| `QUA-901` | Backlog | migrate the residual MC / PDE / credit routes that still dispatch by instrument |
+| `QUA-901` | In Progress | migrate the residual MC / PDE / credit routes that still dispatch by instrument |
 
 Pickup rule:
 

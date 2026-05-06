@@ -2675,7 +2675,9 @@ def _payoff_family_for(
         return "vanilla_option"
     if instrument == "credit_loss_distribution":
         return "credit_loss_distribution"
-    if instrument in {"cdo", "nth_to_default"}:
+    if instrument == "nth_to_default":
+        return "nth_to_default"
+    if instrument == "cdo":
         return "credit_basket"
     if instrument == "mbs":
         return "mortgage_pool"
@@ -2934,6 +2936,7 @@ def _route_matches_product_ir(route, ir: ProductIR) -> bool:
     exercise = getattr(ir, "exercise_style", "none")
     payoff_family = getattr(ir, "payoff_family", "")
     payoff_traits = set(getattr(ir, "payoff_traits", ()) or ())
+    model_family = getattr(ir, "model_family", "")
     required_market_data = set(getattr(ir, "required_market_data", ()) or ())
 
     if route.exclude_instruments and instrument in route.exclude_instruments:
@@ -2941,6 +2944,11 @@ def _route_matches_product_ir(route, ir: ProductIR) -> bool:
     if route.match_exercise is not None and exercise not in route.match_exercise:
         return False
     if route.exclude_exercise and exercise in route.exclude_exercise:
+        return False
+    if (
+        getattr(route, "match_model_family", None) is not None
+        and model_family not in route.match_model_family
+    ):
         return False
     if route.match_required_market_data is not None and not all(
         item in required_market_data for item in route.match_required_market_data
@@ -2980,6 +2988,8 @@ _STRUCTURAL_PROMOTED_SUPPORT_PAYOFFS: dict[str, frozenset[str]] = {
     ),
     "short_rate_bond_option": frozenset({"zcb_option"}),
     "credit_default_swap": frozenset({EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY}),
+    "credit_basket_nth_to_default": frozenset({"nth_to_default"}),
+    "vanilla_equity_theta_pde": frozenset({"vanilla_option"}),
 }
 
 

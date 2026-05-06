@@ -173,6 +173,20 @@ class TestProductIR:
         assert "analytical" in ir.candidate_engine_families
         assert ir.supported is True
 
+    def test_ir_for_nth_to_default_uses_specific_payoff_family(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "First-to-default basket on five names with Gaussian copula",
+            instrument_type="nth_to_default",
+        )
+
+        assert ir.instrument == "nth_to_default"
+        assert ir.payoff_family == "nth_to_default"
+        assert ir.model_family == "credit_copula"
+        assert "nth_to_default" in ir.route_families
+        assert ir.supported is True
+
     def test_ir_normalizes_american_option_alias(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 

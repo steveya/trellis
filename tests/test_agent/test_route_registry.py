@@ -480,7 +480,11 @@ class TestCreditRoutes:
         payoff_family="event_triggered_two_legged_contract",
         route_families=("event_triggered_two_legged_contract",),
     )
-    NTD_IR = ProductIR(instrument="nth_to_default", payoff_family="nth_to_default")
+    NTD_IR = ProductIR(
+        instrument="nth_to_default",
+        payoff_family="nth_to_default",
+        model_family="credit_copula",
+    )
 
     def test_cds_analytical(self, registry):
         new = _new_routes(
@@ -509,6 +513,14 @@ class TestCreditRoutes:
         plan = _make_plan("monte_carlo", market_data={"discount_curve", "credit_curve"})
         new = _new_routes(registry, "monte_carlo", self.NTD_IR, pricing_plan=plan)
         assert new == ("credit_basket_nth_to_default",)
+
+    def test_nth_to_default_route_no_longer_matches_by_instrument(self, registry):
+        spec = find_route_by_id("credit_basket_nth_to_default", registry)
+
+        assert spec is not None
+        assert spec.match_instruments is None
+        assert spec.match_payoff_family == ("nth_to_default",)
+        assert spec.match_model_family == ("credit_copula",)
 
     _PRE_COLLAPSE_ANALYTICAL_PRIMITIVES = frozenset({
         ("trellis.core.date_utils", "year_fraction", "time_measure"),
@@ -1733,6 +1745,7 @@ class TestFallbackRoutes:
             instrument="european_option",
             payoff_family="vanilla_option",
             exercise_style="european",
+            model_family="equity_diffusion",
         )
         new = _new_routes(registry, "pde_solver", ir)
         assert new == ("vanilla_equity_theta_pde", "pde_theta_1d")
@@ -1814,6 +1827,7 @@ class TestFallbackRoutes:
             instrument="european_option",
             payoff_family="vanilla_option",
             exercise_style="european",
+            model_family="equity_diffusion",
         )
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
@@ -1821,12 +1835,21 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_vanilla_equity_pde_route_no_longer_matches_by_instrument(self, registry):
+        spec = find_route_by_id("vanilla_equity_theta_pde", registry)
+
+        assert spec is not None
+        assert spec.match_instruments is None
+        assert spec.match_payoff_family == ("vanilla_option",)
+        assert spec.match_model_family == ("equity_diffusion",)
+
     def test_vanilla_equity_pde_helper_route_is_thin(self, registry):
         spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
         ir = ProductIR(
             instrument="european_option",
             payoff_family="vanilla_option",
             exercise_style="european",
+            model_family="equity_diffusion",
         )
         assert resolve_route_notes(spec, ir) == ()
         assert resolve_route_adapters(spec, ir) == ()
@@ -2155,6 +2178,15 @@ class TestEngineFamilyCoverage:
         route_ids = {r.id for r in registry.routes}
         expected_ids = set(self.EXPECTED.keys())
         assert route_ids == expected_ids, f"Missing: {expected_ids - route_ids}, Extra: {route_ids - expected_ids}"
+
+    def test_canonical_routes_do_not_use_positive_instrument_matching(self, registry):
+        instrument_keyed = {
+            route.id: route.match_instruments
+            for route in registry.routes
+            if route.match_instruments is not None
+        }
+
+        assert instrument_keyed == {}
 
 
 # ---------------------------------------------------------------------------

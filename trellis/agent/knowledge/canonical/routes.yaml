@@ -143,9 +143,9 @@ routes:
       payoff_family_bonus: {nth_to_default: 2.0}
     match:
       methods: [analytical, monte_carlo, qmc, copula]
-      instruments: [nth_to_default]
       required_market_data: [credit_curve]
       payoff_family: [nth_to_default]
+      model_family: [credit_copula]
     conditional_primitives:
       - when:
           methods: [analytical]
@@ -1118,8 +1118,8 @@ routes:
       payoff_family_bonus: {vanilla_option: 2.0}
     match:
       methods: [pde_solver]
-      instruments: [european_option]
       payoff_family: [vanilla_option]
+      model_family: [equity_diffusion]
       exercise: [european]
     admissibility:
       control_styles: [identity, holder_max]
