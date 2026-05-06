@@ -586,3 +586,37 @@ class TestLegacyRegistryRegression:
             f"analytical_black76 default clause should use 'default' sentinel; "
             f"got when={default_cp.when!r}"
         )
+
+    def test_absorbed_analytical_exotic_dsl_clauses_keep_exercise_guards(self):
+        """Absorbed exotics must not widen beyond their old exercise guard."""
+        registry = load_route_registry()
+        black76 = next(
+            (r for r in registry.routes if r.id == "analytical_black76"), None
+        )
+        assert black76 is not None, "analytical_black76 missing from registry"
+
+        expected_styles = {
+            "barrier_payoff": "european",
+            "chooser_payoff": "european",
+            "cliquet_payoff": "european",
+            "compound_payoff": "european",
+            "digital_payoff": "european",
+            "lookback_payoff": "european",
+            "variance_payoff": "none",
+        }
+        seen: dict[str, str] = {}
+        for cp in black76.conditional_primitives:
+            pattern = cp.contract_pattern
+            if pattern is None or pattern.payoff is None:
+                continue
+            kind = getattr(pattern.payoff, "kind", None)
+            if kind not in expected_styles:
+                continue
+            assert pattern.exercise is not None, (
+                f"{kind} clause must declare an exercise style guard"
+            )
+            style = pattern.exercise.style
+            style_value = style if isinstance(style, str) else getattr(style, "value", None)
+            seen[kind] = style_value
+
+        assert seen == expected_styles

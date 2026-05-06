@@ -535,6 +535,16 @@ class TestLegacyBindingCatalogRegression:
             "variance_payoff",
         }
         dsl_styles = set()
+        expected_absorbed_styles = {
+            "barrier_payoff": "european",
+            "chooser_payoff": "european",
+            "cliquet_payoff": "european",
+            "compound_payoff": "european",
+            "digital_payoff": "european",
+            "lookback_payoff": "european",
+            "variance_payoff": "none",
+        }
+        absorbed_styles = {}
         for cp in dsl_forms:
             exercise = cp.contract_pattern.exercise  # type: ignore[union-attr]
             if exercise is not None:
@@ -547,7 +557,11 @@ class TestLegacyBindingCatalogRegression:
                 )
                 if style_value is not None:
                     dsl_styles.add(style_value)
-        assert dsl_styles == {"bermudan", "european"}, (
-            f"expected DSL clauses to cover {{'bermudan', 'european'}} "
+                    kind = cp.contract_pattern.payoff.kind  # type: ignore[union-attr]
+                    if kind in expected_absorbed_styles:
+                        absorbed_styles[kind] = style_value
+        assert dsl_styles == {"bermudan", "european", "none"}, (
+            f"expected DSL clauses to cover {{'bermudan', 'european', 'none'}} "
             f"exercise styles, got {dsl_styles}"
         )
+        assert absorbed_styles == expected_absorbed_styles
