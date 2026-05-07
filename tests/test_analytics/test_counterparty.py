@@ -322,3 +322,82 @@ def test_compute_exposure_metrics_reports_ee_epe_and_pfe():
         (5.0, 30.0, 20.0),
     )
     assert metrics.to_dict()["aggregation_level"] == "portfolio"
+
+
+def test_price_counterparty_xva_consumes_semantic_exposure_stack():
+    from trellis.analytics.counterparty import (
+        CollateralAgreement,
+        CounterpartySemanticContract,
+        NettingSet,
+        XVAAssumptionSet,
+        price_counterparty_xva,
+    )
+
+    cube = FutureValueCube(
+        values=np.asarray(
+            [
+                [[100.0, 20.0], [140.0, 30.0], [80.0, 120.0]],
+                [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
+                [[-50.0, 10.0], [60.0, -20.0], [10.0, 30.0]],
+            ],
+            dtype=float,
+        ),
+        position_names=("swap_a", "swap_b", "swap_c"),
+        observation_times=(0.0, 1.0 / 12.0, 2.0 / 12.0),
+        observation_dates=(
+            date(2024, 1, 1),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+        ),
+    )
+    agreement = CollateralAgreement(
+        agreement_id="csa_alpha",
+        collateral_currency="USD",
+        threshold=50.0,
+        minimum_transfer_amount=10.0,
+        independent_amount=5.0,
+        margin_period_of_risk_days=31,
+        valuation_lag_days=29,
+    )
+    alpha = NettingSet(
+        netting_set_id="ns_alpha",
+        counterparty_id="bank_alpha",
+        position_names=("swap_a", "swap_b"),
+        collateral_agreement_id="csa_alpha",
+        exposure_currency="USD",
+    )
+    beta = NettingSet(
+        netting_set_id="ns_beta",
+        counterparty_id="bank_beta",
+        position_names=("swap_c",),
+        exposure_currency="USD",
+    )
+    contract = CounterpartySemanticContract(
+        contract_id="cp_alpha",
+        netting_sets=(alpha, beta),
+        collateral_agreements=(agreement,),
+        covered_position_names=("swap_a", "swap_b", "swap_c"),
+    )
+
+    result = price_counterparty_xva(
+        cube,
+        counterparty_contract=contract,
+        assumptions=XVAAssumptionSet(
+            counterparty_hazard_rate=0.02,
+            own_hazard_rate=0.01,
+            counterparty_recovery_rate=0.40,
+            own_recovery_rate=0.40,
+            funding_spread=0.005,
+            discount_rate=0.0,
+        ),
+        pfe_levels=(0.95,),
+    )
+
+    assert result.exposure_metrics.epe == pytest.approx(84.375)
+    np.testing.assert_allclose(result.expected_negative_exposure, (25.0, 10.0, 7.5))
+    assert result.cva == pytest.approx(0.16875)
+    assert result.dva == pytest.approx(0.013125)
+    assert result.fva == pytest.approx(0.0703125)
+    assert result.total_xva == pytest.approx(0.2259375)
+    assert result.metadata["counterparty_contract_id"] == "cp_alpha"
+    assert result.to_dict()["assumptions"]["funding_spread"] == 0.005

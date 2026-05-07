@@ -971,8 +971,10 @@ those later aggregation workflows run:
        CollateralAgreement,
        CounterpartySemanticContract,
        NettingSet,
+       XVAAssumptionSet,
        aggregate_netting_set_exposures,
        compute_exposure_metrics,
+       price_counterparty_xva,
        project_collateral_state,
        validate_counterparty_semantic_contract,
    )
@@ -1021,12 +1023,31 @@ those later aggregation workflows run:
    metrics.epe
    metrics.pfe[0.95]
 
+   xva = price_counterparty_xva(
+       cube,
+       counterparty_contract=contract,
+       assumptions=XVAAssumptionSet(
+           counterparty_hazard_rate=0.02,
+           counterparty_recovery_rate=0.40,
+           own_hazard_rate=0.01,
+           own_recovery_rate=0.40,
+           funding_spread=0.005,
+       ),
+       pfe_levels=(0.95,),
+   )
+   xva.cva
+   xva.dva
+   xva.fva
+   xva.total_xva
+
 The projection is deliberately explicit: held collateral is computed from
 valuation-lagged netted values, and closeout values come from the margin-period
 observation horizon. The netting-set exposure cube turns those per-set
 projections into closeout-ready packets. The first metric output reports
-portfolio and per-netting-set ``EE``/``EPE``/``PFE`` curves. xVA remains a
-separate downstream workflow.
+portfolio and per-netting-set ``EE``/``EPE``/``PFE`` curves. The xVA workflow is
+bounded to scalar flat-hazard ``CVA``/``DVA``/``FVA`` assumptions over that same
+exposure stack; it is not a replacement for an enterprise counterparty-risk,
+capital, margin, or funding platform.
 
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use

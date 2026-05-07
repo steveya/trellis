@@ -259,9 +259,12 @@ valuation-lagged collateral balances and margin-period closeout values.
 ``aggregate_netting_set_exposures(...)`` then builds the closeout-ready
 ``NettingSetExposureCube`` across one or more netting sets.
 ``compute_exposure_metrics(...)`` emits the first stable ``EE``/``EPE``/``PFE``
-artifact over that cube, with portfolio and per-netting-set views. Downstream
-xVA consumers should depend on those packets instead of inventing ad hoc
-position-group metadata.
+artifact over that cube, with portfolio and per-netting-set views.
+``price_counterparty_xva(...)`` now consumes the same semantic contract and
+exposure cube to produce bounded ``CVA``/``DVA``/``FVA`` results from explicit
+flat hazard, recovery, funding-spread, and discount-rate assumptions. Broader
+``MVA``/``KVA``, stochastic credit, legal enforceability, and capital workflow
+surfaces are still intentionally outside this developer contract.
 
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,

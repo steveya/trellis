@@ -574,6 +574,110 @@ class ExposureMetricResult:
         }
 
 
+@dataclass(frozen=True)
+class XVAAssumptionSet:
+    """Scalar assumptions for the bounded counterparty xVA workflow."""
+
+    counterparty_hazard_rate: float
+    counterparty_recovery_rate: float
+    own_hazard_rate: float = 0.0
+    own_recovery_rate: float = 0.0
+    funding_spread: float = 0.0
+    discount_rate: float = 0.0
+    currency: str = ""
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "counterparty_hazard_rate",
+            _non_negative_float(
+                self.counterparty_hazard_rate,
+                field_name="counterparty_hazard_rate",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "own_hazard_rate",
+            _non_negative_float(self.own_hazard_rate, field_name="own_hazard_rate"),
+        )
+        object.__setattr__(
+            self,
+            "funding_spread",
+            _non_negative_float(self.funding_spread, field_name="funding_spread"),
+        )
+        object.__setattr__(self, "discount_rate", float(self.discount_rate))
+        for field_name in ("counterparty_recovery_rate", "own_recovery_rate"):
+            value = float(getattr(self, field_name))
+            if not 0.0 <= value <= 1.0:
+                raise ValueError(f"{field_name} must satisfy 0 <= value <= 1")
+            object.__setattr__(self, field_name, value)
+        object.__setattr__(self, "currency", _normalize_token(self.currency))
+
+    @property
+    def counterparty_loss_given_default(self) -> float:
+        """Return counterparty LGD."""
+        return 1.0 - self.counterparty_recovery_rate
+
+    @property
+    def own_loss_given_default(self) -> float:
+        """Return own LGD."""
+        return 1.0 - self.own_recovery_rate
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-friendly assumption payload."""
+        return {
+            "counterparty_hazard_rate": self.counterparty_hazard_rate,
+            "counterparty_recovery_rate": self.counterparty_recovery_rate,
+            "own_hazard_rate": self.own_hazard_rate,
+            "own_recovery_rate": self.own_recovery_rate,
+            "funding_spread": self.funding_spread,
+            "discount_rate": self.discount_rate,
+            "currency": self.currency,
+        }
+
+
+@dataclass(frozen=True)
+class XVAResult:
+    """Bounded CVA/DVA/FVA result over the institutional exposure stack."""
+
+    exposure_metrics: ExposureMetricResult
+    assumptions: XVAAssumptionSet
+    expected_negative_exposure: tuple[float, ...]
+    negative_epe: float
+    cva: float
+    dva: float
+    fva: float
+    total_xva: float
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "expected_negative_exposure",
+            tuple(float(value) for value in self.expected_negative_exposure),
+        )
+        object.__setattr__(self, "negative_epe", float(self.negative_epe))
+        object.__setattr__(self, "cva", float(self.cva))
+        object.__setattr__(self, "dva", float(self.dva))
+        object.__setattr__(self, "fva", float(self.fva))
+        object.__setattr__(self, "total_xva", float(self.total_xva))
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-friendly xVA payload."""
+        return {
+            "cva": self.cva,
+            "dva": self.dva,
+            "fva": self.fva,
+            "total_xva": self.total_xva,
+            "expected_negative_exposure": list(self.expected_negative_exposure),
+            "negative_epe": self.negative_epe,
+            "assumptions": self.assumptions.to_dict(),
+            "exposure_metrics": self.exposure_metrics.to_dict(),
+            "metadata": dict(self.metadata),
+        }
+
+
 def validate_counterparty_semantic_contract(
     contract: CounterpartySemanticContract,
 ) -> CounterpartySemanticValidationReport:
@@ -822,6 +926,109 @@ def compute_exposure_metrics(
     )
 
 
+def compute_xva_from_exposure_cube(
+    exposure_cube: NettingSetExposureCube,
+    *,
+    assumptions: XVAAssumptionSet,
+    pfe_levels: tuple[float, ...] | list[float] = (0.95,),
+    metadata: Mapping[str, object] | None = None,
+) -> XVAResult:
+    """Compute bounded CVA/DVA/FVA from a netting-set exposure cube."""
+    metrics = compute_exposure_metrics(exposure_cube, pfe_levels=pfe_levels)
+    residual_values = (
+        np.asarray(exposure_cube.closeout_values, dtype=float)
+        - np.asarray(exposure_cube.collateral_balance, dtype=float)
+    )
+    negative_values = np.maximum(-residual_values, 0.0)
+    portfolio_negative_values = np.sum(negative_values, axis=0)
+    expected_negative = tuple(
+        float(value)
+        for value in np.mean(portfolio_negative_values, axis=1)
+    )
+    negative_epe = _time_weighted_average(
+        expected_negative,
+        observation_times=exposure_cube.observation_times,
+    )
+    positive_integral = _discounted_time_integral(
+        metrics.expected_exposure,
+        observation_times=exposure_cube.observation_times,
+        discount_rate=assumptions.discount_rate,
+    )
+    negative_integral = _discounted_time_integral(
+        expected_negative,
+        observation_times=exposure_cube.observation_times,
+        discount_rate=assumptions.discount_rate,
+    )
+    cva = (
+        assumptions.counterparty_loss_given_default
+        * assumptions.counterparty_hazard_rate
+        * positive_integral
+    )
+    dva = assumptions.own_loss_given_default * assumptions.own_hazard_rate * negative_integral
+    fva = assumptions.funding_spread * positive_integral
+    return XVAResult(
+        exposure_metrics=metrics,
+        assumptions=assumptions,
+        expected_negative_exposure=expected_negative,
+        negative_epe=negative_epe,
+        cva=cva,
+        dva=dva,
+        fva=fva,
+        total_xva=cva - dva + fva,
+        metadata={
+            "workflow": "compute_xva_from_exposure_cube",
+            "xva_components": ("cva", "dva", "fva"),
+            "discounting": "flat_continuous_rate",
+            **dict(metadata or {}),
+        },
+    )
+
+
+def price_counterparty_xva(
+    future_value_cube: FutureValueCube,
+    *,
+    counterparty_contract: CounterpartySemanticContract,
+    assumptions: XVAAssumptionSet,
+    pfe_levels: tuple[float, ...] | list[float] = (0.95,),
+) -> XVAResult:
+    """Run the bounded counterparty xVA workflow from semantic inputs."""
+    validation = validate_counterparty_semantic_contract(counterparty_contract)
+    if not validation.ok:
+        missing = ", ".join(validation.missing_fields)
+        raise ValueError(f"Counterparty semantic contract is incomplete: {missing}")
+
+    agreements = counterparty_contract.collateral_agreement_map
+    projections: dict[str, CollateralStateProjection] = {}
+    for netting_set in counterparty_contract.netting_sets:
+        if not netting_set.collateral_agreement_id:
+            continue
+        agreement = agreements[netting_set.collateral_agreement_id]
+        projections[netting_set.netting_set_id] = project_collateral_state(
+            future_value_cube,
+            netting_set=netting_set,
+            collateral_agreement=agreement,
+        )
+    exposure_cube = aggregate_netting_set_exposures(
+        future_value_cube,
+        netting_sets=counterparty_contract.netting_sets,
+        collateral_projections=projections,
+    )
+    return compute_xva_from_exposure_cube(
+        exposure_cube,
+        assumptions=assumptions,
+        pfe_levels=pfe_levels,
+        metadata={
+            "workflow": "price_counterparty_xva",
+            "counterparty_contract_id": counterparty_contract.contract_id,
+            "netting_set_ids": tuple(
+                netting_set.netting_set_id
+                for netting_set in counterparty_contract.netting_sets
+            ),
+            "validation_warnings": validation.warnings,
+        },
+    )
+
+
 def _coerce_path_matrix(values, *, field_name: str):
     """Return a defensive two-dimensional path matrix."""
     matrix = np.asarray(values, dtype=float)
@@ -917,6 +1124,36 @@ def _time_weighted_average(
     return float(integral / horizon)
 
 
+def _discounted_time_integral(
+    values: tuple[float, ...],
+    *,
+    observation_times: tuple[float, ...],
+    discount_rate: float,
+) -> float:
+    """Return the trapezoidal discounted exposure integral."""
+    if not values:
+        return 0.0
+    times = tuple(float(time) for time in observation_times)
+    if len(values) != len(times):
+        raise ValueError("discounted exposure values must match observation_times")
+    if len(values) == 1:
+        return 0.0
+    integral = 0.0
+    for left_value, right_value, left_time, right_time in zip(
+        values,
+        values[1:],
+        times,
+        times[1:],
+    ):
+        left_discount = float(np.exp(-float(discount_rate) * float(left_time)))
+        right_discount = float(np.exp(-float(discount_rate) * float(right_time)))
+        integral += 0.5 * (
+            float(left_value) * left_discount
+            + float(right_value) * right_discount
+        ) * float(right_time - left_time)
+    return float(integral)
+
+
 def _validate_projection_alignment(
     projection: CollateralStateProjection,
     *,
@@ -1000,9 +1237,13 @@ __all__ = [
     "CounterpartySemanticContract",
     "CounterpartySemanticValidationReport",
     "compute_exposure_metrics",
+    "compute_xva_from_exposure_cube",
     "ExposureMetricResult",
     "NettingSet",
     "NettingSetExposureCube",
     "project_collateral_state",
+    "price_counterparty_xva",
     "validate_counterparty_semantic_contract",
+    "XVAAssumptionSet",
+    "XVAResult",
 ]
