@@ -271,6 +271,13 @@ baseline under ``docs/benchmarks/pod_risk_workflows.{json,md}``. The same
 folder-level contract applies there: checked benchmark payloads are repo
 artifacts, not ad hoc local output dumps.
 
+The same benchmarking module now also exposes
+``supported_counterparty_exposure_benchmark_scenarios()`` and
+``build_supported_counterparty_exposure_benchmark_report(...)`` for the
+institutional exposure path. The checked baseline lives in
+``docs/benchmarks/counterparty_exposure_workflows.{json,md}`` and records the
+future-value cube and warm-started exposure-reduction lanes separately.
+
 The first supported model-parameter calibration workflow now sits on top of the
 same substrate. ``calibrate_hull_white(...)`` packages a supported strip of
 swaption-style quotes as a typed least-squares request, reuses the selected

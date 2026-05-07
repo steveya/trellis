@@ -1,0 +1,166 @@
+{
+  "benchmark_name": "counterparty_exposure_workflows",
+  "cases": [
+    {
+      "cold": {
+        "label": "hull_white_shared_path_irs_book",
+        "max_seconds": 0.005674,
+        "mean_seconds": 0.005674,
+        "median_seconds": 0.005674,
+        "metadata": {
+          "n_paths": 96,
+          "n_steps": 36,
+          "position_count": 2,
+          "process_family": "hull_white_1f"
+        },
+        "min_seconds": 0.005674,
+        "mode": "cold",
+        "notes": [
+          "institutional_exposure",
+          "future_value_cube",
+          "shared_paths"
+        ],
+        "repeats": 1,
+        "run_seconds": [
+          0.005674
+        ],
+        "runs_per_second": 176.248,
+        "warmups": 0
+      },
+      "label": "hull_white_shared_path_irs_book",
+      "metadata": {
+        "n_paths": 96,
+        "n_steps": 36,
+        "position_count": 2,
+        "process_family": "hull_white_1f"
+      },
+      "notes": [
+        "institutional_exposure",
+        "future_value_cube",
+        "shared_paths"
+      ],
+      "steady": {
+        "label": "hull_white_shared_path_irs_book",
+        "max_seconds": 0.005704,
+        "mean_seconds": 0.005704,
+        "median_seconds": 0.005704,
+        "metadata": {
+          "n_paths": 96,
+          "n_steps": 36,
+          "position_count": 2,
+          "process_family": "hull_white_1f"
+        },
+        "min_seconds": 0.005704,
+        "mode": "steady_state",
+        "notes": [
+          "institutional_exposure",
+          "future_value_cube",
+          "shared_paths"
+        ],
+        "repeats": 1,
+        "run_seconds": [
+          0.005704
+        ],
+        "runs_per_second": 175.322,
+        "warmups": 0
+      },
+      "steady_speedup": 0.995,
+      "workflow": "swap_portfolio_future_value_cube"
+    },
+    {
+      "cold": {
+        "label": "netting_collateral_ee_epe_pfe",
+        "max_seconds": 0.006096,
+        "mean_seconds": 0.006096,
+        "median_seconds": 0.006096,
+        "metadata": {
+          "netting_set_count": 1,
+          "pfe_levels": [
+            0.95,
+            0.99
+          ],
+          "position_count": 2,
+          "warm_start": "reuse_future_value_cube"
+        },
+        "min_seconds": 0.006096,
+        "mode": "cold",
+        "notes": [
+          "institutional_exposure",
+          "netting",
+          "collateral",
+          "ee_epe_pfe"
+        ],
+        "repeats": 1,
+        "run_seconds": [
+          0.006096
+        ],
+        "runs_per_second": 164.051,
+        "warmups": 0
+      },
+      "label": "netting_collateral_ee_epe_pfe",
+      "metadata": {
+        "netting_set_count": 1,
+        "pfe_levels": [
+          0.95,
+          0.99
+        ],
+        "position_count": 2,
+        "warm_start": "reuse_future_value_cube"
+      },
+      "notes": [
+        "institutional_exposure",
+        "netting",
+        "collateral",
+        "ee_epe_pfe"
+      ],
+      "steady": {
+        "label": "netting_collateral_ee_epe_pfe",
+        "max_seconds": 0.000289,
+        "mean_seconds": 0.000289,
+        "median_seconds": 0.000289,
+        "metadata": {
+          "netting_set_count": 1,
+          "pfe_levels": [
+            0.95,
+            0.99
+          ],
+          "position_count": 2,
+          "warm_start": "reuse_future_value_cube"
+        },
+        "min_seconds": 0.000289,
+        "mode": "steady_state",
+        "notes": [
+          "institutional_exposure",
+          "netting",
+          "collateral",
+          "ee_epe_pfe"
+        ],
+        "repeats": 1,
+        "run_seconds": [
+          0.000289
+        ],
+        "runs_per_second": 3454.723,
+        "warmups": 0
+      },
+      "steady_speedup": 21.059,
+      "workflow": "counterparty_exposure_metrics"
+    }
+  ],
+  "created_at": "2026-05-07T03:21:30Z",
+  "environment": {
+    "platform": "macOS-26.3.1-arm64-arm-64bit",
+    "python_version": "3.10.6"
+  },
+  "notes": [
+    "Cold runs rebuild the future-value cube and exposure stack; steady-state runs reuse upstream artifacts where the workflow allows it.",
+    "Coverage is limited to supported vanilla IRS future-value cubes, bounded collateral projection, netting-set exposure inputs, and EE/EPE/PFE metrics."
+  ],
+  "report_title": "Counterparty Exposure Benchmark",
+  "summary": {
+    "average_steady_speedup": 11.027,
+    "cold_mean_seconds": 0.005885,
+    "steady_mean_seconds": 0.002997,
+    "steady_state_workflow_count": 2,
+    "workflow_count": 2
+  }
+}

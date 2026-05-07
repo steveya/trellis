@@ -510,6 +510,12 @@ measure bundles in ``docs/benchmarks/pod_risk_workflows.{json,md}``, so later
 runtime changes can be compared against an explicit desk-risk benchmark rather
 than anecdotal timing claims.
 
+The institutional exposure path has a separate checked benchmark pack under
+``docs/benchmarks/counterparty_exposure_workflows.{json,md}``. It measures the
+supported shared-path IRS future-value cube plus the warm-started netting /
+collateral / ``EE``-``EPE``-``PFE`` reduction flow, with fixture metadata for
+path count, step count, and warm-start assumptions.
+
 Warning And Error Policy
 ------------------------
 

@@ -1214,6 +1214,11 @@ scenario-result cube path, rebuild-based rates-risk workflows, bucketed vega,
 and the spot-risk measure bundle through the same public/runtime entrypoints
 shown above.
 
+Institutional exposure workflows have their own checked benchmark report in
+``docs/benchmarks/counterparty_exposure_workflows.md``. It covers the supported
+swap-portfolio future-value cube and the warm-started collateral/netting
+``EE``/``EPE``/``PFE`` reduction path.
+
 Callable-bond analytics now have two dedicated runtime measures as well:
 
 - ``oas_duration`` reports effective duration on the callable tree, with an
