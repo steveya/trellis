@@ -971,6 +971,7 @@ those later aggregation workflows run:
        CollateralAgreement,
        CounterpartySemanticContract,
        NettingSet,
+       aggregate_netting_set_exposures,
        project_collateral_state,
        validate_counterparty_semantic_contract,
    )
@@ -1007,10 +1008,18 @@ those later aggregation workflows run:
    projection.collateral_balance
    projection.collateralized_exposure
 
+   exposure_cube = aggregate_netting_set_exposures(
+       cube,
+       netting_sets=(netting_set,),
+       collateral_projections={"ns_alpha": projection},
+   )
+   exposure_cube.closeout_input_for_set("ns_alpha")
+
 The projection is deliberately explicit: held collateral is computed from
 valuation-lagged netted values, and closeout values come from the margin-period
-observation horizon. Netting aggregation across sets, exposure metrics, and xVA
-remain separate downstream workflows.
+observation horizon. The netting-set exposure cube turns those per-set
+projections into closeout-ready packets. Exposure metrics and xVA remain
+separate downstream workflows.
 
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use

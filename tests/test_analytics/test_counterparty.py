@@ -160,3 +160,92 @@ def test_project_collateral_state_applies_margin_period_and_valuation_lag():
     assert projection.metadata["margin_period_of_risk_days"] == 31
     assert projection.metadata["valuation_lag_days"] == 29
     assert projection.to_dict()["netting_set_id"] == "ns_alpha"
+
+
+def test_aggregate_netting_set_exposures_builds_closeout_inputs():
+    from trellis.analytics.counterparty import (
+        CollateralAgreement,
+        NettingSet,
+        aggregate_netting_set_exposures,
+        project_collateral_state,
+    )
+
+    cube = FutureValueCube(
+        values=np.asarray(
+            [
+                [[100.0, 20.0], [140.0, 30.0], [80.0, 120.0]],
+                [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
+                [[-50.0, 10.0], [60.0, -20.0], [10.0, 30.0]],
+            ],
+            dtype=float,
+        ),
+        position_names=("swap_a", "swap_b", "swap_c"),
+        observation_times=(0.0, 1.0 / 12.0, 2.0 / 12.0),
+        observation_dates=(
+            date(2024, 1, 1),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+        ),
+    )
+    agreement = CollateralAgreement(
+        agreement_id="csa_alpha",
+        collateral_currency="USD",
+        threshold=50.0,
+        minimum_transfer_amount=10.0,
+        independent_amount=5.0,
+        margin_period_of_risk_days=31,
+        valuation_lag_days=29,
+    )
+    alpha = NettingSet(
+        netting_set_id="ns_alpha",
+        counterparty_id="bank_alpha",
+        position_names=("swap_a", "swap_b"),
+        collateral_agreement_id="csa_alpha",
+        exposure_currency="USD",
+    )
+    beta = NettingSet(
+        netting_set_id="ns_beta",
+        counterparty_id="bank_beta",
+        position_names=("swap_c",),
+        exposure_currency="USD",
+    )
+    alpha_projection = project_collateral_state(
+        cube,
+        netting_set=alpha,
+        collateral_agreement=agreement,
+    )
+
+    exposure_cube = aggregate_netting_set_exposures(
+        cube,
+        netting_sets=(alpha, beta),
+        collateral_projections={"ns_alpha": alpha_projection},
+    )
+
+    assert exposure_cube.netting_set_ids == ("ns_alpha", "ns_beta")
+    np.testing.assert_allclose(
+        exposure_cube.netted_values_for_set("ns_alpha"),
+        alpha_projection.netted_values,
+    )
+    np.testing.assert_allclose(
+        exposure_cube.exposure_values_for_set("ns_alpha"),
+        alpha_projection.collateralized_exposure,
+    )
+    np.testing.assert_allclose(
+        exposure_cube.netted_values_for_set("ns_beta"),
+        np.asarray([[-50.0, 10.0], [60.0, -20.0], [10.0, 30.0]]),
+    )
+    np.testing.assert_allclose(
+        exposure_cube.exposure_values_for_set("ns_beta"),
+        np.asarray([[0.0, 10.0], [60.0, 0.0], [10.0, 30.0]]),
+    )
+    closeout = exposure_cube.closeout_input_for_set("ns_alpha")
+    assert closeout["netting_set_id"] == "ns_alpha"
+    assert closeout["collateralized"] is True
+    assert closeout["exposure_currency"] == "USD"
+    np.testing.assert_allclose(closeout["collateral_balance"], alpha_projection.collateral_balance)
+    np.testing.assert_allclose(
+        exposure_cube.portfolio_exposure_values(),
+        alpha_projection.collateralized_exposure
+        + np.asarray([[0.0, 10.0], [60.0, 0.0], [10.0, 30.0]]),
+    )
+    assert exposure_cube.to_dict()["netting_set_ids"] == ["ns_alpha", "ns_beta"]

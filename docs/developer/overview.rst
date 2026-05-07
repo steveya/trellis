@@ -256,8 +256,10 @@ an explicit validation report that distinguishes missing required fields from
 warning-only operational gaps. The same module now projects a bounded
 ``CollateralStateProjection`` from a ``FutureValueCube`` by applying
 valuation-lagged collateral balances and margin-period closeout values.
-Downstream netting aggregation and xVA consumers should depend on that semantic
-and projection packet instead of inventing ad hoc position-group metadata.
+``aggregate_netting_set_exposures(...)`` then builds the closeout-ready
+``NettingSetExposureCube`` across one or more netting sets. Downstream exposure
+metric and xVA consumers should depend on those packets instead of inventing ad
+hoc position-group metadata.
 
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,

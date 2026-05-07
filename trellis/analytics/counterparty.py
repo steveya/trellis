@@ -342,6 +342,147 @@ class CollateralStateProjection:
         }
 
 
+@dataclass(frozen=True)
+class NettingSetExposureCube:
+    """Netting-set/date/path exposure tensor with closeout-ready inputs."""
+
+    netting_set_ids: tuple[str, ...]
+    observation_times: tuple[float, ...]
+    observation_dates: tuple[date, ...]
+    netted_values: Any
+    closeout_values: Any
+    collateral_balance: Any
+    exposure_values: Any
+    netting_set_metadata: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        ids = _string_tuple(self.netting_set_ids)
+        if not ids:
+            raise ValueError("NettingSetExposureCube requires at least one netting set")
+        netted = _coerce_netting_tensor(self.netted_values, field_name="netted_values")
+        closeout = _coerce_netting_tensor(self.closeout_values, field_name="closeout_values")
+        collateral = _coerce_netting_tensor(
+            self.collateral_balance,
+            field_name="collateral_balance",
+        )
+        exposure = _coerce_netting_tensor(self.exposure_values, field_name="exposure_values")
+        expected_shape = netted.shape
+        for name, tensor in (
+            ("closeout_values", closeout),
+            ("collateral_balance", collateral),
+            ("exposure_values", exposure),
+        ):
+            if tensor.shape != expected_shape:
+                raise ValueError(
+                    f"{name} must match netted_values shape {expected_shape}; got {tensor.shape}"
+                )
+        if expected_shape[0] != len(ids):
+            raise ValueError("netting_set_ids must match the netting-set axis")
+        times = tuple(float(value) for value in self.observation_times)
+        if expected_shape[1] != len(times):
+            raise ValueError("observation_times must match the observation axis")
+        dates = tuple(self.observation_dates or ())
+        if dates and expected_shape[1] != len(dates):
+            raise ValueError("observation_dates must match the observation axis")
+        object.__setattr__(self, "netting_set_ids", ids)
+        object.__setattr__(self, "observation_times", times)
+        object.__setattr__(self, "observation_dates", dates)
+        object.__setattr__(self, "netted_values", netted.copy())
+        object.__setattr__(self, "closeout_values", closeout.copy())
+        object.__setattr__(self, "collateral_balance", collateral.copy())
+        object.__setattr__(self, "exposure_values", exposure.copy())
+        object.__setattr__(
+            self,
+            "netting_set_metadata",
+            MappingProxyType(
+                {
+                    str(key): MappingProxyType(dict(value))
+                    for key, value in (self.netting_set_metadata or {}).items()
+                }
+            ),
+        )
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    @property
+    def n_netting_sets(self) -> int:
+        """Return the number of netting sets."""
+        return int(self.netted_values.shape[0])
+
+    @property
+    def n_observation_times(self) -> int:
+        """Return the number of observation times."""
+        return int(self.netted_values.shape[1])
+
+    @property
+    def n_paths(self) -> int:
+        """Return the number of paths."""
+        return int(self.netted_values.shape[2])
+
+    def netting_set_index(self, netting_set_id: str) -> int:
+        """Return the tensor index for one netting set id."""
+        token = str(netting_set_id)
+        try:
+            return self.netting_set_ids.index(token)
+        except ValueError as exc:
+            raise KeyError(f"Unknown netting set {netting_set_id!r}") from exc
+
+    def netted_values_for_set(self, netting_set_id: str):
+        """Return netted clean values for one netting set."""
+        return np.asarray(
+            self.netted_values[self.netting_set_index(netting_set_id)],
+            dtype=float,
+        ).copy()
+
+    def exposure_values_for_set(self, netting_set_id: str):
+        """Return post-closeout exposure values for one netting set."""
+        return np.asarray(
+            self.exposure_values[self.netting_set_index(netting_set_id)],
+            dtype=float,
+        ).copy()
+
+    def closeout_input_for_set(self, netting_set_id: str) -> dict[str, object]:
+        """Return the closeout-ready exposure input packet for one netting set."""
+        index = self.netting_set_index(netting_set_id)
+        resolved_id = self.netting_set_ids[index]
+        meta = dict(self.netting_set_metadata.get(resolved_id, {}))
+        return {
+            "netting_set_id": resolved_id,
+            "counterparty_id": meta.get("counterparty_id", ""),
+            "position_names": list(meta.get("position_names", ())),
+            "exposure_currency": meta.get("exposure_currency", ""),
+            "collateralized": bool(meta.get("collateralized", False)),
+            "observation_times": self.observation_times,
+            "observation_dates": self.observation_dates,
+            "netted_values": np.asarray(self.netted_values[index], dtype=float).copy(),
+            "closeout_values": np.asarray(self.closeout_values[index], dtype=float).copy(),
+            "collateral_balance": np.asarray(self.collateral_balance[index], dtype=float).copy(),
+            "exposure_values": np.asarray(self.exposure_values[index], dtype=float).copy(),
+            "metadata": meta,
+        }
+
+    def portfolio_exposure_values(self):
+        """Return aggregate exposure across netting sets."""
+        return np.sum(np.asarray(self.exposure_values, dtype=float), axis=0)
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-friendly netting exposure payload."""
+        return {
+            "netting_set_ids": list(self.netting_set_ids),
+            "observation_times": list(self.observation_times),
+            "observation_dates": [obs.isoformat() for obs in self.observation_dates],
+            "netted_values": np.asarray(self.netted_values, dtype=float).tolist(),
+            "closeout_values": np.asarray(self.closeout_values, dtype=float).tolist(),
+            "collateral_balance": np.asarray(self.collateral_balance, dtype=float).tolist(),
+            "exposure_values": np.asarray(self.exposure_values, dtype=float).tolist(),
+            "netting_set_metadata": {
+                key: dict(value)
+                for key, value in self.netting_set_metadata.items()
+            },
+            "metadata": dict(self.metadata),
+        }
+
+
 def validate_counterparty_semantic_contract(
     contract: CounterpartySemanticContract,
 ) -> CounterpartySemanticValidationReport:
@@ -472,12 +613,97 @@ def project_collateral_state(
     )
 
 
+def aggregate_netting_set_exposures(
+    future_value_cube: FutureValueCube,
+    *,
+    netting_sets: tuple[NettingSet, ...] | list[NettingSet],
+    collateral_projections: Mapping[str, CollateralStateProjection] | None = None,
+) -> NettingSetExposureCube:
+    """Aggregate trade future values into closeout-ready netting-set exposures."""
+    resolved_sets = tuple(netting_sets or ())
+    if not resolved_sets:
+        raise ValueError("aggregate_netting_set_exposures requires at least one netting set")
+
+    projections = dict(collateral_projections or {})
+    ids: list[str] = []
+    netted_tensors = []
+    closeout_tensors = []
+    collateral_tensors = []
+    exposure_tensors = []
+    set_metadata: dict[str, dict[str, object]] = {}
+
+    for netting_set in resolved_sets:
+        netted = _netted_values_for_set(future_value_cube, netting_set)
+        projection = projections.get(netting_set.netting_set_id)
+        if projection is None:
+            closeout = netted
+            collateral = np.zeros_like(netted)
+            exposure = np.maximum(closeout, 0.0)
+            collateralized = False
+            projection_metadata: dict[str, object] = {}
+        else:
+            _validate_projection_alignment(
+                projection,
+                future_value_cube=future_value_cube,
+                netting_set=netting_set,
+                netted_values=netted,
+            )
+            closeout = np.asarray(projection.closeout_values, dtype=float)
+            collateral = np.asarray(projection.collateral_balance, dtype=float)
+            exposure = np.asarray(projection.collateralized_exposure, dtype=float)
+            collateralized = True
+            projection_metadata = dict(projection.metadata)
+
+        ids.append(netting_set.netting_set_id)
+        netted_tensors.append(netted)
+        closeout_tensors.append(closeout)
+        collateral_tensors.append(collateral)
+        exposure_tensors.append(exposure)
+        set_metadata[netting_set.netting_set_id] = {
+            "counterparty_id": netting_set.counterparty_id,
+            "position_names": netting_set.position_names,
+            "exposure_currency": netting_set.exposure_currency,
+            "closeout_convention": netting_set.closeout_convention,
+            "collateralized": collateralized,
+            "collateral_agreement_id": netting_set.collateral_agreement_id,
+            "collateral_projection": projection_metadata,
+        }
+
+    return NettingSetExposureCube(
+        netting_set_ids=tuple(ids),
+        observation_times=future_value_cube.observation_times,
+        observation_dates=future_value_cube.observation_dates,
+        netted_values=np.asarray(netted_tensors, dtype=float),
+        closeout_values=np.asarray(closeout_tensors, dtype=float),
+        collateral_balance=np.asarray(collateral_tensors, dtype=float),
+        exposure_values=np.asarray(exposure_tensors, dtype=float),
+        netting_set_metadata=set_metadata,
+        metadata={
+            "workflow": "aggregate_netting_set_exposures",
+            "source_value_semantics": future_value_cube.value_semantics,
+            "source_phase_semantics": future_value_cube.phase_semantics,
+            "netting_set_count": len(ids),
+            "position_names": future_value_cube.position_names,
+        },
+    )
+
+
 def _coerce_path_matrix(values, *, field_name: str):
     """Return a defensive two-dimensional path matrix."""
     matrix = np.asarray(values, dtype=float)
     if matrix.ndim != 2:
         raise ValueError(f"{field_name} must have shape (observation_time, path)")
     return matrix
+
+
+def _coerce_netting_tensor(values, *, field_name: str):
+    """Return a defensive three-dimensional netting-set tensor."""
+    tensor = np.asarray(values, dtype=float)
+    if tensor.ndim != 3:
+        raise ValueError(
+            f"{field_name} must have shape (netting_set, observation_time, path)"
+        )
+    return tensor
 
 
 def _netted_values_for_set(
@@ -492,6 +718,27 @@ def _netted_values_for_set(
         for position_name in netting_set.position_names
     ]
     return np.sum(np.asarray(matrices, dtype=float), axis=0)
+
+
+def _validate_projection_alignment(
+    projection: CollateralStateProjection,
+    *,
+    future_value_cube: FutureValueCube,
+    netting_set: NettingSet,
+    netted_values,
+) -> None:
+    """Validate that a collateral projection belongs to the netting exposure input."""
+    if projection.netting_set_id != netting_set.netting_set_id:
+        raise ValueError("Collateral projection netting_set_id does not match netting set")
+    if projection.observation_times != future_value_cube.observation_times:
+        raise ValueError("Collateral projection observation_times do not match cube")
+    if projection.observation_dates != future_value_cube.observation_dates:
+        raise ValueError("Collateral projection observation_dates do not match cube")
+    netted_difference = np.abs(
+        np.asarray(projection.netted_values, dtype=float) - netted_values
+    )
+    if bool(np.any(netted_difference > 1e-8)):
+        raise ValueError("Collateral projection netted_values do not match cube aggregation")
 
 
 def _forward_date_indices(observation_dates: tuple[date, ...], days: int) -> tuple[int, ...]:
@@ -550,11 +797,13 @@ def _collateral_balance_from_values(
 
 
 __all__ = [
+    "aggregate_netting_set_exposures",
     "CollateralAgreement",
     "CollateralStateProjection",
     "CounterpartySemanticContract",
     "CounterpartySemanticValidationReport",
     "NettingSet",
+    "NettingSetExposureCube",
     "project_collateral_state",
     "validate_counterparty_semantic_contract",
 ]

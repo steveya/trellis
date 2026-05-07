@@ -496,8 +496,11 @@ also provides ``project_collateral_state(...)`` to produce a bounded
 ``CollateralStateProjection`` from a ``FutureValueCube`` for one netting set.
 Collateral balance is based on valuation-lagged netted values, while closeout
 values are read from the first observation date on or after the margin-period
-horizon. This still does not aggregate multiple netting sets, produce
-production exposure metrics, or compute xVA.
+horizon. ``aggregate_netting_set_exposures(...)`` then assembles a
+``NettingSetExposureCube`` with one netting-set/date/path tensor, collateral
+balances when supplied, and closeout-ready input packets for later exposure and
+xVA consumers. This still does not produce production ``EE``/``EPE``/``PFE``
+metrics or compute xVA.
 
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,
