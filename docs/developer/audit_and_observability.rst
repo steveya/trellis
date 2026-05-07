@@ -399,6 +399,9 @@ Governed Policy Outcomes
 layer for governed execution. It adds:
 
 - ``PolicyBundle`` for explicit sandbox, research, and production policy defaults
+- ``policy_bundle.production.institutional`` for production valuation runs that
+  must carry approval, model-review, snapshot, run-artifact, and audit-bundle
+  evidence before execution
 - ``PolicyEvaluation`` for a structured allowed/blocked result
 - ``PolicyBlocker`` records for stable blocker codes, requirement names, and field-level details
 
@@ -408,6 +411,8 @@ This matters operationally because:
 - the run ledger can persist structured ``policy_outcome`` payloads directly
 - later executor, MCP, and audit-bundle work can reuse the same blocker codes
   instead of inventing parallel policy reporting
+- institutional production blockers distinguish missing approval fields,
+  non-approved approval statuses, and missing run artifacts
 
 Platform Traces
 ---------------

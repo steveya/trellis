@@ -445,7 +445,7 @@ Where Things Live
      - Explicit ``RunMode``, provider bindings, and serializable execution-context records
    * - Governed policy layer
      - ``trellis.platform.policies``
-     - Default sandbox/research/production policy bundles plus deterministic execution guards and structured blocker outcomes
+     - Default sandbox/research/production policy bundles plus the institutional production approval/run-artifact gate and structured blocker outcomes
    * - Governed provider registry
      - ``trellis.platform.providers``
      - Stable provider ids, explicit governed snapshot resolution, snapshot ids, and no silent mock fallback on governed paths

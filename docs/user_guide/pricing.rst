@@ -741,6 +741,10 @@ Important constraints:
   so production eligibility depends on both deterministic validation and the
   quant/critic/arbiter/model-validator cycle outcome
 - production pricing still requires an explicitly approved model version
+- institutional production valuation can opt into
+  ``policy_bundle.production.institutional`` to require approval id/status,
+  approver, model-review id, market snapshot id, run artifact id, and audit
+  bundle id before execution
 - deprecation removes execution eligibility without deleting the stored
   contract, code, validation, or lineage artifacts
 
@@ -750,7 +754,10 @@ and benchmark scorecards expose the same stable surface. Treat it as
 governance evidence for the recorded quant/critic/arbiter/model-validator
 cycle, not as an external model-approval certificate, regulatory sign-off, xVA
 coverage claim, FpML coverage claim, or guarantee beyond the recorded
-validation scope.
+validation scope. The institutional production policy is the same kind of
+internal execution control: it proves that configured approval and artifact
+fields were present for the run, not that an external authority approved the
+model or valuation.
 
 Governed Model Store And Replay Bundles
 ---------------------------------------

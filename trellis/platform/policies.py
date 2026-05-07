@@ -32,6 +32,15 @@ def _string_tuple(values) -> tuple[str, ...]:
     return tuple(items)
 
 
+def _has_required_value(value) -> bool:
+    """Return whether a provenance value satisfies an evidence requirement."""
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return bool(value)
+
+
 def _run_mode_tuple(values) -> tuple[RunMode, ...]:
     """Normalize one iterable of run modes."""
     return tuple(RunMode.normalize(value) for value in values or ())
@@ -96,6 +105,9 @@ class PolicyBundle:
     required_provider_families: tuple[str, ...] = ("market_data",)
     allowed_model_statuses: tuple[ModelLifecycleStatus, ...] = ()
     required_provenance_fields: tuple[str, ...] = ()
+    required_approval_fields: tuple[str, ...] = ()
+    required_approval_statuses: tuple[str, ...] = ()
+    required_run_artifact_fields: tuple[str, ...] = ()
     metadata: Mapping[str, object] = dataclass_field(default_factory=dict)
 
     def __post_init__(self):
@@ -108,6 +120,13 @@ class PolicyBundle:
         object.__setattr__(self, "required_provider_families", _string_tuple(self.required_provider_families))
         object.__setattr__(self, "allowed_model_statuses", _model_status_tuple(self.allowed_model_statuses))
         object.__setattr__(self, "required_provenance_fields", _string_tuple(self.required_provenance_fields))
+        object.__setattr__(self, "required_approval_fields", _string_tuple(self.required_approval_fields))
+        object.__setattr__(self, "required_approval_statuses", _string_tuple(self.required_approval_statuses))
+        object.__setattr__(
+            self,
+            "required_run_artifact_fields",
+            _string_tuple(self.required_run_artifact_fields),
+        )
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
     def to_dict(self) -> dict[str, object]:
@@ -121,6 +140,9 @@ class PolicyBundle:
             "required_provider_families": list(self.required_provider_families),
             "allowed_model_statuses": [status.value for status in self.allowed_model_statuses],
             "required_provenance_fields": list(self.required_provenance_fields),
+            "required_approval_fields": list(self.required_approval_fields),
+            "required_approval_statuses": list(self.required_approval_statuses),
+            "required_run_artifact_fields": list(self.required_run_artifact_fields),
             "metadata": dict(self.metadata),
         }
 
@@ -138,6 +160,9 @@ class PolicyBundle:
             required_provider_families=payload.get("required_provider_families") or (),
             allowed_model_statuses=payload.get("allowed_model_statuses") or (),
             required_provenance_fields=payload.get("required_provenance_fields") or (),
+            required_approval_fields=payload.get("required_approval_fields") or (),
+            required_approval_statuses=payload.get("required_approval_statuses") or (),
+            required_run_artifact_fields=payload.get("required_run_artifact_fields") or (),
             metadata=payload.get("metadata") or {},
         )
 
@@ -263,6 +288,38 @@ def _default_policy_bundles() -> dict[str, PolicyBundle]:
             required_provider_families=("market_data",),
             allowed_model_statuses=(ModelLifecycleStatus.APPROVED,),
             required_provenance_fields=("provider_id", "market_snapshot_id"),
+        ),
+        "policy_bundle.production.institutional": PolicyBundle(
+            policy_id="policy_bundle.production.institutional",
+            name="Production Institutional",
+            allowed_run_modes=(RunMode.PRODUCTION,),
+            allow_mock_data=False,
+            require_provider_disclosure=True,
+            required_provider_families=("market_data",),
+            allowed_model_statuses=(ModelLifecycleStatus.APPROVED,),
+            required_provenance_fields=(
+                "provider_id",
+                "market_snapshot_id",
+                "model_id",
+                "model_status",
+            ),
+            required_approval_fields=(
+                "approval_id",
+                "approval_status",
+                "approver",
+                "model_review_id",
+            ),
+            required_approval_statuses=("approved",),
+            required_run_artifact_fields=("run_artifact_id", "audit_bundle_id"),
+            metadata={
+                "workflow_scope": "institutional_valuation",
+                "control_surface": (
+                    "approval",
+                    "model_review",
+                    "market_snapshot",
+                    "run_artifact",
+                ),
+            },
         ),
     }
 
@@ -443,6 +500,61 @@ def evaluate_execution_policy(
     if not any(blocker.code == "missing_provenance_field" for blocker in blockers):
         if bundle.required_provenance_fields:
             satisfied.append("required_provenance_fields")
+
+    missing_approval_fields = tuple(
+        field_name
+        for field_name in bundle.required_approval_fields
+        if not _has_required_value(resolved_provenance.get(field_name))
+    )
+    for field_name in missing_approval_fields:
+        blockers.append(
+            PolicyBlocker(
+                code="missing_approval_field",
+                message=f"Required institutional approval field {field_name!r} is missing",
+                requirement="institutional_approval_fields",
+                field=field_name,
+            )
+        )
+    if bundle.required_approval_fields and not missing_approval_fields:
+        satisfied.append("institutional_approval_fields")
+
+    approval_status = _normalize_token(
+        str(resolved_provenance.get("approval_status", "") or "")
+    )
+    if bundle.required_approval_statuses and approval_status:
+        if approval_status not in bundle.required_approval_statuses:
+            blockers.append(
+                PolicyBlocker(
+                    code="approval_status_not_allowed",
+                    message=(
+                        f"Approval status {approval_status!r} is not allowed by {bundle.policy_id}"
+                    ),
+                    requirement="institutional_approval_status",
+                    field="approval_status",
+                    details={
+                        "allowed_statuses": list(bundle.required_approval_statuses),
+                    },
+                )
+            )
+        else:
+            satisfied.append("institutional_approval_status")
+
+    missing_run_artifact_fields = tuple(
+        field_name
+        for field_name in bundle.required_run_artifact_fields
+        if not _has_required_value(resolved_provenance.get(field_name))
+    )
+    for field_name in missing_run_artifact_fields:
+        blockers.append(
+            PolicyBlocker(
+                code="missing_run_artifact_field",
+                message=f"Required institutional run artifact field {field_name!r} is missing",
+                requirement="institutional_run_artifact_fields",
+                field=field_name,
+            )
+        )
+    if bundle.required_run_artifact_fields and not missing_run_artifact_fields:
+        satisfied.append("institutional_run_artifact_fields")
 
     return PolicyEvaluation(
         policy_id=bundle.policy_id,
