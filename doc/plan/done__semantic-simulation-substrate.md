@@ -51,7 +51,7 @@ Rules for coding agents:
   are satisfied.
 - Update this file only after the relevant Linear ticket is updated.
 
-Status mirror last synced: `2026-04-18`
+Status mirror last synced: `2026-05-07`
 
 ### Epic Row
 
@@ -80,6 +80,7 @@ Status mirror last synced: `2026-04-18`
 | `QUA-635` | Done | landed `ScenarioResultCube`, which is adjacent to but not the same as a future-value cube |
 | `QUA-594` | Backlog | later institutional consumer umbrella, not the right parent abstraction |
 | `QUA-638` | Done | first swap-portfolio future-value consumer that should narrow onto this substrate instead of redefining it |
+| `QUA-897` | Done | validation hardening pack for swap future-value cube invariants and independent vanilla IRS reset-date checks |
 | `QUA-639` | Backlog | collateral-state consumer of the future-value substrate |
 | `QUA-640` | Backlog | netting-set consumer of the future-value substrate |
 | `QUA-641` | Backlog | exposure-statistics consumer of the future-value substrate |
