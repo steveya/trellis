@@ -249,6 +249,14 @@ the first execution-backed reporting precursors:
 Those visitors are the new substrate for later netting/xVA orchestration, not
 evidence that those downstream engines already exist.
 
+The first institutional counterparty semantic surface now lives in
+``trellis.analytics.counterparty``. It provides frozen value objects for
+collateral agreements, netting sets, and their combined semantic contract, with
+an explicit validation report that distinguishes missing required fields from
+warning-only operational gaps. Downstream collateral projection, netting
+aggregation, and xVA consumers should depend on that semantic packet instead of
+inventing ad hoc position-group metadata.
+
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,
 rebuild-based rates-risk, bucketed-vega, and spot-risk workflows through the

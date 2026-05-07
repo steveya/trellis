@@ -962,6 +962,46 @@ result is the same ``FutureValueCube`` contract, now populated on the union of
 the portfolio's floating-boundary dates so later aggregation semantics remain
 well-defined.
 
+Collateral and netting-set semantics are now represented explicitly before
+those later aggregation workflows run:
+
+.. code-block:: python
+
+   from trellis.analytics.counterparty import (
+       CollateralAgreement,
+       CounterpartySemanticContract,
+       NettingSet,
+       validate_counterparty_semantic_contract,
+   )
+
+   agreement = CollateralAgreement(
+       agreement_id="csa_alpha",
+       collateral_currency="USD",
+       threshold=100_000.0,
+       margin_period_of_risk_days=10,
+   )
+   netting_set = NettingSet(
+       netting_set_id="ns_alpha",
+       counterparty_id="bank_alpha",
+       position_names=("payer_swap", "receiver_swap"),
+       collateral_agreement_id="csa_alpha",
+       exposure_currency="USD",
+   )
+   contract = CounterpartySemanticContract(
+       contract_id="cp_alpha",
+       netting_sets=(netting_set,),
+       collateral_agreements=(agreement,),
+       covered_position_names=("payer_swap", "receiver_swap"),
+   )
+
+   report = validate_counterparty_semantic_contract(contract)
+   report.ok
+   contract.to_dict()["runtime_semantics"]
+
+This surface records the operational contract and missing-field behavior only;
+collateral projection, netting aggregation, exposure metrics, and xVA remain
+separate downstream workflows.
+
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use
 finite-difference repricing on one selected spot binding, while theta rolls the

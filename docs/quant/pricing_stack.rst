@@ -485,6 +485,16 @@ on top of that bridge:
 These are explicit reporting precursors, not a claim that Trellis now has a
 full netting, collateral, or xVA engine.
 
+The institutional counterparty layer now has its first semantic representation
+for later consumers. ``trellis.analytics.counterparty`` defines frozen
+``CollateralAgreement``, ``NettingSet``, and
+``CounterpartySemanticContract`` value types, plus
+``validate_counterparty_semantic_contract(...)`` for explicit missing-field and
+warning behavior. This is a governed representation of collateral agreements,
+netting-set membership, closeout convention, and downstream runtime axes. It
+does not by itself project collateral, aggregate netting-set exposure, or
+compute xVA.
+
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,
 rebuild-based rates sensitivities/scenarios, bucketed vega, and spot-risk
