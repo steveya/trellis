@@ -483,6 +483,97 @@ class NettingSetExposureCube:
         }
 
 
+@dataclass(frozen=True)
+class ExposureMetricResult:
+    """Stable EE/EPE/PFE exposure metric output."""
+
+    aggregation_level: str
+    observation_times: tuple[float, ...]
+    observation_dates: tuple[date, ...]
+    expected_exposure: tuple[float, ...]
+    epe: float
+    pfe: Mapping[float, tuple[float, ...]]
+    netting_set_metrics: Mapping[str, Mapping[str, object]] = field(default_factory=dict)
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "aggregation_level",
+            _normalize_token(self.aggregation_level, fallback="portfolio"),
+        )
+        object.__setattr__(
+            self,
+            "observation_times",
+            tuple(float(value) for value in self.observation_times),
+        )
+        object.__setattr__(self, "observation_dates", tuple(self.observation_dates or ()))
+        object.__setattr__(
+            self,
+            "expected_exposure",
+            tuple(float(value) for value in self.expected_exposure),
+        )
+        object.__setattr__(self, "epe", float(self.epe))
+        object.__setattr__(
+            self,
+            "pfe",
+            MappingProxyType(
+                {
+                    float(level): tuple(float(value) for value in values)
+                    for level, values in (self.pfe or {}).items()
+                }
+            ),
+        )
+        object.__setattr__(
+            self,
+            "netting_set_metrics",
+            MappingProxyType(
+                {
+                    str(key): MappingProxyType(dict(value))
+                    for key, value in (self.netting_set_metrics or {}).items()
+                }
+            ),
+        )
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    @property
+    def expected_positive_exposure(self) -> tuple[float, ...]:
+        """Compatibility alias for EE as expected positive exposure."""
+        return self.expected_exposure
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-friendly metric payload."""
+        return {
+            "aggregation_level": self.aggregation_level,
+            "observation_times": list(self.observation_times),
+            "observation_dates": [obs.isoformat() for obs in self.observation_dates],
+            "expected_exposure": list(self.expected_exposure),
+            "expected_positive_exposure": list(self.expected_positive_exposure),
+            "epe": self.epe,
+            "pfe": {
+                str(level): list(values)
+                for level, values in self.pfe.items()
+            },
+            "netting_set_metrics": {
+                key: {
+                    metric_key: (
+                        list(metric_value)
+                        if isinstance(metric_value, tuple)
+                        else {
+                            str(level): list(values)
+                            for level, values in metric_value.items()
+                        }
+                        if isinstance(metric_value, Mapping)
+                        else metric_value
+                    )
+                    for metric_key, metric_value in value.items()
+                }
+                for key, value in self.netting_set_metrics.items()
+            },
+            "metadata": dict(self.metadata),
+        }
+
+
 def validate_counterparty_semantic_contract(
     contract: CounterpartySemanticContract,
 ) -> CounterpartySemanticValidationReport:
@@ -688,6 +779,49 @@ def aggregate_netting_set_exposures(
     )
 
 
+def compute_exposure_metrics(
+    exposure_cube: NettingSetExposureCube,
+    *,
+    pfe_levels: tuple[float, ...] | list[float] = (0.95,),
+) -> ExposureMetricResult:
+    """Compute deterministic EE, EPE, and PFE outputs from exposure values."""
+    levels = _normalize_pfe_levels(pfe_levels)
+    portfolio_metrics = _exposure_metrics_for_matrix(
+        exposure_cube.portfolio_exposure_values(),
+        observation_times=exposure_cube.observation_times,
+        pfe_levels=levels,
+    )
+    per_set: dict[str, dict[str, object]] = {}
+    for netting_set_id in exposure_cube.netting_set_ids:
+        set_metrics = _exposure_metrics_for_matrix(
+            exposure_cube.exposure_values_for_set(netting_set_id),
+            observation_times=exposure_cube.observation_times,
+            pfe_levels=levels,
+        )
+        per_set[netting_set_id] = {
+            "expected_exposure": set_metrics["expected_exposure"],
+            "epe": set_metrics["epe"],
+            "pfe": set_metrics["pfe"],
+        }
+
+    return ExposureMetricResult(
+        aggregation_level="portfolio",
+        observation_times=exposure_cube.observation_times,
+        observation_dates=exposure_cube.observation_dates,
+        expected_exposure=portfolio_metrics["expected_exposure"],
+        epe=portfolio_metrics["epe"],
+        pfe=portfolio_metrics["pfe"],
+        netting_set_metrics=per_set,
+        metadata={
+            "workflow": "compute_exposure_metrics",
+            "source": "NettingSetExposureCube",
+            "pfe_levels": levels,
+            "netting_set_ids": exposure_cube.netting_set_ids,
+            "time_weighting": "trapezoidal_observation_time",
+        },
+    )
+
+
 def _coerce_path_matrix(values, *, field_name: str):
     """Return a defensive two-dimensional path matrix."""
     matrix = np.asarray(values, dtype=float)
@@ -718,6 +852,69 @@ def _netted_values_for_set(
         for position_name in netting_set.position_names
     ]
     return np.sum(np.asarray(matrices, dtype=float), axis=0)
+
+
+def _normalize_pfe_levels(levels) -> tuple[float, ...]:
+    """Normalize PFE quantile levels."""
+    if not levels:
+        raise ValueError("pfe_levels must not be empty")
+    resolved: list[float] = []
+    for level in levels:
+        value = float(level)
+        if not 0.0 <= value <= 1.0:
+            raise ValueError("PFE levels must satisfy 0 <= level <= 1")
+        if value not in resolved:
+            resolved.append(value)
+    return tuple(resolved)
+
+
+def _exposure_metrics_for_matrix(
+    exposure_values,
+    *,
+    observation_times: tuple[float, ...],
+    pfe_levels: tuple[float, ...],
+) -> dict[str, object]:
+    """Return EE/EPE/PFE metrics for one date/path exposure matrix."""
+    matrix = _coerce_path_matrix(exposure_values, field_name="exposure_values")
+    expected = tuple(float(value) for value in np.mean(matrix, axis=1))
+    pfe = {
+        level: tuple(float(value) for value in np.quantile(matrix, level, axis=1))
+        for level in pfe_levels
+    }
+    return {
+        "expected_exposure": expected,
+        "epe": _time_weighted_average(expected, observation_times=observation_times),
+        "pfe": pfe,
+    }
+
+
+def _time_weighted_average(
+    values: tuple[float, ...],
+    *,
+    observation_times: tuple[float, ...],
+) -> float:
+    """Return trapezoidal time-weighted average exposure."""
+    if not values:
+        return 0.0
+    times = tuple(float(time) for time in observation_times)
+    if len(values) != len(times):
+        raise ValueError("exposure metric values must match observation_times")
+    if len(values) == 1:
+        return float(values[0])
+    horizon = float(times[-1] - times[0])
+    if horizon <= 0.0:
+        return float(np.mean(np.asarray(values, dtype=float)))
+    integral = 0.0
+    for left_value, right_value, left_time, right_time in zip(
+        values,
+        values[1:],
+        times,
+        times[1:],
+    ):
+        integral += 0.5 * (float(left_value) + float(right_value)) * float(
+            right_time - left_time
+        )
+    return float(integral / horizon)
 
 
 def _validate_projection_alignment(
@@ -802,6 +999,8 @@ __all__ = [
     "CollateralStateProjection",
     "CounterpartySemanticContract",
     "CounterpartySemanticValidationReport",
+    "compute_exposure_metrics",
+    "ExposureMetricResult",
     "NettingSet",
     "NettingSetExposureCube",
     "project_collateral_state",

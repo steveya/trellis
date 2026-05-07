@@ -257,9 +257,11 @@ warning-only operational gaps. The same module now projects a bounded
 ``CollateralStateProjection`` from a ``FutureValueCube`` by applying
 valuation-lagged collateral balances and margin-period closeout values.
 ``aggregate_netting_set_exposures(...)`` then builds the closeout-ready
-``NettingSetExposureCube`` across one or more netting sets. Downstream exposure
-metric and xVA consumers should depend on those packets instead of inventing ad
-hoc position-group metadata.
+``NettingSetExposureCube`` across one or more netting sets.
+``compute_exposure_metrics(...)`` emits the first stable ``EE``/``EPE``/``PFE``
+artifact over that cube, with portfolio and per-netting-set views. Downstream
+xVA consumers should depend on those packets instead of inventing ad hoc
+position-group metadata.
 
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,

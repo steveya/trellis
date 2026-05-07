@@ -499,8 +499,9 @@ values are read from the first observation date on or after the margin-period
 horizon. ``aggregate_netting_set_exposures(...)`` then assembles a
 ``NettingSetExposureCube`` with one netting-set/date/path tensor, collateral
 balances when supplied, and closeout-ready input packets for later exposure and
-xVA consumers. This still does not produce production ``EE``/``EPE``/``PFE``
-metrics or compute xVA.
+xVA consumers. ``compute_exposure_metrics(...)`` now produces the first stable
+``EE`` curve, trapezoidal ``EPE``, and ``PFE`` quantile curves at portfolio and
+per-netting-set levels. This still does not compute xVA.
 
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,

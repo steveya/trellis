@@ -249,3 +249,76 @@ def test_aggregate_netting_set_exposures_builds_closeout_inputs():
         + np.asarray([[0.0, 10.0], [60.0, 0.0], [10.0, 30.0]]),
     )
     assert exposure_cube.to_dict()["netting_set_ids"] == ["ns_alpha", "ns_beta"]
+
+
+def test_compute_exposure_metrics_reports_ee_epe_and_pfe():
+    from trellis.analytics.counterparty import (
+        CollateralAgreement,
+        NettingSet,
+        aggregate_netting_set_exposures,
+        compute_exposure_metrics,
+        project_collateral_state,
+    )
+
+    cube = FutureValueCube(
+        values=np.asarray(
+            [
+                [[100.0, 20.0], [140.0, 30.0], [80.0, 120.0]],
+                [[0.0, 0.0], [0.0, 0.0], [0.0, 0.0]],
+                [[-50.0, 10.0], [60.0, -20.0], [10.0, 30.0]],
+            ],
+            dtype=float,
+        ),
+        position_names=("swap_a", "swap_b", "swap_c"),
+        observation_times=(0.0, 1.0 / 12.0, 2.0 / 12.0),
+        observation_dates=(
+            date(2024, 1, 1),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+        ),
+    )
+    agreement = CollateralAgreement(
+        agreement_id="csa_alpha",
+        collateral_currency="USD",
+        threshold=50.0,
+        minimum_transfer_amount=10.0,
+        independent_amount=5.0,
+        margin_period_of_risk_days=31,
+        valuation_lag_days=29,
+    )
+    alpha = NettingSet(
+        netting_set_id="ns_alpha",
+        counterparty_id="bank_alpha",
+        position_names=("swap_a", "swap_b"),
+        collateral_agreement_id="csa_alpha",
+        exposure_currency="USD",
+    )
+    beta = NettingSet(
+        netting_set_id="ns_beta",
+        counterparty_id="bank_beta",
+        position_names=("swap_c",),
+        exposure_currency="USD",
+    )
+    exposure_cube = aggregate_netting_set_exposures(
+        cube,
+        netting_sets=(alpha, beta),
+        collateral_projections={
+            "ns_alpha": project_collateral_state(
+                cube,
+                netting_set=alpha,
+                collateral_agreement=agreement,
+            )
+        },
+    )
+
+    metrics = compute_exposure_metrics(exposure_cube, pfe_levels=(0.5, 0.95))
+
+    np.testing.assert_allclose(metrics.expected_exposure, (60.0, 100.0, 77.5))
+    assert metrics.epe == pytest.approx(84.375)
+    np.testing.assert_allclose(metrics.pfe[0.5], (60.0, 100.0, 77.5))
+    np.testing.assert_allclose(metrics.pfe[0.95], (82.5, 113.5, 138.25))
+    np.testing.assert_allclose(
+        metrics.netting_set_metrics["ns_beta"]["expected_exposure"],
+        (5.0, 30.0, 20.0),
+    )
+    assert metrics.to_dict()["aggregation_level"] == "portfolio"
