@@ -12,13 +12,14 @@ from tests.test_contracts.conftest import (
     CASSETTES_DIR,
     CASSETTE_MAX_AGE_DAYS,
     cassette_age_days,
+    cassette_recording_supported,
 )
 
 
 @pytest.mark.freshness
 @pytest.mark.tier2
 def test_cassettes_are_fresh():
-    """All committed cassettes should be less than CASSETTE_MAX_AGE_DAYS old."""
+    """Replay-enabled cassettes should be less than CASSETTE_MAX_AGE_DAYS old."""
     if not CASSETTES_DIR.exists():
         pytest.skip("No cassettes directory found — record cassettes first")
 
@@ -28,6 +29,10 @@ def test_cassettes_are_fresh():
 
     stale = []
     for path in sorted(cassette_files):
+        # Replay-disabled cassettes can remain as historical fixtures, but the
+        # recorder intentionally refuses to refresh them.
+        if not cassette_recording_supported(path.stem):
+            continue
         age = cassette_age_days(path)
         if age is not None and age > CASSETTE_MAX_AGE_DAYS:
             stale.append(f"{path.name} ({age} days old)")

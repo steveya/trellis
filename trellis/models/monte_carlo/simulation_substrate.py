@@ -927,6 +927,7 @@ __all__ = [
     "HullWhiteSwapFutureValueModel",
     "build_future_value_cube",
     "evaluate_conditional_valuation_paths",
+    "price_interest_rate_swap_portfolio_future_value_cube",
     "price_interest_rate_swap_future_value_cube",
     "simulate_factor_state_observations",
 ]
