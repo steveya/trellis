@@ -492,8 +492,12 @@ for later consumers. ``trellis.analytics.counterparty`` defines frozen
 ``validate_counterparty_semantic_contract(...)`` for explicit missing-field and
 warning behavior. This is a governed representation of collateral agreements,
 netting-set membership, closeout convention, and downstream runtime axes. It
-does not by itself project collateral, aggregate netting-set exposure, or
-compute xVA.
+also provides ``project_collateral_state(...)`` to produce a bounded
+``CollateralStateProjection`` from a ``FutureValueCube`` for one netting set.
+Collateral balance is based on valuation-lagged netted values, while closeout
+values are read from the first observation date on or after the margin-period
+horizon. This still does not aggregate multiple netting sets, produce
+production exposure metrics, or compute xVA.
 
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,

@@ -3,8 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from datetime import date
 
+import numpy as np
 import pytest
+
+from trellis.book import FutureValueCube
 
 
 def test_counterparty_semantic_contract_records_collateral_and_netting_context():
@@ -82,3 +86,77 @@ def test_counterparty_semantic_contract_warns_on_missing_operational_fields():
     assert "netting_sets.ns_missing.collateral_agreement_id" in report.warnings
     assert report.to_dict()["ok"] is False
 
+
+def test_project_collateral_state_applies_margin_period_and_valuation_lag():
+    from trellis.analytics.counterparty import (
+        CollateralAgreement,
+        NettingSet,
+        project_collateral_state,
+    )
+
+    cube = FutureValueCube(
+        values=np.asarray(
+            [
+                [
+                    [100.0, 20.0],
+                    [140.0, 30.0],
+                    [80.0, 120.0],
+                ],
+                [
+                    [0.0, 0.0],
+                    [0.0, 0.0],
+                    [0.0, 0.0],
+                ],
+            ],
+            dtype=float,
+        ),
+        position_names=("swap_a", "swap_b"),
+        observation_times=(0.0, 1.0 / 12.0, 2.0 / 12.0),
+        observation_dates=(
+            date(2024, 1, 1),
+            date(2024, 2, 1),
+            date(2024, 3, 1),
+        ),
+    )
+    agreement = CollateralAgreement(
+        agreement_id="csa_alpha",
+        collateral_currency="USD",
+        threshold=50.0,
+        minimum_transfer_amount=10.0,
+        independent_amount=5.0,
+        margin_period_of_risk_days=31,
+        valuation_lag_days=29,
+    )
+    netting_set = NettingSet(
+        netting_set_id="ns_alpha",
+        counterparty_id="bank_alpha",
+        position_names=("swap_a", "swap_b"),
+        collateral_agreement_id="csa_alpha",
+        exposure_currency="USD",
+    )
+
+    projection = project_collateral_state(
+        cube,
+        netting_set=netting_set,
+        collateral_agreement=agreement,
+    )
+
+    np.testing.assert_allclose(
+        projection.netted_values,
+        np.asarray([[100.0, 20.0], [140.0, 30.0], [80.0, 120.0]]),
+    )
+    np.testing.assert_allclose(
+        projection.closeout_values,
+        np.asarray([[140.0, 30.0], [80.0, 120.0], [80.0, 120.0]]),
+    )
+    np.testing.assert_allclose(
+        projection.collateral_balance,
+        np.asarray([[55.0, 5.0], [55.0, 5.0], [95.0, 5.0]]),
+    )
+    np.testing.assert_allclose(
+        projection.collateralized_exposure,
+        np.asarray([[85.0, 25.0], [25.0, 115.0], [0.0, 115.0]]),
+    )
+    assert projection.metadata["margin_period_of_risk_days"] == 31
+    assert projection.metadata["valuation_lag_days"] == 29
+    assert projection.to_dict()["netting_set_id"] == "ns_alpha"

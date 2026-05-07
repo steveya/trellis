@@ -253,9 +253,11 @@ The first institutional counterparty semantic surface now lives in
 ``trellis.analytics.counterparty``. It provides frozen value objects for
 collateral agreements, netting sets, and their combined semantic contract, with
 an explicit validation report that distinguishes missing required fields from
-warning-only operational gaps. Downstream collateral projection, netting
-aggregation, and xVA consumers should depend on that semantic packet instead of
-inventing ad hoc position-group metadata.
+warning-only operational gaps. The same module now projects a bounded
+``CollateralStateProjection`` from a ``FutureValueCube`` by applying
+valuation-lagged collateral balances and margin-period closeout values.
+Downstream netting aggregation and xVA consumers should depend on that semantic
+and projection packet instead of inventing ad hoc position-group metadata.
 
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,

@@ -971,6 +971,7 @@ those later aggregation workflows run:
        CollateralAgreement,
        CounterpartySemanticContract,
        NettingSet,
+       project_collateral_state,
        validate_counterparty_semantic_contract,
    )
 
@@ -998,9 +999,18 @@ those later aggregation workflows run:
    report.ok
    contract.to_dict()["runtime_semantics"]
 
-This surface records the operational contract and missing-field behavior only;
-collateral projection, netting aggregation, exposure metrics, and xVA remain
-separate downstream workflows.
+   projection = project_collateral_state(
+       cube,
+       netting_set=netting_set,
+       collateral_agreement=agreement,
+   )
+   projection.collateral_balance
+   projection.collateralized_exposure
+
+The projection is deliberately explicit: held collateral is computed from
+valuation-lagged netted values, and closeout values come from the margin-period
+observation horizon. Netting aggregation across sets, exposure metrics, and xVA
+remain separate downstream workflows.
 
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use
