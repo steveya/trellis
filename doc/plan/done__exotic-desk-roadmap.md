@@ -74,7 +74,7 @@ Status mirror last synced: `2026-04-18`
 | `QUA-591` Pod risk and explain | Done |
 | `QUA-592` Book ingestion | Done |
 | `QUA-593` Enterprise integration | Backlog |
-| `QUA-594` Institutional valuation stack | Backlog |
+| `QUA-594` Institutional valuation stack | Done |
 
 ### Ordered Exotic Desk MVP Queue
 
@@ -163,14 +163,14 @@ Status mirror last synced: `2026-04-18`
 
 | Ticket | Status |
 | --- | --- |
-| `QUA-620` Semantic contract: collateral and netting set representation | Backlog |
+| `QUA-620` Semantic contract: collateral and netting set representation | Done |
 | `QUA-638` Counterparty exposure: swap portfolio future value cube | Done |
-| `QUA-639` Collateral workflow: margin period and collateral state projection | Backlog |
-| `QUA-640` Netting workflow: netting-set aggregation and closeout exposure inputs | Backlog |
-| `QUA-641` Counterparty exposure: EE EPE PFE aggregation outputs | Backlog |
-| `QUA-642` Counterparty performance: exposure simulation benchmark pack | Backlog |
-| `QUA-619` Counterparty valuation: xVA engine for swap portfolios | Backlog |
-| `QUA-621` Governed workflow: approval and execution gates for production valuation | Backlog |
+| `QUA-639` Collateral workflow: margin period and collateral state projection | Done |
+| `QUA-640` Netting workflow: netting-set aggregation and closeout exposure inputs | Done |
+| `QUA-641` Counterparty exposure: EE EPE PFE aggregation outputs | Done |
+| `QUA-642` Counterparty performance: exposure simulation benchmark pack | Done |
+| `QUA-619` Counterparty valuation: xVA engine for swap portfolios | Done |
+| `QUA-621` Governed workflow: approval and execution gates for production valuation | Done |
 
 ### Cross-Epic Sequencing Constraints
 
