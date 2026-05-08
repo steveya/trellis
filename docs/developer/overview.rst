@@ -249,6 +249,23 @@ the first execution-backed reporting precursors:
 Those visitors are the new substrate for later netting/xVA orchestration, not
 evidence that those downstream engines already exist.
 
+The first institutional counterparty semantic surface now lives in
+``trellis.analytics.counterparty``. It provides frozen value objects for
+collateral agreements, netting sets, and their combined semantic contract, with
+an explicit validation report that distinguishes missing required fields from
+warning-only operational gaps. The same module now projects a bounded
+``CollateralStateProjection`` from a ``FutureValueCube`` by applying
+valuation-lagged collateral balances and margin-period closeout values.
+``aggregate_netting_set_exposures(...)`` then builds the closeout-ready
+``NettingSetExposureCube`` across one or more netting sets.
+``compute_exposure_metrics(...)`` emits the first stable ``EE``/``EPE``/``PFE``
+artifact over that cube, with portfolio and per-netting-set views.
+``price_counterparty_xva(...)`` now consumes the same semantic contract and
+exposure cube to produce bounded ``CVA``/``DVA``/``FVA`` results from explicit
+flat hazard, recovery, funding-spread, and discount-rate assumptions. Broader
+``MVA``/``KVA``, stochastic credit, legal enforceability, and capital workflow
+surfaces are still intentionally outside this developer contract.
+
 Pod-risk throughput now has a checked benchmark surface as well.
 ``trellis.analytics.benchmarking`` measures the supported scenario-cube,
 rebuild-based rates-risk, bucketed-vega, and spot-risk workflows through the
@@ -256,6 +273,13 @@ same public/runtime entrypoints that desk code uses, and persists the current
 baseline under ``docs/benchmarks/pod_risk_workflows.{json,md}``. The same
 folder-level contract applies there: checked benchmark payloads are repo
 artifacts, not ad hoc local output dumps.
+
+The same benchmarking module now also exposes
+``supported_counterparty_exposure_benchmark_scenarios()`` and
+``build_supported_counterparty_exposure_benchmark_report(...)`` for the
+institutional exposure path. The checked baseline lives in
+``docs/benchmarks/counterparty_exposure_workflows.{json,md}`` and records the
+future-value cube and warm-started exposure-reduction lanes separately.
 
 The first supported model-parameter calibration workflow now sits on top of the
 same substrate. ``calibrate_hull_white(...)`` packages a supported strip of
@@ -421,7 +445,7 @@ Where Things Live
      - Explicit ``RunMode``, provider bindings, and serializable execution-context records
    * - Governed policy layer
      - ``trellis.platform.policies``
-     - Default sandbox/research/production policy bundles plus deterministic execution guards and structured blocker outcomes
+     - Default sandbox/research/production policy bundles plus the institutional production approval/run-artifact gate and structured blocker outcomes
    * - Governed provider registry
      - ``trellis.platform.providers``
      - Stable provider ids, explicit governed snapshot resolution, snapshot ids, and no silent mock fallback on governed paths

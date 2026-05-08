@@ -111,3 +111,40 @@ def test_portfolio_aad_benchmark_uses_distinct_cold_and_reverse_mode_lanes():
     assert isinstance(cold, dict)
     assert steady.metadata["resolved_derivative_method"] == "portfolio_aad_vjp"
     assert steady.metadata["backend_operator"] == "vjp"
+
+
+def test_supported_counterparty_exposure_benchmark_scenarios_cover_workflows():
+    from trellis.analytics.benchmarking import (
+        build_supported_counterparty_exposure_benchmark_report,
+        supported_counterparty_exposure_benchmark_scenarios,
+    )
+
+    scenarios = supported_counterparty_exposure_benchmark_scenarios()
+    workflows = {scenario.workflow for scenario in scenarios}
+
+    assert workflows == {
+        "swap_portfolio_future_value_cube",
+        "counterparty_exposure_metrics",
+    }
+    assert all(scenario.steady_runner is not None for scenario in scenarios)
+    assert all("institutional_exposure" in scenario.notes for scenario in scenarios)
+
+    metrics_scenario = next(
+        scenario
+        for scenario in scenarios
+        if scenario.workflow == "counterparty_exposure_metrics"
+    )
+    metrics = metrics_scenario.steady_runner()
+
+    assert metrics.metadata["workflow"] == "compute_exposure_metrics"
+    assert metrics.metadata["time_weighting"] == "trapezoidal_observation_time"
+    assert 0.95 in metrics.pfe
+
+    timer_values = iter([1.0, 1.1, 2.0, 2.1, 3.0, 3.1, 4.0, 4.1])
+    report = build_supported_counterparty_exposure_benchmark_report(
+        repeats=1,
+        warmups=0,
+        timer=lambda: next(timer_values),
+    )
+    assert report["report_title"] == "Counterparty Exposure Benchmark"
+    assert report["benchmark_name"] == "counterparty_exposure_workflows"

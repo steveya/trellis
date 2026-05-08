@@ -485,12 +485,41 @@ on top of that bridge:
 These are explicit reporting precursors, not a claim that Trellis now has a
 full netting, collateral, or xVA engine.
 
+The institutional counterparty layer now has its first semantic representation
+for later consumers. ``trellis.analytics.counterparty`` defines frozen
+``CollateralAgreement``, ``NettingSet``, and
+``CounterpartySemanticContract`` value types, plus
+``validate_counterparty_semantic_contract(...)`` for explicit missing-field and
+warning behavior. This is a governed representation of collateral agreements,
+netting-set membership, closeout convention, and downstream runtime axes. It
+also provides ``project_collateral_state(...)`` to produce a bounded
+``CollateralStateProjection`` from a ``FutureValueCube`` for one netting set.
+Collateral balance is based on valuation-lagged netted values, while closeout
+values are read from the first observation date on or after the margin-period
+horizon. ``aggregate_netting_set_exposures(...)`` then assembles a
+``NettingSetExposureCube`` with one netting-set/date/path tensor, collateral
+balances when supplied, and closeout-ready input packets for later exposure and
+xVA consumers. ``compute_exposure_metrics(...)`` now produces the first stable
+``EE`` curve, trapezoidal ``EPE``, and ``PFE`` quantile curves at portfolio and
+per-netting-set levels. ``price_counterparty_xva(...)`` consumes the same
+semantic contract and exposure stack to compute bounded flat-hazard
+``CVA``/``DVA``/``FVA`` outputs under an explicit ``XVAAssumptionSet``. This is
+not a full enterprise counterparty-risk platform: ``MVA``/``KVA``, stochastic
+credit curves, capital models, legal enforceability workflows, and funding
+desk integration remain outside the checked contract.
+
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,
 rebuild-based rates sensitivities/scenarios, bucketed vega, and spot-risk
 measure bundles in ``docs/benchmarks/pod_risk_workflows.{json,md}``, so later
 runtime changes can be compared against an explicit desk-risk benchmark rather
 than anecdotal timing claims.
+
+The institutional exposure path has a separate checked benchmark pack under
+``docs/benchmarks/counterparty_exposure_workflows.{json,md}``. It measures the
+supported shared-path IRS future-value cube plus the warm-started netting /
+collateral / ``EE``-``EPE``-``PFE`` reduction flow, with fixture metadata for
+path count, step count, and warm-start assumptions.
 
 Warning And Error Policy
 ------------------------

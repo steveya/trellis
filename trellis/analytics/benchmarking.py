@@ -196,6 +196,7 @@ def build_risk_benchmark_report(
     cases: Sequence[Mapping[str, object]],
     notes: Sequence[str] | None = None,
     environment: Mapping[str, object] | None = None,
+    report_title: str = "Pod Risk Benchmark",
 ) -> dict[str, object]:
     """Assemble one persisted pod-risk benchmark report."""
     cases = [dict(case) for case in cases]
@@ -212,6 +213,7 @@ def build_risk_benchmark_report(
     ]
     return {
         "benchmark_name": benchmark_name,
+        "report_title": str(report_title or "Pod Risk Benchmark"),
         "created_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
         "environment": dict(environment or _default_environment()),
         "summary": {
@@ -234,7 +236,7 @@ def render_risk_benchmark_report(report: Mapping[str, object]) -> str:
     environment = report["environment"]
 
     lines = [
-        f"# Pod Risk Benchmark: `{report['benchmark_name']}`",
+        f"# {report.get('report_title', 'Pod Risk Benchmark')}: `{report['benchmark_name']}`",
         f"- Created at: `{report.get('created_at', '')}`",
         f"- Workflows: `{summary['workflow_count']}`",
         f"- Steady-state workflows: `{summary['steady_state_workflow_count']}`",
@@ -674,6 +676,171 @@ def supported_pod_risk_benchmark_scenarios() -> tuple[RiskBenchmarkScenario, ...
     )
 
 
+def build_supported_counterparty_exposure_benchmark_report(
+    *,
+    repeats: int = 3,
+    warmups: int = 1,
+    timer: Callable[[], float] | None = None,
+) -> dict[str, object]:
+    """Benchmark supported institutional exposure workflows."""
+    cases = [
+        benchmark_risk_scenario(
+            scenario,
+            repeats=repeats,
+            warmups=warmups,
+            timer=timer,
+        )
+        for scenario in supported_counterparty_exposure_benchmark_scenarios()
+    ]
+    return build_risk_benchmark_report(
+        benchmark_name="counterparty_exposure_workflows",
+        cases=cases,
+        report_title="Counterparty Exposure Benchmark",
+        notes=(
+            "Cold runs rebuild the future-value cube and exposure stack; steady-state runs reuse upstream artifacts where the workflow allows it.",
+            "Coverage is limited to supported vanilla IRS future-value cubes, bounded collateral projection, netting-set exposure inputs, and EE/EPE/PFE metrics.",
+        ),
+    )
+
+
+def supported_counterparty_exposure_benchmark_scenarios() -> tuple[RiskBenchmarkScenario, ...]:
+    """Return checked benchmark fixtures for institutional exposure workflows."""
+    from trellis.analytics.counterparty import (
+        CollateralAgreement,
+        NettingSet,
+        aggregate_netting_set_exposures,
+        compute_exposure_metrics,
+        project_collateral_state,
+    )
+    from trellis.core.market_state import MarketState
+    from trellis.core.types import DayCountConvention, Frequency
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.instruments.swap import SwapPayoff, SwapSpec
+    from trellis.models.monte_carlo.simulation_substrate import (
+        price_interest_rate_swap_portfolio_future_value_cube,
+    )
+    from trellis.models.vol_surface import FlatVol
+
+    settle = BENCHMARK_SETTLE
+    n_paths = 96
+    n_steps = 36
+
+    def market_state() -> MarketState:
+        return MarketState(
+            as_of=settle,
+            settlement=settle,
+            discount=YieldCurve.flat(0.041, max_tenor=10.0),
+            forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.045, max_tenor=10.0)},
+            vol_surface=FlatVol(0.18),
+            selected_curve_names={
+                "discount_curve": "usd_ois",
+                "forecast_curve": "USD-SOFR-3M",
+            },
+        )
+
+    def payer_swap() -> SwapSpec:
+        return SwapSpec(
+            notional=1_000_000.0,
+            fixed_rate=0.043,
+            start_date=settle,
+            end_date=date(2027, 11, 15),
+            fixed_frequency=Frequency.SEMI_ANNUAL,
+            float_frequency=Frequency.QUARTERLY,
+            fixed_day_count=DayCountConvention.THIRTY_360,
+            float_day_count=DayCountConvention.ACT_360,
+            rate_index="USD-SOFR-3M",
+            is_payer=True,
+        )
+
+    def receiver_swap() -> SwapSpec:
+        return SwapSpec(
+            notional=750_000.0,
+            fixed_rate=0.039,
+            start_date=settle,
+            end_date=date(2026, 11, 15),
+            fixed_frequency=Frequency.SEMI_ANNUAL,
+            float_frequency=Frequency.QUARTERLY,
+            fixed_day_count=DayCountConvention.THIRTY_360,
+            float_day_count=DayCountConvention.ACT_360,
+            rate_index="USD-SOFR-3M",
+            is_payer=False,
+        )
+
+    def future_value_cube():
+        return price_interest_rate_swap_portfolio_future_value_cube(
+            positions={
+                "payer_swap": SwapPayoff(payer_swap()),
+                "receiver_swap": SwapPayoff(receiver_swap()),
+            },
+            market_state=market_state(),
+            n_paths=n_paths,
+            n_steps=n_steps,
+            seed=642,
+            mean_reversion=0.10,
+            sigma=0.0,
+        )
+
+    agreement = CollateralAgreement(
+        agreement_id="csa_benchmark",
+        collateral_currency="USD",
+        threshold=50_000.0,
+        minimum_transfer_amount=10_000.0,
+        margin_period_of_risk_days=14,
+        valuation_lag_days=2,
+    )
+    netting_set = NettingSet(
+        netting_set_id="ns_benchmark",
+        counterparty_id="bank_benchmark",
+        position_names=("payer_swap", "receiver_swap"),
+        collateral_agreement_id=agreement.agreement_id,
+        exposure_currency="USD",
+    )
+
+    def exposure_metrics_from_cube(cube):
+        projection = project_collateral_state(
+            cube,
+            netting_set=netting_set,
+            collateral_agreement=agreement,
+        )
+        exposure_cube = aggregate_netting_set_exposures(
+            cube,
+            netting_sets=(netting_set,),
+            collateral_projections={netting_set.netting_set_id: projection},
+        )
+        return compute_exposure_metrics(exposure_cube, pfe_levels=(0.95, 0.99))
+
+    warm_cube = future_value_cube()
+
+    return (
+        RiskBenchmarkScenario(
+            workflow="swap_portfolio_future_value_cube",
+            label="hull_white_shared_path_irs_book",
+            cold_runner=future_value_cube,
+            steady_runner=future_value_cube,
+            notes=("institutional_exposure", "future_value_cube", "shared_paths"),
+            metadata={
+                "position_count": 2,
+                "n_paths": n_paths,
+                "n_steps": n_steps,
+                "process_family": "hull_white_1f",
+            },
+        ),
+        RiskBenchmarkScenario(
+            workflow="counterparty_exposure_metrics",
+            label="netting_collateral_ee_epe_pfe",
+            cold_runner=lambda: exposure_metrics_from_cube(future_value_cube()),
+            steady_runner=lambda: exposure_metrics_from_cube(warm_cube),
+            notes=("institutional_exposure", "netting", "collateral", "ee_epe_pfe"),
+            metadata={
+                "position_count": 2,
+                "netting_set_count": 1,
+                "pfe_levels": [0.95, 0.99],
+                "warm_start": "reuse_future_value_cube",
+            },
+        ),
+    )
+
+
 def _default_environment() -> dict[str, object]:
     """Return environment metadata for persisted benchmark reports."""
     return {
@@ -692,5 +859,7 @@ __all__ = [
     "render_risk_benchmark_report",
     "save_risk_benchmark_report",
     "build_supported_pod_risk_benchmark_report",
+    "build_supported_counterparty_exposure_benchmark_report",
     "supported_pod_risk_benchmark_scenarios",
+    "supported_counterparty_exposure_benchmark_scenarios",
 ]

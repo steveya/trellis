@@ -45,6 +45,8 @@ The current migration path separates request intent from governed runtime state.
 into executable guards:
 
 - ``PolicyBundle`` for the sandbox, research, and production default policies
+- ``policy_bundle.production.institutional`` for production runs that require
+  explicit approval, model-review, snapshot, and run-artifact evidence
 - ``evaluate_execution_policy()`` for deterministic policy outcomes
 - ``enforce_execution_policy()`` for a structured guard error when execution is blocked
 
@@ -80,6 +82,21 @@ This split is intentional:
 - once a governed path has identified a model id, it should pass through the
   model execution gate before pricing so lifecycle eligibility is explicit and
   deterministic
+
+For production institutional valuation, set
+``ExecutionContext.policy_bundle_id`` to
+``policy_bundle.production.institutional``. That bundle keeps the default
+production constraints and additionally requires:
+
+- ``provider_id`` and ``market_snapshot_id``
+- ``model_id`` and approved ``model_status``
+- approval evidence: ``approval_id``, ``approval_status="approved"``,
+  ``approver``, and ``model_review_id``
+- run evidence: ``run_artifact_id`` and ``audit_bundle_id``
+
+Missing evidence returns deterministic blocker codes such as
+``missing_approval_field``, ``approval_status_not_allowed``, and
+``missing_run_artifact_field``.
 
 MCP State Root And Bootstrap
 ----------------------------

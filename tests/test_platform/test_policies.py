@@ -163,6 +163,97 @@ def test_production_policy_blocks_unapproved_models_and_missing_snapshot_provena
     assert "missing_provenance_field" in result.blocker_codes
 
 
+def test_institutional_production_policy_blocks_missing_approval_evidence():
+    from trellis.platform.policies import evaluate_execution_policy
+
+    result = evaluate_execution_policy(
+        execution_context=_context(
+            run_mode=RunMode.PRODUCTION,
+            provider_id="market_data.treasury_gov",
+            allow_mock_data=False,
+            policy_bundle_id="policy_bundle.production.institutional",
+        ),
+        market_snapshot=_snapshot(provider_id="market_data.treasury_gov"),
+        selected_model={"model_id": "swap_xva_engine", "status": "approved"},
+        provenance={
+            "run_artifact_id": "run_artifact_001",
+            "audit_bundle_id": "audit_bundle_001",
+        },
+    )
+
+    assert result.allowed is False
+    assert "missing_approval_field" in result.blocker_codes
+    assert {
+        blocker.field
+        for blocker in result.blockers
+        if blocker.code == "missing_approval_field"
+    } == {"approval_id", "approval_status", "approver", "model_review_id"}
+
+
+def test_institutional_production_policy_blocks_pending_approval_status():
+    from trellis.platform.policies import evaluate_execution_policy
+
+    result = evaluate_execution_policy(
+        execution_context=_context(
+            run_mode=RunMode.PRODUCTION,
+            provider_id="market_data.treasury_gov",
+            allow_mock_data=False,
+            policy_bundle_id="policy_bundle.production.institutional",
+        ),
+        market_snapshot=_snapshot(provider_id="market_data.treasury_gov"),
+        selected_model={"model_id": "swap_xva_engine", "status": "approved"},
+        provenance={
+            "approval_id": "approval_001",
+            "approval_status": "pending_review",
+            "approver": "model-risk",
+            "model_review_id": "model_review_001",
+            "run_artifact_id": "run_artifact_001",
+            "audit_bundle_id": "audit_bundle_001",
+        },
+    )
+
+    assert result.allowed is False
+    assert "approval_status_not_allowed" in result.blocker_codes
+
+
+def test_institutional_production_policy_allows_complete_reviewed_run_artifacts():
+    from trellis.platform.policies import evaluate_execution_policy, get_policy_bundle
+
+    bundle = get_policy_bundle("policy_bundle.production.institutional")
+    assert bundle.required_approval_fields == (
+        "approval_id",
+        "approval_status",
+        "approver",
+        "model_review_id",
+    )
+
+    result = evaluate_execution_policy(
+        execution_context=_context(
+            run_mode=RunMode.PRODUCTION,
+            provider_id="market_data.treasury_gov",
+            allow_mock_data=False,
+            policy_bundle_id="policy_bundle.production.institutional",
+        ),
+        market_snapshot=_snapshot(provider_id="market_data.treasury_gov"),
+        selected_model={"model_id": "swap_xva_engine", "status": "approved"},
+        provenance={
+            "approval_id": "approval_001",
+            "approval_status": "approved",
+            "approver": "model-risk",
+            "model_review_id": "model_review_001",
+            "run_artifact_id": "run_artifact_001",
+            "audit_bundle_id": "audit_bundle_001",
+        },
+    )
+
+    assert result.allowed is True
+    assert result.blocker_codes == ()
+    assert "institutional_approval_fields" in result.satisfied_requirements
+    assert "institutional_approval_status" in result.satisfied_requirements
+    assert "institutional_run_artifact_fields" in result.satisfied_requirements
+    assert result.provenance["model_id"] == "swap_xva_engine"
+
+
 def test_enforce_execution_policy_raises_structured_guard_error():
     from trellis.platform.policies import PolicyViolationError, enforce_execution_policy
 

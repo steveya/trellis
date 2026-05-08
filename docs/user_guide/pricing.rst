@@ -741,6 +741,10 @@ Important constraints:
   so production eligibility depends on both deterministic validation and the
   quant/critic/arbiter/model-validator cycle outcome
 - production pricing still requires an explicitly approved model version
+- institutional production valuation can opt into
+  ``policy_bundle.production.institutional`` to require approval id/status,
+  approver, model-review id, market snapshot id, run artifact id, and audit
+  bundle id before execution
 - deprecation removes execution eligibility without deleting the stored
   contract, code, validation, or lineage artifacts
 
@@ -750,7 +754,10 @@ and benchmark scorecards expose the same stable surface. Treat it as
 governance evidence for the recorded quant/critic/arbiter/model-validator
 cycle, not as an external model-approval certificate, regulatory sign-off, xVA
 coverage claim, FpML coverage claim, or guarantee beyond the recorded
-validation scope.
+validation scope. The institutional production policy is the same kind of
+internal execution control: it proves that configured approval and artifact
+fields were present for the run, not that an external authority approved the
+model or valuation.
 
 Governed Model Store And Replay Bundles
 ---------------------------------------
@@ -962,6 +969,93 @@ result is the same ``FutureValueCube`` contract, now populated on the union of
 the portfolio's floating-boundary dates so later aggregation semantics remain
 well-defined.
 
+Collateral and netting-set semantics are now represented explicitly before
+those later aggregation workflows run:
+
+.. code-block:: python
+
+   from trellis.analytics.counterparty import (
+       CollateralAgreement,
+       CounterpartySemanticContract,
+       NettingSet,
+       XVAAssumptionSet,
+       aggregate_netting_set_exposures,
+       compute_exposure_metrics,
+       price_counterparty_xva,
+       project_collateral_state,
+       validate_counterparty_semantic_contract,
+   )
+
+   agreement = CollateralAgreement(
+       agreement_id="csa_alpha",
+       collateral_currency="USD",
+       threshold=100_000.0,
+       margin_period_of_risk_days=10,
+   )
+   netting_set = NettingSet(
+       netting_set_id="ns_alpha",
+       counterparty_id="bank_alpha",
+       position_names=("payer_swap", "receiver_swap"),
+       collateral_agreement_id="csa_alpha",
+       exposure_currency="USD",
+   )
+   contract = CounterpartySemanticContract(
+       contract_id="cp_alpha",
+       netting_sets=(netting_set,),
+       collateral_agreements=(agreement,),
+       covered_position_names=("payer_swap", "receiver_swap"),
+   )
+
+   report = validate_counterparty_semantic_contract(contract)
+   report.ok
+   contract.to_dict()["runtime_semantics"]
+
+   projection = project_collateral_state(
+       cube,
+       netting_set=netting_set,
+       collateral_agreement=agreement,
+   )
+   projection.collateral_balance
+   projection.collateralized_exposure
+
+   exposure_cube = aggregate_netting_set_exposures(
+       cube,
+       netting_sets=(netting_set,),
+       collateral_projections={"ns_alpha": projection},
+   )
+   exposure_cube.closeout_input_for_set("ns_alpha")
+
+   metrics = compute_exposure_metrics(exposure_cube, pfe_levels=(0.95, 0.99))
+   metrics.expected_exposure
+   metrics.epe
+   metrics.pfe[0.95]
+
+   xva = price_counterparty_xva(
+       cube,
+       counterparty_contract=contract,
+       assumptions=XVAAssumptionSet(
+           counterparty_hazard_rate=0.02,
+           counterparty_recovery_rate=0.40,
+           own_hazard_rate=0.01,
+           own_recovery_rate=0.40,
+           funding_spread=0.005,
+       ),
+       pfe_levels=(0.95,),
+   )
+   xva.cva
+   xva.dva
+   xva.fva
+   xva.total_xva
+
+The projection is deliberately explicit: held collateral is computed from
+valuation-lagged netted values, and closeout values come from the margin-period
+observation horizon. The netting-set exposure cube turns those per-set
+projections into closeout-ready packets. The first metric output reports
+portfolio and per-netting-set ``EE``/``EPE``/``PFE`` curves. The xVA workflow is
+bounded to scalar flat-hazard ``CVA``/``DVA``/``FVA`` assumptions over that same
+exposure stack; it is not a replacement for an enterprise counterparty-risk,
+capital, margin, or funding platform.
+
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use
 finite-difference repricing on one selected spot binding, while theta rolls the
@@ -1147,6 +1241,11 @@ The supported pod-risk workflows now also have a checked throughput baseline in
 scenario-result cube path, rebuild-based rates-risk workflows, bucketed vega,
 and the spot-risk measure bundle through the same public/runtime entrypoints
 shown above.
+
+Institutional exposure workflows have their own checked benchmark report in
+``docs/benchmarks/counterparty_exposure_workflows.md``. It covers the supported
+swap-portfolio future-value cube and the warm-started collateral/netting
+``EE``/``EPE``/``PFE`` reduction path.
 
 Callable-bond analytics now have two dedicated runtime measures as well:
 
