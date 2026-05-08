@@ -163,6 +163,7 @@ class TestImpliedVolCrossVal:
         assert trellis_iv == pytest.approx(sigma, rel=1e-4)
 
         # QuantLib IV
+        _require_quantlib()
         import QuantLib as ql
         today = ql.Date(15, 11, 2024)
         ql.Settings.instance().evaluationDate = today
