@@ -63,7 +63,7 @@ Rules for coding agents:
   - only then update the corresponding row in this file
 - Update this table only after the ticket is closed in Linear.
 
-Status mirror last synced: `2026-04-18`
+Status mirror last synced: `2026-05-07`
 
 ### Ordered Epic Queue
 
