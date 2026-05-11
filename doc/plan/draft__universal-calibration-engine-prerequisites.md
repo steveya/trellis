@@ -2,7 +2,12 @@
 
 ## Status
 
-Draft planning document. No Linear tickets have been created from this plan.
+Draft planning document with first Linear execution ticket filed.
+
+Filed queue:
+
+- QUA-1001 — Calibration engine: common problem IR program
+- QUA-1002 — Calibration engine: common problem IR and SABR adapter
 
 This document describes the missing contracts and implementation work required
 before Trellis can honestly claim a universal calibration engine. It is a
@@ -190,7 +195,7 @@ workflow inputs into `CalibrationProblemIR`.
 
 Deliverables:
 
-- new IR module under `trellis/models/calibration/`
+- new IR module under `trellis/models/calibration/` (`QUA-1002`)
 - typed validators for variables, quotes, transforms, and materialization
 - tests showing existing workflow metadata can be represented without solving
 
@@ -201,7 +206,7 @@ build an IR and then execute through the existing solver path.
 
 Deliverables:
 
-- adapter implementation
+- adapter implementation (`QUA-1002` starts this with the SABR smile workflow)
 - parity tests against the old workflow result
 - replay artifact comparison
 
@@ -271,3 +276,8 @@ Acceptance criteria:
   and diagnostics as before.
 - Unsupported workflows remain on their current direct functions and are not
   advertised as universal-engine-backed.
+
+Filed as `QUA-1002` with SABR smile as the first migrated workflow adapter.
+This first slice deliberately keeps `engine_backed = false` in the problem IR
+metadata: it proves representation and adapter parity, not a public universal
+engine.

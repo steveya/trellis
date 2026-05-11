@@ -70,9 +70,11 @@ from trellis.models.calibration.sabr_fit import (
     SABRSmilePoint,
     SABRSmileSurface,
     build_sabr_smile_surface,
+    build_sabr_smile_calibration_problem_ir,
     calibrate_sabr_smile_workflow,
     calibrate_sabr,
     fit_sabr_smile_surface,
+    fit_sabr_smile_problem_ir,
 )
 from trellis.models.calibration.local_vol import (
     LocalVolCalibrationResult,
@@ -124,6 +126,15 @@ from trellis.models.calibration.dependency_graph import (
     CalibrationDependencyNode,
     DuplicateCalibrationDependencyNodeError,
     MissingCalibrationDependencyNodeError,
+)
+from trellis.models.calibration.problem_ir import (
+    CalibrationDependencySpec,
+    CalibrationDiagnosticSpec,
+    CalibrationMaterializationSpec,
+    CalibrationObjectiveSpec,
+    CalibrationProblemIR,
+    CalibrationTargetSpec,
+    CalibrationVariableSpec,
 )
 from trellis.models.calibration.quanto import (
     QuantoCorrelationCalibrationDiagnostics,
@@ -210,7 +221,9 @@ __all__ = [
     "SABRSmileFitDiagnostics",
     "SABRSmileCalibrationResult",
     "build_sabr_smile_surface",
+    "build_sabr_smile_calibration_problem_ir",
     "fit_sabr_smile_surface",
+    "fit_sabr_smile_problem_ir",
     "calibrate_sabr_smile_workflow",
     "calibrate_sabr",
     "LocalVolCalibrationResult",
@@ -250,6 +263,13 @@ __all__ = [
     "CalibrationDependencyGraph",
     "CalibrationDependencyGraphError",
     "CalibrationDependencyNode",
+    "CalibrationDependencySpec",
+    "CalibrationDiagnosticSpec",
+    "CalibrationMaterializationSpec",
+    "CalibrationObjectiveSpec",
+    "CalibrationProblemIR",
+    "CalibrationTargetSpec",
+    "CalibrationVariableSpec",
     "DuplicateCalibrationDependencyNodeError",
     "MissingCalibrationDependencyNodeError",
     "QuantoCorrelationCalibrationDiagnostics",

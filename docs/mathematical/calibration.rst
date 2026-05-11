@@ -138,6 +138,30 @@ now explicit and serializable before backend dispatch. That means calibration
 results can record the solve request itself in provenance instead of forcing
 replay tools to infer solver inputs from ad hoc backend calls.
 
+Calibration Problem IR
+----------------------
+
+Trellis now has a first calibration-engine migration artifact:
+``CalibrationProblemIR`` in ``trellis.models.calibration.problem_ir``. The IR
+is a typed, immutable representation of one calibration node. It records:
+
+- calibration variables and their coordinate charts
+- observed targets, quote conventions, quote maps, weights, and validation tags
+- objective shape, loss function, derivative method, and solve-request identity
+- upstream dependencies, materialization intent, diagnostics, replay metadata,
+  and the serialized solve request when available
+
+The first checked adapter is intentionally bounded. SABR smile calibration can
+build a ``CalibrationProblemIR`` through
+``build_sabr_smile_calibration_problem_ir(...)`` and execute the existing
+workflow through ``fit_sabr_smile_problem_ir(...)``. This proves the common
+problem shape against an existing workflow without changing the SABR objective,
+solver choice, solved parameters, diagnostics, or replay payload.
+
+This is not yet a public universal calibration orchestrator. The IR-backed SABR
+path reports itself as adapter-only, and unsupported workflows remain on their
+current direct functions until they have parity adapters and replay coverage.
+
 Quote Maps And Target Transforms
 --------------------------------
 
