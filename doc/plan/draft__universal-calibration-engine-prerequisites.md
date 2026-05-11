@@ -244,6 +244,12 @@ Deliverables:
 - replay tests compare problem IR, solve request, result payload, and
   materialization output
 
+`QUA-1009` adds the first replay lock for the problem-IR contract. The
+supported calibration benchmark report now carries full problem-IR payloads for
+the adapter-backed SABR and single-name credit workflows, and replay tests
+compare the serialized solve-request portions against the live direct workflow
+outputs.
+
 ### Phase 5: Universal Orchestrator
 
 Introduce a public orchestrator only after multiple adapters prove the IR.
@@ -305,3 +311,8 @@ bounded two-node compile where a downstream basket-credit problem consumes the
 single-name credit curve materialized by the credit adapter. This remains a
 compile/validation step only; execution is deferred to the gated orchestrator
 work.
+
+`QUA-1009` adds benchmark and replay payload coverage for the adapter-backed
+problem IRs. This keeps non-IR workflows unchanged while making SABR and
+single-name credit problem payload drift observable in the checked benchmark
+artifact and replay tests.

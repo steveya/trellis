@@ -180,6 +180,17 @@ This graph compiler is still an internal coordination primitive. It does not
 execute arbitrary problem IRs by itself, and it does not promote adapter-only
 workflows to public universal-engine support.
 
+Problem-IR Replay Payloads
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The supported calibration benchmark report now carries full
+``CalibrationProblemIR`` payloads for the adapter-backed SABR and single-name
+credit workflows. Replay tests compare those payloads back to the live
+``SolveRequest`` payloads emitted by the direct workflows. This makes drift in
+problem variables, targets, quote maps, materialization intent, or solve-request
+construction visible before a public orchestrator starts consuming the IR as an
+execution contract.
+
 Quote Maps And Target Transforms
 --------------------------------
 

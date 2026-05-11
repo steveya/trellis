@@ -34,6 +34,7 @@ def test_supported_calibration_workflows_preserve_replay_contracts_and_fit_toler
     sabr = scenarios["sabr"].cold_runner()
     assert sabr.solver_provenance.backend["backend_id"] == "scipy"
     assert sabr.solver_replay_artifact.request["request_id"] == "sabr_smile_least_squares"
+    assert scenarios["sabr"].problem_ir_payload["solve_request"] == sabr.solve_request.to_payload()
     assert sabr.diagnostics.max_abs_vol_error < 5e-4
 
     swaption_cube = scenarios["swaption_cube"].cold_runner()
@@ -70,6 +71,7 @@ def test_supported_calibration_workflows_preserve_replay_contracts_and_fit_toler
         credit.solver_replay_artifact.request["request_id"]
         == "single_name_credit_cds_par_spread_least_squares"
     )
+    assert scenarios["credit"].problem_ir_payload["solve_request"] == credit.solve_request.to_payload()
     assert credit.max_abs_repricing_error < 5e-12
     assert credit.max_abs_quote_residual < 1e-8
     assert credit.provenance["potential_binding"]["discount_curve_name"] == "usd_ois"
@@ -194,6 +196,7 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     assert report["summary"]["desk_like_workflow_count"] == 2
     assert report["summary"]["perturbation_diagnostic_count"] == 2
     assert report["summary"]["latency_envelope_count"] == 2
+    assert report["summary"]["problem_ir_payload_count"] == 2
     assert set(cases) == {
         "hull_white",
         "caplet_strip",
@@ -225,6 +228,8 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     assert cases["caplet_strip"]["metadata"]["surface_name"] == "usd_caplet_strip"
     assert cases["sabr"]["metadata"]["surface_name"] == "usd_rates_smile"
     assert cases["sabr"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["sabr"]["problem_ir"]["metadata"]["adapter_id"] == "sabr_smile_problem_ir_v1"
+    assert cases["sabr"]["problem_ir"]["solve_request"]["request_id"] == "sabr_smile_least_squares"
     assert cases["swaption_cube"]["metadata"]["surface_name"] == "usd_swaption_cube"
     assert cases["swaption_cube"]["metadata"]["synthetic_generation_contract_version"] == "v2"
     assert cases["equity_vol_surface"]["metadata"]["surface_name"] == "spx_surface_authority"
@@ -236,6 +241,8 @@ def test_live_supported_calibration_benchmark_report_covers_warm_start_shape():
     assert cases["local_vol"]["metadata"]["source_surface_name"] == "spx_heston_implied_vol"
     assert cases["local_vol"]["metadata"]["surface_name"] == "spx_local_vol"
     assert cases["local_vol"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["credit"]["problem_ir"]["metadata"]["adapter_id"] == "single_name_credit_problem_ir_v1"
+    assert cases["credit"]["problem_ir"]["materialization"]["object_kind"] == "credit_curve"
     assert cases["basket_credit"]["metadata"]["fixture_style"] == "desk_like"
     assert cases["basket_credit"]["metadata"]["linked_credit_curve"] == "benchmark_single_name_credit"
     assert cases["basket_credit"]["metadata"]["perturbation_diagnostic"]["threshold_breaches"] == {}
@@ -259,6 +266,7 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     assert payload["summary"]["desk_like_workflow_count"] == 2
     assert payload["summary"]["perturbation_diagnostic_count"] == 2
     assert payload["summary"]["latency_envelope_count"] == 2
+    assert payload["summary"]["problem_ir_payload_count"] == 2
     assert set(cases) == {
         "hull_white",
         "caplet_strip",
@@ -288,6 +296,8 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     assert cases["caplet_strip"]["metadata"]["surface_name"] == "usd_caplet_strip"
     assert cases["sabr"]["metadata"]["surface_name"] == "usd_rates_smile"
     assert cases["sabr"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["sabr"]["problem_ir"]["metadata"]["adapter_id"] == "sabr_smile_problem_ir_v1"
+    assert cases["sabr"]["problem_ir"]["solve_request"]["request_id"] == "sabr_smile_least_squares"
     assert cases["swaption_cube"]["metadata"]["surface_name"] == "usd_swaption_cube"
     assert cases["swaption_cube"]["metadata"]["synthetic_generation_contract_version"] == "v2"
     assert cases["equity_vol_surface"]["metadata"]["surface_name"] == "spx_surface_authority"
@@ -299,6 +309,10 @@ def test_checked_calibration_benchmark_artifact_covers_supported_workflows():
     assert cases["local_vol"]["metadata"]["source_surface_name"] == "spx_heston_implied_vol"
     assert cases["local_vol"]["metadata"]["surface_name"] == "spx_local_vol"
     assert cases["local_vol"]["metadata"]["synthetic_generation_contract_version"] == "v2"
+    assert cases["credit"]["problem_ir"]["metadata"]["adapter_id"] == "single_name_credit_problem_ir_v1"
+    assert cases["credit"]["problem_ir"]["solve_request"]["request_id"] == (
+        "single_name_credit_cds_par_spread_least_squares"
+    )
     assert cases["basket_credit"]["metadata"]["fixture_style"] == "desk_like"
     assert cases["basket_credit"]["metadata"]["linked_credit_curve"] == "benchmark_single_name_credit"
     assert cases["basket_credit"]["metadata"]["perturbation_diagnostic"]["threshold_breaches"] == {}
