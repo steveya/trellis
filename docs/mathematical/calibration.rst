@@ -138,6 +138,88 @@ now explicit and serializable before backend dispatch. That means calibration
 results can record the solve request itself in provenance instead of forcing
 replay tools to infer solver inputs from ad hoc backend calls.
 
+Calibration Problem IR
+----------------------
+
+Trellis now has a first calibration-engine migration artifact:
+``CalibrationProblemIR`` in ``trellis.models.calibration.problem_ir``. The IR
+is a typed, immutable representation of one calibration node. It records:
+
+- calibration variables and their coordinate charts
+- observed targets, quote conventions, quote maps, weights, and validation tags
+- objective shape, loss function, derivative method, and solve-request identity
+- upstream dependencies, materialization intent, diagnostics, replay metadata,
+  and the serialized solve request when available
+
+The first checked adapters are intentionally bounded. SABR smile calibration can
+build a ``CalibrationProblemIR`` through
+``build_sabr_smile_calibration_problem_ir(...)`` and execute the existing
+workflow through ``fit_sabr_smile_problem_ir(...)``. Single-name credit curve
+calibration can do the same through
+``build_single_name_credit_calibration_problem_ir(...)`` and
+``fit_single_name_credit_problem_ir(...)``. These paths prove the common problem
+shape against existing workflows without changing their objectives, solver
+choices, solved parameters, diagnostics, or replay payloads.
+
+This is not yet a public universal calibration orchestrator. The IR-backed SABR
+and single-name credit paths report themselves as adapter-only, and unsupported
+workflows remain on their current direct functions until they have parity
+adapters and replay coverage.
+
+Problem-IR Dependency Graphs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``compile_calibration_problem_dependency_graph(...)`` bridges problem IR nodes
+onto the existing ``CalibrationDependencyGraph`` validator. A problem can
+depend on another problem by naming a ``problem:<problem_id>`` source reference
+or by consuming an object kind/name materialized by another problem. The
+compiled graph keeps the existing dependency-first ordering and fail-closed
+diagnostics for duplicate nodes, missing upstream references, and cycles.
+
+This graph compiler is still an internal coordination primitive. It does not
+execute arbitrary problem IRs by itself, and it does not promote adapter-only
+workflows to public universal-engine support.
+
+Problem-IR Replay Payloads
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The supported calibration benchmark report now carries full
+``CalibrationProblemIR`` payloads for the adapter-backed SABR and single-name
+credit workflows. Replay tests compare those payloads back to the live
+``SolveRequest`` payloads emitted by the direct workflows. This makes drift in
+problem variables, targets, quote maps, materialization intent, or solve-request
+construction visible before a public orchestrator starts consuming the IR as an
+execution contract.
+
+Gated Problem-IR Orchestrator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``calibrate_problem_ir(...)`` is the bounded public orchestrator for problem-IR
+execution. It is fail-closed: only workflows returned by
+``supported_calibration_problem_ir_adapters()`` are accepted, and each supported
+workflow must receive its explicit context object.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Family
+     - Workflow
+     - Required context
+     - Result
+   * - ``sabr``
+     - ``sabr_smile``
+     - ``surface``
+     - ``SABRSmileCalibrationResult``
+   * - ``credit``
+     - ``single_name_credit_curve``
+     - ``quotes`` and ``market_state``
+     - ``CreditHazardCalibrationResult``
+
+The orchestrator delegates to the adapter-backed direct workflows and annotates
+result provenance with the selected problem-IR adapter. It does not discover or
+execute arbitrary calibration families, and it does not remove the direct
+workflow functions.
+
 Quote Maps And Target Transforms
 --------------------------------
 
@@ -152,6 +234,7 @@ The shipped quote-map vocabulary is intentionally bounded:
 - ``ImpliedVol(Normal)``
 - ``ParRate``
 - ``Spread``
+- ``Upfront``
 - ``Hazard``
 
 Each quote map carries two directional transforms where applicable:

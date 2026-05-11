@@ -2,7 +2,16 @@
 
 ## Status
 
-Draft planning document. No Linear tickets have been created from this plan.
+Draft planning document with Linear execution queue filed.
+
+Filed queue:
+
+- QUA-1001 — Calibration engine: common problem IR program
+- QUA-1002 — Calibration engine: common problem IR and SABR adapter
+- QUA-1007 — Calibration engine: second workflow problem-IR adapter
+- QUA-1008 — Calibration engine: problem IR dependency graph compiler
+- QUA-1009 — Calibration engine: benchmark and replay problem-IR payloads
+- QUA-1010 — Calibration engine: gated public problem-IR orchestrator
 
 This document describes the missing contracts and implementation work required
 before Trellis can honestly claim a universal calibration engine. It is a
@@ -190,18 +199,19 @@ workflow inputs into `CalibrationProblemIR`.
 
 Deliverables:
 
-- new IR module under `trellis/models/calibration/`
+- new IR module under `trellis/models/calibration/` (`QUA-1002`)
 - typed validators for variables, quotes, transforms, and materialization
 - tests showing existing workflow metadata can be represented without solving
 
-### Phase 2: One Workflow Adapter
+### Phase 2: Workflow Adapters
 
-Adapt one low-risk workflow, preferably SABR smile or single-name credit, to
-build an IR and then execute through the existing solver path.
+Adapt low-risk workflows, starting with SABR smile and single-name credit, to
+build an IR and then execute through the existing solver paths.
 
 Deliverables:
 
-- adapter implementation
+- adapter implementation (`QUA-1002` starts this with the SABR smile workflow)
+- second adapter implementation (`QUA-1007` adds single-name credit)
 - parity tests against the old workflow result
 - replay artifact comparison
 
@@ -216,6 +226,13 @@ Deliverables:
 - basket-credit or bounded quanto route represented as a two-node graph
 - failure diagnostics for missing upstream materializations
 
+`QUA-1008` introduces this bridge as
+`compile_calibration_problem_dependency_graph(...)`. The compiler accepts
+concrete `CalibrationProblemIR` nodes, infers problem-level edges from
+`problem:<problem_id>` source refs or matching materialized object kind/name
+pairs, and delegates duplicate/missing/cycle validation to the existing
+`CalibrationDependencyGraph`.
+
 ### Phase 4: Benchmark And Replay Migration
 
 Move benchmark metadata and replay payloads to consume IR fields instead of
@@ -227,6 +244,12 @@ Deliverables:
 - replay tests compare problem IR, solve request, result payload, and
   materialization output
 
+`QUA-1009` adds the first replay lock for the problem-IR contract. The
+supported calibration benchmark report now carries full problem-IR payloads for
+the adapter-backed SABR and single-name credit workflows, and replay tests
+compare the serialized solve-request portions against the live direct workflow
+outputs.
+
 ### Phase 5: Universal Orchestrator
 
 Introduce a public orchestrator only after multiple adapters prove the IR.
@@ -236,6 +259,13 @@ Deliverables:
 - `calibrate(problem_ir, market_state)` entrypoint
 - support matrix listing which families are engine-backed
 - fail-closed behavior for unsupported families
+
+`QUA-1010` exposes this as the bounded `calibrate_problem_ir(...)`
+orchestrator plus `supported_calibration_problem_ir_adapters()`. The support
+matrix is limited to the adapter-backed SABR smile and single-name credit curve
+workflows, and each route requires explicit context (`surface` for SABR;
+`quotes` plus `market_state` for credit). Unsupported families raise a
+dedicated fail-closed error.
 
 ## Explicit Non-Goals
 
@@ -271,3 +301,29 @@ Acceptance criteria:
   and diagnostics as before.
 - Unsupported workflows remain on their current direct functions and are not
   advertised as universal-engine-backed.
+
+Filed as `QUA-1002` with SABR smile as the first migrated workflow adapter.
+This first slice deliberately keeps `engine_backed = false` in the problem IR
+metadata: it proves representation and adapter parity, not a public universal
+engine.
+
+`QUA-1007` adds the second bounded adapter for the schedule-aware single-name
+credit curve workflow. It keeps the direct credit workflow authoritative,
+preserves the existing solve request and replay payload, and records the
+discount-curve dependency and credit-curve materialization intent in the common
+problem shape.
+
+`QUA-1008` adds the internal problem-IR dependency graph compiler. It proves a
+bounded two-node compile where a downstream basket-credit problem consumes the
+single-name credit curve materialized by the credit adapter. This remains a
+compile/validation step only; execution is deferred to the gated orchestrator
+work.
+
+`QUA-1009` adds benchmark and replay payload coverage for the adapter-backed
+problem IRs. This keeps non-IR workflows unchanged while making SABR and
+single-name credit problem payload drift observable in the checked benchmark
+artifact and replay tests.
+
+`QUA-1010` adds the bounded public orchestrator. It intentionally exposes only
+the replay-backed SABR and single-name credit problem-IR adapters and records
+orchestrator provenance on returned calibration results.

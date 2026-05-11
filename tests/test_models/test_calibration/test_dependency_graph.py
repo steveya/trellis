@@ -2,15 +2,111 @@
 
 from __future__ import annotations
 
+from datetime import date
+
 import pytest
 
+from trellis.core.market_state import MarketState
+from trellis.curves.yield_curve import YieldCurve
+from trellis.models.calibration.credit import (
+    CreditHazardCalibrationQuote,
+    build_single_name_credit_calibration_problem_ir,
+)
 from trellis.models.calibration.dependency_graph import (
     CalibrationDependencyCycleError,
     CalibrationDependencyGraph,
     CalibrationDependencyNode,
+    compile_calibration_problem_dependency_graph,
     DuplicateCalibrationDependencyNodeError,
     MissingCalibrationDependencyNodeError,
 )
+from trellis.models.calibration.problem_ir import (
+    CalibrationDependencySpec,
+    CalibrationMaterializationSpec,
+    CalibrationObjectiveSpec,
+    CalibrationProblemIR,
+    CalibrationTargetSpec,
+    CalibrationVariableSpec,
+)
+
+
+SETTLE = date(2024, 11, 15)
+
+
+def _credit_market_state() -> MarketState:
+    return MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.03),
+        selected_curve_names={"discount_curve": "usd_ois"},
+        market_provenance={"source_kind": "explicit_input", "source_ref": "dependency_graph_unit_test"},
+    )
+
+
+def _credit_problem():
+    return build_single_name_credit_calibration_problem_ir(
+        (
+            CreditHazardCalibrationQuote(1.0, 120.0, "spread", label="spread_1y"),
+            CreditHazardCalibrationQuote(5.0, 180.0, "spread", label="spread_5y"),
+        ),
+        _credit_market_state(),
+        recovery=0.4,
+        curve_name="benchmark_single_name_credit",
+    )
+
+
+def _dependent_basket_problem(
+    *,
+    dependency_source_ref: str = "",
+    dependency_object_name: str = "benchmark_single_name_credit",
+) -> CalibrationProblemIR:
+    return CalibrationProblemIR(
+        problem_id="basket_credit_tranche_correlation_problem",
+        workflow_id="basket_credit_problem_ir_graph_fixture",
+        family_id="basket_credit",
+        variables=(
+            CalibrationVariableSpec(
+                name="base_correlation",
+                coordinate_chart="bounded_correlation",
+                initial_value=0.3,
+                lower_bound=0.0,
+                upper_bound=0.999,
+            ),
+        ),
+        targets=(
+            CalibrationTargetSpec(
+                target_id="tranche_0_3",
+                instrument_id="basket_credit:tranche_0_3",
+                quote_family="spread",
+                quote_convention="tranche_running_spread",
+                quote_value=100.0,
+                validation_tags=("basket_credit", "problem_ir_graph_fixture"),
+            ),
+        ),
+        objective=CalibrationObjectiveSpec(
+            objective_kind="least_squares",
+            loss_function="weighted_sum_of_squares",
+            residual_count=1,
+            derivative_method="scipy_2point_residual_jacobian",
+            solve_request_id="basket_credit_graph_fixture",
+        ),
+        dependencies=(
+            CalibrationDependencySpec(
+                dependency_id="representative_credit_curve",
+                object_kind="credit_curve",
+                object_name=dependency_object_name,
+                source_ref=dependency_source_ref,
+            ),
+        ),
+        materialization=CalibrationMaterializationSpec(
+            object_kind="correlation_surface",
+            object_name="basket_base_correlation",
+            destination_field="model_parameter_sets",
+            source_ref="basket_credit_graph_fixture",
+        ),
+        solve_request_payload={"request_id": "basket_credit_graph_fixture"},
+        metadata={"adapter_id": "basket_credit_graph_fixture", "engine_backed": False},
+    )
 
 
 def test_dependency_graph_orders_dependencies_before_dependents():
@@ -201,4 +297,46 @@ def test_dependency_graph_rejects_cycles():
                 ),
             ),
             edges=(),
+        )
+
+
+def test_problem_ir_dependency_graph_infers_materialized_upstream_edges():
+    credit_problem = _credit_problem()
+    basket_problem = _dependent_basket_problem()
+
+    compiled = compile_calibration_problem_dependency_graph(
+        "basket_credit_problem_ir_program",
+        problems=(basket_problem, credit_problem),
+    )
+    payload = compiled.to_payload()
+
+    assert compiled.problem_ids == (
+        "basket_credit_tranche_correlation_problem",
+        "single_name_credit_cds_par_spread_least_squares",
+    )
+    assert compiled.dependency_order() == (
+        "single_name_credit_cds_par_spread_least_squares",
+        "basket_credit_tranche_correlation_problem",
+    )
+    assert [problem.problem_id for problem in compiled.topological_problems] == list(compiled.dependency_order())
+    assert payload["dependency_graph"]["edges"] == [
+        [
+            "basket_credit_tranche_correlation_problem",
+            "single_name_credit_cds_par_spread_least_squares",
+        ],
+    ]
+    assert payload["problems"][0]["problem_id"] == "basket_credit_tranche_correlation_problem"
+    assert payload["problems"][1]["materialization"]["object_kind"] == "credit_curve"
+
+
+def test_problem_ir_dependency_graph_rejects_missing_problem_source_refs():
+    with pytest.raises(MissingCalibrationDependencyNodeError, match="missing target 'missing_credit_problem'"):
+        compile_calibration_problem_dependency_graph(
+            "missing_problem_ref",
+            problems=(
+                _dependent_basket_problem(
+                    dependency_source_ref="problem:missing_credit_problem",
+                    dependency_object_name="missing_credit_curve",
+                ),
+            ),
         )

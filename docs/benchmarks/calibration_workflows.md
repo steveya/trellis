@@ -5,6 +5,7 @@
 - Desk-like workflows: `2`
 - Perturbation diagnostics: `2`
 - Latency envelopes: `2`
+- Problem-IR payloads: `2`
 - Avg cold mean seconds: `1.122763`
 - Avg warm mean seconds: `0.146565`
 - Avg warm speedup: `10.047`x
@@ -44,6 +45,7 @@
 - Warm mean: `0.00344` s
 - Warm throughput: `290.707` runs/s
 - Warm speedup: `22.754`x
+- Problem IR: `sabr_smile_least_squares` via `sabr_smile_problem_ir_v1`
 - Metadata: `point_count`=7, `surface_name`='usd_rates_smile', `synthetic_generation_contract_version`='v2', `warm_start`=True
 - Note: least_squares
 - Note: implied_vol_fit
@@ -104,6 +106,7 @@
 - Cold mean: `0.701379` s
 - Cold throughput: `1.426` runs/s
 - Warm start: `n/a`
+- Problem IR: `single_name_credit_cds_par_spread_least_squares` via `single_name_credit_problem_ir_v1`
 - Metadata: `curve_name`='usd_ig', `model_consistency_contract_version`='v1', `point_count`=4, `quote_family`='spread', `warm_start`=False
 - Note: least_squares
 - Note: model_consistency_contract_fixture
@@ -114,7 +117,7 @@
 - Warm start: `n/a`
 - Latency envelope: `pass` (cold mean `3.055233` s <= `6.0` s)
 - Perturbation diagnostic: `pass` (max abs change `0.004268596412018488`)
-- Metadata: `fixture_style`='desk_like', `latency_envelope`={'workflow': 'basket_credit', 'label': 'desk_tranche_surface', 'fixture_style': 'desk_like', 'instrument_count': None, 'quote_count': 6, 'cold_mean_limit_seconds': 6.0, 'cold_max_limit_seconds': 8.0, 'warm_mean_limit_seconds': None}, `linked_credit_curve`='benchmark_single_name_credit', `maturity_count`=2, `perturbation_diagnostic`={'label': 'basket_credit_parallel_quote_up', 'perturbation_size': 0.0025, 'baseline_metrics': {'5y_0.00_0.03': 0.18000000000001112, '5y_0.03_0.07': 0.23999999999990046, '5y_0.07_0.10': 0.33999999999225816, '7y_0.00_0.03': 0.39, '7y_0.03_0.07': 0.48000000000000054, '7y_0.07_0.10': 0.5399999999999684}, 'perturbed_metrics': {'5y_0.00_0.03': 0.1781832312816442, '5y_0.03_0.07': 0.23573140358788197, '5y_0.07_0.10': 0.34400870869280414, '7y_0.00_0.03': 0.3880026451908997, '7y_0.03_0.07': 0.4774988971374956, '7y_0.07_0.10': 0.5361447035161097}, 'absolute_changes': {'5y_0.00_0.03': -0.0018167687183669179, '5y_0.03_0.07': -0.004268596412018488, '5y_0.07_0.10': 0.004008708700545982, '7y_0.00_0.03': -0.0019973548091002935, '7y_0.03_0.07': -0.0025011028625049336, '7y_0.07_0.10': -0.003855296483858739}, 'relative_changes': {'5y_0.00_0.03': -0.010093159546482253, '5y_0.03_0.07': -0.017785818383417744, '5y_0.07_0.10': 0.011790319707756649, '7y_0.00_0.03': -0.00512142258743665, '7y_0.03_0.07': -0.00521063096355194, '7y_0.07_0.10': -0.007139437933072156}, 'max_abs_change': 0.004268596412018488, 'max_relative_change': 0.017785818383417744, 'threshold_breaches': {}, 'status': 'pass'}, `quote_count`=6, `support_boundary`='homogeneous_representative_curve', `surface_name`='benchmark_tranche_correlation', `tranche_count`=3, `warm_start`=False
+- Metadata: `fixture_style`='desk_like', `latency_envelope`={'cold_max_limit_seconds': 8.0, 'cold_mean_limit_seconds': 6.0, 'fixture_style': 'desk_like', 'instrument_count': None, 'label': 'desk_tranche_surface', 'quote_count': 6, 'warm_mean_limit_seconds': None, 'workflow': 'basket_credit'}, `linked_credit_curve`='benchmark_single_name_credit', `maturity_count`=2, `perturbation_diagnostic`={'absolute_changes': {'5y_0.00_0.03': -0.0018167687183669179, '5y_0.03_0.07': -0.004268596412018488, '5y_0.07_0.10': 0.004008708700545982, '7y_0.00_0.03': -0.0019973548091002935, '7y_0.03_0.07': -0.0025011028625049336, '7y_0.07_0.10': -0.003855296483858739}, 'baseline_metrics': {'5y_0.00_0.03': 0.18000000000001112, '5y_0.03_0.07': 0.23999999999990046, '5y_0.07_0.10': 0.33999999999225816, '7y_0.00_0.03': 0.39, '7y_0.03_0.07': 0.48000000000000054, '7y_0.07_0.10': 0.5399999999999684}, 'label': 'basket_credit_parallel_quote_up', 'max_abs_change': 0.004268596412018488, 'max_relative_change': 0.017785818383417744, 'perturbation_size': 0.0025, 'perturbed_metrics': {'5y_0.00_0.03': 0.1781832312816442, '5y_0.03_0.07': 0.23573140358788197, '5y_0.07_0.10': 0.34400870869280414, '7y_0.00_0.03': 0.3880026451908997, '7y_0.03_0.07': 0.4774988971374956, '7y_0.07_0.10': 0.5361447035161097}, 'relative_changes': {'5y_0.00_0.03': -0.010093159546482253, '5y_0.03_0.07': -0.017785818383417744, '5y_0.07_0.10': 0.011790319707756649, '7y_0.00_0.03': -0.00512142258743665, '7y_0.03_0.07': -0.00521063096355194, '7y_0.07_0.10': -0.007139437933072156}, 'status': 'pass', 'threshold_breaches': {}}, `quote_count`=6, `support_boundary`='homogeneous_representative_curve', `surface_name`='benchmark_tranche_correlation', `tranche_count`=3, `warm_start`=False
 - Note: brentq_root_scan
 - Note: homogeneous_basket_credit
 - Note: desk_like_fixture
@@ -128,7 +131,7 @@
 - Warm speedup: `3.21`x
 - Latency envelope: `pass` (cold mean `0.009328` s <= `1.5` s)
 - Perturbation diagnostic: `pass` (max abs change `0.00741841223079881`)
-- Metadata: `correlation_keys`=['EURUSD_corr'], `fixture_style`='desk_like', `fx_pair`='EURUSD', `latency_envelope`={'workflow': 'quanto_correlation', 'label': 'desk_quanto_correlation', 'fixture_style': 'desk_like', 'instrument_count': None, 'quote_count': 3, 'cold_mean_limit_seconds': 1.5, 'cold_max_limit_seconds': 2.0, 'warm_mean_limit_seconds': 0.5}, `linked_curve_roles`={'discount_curve': 'usd_ois', 'forecast_curve': 'EUR-DISC'}, `linked_vol_surface`='quanto_flat_vol', `parameter_set_name`='benchmark_quanto_rho', `perturbation_diagnostic`={'label': 'quanto_correlation_parallel_quote_up', 'perturbation_size': 0.0025, 'baseline_metrics': {'quanto_correlation': 0.3499999999999991}, 'perturbed_metrics': {'quanto_correlation': 0.3425815877692003}, 'absolute_changes': {'quanto_correlation': -0.00741841223079881}, 'relative_changes': {'quanto_correlation': -0.021195463516568085}, 'max_abs_change': 0.00741841223079881, 'max_relative_change': 0.021195463516568085, 'threshold_breaches': {}, 'status': 'pass'}, `quote_count`=3, `support_boundary`='bounded_quanto_correlation', `warm_start`=True
+- Metadata: `correlation_keys`=['EURUSD_corr'], `fixture_style`='desk_like', `fx_pair`='EURUSD', `latency_envelope`={'cold_max_limit_seconds': 2.0, 'cold_mean_limit_seconds': 1.5, 'fixture_style': 'desk_like', 'instrument_count': None, 'label': 'desk_quanto_correlation', 'quote_count': 3, 'warm_mean_limit_seconds': 0.5, 'workflow': 'quanto_correlation'}, `linked_curve_roles`={'discount_curve': 'usd_ois', 'forecast_curve': 'EUR-DISC'}, `linked_vol_surface`='quanto_flat_vol', `parameter_set_name`='benchmark_quanto_rho', `perturbation_diagnostic`={'absolute_changes': {'quanto_correlation': -0.00741841223079881}, 'baseline_metrics': {'quanto_correlation': 0.3499999999999991}, 'label': 'quanto_correlation_parallel_quote_up', 'max_abs_change': 0.00741841223079881, 'max_relative_change': 0.021195463516568085, 'perturbation_size': 0.0025, 'perturbed_metrics': {'quanto_correlation': 0.3425815877692003}, 'relative_changes': {'quanto_correlation': -0.021195463516568085}, 'status': 'pass', 'threshold_breaches': {}}, `quote_count`=3, `support_boundary`='bounded_quanto_correlation', `warm_start`=True
 - Note: least_squares
 - Note: desk_like_fixture
 - Note: bounded_quanto_correlation

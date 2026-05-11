@@ -70,9 +70,11 @@ from trellis.models.calibration.sabr_fit import (
     SABRSmilePoint,
     SABRSmileSurface,
     build_sabr_smile_surface,
+    build_sabr_smile_calibration_problem_ir,
     calibrate_sabr_smile_workflow,
     calibrate_sabr,
     fit_sabr_smile_surface,
+    fit_sabr_smile_problem_ir,
 )
 from trellis.models.calibration.local_vol import (
     LocalVolCalibrationResult,
@@ -83,7 +85,9 @@ from trellis.models.calibration.local_vol import (
 from trellis.models.calibration.credit import (
     CreditHazardCalibrationQuote,
     CreditHazardCalibrationResult,
+    build_single_name_credit_calibration_problem_ir,
     calibrate_single_name_credit_curve_workflow,
+    fit_single_name_credit_problem_ir,
 )
 from trellis.models.calibration.basket_credit import (
     BasketCreditCalibrationDiagnostics,
@@ -122,8 +126,25 @@ from trellis.models.calibration.dependency_graph import (
     CalibrationDependencyGraph,
     CalibrationDependencyGraphError,
     CalibrationDependencyNode,
+    CalibrationProblemDependencyGraph,
+    compile_calibration_problem_dependency_graph,
     DuplicateCalibrationDependencyNodeError,
     MissingCalibrationDependencyNodeError,
+)
+from trellis.models.calibration.problem_ir import (
+    CalibrationDependencySpec,
+    CalibrationDiagnosticSpec,
+    CalibrationMaterializationSpec,
+    CalibrationObjectiveSpec,
+    CalibrationProblemIR,
+    CalibrationTargetSpec,
+    CalibrationVariableSpec,
+)
+from trellis.models.calibration.orchestrator import (
+    CalibrationProblemIRAdapterSpec,
+    UnsupportedCalibrationProblemIRError,
+    calibrate_problem_ir,
+    supported_calibration_problem_ir_adapters,
 )
 from trellis.models.calibration.quanto import (
     QuantoCorrelationCalibrationDiagnostics,
@@ -210,7 +231,9 @@ __all__ = [
     "SABRSmileFitDiagnostics",
     "SABRSmileCalibrationResult",
     "build_sabr_smile_surface",
+    "build_sabr_smile_calibration_problem_ir",
     "fit_sabr_smile_surface",
+    "fit_sabr_smile_problem_ir",
     "calibrate_sabr_smile_workflow",
     "calibrate_sabr",
     "LocalVolCalibrationResult",
@@ -219,7 +242,9 @@ __all__ = [
     "dupire_local_vol",
     "CreditHazardCalibrationQuote",
     "CreditHazardCalibrationResult",
+    "build_single_name_credit_calibration_problem_ir",
     "calibrate_single_name_credit_curve_workflow",
+    "fit_single_name_credit_problem_ir",
     "BasketCreditCalibrationDiagnostics",
     "BasketCreditCorrelationCalibrationResult",
     "BasketCreditCorrelationPoint",
@@ -250,6 +275,19 @@ __all__ = [
     "CalibrationDependencyGraph",
     "CalibrationDependencyGraphError",
     "CalibrationDependencyNode",
+    "CalibrationProblemDependencyGraph",
+    "compile_calibration_problem_dependency_graph",
+    "CalibrationDependencySpec",
+    "CalibrationDiagnosticSpec",
+    "CalibrationMaterializationSpec",
+    "CalibrationObjectiveSpec",
+    "CalibrationProblemIR",
+    "CalibrationProblemIRAdapterSpec",
+    "CalibrationTargetSpec",
+    "CalibrationVariableSpec",
+    "UnsupportedCalibrationProblemIRError",
+    "calibrate_problem_ir",
+    "supported_calibration_problem_ir_adapters",
     "DuplicateCalibrationDependencyNodeError",
     "MissingCalibrationDependencyNodeError",
     "QuantoCorrelationCalibrationDiagnostics",

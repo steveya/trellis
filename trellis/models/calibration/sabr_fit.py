@@ -21,6 +21,14 @@ from trellis.models.calibration.solve_request import (
     build_solve_replay_artifact,
     execute_solve_request,
 )
+from trellis.models.calibration.problem_ir import (
+    CalibrationDiagnosticSpec,
+    CalibrationMaterializationSpec,
+    CalibrationObjectiveSpec,
+    CalibrationProblemIR,
+    CalibrationTargetSpec,
+    CalibrationVariableSpec,
+)
 from trellis.models.calibration.quote_maps import (
     QuoteAxisSpec,
     QuoteMapSpec,
@@ -389,23 +397,27 @@ def _fit_diagnostics(
     )
 
 
-def fit_sabr_smile_surface(
+def _resolve_sabr_initial_guess(
+    surface: SABRSmileSurface,
+    initial_guess: tuple[float, float, float] | None,
+) -> tuple[tuple[float, float, float], str]:
+    """Resolve SABR initial values and their provenance label."""
+    if initial_guess is None:
+        alpha0 = float(surface.market_vols[surface.atm_index]) * float(surface.forward) ** (1 - float(surface.beta))
+        return (float(alpha0), 0.0, 0.3), "atm_seed"
+    return tuple(float(value) for value in initial_guess), "explicit_seed"
+
+
+def _build_sabr_smile_solve_request(
     surface: SABRSmileSurface,
     *,
-    initial_guess: tuple[float, float, float] | None = None,
-) -> SABRSmileCalibrationResult:
-    """Fit SABR parameters to one reusable smile surface."""
+    resolved_initial_guess: tuple[float, float, float],
+    warm_start_source: str,
+) -> SolveRequest:
+    """Build the checked SABR smile solve request from a resolved surface."""
     strikes = raw_np.asarray(surface.strikes, dtype=float)
     market_vols = raw_np.asarray(surface.market_vols, dtype=float)
     weights = raw_np.asarray(surface.weights, dtype=float)
-
-    if initial_guess is None:
-        alpha0 = float(surface.market_vols[surface.atm_index]) * float(surface.forward) ** (1 - float(surface.beta))
-        resolved_initial_guess = (float(alpha0), 0.0, 0.3)
-        warm_start_source = "atm_seed"
-    else:
-        resolved_initial_guess = tuple(float(value) for value in initial_guess)
-        warm_start_source = "explicit_seed"
 
     def objective(params):
         """Return the weighted squared-error objective for one SABR parameter vector."""
@@ -418,7 +430,7 @@ def fit_sabr_smile_surface(
         return np.sum(weights * residuals ** 2)
 
     objective_grad = gradient(objective)
-    solve_request = SolveRequest(
+    return SolveRequest(
         request_id="sabr_smile_least_squares",
         problem_kind="least_squares",
         parameter_names=("alpha", "rho", "nu"),
@@ -459,6 +471,13 @@ def fit_sabr_smile_surface(
             "surface_name": surface.surface_name,
         },
     )
+
+
+def _finish_sabr_smile_fit(
+    surface: SABRSmileSurface,
+    solve_request: SolveRequest,
+) -> SABRSmileCalibrationResult:
+    """Execute a SABR solve request and assemble the reusable result surface."""
     solve_result = execute_solve_request(solve_request)
     if not solve_result.success:
         raise ValueError(f"SABR calibration failed: {solve_result.metadata.get('message', 'unknown failure')}")
@@ -518,6 +537,181 @@ def fit_sabr_smile_surface(
         warnings=surface.warnings,
         provenance=provenance,
         summary=summary,
+    )
+
+
+def fit_sabr_smile_surface(
+    surface: SABRSmileSurface,
+    *,
+    initial_guess: tuple[float, float, float] | None = None,
+) -> SABRSmileCalibrationResult:
+    """Fit SABR parameters to one reusable smile surface."""
+    resolved_initial_guess, warm_start_source = _resolve_sabr_initial_guess(surface, initial_guess)
+    return _finish_sabr_smile_fit(
+        surface,
+        _build_sabr_smile_solve_request(
+            surface,
+            resolved_initial_guess=resolved_initial_guess,
+            warm_start_source=warm_start_source,
+        ),
+    )
+
+
+def build_sabr_smile_calibration_problem_ir(
+    surface: SABRSmileSurface,
+    *,
+    initial_guess: tuple[float, float, float] | None = None,
+) -> CalibrationProblemIR:
+    """Represent the supported SABR smile workflow as a calibration problem IR."""
+    resolved_initial_guess, warm_start_source = _resolve_sabr_initial_guess(surface, initial_guess)
+    solve_request = _build_sabr_smile_solve_request(
+        surface,
+        resolved_initial_guess=resolved_initial_guess,
+        warm_start_source=warm_start_source,
+    )
+    bounds_payload = solve_request.bounds.to_payload()
+    lower_bounds = tuple(bounds_payload["lower"])
+    upper_bounds = tuple(bounds_payload["upper"])
+    variable_charts = {
+        "alpha": "positive",
+        "rho": "bounded_correlation",
+        "nu": "positive",
+    }
+    variables = tuple(
+        CalibrationVariableSpec(
+            name=name,
+            coordinate_chart=variable_charts[name],
+            initial_value=resolved_initial_guess[index],
+            lower_bound=lower_bounds[index],
+            upper_bound=upper_bounds[index],
+            warm_start_source=warm_start_source,
+            metadata={
+                "parameter_role": "sabr_parameter",
+                "fixed_beta": float(surface.beta),
+            },
+        )
+        for index, name in enumerate(solve_request.parameter_names)
+    )
+    quote_map_payload = surface.quote_map_spec.to_payload()
+    targets = tuple(
+        CalibrationTargetSpec(
+            target_id=label,
+            instrument_id=f"{surface.surface_name or 'sabr_smile'}:{label}",
+            quote_family=surface.quote_map_spec.quote_family,
+            quote_convention=surface.quote_map_spec.convention,
+            quote_value=point.market_vol,
+            weight=point.weight,
+            quote_map_payload=quote_map_payload,
+            validation_tags=("implied_vol", "sabr_smile"),
+            metadata={
+                "strike": float(point.strike),
+                "expiry_years": float(surface.expiry_years),
+                "forward": float(surface.forward),
+            },
+        )
+        for label, point in zip(surface.labels, surface.points)
+    )
+    objective = CalibrationObjectiveSpec(
+        objective_kind="least_squares",
+        loss_function="weighted_sum_of_squares",
+        residual_count=len(targets),
+        derivative_method="autodiff_scalar_gradient",
+        solve_request_id=solve_request.request_id,
+        metadata={
+            "target_transform": "black_implied_vol",
+            "quote_map": quote_map_payload,
+            "beta": float(surface.beta),
+        },
+    )
+    materialization = CalibrationMaterializationSpec(
+        object_kind="model_parameter_set",
+        object_name=surface.surface_name or "sabr_smile",
+        destination_field="model_parameter_sets",
+        source_ref="fit_sabr_smile_surface",
+        metadata={
+            "model_family": "sabr",
+            "parameter_names": ["alpha", "beta", "rho", "nu"],
+            "fixed_beta": float(surface.beta),
+        },
+    )
+    diagnostics = (
+        CalibrationDiagnosticSpec(
+            diagnostic_id="max_abs_vol_error",
+            metric_name="max_abs_vol_error",
+            tolerance=5e-4,
+            severity="warning",
+        ),
+        CalibrationDiagnosticSpec(
+            diagnostic_id="weighted_rms_vol_error",
+            metric_name="weighted_rms_vol_error",
+            tolerance=5e-4,
+            severity="warning",
+        ),
+    )
+    return CalibrationProblemIR(
+        problem_id=solve_request.request_id,
+        workflow_id="sabr_smile",
+        family_id="sabr",
+        variables=variables,
+        targets=targets,
+        objective=objective,
+        materialization=materialization,
+        diagnostics=diagnostics,
+        solve_request_payload=solve_request.to_payload(),
+        replay_metadata={
+            "surface": surface.to_payload(),
+            "warm_start_source": warm_start_source,
+        },
+        metadata={
+            "adapter_id": "sabr_smile_problem_ir_v1",
+            "engine_backed": False,
+            "support_boundary": "problem_ir_adapter_only",
+            "source_ref": "build_sabr_smile_calibration_problem_ir",
+        },
+    )
+
+
+def fit_sabr_smile_problem_ir(
+    problem: CalibrationProblemIR,
+    surface: SABRSmileSurface,
+) -> SABRSmileCalibrationResult:
+    """Execute the current SABR workflow through its problem-IR adapter."""
+    if problem.workflow_id != "sabr_smile" or problem.family_id != "sabr":
+        raise ValueError("fit_sabr_smile_problem_ir requires a SABR smile calibration problem")
+    if tuple(variable.name for variable in problem.variables) != ("alpha", "rho", "nu"):
+        raise ValueError("fit_sabr_smile_problem_ir requires SABR alpha/rho/nu variables")
+    warm_start_source = str(problem.replay_metadata.get("warm_start_source") or "explicit_seed")
+    solve_request = _build_sabr_smile_solve_request(
+        surface,
+        resolved_initial_guess=(
+            float(problem.variables[0].initial_value),
+            float(problem.variables[1].initial_value),
+            float(problem.variables[2].initial_value),
+        ),
+        warm_start_source=warm_start_source,
+    )
+    if problem.solve_request_payload and dict(problem.solve_request_payload) != solve_request.to_payload():
+        raise ValueError("SABR smile calibration problem solve_request_payload is stale or inconsistent")
+    result = _finish_sabr_smile_fit(surface, solve_request)
+    provenance = dict(result.provenance)
+    provenance["calibration_problem_ir"] = {
+        "problem_id": problem.problem_id,
+        "workflow_id": problem.workflow_id,
+        "family_id": problem.family_id,
+        "adapter_id": problem.metadata.get("adapter_id", ""),
+        "engine_backed": bool(problem.metadata.get("engine_backed", False)),
+    }
+    return SABRSmileCalibrationResult(
+        surface=result.surface,
+        sabr=result.sabr,
+        solve_request=result.solve_request,
+        solve_result=result.solve_result,
+        solver_provenance=result.solver_provenance,
+        solver_replay_artifact=result.solver_replay_artifact,
+        diagnostics=result.diagnostics,
+        warnings=result.warnings,
+        provenance=provenance,
+        summary=result.summary,
     )
 
 
@@ -600,7 +794,9 @@ __all__ = [
     "SABRSmileFitDiagnostics",
     "SABRSmileCalibrationResult",
     "build_sabr_smile_surface",
+    "build_sabr_smile_calibration_problem_ir",
     "fit_sabr_smile_surface",
+    "fit_sabr_smile_problem_ir",
     "calibrate_sabr_smile_workflow",
     "calibrate_sabr",
 ]

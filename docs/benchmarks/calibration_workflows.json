@@ -45,6 +45,7 @@
         "least_squares",
         "tree_pricing"
       ],
+      "problem_ir": null,
       "warm": {
         "calibrations_per_second": 3.326,
         "label": "swaption_strip",
@@ -123,6 +124,7 @@
         "caplet_surface",
         "price_quotes"
       ],
+      "problem_ir": null,
       "warm": null,
       "warm_speedup": null,
       "workflow": "caplet_strip"
@@ -167,6 +169,792 @@
         "implied_vol_fit",
         "synthetic_generation_contract_fixture"
       ],
+      "problem_ir": {
+        "dependencies": [],
+        "diagnostics": [
+          {
+            "diagnostic_id": "max_abs_vol_error",
+            "metadata": {},
+            "metric_name": "max_abs_vol_error",
+            "severity": "warning",
+            "tolerance": 0.0005
+          },
+          {
+            "diagnostic_id": "weighted_rms_vol_error",
+            "metadata": {},
+            "metric_name": "weighted_rms_vol_error",
+            "severity": "warning",
+            "tolerance": 0.0005
+          }
+        ],
+        "family_id": "sabr",
+        "materialization": {
+          "destination_field": "model_parameter_sets",
+          "metadata": {
+            "fixed_beta": 0.5,
+            "model_family": "sabr",
+            "parameter_names": [
+              "alpha",
+              "beta",
+              "rho",
+              "nu"
+            ]
+          },
+          "object_kind": "model_parameter_set",
+          "object_name": "usd_rates_smile",
+          "source_ref": "fit_sabr_smile_surface"
+        },
+        "metadata": {
+          "adapter_id": "sabr_smile_problem_ir_v1",
+          "engine_backed": false,
+          "source_ref": "build_sabr_smile_calibration_problem_ir",
+          "support_boundary": "problem_ir_adapter_only"
+        },
+        "objective": {
+          "derivative_method": "autodiff_scalar_gradient",
+          "loss_function": "weighted_sum_of_squares",
+          "metadata": {
+            "beta": 0.5,
+            "quote_map": {
+              "assumptions": [],
+              "convention": "black",
+              "metadata": {},
+              "quote_axes": [
+                {
+                  "axis_kind": "time_to_expiry",
+                  "axis_name": "expiry",
+                  "unit": "years"
+                },
+                {
+                  "axis_kind": "swap_rate",
+                  "axis_name": "strike",
+                  "unit": "decimal_rate"
+                }
+              ],
+              "quote_family": "implied_vol",
+              "quote_semantics": {
+                "convention": "black",
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_volatility",
+                  "value_domain": "volatility"
+                }
+              },
+              "quote_subject": "swaption",
+              "quote_unit": "decimal_volatility"
+            },
+            "target_transform": "black_implied_vol"
+          },
+          "objective_kind": "least_squares",
+          "regularization": {},
+          "residual_count": 7,
+          "solve_request_id": "sabr_smile_least_squares"
+        },
+        "problem_id": "sabr_smile_least_squares",
+        "replay_metadata": {
+          "surface": {
+            "atm_market_vol": 1.177411,
+            "atm_strike": 0.04,
+            "beta": 0.5,
+            "expiry_years": 1.0,
+            "forward": 0.04443994157739724,
+            "labels": [
+              "strike_0.01",
+              "strike_0.02",
+              "strike_0.03",
+              "strike_0.04",
+              "strike_0.05",
+              "strike_0.06",
+              "strike_0.07"
+            ],
+            "market_vols": [
+              1.726447,
+              1.432935,
+              1.278181,
+              1.177411,
+              1.105188,
+              1.050471,
+              1.007475
+            ],
+            "metadata": {},
+            "quote_map": {
+              "assumptions": [],
+              "convention": "black",
+              "metadata": {},
+              "quote_axes": [
+                {
+                  "axis_kind": "time_to_expiry",
+                  "axis_name": "expiry",
+                  "unit": "years"
+                },
+                {
+                  "axis_kind": "swap_rate",
+                  "axis_name": "strike",
+                  "unit": "decimal_rate"
+                }
+              ],
+              "quote_family": "implied_vol",
+              "quote_semantics": {
+                "convention": "black",
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_volatility",
+                  "value_domain": "volatility"
+                }
+              },
+              "quote_subject": "swaption",
+              "quote_unit": "decimal_volatility"
+            },
+            "source_kind": "option_surface",
+            "source_ref": "supported_calibration_benchmark_scenarios",
+            "strike_count": 7,
+            "strikes": [
+              0.01,
+              0.02,
+              0.03,
+              0.04,
+              0.05,
+              0.06,
+              0.07
+            ],
+            "surface_name": "usd_rates_smile",
+            "warnings": [
+              "ATM forward 0.0444399 not observed exactly; nearest strike 0.04 is used for diagnostics."
+            ],
+            "weights": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "warm_start_source": "atm_seed"
+        },
+        "solve_request": {
+          "bounds": {
+            "lower": [
+              1e-06,
+              -0.999,
+              1e-06
+            ],
+            "upper": [
+              null,
+              0.999,
+              null
+            ]
+          },
+          "constraints": [],
+          "initial_guess": [
+            0.24820745901191202,
+            0.0,
+            0.3
+          ],
+          "metadata": {
+            "problem_family": "sabr_smile",
+            "solver_family": "scipy",
+            "surface_name": "usd_rates_smile"
+          },
+          "objective": {
+            "derivatives": {
+              "hessian": "none",
+              "jacobian": "provided"
+            },
+            "labels": [
+              "strike_0.01",
+              "strike_0.02",
+              "strike_0.03",
+              "strike_0.04",
+              "strike_0.05",
+              "strike_0.06",
+              "strike_0.07"
+            ],
+            "metadata": {
+              "beta": 0.5,
+              "derivative_method": "autodiff_scalar_gradient",
+              "expiry_years": 1.0,
+              "forward": 0.04443994157739724,
+              "quote_map": {
+                "assumptions": [],
+                "convention": "black",
+                "metadata": {},
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_semantics": {
+                  "convention": "black",
+                  "quote_axes": [
+                    {
+                      "axis_kind": "time_to_expiry",
+                      "axis_name": "expiry",
+                      "unit": "years"
+                    },
+                    {
+                      "axis_kind": "swap_rate",
+                      "axis_name": "strike",
+                      "unit": "decimal_rate"
+                    }
+                  ],
+                  "quote_family": "implied_vol",
+                  "quote_subject": "swaption",
+                  "quote_unit": "decimal_volatility",
+                  "quote_unit_spec": {
+                    "scaling": "absolute",
+                    "unit_name": "decimal_volatility",
+                    "value_domain": "volatility"
+                  }
+                },
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility"
+              },
+              "surface_name": "usd_rates_smile"
+            },
+            "objective_kind": "least_squares",
+            "target_values": [
+              1.726447,
+              1.432935,
+              1.278181,
+              1.177411,
+              1.105188,
+              1.050471,
+              1.007475
+            ],
+            "weights": [
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "options": {},
+          "parameter_names": [
+            "alpha",
+            "rho",
+            "nu"
+          ],
+          "problem_kind": "least_squares",
+          "request_id": "sabr_smile_least_squares",
+          "solver_hint": "L-BFGS-B",
+          "warm_start": {
+            "metadata": {},
+            "parameter_values": [
+              0.24820745901191202,
+              0.0,
+              0.3
+            ],
+            "source": "atm_seed"
+          }
+        },
+        "targets": [
+          {
+            "instrument_id": "usd_rates_smile:strike_0.01",
+            "metadata": {
+              "expiry_years": 1.0,
+              "forward": 0.04443994157739724,
+              "strike": 0.01
+            },
+            "quote_convention": "black",
+            "quote_family": "implied_vol",
+            "quote_map": {
+              "assumptions": [],
+              "convention": "black",
+              "metadata": {},
+              "quote_axes": [
+                {
+                  "axis_kind": "time_to_expiry",
+                  "axis_name": "expiry",
+                  "unit": "years"
+                },
+                {
+                  "axis_kind": "swap_rate",
+                  "axis_name": "strike",
+                  "unit": "decimal_rate"
+                }
+              ],
+              "quote_family": "implied_vol",
+              "quote_semantics": {
+                "convention": "black",
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_volatility",
+                  "value_domain": "volatility"
+                }
+              },
+              "quote_subject": "swaption",
+              "quote_unit": "decimal_volatility"
+            },
+            "quote_value": 1.726447,
+            "target_id": "strike_0.01",
+            "validation_tags": [
+              "implied_vol",
+              "sabr_smile"
+            ],
+            "weight": 1.0
+          },
+          {
+            "instrument_id": "usd_rates_smile:strike_0.02",
+            "metadata": {
+              "expiry_years": 1.0,
+              "forward": 0.04443994157739724,
+              "strike": 0.02
+            },
+            "quote_convention": "black",
+            "quote_family": "implied_vol",
+            "quote_map": {
+              "assumptions": [],
+              "convention": "black",
+              "metadata": {},
+              "quote_axes": [
+                {
+                  "axis_kind": "time_to_expiry",
+                  "axis_name": "expiry",
+                  "unit": "years"
+                },
+                {
+                  "axis_kind": "swap_rate",
+                  "axis_name": "strike",
+                  "unit": "decimal_rate"
+                }
+              ],
+              "quote_family": "implied_vol",
+              "quote_semantics": {
+                "convention": "black",
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_volatility",
+                  "value_domain": "volatility"
+                }
+              },
+              "quote_subject": "swaption",
+              "quote_unit": "decimal_volatility"
+            },
+            "quote_value": 1.432935,
+            "target_id": "strike_0.02",
+            "validation_tags": [
+              "implied_vol",
+              "sabr_smile"
+            ],
+            "weight": 1.0
+          },
+          {
+            "instrument_id": "usd_rates_smile:strike_0.03",
+            "metadata": {
+              "expiry_years": 1.0,
+              "forward": 0.04443994157739724,
+              "strike": 0.03
+            },
+            "quote_convention": "black",
+            "quote_family": "implied_vol",
+            "quote_map": {
+              "assumptions": [],
+              "convention": "black",
+              "metadata": {},
+              "quote_axes": [
+                {
+                  "axis_kind": "time_to_expiry",
+                  "axis_name": "expiry",
+                  "unit": "years"
+                },
+                {
+                  "axis_kind": "swap_rate",
+                  "axis_name": "strike",
+                  "unit": "decimal_rate"
+                }
+              ],
+              "quote_family": "implied_vol",
+              "quote_semantics": {
+                "convention": "black",
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_volatility",
+                  "value_domain": "volatility"
+                }
+              },
+              "quote_subject": "swaption",
+              "quote_unit": "decimal_volatility"
+            },
+            "quote_value": 1.278181,
+            "target_id": "strike_0.03",
+            "validation_tags": [
+              "implied_vol",
+              "sabr_smile"
+            ],
+            "weight": 1.0
+          },
+          {
+            "instrument_id": "usd_rates_smile:strike_0.04",
+            "metadata": {
+              "expiry_years": 1.0,
+              "forward": 0.04443994157739724,
+              "strike": 0.04
+            },
+            "quote_convention": "black",
+            "quote_family": "implied_vol",
+            "quote_map": {
+              "assumptions": [],
+              "convention": "black",
+              "metadata": {},
+              "quote_axes": [
+                {
+                  "axis_kind": "time_to_expiry",
+                  "axis_name": "expiry",
+                  "unit": "years"
+                },
+                {
+                  "axis_kind": "swap_rate",
+                  "axis_name": "strike",
+                  "unit": "decimal_rate"
+                }
+              ],
+              "quote_family": "implied_vol",
+              "quote_semantics": {
+                "convention": "black",
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_volatility",
+                  "value_domain": "volatility"
+                }
+              },
+              "quote_subject": "swaption",
+              "quote_unit": "decimal_volatility"
+            },
+            "quote_value": 1.177411,
+            "target_id": "strike_0.04",
+            "validation_tags": [
+              "implied_vol",
+              "sabr_smile"
+            ],
+            "weight": 1.0
+          },
+          {
+            "instrument_id": "usd_rates_smile:strike_0.05",
+            "metadata": {
+              "expiry_years": 1.0,
+              "forward": 0.04443994157739724,
+              "strike": 0.05
+            },
+            "quote_convention": "black",
+            "quote_family": "implied_vol",
+            "quote_map": {
+              "assumptions": [],
+              "convention": "black",
+              "metadata": {},
+              "quote_axes": [
+                {
+                  "axis_kind": "time_to_expiry",
+                  "axis_name": "expiry",
+                  "unit": "years"
+                },
+                {
+                  "axis_kind": "swap_rate",
+                  "axis_name": "strike",
+                  "unit": "decimal_rate"
+                }
+              ],
+              "quote_family": "implied_vol",
+              "quote_semantics": {
+                "convention": "black",
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_volatility",
+                  "value_domain": "volatility"
+                }
+              },
+              "quote_subject": "swaption",
+              "quote_unit": "decimal_volatility"
+            },
+            "quote_value": 1.105188,
+            "target_id": "strike_0.05",
+            "validation_tags": [
+              "implied_vol",
+              "sabr_smile"
+            ],
+            "weight": 1.0
+          },
+          {
+            "instrument_id": "usd_rates_smile:strike_0.06",
+            "metadata": {
+              "expiry_years": 1.0,
+              "forward": 0.04443994157739724,
+              "strike": 0.06
+            },
+            "quote_convention": "black",
+            "quote_family": "implied_vol",
+            "quote_map": {
+              "assumptions": [],
+              "convention": "black",
+              "metadata": {},
+              "quote_axes": [
+                {
+                  "axis_kind": "time_to_expiry",
+                  "axis_name": "expiry",
+                  "unit": "years"
+                },
+                {
+                  "axis_kind": "swap_rate",
+                  "axis_name": "strike",
+                  "unit": "decimal_rate"
+                }
+              ],
+              "quote_family": "implied_vol",
+              "quote_semantics": {
+                "convention": "black",
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_volatility",
+                  "value_domain": "volatility"
+                }
+              },
+              "quote_subject": "swaption",
+              "quote_unit": "decimal_volatility"
+            },
+            "quote_value": 1.050471,
+            "target_id": "strike_0.06",
+            "validation_tags": [
+              "implied_vol",
+              "sabr_smile"
+            ],
+            "weight": 1.0
+          },
+          {
+            "instrument_id": "usd_rates_smile:strike_0.07",
+            "metadata": {
+              "expiry_years": 1.0,
+              "forward": 0.04443994157739724,
+              "strike": 0.07
+            },
+            "quote_convention": "black",
+            "quote_family": "implied_vol",
+            "quote_map": {
+              "assumptions": [],
+              "convention": "black",
+              "metadata": {},
+              "quote_axes": [
+                {
+                  "axis_kind": "time_to_expiry",
+                  "axis_name": "expiry",
+                  "unit": "years"
+                },
+                {
+                  "axis_kind": "swap_rate",
+                  "axis_name": "strike",
+                  "unit": "decimal_rate"
+                }
+              ],
+              "quote_family": "implied_vol",
+              "quote_semantics": {
+                "convention": "black",
+                "quote_axes": [
+                  {
+                    "axis_kind": "time_to_expiry",
+                    "axis_name": "expiry",
+                    "unit": "years"
+                  },
+                  {
+                    "axis_kind": "swap_rate",
+                    "axis_name": "strike",
+                    "unit": "decimal_rate"
+                  }
+                ],
+                "quote_family": "implied_vol",
+                "quote_subject": "swaption",
+                "quote_unit": "decimal_volatility",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_volatility",
+                  "value_domain": "volatility"
+                }
+              },
+              "quote_subject": "swaption",
+              "quote_unit": "decimal_volatility"
+            },
+            "quote_value": 1.007475,
+            "target_id": "strike_0.07",
+            "validation_tags": [
+              "implied_vol",
+              "sabr_smile"
+            ],
+            "weight": 1.0
+          }
+        ],
+        "variables": [
+          {
+            "coordinate_chart": "positive",
+            "initial_value": 0.24820745901191202,
+            "lower_bound": 1e-06,
+            "metadata": {
+              "fixed_beta": 0.5,
+              "parameter_role": "sabr_parameter"
+            },
+            "name": "alpha",
+            "scaling": 1.0,
+            "upper_bound": null,
+            "warm_start_source": "atm_seed"
+          },
+          {
+            "coordinate_chart": "bounded_correlation",
+            "initial_value": 0.0,
+            "lower_bound": -0.999,
+            "metadata": {
+              "fixed_beta": 0.5,
+              "parameter_role": "sabr_parameter"
+            },
+            "name": "rho",
+            "scaling": 1.0,
+            "upper_bound": 0.999,
+            "warm_start_source": "atm_seed"
+          },
+          {
+            "coordinate_chart": "positive",
+            "initial_value": 0.3,
+            "lower_bound": 1e-06,
+            "metadata": {
+              "fixed_beta": 0.5,
+              "parameter_role": "sabr_parameter"
+            },
+            "name": "nu",
+            "scaling": 1.0,
+            "upper_bound": null,
+            "warm_start_source": "atm_seed"
+          }
+        ],
+        "workflow_id": "sabr_smile"
+      },
       "warm": {
         "calibrations_per_second": 290.707,
         "label": "single_smile",
@@ -249,6 +1037,7 @@
         "price_quotes",
         "synthetic_generation_contract_fixture"
       ],
+      "problem_ir": null,
       "warm": null,
       "warm_speedup": null,
       "workflow": "swaption_cube"
@@ -299,6 +1088,7 @@
         "quote_governance",
         "synthetic_generation_contract_fixture"
       ],
+      "problem_ir": null,
       "warm": null,
       "warm_speedup": null,
       "workflow": "equity_vol_surface"
@@ -343,6 +1133,7 @@
         "fft_pricing",
         "synthetic_generation_contract_fixture"
       ],
+      "problem_ir": null,
       "warm": {
         "calibrations_per_second": 14.517,
         "label": "single_smile",
@@ -421,6 +1212,7 @@
         "surface_compression",
         "synthetic_generation_contract_fixture"
       ],
+      "problem_ir": null,
       "warm": {
         "calibrations_per_second": 2.802,
         "label": "surface_compression",
@@ -503,6 +1295,7 @@
         "workflow_surface",
         "synthetic_generation_contract_fixture"
       ],
+      "problem_ir": null,
       "warm": null,
       "warm_speedup": null,
       "workflow": "local_vol"
@@ -547,6 +1340,1411 @@
         "least_squares",
         "model_consistency_contract_fixture"
       ],
+      "problem_ir": {
+        "dependencies": [
+          {
+            "dependency_id": "discount_curve",
+            "metadata": {
+              "curve_role": "discount_curve",
+              "required_for": "cds_par_spread_objective"
+            },
+            "object_kind": "yield_curve",
+            "object_name": "usd_ois",
+            "required": true,
+            "source_ref": "market_state.discount"
+          }
+        ],
+        "diagnostics": [
+          {
+            "diagnostic_id": "max_abs_repricing_error",
+            "metadata": {},
+            "metric_name": "max_abs_repricing_error",
+            "severity": "warning",
+            "tolerance": 5e-12
+          },
+          {
+            "diagnostic_id": "max_abs_quote_residual",
+            "metadata": {},
+            "metric_name": "max_abs_quote_residual",
+            "severity": "warning",
+            "tolerance": 1e-08
+          },
+          {
+            "diagnostic_id": "max_abs_hazard_residual",
+            "metadata": {},
+            "metric_name": "max_abs_hazard_residual",
+            "severity": "warning",
+            "tolerance": 1e-08
+          }
+        ],
+        "family_id": "credit",
+        "materialization": {
+          "destination_field": "credit_curve",
+          "metadata": {
+            "instrument_kind": "single_name_cds",
+            "model_family": "reduced_form_credit",
+            "potential_binding": {
+              "default_curve_name": "benchmark_single_name_credit",
+              "default_curve_role": "credit_curve",
+              "discount_curve_name": "usd_ois",
+              "discount_curve_role": "discount_curve",
+              "recovery": 0.4,
+              "risky_discount_formula": "discount(t) * survival_probability(t)"
+            },
+            "recovery": 0.4,
+            "tenors": [
+              1.0,
+              3.0,
+              5.002739726027397,
+              10.005479452054795
+            ]
+          },
+          "object_kind": "credit_curve",
+          "object_name": "benchmark_single_name_credit",
+          "source_ref": "calibrate_single_name_credit_curve_workflow"
+        },
+        "metadata": {
+          "adapter_id": "single_name_credit_problem_ir_v1",
+          "engine_backed": false,
+          "quote_normalization_method": "cds_pricer",
+          "source_ref": "build_single_name_credit_calibration_problem_ir",
+          "support_boundary": "problem_ir_adapter_only"
+        },
+        "objective": {
+          "derivative_method": "scipy_2point_residual_jacobian",
+          "loss_function": "weighted_sum_of_squares",
+          "metadata": {
+            "fit_space": "cds_par_spread",
+            "fit_value_kinds": [
+              "par_spread",
+              "par_spread",
+              "par_spread",
+              "par_spread"
+            ],
+            "potential_binding": {
+              "default_curve_name": "benchmark_single_name_credit",
+              "default_curve_role": "credit_curve",
+              "discount_curve_name": "usd_ois",
+              "discount_curve_role": "discount_curve",
+              "recovery": 0.4,
+              "risky_discount_formula": "discount(t) * survival_probability(t)"
+            }
+          },
+          "objective_kind": "least_squares",
+          "regularization": {},
+          "residual_count": 4,
+          "solve_request_id": "single_name_credit_cds_par_spread_least_squares"
+        },
+        "problem_id": "single_name_credit_cds_par_spread_least_squares",
+        "replay_metadata": {
+          "market_state": {
+            "as_of": "2024-11-15",
+            "selected_curve_names": {
+              "credit_curve": "usd_ig",
+              "discount_curve": "usd_ois",
+              "fixing_history": "USD-SOFR-3M",
+              "forecast_curve": "USD-SOFR-3M"
+            },
+            "settlement": "2024-11-15"
+          },
+          "max_hazard": 5.0,
+          "quotes": [
+            {
+              "business_day_adjustment": "FOLLOWING",
+              "calendar": "WeekendOnly",
+              "day_count": "ACT_360",
+              "frequency": "QUARTERLY",
+              "label": "usd_ig_1.0y",
+              "maturity_date": null,
+              "maturity_years": 1.0,
+              "payment_lag_days": 0,
+              "quote": 0.0059460163,
+              "quote_kind": "spread",
+              "roll_convention": "NONE",
+              "standard_running_spread": null,
+              "start_date": null,
+              "stub": "SHORT_LAST",
+              "weight": 1.0
+            },
+            {
+              "business_day_adjustment": "FOLLOWING",
+              "calendar": "WeekendOnly",
+              "day_count": "ACT_360",
+              "frequency": "QUARTERLY",
+              "label": "usd_ig_3.0y",
+              "maturity_date": null,
+              "maturity_years": 3.0,
+              "payment_lag_days": 0,
+              "quote": 0.0068962089,
+              "quote_kind": "spread",
+              "roll_convention": "NONE",
+              "standard_running_spread": null,
+              "start_date": null,
+              "stub": "SHORT_LAST",
+              "weight": 1.0
+            },
+            {
+              "business_day_adjustment": "FOLLOWING",
+              "calendar": "WeekendOnly",
+              "day_count": "ACT_360",
+              "frequency": "QUARTERLY",
+              "label": "usd_ig_5.0y",
+              "maturity_date": null,
+              "maturity_years": 5.0,
+              "payment_lag_days": 0,
+              "quote": 0.0078130616,
+              "quote_kind": "spread",
+              "roll_convention": "NONE",
+              "standard_running_spread": null,
+              "start_date": null,
+              "stub": "SHORT_LAST",
+              "weight": 1.0
+            },
+            {
+              "business_day_adjustment": "FOLLOWING",
+              "calendar": "WeekendOnly",
+              "day_count": "ACT_360",
+              "frequency": "QUARTERLY",
+              "label": "usd_ig_10.0y",
+              "maturity_date": null,
+              "maturity_years": 10.0,
+              "payment_lag_days": 0,
+              "quote": 0.0086865647,
+              "quote_kind": "spread",
+              "roll_convention": "NONE",
+              "standard_running_spread": null,
+              "start_date": null,
+              "stub": "SHORT_LAST",
+              "weight": 1.0
+            }
+          ],
+          "solver_replay_artifact": {
+            "backend": {
+              "backend_id": "scipy",
+              "backend_operator": null,
+              "derivative_method": "scipy_2point_residual_jacobian",
+              "derivative_method_category": "finite_difference_bump",
+              "derivative_method_support": "fallback",
+              "fallback_derivative_method": "scipy_2point_residual_jacobian",
+              "fallback_from": null,
+              "method": "trf",
+              "requested_backend": "scipy",
+              "resolved_derivative_method": "scipy_2point_residual_jacobian",
+              "solver_family": "scipy"
+            },
+            "options": {
+              "ftol": 1e-12,
+              "gtol": 1e-12,
+              "maxiter": 80,
+              "xtol": 1e-12
+            },
+            "request": {
+              "bounds": {
+                "lower": [
+                  0.0,
+                  0.0,
+                  0.0,
+                  0.0
+                ],
+                "upper": [
+                  5.0,
+                  5.0,
+                  5.0,
+                  5.0
+                ]
+              },
+              "constraints": [],
+              "initial_guess": [
+                0.009995596024839917,
+                0.011593310420375329,
+                0.013133513323050183,
+                0.014599771487912895
+              ],
+              "metadata": {
+                "curve_name": "benchmark_single_name_credit",
+                "fit_space": "cds_par_spread",
+                "fit_value_kinds": [
+                  "par_spread",
+                  "par_spread",
+                  "par_spread",
+                  "par_spread"
+                ],
+                "model_family": "reduced_form_credit",
+                "potential_binding": {
+                  "default_curve_name": "benchmark_single_name_credit",
+                  "default_curve_role": "credit_curve",
+                  "discount_curve_name": "usd_ois",
+                  "discount_curve_role": "discount_curve",
+                  "recovery": 0.4,
+                  "risky_discount_formula": "discount(t) * survival_probability(t)"
+                },
+                "selected_curve_names": {
+                  "credit_curve": "usd_ig",
+                  "discount_curve": "usd_ois",
+                  "fixing_history": "USD-SOFR-3M",
+                  "forecast_curve": "USD-SOFR-3M"
+                }
+              },
+              "objective": {
+                "derivatives": {
+                  "hessian": "none",
+                  "jacobian": "none"
+                },
+                "labels": [
+                  "usd_ig_1.0y",
+                  "usd_ig_3.0y",
+                  "usd_ig_5.0y",
+                  "usd_ig_10.0y"
+                ],
+                "metadata": {
+                  "curve_name": "benchmark_single_name_credit",
+                  "fit_space": "cds_par_spread",
+                  "fit_value_kinds": [
+                    "par_spread",
+                    "par_spread",
+                    "par_spread",
+                    "par_spread"
+                  ],
+                  "model_family": "reduced_form_credit",
+                  "potential_binding": {
+                    "default_curve_name": "benchmark_single_name_credit",
+                    "default_curve_role": "credit_curve",
+                    "discount_curve_name": "usd_ois",
+                    "discount_curve_role": "discount_curve",
+                    "recovery": 0.4,
+                    "risky_discount_formula": "discount(t) * survival_probability(t)"
+                  },
+                  "quote_maps": [
+                    {
+                      "assumptions": [
+                        "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                        "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                        "Recovery assumption: 0.400000.",
+                        "Discount curve role: usd_ois."
+                      ],
+                      "convention": "",
+                      "has_inverse_transform": true,
+                      "metadata": {},
+                      "normalization_method": "running_spread_decimal",
+                      "potential_binding": {
+                        "default_curve_name": "benchmark_single_name_credit",
+                        "default_curve_role": "credit_curve",
+                        "discount_curve_name": "usd_ois",
+                        "discount_curve_role": "discount_curve",
+                        "recovery": 0.4,
+                        "risky_discount_formula": "discount(t) * survival_probability(t)"
+                      },
+                      "quote_axes": [
+                        {
+                          "axis_kind": "tenor",
+                          "axis_name": "maturity",
+                          "unit": "years"
+                        }
+                      ],
+                      "quote_family": "spread",
+                      "quote_kind": "spread",
+                      "quote_semantics": {
+                        "convention": "",
+                        "quote_axes": [
+                          {
+                            "axis_kind": "tenor",
+                            "axis_name": "maturity",
+                            "unit": "years"
+                          }
+                        ],
+                        "quote_family": "spread",
+                        "quote_settlement": {
+                          "discount_curve_role": "discount_curve",
+                          "numeraire": "discount_curve"
+                        },
+                        "quote_subject": "single_name_cds",
+                        "quote_unit": "decimal_running_spread",
+                        "quote_unit_spec": {
+                          "scaling": "absolute",
+                          "unit_name": "decimal_running_spread",
+                          "value_domain": "credit_spread"
+                        }
+                      },
+                      "quote_settlement": {
+                        "discount_curve_role": "discount_curve",
+                        "numeraire": "discount_curve"
+                      },
+                      "quote_subject": "single_name_cds",
+                      "quote_unit": "decimal_running_spread",
+                      "recovery": 0.4,
+                      "source_ref": "_spread_quote_map"
+                    },
+                    {
+                      "assumptions": [
+                        "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                        "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                        "Recovery assumption: 0.400000.",
+                        "Discount curve role: usd_ois."
+                      ],
+                      "convention": "",
+                      "has_inverse_transform": true,
+                      "metadata": {},
+                      "normalization_method": "running_spread_decimal",
+                      "potential_binding": {
+                        "default_curve_name": "benchmark_single_name_credit",
+                        "default_curve_role": "credit_curve",
+                        "discount_curve_name": "usd_ois",
+                        "discount_curve_role": "discount_curve",
+                        "recovery": 0.4,
+                        "risky_discount_formula": "discount(t) * survival_probability(t)"
+                      },
+                      "quote_axes": [
+                        {
+                          "axis_kind": "tenor",
+                          "axis_name": "maturity",
+                          "unit": "years"
+                        }
+                      ],
+                      "quote_family": "spread",
+                      "quote_kind": "spread",
+                      "quote_semantics": {
+                        "convention": "",
+                        "quote_axes": [
+                          {
+                            "axis_kind": "tenor",
+                            "axis_name": "maturity",
+                            "unit": "years"
+                          }
+                        ],
+                        "quote_family": "spread",
+                        "quote_settlement": {
+                          "discount_curve_role": "discount_curve",
+                          "numeraire": "discount_curve"
+                        },
+                        "quote_subject": "single_name_cds",
+                        "quote_unit": "decimal_running_spread",
+                        "quote_unit_spec": {
+                          "scaling": "absolute",
+                          "unit_name": "decimal_running_spread",
+                          "value_domain": "credit_spread"
+                        }
+                      },
+                      "quote_settlement": {
+                        "discount_curve_role": "discount_curve",
+                        "numeraire": "discount_curve"
+                      },
+                      "quote_subject": "single_name_cds",
+                      "quote_unit": "decimal_running_spread",
+                      "recovery": 0.4,
+                      "source_ref": "_spread_quote_map"
+                    },
+                    {
+                      "assumptions": [
+                        "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                        "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                        "Recovery assumption: 0.400000.",
+                        "Discount curve role: usd_ois."
+                      ],
+                      "convention": "",
+                      "has_inverse_transform": true,
+                      "metadata": {},
+                      "normalization_method": "running_spread_decimal",
+                      "potential_binding": {
+                        "default_curve_name": "benchmark_single_name_credit",
+                        "default_curve_role": "credit_curve",
+                        "discount_curve_name": "usd_ois",
+                        "discount_curve_role": "discount_curve",
+                        "recovery": 0.4,
+                        "risky_discount_formula": "discount(t) * survival_probability(t)"
+                      },
+                      "quote_axes": [
+                        {
+                          "axis_kind": "tenor",
+                          "axis_name": "maturity",
+                          "unit": "years"
+                        }
+                      ],
+                      "quote_family": "spread",
+                      "quote_kind": "spread",
+                      "quote_semantics": {
+                        "convention": "",
+                        "quote_axes": [
+                          {
+                            "axis_kind": "tenor",
+                            "axis_name": "maturity",
+                            "unit": "years"
+                          }
+                        ],
+                        "quote_family": "spread",
+                        "quote_settlement": {
+                          "discount_curve_role": "discount_curve",
+                          "numeraire": "discount_curve"
+                        },
+                        "quote_subject": "single_name_cds",
+                        "quote_unit": "decimal_running_spread",
+                        "quote_unit_spec": {
+                          "scaling": "absolute",
+                          "unit_name": "decimal_running_spread",
+                          "value_domain": "credit_spread"
+                        }
+                      },
+                      "quote_settlement": {
+                        "discount_curve_role": "discount_curve",
+                        "numeraire": "discount_curve"
+                      },
+                      "quote_subject": "single_name_cds",
+                      "quote_unit": "decimal_running_spread",
+                      "recovery": 0.4,
+                      "source_ref": "_spread_quote_map"
+                    },
+                    {
+                      "assumptions": [
+                        "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                        "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                        "Recovery assumption: 0.400000.",
+                        "Discount curve role: usd_ois."
+                      ],
+                      "convention": "",
+                      "has_inverse_transform": true,
+                      "metadata": {},
+                      "normalization_method": "running_spread_decimal",
+                      "potential_binding": {
+                        "default_curve_name": "benchmark_single_name_credit",
+                        "default_curve_role": "credit_curve",
+                        "discount_curve_name": "usd_ois",
+                        "discount_curve_role": "discount_curve",
+                        "recovery": 0.4,
+                        "risky_discount_formula": "discount(t) * survival_probability(t)"
+                      },
+                      "quote_axes": [
+                        {
+                          "axis_kind": "tenor",
+                          "axis_name": "maturity",
+                          "unit": "years"
+                        }
+                      ],
+                      "quote_family": "spread",
+                      "quote_kind": "spread",
+                      "quote_semantics": {
+                        "convention": "",
+                        "quote_axes": [
+                          {
+                            "axis_kind": "tenor",
+                            "axis_name": "maturity",
+                            "unit": "years"
+                          }
+                        ],
+                        "quote_family": "spread",
+                        "quote_settlement": {
+                          "discount_curve_role": "discount_curve",
+                          "numeraire": "discount_curve"
+                        },
+                        "quote_subject": "single_name_cds",
+                        "quote_unit": "decimal_running_spread",
+                        "quote_unit_spec": {
+                          "scaling": "absolute",
+                          "unit_name": "decimal_running_spread",
+                          "value_domain": "credit_spread"
+                        }
+                      },
+                      "quote_settlement": {
+                        "discount_curve_role": "discount_curve",
+                        "numeraire": "discount_curve"
+                      },
+                      "quote_subject": "single_name_cds",
+                      "quote_unit": "decimal_running_spread",
+                      "recovery": 0.4,
+                      "source_ref": "_spread_quote_map"
+                    }
+                  ]
+                },
+                "objective_kind": "least_squares",
+                "target_values": [
+                  0.0059460163,
+                  0.0068962089,
+                  0.0078130616,
+                  0.0086865647
+                ],
+                "weights": [
+                  1.0,
+                  1.0,
+                  1.0,
+                  1.0
+                ]
+              },
+              "options": {
+                "ftol": 1e-12,
+                "gtol": 1e-12,
+                "maxiter": 80,
+                "xtol": 1e-12
+              },
+              "parameter_names": [
+                "hazard_1",
+                "hazard_2",
+                "hazard_3",
+                "hazard_4"
+              ],
+              "problem_kind": "least_squares",
+              "request_id": "single_name_credit_cds_par_spread_least_squares",
+              "solver_hint": "trf",
+              "warm_start": {
+                "metadata": {},
+                "parameter_values": [
+                  0.009995596024839917,
+                  0.011593310420375329,
+                  0.013133513323050183,
+                  0.014599771487912895
+                ],
+                "source": "quote_map_seed"
+              }
+            },
+            "residual_diagnostics": {
+              "l2_norm": 1.561865196510719e-13,
+              "max_abs_residual": 1.5618409343609585e-13,
+              "residual_count": 4,
+              "residual_vector": [
+                9.107298248878237e-17,
+                3.885780586188048e-16,
+                -7.73686670285656e-16,
+                -1.5618409343609585e-13
+              ]
+            },
+            "result": {
+              "iteration_count": 3,
+              "metadata": {
+                "backend_id": "scipy",
+                "derivative_method": "scipy_2point_residual_jacobian",
+                "derivative_method_category": "finite_difference_bump",
+                "derivative_method_support": "fallback",
+                "fallback_derivative_method": "scipy_2point_residual_jacobian",
+                "fallback_reason": null,
+                "message": "`gtol` termination condition is satisfied.",
+                "requested_backend": "scipy",
+                "resolved_derivative_method": "scipy_2point_residual_jacobian",
+                "solver_family": "scipy",
+                "warnings": []
+              },
+              "method": "trf",
+              "objective_value": 2.4394228920714676e-26,
+              "residual_vector": [
+                9.107298248878237e-17,
+                3.885780586188048e-16,
+                -7.73686670285656e-16,
+                -1.5618409343609585e-13
+              ],
+              "solution": [
+                0.009991144709751166,
+                0.011656335477398416,
+                0.013322503742017369,
+                0.01498696724632779
+              ],
+              "success": true
+            },
+            "termination": {
+              "iteration_count": 3,
+              "message": "`gtol` termination condition is satisfied.",
+              "objective_value": 2.4394228920714676e-26,
+              "reason": "`gtol` termination condition is satisfied.",
+              "success": true
+            }
+          }
+        },
+        "solve_request": {
+          "bounds": {
+            "lower": [
+              0.0,
+              0.0,
+              0.0,
+              0.0
+            ],
+            "upper": [
+              5.0,
+              5.0,
+              5.0,
+              5.0
+            ]
+          },
+          "constraints": [],
+          "initial_guess": [
+            0.009995596024839917,
+            0.011593310420375329,
+            0.013133513323050183,
+            0.014599771487912895
+          ],
+          "metadata": {
+            "curve_name": "benchmark_single_name_credit",
+            "fit_space": "cds_par_spread",
+            "fit_value_kinds": [
+              "par_spread",
+              "par_spread",
+              "par_spread",
+              "par_spread"
+            ],
+            "model_family": "reduced_form_credit",
+            "potential_binding": {
+              "default_curve_name": "benchmark_single_name_credit",
+              "default_curve_role": "credit_curve",
+              "discount_curve_name": "usd_ois",
+              "discount_curve_role": "discount_curve",
+              "recovery": 0.4,
+              "risky_discount_formula": "discount(t) * survival_probability(t)"
+            },
+            "selected_curve_names": {
+              "credit_curve": "usd_ig",
+              "discount_curve": "usd_ois",
+              "fixing_history": "USD-SOFR-3M",
+              "forecast_curve": "USD-SOFR-3M"
+            }
+          },
+          "objective": {
+            "derivatives": {
+              "hessian": "none",
+              "jacobian": "none"
+            },
+            "labels": [
+              "usd_ig_1.0y",
+              "usd_ig_3.0y",
+              "usd_ig_5.0y",
+              "usd_ig_10.0y"
+            ],
+            "metadata": {
+              "curve_name": "benchmark_single_name_credit",
+              "fit_space": "cds_par_spread",
+              "fit_value_kinds": [
+                "par_spread",
+                "par_spread",
+                "par_spread",
+                "par_spread"
+              ],
+              "model_family": "reduced_form_credit",
+              "potential_binding": {
+                "default_curve_name": "benchmark_single_name_credit",
+                "default_curve_role": "credit_curve",
+                "discount_curve_name": "usd_ois",
+                "discount_curve_role": "discount_curve",
+                "recovery": 0.4,
+                "risky_discount_formula": "discount(t) * survival_probability(t)"
+              },
+              "quote_maps": [
+                {
+                  "assumptions": [
+                    "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                    "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                    "Recovery assumption: 0.400000.",
+                    "Discount curve role: usd_ois."
+                  ],
+                  "convention": "",
+                  "has_inverse_transform": true,
+                  "metadata": {},
+                  "normalization_method": "running_spread_decimal",
+                  "potential_binding": {
+                    "default_curve_name": "benchmark_single_name_credit",
+                    "default_curve_role": "credit_curve",
+                    "discount_curve_name": "usd_ois",
+                    "discount_curve_role": "discount_curve",
+                    "recovery": 0.4,
+                    "risky_discount_formula": "discount(t) * survival_probability(t)"
+                  },
+                  "quote_axes": [
+                    {
+                      "axis_kind": "tenor",
+                      "axis_name": "maturity",
+                      "unit": "years"
+                    }
+                  ],
+                  "quote_family": "spread",
+                  "quote_kind": "spread",
+                  "quote_semantics": {
+                    "convention": "",
+                    "quote_axes": [
+                      {
+                        "axis_kind": "tenor",
+                        "axis_name": "maturity",
+                        "unit": "years"
+                      }
+                    ],
+                    "quote_family": "spread",
+                    "quote_settlement": {
+                      "discount_curve_role": "discount_curve",
+                      "numeraire": "discount_curve"
+                    },
+                    "quote_subject": "single_name_cds",
+                    "quote_unit": "decimal_running_spread",
+                    "quote_unit_spec": {
+                      "scaling": "absolute",
+                      "unit_name": "decimal_running_spread",
+                      "value_domain": "credit_spread"
+                    }
+                  },
+                  "quote_settlement": {
+                    "discount_curve_role": "discount_curve",
+                    "numeraire": "discount_curve"
+                  },
+                  "quote_subject": "single_name_cds",
+                  "quote_unit": "decimal_running_spread",
+                  "recovery": 0.4,
+                  "source_ref": "_spread_quote_map"
+                },
+                {
+                  "assumptions": [
+                    "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                    "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                    "Recovery assumption: 0.400000.",
+                    "Discount curve role: usd_ois."
+                  ],
+                  "convention": "",
+                  "has_inverse_transform": true,
+                  "metadata": {},
+                  "normalization_method": "running_spread_decimal",
+                  "potential_binding": {
+                    "default_curve_name": "benchmark_single_name_credit",
+                    "default_curve_role": "credit_curve",
+                    "discount_curve_name": "usd_ois",
+                    "discount_curve_role": "discount_curve",
+                    "recovery": 0.4,
+                    "risky_discount_formula": "discount(t) * survival_probability(t)"
+                  },
+                  "quote_axes": [
+                    {
+                      "axis_kind": "tenor",
+                      "axis_name": "maturity",
+                      "unit": "years"
+                    }
+                  ],
+                  "quote_family": "spread",
+                  "quote_kind": "spread",
+                  "quote_semantics": {
+                    "convention": "",
+                    "quote_axes": [
+                      {
+                        "axis_kind": "tenor",
+                        "axis_name": "maturity",
+                        "unit": "years"
+                      }
+                    ],
+                    "quote_family": "spread",
+                    "quote_settlement": {
+                      "discount_curve_role": "discount_curve",
+                      "numeraire": "discount_curve"
+                    },
+                    "quote_subject": "single_name_cds",
+                    "quote_unit": "decimal_running_spread",
+                    "quote_unit_spec": {
+                      "scaling": "absolute",
+                      "unit_name": "decimal_running_spread",
+                      "value_domain": "credit_spread"
+                    }
+                  },
+                  "quote_settlement": {
+                    "discount_curve_role": "discount_curve",
+                    "numeraire": "discount_curve"
+                  },
+                  "quote_subject": "single_name_cds",
+                  "quote_unit": "decimal_running_spread",
+                  "recovery": 0.4,
+                  "source_ref": "_spread_quote_map"
+                },
+                {
+                  "assumptions": [
+                    "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                    "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                    "Recovery assumption: 0.400000.",
+                    "Discount curve role: usd_ois."
+                  ],
+                  "convention": "",
+                  "has_inverse_transform": true,
+                  "metadata": {},
+                  "normalization_method": "running_spread_decimal",
+                  "potential_binding": {
+                    "default_curve_name": "benchmark_single_name_credit",
+                    "default_curve_role": "credit_curve",
+                    "discount_curve_name": "usd_ois",
+                    "discount_curve_role": "discount_curve",
+                    "recovery": 0.4,
+                    "risky_discount_formula": "discount(t) * survival_probability(t)"
+                  },
+                  "quote_axes": [
+                    {
+                      "axis_kind": "tenor",
+                      "axis_name": "maturity",
+                      "unit": "years"
+                    }
+                  ],
+                  "quote_family": "spread",
+                  "quote_kind": "spread",
+                  "quote_semantics": {
+                    "convention": "",
+                    "quote_axes": [
+                      {
+                        "axis_kind": "tenor",
+                        "axis_name": "maturity",
+                        "unit": "years"
+                      }
+                    ],
+                    "quote_family": "spread",
+                    "quote_settlement": {
+                      "discount_curve_role": "discount_curve",
+                      "numeraire": "discount_curve"
+                    },
+                    "quote_subject": "single_name_cds",
+                    "quote_unit": "decimal_running_spread",
+                    "quote_unit_spec": {
+                      "scaling": "absolute",
+                      "unit_name": "decimal_running_spread",
+                      "value_domain": "credit_spread"
+                    }
+                  },
+                  "quote_settlement": {
+                    "discount_curve_role": "discount_curve",
+                    "numeraire": "discount_curve"
+                  },
+                  "quote_subject": "single_name_cds",
+                  "quote_unit": "decimal_running_spread",
+                  "recovery": 0.4,
+                  "source_ref": "_spread_quote_map"
+                },
+                {
+                  "assumptions": [
+                    "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                    "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                    "Recovery assumption: 0.400000.",
+                    "Discount curve role: usd_ois."
+                  ],
+                  "convention": "",
+                  "has_inverse_transform": true,
+                  "metadata": {},
+                  "normalization_method": "running_spread_decimal",
+                  "potential_binding": {
+                    "default_curve_name": "benchmark_single_name_credit",
+                    "default_curve_role": "credit_curve",
+                    "discount_curve_name": "usd_ois",
+                    "discount_curve_role": "discount_curve",
+                    "recovery": 0.4,
+                    "risky_discount_formula": "discount(t) * survival_probability(t)"
+                  },
+                  "quote_axes": [
+                    {
+                      "axis_kind": "tenor",
+                      "axis_name": "maturity",
+                      "unit": "years"
+                    }
+                  ],
+                  "quote_family": "spread",
+                  "quote_kind": "spread",
+                  "quote_semantics": {
+                    "convention": "",
+                    "quote_axes": [
+                      {
+                        "axis_kind": "tenor",
+                        "axis_name": "maturity",
+                        "unit": "years"
+                      }
+                    ],
+                    "quote_family": "spread",
+                    "quote_settlement": {
+                      "discount_curve_role": "discount_curve",
+                      "numeraire": "discount_curve"
+                    },
+                    "quote_subject": "single_name_cds",
+                    "quote_unit": "decimal_running_spread",
+                    "quote_unit_spec": {
+                      "scaling": "absolute",
+                      "unit_name": "decimal_running_spread",
+                      "value_domain": "credit_spread"
+                    }
+                  },
+                  "quote_settlement": {
+                    "discount_curve_role": "discount_curve",
+                    "numeraire": "discount_curve"
+                  },
+                  "quote_subject": "single_name_cds",
+                  "quote_unit": "decimal_running_spread",
+                  "recovery": 0.4,
+                  "source_ref": "_spread_quote_map"
+                }
+              ]
+            },
+            "objective_kind": "least_squares",
+            "target_values": [
+              0.0059460163,
+              0.0068962089,
+              0.0078130616,
+              0.0086865647
+            ],
+            "weights": [
+              1.0,
+              1.0,
+              1.0,
+              1.0
+            ]
+          },
+          "options": {
+            "ftol": 1e-12,
+            "gtol": 1e-12,
+            "maxiter": 80,
+            "xtol": 1e-12
+          },
+          "parameter_names": [
+            "hazard_1",
+            "hazard_2",
+            "hazard_3",
+            "hazard_4"
+          ],
+          "problem_kind": "least_squares",
+          "request_id": "single_name_credit_cds_par_spread_least_squares",
+          "solver_hint": "trf",
+          "warm_start": {
+            "metadata": {},
+            "parameter_values": [
+              0.009995596024839917,
+              0.011593310420375329,
+              0.013133513323050183,
+              0.014599771487912895
+            ],
+            "source": "quote_map_seed"
+          }
+        },
+        "targets": [
+          {
+            "instrument_id": "benchmark_single_name_credit:usd_ig_1.0y",
+            "metadata": {
+              "curve_tenor_years": 1.0,
+              "instrument_setup": {
+                "business_day_adjustment": "FOLLOWING",
+                "calendar": "WeekendOnly",
+                "curve_tenor_years": 1.0,
+                "day_count": "ACT_360",
+                "first_payment_date": "2025-02-17",
+                "frequency": "QUARTERLY",
+                "label": "usd_ig_1.0y",
+                "last_payment_date": "2025-11-17",
+                "maturity_date": "2025-11-15",
+                "maturity_years": 1.0,
+                "payment_lag_days": 0,
+                "period_count": 4,
+                "roll_convention": "NONE",
+                "standard_running_spread": null,
+                "start_date": "2024-11-15",
+                "stub": "SHORT_LAST"
+              },
+              "maturity_years": 1.0,
+              "target_hazard": 0.009995596024839917,
+              "target_running_spread": 0.0059460163
+            },
+            "quote_convention": "cds_par_spread",
+            "quote_family": "spread",
+            "quote_map": {
+              "assumptions": [
+                "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                "Recovery assumption: 0.400000.",
+                "Discount curve role: usd_ois."
+              ],
+              "convention": "",
+              "has_inverse_transform": true,
+              "metadata": {},
+              "normalization_method": "running_spread_decimal",
+              "potential_binding": {
+                "default_curve_name": "benchmark_single_name_credit",
+                "default_curve_role": "credit_curve",
+                "discount_curve_name": "usd_ois",
+                "discount_curve_role": "discount_curve",
+                "recovery": 0.4,
+                "risky_discount_formula": "discount(t) * survival_probability(t)"
+              },
+              "quote_axes": [
+                {
+                  "axis_kind": "tenor",
+                  "axis_name": "maturity",
+                  "unit": "years"
+                }
+              ],
+              "quote_family": "spread",
+              "quote_kind": "spread",
+              "quote_semantics": {
+                "convention": "",
+                "quote_axes": [
+                  {
+                    "axis_kind": "tenor",
+                    "axis_name": "maturity",
+                    "unit": "years"
+                  }
+                ],
+                "quote_family": "spread",
+                "quote_settlement": {
+                  "discount_curve_role": "discount_curve",
+                  "numeraire": "discount_curve"
+                },
+                "quote_subject": "single_name_cds",
+                "quote_unit": "decimal_running_spread",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_running_spread",
+                  "value_domain": "credit_spread"
+                }
+              },
+              "quote_settlement": {
+                "discount_curve_role": "discount_curve",
+                "numeraire": "discount_curve"
+              },
+              "quote_subject": "single_name_cds",
+              "quote_unit": "decimal_running_spread",
+              "recovery": 0.4,
+              "source_ref": "_spread_quote_map"
+            },
+            "quote_value": 0.0059460163,
+            "target_id": "usd_ig_1.0y",
+            "validation_tags": [
+              "single_name_credit",
+              "cds",
+              "spread"
+            ],
+            "weight": 1.0
+          },
+          {
+            "instrument_id": "benchmark_single_name_credit:usd_ig_3.0y",
+            "metadata": {
+              "curve_tenor_years": 3.0,
+              "instrument_setup": {
+                "business_day_adjustment": "FOLLOWING",
+                "calendar": "WeekendOnly",
+                "curve_tenor_years": 3.0,
+                "day_count": "ACT_360",
+                "first_payment_date": "2025-02-17",
+                "frequency": "QUARTERLY",
+                "label": "usd_ig_3.0y",
+                "last_payment_date": "2027-11-15",
+                "maturity_date": "2027-11-15",
+                "maturity_years": 3.0,
+                "payment_lag_days": 0,
+                "period_count": 12,
+                "roll_convention": "NONE",
+                "standard_running_spread": null,
+                "start_date": "2024-11-15",
+                "stub": "SHORT_LAST"
+              },
+              "maturity_years": 3.0,
+              "target_hazard": 0.011593310420375329,
+              "target_running_spread": 0.0068962089
+            },
+            "quote_convention": "cds_par_spread",
+            "quote_family": "spread",
+            "quote_map": {
+              "assumptions": [
+                "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                "Recovery assumption: 0.400000.",
+                "Discount curve role: usd_ois."
+              ],
+              "convention": "",
+              "has_inverse_transform": true,
+              "metadata": {},
+              "normalization_method": "running_spread_decimal",
+              "potential_binding": {
+                "default_curve_name": "benchmark_single_name_credit",
+                "default_curve_role": "credit_curve",
+                "discount_curve_name": "usd_ois",
+                "discount_curve_role": "discount_curve",
+                "recovery": 0.4,
+                "risky_discount_formula": "discount(t) * survival_probability(t)"
+              },
+              "quote_axes": [
+                {
+                  "axis_kind": "tenor",
+                  "axis_name": "maturity",
+                  "unit": "years"
+                }
+              ],
+              "quote_family": "spread",
+              "quote_kind": "spread",
+              "quote_semantics": {
+                "convention": "",
+                "quote_axes": [
+                  {
+                    "axis_kind": "tenor",
+                    "axis_name": "maturity",
+                    "unit": "years"
+                  }
+                ],
+                "quote_family": "spread",
+                "quote_settlement": {
+                  "discount_curve_role": "discount_curve",
+                  "numeraire": "discount_curve"
+                },
+                "quote_subject": "single_name_cds",
+                "quote_unit": "decimal_running_spread",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_running_spread",
+                  "value_domain": "credit_spread"
+                }
+              },
+              "quote_settlement": {
+                "discount_curve_role": "discount_curve",
+                "numeraire": "discount_curve"
+              },
+              "quote_subject": "single_name_cds",
+              "quote_unit": "decimal_running_spread",
+              "recovery": 0.4,
+              "source_ref": "_spread_quote_map"
+            },
+            "quote_value": 0.0068962089,
+            "target_id": "usd_ig_3.0y",
+            "validation_tags": [
+              "single_name_credit",
+              "cds",
+              "spread"
+            ],
+            "weight": 1.0
+          },
+          {
+            "instrument_id": "benchmark_single_name_credit:usd_ig_5.0y",
+            "metadata": {
+              "curve_tenor_years": 5.002739726027397,
+              "instrument_setup": {
+                "business_day_adjustment": "FOLLOWING",
+                "calendar": "WeekendOnly",
+                "curve_tenor_years": 5.002739726027397,
+                "day_count": "ACT_360",
+                "first_payment_date": "2025-02-17",
+                "frequency": "QUARTERLY",
+                "label": "usd_ig_5.0y",
+                "last_payment_date": "2029-11-15",
+                "maturity_date": "2029-11-15",
+                "maturity_years": 5.0,
+                "payment_lag_days": 0,
+                "period_count": 20,
+                "roll_convention": "NONE",
+                "standard_running_spread": null,
+                "start_date": "2024-11-15",
+                "stub": "SHORT_LAST"
+              },
+              "maturity_years": 5.0,
+              "target_hazard": 0.013133513323050183,
+              "target_running_spread": 0.0078130616
+            },
+            "quote_convention": "cds_par_spread",
+            "quote_family": "spread",
+            "quote_map": {
+              "assumptions": [
+                "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                "Recovery assumption: 0.400000.",
+                "Discount curve role: usd_ois."
+              ],
+              "convention": "",
+              "has_inverse_transform": true,
+              "metadata": {},
+              "normalization_method": "running_spread_decimal",
+              "potential_binding": {
+                "default_curve_name": "benchmark_single_name_credit",
+                "default_curve_role": "credit_curve",
+                "discount_curve_name": "usd_ois",
+                "discount_curve_role": "discount_curve",
+                "recovery": 0.4,
+                "risky_discount_formula": "discount(t) * survival_probability(t)"
+              },
+              "quote_axes": [
+                {
+                  "axis_kind": "tenor",
+                  "axis_name": "maturity",
+                  "unit": "years"
+                }
+              ],
+              "quote_family": "spread",
+              "quote_kind": "spread",
+              "quote_semantics": {
+                "convention": "",
+                "quote_axes": [
+                  {
+                    "axis_kind": "tenor",
+                    "axis_name": "maturity",
+                    "unit": "years"
+                  }
+                ],
+                "quote_family": "spread",
+                "quote_settlement": {
+                  "discount_curve_role": "discount_curve",
+                  "numeraire": "discount_curve"
+                },
+                "quote_subject": "single_name_cds",
+                "quote_unit": "decimal_running_spread",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_running_spread",
+                  "value_domain": "credit_spread"
+                }
+              },
+              "quote_settlement": {
+                "discount_curve_role": "discount_curve",
+                "numeraire": "discount_curve"
+              },
+              "quote_subject": "single_name_cds",
+              "quote_unit": "decimal_running_spread",
+              "recovery": 0.4,
+              "source_ref": "_spread_quote_map"
+            },
+            "quote_value": 0.0078130616,
+            "target_id": "usd_ig_5.0y",
+            "validation_tags": [
+              "single_name_credit",
+              "cds",
+              "spread"
+            ],
+            "weight": 1.0
+          },
+          {
+            "instrument_id": "benchmark_single_name_credit:usd_ig_10.0y",
+            "metadata": {
+              "curve_tenor_years": 10.005479452054795,
+              "instrument_setup": {
+                "business_day_adjustment": "FOLLOWING",
+                "calendar": "WeekendOnly",
+                "curve_tenor_years": 10.005479452054795,
+                "day_count": "ACT_360",
+                "first_payment_date": "2025-02-17",
+                "frequency": "QUARTERLY",
+                "label": "usd_ig_10.0y",
+                "last_payment_date": "2034-11-15",
+                "maturity_date": "2034-11-15",
+                "maturity_years": 10.0,
+                "payment_lag_days": 0,
+                "period_count": 40,
+                "roll_convention": "NONE",
+                "standard_running_spread": null,
+                "start_date": "2024-11-15",
+                "stub": "SHORT_LAST"
+              },
+              "maturity_years": 10.0,
+              "target_hazard": 0.014599771487912895,
+              "target_running_spread": 0.0086865647
+            },
+            "quote_convention": "cds_par_spread",
+            "quote_family": "spread",
+            "quote_map": {
+              "assumptions": [
+                "Reduced-form single-name calibration binds potential terms as risky_discount(t)=discount(t)*survival_probability(t).",
+                "CDS repricing uses bounded quarterly ACT/360 schedules built from market_state.settlement with tenor maturities rounded to calendar months.",
+                "Recovery assumption: 0.400000.",
+                "Discount curve role: usd_ois."
+              ],
+              "convention": "",
+              "has_inverse_transform": true,
+              "metadata": {},
+              "normalization_method": "running_spread_decimal",
+              "potential_binding": {
+                "default_curve_name": "benchmark_single_name_credit",
+                "default_curve_role": "credit_curve",
+                "discount_curve_name": "usd_ois",
+                "discount_curve_role": "discount_curve",
+                "recovery": 0.4,
+                "risky_discount_formula": "discount(t) * survival_probability(t)"
+              },
+              "quote_axes": [
+                {
+                  "axis_kind": "tenor",
+                  "axis_name": "maturity",
+                  "unit": "years"
+                }
+              ],
+              "quote_family": "spread",
+              "quote_kind": "spread",
+              "quote_semantics": {
+                "convention": "",
+                "quote_axes": [
+                  {
+                    "axis_kind": "tenor",
+                    "axis_name": "maturity",
+                    "unit": "years"
+                  }
+                ],
+                "quote_family": "spread",
+                "quote_settlement": {
+                  "discount_curve_role": "discount_curve",
+                  "numeraire": "discount_curve"
+                },
+                "quote_subject": "single_name_cds",
+                "quote_unit": "decimal_running_spread",
+                "quote_unit_spec": {
+                  "scaling": "absolute",
+                  "unit_name": "decimal_running_spread",
+                  "value_domain": "credit_spread"
+                }
+              },
+              "quote_settlement": {
+                "discount_curve_role": "discount_curve",
+                "numeraire": "discount_curve"
+              },
+              "quote_subject": "single_name_cds",
+              "quote_unit": "decimal_running_spread",
+              "recovery": 0.4,
+              "source_ref": "_spread_quote_map"
+            },
+            "quote_value": 0.0086865647,
+            "target_id": "usd_ig_10.0y",
+            "validation_tags": [
+              "single_name_credit",
+              "cds",
+              "spread"
+            ],
+            "weight": 1.0
+          }
+        ],
+        "variables": [
+          {
+            "coordinate_chart": "positive_hazard_rate",
+            "initial_value": 0.009995596024839917,
+            "lower_bound": 0.0,
+            "metadata": {
+              "curve_name": "benchmark_single_name_credit",
+              "parameter_role": "piecewise_hazard_rate",
+              "tenor_years": 1.0
+            },
+            "name": "hazard_1",
+            "scaling": 1.0,
+            "upper_bound": 5.0,
+            "warm_start_source": "quote_map_seed"
+          },
+          {
+            "coordinate_chart": "positive_hazard_rate",
+            "initial_value": 0.011593310420375329,
+            "lower_bound": 0.0,
+            "metadata": {
+              "curve_name": "benchmark_single_name_credit",
+              "parameter_role": "piecewise_hazard_rate",
+              "tenor_years": 3.0
+            },
+            "name": "hazard_2",
+            "scaling": 1.0,
+            "upper_bound": 5.0,
+            "warm_start_source": "quote_map_seed"
+          },
+          {
+            "coordinate_chart": "positive_hazard_rate",
+            "initial_value": 0.013133513323050183,
+            "lower_bound": 0.0,
+            "metadata": {
+              "curve_name": "benchmark_single_name_credit",
+              "parameter_role": "piecewise_hazard_rate",
+              "tenor_years": 5.002739726027397
+            },
+            "name": "hazard_3",
+            "scaling": 1.0,
+            "upper_bound": 5.0,
+            "warm_start_source": "quote_map_seed"
+          },
+          {
+            "coordinate_chart": "positive_hazard_rate",
+            "initial_value": 0.014599771487912895,
+            "lower_bound": 0.0,
+            "metadata": {
+              "curve_name": "benchmark_single_name_credit",
+              "parameter_role": "piecewise_hazard_rate",
+              "tenor_years": 10.005479452054795
+            },
+            "name": "hazard_4",
+            "scaling": 1.0,
+            "upper_bound": 5.0,
+            "warm_start_source": "quote_map_seed"
+          }
+        ],
+        "workflow_id": "single_name_credit_curve"
+      },
       "warm": null,
       "warm_speedup": null,
       "workflow": "credit"
@@ -716,6 +2914,7 @@
         "desk_like_fixture",
         "linked_single_name_credit_curve"
       ],
+      "problem_ir": null,
       "warm": null,
       "warm_speedup": null,
       "workflow": "basket_credit"
@@ -857,6 +3056,7 @@
         "bounded_quanto_correlation",
         "linked_market_state_materialization"
       ],
+      "problem_ir": null,
       "warm": {
         "calibrations_per_second": 344.142,
         "label": "desk_quanto_correlation",
@@ -944,6 +3144,7 @@
     "desk_like_workflow_count": 2,
     "latency_envelope_count": 2,
     "perturbation_diagnostic_count": 2,
+    "problem_ir_payload_count": 2,
     "warm_mean_seconds": 0.146565,
     "warm_start_workflow_count": 5,
     "workflow_count": 11

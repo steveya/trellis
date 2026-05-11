@@ -141,6 +141,7 @@ def test_models_package_exports():
         HullWhiteCalibrationResult,
         LocalVolCalibrationResult,
         ObjectiveBundle,
+        CalibrationProblemIRAdapterSpec,
         SABRSmileCalibrationResult,
         SABRSmileFitDiagnostics,
         SABRSmilePoint,
@@ -154,6 +155,7 @@ def test_models_package_exports():
         SolveReplayArtifact,
         SolveResult,
         UnsupportedSolveCapabilityError,
+        UnsupportedCalibrationProblemIRError,
         WarmStart,
         build_heston_smile_surface,
         build_supported_calibration_benchmark_report,
@@ -163,6 +165,7 @@ def test_models_package_exports():
         calibrate_heston_smile_workflow,
         calibrate_hull_white,
         calibrate_local_vol_surface_workflow,
+        calibrate_problem_ir,
         calibrate_single_name_credit_curve_workflow,
         calibrate_sabr_smile_workflow,
         calibrate_cap_floor_black_vol,
@@ -172,6 +175,7 @@ def test_models_package_exports():
         fit_heston_smile_surface,
         fit_sabr_smile_surface,
         save_calibration_benchmark_report,
+        supported_calibration_problem_ir_adapters,
         swaption_terms,
     )
     from trellis.models.vol_surface import FlatVol, GridVolSurface, VolSurface
@@ -193,6 +197,7 @@ def test_models_package_exports():
     assert models.calibration.HullWhiteCalibrationInstrument is HullWhiteCalibrationInstrument
     assert models.calibration.HullWhiteCalibrationResult is HullWhiteCalibrationResult
     assert models.calibration.LocalVolCalibrationResult is LocalVolCalibrationResult
+    assert models.calibration.CalibrationProblemIRAdapterSpec is CalibrationProblemIRAdapterSpec
     assert models.calibration.CreditHazardCalibrationQuote is CreditHazardCalibrationQuote
     assert models.calibration.CreditHazardCalibrationResult is CreditHazardCalibrationResult
     assert models.calibration.SABRSmilePoint is SABRSmilePoint
@@ -210,6 +215,7 @@ def test_models_package_exports():
     assert models.calibration.SolveReplayArtifact is SolveReplayArtifact
     assert models.calibration.SolveResult is SolveResult
     assert models.calibration.UnsupportedSolveCapabilityError is UnsupportedSolveCapabilityError
+    assert models.calibration.UnsupportedCalibrationProblemIRError is UnsupportedCalibrationProblemIRError
     assert models.calibration.WarmStart is WarmStart
     assert models.calibration.build_supported_calibration_benchmark_report is build_supported_calibration_benchmark_report
     assert models.calibration.build_solve_provenance is build_solve_provenance
@@ -219,6 +225,7 @@ def test_models_package_exports():
     assert models.calibration.calibrate_heston_smile_workflow is calibrate_heston_smile_workflow
     assert models.calibration.calibrate_hull_white is calibrate_hull_white
     assert models.calibration.calibrate_local_vol_surface_workflow is calibrate_local_vol_surface_workflow
+    assert models.calibration.calibrate_problem_ir is calibrate_problem_ir
     assert (
         models.calibration.calibrate_single_name_credit_curve_workflow
         is calibrate_single_name_credit_curve_workflow
@@ -231,6 +238,10 @@ def test_models_package_exports():
     assert models.calibration.fit_heston_smile_surface is fit_heston_smile_surface
     assert models.calibration.fit_sabr_smile_surface is fit_sabr_smile_surface
     assert models.calibration.save_calibration_benchmark_report is save_calibration_benchmark_report
+    assert (
+        models.calibration.supported_calibration_problem_ir_adapters
+        is supported_calibration_problem_ir_adapters
+    )
     assert models.calibration.swaption_terms is swaption_terms
     assert models.FlatVol is FlatVol
     assert models.GridVolSurface is GridVolSurface

@@ -53,6 +53,10 @@ def test_build_and_save_calibration_benchmark_report(tmp_path):
         warm_runner=lambda: {"mode": "warm"},
         notes=("least_squares",),
         metadata={"point_count": 7},
+        problem_ir_payload={
+            "problem_id": "sabr_smile_least_squares",
+            "metadata": {"adapter_id": "sabr_smile_problem_ir_v1"},
+        },
     )
     case = benchmark_calibration_scenario(scenario, repeats=2, warmups=0, timer=fake_timer)
     report = build_calibration_benchmark_report(
@@ -64,11 +68,14 @@ def test_build_and_save_calibration_benchmark_report(tmp_path):
 
     assert report["summary"]["workflow_count"] == 1
     assert report["summary"]["warm_start_workflow_count"] == 1
+    assert report["summary"]["problem_ir_payload_count"] == 1
     assert report["summary"]["average_warm_speedup"] > 1.0
+    assert report["cases"][0]["problem_ir"]["problem_id"] == "sabr_smile_least_squares"
 
     rendered = render_calibration_benchmark_report(report)
     assert "Calibration Benchmark" in rendered
     assert "Warm speedup" in rendered
+    assert "Problem IR" in rendered
     assert "single_smile" in rendered
 
     artifacts = save_calibration_benchmark_report(report, root=tmp_path, stem="supported_calibration_workflows")
@@ -110,6 +117,8 @@ def test_supported_calibration_benchmark_scenarios_cover_workflows():
     assert scenario_map["credit"].warm_runner is None
     assert scenario_map["sabr"].metadata["surface_name"] == "usd_rates_smile"
     assert scenario_map["sabr"].metadata["synthetic_generation_contract_version"] == "v2"
+    assert scenario_map["sabr"].problem_ir_payload["problem_id"] == "sabr_smile_least_squares"
+    assert scenario_map["sabr"].problem_ir_payload["metadata"]["adapter_id"] == "sabr_smile_problem_ir_v1"
     assert scenario_map["swaption_cube"].warm_runner is None
     assert scenario_map["swaption_cube"].metadata["surface_name"] == "usd_swaption_cube"
     assert scenario_map["swaption_cube"].metadata["synthetic_generation_contract_version"] == "v2"
@@ -122,6 +131,12 @@ def test_supported_calibration_benchmark_scenarios_cover_workflows():
     assert scenario_map["local_vol"].metadata["source_surface_name"] == "spx_heston_implied_vol"
     assert scenario_map["local_vol"].metadata["surface_name"] == "spx_local_vol"
     assert scenario_map["local_vol"].metadata["synthetic_generation_contract_version"] == "v2"
+    assert scenario_map["credit"].problem_ir_payload["problem_id"] == (
+        "single_name_credit_cds_par_spread_least_squares"
+    )
+    assert scenario_map["credit"].problem_ir_payload["metadata"]["adapter_id"] == (
+        "single_name_credit_problem_ir_v1"
+    )
     basket_credit = scenario_map["basket_credit"]
     assert basket_credit.warm_runner is None
     assert basket_credit.metadata["fixture_style"] == "desk_like"

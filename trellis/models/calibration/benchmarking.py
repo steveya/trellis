@@ -83,10 +83,16 @@ class CalibrationBenchmarkScenario:
     warm_runner: Callable[[], object] | None = field(default=None, repr=False, compare=False)
     notes: tuple[str, ...] = ()
     metadata: Mapping[str, object] = field(default_factory=dict)
+    problem_ir_payload: Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "notes", tuple(str(note) for note in self.notes))
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+        object.__setattr__(
+            self,
+            "problem_ir_payload",
+            None if self.problem_ir_payload is None else _freeze_mapping(self.problem_ir_payload),
+        )
 
 
 @dataclass(frozen=True)
@@ -396,6 +402,7 @@ def benchmark_calibration_scenario(
         "label": scenario.label,
         "notes": list(scenario.notes),
         "metadata": dict(scenario.metadata),
+        "problem_ir": None if scenario.problem_ir_payload is None else dict(scenario.problem_ir_payload),
         "cold": cold.to_dict(),
         "warm": None if warm is None else warm.to_dict(),
         "warm_speedup": None if warm_speedup is None else round(warm_speedup, 3),
@@ -462,6 +469,7 @@ def build_calibration_benchmark_report(
                 if isinstance(dict(case.get("metadata") or {}).get("perturbation_diagnostic"), Mapping)
             ),
             "latency_envelope_count": sum(1 for case in cases if isinstance(case.get("latency_envelope"), Mapping)),
+            "problem_ir_payload_count": sum(1 for case in cases if isinstance(case.get("problem_ir"), Mapping)),
             "cold_mean_seconds": round(float(raw_np.mean(cold_means)), 6) if cold_means else 0.0,
             "warm_mean_seconds": round(float(raw_np.mean(warm_means)), 6) if warm_means else 0.0,
             "average_warm_speedup": round(float(raw_np.mean(speedups)), 3) if speedups else None,
@@ -484,6 +492,7 @@ def render_calibration_benchmark_report(report: Mapping[str, object]) -> str:
         f"- Desk-like workflows: `{summary.get('desk_like_workflow_count', 0)}`",
         f"- Perturbation diagnostics: `{summary.get('perturbation_diagnostic_count', 0)}`",
         f"- Latency envelopes: `{summary.get('latency_envelope_count', 0)}`",
+        f"- Problem-IR payloads: `{summary.get('problem_ir_payload_count', 0)}`",
         f"- Avg cold mean seconds: `{summary['cold_mean_seconds']}`",
         f"- Avg warm mean seconds: `{summary['warm_mean_seconds']}`",
     ]
@@ -528,6 +537,15 @@ def render_calibration_benchmark_report(report: Mapping[str, object]) -> str:
                 f"`{latency['status']}` "
                 f"(cold mean `{latency['cold_mean_seconds']}` s <= "
                 f"`{latency['cold_mean_limit_seconds']}` s)"
+            )
+        problem_ir = case.get("problem_ir")
+        if isinstance(problem_ir, Mapping):
+            problem_metadata = dict(problem_ir.get("metadata") or {})
+            adapter_id = problem_metadata.get("adapter_id", "")
+            lines.append(
+                "- Problem IR: "
+                f"`{problem_ir.get('problem_id', '')}`"
+                + (f" via `{adapter_id}`" if adapter_id else "")
             )
         perturbation = dict(case.get("metadata") or {}).get("perturbation_diagnostic")
         if isinstance(perturbation, Mapping):
@@ -609,6 +627,7 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     )
     from trellis.models.calibration.credit import (
         CreditHazardCalibrationQuote,
+        build_single_name_credit_calibration_problem_ir,
         calibrate_single_name_credit_curve_workflow,
     )
     from trellis.models.calibration.equity_vol_surface import calibrate_equity_vol_surface_workflow
@@ -629,7 +648,11 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         calibrate_caplet_vol_strip_workflow,
         calibrate_swaption_vol_cube_workflow,
     )
-    from trellis.models.calibration.sabr_fit import calibrate_sabr_smile_workflow
+    from trellis.models.calibration.sabr_fit import (
+        build_sabr_smile_calibration_problem_ir,
+        build_sabr_smile_surface,
+        calibrate_sabr_smile_workflow,
+    )
     from trellis.models.credit_basket_copula import price_credit_basket_tranche_result
     from trellis.models.processes.sabr import SABRProcess
     from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
@@ -774,6 +797,17 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
     sabr_forward = float(mock_snapshot.forecast_curves[forecast_curve_name].zero_rate(sabr_expiry))
     sabr_beta = float(rate_vol_model.get("beta", 0.5))
     sabr_market_vols = [rate_surface.black_vol(sabr_expiry, strike) for strike in sabr_strikes]
+    sabr_problem_ir_payload = build_sabr_smile_calibration_problem_ir(
+        build_sabr_smile_surface(
+            sabr_forward,
+            sabr_expiry,
+            sabr_strikes,
+            sabr_market_vols,
+            beta=sabr_beta,
+            surface_name=rate_surface_name,
+            source_ref="supported_calibration_benchmark_scenarios",
+        )
+    ).to_payload()
 
     swaption_cube_state = market_state()
     swaption_cube_expiries = (date(2025, 11, 15), date(2026, 11, 15))
@@ -891,6 +925,12 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
         recovery=credit_recovery,
         curve_name="benchmark_single_name_credit",
     )
+    credit_problem_ir_payload = build_single_name_credit_calibration_problem_ir(
+        credit_quotes,
+        credit_state,
+        recovery=credit_recovery,
+        curve_name="benchmark_single_name_credit",
+    ).to_payload()
     basket_credit_state = benchmark_credit_result.apply_to_market_state(credit_state)
     basket_notional = 100_000_000.0
     basket_n_names = 125
@@ -1157,6 +1197,7 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 "surface_name": rate_surface_name,
                 "synthetic_generation_contract_version": str(synthetic_generation_contract.get("version", "")),
             },
+            problem_ir_payload=sabr_problem_ir_payload,
         ),
         CalibrationBenchmarkScenario(
             workflow="swaption_cube",
@@ -1286,6 +1327,7 @@ def supported_calibration_benchmark_scenarios() -> tuple[CalibrationBenchmarkSce
                 "model_consistency_contract_version": str(model_consistency_contract.get("version", "")),
                 "curve_name": credit_curve_name,
             },
+            problem_ir_payload=credit_problem_ir_payload,
         ),
         CalibrationBenchmarkScenario(
             workflow="basket_credit",
