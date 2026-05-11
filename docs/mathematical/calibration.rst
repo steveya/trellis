@@ -191,6 +191,35 @@ problem variables, targets, quote maps, materialization intent, or solve-request
 construction visible before a public orchestrator starts consuming the IR as an
 execution contract.
 
+Gated Problem-IR Orchestrator
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``calibrate_problem_ir(...)`` is the bounded public orchestrator for problem-IR
+execution. It is fail-closed: only workflows returned by
+``supported_calibration_problem_ir_adapters()`` are accepted, and each supported
+workflow must receive its explicit context object.
+
+.. list-table::
+   :header-rows: 1
+
+   * - Family
+     - Workflow
+     - Required context
+     - Result
+   * - ``sabr``
+     - ``sabr_smile``
+     - ``surface``
+     - ``SABRSmileCalibrationResult``
+   * - ``credit``
+     - ``single_name_credit_curve``
+     - ``quotes`` and ``market_state``
+     - ``CreditHazardCalibrationResult``
+
+The orchestrator delegates to the adapter-backed direct workflows and annotates
+result provenance with the selected problem-IR adapter. It does not discover or
+execute arbitrary calibration families, and it does not remove the direct
+workflow functions.
+
 Quote Maps And Target Transforms
 --------------------------------
 

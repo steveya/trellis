@@ -14,6 +14,11 @@ from trellis.models.calibration.credit import (
     calibrate_single_name_credit_curve_workflow,
     fit_single_name_credit_problem_ir,
 )
+from trellis.models.calibration.orchestrator import (
+    UnsupportedCalibrationProblemIRError,
+    calibrate_problem_ir,
+    supported_calibration_problem_ir_adapters,
+)
 from trellis.models.calibration.problem_ir import (
     CalibrationObjectiveSpec,
     CalibrationProblemIR,
@@ -253,3 +258,78 @@ def test_single_name_credit_problem_ir_adapter_rejects_wrong_problem_family():
 
     with pytest.raises(ValueError, match="single-name credit"):
         fit_single_name_credit_problem_ir(wrong_problem, _credit_quotes(), market_state)
+
+
+def test_problem_ir_orchestrator_lists_bounded_supported_workflows():
+    supported = {
+        (adapter.family_id, adapter.workflow_id): adapter
+        for adapter in supported_calibration_problem_ir_adapters()
+    }
+
+    assert ("sabr", "sabr_smile") in supported
+    assert ("credit", "single_name_credit_curve") in supported
+    assert supported[("sabr", "sabr_smile")].required_context == ("surface",)
+    assert supported[("credit", "single_name_credit_curve")].required_context == (
+        "quotes",
+        "market_state",
+    )
+
+
+def test_problem_ir_orchestrator_dispatches_sabr_adapter_with_provenance():
+    surface = _sabr_surface()
+    problem = build_sabr_smile_calibration_problem_ir(surface)
+    direct = fit_sabr_smile_surface(surface)
+
+    orchestrated = calibrate_problem_ir(problem, surface=surface)
+
+    assert orchestrated.solve_request.to_payload() == direct.solve_request.to_payload()
+    assert orchestrated.sabr.alpha == pytest.approx(direct.sabr.alpha, abs=1e-12)
+    assert orchestrated.provenance["calibration_problem_ir_orchestrator"]["adapter_id"] == (
+        "sabr_smile_problem_ir_v1"
+    )
+
+
+def test_problem_ir_orchestrator_dispatches_credit_adapter_with_provenance():
+    market_state = _credit_market_state()
+    quotes = _credit_quotes()
+    problem = build_single_name_credit_calibration_problem_ir(
+        quotes,
+        market_state,
+        recovery=0.4,
+        curve_name="acme_credit",
+    )
+    direct = calibrate_single_name_credit_curve_workflow(
+        quotes,
+        market_state,
+        recovery=0.4,
+        curve_name="acme_credit",
+    )
+
+    orchestrated = calibrate_problem_ir(problem, quotes=quotes, market_state=market_state)
+
+    assert orchestrated.solve_request.to_payload() == direct.solve_request.to_payload()
+    assert orchestrated.credit_curve.hazard_rates == pytest.approx(direct.credit_curve.hazard_rates, abs=1e-12)
+    assert orchestrated.provenance["calibration_problem_ir_orchestrator"]["adapter_id"] == (
+        "single_name_credit_problem_ir_v1"
+    )
+
+
+def test_problem_ir_orchestrator_fails_closed_for_unsupported_or_incomplete_context():
+    surface = _sabr_surface()
+    problem = build_sabr_smile_calibration_problem_ir(surface)
+
+    with pytest.raises(ValueError, match="requires `surface`"):
+        calibrate_problem_ir(problem)
+
+    unsupported = CalibrationProblemIR(
+        problem_id="unsupported_problem",
+        workflow_id="heston_surface",
+        family_id="heston",
+        variables=problem.variables,
+        targets=problem.targets,
+        objective=problem.objective,
+        solve_request_payload=problem.solve_request_payload,
+    )
+
+    with pytest.raises(UnsupportedCalibrationProblemIRError, match="Unsupported calibration problem IR"):
+        calibrate_problem_ir(unsupported)

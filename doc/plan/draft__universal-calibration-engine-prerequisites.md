@@ -260,6 +260,13 @@ Deliverables:
 - support matrix listing which families are engine-backed
 - fail-closed behavior for unsupported families
 
+`QUA-1010` exposes this as the bounded `calibrate_problem_ir(...)`
+orchestrator plus `supported_calibration_problem_ir_adapters()`. The support
+matrix is limited to the adapter-backed SABR smile and single-name credit curve
+workflows, and each route requires explicit context (`surface` for SABR;
+`quotes` plus `market_state` for credit). Unsupported families raise a
+dedicated fail-closed error.
+
 ## Explicit Non-Goals
 
 - Do not build a single pricing formula registry inside the engine.
@@ -316,3 +323,7 @@ work.
 problem IRs. This keeps non-IR workflows unchanged while making SABR and
 single-name credit problem payload drift observable in the checked benchmark
 artifact and replay tests.
+
+`QUA-1010` adds the bounded public orchestrator. It intentionally exposes only
+the replay-backed SABR and single-name credit problem-IR adapters and records
+orchestrator provenance on returned calibration results.

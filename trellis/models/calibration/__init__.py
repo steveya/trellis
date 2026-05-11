@@ -140,6 +140,12 @@ from trellis.models.calibration.problem_ir import (
     CalibrationTargetSpec,
     CalibrationVariableSpec,
 )
+from trellis.models.calibration.orchestrator import (
+    CalibrationProblemIRAdapterSpec,
+    UnsupportedCalibrationProblemIRError,
+    calibrate_problem_ir,
+    supported_calibration_problem_ir_adapters,
+)
 from trellis.models.calibration.quanto import (
     QuantoCorrelationCalibrationDiagnostics,
     QuantoCorrelationCalibrationQuote,
@@ -276,8 +282,12 @@ __all__ = [
     "CalibrationMaterializationSpec",
     "CalibrationObjectiveSpec",
     "CalibrationProblemIR",
+    "CalibrationProblemIRAdapterSpec",
     "CalibrationTargetSpec",
     "CalibrationVariableSpec",
+    "UnsupportedCalibrationProblemIRError",
+    "calibrate_problem_ir",
+    "supported_calibration_problem_ir_adapters",
     "DuplicateCalibrationDependencyNodeError",
     "MissingCalibrationDependencyNodeError",
     "QuantoCorrelationCalibrationDiagnostics",
