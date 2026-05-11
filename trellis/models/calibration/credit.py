@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Literal, Sequence
 
 import numpy as raw_np
@@ -16,6 +16,15 @@ from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.curves.credit_curve import CreditCurve
 from trellis.models.calibration.materialization import materialize_credit_curve
+from trellis.models.calibration.problem_ir import (
+    CalibrationDependencySpec,
+    CalibrationDiagnosticSpec,
+    CalibrationMaterializationSpec,
+    CalibrationObjectiveSpec,
+    CalibrationProblemIR,
+    CalibrationTargetSpec,
+    CalibrationVariableSpec,
+)
 from trellis.models.calibration.quote_maps import (
     CalibrationQuoteMap,
     QuoteAxisSpec,
@@ -1240,8 +1249,235 @@ def calibrate_single_name_credit_curve_workflow(
     )
 
 
+def _credit_problem_quote_convention(quote: CreditHazardCalibrationQuote) -> str:
+    """Return the objective-space quote convention for one credit target."""
+    if quote.quote_kind == "upfront":
+        return "standard_coupon_upfront"
+    return "cds_par_spread"
+
+
+def _single_name_credit_result_to_problem_ir(
+    result: CreditHazardCalibrationResult,
+    market_state: MarketState,
+    *,
+    max_hazard: float,
+) -> CalibrationProblemIR:
+    """Represent one existing single-name credit fit as a calibration problem IR."""
+    solve_request = result.solve_request
+    bounds_payload = solve_request.bounds.to_payload()
+    lower_bounds = tuple(bounds_payload["lower"])
+    upper_bounds = tuple(bounds_payload["upper"])
+    variables = tuple(
+        CalibrationVariableSpec(
+            name=name,
+            coordinate_chart="positive_hazard_rate",
+            initial_value=solve_request.initial_guess[index],
+            lower_bound=lower_bounds[index],
+            upper_bound=upper_bounds[index],
+            warm_start_source=(
+                solve_request.warm_start.source
+                if solve_request.warm_start is not None
+                else ""
+            ),
+            metadata={
+                "parameter_role": "piecewise_hazard_rate",
+                "tenor_years": float(result.tenors[index]),
+                "curve_name": result.curve_name,
+            },
+        )
+        for index, name in enumerate(solve_request.parameter_names)
+    )
+
+    target_payload = dict(result.provenance.get("calibration_target") or {})
+    quote_maps = tuple(target_payload.get("quote_maps") or ())
+    instrument_setups = tuple(target_payload.get("instrument_setup") or ())
+    labels = tuple(target_payload.get("labels") or solve_request.objective.labels)
+    targets = tuple(
+        CalibrationTargetSpec(
+            target_id=str(labels[index]),
+            instrument_id=f"{result.curve_name}:{labels[index]}",
+            quote_family=quote.quote_kind,
+            quote_convention=_credit_problem_quote_convention(quote),
+            quote_value=quote.quote,
+            weight=quote.weight,
+            quote_map_payload=quote_maps[index] if index < len(quote_maps) else {},
+            validation_tags=("single_name_credit", "cds", quote.quote_kind),
+            metadata={
+                "maturity_years": float(quote.maturity_years),
+                "curve_tenor_years": float(result.tenors[index]),
+                "target_running_spread": float(result.target_running_spreads[index]),
+                "target_hazard": float(result.target_hazards[index]),
+                "instrument_setup": (
+                    dict(instrument_setups[index])
+                    if index < len(instrument_setups)
+                    else {}
+                ),
+            },
+        )
+        for index, quote in enumerate(result.quotes)
+    )
+
+    objective = CalibrationObjectiveSpec(
+        objective_kind=solve_request.problem_kind,
+        loss_function="weighted_sum_of_squares",
+        residual_count=len(targets),
+        derivative_method=str(
+            result.solver_provenance.backend.get("resolved_derivative_method", "")
+            or result.solver_provenance.backend.get("derivative_method", "")
+        ),
+        solve_request_id=solve_request.request_id,
+        metadata={
+            "fit_space": dict(result.provenance.get("fit_diagnostics") or {}).get("fit_space", ""),
+            "fit_value_kinds": list(solve_request.objective.metadata.get("fit_value_kinds") or ()),
+            "potential_binding": dict(result.potential_binding),
+        },
+    )
+
+    selected_curve_names = dict(market_state.selected_curve_names or {})
+    dependencies = (
+        CalibrationDependencySpec(
+            dependency_id="discount_curve",
+            object_kind="yield_curve",
+            object_name=str(selected_curve_names.get("discount_curve") or "discount_curve"),
+            source_ref="market_state.discount",
+            metadata={
+                "curve_role": "discount_curve",
+                "required_for": "cds_par_spread_objective",
+            },
+        ),
+    )
+    materialization = CalibrationMaterializationSpec(
+        object_kind="credit_curve",
+        object_name=result.curve_name,
+        destination_field="credit_curve",
+        source_ref="calibrate_single_name_credit_curve_workflow",
+        metadata={
+            "model_family": "reduced_form_credit",
+            "instrument_kind": "single_name_cds",
+            "tenors": list(result.tenors),
+            "recovery": float(result.recovery),
+            "potential_binding": dict(result.potential_binding),
+        },
+    )
+    diagnostics = (
+        CalibrationDiagnosticSpec(
+            diagnostic_id="max_abs_repricing_error",
+            metric_name="max_abs_repricing_error",
+            tolerance=5e-12,
+            severity="warning",
+        ),
+        CalibrationDiagnosticSpec(
+            diagnostic_id="max_abs_quote_residual",
+            metric_name="max_abs_quote_residual",
+            tolerance=1e-8,
+            severity="warning",
+        ),
+        CalibrationDiagnosticSpec(
+            diagnostic_id="max_abs_hazard_residual",
+            metric_name="max_abs_hazard_residual",
+            tolerance=1e-8,
+            severity="warning",
+        ),
+    )
+    return CalibrationProblemIR(
+        problem_id=solve_request.request_id,
+        workflow_id="single_name_credit_curve",
+        family_id="credit",
+        variables=variables,
+        targets=targets,
+        objective=objective,
+        dependencies=dependencies,
+        materialization=materialization,
+        diagnostics=diagnostics,
+        solve_request_payload=solve_request.to_payload(),
+        replay_metadata={
+            "quotes": [quote.to_payload() for quote in result.quotes],
+            "market_state": {
+                "as_of": market_state.as_of.isoformat() if market_state.as_of is not None else None,
+                "settlement": (
+                    market_state.settlement.isoformat()
+                    if market_state.settlement is not None
+                    else None
+                ),
+                "selected_curve_names": selected_curve_names,
+            },
+            "solver_replay_artifact": result.solver_replay_artifact.to_payload(),
+            "max_hazard": float(max_hazard),
+        },
+        metadata={
+            "adapter_id": "single_name_credit_problem_ir_v1",
+            "engine_backed": False,
+            "support_boundary": "problem_ir_adapter_only",
+            "source_ref": "build_single_name_credit_calibration_problem_ir",
+            "quote_normalization_method": result.summary.get("quote_normalization_method", ""),
+        },
+    )
+
+
+def build_single_name_credit_calibration_problem_ir(
+    quotes: Sequence[CreditHazardCalibrationQuote],
+    market_state: MarketState,
+    *,
+    recovery: float = 0.4,
+    curve_name: str = "single_name_credit",
+    max_hazard: float = 5.0,
+) -> CalibrationProblemIR:
+    """Represent the supported single-name credit workflow as a calibration problem IR."""
+    result = calibrate_single_name_credit_curve_workflow(
+        quotes,
+        market_state,
+        recovery=recovery,
+        curve_name=curve_name,
+        max_hazard=max_hazard,
+    )
+    return _single_name_credit_result_to_problem_ir(
+        result,
+        market_state,
+        max_hazard=max_hazard,
+    )
+
+
+def fit_single_name_credit_problem_ir(
+    problem: CalibrationProblemIR,
+    quotes: Sequence[CreditHazardCalibrationQuote],
+    market_state: MarketState,
+    *,
+    recovery: float = 0.4,
+    curve_name: str = "single_name_credit",
+    max_hazard: float = 5.0,
+) -> CreditHazardCalibrationResult:
+    """Execute the current single-name credit workflow through its problem-IR adapter."""
+    if problem.workflow_id != "single_name_credit_curve" or problem.family_id != "credit":
+        raise ValueError("fit_single_name_credit_problem_ir requires a single-name credit calibration problem")
+    result = calibrate_single_name_credit_curve_workflow(
+        quotes,
+        market_state,
+        recovery=recovery,
+        curve_name=curve_name,
+        max_hazard=max_hazard,
+    )
+    if tuple(variable.name for variable in problem.variables) != result.solve_request.parameter_names:
+        raise ValueError("single-name credit calibration problem hazard variables are stale or inconsistent")
+    if len(problem.targets) != len(result.quotes):
+        raise ValueError("single-name credit calibration problem target count is stale or inconsistent")
+    if problem.solve_request_payload and dict(problem.solve_request_payload) != result.solve_request.to_payload():
+        raise ValueError("single-name credit calibration problem solve_request_payload is stale or inconsistent")
+
+    provenance = dict(result.provenance)
+    provenance["calibration_problem_ir"] = {
+        "problem_id": problem.problem_id,
+        "workflow_id": problem.workflow_id,
+        "family_id": problem.family_id,
+        "adapter_id": problem.metadata.get("adapter_id", ""),
+        "engine_backed": bool(problem.metadata.get("engine_backed", False)),
+    }
+    return replace(result, provenance=provenance)
+
+
 __all__ = [
     "CreditHazardCalibrationQuote",
     "CreditHazardCalibrationResult",
+    "build_single_name_credit_calibration_problem_ir",
     "calibrate_single_name_credit_curve_workflow",
+    "fit_single_name_credit_problem_ir",
 ]

@@ -85,7 +85,9 @@ from trellis.models.calibration.local_vol import (
 from trellis.models.calibration.credit import (
     CreditHazardCalibrationQuote,
     CreditHazardCalibrationResult,
+    build_single_name_credit_calibration_problem_ir,
     calibrate_single_name_credit_curve_workflow,
+    fit_single_name_credit_problem_ir,
 )
 from trellis.models.calibration.basket_credit import (
     BasketCreditCalibrationDiagnostics,
@@ -232,7 +234,9 @@ __all__ = [
     "dupire_local_vol",
     "CreditHazardCalibrationQuote",
     "CreditHazardCalibrationResult",
+    "build_single_name_credit_calibration_problem_ir",
     "calibrate_single_name_credit_curve_workflow",
+    "fit_single_name_credit_problem_ir",
     "BasketCreditCalibrationDiagnostics",
     "BasketCreditCorrelationCalibrationResult",
     "BasketCreditCorrelationPoint",

@@ -151,16 +151,20 @@ is a typed, immutable representation of one calibration node. It records:
 - upstream dependencies, materialization intent, diagnostics, replay metadata,
   and the serialized solve request when available
 
-The first checked adapter is intentionally bounded. SABR smile calibration can
+The first checked adapters are intentionally bounded. SABR smile calibration can
 build a ``CalibrationProblemIR`` through
 ``build_sabr_smile_calibration_problem_ir(...)`` and execute the existing
-workflow through ``fit_sabr_smile_problem_ir(...)``. This proves the common
-problem shape against an existing workflow without changing the SABR objective,
-solver choice, solved parameters, diagnostics, or replay payload.
+workflow through ``fit_sabr_smile_problem_ir(...)``. Single-name credit curve
+calibration can do the same through
+``build_single_name_credit_calibration_problem_ir(...)`` and
+``fit_single_name_credit_problem_ir(...)``. These paths prove the common problem
+shape against existing workflows without changing their objectives, solver
+choices, solved parameters, diagnostics, or replay payloads.
 
 This is not yet a public universal calibration orchestrator. The IR-backed SABR
-path reports itself as adapter-only, and unsupported workflows remain on their
-current direct functions until they have parity adapters and replay coverage.
+and single-name credit paths report themselves as adapter-only, and unsupported
+workflows remain on their current direct functions until they have parity
+adapters and replay coverage.
 
 Quote Maps And Target Transforms
 --------------------------------
@@ -176,6 +180,7 @@ The shipped quote-map vocabulary is intentionally bounded:
 - ``ImpliedVol(Normal)``
 - ``ParRate``
 - ``Spread``
+- ``Upfront``
 - ``Hazard``
 
 Each quote map carries two directional transforms where applicable:

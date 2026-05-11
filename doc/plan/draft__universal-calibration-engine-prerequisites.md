@@ -2,12 +2,16 @@
 
 ## Status
 
-Draft planning document with first Linear execution ticket filed.
+Draft planning document with Linear execution queue filed.
 
 Filed queue:
 
 - QUA-1001 — Calibration engine: common problem IR program
 - QUA-1002 — Calibration engine: common problem IR and SABR adapter
+- QUA-1007 — Calibration engine: second workflow problem-IR adapter
+- QUA-1008 — Calibration engine: problem IR dependency graph compiler
+- QUA-1009 — Calibration engine: benchmark and replay problem-IR payloads
+- QUA-1010 — Calibration engine: gated public problem-IR orchestrator
 
 This document describes the missing contracts and implementation work required
 before Trellis can honestly claim a universal calibration engine. It is a
@@ -199,14 +203,15 @@ Deliverables:
 - typed validators for variables, quotes, transforms, and materialization
 - tests showing existing workflow metadata can be represented without solving
 
-### Phase 2: One Workflow Adapter
+### Phase 2: Workflow Adapters
 
-Adapt one low-risk workflow, preferably SABR smile or single-name credit, to
-build an IR and then execute through the existing solver path.
+Adapt low-risk workflows, starting with SABR smile and single-name credit, to
+build an IR and then execute through the existing solver paths.
 
 Deliverables:
 
 - adapter implementation (`QUA-1002` starts this with the SABR smile workflow)
+- second adapter implementation (`QUA-1007` adds single-name credit)
 - parity tests against the old workflow result
 - replay artifact comparison
 
@@ -281,3 +286,9 @@ Filed as `QUA-1002` with SABR smile as the first migrated workflow adapter.
 This first slice deliberately keeps `engine_backed = false` in the problem IR
 metadata: it proves representation and adapter parity, not a public universal
 engine.
+
+`QUA-1007` adds the second bounded adapter for the schedule-aware single-name
+credit curve workflow. It keeps the direct credit workflow authoritative,
+preserves the existing solve request and replay payload, and records the
+discount-curve dependency and credit-curve materialization intent in the common
+problem shape.
