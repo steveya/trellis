@@ -226,6 +226,13 @@ Deliverables:
 - basket-credit or bounded quanto route represented as a two-node graph
 - failure diagnostics for missing upstream materializations
 
+`QUA-1008` introduces this bridge as
+`compile_calibration_problem_dependency_graph(...)`. The compiler accepts
+concrete `CalibrationProblemIR` nodes, infers problem-level edges from
+`problem:<problem_id>` source refs or matching materialized object kind/name
+pairs, and delegates duplicate/missing/cycle validation to the existing
+`CalibrationDependencyGraph`.
+
 ### Phase 4: Benchmark And Replay Migration
 
 Move benchmark metadata and replay payloads to consume IR fields instead of
@@ -292,3 +299,9 @@ credit curve workflow. It keeps the direct credit workflow authoritative,
 preserves the existing solve request and replay payload, and records the
 discount-curve dependency and credit-curve materialization intent in the common
 problem shape.
+
+`QUA-1008` adds the internal problem-IR dependency graph compiler. It proves a
+bounded two-node compile where a downstream basket-credit problem consumes the
+single-name credit curve materialized by the credit adapter. This remains a
+compile/validation step only; execution is deferred to the gated orchestrator
+work.

@@ -166,6 +166,20 @@ and single-name credit paths report themselves as adapter-only, and unsupported
 workflows remain on their current direct functions until they have parity
 adapters and replay coverage.
 
+Problem-IR Dependency Graphs
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``compile_calibration_problem_dependency_graph(...)`` bridges problem IR nodes
+onto the existing ``CalibrationDependencyGraph`` validator. A problem can
+depend on another problem by naming a ``problem:<problem_id>`` source reference
+or by consuming an object kind/name materialized by another problem. The
+compiled graph keeps the existing dependency-first ordering and fail-closed
+diagnostics for duplicate nodes, missing upstream references, and cycles.
+
+This graph compiler is still an internal coordination primitive. It does not
+execute arbitrary problem IRs by itself, and it does not promote adapter-only
+workflows to public universal-engine support.
+
 Quote Maps And Target Transforms
 --------------------------------
 

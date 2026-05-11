@@ -126,6 +126,8 @@ from trellis.models.calibration.dependency_graph import (
     CalibrationDependencyGraph,
     CalibrationDependencyGraphError,
     CalibrationDependencyNode,
+    CalibrationProblemDependencyGraph,
+    compile_calibration_problem_dependency_graph,
     DuplicateCalibrationDependencyNodeError,
     MissingCalibrationDependencyNodeError,
 )
@@ -267,6 +269,8 @@ __all__ = [
     "CalibrationDependencyGraph",
     "CalibrationDependencyGraphError",
     "CalibrationDependencyNode",
+    "CalibrationProblemDependencyGraph",
+    "compile_calibration_problem_dependency_graph",
     "CalibrationDependencySpec",
     "CalibrationDiagnosticSpec",
     "CalibrationMaterializationSpec",
