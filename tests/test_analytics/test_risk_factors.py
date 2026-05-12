@@ -7,8 +7,13 @@ import pytest
 from trellis.analytics.risk_factors import (
     RiskFactorCoordinate,
     RiskFactorId,
+    RiskFactorRegistry,
     SparseRiskVector,
+    UnsupportedRiskFactorObject,
 )
+from trellis.curves.credit_curve import CreditCurve
+from trellis.curves.yield_curve import YieldCurve
+from trellis.models.vol_surface import FlatVol, GridVolSurface
 
 
 def _curve_factor(tenor: float, *, object_name: str = "usd_ois") -> RiskFactorId:
@@ -116,3 +121,118 @@ def test_sparse_risk_vector_payload_round_trips_and_buckets():
         "1Y": pytest.approx(1.5),
         "5Y": pytest.approx(5.0),
     }
+
+
+def test_registry_discovers_stable_yield_curve_coordinates_without_object_identity():
+    registry = RiskFactorRegistry()
+    first_curve = YieldCurve([1.0, 5.0], [0.04, 0.045])
+    second_curve = YieldCurve([1.0, 5.0], [0.04, 0.045])
+
+    first = registry.discover_yield_curve(
+        first_curve,
+        object_name="usd_ois",
+        currency="USD",
+        provenance_namespace="base",
+    )
+    second = registry.discover_yield_curve(
+        second_curve,
+        object_name="usd_ois",
+        currency="USD",
+        provenance_namespace="base",
+    )
+    different_namespace = registry.discover_yield_curve(
+        first_curve,
+        object_name="usd_ois",
+        currency="USD",
+        provenance_namespace="stress_up",
+    )
+
+    assert [coordinate.factor_id for coordinate in first] == [
+        coordinate.factor_id for coordinate in second
+    ]
+    assert [coordinate.factor_id.key for coordinate in first] == [
+        "type=curve|object=usd_ois|coordinate=zero_rate|currency=USD|"
+        "tenor_years=1|namespace=base",
+        "type=curve|object=usd_ois|coordinate=zero_rate|currency=USD|"
+        "tenor_years=5|namespace=base",
+    ]
+    assert first[0].support_status == "supported"
+    assert first[0].bucket("risk_class") == "rates"
+    assert different_namespace[0].factor_id != first[0].factor_id
+
+
+def test_registry_registers_coordinates_and_payloads_deterministically():
+    registry = RiskFactorRegistry()
+    curve = YieldCurve([1.0, 5.0], [0.04, 0.045])
+
+    populated = registry.with_yield_curve(
+        curve,
+        object_name="usd_ois",
+        currency="USD",
+        provenance_namespace="base",
+    )
+    duplicate = populated.with_coordinates(populated.coordinates)
+    payload = duplicate.to_payload()
+
+    assert duplicate == populated
+    assert json.loads(json.dumps(payload)) == payload
+    assert RiskFactorRegistry.from_payload(payload) == populated
+    assert [coordinate.factor_id.key for coordinate in populated.coordinates] == sorted(
+        coordinate.factor_id.key for coordinate in populated.coordinates
+    )
+
+
+def test_registry_discovery_only_lanes_cover_credit_vol_and_model_parameters():
+    registry = RiskFactorRegistry()
+
+    credit = registry.discover_credit_curve(
+        CreditCurve([1.0, 3.0], [0.01, 0.015]),
+        object_name="acme_cds",
+        issuer="ACME",
+        currency="USD",
+    )
+    flat_vol = registry.discover_flat_vol_surface(
+        FlatVol(0.2),
+        object_name="spx_flat",
+        currency="USD",
+    )
+    grid_vol = registry.discover_grid_vol_surface(
+        GridVolSurface(
+            expiries=(1.0, 2.0),
+            strikes=(90.0, 110.0),
+            vols=((0.2, 0.22), (0.24, 0.26)),
+        ),
+        object_name="spx_grid",
+        currency="USD",
+    )
+    model_params = registry.discover_scalar_model_parameters(
+        {"kappa": 1.2, "theta": 0.04},
+        parameter_set_name="heston_equity",
+        model_family="heston",
+        provenance_namespace="calibrated",
+    )
+
+    assert [coordinate.support_status for coordinate in credit] == [
+        "discovery_only",
+        "discovery_only",
+    ]
+    assert flat_vol[0].factor_id.key == (
+        "type=vol_surface|object=spx_flat|coordinate=flat_vol|currency=USD"
+    )
+    assert len(grid_vol) == 4
+    assert grid_vol[0].bucket("risk_class") == "volatility"
+    assert [coordinate.factor_id.axes for coordinate in model_params] == [
+        (("parameter", "kappa"),),
+        (("parameter", "theta"),),
+    ]
+
+
+def test_registry_fails_closed_for_unknown_market_objects():
+    registry = RiskFactorRegistry()
+
+    with pytest.raises(UnsupportedRiskFactorObject) as excinfo:
+        registry.discover_market_object(object(), object_name="unknown")
+
+    payload = excinfo.value.to_payload()
+    assert payload["reason"] == "unsupported_market_object"
+    assert payload["object_type"] == "object"

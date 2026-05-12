@@ -142,7 +142,9 @@ class RiskFactorCoordinate:
     display_name: str = ""
     unit: str = ""
     transform: str = "identity"
+    support_status: str = "supported"
     reporting_buckets: AxisInput | None = field(default_factory=tuple)
+    metadata: AxisInput | None = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "object_path", str(self.object_path).strip())
@@ -151,8 +153,18 @@ class RiskFactorCoordinate:
         object.__setattr__(self, "transform", _clean_required(self.transform, "transform"))
         object.__setattr__(
             self,
+            "support_status",
+            _clean_required(self.support_status, "support_status"),
+        )
+        object.__setattr__(
+            self,
             "reporting_buckets",
             _normalize_pairs(self.reporting_buckets, field_name="reporting_buckets"),
+        )
+        object.__setattr__(
+            self,
+            "metadata",
+            _normalize_pairs(self.metadata, field_name="metadata"),
         )
 
     def bucket(self, name: str, *, default: str | None = None) -> str | None:
@@ -169,7 +181,9 @@ class RiskFactorCoordinate:
             "display_name": self.display_name,
             "unit": self.unit,
             "transform": self.transform,
+            "support_status": self.support_status,
             "reporting_buckets": dict(self.reporting_buckets),
+            "metadata": dict(self.metadata),
         }
 
     @classmethod
@@ -181,7 +195,9 @@ class RiskFactorCoordinate:
             display_name=str(payload.get("display_name", "")),
             unit=str(payload.get("unit", "")),
             transform=str(payload.get("transform", "identity")),
+            support_status=str(payload.get("support_status", "supported")),
             reporting_buckets=payload.get("reporting_buckets") or (),
+            metadata=payload.get("metadata") or (),
         )
 
 
@@ -296,8 +312,347 @@ class SparseRiskVector(Mapping[RiskFactorId, float]):
         return dict(sorted(totals.items()))
 
 
+class UnsupportedRiskFactorObject(ValueError):
+    """Raised when registry discovery is asked to inspect an unsupported object."""
+
+    def __init__(self, market_object: object, *, reason: str = "unsupported_market_object"):
+        self.object_type = type(market_object).__name__
+        self.reason = str(reason)
+        super().__init__(
+            f"unsupported risk-factor object {self.object_type!r}: {self.reason}"
+        )
+
+    def to_payload(self) -> dict[str, str]:
+        """Return a JSON-friendly diagnostic payload."""
+        return {
+            "object_type": self.object_type,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True)
+class RiskFactorRegistry:
+    """Deterministic registry of discovered risk-factor coordinates."""
+
+    coordinates: tuple[RiskFactorCoordinate, ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "coordinates",
+            self._normalize_coordinates(self.coordinates),
+        )
+
+    @staticmethod
+    def _normalize_coordinates(
+        coordinates: Iterable[RiskFactorCoordinate],
+    ) -> tuple[RiskFactorCoordinate, ...]:
+        coordinate_map: dict[RiskFactorId, RiskFactorCoordinate] = {}
+        for coordinate in coordinates:
+            if not isinstance(coordinate, RiskFactorCoordinate):
+                raise TypeError("RiskFactorRegistry coordinates must be RiskFactorCoordinate instances")
+            existing = coordinate_map.get(coordinate.factor_id)
+            if existing is not None and existing != coordinate:
+                raise ValueError(f"conflicting coordinate for factor {coordinate.factor_id.key!r}")
+            coordinate_map[coordinate.factor_id] = coordinate
+        return tuple(
+            coordinate
+            for _, coordinate in sorted(
+                coordinate_map.items(),
+                key=lambda item: item[0].key,
+            )
+        )
+
+    def with_coordinates(
+        self,
+        coordinates: Iterable[RiskFactorCoordinate],
+    ) -> RiskFactorRegistry:
+        """Return a registry containing the existing and supplied coordinates."""
+        return RiskFactorRegistry((*self.coordinates, *tuple(coordinates)))
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly registry payload."""
+        return {
+            "coordinates": [
+                coordinate.to_payload()
+                for coordinate in self.coordinates
+            ]
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> RiskFactorRegistry:
+        """Build a registry from :meth:`to_payload` output."""
+        return cls(
+            tuple(
+                RiskFactorCoordinate.from_payload(entry)
+                for entry in payload.get("coordinates", ())
+            )
+        )
+
+    def discover_market_object(
+        self,
+        market_object: object,
+        *,
+        object_name: str,
+        currency: str | None = None,
+        issuer: str | None = None,
+        object_path: str = "",
+        provenance_namespace: str | None = None,
+    ) -> tuple[RiskFactorCoordinate, ...]:
+        """Dispatch discovery for a supported market object or fail closed."""
+        from trellis.curves.credit_curve import CreditCurve
+        from trellis.curves.yield_curve import YieldCurve
+        from trellis.models.vol_surface import FlatVol, GridVolSurface
+
+        if isinstance(market_object, YieldCurve):
+            return self.discover_yield_curve(
+                market_object,
+                object_name=object_name,
+                currency=currency,
+                object_path=object_path,
+                provenance_namespace=provenance_namespace,
+            )
+        if isinstance(market_object, CreditCurve):
+            return self.discover_credit_curve(
+                market_object,
+                object_name=object_name,
+                currency=currency,
+                issuer=issuer,
+                object_path=object_path,
+                provenance_namespace=provenance_namespace,
+            )
+        if isinstance(market_object, FlatVol):
+            return self.discover_flat_vol_surface(
+                market_object,
+                object_name=object_name,
+                currency=currency,
+                object_path=object_path,
+                provenance_namespace=provenance_namespace,
+            )
+        if isinstance(market_object, GridVolSurface):
+            return self.discover_grid_vol_surface(
+                market_object,
+                object_name=object_name,
+                currency=currency,
+                object_path=object_path,
+                provenance_namespace=provenance_namespace,
+            )
+        raise UnsupportedRiskFactorObject(market_object)
+
+    def discover_yield_curve(
+        self,
+        curve: object,
+        *,
+        object_name: str,
+        currency: str | None = None,
+        object_path: str = "",
+        provenance_namespace: str | None = None,
+    ) -> tuple[RiskFactorCoordinate, ...]:
+        """Return zero-rate node coordinates for a supported yield curve."""
+        tenors = getattr(curve, "tenors", None)
+        rates = getattr(curve, "rates", None)
+        if tenors is None or rates is None:
+            raise UnsupportedRiskFactorObject(curve, reason="yield_curve_nodes_unavailable")
+        resolved_path = object_path or f"curves.{object_name}"
+        return tuple(
+            RiskFactorCoordinate(
+                factor_id=RiskFactorId(
+                    object_type="curve",
+                    object_name=object_name,
+                    coordinate_type="zero_rate",
+                    currency=currency,
+                    axes={"tenor_years": float(tenor)},
+                    provenance_namespace=provenance_namespace,
+                ),
+                object_path=f"{resolved_path}.rates[{index}]",
+                display_name=f"{object_name} {format(float(tenor), '.12g')}Y zero rate",
+                unit="rate",
+                transform="identity",
+                support_status="supported",
+                reporting_buckets={
+                    "risk_class": "rates",
+                    "currency": currency or "",
+                    "tenor": f"{format(float(tenor), '.12g')}Y",
+                    "object_name": object_name,
+                },
+            )
+            for index, tenor in enumerate(tenors)
+        )
+
+    def with_yield_curve(self, curve: object, **kwargs: object) -> RiskFactorRegistry:
+        """Return a registry extended with yield-curve node coordinates."""
+        return self.with_coordinates(self.discover_yield_curve(curve, **kwargs))
+
+    def discover_credit_curve(
+        self,
+        curve: object,
+        *,
+        object_name: str,
+        issuer: str | None = None,
+        currency: str | None = None,
+        object_path: str = "",
+        provenance_namespace: str | None = None,
+    ) -> tuple[RiskFactorCoordinate, ...]:
+        """Return discovery-only hazard-rate coordinates for a credit curve."""
+        tenors = getattr(curve, "tenors", None)
+        hazard_rates = getattr(curve, "hazard_rates", None)
+        if tenors is None or hazard_rates is None:
+            raise UnsupportedRiskFactorObject(curve, reason="credit_curve_nodes_unavailable")
+        resolved_path = object_path or f"credit_curves.{object_name}"
+        return tuple(
+            RiskFactorCoordinate(
+                factor_id=RiskFactorId(
+                    object_type="credit_curve",
+                    object_name=object_name,
+                    coordinate_type="hazard_rate",
+                    currency=currency,
+                    issuer=issuer,
+                    axes={"tenor_years": float(tenor)},
+                    provenance_namespace=provenance_namespace,
+                ),
+                object_path=f"{resolved_path}.hazard_rates[{index}]",
+                display_name=f"{object_name} {format(float(tenor), '.12g')}Y hazard rate",
+                unit="hazard_rate",
+                transform="identity",
+                support_status="discovery_only",
+                reporting_buckets={
+                    "risk_class": "credit",
+                    "currency": currency or "",
+                    "issuer": issuer or "",
+                    "tenor": f"{format(float(tenor), '.12g')}Y",
+                    "object_name": object_name,
+                },
+            )
+            for index, tenor in enumerate(tenors)
+        )
+
+    def discover_flat_vol_surface(
+        self,
+        surface: object,
+        *,
+        object_name: str,
+        currency: str | None = None,
+        object_path: str = "",
+        provenance_namespace: str | None = None,
+    ) -> tuple[RiskFactorCoordinate, ...]:
+        """Return a discovery-only scalar flat-vol coordinate."""
+        if not hasattr(surface, "vol"):
+            raise UnsupportedRiskFactorObject(surface, reason="flat_vol_unavailable")
+        return (
+            RiskFactorCoordinate(
+                factor_id=RiskFactorId(
+                    object_type="vol_surface",
+                    object_name=object_name,
+                    coordinate_type="flat_vol",
+                    currency=currency,
+                    provenance_namespace=provenance_namespace,
+                ),
+                object_path=object_path or f"vol_surfaces.{object_name}.vol",
+                display_name=f"{object_name} flat volatility",
+                unit="volatility",
+                transform="identity",
+                support_status="discovery_only",
+                reporting_buckets={
+                    "risk_class": "volatility",
+                    "currency": currency or "",
+                    "object_name": object_name,
+                },
+            ),
+        )
+
+    def discover_grid_vol_surface(
+        self,
+        surface: object,
+        *,
+        object_name: str,
+        currency: str | None = None,
+        object_path: str = "",
+        provenance_namespace: str | None = None,
+    ) -> tuple[RiskFactorCoordinate, ...]:
+        """Return discovery-only Black-vol node coordinates for a grid surface."""
+        expiries = getattr(surface, "expiries", None)
+        strikes = getattr(surface, "strikes", None)
+        vols = getattr(surface, "vols", None)
+        if expiries is None or strikes is None or vols is None:
+            raise UnsupportedRiskFactorObject(surface, reason="grid_vol_nodes_unavailable")
+        resolved_path = object_path or f"vol_surfaces.{object_name}"
+        coordinates: list[RiskFactorCoordinate] = []
+        for expiry_index, expiry in enumerate(expiries):
+            for strike_index, strike in enumerate(strikes):
+                expiry_label = format(float(expiry), ".12g")
+                strike_label = format(float(strike), ".12g")
+                coordinates.append(
+                    RiskFactorCoordinate(
+                        factor_id=RiskFactorId(
+                            object_type="vol_surface",
+                            object_name=object_name,
+                            coordinate_type="black_vol",
+                            currency=currency,
+                            axes={
+                                "expiry_years": float(expiry),
+                                "strike": float(strike),
+                            },
+                            provenance_namespace=provenance_namespace,
+                        ),
+                        object_path=f"{resolved_path}.vols[{expiry_index}][{strike_index}]",
+                        display_name=f"{object_name} {expiry_label}Y {strike_label} vol",
+                        unit="volatility",
+                        transform="identity",
+                        support_status="discovery_only",
+                        reporting_buckets={
+                            "risk_class": "volatility",
+                            "currency": currency or "",
+                            "expiry": f"{expiry_label}Y",
+                            "strike": strike_label,
+                            "object_name": object_name,
+                        },
+                    )
+                )
+        return tuple(coordinates)
+
+    def discover_scalar_model_parameters(
+        self,
+        parameters: Mapping[str, object],
+        *,
+        parameter_set_name: str,
+        model_family: str | None = None,
+        provenance_namespace: str | None = None,
+    ) -> tuple[RiskFactorCoordinate, ...]:
+        """Return discovery-only scalar model-parameter coordinates."""
+        coordinates: list[RiskFactorCoordinate] = []
+        for parameter_name in sorted(str(name) for name in parameters):
+            coordinates.append(
+                RiskFactorCoordinate(
+                    factor_id=RiskFactorId(
+                        object_type="model_parameter",
+                        object_name=parameter_set_name,
+                        coordinate_type="model_parameter",
+                        axes={"parameter": parameter_name},
+                        provenance_namespace=provenance_namespace,
+                    ),
+                    object_path=f"model_parameter_sets.{parameter_set_name}.{parameter_name}",
+                    display_name=f"{parameter_set_name} {parameter_name}",
+                    unit="model_parameter",
+                    transform="identity",
+                    support_status="discovery_only",
+                    reporting_buckets={
+                        "risk_class": "model",
+                        "model_family": model_family or "",
+                        "parameter_set": parameter_set_name,
+                        "parameter": parameter_name,
+                    },
+                    metadata={
+                        "model_family": model_family or "",
+                    },
+                )
+            )
+        return tuple(coordinates)
+
+
 __all__ = [
     "RiskFactorCoordinate",
     "RiskFactorId",
+    "RiskFactorRegistry",
     "SparseRiskVector",
+    "UnsupportedRiskFactorObject",
 ]

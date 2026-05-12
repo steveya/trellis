@@ -3,11 +3,15 @@
 from trellis.analytics.risk_factors import (
     RiskFactorCoordinate,
     RiskFactorId,
+    RiskFactorRegistry,
     SparseRiskVector,
+    UnsupportedRiskFactorObject,
 )
 
 __all__ = [
     "RiskFactorCoordinate",
     "RiskFactorId",
+    "RiskFactorRegistry",
     "SparseRiskVector",
+    "UnsupportedRiskFactorObject",
 ]
