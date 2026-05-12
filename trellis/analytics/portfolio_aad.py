@@ -335,6 +335,18 @@ class PortfolioAADResult:
             diagnostics=self.diagnostics,
         )
 
+    def missing_selected_factors(self, request: PortfolioAADRequest) -> tuple[RiskFactorId, ...]:
+        """Return explicitly requested factors absent from this result."""
+        if request.selects_all_factors:
+            return ()
+        available_factors = set(self.risk_vector)
+        available_factors.update(coordinate.factor_id for coordinate in self.coordinates)
+        return tuple(
+            factor
+            for factor in request.selected_factors
+            if factor not in available_factors
+        )
+
     def values_by_axis(self, axis_name: str) -> dict[str | float, float]:
         """Expose sparse values keyed by one factor-axis value for legacy views."""
         values: dict[str | float, float] = {}
