@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol, runtime_checkable
 
 from trellis.analytics.risk_factors import (
     RiskFactorCoordinate,
@@ -37,6 +37,127 @@ def _axis_key(value: str) -> str | float:
         return float(value)
     except ValueError:
         return value
+
+
+@dataclass(frozen=True)
+class AADSupportDecision:
+    """Adapter support decision for one position and request."""
+
+    supported: bool
+    reason: str
+    factor_dependencies: tuple[RiskFactorId, ...] = field(default_factory=tuple)
+    diagnostics: tuple[Mapping[str, Any], ...] = field(default_factory=tuple, hash=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "supported", bool(self.supported))
+        object.__setattr__(self, "reason", str(self.reason))
+        object.__setattr__(
+            self,
+            "factor_dependencies",
+            _sorted_unique_factors(self.factor_dependencies),
+        )
+        object.__setattr__(self, "diagnostics", _copy_diagnostics(self.diagnostics))
+
+    @property
+    def support_status(self) -> str:
+        """Return a compact support status string."""
+        return "supported" if self.supported else "unsupported"
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly support-decision payload."""
+        return {
+            "supported": self.supported,
+            "support_status": self.support_status,
+            "reason": self.reason,
+            "factor_dependencies": [
+                factor.to_payload()
+                for factor in self.factor_dependencies
+            ],
+            "diagnostics": [dict(diagnostic) for diagnostic in self.diagnostics],
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> AADSupportDecision:
+        """Build a support decision from :meth:`to_payload` output."""
+        return cls(
+            supported=bool(payload["supported"]),
+            reason=str(payload["reason"]),
+            factor_dependencies=tuple(
+                RiskFactorId.from_payload(entry)
+                for entry in payload.get("factor_dependencies", ())
+            ),
+            diagnostics=payload.get("diagnostics") or (),
+        )
+
+
+@runtime_checkable
+class TradeAADAdapter(Protocol):
+    """Structural protocol for product-family portfolio-AAD adapters."""
+
+    def support_decision(
+        self,
+        position_name: str,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> AADSupportDecision:
+        """Return whether this adapter supports a position under *request*."""
+        ...
+
+    def factor_dependencies(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> tuple[RiskFactorId, ...]:
+        """Return the factors needed to differentiate the supplied position."""
+        ...
+
+    def value(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> float:
+        """Return the scalar value represented by this adapter."""
+        ...
+
+    def vjp(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+        weight: float = 1.0,
+    ) -> SparseRiskVector:
+        """Return a sparse VJP risk vector for the supplied position."""
+        ...
+
+
+@dataclass(frozen=True)
+class DefaultUnsupportedAADPolicy:
+    """Default fail-closed policy for positions outside portfolio-AAD support."""
+
+    include_value_when_priced: bool = True
+
+    def record(
+        self,
+        *,
+        position_name: str,
+        instrument: object,
+        reason: str,
+        request: PortfolioAADRequest,
+        priced_value_available: bool = False,
+    ) -> UnsupportedAADPosition:
+        """Return the typed unsupported-position record for a failed adapter match."""
+        return UnsupportedAADPosition(
+            position_name=position_name,
+            instrument_type=type(instrument).__name__,
+            reason=reason,
+            requested_factors=request.selected_factors,
+            included_in_value=bool(self.include_value_when_priced and priced_value_available),
+            included_in_risk=False,
+            fallback_method=None,
+        )
 
 
 @dataclass(frozen=True)
@@ -262,7 +383,10 @@ class PortfolioAADResult:
 
 
 __all__ = [
+    "AADSupportDecision",
+    "DefaultUnsupportedAADPolicy",
     "PortfolioAADRequest",
     "PortfolioAADResult",
+    "TradeAADAdapter",
     "UnsupportedAADPosition",
 ]

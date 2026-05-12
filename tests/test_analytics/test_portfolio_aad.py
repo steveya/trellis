@@ -6,8 +6,11 @@ import pytest
 
 from trellis.analytics.derivative_methods import derivative_method_payload
 from trellis.analytics.portfolio_aad import (
+    AADSupportDecision,
+    DefaultUnsupportedAADPolicy,
     PortfolioAADRequest,
     PortfolioAADResult,
+    TradeAADAdapter,
     UnsupportedAADPosition,
 )
 from trellis.analytics.risk_factors import (
@@ -131,3 +134,61 @@ def test_portfolio_aad_result_applies_request_filter():
 
     assert filtered.risk_vector == SparseRiskVector.from_items([(five_year, 5.5)])
     assert [coordinate.factor_id for coordinate in filtered.coordinates] == [five_year]
+
+
+class _FakeAdapter:
+    def support_decision(self, position_name, instrument, market_context, request):
+        return AADSupportDecision(
+            supported=True,
+            reason="supported_fake",
+            factor_dependencies=request.selected_factors,
+            diagnostics=({"code": "ok"},),
+        )
+
+    def factor_dependencies(self, instrument, market_context, request):
+        return request.selected_factors
+
+    def value(self, instrument, market_context, request):
+        return 1.0
+
+    def vjp(self, instrument, market_context, request, weight=1.0):
+        return SparseRiskVector.from_items(
+            (factor, weight)
+            for factor in request.selected_factors
+        )
+
+
+def test_trade_aad_adapter_protocol_and_support_decision_payload():
+    factor = _curve_factor(1.0)
+    request = PortfolioAADRequest(selected_factors=(factor,))
+    adapter = _FakeAdapter()
+
+    decision = adapter.support_decision("bond", object(), object(), request)
+    payload = decision.to_payload()
+
+    assert isinstance(adapter, TradeAADAdapter)
+    assert json.loads(json.dumps(payload)) == payload
+    assert AADSupportDecision.from_payload(payload) == decision
+    assert adapter.vjp(object(), object(), request, weight=2.0)[factor] == pytest.approx(2.0)
+
+
+def test_default_unsupported_policy_never_includes_position_in_aad_risk():
+    factor = _curve_factor(5.0)
+    request = PortfolioAADRequest(selected_factors=(factor,))
+    policy = DefaultUnsupportedAADPolicy(include_value_when_priced=True)
+
+    position = policy.record(
+        position_name="unsupported",
+        instrument=object(),
+        reason="unsupported_instrument_type",
+        request=request,
+        priced_value_available=True,
+    )
+
+    assert position.position_name == "unsupported"
+    assert position.instrument_type == "object"
+    assert position.reason == "unsupported_instrument_type"
+    assert position.requested_factors == (factor,)
+    assert position.included_in_value is True
+    assert position.included_in_risk is False
+    assert position.fallback_method is None
