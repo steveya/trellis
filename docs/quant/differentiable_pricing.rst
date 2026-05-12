@@ -82,6 +82,7 @@ The checked support contract is intentionally explicit:
        ``trellis.book.portfolio_aad_curve_risk(...)`` and
        ``Session.risk_report(...)``
      - bounded to supported bond positions on a shared ``YieldCurve``;
+       factorized risk uses stable ``RiskFactorId`` coordinates, while
        unsupported positions are listed in metadata and excluded from the
        reverse-mode aggregate
    * - Flat volatility risk
@@ -152,7 +153,8 @@ keeping today's ``autograd`` boundary honest.
   ``resolved_derivative_method="autodiff_public_curve"`` recorded on the
   resulting analytics outputs
 - bounded book-level reverse mode for supported bond books on a shared
-  ``YieldCurve``, with unsupported positions excluded explicitly in metadata
+  ``YieldCurve``, with factorized sparse risk metadata and unsupported
+  positions excluded explicitly in metadata
 - rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
   matrix
 - flat-vol Vega extraction in the analytics layer
@@ -237,8 +239,48 @@ runtime reporting must not overstate.
      - bounded bond-book portfolio AAD route
      - ``portfolio_aad_vjp``
      - partial support: shared-curve bond books use a VJP-backed reverse-mode
-       aggregate, while unsupported positions are excluded and reported in
-       metadata
+       aggregate over canonical risk-factor IDs, while unsupported positions
+       are excluded and reported in metadata
+
+Bounded Portfolio-AAD Factor Payload
+------------------------------------
+
+The bounded book-level lane now exposes both its legacy tenor-keyed values and
+a typed factorized payload. ``portfolio_aad_curve_risk(...)`` still returns a
+``RiskMeasureOutput`` whose values are key-rate-duration-style tenor entries,
+but its metadata now also includes:
+
+- ``risk_factor_coordinates``: the discovered coordinate table for the shared
+  market object
+- ``sparse_risk_vector``: sensitivities keyed by canonical ``RiskFactorId``
+  payloads
+- ``portfolio_aad_result``: the serialized ``PortfolioAADResult`` containing
+  portfolio value, sparse risk, coordinates, unsupported positions, method
+  metadata, and diagnostics
+
+``RiskFactorId`` is the stable identity for a differentiable market or model
+coordinate. It records object type, object name, coordinate type, optional
+currency or issuer, sorted axes such as ``tenor_years``, and an optional
+provenance namespace. ``RiskFactorRegistry`` discovers supported
+``YieldCurve`` zero-rate nodes for the executable bond-book lane, and it can
+also describe credit-curve hazard nodes, flat/grid volatility nodes, and
+scalar model parameters as ``discovery_only`` coordinates for future adapters.
+
+``PortfolioAADRequest`` is the request-side support contract. A request may
+select a subset of factors, set the unsupported-position policy, and preserve
+whether unsupported values should be included when they can still be priced.
+``PortfolioAADResult.apply_request(...)`` filters the sparse risk vector and
+coordinate table without mutating the full result, while
+``missing_selected_factors(...)`` reports requested factors that were absent
+from the produced result. This keeps factor filtering explicit rather than
+silently inventing missing sensitivities.
+
+Unsupported products remain fail-closed for AAD risk. The default policy is to
+report ``UnsupportedAADPosition`` records with the position name, instrument
+type, reason, requested factors, value-inclusion flag, risk-inclusion flag, and
+fallback method. The current executable route excludes unsupported positions
+from AAD risk and does not hide a finite-difference fallback inside the AAD
+result.
 
 Runtime Derivative-Method Taxonomy
 ----------------------------------
@@ -427,8 +469,11 @@ Phase 2 Follow-On Program
 
 The completed public-contract work is now tracked separately from the next
 autograd phase. ``QUA-966`` is the follow-on umbrella for portfolio AAD and
-gradient governance; its repo mirror is
-``doc/plan/draft__autograd-phase-2-aad-and-gradient-governance.md``.
+gradient governance; ``QUA-1011`` delivered the first risk-factor identity,
+request/result, adapter-protocol, and verification substrate under that
+program. The repo mirrors are
+``doc/plan/draft__autograd-phase-2-aad-and-gradient-governance.md`` and
+``doc/plan/draft__broad-portfolio-aad-prerequisites.md``.
 
 That program is deliberately narrower than "differentiate everything". It is
 organized around five concrete follow-on slices:
@@ -445,9 +490,11 @@ organized around five concrete follow-on slices:
      - do not report ``jvp`` or ``portfolio_aad`` support until the wrappers
        compute checked values
    * - Portfolio AAD
-     - add the first book-level reverse-mode sensitivity substrate
+     - widen the checked factorized substrate beyond the current shared-curve
+       bond-book lane
      - bounded supported books only; unsupported routes must be excluded or
-       reported explicitly
+       reported explicitly, and ``portfolio_aad=False`` remains the backend
+       truth until broad support is executable
    * - Discontinuous Greeks
      - define smoothing, custom-adjoint, finite-difference, or unsupported
        policy for barriers, digitals, and exercise/event logic; the first

@@ -103,3 +103,11 @@ A ``Book`` holds a collection of instruments with notionals:
    result = s.price(book)
    print(f"Total MV: {result.total_mv:,.0f}")
    print(f"Book DV01: {result.book_dv01:,.0f}")
+
+``Session.risk_report(book)`` also includes a bounded ``portfolio_aad`` payload
+for supported bond books on a shared ``YieldCurve``. The legacy report values
+remain tenor-keyed, while ``portfolio_aad["metadata"]`` carries
+``risk_factor_coordinates``, ``sparse_risk_vector``, and a serialized
+``portfolio_aad_result`` keyed by canonical risk-factor IDs. Unsupported
+positions are listed explicitly and are excluded from AAD risk rather than
+silently bumped.

@@ -901,11 +901,20 @@ class TestRiskReport:
         book = Book({"10Y": _bond()})
 
         report = s.risk_report(book)
+        metadata = report["portfolio_aad"]["metadata"]
 
-        assert report["portfolio_aad"]["metadata"]["resolved_derivative_method"] == "portfolio_aad_vjp"
-        assert report["portfolio_aad"]["metadata"]["backend_operator"] == "vjp"
-        assert report["portfolio_aad"]["metadata"]["unsupported_position_count"] == 0
+        assert metadata["resolved_derivative_method"] == "portfolio_aad_vjp"
+        assert metadata["backend_operator"] == "vjp"
+        assert metadata["unsupported_position_count"] == 0
         assert set(report["portfolio_aad"]["values"]) == {1.0, 2.0, 5.0, 10.0}
+        assert len(metadata["risk_factor_coordinates"]) == len(curve.tenors)
+        assert len(metadata["sparse_risk_vector"]["values"]) == len(curve.tenors)
+        assert metadata["portfolio_aad_result"]["risk_vector"] == metadata["sparse_risk_vector"]
+        assert metadata["portfolio_aad_result"]["coordinates"] == metadata["risk_factor_coordinates"]
+        assert {
+            coordinate["factor_id"]["axes"]["tenor_years"]
+            for coordinate in metadata["risk_factor_coordinates"]
+        } == {"1", "2", "5", "10"}
 
 
 class TestSessionPricePayoff:

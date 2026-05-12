@@ -13,6 +13,8 @@ from trellis.book import (
     ScenarioResultCube,
     portfolio_aad_curve_risk,
 )
+from trellis.analytics.portfolio_aad import PortfolioAADResult
+from trellis.analytics.risk_factors import SparseRiskVector
 from trellis.core.types import PricingResult
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.pricer import price_instrument
@@ -226,6 +228,31 @@ class TestPortfolioAADCurveRisk:
         assert result.metadata["unsupported_position_count"] == 1
         assert result.metadata["unsupported_positions"][0]["position_name"] == "unsupported"
         assert result.metadata["unsupported_positions"][0]["reason"] == "unsupported_instrument_type"
+
+    def test_factorized_metadata_preserves_sparse_zero_rate_sensitivities(self):
+        curve = YieldCurve([1.0, 2.0, 5.0, 10.0], [0.04, 0.042, 0.045, 0.047])
+        book = Book({"A": _make_bond()}, notionals={"A": 1_000_000})
+
+        result = portfolio_aad_curve_risk(book, curve, date(2024, 11, 15))
+
+        sparse_vector = SparseRiskVector.from_payload(result.metadata["sparse_risk_vector"])
+        factorized_result = PortfolioAADResult.from_payload(result.metadata["portfolio_aad_result"])
+        factor_keys = [
+            entry["factor_key"]
+            for entry in result.metadata["risk_factor_coordinates"]
+        ]
+
+        assert sparse_vector == factorized_result.risk_vector
+        assert len(sparse_vector) == len(curve.tenors)
+        assert factor_keys == [
+            "type=curve|object=shared_curve|coordinate=zero_rate|"
+            f"tenor_years={tenor:g}|namespace=portfolio_aad"
+            for tenor in [1.0, 2.0, 5.0, 10.0]
+        ]
+        assert factorized_result.values_by_axis("tenor_years") == {
+            tenor: pytest.approx(value)
+            for tenor, value in zip(curve.tenors, result.metadata["gradient"])
+        }
 
     def test_portfolio_aad_fail_closed_metadata_mirrors_fallback_reason_into_warnings(self):
         curve = YieldCurve.flat(0.045)
