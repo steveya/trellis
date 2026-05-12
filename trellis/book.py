@@ -9,6 +9,8 @@ from datetime import date
 from typing import Any
 
 from trellis.analytics.derivative_methods import derivative_method_payload
+from trellis.analytics.portfolio_aad import PortfolioAADResult, UnsupportedAADPosition
+from trellis.analytics.risk_factors import RiskFactorRegistry, SparseRiskVector
 from trellis.analytics.result import RiskMeasureOutput
 from trellis.core.differentiable import get_backend_capabilities, get_numpy, vjp
 from trellis.core.types import Instrument, PricingResult
@@ -259,6 +261,20 @@ def _record_derivative_fallback_reason(metadata: dict[str, Any], reason: dict[st
     metadata["warnings"] = [*metadata.get("warnings", []), reason_payload]
 
 
+def _unsupported_aad_positions(exclusions: list[dict[str, Any]]) -> tuple[UnsupportedAADPosition, ...]:
+    """Convert legacy unsupported-position records into typed AAD records."""
+    return tuple(
+        UnsupportedAADPosition(
+            position_name=str(exclusion["position_name"]),
+            instrument_type=str(exclusion.get("instrument_type", "unknown")),
+            reason=str(exclusion["reason"]),
+            included_in_value=False,
+            included_in_risk=False,
+        )
+        for exclusion in exclusions
+    )
+
+
 def portfolio_aad_curve_risk(
     book: Book,
     curve: YieldCurve,
@@ -274,6 +290,13 @@ def portfolio_aad_curve_risk(
     capabilities = get_backend_capabilities()
     tenors = getattr(curve, "tenors", None)
     rates = getattr(curve, "rates", None)
+    factor_coordinates = ()
+    if tenors is not None and rates is not None:
+        factor_coordinates = RiskFactorRegistry().discover_yield_curve(
+            curve,
+            object_name="shared_curve",
+            provenance_namespace="portfolio_aad",
+        )
     support_status = "supported" if supported_positions and not exclusions else (
         "partial" if supported_positions else "unsupported"
     )
@@ -291,6 +314,11 @@ def portfolio_aad_curve_risk(
         book_position_count=len(book),
         support_status=support_status,
     )
+    if factor_coordinates:
+        base_metadata["risk_factor_coordinates"] = [
+            coordinate.to_payload()
+            for coordinate in factor_coordinates
+        ]
 
     if tenors is None or rates is None:
         _record_derivative_fallback_reason(base_metadata, {
@@ -331,6 +359,10 @@ def portfolio_aad_curve_risk(
 
     book_value = float(book_value)
     gradient = np.asarray(gradient, dtype=float)
+    sparse_risk_vector = SparseRiskVector.from_items(
+        (coordinate.factor_id, sensitivity)
+        for coordinate, sensitivity in zip(factor_coordinates, gradient)
+    )
     book_dv01 = -float(np.sum(gradient)) * 0.0001
     book_duration = 0.0 if book_value == 0.0 else -float(np.sum(gradient)) / book_value
     key_rate_durations: dict[float, float] = {}
@@ -347,6 +379,15 @@ def portfolio_aad_curve_risk(
         "unsupported_positions": deepcopy(exclusions),
         "supported_position_market_value": book_value,
     }
+    portfolio_aad_result = PortfolioAADResult(
+        portfolio_value=book_value,
+        risk_vector=sparse_risk_vector,
+        coordinates=factor_coordinates,
+        unsupported_positions=_unsupported_aad_positions(exclusions),
+        method_metadata=metadata,
+    )
+    metadata["sparse_risk_vector"] = sparse_risk_vector.to_payload()
+    metadata["portfolio_aad_result"] = portfolio_aad_result.to_payload()
     return RiskMeasureOutput(key_rate_durations, metadata=metadata)
 
 
