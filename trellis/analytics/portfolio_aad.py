@@ -1,0 +1,268 @@
+"""Typed portfolio-AAD request and result contracts."""
+
+from __future__ import annotations
+
+from collections.abc import Iterable, Mapping
+from dataclasses import dataclass, field
+from typing import Any
+
+from trellis.analytics.risk_factors import (
+    RiskFactorCoordinate,
+    RiskFactorId,
+    SparseRiskVector,
+)
+
+
+def _sorted_unique_factors(factors: Iterable[RiskFactorId]) -> tuple[RiskFactorId, ...]:
+    factor_map: dict[RiskFactorId, RiskFactorId] = {}
+    for factor in factors:
+        if not isinstance(factor, RiskFactorId):
+            raise TypeError("selected factors must be RiskFactorId instances")
+        factor_map[factor] = factor
+    return tuple(factor for _, factor in sorted(factor_map.items(), key=lambda item: item[0].key))
+
+
+def _copy_metadata(metadata: Mapping[str, Any] | None) -> dict[str, Any]:
+    return dict(metadata or {})
+
+
+def _copy_diagnostics(
+    diagnostics: Iterable[Mapping[str, Any]] | None,
+) -> tuple[dict[str, Any], ...]:
+    return tuple(dict(diagnostic) for diagnostic in (diagnostics or ()))
+
+
+def _axis_key(value: str) -> str | float:
+    try:
+        return float(value)
+    except ValueError:
+        return value
+
+
+@dataclass(frozen=True)
+class PortfolioAADRequest:
+    """Request policy for factorized portfolio AAD."""
+
+    selected_factors: tuple[RiskFactorId, ...] = field(default_factory=tuple)
+    unsupported_position_policy: str = "exclude_from_risk"
+    include_unsupported_value: bool = True
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "selected_factors",
+            _sorted_unique_factors(self.selected_factors),
+        )
+        object.__setattr__(
+            self,
+            "unsupported_position_policy",
+            str(self.unsupported_position_policy).strip() or "exclude_from_risk",
+        )
+        object.__setattr__(
+            self,
+            "include_unsupported_value",
+            bool(self.include_unsupported_value),
+        )
+
+    @property
+    def selects_all_factors(self) -> bool:
+        """Return whether the request leaves the full factor set selected."""
+        return not self.selected_factors
+
+    def filter_vector(self, vector: SparseRiskVector) -> SparseRiskVector:
+        """Apply this request's selected-factor policy to a sparse vector."""
+        if self.selects_all_factors:
+            return vector
+        return vector.filter(self.selected_factors)
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly request payload."""
+        return {
+            "selected_factors": "all"
+            if self.selects_all_factors
+            else [factor.to_payload() for factor in self.selected_factors],
+            "unsupported_position_policy": self.unsupported_position_policy,
+            "include_unsupported_value": self.include_unsupported_value,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> PortfolioAADRequest:
+        """Build a request from :meth:`to_payload` output."""
+        selected_payload = payload.get("selected_factors", "all")
+        if selected_payload == "all":
+            selected_factors: tuple[RiskFactorId, ...] = ()
+        else:
+            selected_factors = tuple(
+                RiskFactorId.from_payload(entry)
+                for entry in selected_payload
+            )
+        return cls(
+            selected_factors=selected_factors,
+            unsupported_position_policy=str(
+                payload.get("unsupported_position_policy", "exclude_from_risk")
+            ),
+            include_unsupported_value=bool(payload.get("include_unsupported_value", True)),
+        )
+
+
+@dataclass(frozen=True)
+class UnsupportedAADPosition:
+    """Typed record for a position excluded from portfolio-AAD risk."""
+
+    position_name: str
+    instrument_type: str
+    reason: str
+    requested_factors: tuple[RiskFactorId, ...] = field(default_factory=tuple)
+    included_in_value: bool = False
+    included_in_risk: bool = False
+    fallback_method: str | None = None
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "position_name", str(self.position_name))
+        object.__setattr__(self, "instrument_type", str(self.instrument_type))
+        object.__setattr__(self, "reason", str(self.reason))
+        object.__setattr__(
+            self,
+            "requested_factors",
+            _sorted_unique_factors(self.requested_factors),
+        )
+        object.__setattr__(self, "included_in_value", bool(self.included_in_value))
+        object.__setattr__(self, "included_in_risk", bool(self.included_in_risk))
+        if self.fallback_method is not None:
+            object.__setattr__(self, "fallback_method", str(self.fallback_method))
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly unsupported-position payload."""
+        return {
+            "position_name": self.position_name,
+            "instrument_type": self.instrument_type,
+            "reason": self.reason,
+            "requested_factors": [
+                factor.to_payload()
+                for factor in self.requested_factors
+            ],
+            "included_in_value": self.included_in_value,
+            "included_in_risk": self.included_in_risk,
+            "fallback_method": self.fallback_method,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> UnsupportedAADPosition:
+        """Build an unsupported-position record from :meth:`to_payload` output."""
+        return cls(
+            position_name=str(payload["position_name"]),
+            instrument_type=str(payload["instrument_type"]),
+            reason=str(payload["reason"]),
+            requested_factors=tuple(
+                RiskFactorId.from_payload(entry)
+                for entry in payload.get("requested_factors", ())
+            ),
+            included_in_value=bool(payload.get("included_in_value", False)),
+            included_in_risk=bool(payload.get("included_in_risk", False)),
+            fallback_method=(
+                None
+                if payload.get("fallback_method") is None
+                else str(payload.get("fallback_method"))
+            ),
+        )
+
+
+@dataclass(frozen=True)
+class PortfolioAADResult:
+    """Factorized portfolio-AAD result with metadata and diagnostics."""
+
+    portfolio_value: float | None = None
+    risk_vector: SparseRiskVector = field(default_factory=SparseRiskVector)
+    coordinates: tuple[RiskFactorCoordinate, ...] = field(default_factory=tuple)
+    unsupported_positions: tuple[UnsupportedAADPosition, ...] = field(default_factory=tuple)
+    method_metadata: Mapping[str, Any] = field(default_factory=dict, hash=False)
+    diagnostics: tuple[Mapping[str, Any], ...] = field(default_factory=tuple, hash=False)
+
+    def __post_init__(self) -> None:
+        if self.portfolio_value is not None:
+            object.__setattr__(self, "portfolio_value", float(self.portfolio_value))
+        object.__setattr__(self, "coordinates", tuple(self.coordinates))
+        object.__setattr__(self, "unsupported_positions", tuple(self.unsupported_positions))
+        object.__setattr__(self, "method_metadata", _copy_metadata(self.method_metadata))
+        object.__setattr__(self, "diagnostics", _copy_diagnostics(self.diagnostics))
+
+    @property
+    def support_status(self) -> str:
+        """Return the normalized derivative support status."""
+        return str(
+            self.method_metadata.get(
+                "derivative_method_support",
+                self.method_metadata.get("support_status", "unsupported"),
+            )
+        )
+
+    def apply_request(self, request: PortfolioAADRequest) -> PortfolioAADResult:
+        """Return this result filtered according to *request*."""
+        filtered_vector = request.filter_vector(self.risk_vector)
+        selected = set(filtered_vector)
+        filtered_coordinates = tuple(
+            coordinate
+            for coordinate in self.coordinates
+            if coordinate.factor_id in selected
+        )
+        return PortfolioAADResult(
+            portfolio_value=self.portfolio_value,
+            risk_vector=filtered_vector,
+            coordinates=filtered_coordinates,
+            unsupported_positions=self.unsupported_positions,
+            method_metadata=self.method_metadata,
+            diagnostics=self.diagnostics,
+        )
+
+    def values_by_axis(self, axis_name: str) -> dict[str | float, float]:
+        """Expose sparse values keyed by one factor-axis value for legacy views."""
+        values: dict[str | float, float] = {}
+        for factor_id, sensitivity in self.risk_vector.items():
+            axes = dict(factor_id.axes)
+            if axis_name not in axes:
+                continue
+            values[_axis_key(axes[axis_name])] = float(sensitivity)
+        return dict(sorted(values.items(), key=lambda item: str(item[0])))
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly result payload."""
+        return {
+            "portfolio_value": self.portfolio_value,
+            "risk_vector": self.risk_vector.to_payload(),
+            "coordinates": [
+                coordinate.to_payload()
+                for coordinate in self.coordinates
+            ],
+            "unsupported_positions": [
+                position.to_payload()
+                for position in self.unsupported_positions
+            ],
+            "metadata": dict(self.method_metadata),
+            "diagnostics": [dict(diagnostic) for diagnostic in self.diagnostics],
+            "support_status": self.support_status,
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> PortfolioAADResult:
+        """Build a result from :meth:`to_payload` output."""
+        return cls(
+            portfolio_value=payload.get("portfolio_value"),
+            risk_vector=SparseRiskVector.from_payload(payload.get("risk_vector") or {}),
+            coordinates=tuple(
+                RiskFactorCoordinate.from_payload(entry)
+                for entry in payload.get("coordinates", ())
+            ),
+            unsupported_positions=tuple(
+                UnsupportedAADPosition.from_payload(entry)
+                for entry in payload.get("unsupported_positions", ())
+            ),
+            method_metadata=payload.get("metadata") or {},
+            diagnostics=payload.get("diagnostics") or (),
+        )
+
+
+__all__ = [
+    "PortfolioAADRequest",
+    "PortfolioAADResult",
+    "UnsupportedAADPosition",
+]
