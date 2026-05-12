@@ -2,10 +2,24 @@
 
 ## Status
 
-Draft planning document. No Linear tickets have been created from this plan.
+Execution mirror for `QUA-1011`, the first AAD substrate epic under the broader
+portfolio-AAD program. The child tickets below were created from this plan and
+implemented as local commits on the epic branch before the final PR.
 
-This document describes the missing contracts and implementation work required
-before Trellis can claim broad portfolio AAD.
+| Ticket | Scope | Status |
+|---|---|---|
+| `QUA-1012` | Canonical `RiskFactorId`, `RiskFactorCoordinate`, and `SparseRiskVector` primitives | Done |
+| `QUA-1013` | Market-object coordinate registry for yield curves plus discovery-only credit, volatility, and model-parameter coordinates | Done |
+| `QUA-1014` | `PortfolioAADRequest`, `PortfolioAADResult`, and `UnsupportedAADPosition` support contract | Done |
+| `QUA-1015` | Migrate the existing shared-curve bond-book VJP lane onto factorized metadata | Done |
+| `QUA-1016` | Trade-AAD adapter protocol and default unsupported-position policy | Done |
+| `QUA-1017` | Aggregation, selected-factor filtering, and finite-difference verification | Done |
+| `QUA-1018` | Session reporting, docs, limitations, and closeout validation | Done |
+
+This document still describes the prerequisites for broad portfolio AAD. The
+first prerequisite, stable factor identity plus typed result contracts, is now
+implemented. Broad portfolio AAD remains open until product-family adapters,
+hybrid factor graphs, scenario/bucket aggregation, and scale validation exist.
 
 ## Current Shipped Boundary
 
@@ -13,6 +27,8 @@ Trellis currently has a bounded book-level reverse-mode lane:
 
 - `trellis.book.portfolio_aad_curve_risk(...)`
 - supported bond positions on a shared `YieldCurve`
+- canonical `RiskFactorId` coordinates and sparse risk vectors in metadata
+- typed `PortfolioAADRequest` / `PortfolioAADResult` payloads
 - unsupported positions excluded and reported in metadata
 - runtime reporting integrated through the derivative-method taxonomy
 - backend VJP support is checked and executable
@@ -26,7 +42,7 @@ products, or a full risk aggregation graph.
 Broad portfolio AAD cannot be built until Trellis has a unified risk factor
 identity and coordinate registry.
 
-The missing prerequisite is:
+The first missing prerequisite is now implemented:
 
 `RiskFactorRegistry`: a stable mapping from market objects and model
 parameters to differentiable coordinates, factor IDs, aggregation buckets, and
@@ -119,6 +135,10 @@ Required core objects:
 - `PortfolioAADResult`: portfolio value, sparse risk vector, unsupported
   positions, method metadata, diagnostics
 - `RiskAggregationMap`: maps low-level factors to reporting buckets
+
+`QUA-1011` delivered every object above except `RiskAggregationMap`, which
+remains a follow-on once multiple product families and reporting bucket maps
+share the same low-level factor graph.
 
 The first broad architecture should be adapter-based:
 
@@ -240,6 +260,11 @@ Deliverables:
 - stable ID tests
 - `MarketState` factor discovery tests
 
+Status: delivered in `QUA-1012` and `QUA-1013` for canonical identity,
+sparse vectors, supported yield-curve nodes, and discovery-only credit,
+volatility, and scalar model-parameter coordinates. Scalar correlation
+coordinates remain part of the hybrid-factor follow-on.
+
 ### Phase 2: Portfolio AAD Request And Result Schema
 
 Define public request/result dataclasses and metadata conventions. Keep
@@ -252,6 +277,11 @@ Deliverables:
 - unsupported-position schema
 - derivative-method payload integration
 
+Status: delivered in `QUA-1014`, `QUA-1015`, and `QUA-1018`. The existing
+tenor-keyed result remains compatible, and the metadata now carries
+`risk_factor_coordinates`, `sparse_risk_vector`, and a serialized
+`portfolio_aad_result`.
+
 ### Phase 3: Adapter Migration For Existing Bond Lane
 
 Move the current supported bond-book lane behind the adapter interface without
@@ -263,10 +293,17 @@ Deliverables:
 - risk report compatibility tests
 - finite-difference comparison
 
+Status: partially delivered. `QUA-1016` added the protocol and unsupported
+policy, while `QUA-1015` migrated the current bond-book output to the factor
+registry. A concrete route adapter object that owns the existing bond lane is
+still a follow-on before broad product-family expansion.
+
 ### Phase 4: Second Product Family
 
 Add one new product family with a small smooth book. A good first target is a
 vanilla option book on a shared flat-vol or grid-vol surface.
+
+Status: not started.
 
 Deliverables:
 
@@ -278,6 +315,9 @@ Deliverables:
 
 Expose broad AAD through `Session.risk_report(...)` only for supported books.
 Add latency and coverage reporting.
+
+Status: partially delivered for session reporting of the existing bounded
+bond-book lane. Broad runtime exposure and latency benchmarking remain open.
 
 Deliverables:
 
