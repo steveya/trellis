@@ -682,8 +682,9 @@ class RiskFactorRegistry:
         currency: str | None = None,
         object_path: str = "",
         provenance_namespace: str | None = None,
+        support_status: str = "discovery_only",
     ) -> tuple[RiskFactorCoordinate, ...]:
-        """Return a discovery-only scalar flat-vol coordinate."""
+        """Return a scalar flat-vol coordinate."""
         if not hasattr(surface, "vol"):
             raise UnsupportedRiskFactorObject(surface, reason="flat_vol_unavailable")
         return (
@@ -699,7 +700,7 @@ class RiskFactorRegistry:
                 display_name=f"{object_name} flat volatility",
                 unit="volatility",
                 transform="identity",
-                support_status="discovery_only",
+                support_status=support_status,
                 reporting_buckets={
                     "risk_class": "volatility",
                     "currency": currency or "",

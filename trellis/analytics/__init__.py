@@ -9,6 +9,8 @@ from trellis.analytics.portfolio_aad import (
     PortfolioAADResult,
     TradeAADAdapter,
     UnsupportedAADPosition,
+    VanillaEquityOptionVolAADAdapter,
+    VanillaEquityOptionVolAADMarketContext,
 )
 from trellis.analytics.risk_factors import (
     RiskAggregationMap,
@@ -34,4 +36,6 @@ __all__ = [
     "TradeAADAdapter",
     "UnsupportedAADPosition",
     "UnsupportedRiskFactorObject",
+    "VanillaEquityOptionVolAADAdapter",
+    "VanillaEquityOptionVolAADMarketContext",
 ]
