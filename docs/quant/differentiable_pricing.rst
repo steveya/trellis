@@ -114,10 +114,12 @@ the executable operator truth table ``grad=True``, ``jacobian=True``,
 ``jvp=False``, and ``portfolio_aad=False``. The ``vjp`` wrapper returns the
 primal value plus a pullback closure for vector-valued smooth functions, and
 the bounded book-level reverse-mode lanes now build on that surface for
-supported curve-linked bond books and flat-vol vanilla option books.
-The capability flag stays
-``portfolio_aad=False`` because the supported contract is still book-specific
-rather than a claim of universal portfolio-AAD coverage.
+supported curve-linked bond books, flat/grid-vol vanilla option books,
+smooth-interior early-exercise options, arithmetic-Asian path summaries,
+scalar quanto-correlation books, and explicitly configured mixed supported
+books. The capability flag stays ``portfolio_aad=False`` because the supported
+contract is still book-specific rather than a claim of universal portfolio-AAD
+coverage.
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
 scalar-objective functions on smooth-interior regions. It is not a claim about
 branch singularities, discontinuous payoffs, or vector-valued objectives. For
@@ -179,6 +181,9 @@ keeping today's ``autograd`` boundary honest.
   scalar underlier/FX correlation through
   ``trellis.book.portfolio_aad_quanto_correlation_risk(...)``, with canonical
   ``model_parameter`` / ``correlation`` risk-factor coordinates
+- bounded mixed supported-book reverse mode through
+  ``trellis.book.portfolio_aad_supported_book_risk(...)`` for explicitly
+  configured combinations of the supported AAD lanes
 - rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
   matrix
 - flat-vol Vega extraction in the analytics layer
