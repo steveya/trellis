@@ -280,6 +280,17 @@ provenance namespace. ``RiskFactorRegistry`` discovers supported
 also describe credit-curve hazard nodes, grid volatility nodes, and scalar
 model parameters as ``discovery_only`` coordinates for future adapters.
 
+``trellis.analytics.admit_portfolio_aad_lane(...)`` is the semantic admission
+gate used before widening those adapters. It classifies ``ContractIR`` and
+``DynamicContractIR`` shapes into supported, planned, or unsupported
+portfolio-AAD lanes, and records the required market-coordinate family before a
+pricing tape is built. Today terminal European vanilla option ``ContractIR``
+shapes over scalar flat vol are admitted as supported, grid-vol vanilla,
+early-exercise/control, smooth path-dependent, and hybrid/correlation shapes
+are recorded as planned fail-closed lanes, and discontinuous event monitors are
+reported as unsupported. Admission metadata is a support decision only; it is
+not itself a pricing implementation.
+
 ``portfolio_aad_equity_option_vol_risk(...)`` returns the typed
 ``PortfolioAADResult`` directly. It supports smooth European call/put specs
 that expose ``spot``, ``strike``, ``expiry_date``, ``option_type``, optional
