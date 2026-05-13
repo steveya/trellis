@@ -1,12 +1,15 @@
 """Tests for typed portfolio-AAD request and result contracts."""
 
 import json
+from datetime import date
 
 import pytest
 
 from trellis.analytics.derivative_methods import derivative_method_payload
 from trellis.analytics.portfolio_aad import (
     AADSupportDecision,
+    BondCurveAADAdapter,
+    BondCurveAADMarketContext,
     DefaultUnsupportedAADPolicy,
     PortfolioAADRequest,
     PortfolioAADResult,
@@ -18,6 +21,8 @@ from trellis.analytics.risk_factors import (
     RiskFactorId,
     SparseRiskVector,
 )
+from trellis.curves.yield_curve import YieldCurve
+from trellis.instruments.bond import Bond
 
 
 def _curve_factor(tenor: float) -> RiskFactorId:
@@ -192,3 +197,68 @@ def test_default_unsupported_policy_never_includes_position_in_aad_risk():
     assert position.included_in_value is True
     assert position.included_in_risk is False
     assert position.fallback_method is None
+
+
+def test_bond_curve_aad_adapter_reports_support_and_dependencies():
+    curve = YieldCurve([1.0, 2.0, 5.0], [0.04, 0.042, 0.045])
+    context = BondCurveAADMarketContext(
+        curve=curve,
+        settlement=date(2024, 11, 15),
+        curve_name="usd_ois",
+        currency="USD",
+    )
+    adapter = BondCurveAADAdapter()
+    bond = Bond(
+        face=100.0,
+        coupon=0.05,
+        maturity_date=date(2030, 11, 15),
+        maturity=6,
+        frequency=2,
+    )
+
+    decision = adapter.support_decision("bond", bond, context, PortfolioAADRequest())
+    dependencies = adapter.factor_dependencies(bond, context, PortfolioAADRequest())
+
+    assert decision.supported is True
+    assert decision.reason == "supported_bond_curve_aad"
+    assert dependencies == decision.factor_dependencies
+    assert [factor.key for factor in dependencies] == [
+        "type=curve|object=usd_ois|coordinate=zero_rate|currency=USD|"
+        "tenor_years=1|namespace=portfolio_aad",
+        "type=curve|object=usd_ois|coordinate=zero_rate|currency=USD|"
+        "tenor_years=2|namespace=portfolio_aad",
+        "type=curve|object=usd_ois|coordinate=zero_rate|currency=USD|"
+        "tenor_years=5|namespace=portfolio_aad",
+    ]
+
+
+def test_bond_curve_aad_adapter_vjp_returns_sparse_curve_risk():
+    curve = YieldCurve([1.0, 2.0, 5.0], [0.04, 0.042, 0.045])
+    context = BondCurveAADMarketContext(curve=curve, settlement=date(2024, 11, 15))
+    adapter = BondCurveAADAdapter()
+    bond = Bond(
+        face=100.0,
+        coupon=0.05,
+        maturity_date=date(2030, 11, 15),
+        maturity=6,
+        frequency=2,
+    )
+
+    vector = adapter.vjp(bond, context, PortfolioAADRequest(), weight=1_000_000)
+
+    assert len(vector) == len(curve.tenors)
+    assert all(factor.object_type == "curve" for factor in vector)
+    assert any(abs(value) > 0.0 for _, value in vector.items())
+
+
+def test_bond_curve_aad_adapter_rejects_unsupported_inputs():
+    adapter = BondCurveAADAdapter()
+    context = BondCurveAADMarketContext(
+        curve=object(),
+        settlement=date(2024, 11, 15),
+    )
+
+    decision = adapter.support_decision("not_bond", object(), context, PortfolioAADRequest())
+
+    assert decision.supported is False
+    assert decision.reason == "unsupported_instrument_type"

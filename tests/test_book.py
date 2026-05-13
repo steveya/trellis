@@ -253,6 +253,16 @@ class TestPortfolioAADCurveRisk:
             tenor: pytest.approx(value)
             for tenor, value in zip(curve.tenors, result.metadata["gradient"])
         }
+        assert result.metadata["risk_bucket_totals"]["bucket_names"] == [
+            "risk_class",
+            "currency",
+            "tenor",
+        ]
+        assert len(result.metadata["risk_bucket_totals"]["totals"]) == len(curve.tenors)
+        assert {
+            entry["buckets"]["risk_class"]
+            for entry in result.metadata["risk_bucket_totals"]["totals"]
+        } == {"rates"}
 
     def test_portfolio_aad_fail_closed_metadata_mirrors_fallback_reason_into_warnings(self):
         curve = YieldCurve.flat(0.045)

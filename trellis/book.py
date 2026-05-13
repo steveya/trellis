@@ -9,8 +9,13 @@ from datetime import date
 from typing import Any
 
 from trellis.analytics.derivative_methods import derivative_method_payload
-from trellis.analytics.portfolio_aad import PortfolioAADResult, UnsupportedAADPosition
-from trellis.analytics.risk_factors import RiskFactorRegistry, SparseRiskVector
+from trellis.analytics.portfolio_aad import (
+    BondCurveAADAdapter,
+    BondCurveAADMarketContext,
+    PortfolioAADResult,
+    UnsupportedAADPosition,
+)
+from trellis.analytics.risk_factors import RiskAggregationMap, SparseRiskVector
 from trellis.analytics.result import RiskMeasureOutput
 from trellis.core.differentiable import get_backend_capabilities, get_numpy, vjp
 from trellis.core.types import Instrument, PricingResult
@@ -291,12 +296,15 @@ def portfolio_aad_curve_risk(
     tenors = getattr(curve, "tenors", None)
     rates = getattr(curve, "rates", None)
     factor_coordinates = ()
+    aad_adapter = BondCurveAADAdapter()
+    aad_context = BondCurveAADMarketContext(
+        curve=curve,
+        settlement=settlement,
+        curve_name="shared_curve",
+        provenance_namespace="portfolio_aad",
+    )
     if tenors is not None and rates is not None:
-        factor_coordinates = RiskFactorRegistry().discover_yield_curve(
-            curve,
-            object_name="shared_curve",
-            provenance_namespace="portfolio_aad",
-        )
+        factor_coordinates = aad_context.coordinates()
     support_status = "supported" if supported_positions and not exclusions else (
         "partial" if supported_positions else "unsupported"
     )
@@ -313,6 +321,7 @@ def portfolio_aad_curve_risk(
         unsupported_position_count=len(exclusions),
         book_position_count=len(book),
         support_status=support_status,
+        aad_adapter=type(aad_adapter).__name__,
     )
     if factor_coordinates:
         base_metadata["risk_factor_coordinates"] = [
@@ -363,6 +372,11 @@ def portfolio_aad_curve_risk(
         (coordinate.factor_id, sensitivity)
         for coordinate, sensitivity in zip(factor_coordinates, gradient)
     )
+    risk_aggregation_map = RiskAggregationMap.from_coordinates(
+        factor_coordinates,
+        bucket_names=("risk_class", "currency", "tenor"),
+        default_bucket="all",
+    )
     book_dv01 = -float(np.sum(gradient)) * 0.0001
     book_duration = 0.0 if book_value == 0.0 else -float(np.sum(gradient)) / book_value
     key_rate_durations: dict[float, float] = {}
@@ -378,6 +392,8 @@ def portfolio_aad_curve_risk(
         "gradient": [float(value) for value in gradient],
         "unsupported_positions": deepcopy(exclusions),
         "supported_position_market_value": book_value,
+        "risk_aggregation_map": risk_aggregation_map.to_payload(),
+        "risk_bucket_totals": risk_aggregation_map.aggregate_payload(sparse_risk_vector),
     }
     portfolio_aad_result = PortfolioAADResult(
         portfolio_value=book_value,

@@ -2,6 +2,8 @@
 
 from trellis.analytics.portfolio_aad import (
     AADSupportDecision,
+    BondCurveAADAdapter,
+    BondCurveAADMarketContext,
     DefaultUnsupportedAADPolicy,
     PortfolioAADRequest,
     PortfolioAADResult,
@@ -19,6 +21,8 @@ from trellis.analytics.risk_factors import (
 
 __all__ = [
     "AADSupportDecision",
+    "BondCurveAADAdapter",
+    "BondCurveAADMarketContext",
     "DefaultUnsupportedAADPolicy",
     "PortfolioAADRequest",
     "PortfolioAADResult",

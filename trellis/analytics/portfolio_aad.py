@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from datetime import date
 from typing import Any, Protocol, runtime_checkable
 
 from trellis.analytics.risk_factors import (
     RiskFactorCoordinate,
     RiskFactorId,
+    RiskFactorRegistry,
     SparseRiskVector,
 )
 
@@ -158,6 +160,127 @@ class DefaultUnsupportedAADPolicy:
             included_in_risk=False,
             fallback_method=None,
         )
+
+
+@dataclass(frozen=True)
+class BondCurveAADMarketContext:
+    """Market context for the bounded shared-curve bond AAD lane."""
+
+    curve: object
+    settlement: date
+    curve_name: str = "shared_curve"
+    currency: str | None = None
+    provenance_namespace: str | None = "portfolio_aad"
+    object_path: str = ""
+
+    def coordinates(self) -> tuple[RiskFactorCoordinate, ...]:
+        """Return canonical curve coordinates for this context."""
+        return RiskFactorRegistry().discover_yield_curve(
+            self.curve,
+            object_name=self.curve_name,
+            currency=self.currency,
+            object_path=self.object_path,
+            provenance_namespace=self.provenance_namespace,
+        )
+
+
+@dataclass(frozen=True)
+class BondCurveAADAdapter:
+    """Concrete adapter for fixed-rate bond risk over one shared yield curve."""
+
+    def support_decision(
+        self,
+        position_name: str,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> AADSupportDecision:
+        """Return whether this adapter supports a bond under *market_context*."""
+        from trellis.instruments.bond import Bond
+
+        if not isinstance(instrument, Bond):
+            return AADSupportDecision(False, "unsupported_instrument_type")
+        if instrument.maturity_date is None:
+            return AADSupportDecision(False, "bond_maturity_date_required")
+        try:
+            dependencies = self.factor_dependencies(instrument, market_context, request)
+        except Exception as exc:
+            return AADSupportDecision(
+                False,
+                "yield_curve_nodes_unavailable",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                ),
+            )
+        return AADSupportDecision(
+            True,
+            "supported_bond_curve_aad",
+            factor_dependencies=dependencies,
+        )
+
+    def factor_dependencies(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> tuple[RiskFactorId, ...]:
+        """Return shared-curve zero-rate factors for a supported bond."""
+        context = self._context(market_context)
+        return tuple(coordinate.factor_id for coordinate in context.coordinates())
+
+    def value(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> float:
+        """Return the bond value for this adapter's market context."""
+        context = self._context(market_context)
+        return float(instrument.price(context.curve, context.settlement))
+
+    def vjp(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+        weight: float = 1.0,
+    ) -> SparseRiskVector:
+        """Return the sparse VJP vector for one bond position."""
+        from trellis.core.differentiable import get_numpy, vjp
+
+        context = self._context(market_context)
+        curve = context.curve
+        coordinates = context.coordinates()
+        tenors = getattr(curve, "tenors", None)
+        rates = getattr(curve, "rates", None)
+        if tenors is None or rates is None:
+            raise ValueError("bond curve AAD requires curve tenors and rates")
+        np = get_numpy()
+        curve_cls = type(curve)
+        tenors_arr = np.asarray(tenors, dtype=float)
+        rates_arr = np.asarray(rates, dtype=float)
+
+        def value_from_rates(rates_vec):
+            traced_curve = curve_cls(tenors_arr, rates_vec)
+            return instrument.price(traced_curve, context.settlement)
+
+        _value, pullback = vjp(value_from_rates, rates_arr)
+        gradient = np.asarray(pullback(float(weight)), dtype=float)
+        vector = SparseRiskVector.from_items(
+            (coordinate.factor_id, sensitivity)
+            for coordinate, sensitivity in zip(coordinates, gradient)
+        )
+        return request.filter_vector(vector)
+
+    @staticmethod
+    def _context(market_context: object) -> BondCurveAADMarketContext:
+        if not isinstance(market_context, BondCurveAADMarketContext):
+            raise TypeError("BondCurveAADAdapter requires BondCurveAADMarketContext")
+        return market_context
 
 
 @dataclass(frozen=True)
@@ -396,6 +519,8 @@ class PortfolioAADResult:
 
 __all__ = [
     "AADSupportDecision",
+    "BondCurveAADAdapter",
+    "BondCurveAADMarketContext",
     "DefaultUnsupportedAADPolicy",
     "PortfolioAADRequest",
     "PortfolioAADResult",
