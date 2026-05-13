@@ -7,6 +7,7 @@ import pytest
 from trellis.analytics.risk_factors import (
     RiskFactorCoordinate,
     RiskFactorId,
+    RiskAggregationMap,
     RiskFactorRegistry,
     SparseRiskVector,
     UnsupportedRiskFactorObject,
@@ -120,6 +121,89 @@ def test_sparse_risk_vector_payload_round_trips_and_buckets():
     assert vector.bucket_totals(coordinates, "tenor") == {
         "1Y": pytest.approx(1.5),
         "5Y": pytest.approx(5.0),
+    }
+
+
+def test_risk_aggregation_map_aggregates_by_multiple_coordinate_buckets():
+    one_year = _curve_factor(1.0)
+    five_year = _curve_factor(5.0)
+    spx_vol = RiskFactorId(
+        object_type="vol_surface",
+        coordinate_type="flat_vol",
+        object_name="spx_flat",
+        currency="USD",
+    )
+    vector = SparseRiskVector.from_items(
+        [
+            (five_year, 5.0),
+            (one_year, 1.5),
+            (spx_vol, 2.0),
+            (five_year, -1.0),
+        ]
+    )
+    coordinates = [
+        RiskFactorCoordinate(
+            factor_id=one_year,
+            reporting_buckets={
+                "risk_class": "rates",
+                "currency": "USD",
+                "tenor": "1Y",
+            },
+        ),
+        RiskFactorCoordinate(
+            factor_id=five_year,
+            reporting_buckets={
+                "risk_class": "rates",
+                "currency": "USD",
+                "tenor": "5Y",
+            },
+        ),
+        RiskFactorCoordinate(
+            factor_id=spx_vol,
+            reporting_buckets={
+                "risk_class": "volatility",
+                "currency": "USD",
+            },
+        ),
+    ]
+
+    aggregation = RiskAggregationMap.from_coordinates(
+        coordinates,
+        bucket_names=("risk_class", "currency", "tenor"),
+        default_bucket="all",
+    )
+    totals = aggregation.aggregate(vector)
+
+    assert totals[(("risk_class", "rates"), ("currency", "USD"), ("tenor", "1Y"))] == pytest.approx(1.5)
+    assert totals[(("risk_class", "rates"), ("currency", "USD"), ("tenor", "5Y"))] == pytest.approx(4.0)
+    assert totals[(("risk_class", "volatility"), ("currency", "USD"), ("tenor", "all"))] == pytest.approx(2.0)
+
+
+def test_risk_aggregation_map_payload_round_trips_and_reports_totals():
+    one_year = _curve_factor(1.0)
+    coordinate = RiskFactorCoordinate(
+        factor_id=one_year,
+        reporting_buckets={"risk_class": "rates", "currency": "USD"},
+    )
+    aggregation = RiskAggregationMap.from_coordinates(
+        [coordinate],
+        bucket_names=("risk_class", "currency"),
+    )
+    vector = SparseRiskVector.from_items([(one_year, 3.0)])
+
+    payload = aggregation.to_payload()
+    totals_payload = aggregation.aggregate_payload(vector)
+
+    assert json.loads(json.dumps(payload)) == payload
+    assert RiskAggregationMap.from_payload(payload) == aggregation
+    assert totals_payload == {
+        "bucket_names": ["risk_class", "currency"],
+        "totals": [
+            {
+                "buckets": {"risk_class": "rates", "currency": "USD"},
+                "sensitivity": pytest.approx(3.0),
+            }
+        ],
     }
 
 

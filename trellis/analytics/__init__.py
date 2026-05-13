@@ -9,6 +9,7 @@ from trellis.analytics.portfolio_aad import (
     UnsupportedAADPosition,
 )
 from trellis.analytics.risk_factors import (
+    RiskAggregationMap,
     RiskFactorCoordinate,
     RiskFactorId,
     RiskFactorRegistry,
@@ -21,6 +22,7 @@ __all__ = [
     "DefaultUnsupportedAADPolicy",
     "PortfolioAADRequest",
     "PortfolioAADResult",
+    "RiskAggregationMap",
     "RiskFactorCoordinate",
     "RiskFactorId",
     "RiskFactorRegistry",

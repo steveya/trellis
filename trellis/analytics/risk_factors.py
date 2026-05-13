@@ -312,6 +312,154 @@ class SparseRiskVector(Mapping[RiskFactorId, float]):
         return dict(sorted(totals.items()))
 
 
+BucketKey = tuple[tuple[str, str], ...]
+
+
+def _normalize_bucket_names(bucket_names: Iterable[object]) -> tuple[str, ...]:
+    normalized = tuple(_clean_required(name, "bucket name") for name in bucket_names)
+    if not normalized:
+        raise ValueError("bucket_names must be non-empty")
+    if len(set(normalized)) != len(normalized):
+        raise ValueError("bucket_names must be unique")
+    return normalized
+
+
+def _bucket_key(
+    buckets: Mapping[str, object],
+    bucket_names: tuple[str, ...],
+    *,
+    default_bucket: str,
+) -> BucketKey:
+    return tuple(
+        (name, _normalize_axis_value(buckets.get(name, default_bucket)) or default_bucket)
+        for name in bucket_names
+    )
+
+
+@dataclass(frozen=True)
+class RiskAggregationMap:
+    """Reusable map from low-level factors to reporting bucket keys."""
+
+    bucket_names: tuple[str, ...]
+    factor_buckets: tuple[tuple[RiskFactorId, BucketKey], ...] = field(default_factory=tuple)
+    default_bucket: str = "unbucketed"
+
+    def __post_init__(self) -> None:
+        bucket_names = _normalize_bucket_names(self.bucket_names)
+        default_bucket = _clean_required(self.default_bucket, "default_bucket")
+        normalized_items: dict[RiskFactorId, BucketKey] = {}
+        for factor_id, bucket_key in self.factor_buckets:
+            if not isinstance(factor_id, RiskFactorId):
+                raise TypeError("RiskAggregationMap keys must be RiskFactorId instances")
+            normalized_key = _bucket_key(
+                dict(bucket_key),
+                bucket_names,
+                default_bucket=default_bucket,
+            )
+            existing = normalized_items.get(factor_id)
+            if existing is not None and existing != normalized_key:
+                raise ValueError(f"conflicting bucket key for factor {factor_id.key!r}")
+            normalized_items[factor_id] = normalized_key
+        object.__setattr__(self, "bucket_names", bucket_names)
+        object.__setattr__(self, "default_bucket", default_bucket)
+        object.__setattr__(
+            self,
+            "factor_buckets",
+            tuple(
+                (factor_id, bucket_key)
+                for factor_id, bucket_key in sorted(
+                    normalized_items.items(),
+                    key=lambda item: item[0].key,
+                )
+            ),
+        )
+
+    @classmethod
+    def from_coordinates(
+        cls,
+        coordinates: Iterable[RiskFactorCoordinate],
+        *,
+        bucket_names: Iterable[object],
+        default_bucket: str = "unbucketed",
+    ) -> RiskAggregationMap:
+        """Build an aggregation map from coordinate reporting buckets."""
+        names = _normalize_bucket_names(bucket_names)
+        default = _clean_required(default_bucket, "default_bucket")
+        return cls(
+            bucket_names=names,
+            factor_buckets=tuple(
+                (
+                    coordinate.factor_id,
+                    _bucket_key(
+                        dict(coordinate.reporting_buckets),
+                        names,
+                        default_bucket=default,
+                    ),
+                )
+                for coordinate in coordinates
+            ),
+            default_bucket=default,
+        )
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> RiskAggregationMap:
+        """Build an aggregation map from :meth:`to_payload` output."""
+        return cls(
+            bucket_names=tuple(payload.get("bucket_names", ())),
+            factor_buckets=tuple(
+                (
+                    RiskFactorId.from_payload(entry["factor_id"]),
+                    tuple(sorted(entry.get("buckets", {}).items())),
+                )
+                for entry in payload.get("factor_buckets", ())
+            ),
+            default_bucket=str(payload.get("default_bucket", "unbucketed")),
+        )
+
+    def bucket_for(self, factor_id: RiskFactorId) -> BucketKey:
+        """Return the reporting bucket key for *factor_id*."""
+        for candidate, bucket_key in self.factor_buckets:
+            if candidate == factor_id:
+                return bucket_key
+        return _bucket_key({}, self.bucket_names, default_bucket=self.default_bucket)
+
+    def aggregate(self, vector: SparseRiskVector) -> dict[BucketKey, float]:
+        """Aggregate sparse risk values by this map's bucket keys."""
+        totals: dict[BucketKey, float] = {}
+        for factor_id, sensitivity in vector.items():
+            bucket_key = self.bucket_for(factor_id)
+            totals[bucket_key] = totals.get(bucket_key, 0.0) + float(sensitivity)
+        return dict(sorted(totals.items(), key=lambda item: item[0]))
+
+    def aggregate_payload(self, vector: SparseRiskVector) -> dict[str, Any]:
+        """Return JSON-friendly bucket totals for *vector*."""
+        return {
+            "bucket_names": list(self.bucket_names),
+            "totals": [
+                {
+                    "buckets": dict(bucket_key),
+                    "sensitivity": float(sensitivity),
+                }
+                for bucket_key, sensitivity in self.aggregate(vector).items()
+            ],
+        }
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly aggregation-map payload."""
+        return {
+            "bucket_names": list(self.bucket_names),
+            "default_bucket": self.default_bucket,
+            "factor_buckets": [
+                {
+                    "factor_id": factor_id.to_payload(),
+                    "factor_key": factor_id.key,
+                    "buckets": dict(bucket_key),
+                }
+                for factor_id, bucket_key in self.factor_buckets
+            ],
+        }
+
+
 class UnsupportedRiskFactorObject(ValueError):
     """Raised when registry discovery is asked to inspect an unsupported object."""
 
@@ -650,6 +798,7 @@ class RiskFactorRegistry:
 
 
 __all__ = [
+    "RiskAggregationMap",
     "RiskFactorCoordinate",
     "RiskFactorId",
     "RiskFactorRegistry",
