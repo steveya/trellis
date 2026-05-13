@@ -6,6 +6,8 @@ Trellis promotes autograd only where it has a clear payoff:
 - closed-form pricing kernels that currently drive real Greeks and calibration
 - cap/floor strips and FX/quanto analytics built on top of those kernels
 - flat-vol Vega extraction in ``Session.analyze()``
+- bounded book-level reverse-mode risk for supported bond books and flat-vol
+  vanilla equity option books
 - curve bootstrap calibration, where the repricing Jacobian is now traced from
   the public repricing map instead of approximated inside the solver
 - SABR calibration, where a gradient is more useful than repeated finite-difference sweeps
@@ -80,11 +82,14 @@ The checked support contract is intentionally explicit:
    * - Book-level reverse mode
      - reverse-mode curve risk for supported bond books through
        ``trellis.book.portfolio_aad_curve_risk(...)`` and
-       ``Session.risk_report(...)``
-     - bounded to supported bond positions on a shared ``YieldCurve``;
-       factorized risk uses stable ``RiskFactorId`` coordinates, while
-       unsupported positions are listed in metadata and excluded from the
-       reverse-mode aggregate
+       ``Session.risk_report(...)``; reverse-mode flat-vol risk for bounded
+       vanilla equity option books through
+       ``trellis.book.portfolio_aad_equity_option_vol_risk(...)``
+     - bounded to supported bond positions on a shared ``YieldCurve`` and
+       European call/put option specs on one shared ``FlatVol``; factorized
+       risk uses stable ``RiskFactorId`` coordinates and ``RiskAggregationMap``
+       bucket totals, while unsupported positions are listed in metadata and
+       excluded from the reverse-mode aggregate
    * - Flat volatility risk
      - scalar vega through ``autodiff_flat_vol``
      - flat surfaces only
@@ -107,8 +112,9 @@ the executable operator truth table ``grad=True``, ``jacobian=True``,
 ``hessian=True``, ``vjp=True``, ``hessian_vector_product=True``,
 ``jvp=False``, and ``portfolio_aad=False``. The ``vjp`` wrapper returns the
 primal value plus a pullback closure for vector-valued smooth functions, and
-the first bounded book-level reverse-mode lane now builds on that surface for
-supported curve-linked bond books. The capability flag stays
+the bounded book-level reverse-mode lanes now build on that surface for
+supported curve-linked bond books and flat-vol vanilla option books.
+The capability flag stays
 ``portfolio_aad=False`` because the supported contract is still book-specific
 rather than a claim of universal portfolio-AAD coverage.
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
@@ -155,6 +161,10 @@ keeping today's ``autograd`` boundary honest.
 - bounded book-level reverse mode for supported bond books on a shared
   ``YieldCurve``, with factorized sparse risk metadata and unsupported
   positions excluded explicitly in metadata
+- bounded book-level reverse mode for European vanilla equity call/put books on
+  a shared ``FlatVol`` through
+  ``trellis.book.portfolio_aad_equity_option_vol_risk(...)``, verified against
+  independent central finite-difference bump/reprice
 - rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
   matrix
 - flat-vol Vega extraction in the analytics layer
@@ -236,19 +246,20 @@ runtime reporting must not overstate.
      - unsupported for pathwise AD; the governed fallback is
        ``finite_difference_bump_reprice`` with fail-closed policy metadata
    * - ``portfolio_aad_vjp``
-     - bounded bond-book portfolio AAD route
+     - bounded bond-book and flat-vol option-book portfolio AAD routes
      - ``portfolio_aad_vjp``
-     - partial support: shared-curve bond books use a VJP-backed reverse-mode
-       aggregate over canonical risk-factor IDs, while unsupported positions
-       are excluded and reported in metadata
+     - partial support: shared-curve bond books and shared-flat-vol European
+       option books use VJP-backed reverse-mode aggregates over canonical
+       risk-factor IDs, while unsupported positions are excluded and reported
+       in metadata
 
 Bounded Portfolio-AAD Factor Payload
 ------------------------------------
 
-The bounded book-level lane now exposes both its legacy tenor-keyed values and
-a typed factorized payload. ``portfolio_aad_curve_risk(...)`` still returns a
-``RiskMeasureOutput`` whose values are key-rate-duration-style tenor entries,
-but its metadata now also includes:
+The bounded book-level lanes expose typed factorized payloads.
+``portfolio_aad_curve_risk(...)`` still returns a ``RiskMeasureOutput`` whose
+values are key-rate-duration-style tenor entries, but its metadata now also
+includes:
 
 - ``risk_factor_coordinates``: the discovered coordinate table for the shared
   market object
@@ -257,14 +268,26 @@ but its metadata now also includes:
 - ``portfolio_aad_result``: the serialized ``PortfolioAADResult`` containing
   portfolio value, sparse risk, coordinates, unsupported positions, method
   metadata, and diagnostics
+- ``risk_aggregation_map`` and ``risk_bucket_totals``: the linear map from
+  low-level factors to reporting buckets and the resulting bucket totals
 
 ``RiskFactorId`` is the stable identity for a differentiable market or model
 coordinate. It records object type, object name, coordinate type, optional
 currency or issuer, sorted axes such as ``tenor_years``, and an optional
 provenance namespace. ``RiskFactorRegistry`` discovers supported
-``YieldCurve`` zero-rate nodes for the executable bond-book lane, and it can
-also describe credit-curve hazard nodes, flat/grid volatility nodes, and
-scalar model parameters as ``discovery_only`` coordinates for future adapters.
+``YieldCurve`` zero-rate nodes for the executable bond-book lane and supported
+``FlatVol`` scalar-vol coordinates for the bounded vanilla option lane. It can
+also describe credit-curve hazard nodes, grid volatility nodes, and scalar
+model parameters as ``discovery_only`` coordinates for future adapters.
+
+``portfolio_aad_equity_option_vol_risk(...)`` returns the typed
+``PortfolioAADResult`` directly. It supports smooth European call/put specs
+that expose ``spot``, ``strike``, ``expiry_date``, ``option_type``, optional
+``notional``, and optional ``exercise_style="european"``. The lane prices from
+one shared ``FlatVol`` and aggregates all supported positions onto one
+canonical ``vol_surface`` / ``flat_vol`` factor. American, Bermudan, barrier,
+Asian, path-dependent, local-vol, and grid-vol option AAD remain unsupported in
+this lane and are reported as unsupported positions rather than silently bumped.
 
 ``PortfolioAADRequest`` is the request-side support contract. A request may
 select a subset of factors, set the unsupported-position policy, and preserve
@@ -278,7 +301,7 @@ silently inventing missing sensitivities.
 Unsupported products remain fail-closed for AAD risk. The default policy is to
 report ``UnsupportedAADPosition`` records with the position name, instrument
 type, reason, requested factors, value-inclusion flag, risk-inclusion flag, and
-fallback method. The current executable route excludes unsupported positions
+fallback method. The current executable routes exclude unsupported positions
 from AAD risk and does not hide a finite-difference fallback inside the AAD
 result.
 
@@ -391,7 +414,8 @@ The registry deliberately includes both AD-backed and non-AD lanes:
    * - ``portfolio_aad_vjp``
      - ``portfolio_aad``
      - ``partial``
-     - ``vjp`` for the bounded shared-curve bond-book lane
+     - ``vjp`` for the bounded shared-curve bond-book lane and shared-flat-vol
+       vanilla equity option lane
    * - ``autodiff_pathwise``
      - ``autograd``
      - ``supported``
@@ -491,7 +515,7 @@ organized around five concrete follow-on slices:
        compute checked values
    * - Portfolio AAD
      - widen the checked factorized substrate beyond the current shared-curve
-       bond-book lane
+       bond-book and shared-flat-vol vanilla option lanes
      - bounded supported books only; unsupported routes must be excluded or
        reported explicitly, and ``portfolio_aad=False`` remains the backend
        truth until broad support is executable
