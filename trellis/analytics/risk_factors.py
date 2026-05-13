@@ -798,6 +798,54 @@ class RiskFactorRegistry:
             )
         return tuple(coordinates)
 
+    def discover_scalar_correlation(
+        self,
+        correlation: object,
+        *,
+        object_name: str,
+        factor_a: str | None = None,
+        factor_b: str | None = None,
+        currency: str | None = None,
+        object_path: str = "",
+        provenance_namespace: str | None = None,
+        support_status: str = "discovery_only",
+    ) -> tuple[RiskFactorCoordinate, ...]:
+        """Return one scalar cross-factor correlation coordinate."""
+        del correlation
+        axes = {}
+        if factor_a is not None:
+            axes["factor_a"] = factor_a
+        if factor_b is not None:
+            axes["factor_b"] = factor_b
+        return (
+            RiskFactorCoordinate(
+                factor_id=RiskFactorId(
+                    object_type="model_parameter",
+                    object_name=object_name,
+                    coordinate_type="correlation",
+                    currency=currency,
+                    axes=axes,
+                    provenance_namespace=provenance_namespace,
+                ),
+                object_path=object_path or f"model_parameters.{object_name}.correlation",
+                display_name=f"{object_name} scalar correlation",
+                unit="correlation",
+                transform="tanh",
+                support_status=support_status,
+                reporting_buckets={
+                    "risk_class": "hybrid",
+                    "currency": currency or "",
+                    "object_name": object_name,
+                    "factor_a": factor_a or "",
+                    "factor_b": factor_b or "",
+                },
+                metadata={
+                    "parameterization": "scalar_correlation",
+                    "constraint": "-1 < rho < 1",
+                },
+            ),
+        )
+
 
 __all__ = [
     "RiskAggregationMap",

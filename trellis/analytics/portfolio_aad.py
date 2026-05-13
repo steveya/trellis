@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import date
 from typing import Any, Protocol, runtime_checkable
 
@@ -327,6 +327,35 @@ class VanillaEquityOptionVolAADMarketContext:
             )
         raise ValueError(
             "unsupported vol surface parameterization for vanilla equity option AAD"
+        )
+
+
+@dataclass(frozen=True)
+class QuantoCorrelationAADMarketContext:
+    """Market context for the bounded quanto scalar-correlation AAD lane."""
+
+    resolved_inputs: object
+    correlation_name: str = "quanto_correlation"
+    factor_a: str | None = None
+    factor_b: str | None = None
+    currency: str | None = None
+    provenance_namespace: str | None = "portfolio_aad"
+    object_path: str = ""
+
+    def coordinates(self) -> tuple[RiskFactorCoordinate, ...]:
+        """Return the scalar correlation coordinate for this context."""
+        corr = getattr(self.resolved_inputs, "corr", None)
+        if corr is None:
+            raise ValueError("quanto correlation AAD requires resolved_inputs.corr")
+        return RiskFactorRegistry().discover_scalar_correlation(
+            corr,
+            object_name=self.correlation_name,
+            factor_a=self.factor_a,
+            factor_b=self.factor_b,
+            currency=self.currency,
+            object_path=self.object_path,
+            provenance_namespace=self.provenance_namespace,
+            support_status="supported",
         )
 
 
@@ -792,6 +821,159 @@ class ArithmeticAsianOptionVolAADAdapter:
         return market_context
 
 
+@dataclass(frozen=True)
+class QuantoCorrelationAADAdapter:
+    """Adapter for bounded quanto option risk to one scalar correlation."""
+
+    def support_decision(
+        self,
+        position_name: str,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> AADSupportDecision:
+        """Return whether this adapter supports the quanto correlation lane."""
+        try:
+            context = self._context(market_context)
+        except TypeError:
+            return AADSupportDecision(False, "unsupported_market_context")
+
+        resolved = context.resolved_inputs
+        if not is_dataclass(resolved):
+            return AADSupportDecision(False, "quanto_resolved_inputs_dataclass_required")
+        missing_fields = tuple(
+            field_name
+            for field_name in ("strike", "option_type", "notional")
+            if not hasattr(instrument, field_name)
+        )
+        if missing_fields:
+            return AADSupportDecision(
+                False,
+                "quanto_contract_fields_required",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "missing_fields": list(missing_fields),
+                    },
+                ),
+            )
+        required_inputs = (
+            "spot",
+            "domestic_df",
+            "foreign_df",
+            "sigma_underlier",
+            "sigma_fx",
+            "corr",
+            "T",
+        )
+        missing_inputs = tuple(
+            input_name for input_name in required_inputs if not hasattr(resolved, input_name)
+        )
+        if missing_inputs:
+            return AADSupportDecision(
+                False,
+                "quanto_resolved_inputs_required",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "missing_inputs": list(missing_inputs),
+                    },
+                ),
+            )
+        option_type = str(getattr(instrument, "option_type", "call")).strip().lower()
+        if option_type not in {"call", "put"}:
+            return AADSupportDecision(False, "unsupported_option_type")
+        corr = float(getattr(resolved, "corr"))
+        if not -0.999 < corr < 0.999:
+            return AADSupportDecision(False, "correlation_bounds_required")
+        if float(getattr(resolved, "T")) <= 0.0:
+            return AADSupportDecision(False, "positive_maturity_required")
+        if float(getattr(resolved, "sigma_underlier")) <= 0.0:
+            return AADSupportDecision(False, "positive_underlier_vol_required")
+        if float(getattr(resolved, "sigma_fx")) <= 0.0:
+            return AADSupportDecision(False, "positive_fx_vol_required")
+
+        try:
+            dependencies = self.factor_dependencies(instrument, context, request)
+        except Exception as exc:
+            return AADSupportDecision(
+                False,
+                "correlation_coordinate_unavailable",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                ),
+            )
+        return AADSupportDecision(
+            True,
+            "supported_quanto_scalar_correlation_aad",
+            factor_dependencies=dependencies,
+            diagnostics=(_quanto_correlation_diagnostic(context),),
+        )
+
+    def factor_dependencies(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> tuple[RiskFactorId, ...]:
+        """Return the scalar correlation factor for a supported quanto option."""
+        context = self._context(market_context)
+        return _sorted_unique_factors(
+            coordinate.factor_id for coordinate in context.coordinates()
+        )
+
+    def value(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> float:
+        """Return the scalar quanto value for this adapter's context."""
+        from trellis.models.analytical.quanto import price_quanto_option_raw
+
+        context = self._context(market_context)
+        return float(price_quanto_option_raw(instrument, context.resolved_inputs))
+
+    def vjp(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+        weight: float = 1.0,
+    ) -> SparseRiskVector:
+        """Return the sparse scalar-correlation VJP vector for one option."""
+        from trellis.core.differentiable import get_numpy, vjp
+        from trellis.models.analytical.quanto import price_quanto_option_raw
+
+        context = self._context(market_context)
+        coordinates = context.coordinates()
+        resolved = context.resolved_inputs
+        base_corr = float(getattr(resolved, "corr"))
+
+        def value_from_corr(corr):
+            traced_inputs = replace(resolved, corr=corr)
+            return price_quanto_option_raw(instrument, traced_inputs)
+
+        _value, pullback = vjp(value_from_corr, base_corr)
+        np = get_numpy()
+        gradient = np.asarray(pullback(np.asarray(float(weight))), dtype=float)
+        sensitivity = float(np.reshape(gradient, (-1,))[0])
+        vector = SparseRiskVector.from_items(
+            ((coordinates[0].factor_id, sensitivity),)
+        )
+        return request.filter_vector(vector)
+
+    @staticmethod
+    def _context(market_context: object) -> QuantoCorrelationAADMarketContext:
+        if not isinstance(market_context, QuantoCorrelationAADMarketContext):
+            raise TypeError("QuantoCorrelationAADAdapter requires QuantoCorrelationAADMarketContext")
+        return market_context
+
+
 def _vanilla_equity_option_maturity(instrument: object, market_state: object) -> float:
     from trellis.core.date_utils import year_fraction
     from trellis.core.types import DayCountConvention
@@ -1150,6 +1332,21 @@ def _arithmetic_asian_option_diagnostic(*, observation_count: int) -> dict[str, 
     }
 
 
+def _quanto_correlation_diagnostic(
+    context: QuantoCorrelationAADMarketContext,
+) -> dict[str, Any]:
+    return {
+        "code": "hybrid_scalar_correlation_policy",
+        "severity": "info",
+        "hybrid_derivative_policy": "bounded_quanto_scalar_correlation_vjp",
+        "correlation_name": context.correlation_name,
+        "factor_a": context.factor_a,
+        "factor_b": context.factor_b,
+        "correlation_transform": "tanh",
+        "correlation_constraint": "-1 < rho < 1",
+    }
+
+
 @dataclass(frozen=True)
 class PortfolioAADRequest:
     """Request policy for factorized portfolio AAD."""
@@ -1392,6 +1589,8 @@ __all__ = [
     "DefaultUnsupportedAADPolicy",
     "PortfolioAADRequest",
     "PortfolioAADResult",
+    "QuantoCorrelationAADAdapter",
+    "QuantoCorrelationAADMarketContext",
     "TradeAADAdapter",
     "UnsupportedAADPosition",
     "VanillaEquityOptionVolAADAdapter",

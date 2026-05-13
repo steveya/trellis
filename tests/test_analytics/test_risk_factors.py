@@ -295,6 +295,15 @@ def test_registry_discovery_only_lanes_cover_credit_vol_and_model_parameters():
         model_family="heston",
         provenance_namespace="calibrated",
     )
+    correlation = registry.discover_scalar_correlation(
+        0.35,
+        object_name="eur_equity_fx",
+        factor_a="SX5E",
+        factor_b="EURUSD",
+        currency="EUR",
+        provenance_namespace="market",
+        support_status="supported",
+    )
 
     assert [coordinate.support_status for coordinate in credit] == [
         "discovery_only",
@@ -309,6 +318,13 @@ def test_registry_discovery_only_lanes_cover_credit_vol_and_model_parameters():
         (("parameter", "kappa"),),
         (("parameter", "theta"),),
     ]
+    assert correlation[0].factor_id.key == (
+        "type=model_parameter|object=eur_equity_fx|coordinate=correlation|"
+        "currency=EUR|factor_a=SX5E|factor_b=EURUSD|namespace=market"
+    )
+    assert correlation[0].support_status == "supported"
+    assert correlation[0].transform == "tanh"
+    assert correlation[0].bucket("risk_class") == "hybrid"
 
 
 def test_registry_fails_closed_for_unknown_market_objects():

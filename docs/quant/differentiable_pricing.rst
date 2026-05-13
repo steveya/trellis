@@ -175,6 +175,10 @@ keeping today's ``autograd`` boundary honest.
   over a shared ``FlatVol`` through
   ``trellis.book.portfolio_aad_arithmetic_asian_vol_risk(...)`` using a
   lognormal moment-matching smooth path-summary derivative policy
+- bounded book-level reverse mode for single-name quanto option books over one
+  scalar underlier/FX correlation through
+  ``trellis.book.portfolio_aad_quanto_correlation_risk(...)``, with canonical
+  ``model_parameter`` / ``correlation`` risk-factor coordinates
 - rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
   matrix
 - flat-vol Vega extraction in the analytics layer
@@ -260,10 +264,10 @@ runtime reporting must not overstate.
      - ``portfolio_aad_vjp``
      - partial support: shared-curve bond books, European option books over
        shared flat/grid vol, smooth-interior early-exercise option books over
-       shared flat vol, and arithmetic-Asian smooth path-summary books over
-       shared flat vol use VJP-backed reverse-mode aggregates over canonical
-       risk-factor IDs, while unsupported positions are excluded and reported
-       in metadata
+       shared flat vol, arithmetic-Asian smooth path-summary books over shared
+       flat vol, and bounded quanto books over one scalar correlation use
+       VJP-backed reverse-mode aggregates over canonical risk-factor IDs, while
+       unsupported positions are excluded and reported in metadata
 
 Bounded Portfolio-AAD Factor Payload
 ------------------------------------
@@ -303,8 +307,10 @@ vanilla option lane under the smooth-interior hard-projection policy.
 Arithmetic-average path summaries are admitted for the bounded flat-vol
 arithmetic-Asian lane under the lognormal moment-matching policy. Grid-vol
 early-exercise and grid-vol path-dependent shapes remain planned fail-closed,
-and discontinuous event monitors are reported as unsupported. Admission
-metadata is a support decision only; it is not itself a pricing implementation.
+and discontinuous event monitors are reported as unsupported. The bounded
+quanto family is admitted only for the scalar underlier/FX correlation
+parameterization. Admission metadata is a support decision only; it is not
+itself a pricing implementation.
 
 ``portfolio_aad_equity_option_vol_risk(...)`` returns the typed
 ``PortfolioAADResult`` directly. It supports smooth European call/put specs
@@ -328,6 +334,15 @@ approximation as the bounded arithmetic-Asian helper and differentiates the
 shared ``FlatVol`` scalar with VJP. Barrier, knock, first-hit, grid-vol path,
 early-exercise path, geometric-average, and broader event-monitor shapes fail
 closed with explicit support reasons.
+
+``portfolio_aad_quanto_correlation_risk(...)`` is the bounded hybrid lane. It
+accepts a ``QuantoCorrelationAADMarketContext`` with already-resolved quanto
+inputs and one scalar ``corr`` value, then differentiates that scalar through
+the analytical quanto kernel. The resulting factor is a canonical
+``RiskFactorId(object_type="model_parameter", coordinate_type="correlation")``
+with optional ``factor_a`` / ``factor_b`` axes and a ``tanh`` transform label.
+This is not universal hybrid AAD: curves, spots, FX, vols, and any broader
+hybrid factor graph are held fixed outside this lane.
 
 ``PortfolioAADRequest`` is the request-side support contract. A request may
 select a subset of factors, set the unsupported-position policy, and preserve

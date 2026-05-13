@@ -64,8 +64,9 @@ The current admission vocabulary is deliberately narrow:
   derivative policy; grid-vol path AAD remains planned, and discontinuous event
   monitors are unsupported for AAD unless a custom derivative policy is
   explicitly added
-- hybrid/composite-underlier shapes require explicit correlation or
-  cross-factor coordinates before any AAD lane can be admitted
+- the bounded single-name quanto lane supports one scalar underlier/FX
+  correlation coordinate; broader hybrid/composite-underlier shapes still
+  require explicit factor-graph ownership before any AAD lane can be admitted
 
 Execution IR Bridge
 -------------------

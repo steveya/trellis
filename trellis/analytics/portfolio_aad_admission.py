@@ -358,6 +358,35 @@ def _admit_contract_ir(
             factor_requirements=(_vol_requirement(market_parameterization),),
             metadata={"fail_closed": True},
         )
+    if _is_quanto_family(product_family) and _is_terminal_vanilla_option(contract):
+        if market_parameterization in {"correlation_scalar", "hybrid_correlation"}:
+            return _admission(
+                admitted=True,
+                lane_id="quanto_scalar_correlation",
+                support_status="supported",
+                reason="supported_quanto_scalar_correlation_aad",
+                semantic_contract_type="ContractIR",
+                product_family=product_family or "quanto_option",
+                contract_shape="quanto_terminal_vanilla_option",
+                factor_requirements=(_correlation_requirement(),),
+                metadata={
+                    "hybrid_derivative_policy": "bounded_quanto_scalar_correlation_vjp",
+                    "correlation_parameterization": "scalar_correlation",
+                    "correlation_transform": "tanh",
+                    "fail_closed_near_bounds": True,
+                },
+            )
+        return _admission(
+            admitted=False,
+            lane_id="quanto_unsupported_hybrid_parameterization",
+            support_status="unsupported",
+            reason="unsupported_quanto_hybrid_parameterization",
+            semantic_contract_type="ContractIR",
+            product_family=product_family or "quanto_option",
+            contract_shape="quanto_terminal_vanilla_option",
+            factor_requirements=(_vol_requirement(market_parameterization),),
+            metadata={"market_parameterization": market_parameterization, "fail_closed": True},
+        )
     if isinstance(contract.underlying.spec, CompositeUnderlying):
         return _admission(
             admitted=False,
@@ -693,6 +722,10 @@ def _clean(value: object, field_name: str) -> str:
 
 def _normalize(value: object) -> str:
     return str(value or "").strip().lower().replace("-", "_")
+
+
+def _is_quanto_family(product_family: str | None) -> bool:
+    return _normalize(product_family) in {"quanto_option", "single_name_quanto_option"}
 
 
 _EQUITY_UNDERLYING_TYPES = ()

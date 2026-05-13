@@ -176,3 +176,23 @@ Arithmetic-average Asian options use a separate path-summary lane:
 That lane supports bounded European arithmetic-average call/put specs over a
 shared ``FlatVol`` and reports barrier, knock, grid-vol path, and other
 discontinuous or unsupported path features as fail-closed metadata.
+
+Single-name quanto correlation risk has its own bounded hybrid lane:
+
+.. code-block:: python
+
+   from trellis.analytics import QuantoCorrelationAADMarketContext
+   from trellis.book import portfolio_aad_quanto_correlation_risk
+
+   context = QuantoCorrelationAADMarketContext(
+       resolved_inputs=resolved_quanto_inputs,
+       correlation_name="sx5e_eurusd",
+       factor_a="SX5E",
+       factor_b="EURUSD",
+       currency="EUR",
+   )
+   aad = portfolio_aad_quanto_correlation_risk(book, context)
+
+Only the scalar correlation in ``resolved_quanto_inputs`` is differentiated;
+the already-resolved curves, spots, FX spot, and volatility inputs are held
+fixed and remain outside the hybrid AAD claim.

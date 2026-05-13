@@ -15,6 +15,8 @@ from trellis.analytics.portfolio_aad import (
     DefaultUnsupportedAADPolicy,
     PortfolioAADRequest,
     PortfolioAADResult,
+    QuantoCorrelationAADAdapter,
+    QuantoCorrelationAADMarketContext,
     TradeAADAdapter,
     UnsupportedAADPosition,
     VanillaEquityOptionVolAADAdapter,
@@ -34,6 +36,7 @@ from trellis.curves.yield_curve import YieldCurve
 from trellis.core.market_state import MarketState
 from trellis.instruments.bond import Bond
 from trellis.models.vol_surface import FlatVol, GridVolSurface
+from trellis.models.resolution.quanto import ResolvedQuantoInputs
 
 
 def _curve_factor(tenor: float) -> RiskFactorId:
@@ -84,6 +87,13 @@ class _ArithmeticAsianSpec:
     barrier: float | None = None
 
 
+@dataclass(frozen=True)
+class _QuantoSpec:
+    strike: float
+    option_type: str = "call"
+    notional: float = 1.0
+
+
 def _equity_market_state(vol: float = 0.2) -> MarketState:
     settlement = date(2024, 11, 15)
     return MarketState(
@@ -105,6 +115,20 @@ def _equity_grid_market_state() -> MarketState:
             strikes=(90.0, 110.0),
             vols=((0.18, 0.21), (0.24, 0.27)),
         ),
+    )
+
+
+def _resolved_quanto_inputs(corr: float = 0.25) -> ResolvedQuantoInputs:
+    return ResolvedQuantoInputs(
+        spot=100.0,
+        fx_spot=1.10,
+        valuation_date=date(2024, 11, 15),
+        T=1.0,
+        domestic_df=0.95,
+        foreign_df=0.97,
+        sigma_underlier=0.22,
+        sigma_fx=0.12,
+        corr=corr,
     )
 
 
@@ -496,6 +520,46 @@ def test_arithmetic_asian_option_vol_adapter_rejects_discontinuous_or_grid_shape
     assert grid_decision.reason == "path_dependent_grid_vol_aad_pending"
     assert barrier_decision.supported is False
     assert barrier_decision.reason == "unsupported_discontinuous_event_monitor"
+
+
+def test_quanto_correlation_adapter_reports_scalar_correlation_dependency():
+    adapter = QuantoCorrelationAADAdapter()
+    context = QuantoCorrelationAADMarketContext(
+        resolved_inputs=_resolved_quanto_inputs(),
+        correlation_name="sx5e_eurusd",
+        factor_a="SX5E",
+        factor_b="EURUSD",
+        currency="EUR",
+    )
+    spec = _QuantoSpec(strike=100.0)
+
+    decision = adapter.support_decision("quanto", spec, context, PortfolioAADRequest())
+    dependencies = adapter.factor_dependencies(spec, context, PortfolioAADRequest())
+
+    assert decision.supported is True
+    assert decision.reason == "supported_quanto_scalar_correlation_aad"
+    assert dependencies == decision.factor_dependencies
+    assert dependencies[0].coordinate_type == "correlation"
+    assert decision.diagnostics[0]["hybrid_derivative_policy"] == (
+        "bounded_quanto_scalar_correlation_vjp"
+    )
+
+
+def test_quanto_correlation_adapter_fails_closed_near_correlation_bounds():
+    adapter = QuantoCorrelationAADAdapter()
+    context = QuantoCorrelationAADMarketContext(
+        resolved_inputs=_resolved_quanto_inputs(corr=0.9999),
+    )
+
+    decision = adapter.support_decision(
+        "quanto",
+        _QuantoSpec(strike=100.0),
+        context,
+        PortfolioAADRequest(),
+    )
+
+    assert decision.supported is False
+    assert decision.reason == "correlation_bounds_required"
 
 
 def test_vanilla_equity_option_vol_adapter_supports_american_flat_vol_policy():

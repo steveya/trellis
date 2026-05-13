@@ -274,3 +274,20 @@ def test_hybrid_composite_underlying_reports_correlation_coordinate_requirement(
     assert admission.reason == "hybrid_factor_aad_pending"
     assert admission.factor_requirements[0].coordinate_type == "correlation"
     assert admission.factor_requirements[0].risk_class == "hybrid"
+
+
+def test_quanto_contract_admits_bounded_scalar_correlation_lane():
+    admission = admit_portfolio_aad_lane(
+        _terminal_call_ir(),
+        market_parameterization="correlation_scalar",
+        product_family="quanto_option",
+    )
+
+    assert admission.admitted is True
+    assert admission.support_status == "supported"
+    assert admission.reason == "supported_quanto_scalar_correlation_aad"
+    assert admission.lane_id == "quanto_scalar_correlation"
+    assert admission.factor_requirements[0].coordinate_type == "correlation"
+    assert admission.metadata["hybrid_derivative_policy"] == (
+        "bounded_quanto_scalar_correlation_vjp"
+    )
