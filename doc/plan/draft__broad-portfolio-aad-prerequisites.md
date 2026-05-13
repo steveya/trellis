@@ -3,8 +3,9 @@
 ## Status
 
 Execution mirror for `QUA-1011`, the first AAD substrate epic under the broader
-portfolio-AAD program. The child tickets below were created from this plan and
-implemented as local commits on the epic branch before the final PR.
+portfolio-AAD program, and `QUA-1019`, the first second-product-family adapter
+epic. The child tickets below were created from this plan and implemented as
+local commits on their epic branches before the final PR.
 
 | Ticket | Scope | Status |
 |---|---|---|
@@ -15,6 +16,11 @@ implemented as local commits on the epic branch before the final PR.
 | `QUA-1016` | Trade-AAD adapter protocol and default unsupported-position policy | Done |
 | `QUA-1017` | Aggregation, selected-factor filtering, and finite-difference verification | Done |
 | `QUA-1018` | Session reporting, docs, limitations, and closeout validation | Done |
+| `QUA-1020` | Reusable `RiskAggregationMap` bucket aggregation payloads | Done |
+| `QUA-1021` | Concrete bond-curve AAD adapter ownership | Done |
+| `QUA-1022` | Vanilla equity flat-vol portfolio-AAD adapter and public book entrypoint | Done |
+| `QUA-1023` | Independent finite-difference verification for option flat-vol AAD | Done |
+| `QUA-1024` | Second-product-family docs, limitations, plan mirror, and PR gate | Done |
 
 This document still describes the prerequisites for broad portfolio AAD. The
 first prerequisite, stable factor identity plus typed result contracts, is now
@@ -23,19 +29,23 @@ hybrid factor graphs, scenario/bucket aggregation, and scale validation exist.
 
 ## Current Shipped Boundary
 
-Trellis currently has a bounded book-level reverse-mode lane:
+Trellis currently has bounded book-level reverse-mode lanes:
 
 - `trellis.book.portfolio_aad_curve_risk(...)`
 - supported bond positions on a shared `YieldCurve`
+- `trellis.book.portfolio_aad_equity_option_vol_risk(...)`
+- supported European vanilla call/put specs on one shared `FlatVol`
 - canonical `RiskFactorId` coordinates and sparse risk vectors in metadata
 - typed `PortfolioAADRequest` / `PortfolioAADResult` payloads
+- `RiskAggregationMap` bucket maps and bucket totals for factor reporting
 - unsupported positions excluded and reported in metadata
 - runtime reporting integrated through the derivative-method taxonomy
 - backend VJP support is checked and executable
 
 This is useful, but it is not broad portfolio AAD. It does not yet cover
-general asset classes, general factor sets, hybrid objects, path-dependent
-products, or a full risk aggregation graph.
+general asset classes, grid-vol option surfaces, early-exercise or
+path-dependent option products, hybrid objects, large mixed books, or a full
+risk aggregation graph.
 
 ## Missing Gap Before Implementation
 
@@ -136,9 +146,10 @@ Required core objects:
   positions, method metadata, diagnostics
 - `RiskAggregationMap`: maps low-level factors to reporting buckets
 
-`QUA-1011` delivered every object above except `RiskAggregationMap`, which
-remains a follow-on once multiple product families and reporting bucket maps
-share the same low-level factor graph.
+`QUA-1011` delivered the identity, request/result, adapter-protocol, and
+verification substrate. `QUA-1019` added `RiskAggregationMap`, concrete
+bond-adapter ownership, and the first non-bond product-family adapter for
+flat-vol vanilla equity option books.
 
 The first broad architecture should be adapter-based:
 
@@ -293,23 +304,29 @@ Deliverables:
 - risk report compatibility tests
 - finite-difference comparison
 
-Status: partially delivered. `QUA-1016` added the protocol and unsupported
-policy, while `QUA-1015` migrated the current bond-book output to the factor
-registry. A concrete route adapter object that owns the existing bond lane is
-still a follow-on before broad product-family expansion.
+Status: delivered. `QUA-1016` added the protocol and unsupported policy,
+`QUA-1015` migrated the current bond-book output to the factor registry, and
+`QUA-1021` added a concrete `BondCurveAADAdapter` /
+`BondCurveAADMarketContext` ownership surface for the existing bond lane.
 
 ### Phase 4: Second Product Family
 
 Add one new product family with a small smooth book. A good first target is a
 vanilla option book on a shared flat-vol or grid-vol surface.
 
-Status: not started.
+Status: delivered for the first bounded second-family slice. `QUA-1022` added
+`VanillaEquityOptionVolAADAdapter` /
+`VanillaEquityOptionVolAADMarketContext` plus
+`portfolio_aad_equity_option_vol_risk(...)` for European call/put specs on one
+shared `FlatVol`. `QUA-1023` verifies the sparse flat-vol VJP against an
+independent central finite-difference Black76 bump/reprice reference.
 
 Deliverables:
 
 - product adapter
 - factor dependency tests
 - aggregation and unsupported-position tests
+- finite-difference verification
 
 ### Phase 5: Runtime And Benchmark Integration
 
@@ -317,7 +334,9 @@ Expose broad AAD through `Session.risk_report(...)` only for supported books.
 Add latency and coverage reporting.
 
 Status: partially delivered for session reporting of the existing bounded
-bond-book lane. Broad runtime exposure and latency benchmarking remain open.
+bond-book lane, direct typed result exposure for the bounded flat-vol option
+lane, and documentation of the current support boundary. Broad runtime
+exposure, grid/surface support, and latency benchmarking remain open.
 
 Deliverables:
 
@@ -327,7 +346,8 @@ Deliverables:
 
 ## Explicit Non-Goals
 
-- Do not claim universal portfolio AAD from the existing bond-book lane.
+- Do not claim universal portfolio AAD from the bounded bond-book or flat-vol
+  option lanes.
 - Do not silently bump unsupported trades inside an AAD result.
 - Do not aggregate risk by display labels alone.
 - Do not include path-dependent discontinuous products until their derivative

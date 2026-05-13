@@ -9,8 +9,17 @@ from datetime import date
 from typing import Any
 
 from trellis.analytics.derivative_methods import derivative_method_payload
-from trellis.analytics.portfolio_aad import PortfolioAADResult, UnsupportedAADPosition
-from trellis.analytics.risk_factors import RiskFactorRegistry, SparseRiskVector
+from trellis.analytics.portfolio_aad import (
+    BondCurveAADAdapter,
+    BondCurveAADMarketContext,
+    DefaultUnsupportedAADPolicy,
+    PortfolioAADRequest,
+    PortfolioAADResult,
+    UnsupportedAADPosition,
+    VanillaEquityOptionVolAADAdapter,
+    VanillaEquityOptionVolAADMarketContext,
+)
+from trellis.analytics.risk_factors import RiskAggregationMap, SparseRiskVector
 from trellis.analytics.result import RiskMeasureOutput
 from trellis.core.differentiable import get_backend_capabilities, get_numpy, vjp
 from trellis.core.types import Instrument, PricingResult
@@ -291,12 +300,15 @@ def portfolio_aad_curve_risk(
     tenors = getattr(curve, "tenors", None)
     rates = getattr(curve, "rates", None)
     factor_coordinates = ()
+    aad_adapter = BondCurveAADAdapter()
+    aad_context = BondCurveAADMarketContext(
+        curve=curve,
+        settlement=settlement,
+        curve_name="shared_curve",
+        provenance_namespace="portfolio_aad",
+    )
     if tenors is not None and rates is not None:
-        factor_coordinates = RiskFactorRegistry().discover_yield_curve(
-            curve,
-            object_name="shared_curve",
-            provenance_namespace="portfolio_aad",
-        )
+        factor_coordinates = aad_context.coordinates()
     support_status = "supported" if supported_positions and not exclusions else (
         "partial" if supported_positions else "unsupported"
     )
@@ -313,6 +325,7 @@ def portfolio_aad_curve_risk(
         unsupported_position_count=len(exclusions),
         book_position_count=len(book),
         support_status=support_status,
+        aad_adapter=type(aad_adapter).__name__,
     )
     if factor_coordinates:
         base_metadata["risk_factor_coordinates"] = [
@@ -363,6 +376,11 @@ def portfolio_aad_curve_risk(
         (coordinate.factor_id, sensitivity)
         for coordinate, sensitivity in zip(factor_coordinates, gradient)
     )
+    risk_aggregation_map = RiskAggregationMap.from_coordinates(
+        factor_coordinates,
+        bucket_names=("risk_class", "currency", "tenor"),
+        default_bucket="all",
+    )
     book_dv01 = -float(np.sum(gradient)) * 0.0001
     book_duration = 0.0 if book_value == 0.0 else -float(np.sum(gradient)) / book_value
     key_rate_durations: dict[float, float] = {}
@@ -378,6 +396,8 @@ def portfolio_aad_curve_risk(
         "gradient": [float(value) for value in gradient],
         "unsupported_positions": deepcopy(exclusions),
         "supported_position_market_value": book_value,
+        "risk_aggregation_map": risk_aggregation_map.to_payload(),
+        "risk_bucket_totals": risk_aggregation_map.aggregate_payload(sparse_risk_vector),
     }
     portfolio_aad_result = PortfolioAADResult(
         portfolio_value=book_value,
@@ -389,6 +409,177 @@ def portfolio_aad_curve_risk(
     metadata["sparse_risk_vector"] = sparse_risk_vector.to_payload()
     metadata["portfolio_aad_result"] = portfolio_aad_result.to_payload()
     return RiskMeasureOutput(key_rate_durations, metadata=metadata)
+
+
+def portfolio_aad_equity_option_vol_risk(
+    book: Book,
+    market_context: VanillaEquityOptionVolAADMarketContext | object,
+    request: PortfolioAADRequest | None = None,
+    *,
+    vol_surface_name: str = "default_vol_surface",
+    currency: str | None = None,
+) -> PortfolioAADResult:
+    """Return factorized flat-vol AAD risk for supported vanilla option books.
+
+    The bounded lane supports European call/put specs that expose ``spot``,
+    ``strike`` and ``expiry_date`` and are priced from one shared
+    :class:`~trellis.models.vol_surface.FlatVol` market surface.
+    """
+    resolved_request = request or PortfolioAADRequest()
+    if isinstance(market_context, VanillaEquityOptionVolAADMarketContext):
+        context = market_context
+    else:
+        context = VanillaEquityOptionVolAADMarketContext(
+            market_state=market_context,
+            vol_surface_name=vol_surface_name,
+            currency=currency,
+        )
+
+    adapter = VanillaEquityOptionVolAADAdapter()
+    unsupported_policy = DefaultUnsupportedAADPolicy(
+        include_value_when_priced=resolved_request.include_unsupported_value
+    )
+    capabilities = get_backend_capabilities()
+    full_vector = SparseRiskVector()
+    portfolio_value = 0.0
+    supported_position_names: list[str] = []
+    unsupported_positions: list[UnsupportedAADPosition] = []
+    diagnostics: list[dict[str, Any]] = []
+    full_coordinates: tuple[Any, ...] = ()
+    try:
+        full_coordinates = context.coordinates()
+    except Exception as exc:
+        diagnostics.append(
+            {
+                "code": "flat_vol_coordinate_unavailable",
+                "severity": "warning",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+        )
+
+    for name in book:
+        instrument = book[name]
+        decision = adapter.support_decision(name, instrument, context, resolved_request)
+        diagnostics.extend(dict(diagnostic) for diagnostic in decision.diagnostics)
+        if not decision.supported:
+            unsupported_positions.append(
+                unsupported_policy.record(
+                    position_name=name,
+                    instrument=instrument,
+                    reason=decision.reason,
+                    request=resolved_request,
+                    priced_value_available=False,
+                )
+            )
+            continue
+
+        try:
+            weight = book.notional(name)
+            full_request = PortfolioAADRequest()
+            portfolio_value += float(weight) * adapter.value(instrument, context, full_request)
+            full_vector = full_vector + adapter.vjp(
+                instrument,
+                context,
+                full_request,
+                weight=weight,
+            )
+        except Exception as exc:
+            diagnostics.append(
+                {
+                    "code": "portfolio_aad_equity_option_trace_failed",
+                    "severity": "warning",
+                    "position_name": name,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+            unsupported_positions.append(
+                unsupported_policy.record(
+                    position_name=name,
+                    instrument=instrument,
+                    reason="portfolio_aad_trace_failed",
+                    request=resolved_request,
+                    priced_value_available=False,
+                )
+            )
+            continue
+
+        supported_position_names.append(name)
+
+    support_status = (
+        "supported"
+        if supported_position_names and not unsupported_positions
+        else "partial"
+        if supported_position_names
+        else "unsupported"
+    )
+    selected_vector = resolved_request.filter_vector(full_vector)
+    available_coordinates = tuple(full_coordinates) if supported_position_names else ()
+    selected_factors = set(selected_vector)
+    if resolved_request.selects_all_factors:
+        selected_coordinates = available_coordinates
+    else:
+        requested_factors = set(resolved_request.selected_factors)
+        selected_coordinates = tuple(
+            coordinate
+            for coordinate in available_coordinates
+            if (
+                coordinate.factor_id in requested_factors
+                and coordinate.factor_id in selected_factors
+            )
+        )
+    risk_aggregation_map = RiskAggregationMap.from_coordinates(
+        selected_coordinates,
+        bucket_names=("risk_class", "currency", "object_name"),
+        default_bucket="all",
+    )
+    fallback_reason = None
+    if not supported_position_names:
+        fallback_reason = {
+            "code": "portfolio_aad_equity_option_book_unavailable",
+            "message": "No supported vanilla equity option positions were found in the book.",
+        }
+    metadata = derivative_method_payload(
+        "portfolio_aad_vjp",
+        method_support=support_status,
+        backend_id=capabilities.backend_id,
+        parameterization="shared_flat_vol",
+        support_status=support_status,
+        aad_adapter=type(adapter).__name__,
+        vol_surface_name=context.vol_surface_name,
+        vol_surface_type=type(getattr(context.market_state, "vol_surface", None)).__name__,
+        supported_position_names=supported_position_names,
+        supported_position_count=len(supported_position_names),
+        unsupported_position_count=len(unsupported_positions),
+        unsupported_positions=[position.to_payload() for position in unsupported_positions],
+        book_position_count=len(book),
+        risk_factor_coordinates=[
+            coordinate.to_payload()
+            for coordinate in selected_coordinates
+        ],
+        risk_aggregation_map=risk_aggregation_map.to_payload(),
+        risk_bucket_totals=risk_aggregation_map.aggregate_payload(selected_vector),
+        fallback_reason=fallback_reason,
+    )
+    metadata["sparse_risk_vector"] = selected_vector.to_payload()
+    result = PortfolioAADResult(
+        portfolio_value=portfolio_value,
+        risk_vector=selected_vector,
+        coordinates=selected_coordinates,
+        unsupported_positions=tuple(unsupported_positions),
+        method_metadata=metadata,
+        diagnostics=tuple(diagnostics),
+    )
+    metadata["portfolio_aad_result"] = result.to_payload()
+    return PortfolioAADResult(
+        portfolio_value=portfolio_value,
+        risk_vector=selected_vector,
+        coordinates=selected_coordinates,
+        unsupported_positions=tuple(unsupported_positions),
+        method_metadata=metadata,
+        diagnostics=tuple(diagnostics),
+    )
 
 
 class ScenarioResultCube(Mapping[str, BookResult]):

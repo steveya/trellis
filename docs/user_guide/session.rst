@@ -111,3 +111,48 @@ remain tenor-keyed, while ``portfolio_aad["metadata"]`` carries
 ``portfolio_aad_result`` keyed by canonical risk-factor IDs. Unsupported
 positions are listed explicitly and are excluded from AAD risk rather than
 silently bumped.
+
+The same factorized portfolio-AAD result contract is available directly for
+bounded vanilla equity option books on one shared flat volatility surface:
+
+.. code-block:: python
+
+   from dataclasses import dataclass
+   from datetime import date
+
+   from trellis.book import Book, portfolio_aad_equity_option_vol_risk
+   from trellis.core.market_state import MarketState
+   from trellis.curves.yield_curve import YieldCurve
+   from trellis.models.vol_surface import FlatVol
+
+   @dataclass(frozen=True)
+   class VanillaOption:
+       spot: float
+       strike: float
+       expiry_date: date
+       option_type: str = "call"
+       notional: float = 1.0
+       exercise_style: str = "european"
+
+   market = MarketState(
+       as_of=date(2024, 11, 15),
+       settlement=date(2024, 11, 15),
+       discount=YieldCurve.flat(0.05),
+       vol_surface=FlatVol(0.20),
+   )
+   book = Book(
+       {"call": VanillaOption(100.0, 100.0, date(2025, 11, 15))},
+       notionals={"call": 1_000.0},
+   )
+   aad = portfolio_aad_equity_option_vol_risk(
+       book,
+       market,
+       vol_surface_name="spx_flat",
+       currency="USD",
+   )
+   print(aad.risk_vector.to_payload())
+
+This option lane is intentionally narrower than ``Session.risk_report(...)``:
+it supports European call/put specs on ``FlatVol`` only, returns a typed
+``PortfolioAADResult`` directly, and reports non-European or non-flat-vol
+positions as unsupported instead of inserting a finite-difference fallback.
