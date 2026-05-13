@@ -196,3 +196,33 @@ Single-name quanto correlation risk has its own bounded hybrid lane:
 Only the scalar correlation in ``resolved_quanto_inputs`` is differentiated;
 the already-resolved curves, spots, FX spot, and volatility inputs are held
 fixed and remain outside the hybrid AAD claim.
+
+For small books that combine already-supported lanes, use the mixed dispatcher:
+
+.. code-block:: python
+
+   from trellis.analytics import (
+       BondCurveAADMarketContext,
+       VanillaEquityOptionVolAADMarketContext,
+   )
+   from trellis.book import portfolio_aad_supported_book_risk
+
+   aad = portfolio_aad_supported_book_risk(
+       book,
+       bond_curve_context=BondCurveAADMarketContext(
+           curve=curve,
+           settlement=date(2024, 11, 15),
+           curve_name="usd_ois",
+           currency="USD",
+       ),
+       equity_option_vol_context=VanillaEquityOptionVolAADMarketContext(
+           market_state=market,
+           vol_surface_name="spx_flat",
+           currency="USD",
+       ),
+   )
+
+It combines the explicit bond, vanilla/grid-vol option, bounded
+arithmetic-Asian, and scalar quanto-correlation AAD lanes when their contexts
+are supplied. Unsupported positions remain listed in the typed result and are
+excluded from AAD risk.

@@ -31,6 +31,7 @@ from trellis.book import (
     Book,
     portfolio_aad_arithmetic_asian_vol_risk,
     portfolio_aad_equity_option_vol_risk,
+    portfolio_aad_supported_book_risk,
 )
 from trellis.curves.yield_curve import YieldCurve
 from trellis.core.market_state import MarketState
@@ -795,6 +796,104 @@ def test_portfolio_aad_arithmetic_asian_vol_risk_aggregates_shared_flat_vol():
     )
     assert result.method_metadata["supported_position_names"] == ["asian_call"]
     assert len(result.risk_vector) == 1
+
+
+def test_portfolio_aad_supported_book_risk_combines_bond_and_option_lanes():
+    curve = YieldCurve([1.0, 2.0], [0.04, 0.045])
+    bond_context = BondCurveAADMarketContext(
+        curve=curve,
+        settlement=date(2024, 11, 15),
+        curve_name="usd_ois",
+        currency="USD",
+    )
+    option_context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_market_state(),
+        vol_surface_name="spx_flat",
+        currency="USD",
+    )
+    bond = Bond(
+        face=100.0,
+        coupon=0.05,
+        maturity_date=date(2030, 11, 15),
+        maturity=6,
+        frequency=2,
+    )
+    call = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+    )
+    book = Book({"bond": bond, "call": call}, notionals={"bond": 100.0, "call": 5.0})
+
+    result = portfolio_aad_supported_book_risk(
+        book,
+        bond_curve_context=bond_context,
+        equity_option_vol_context=option_context,
+    )
+
+    assert result.support_status == "supported"
+    assert result.method_metadata["supported_position_names"] == ["bond", "call"]
+    assert result.method_metadata["lane_count"] == 2
+    assert len(result.risk_vector) == 3
+    assert {factor.object_type for factor in result.risk_vector} == {
+        "curve",
+        "vol_surface",
+    }
+    assert result.method_metadata["risk_bucket_totals"]["bucket_names"] == [
+        "risk_class",
+        "currency",
+        "object_name",
+        "tenor",
+        "expiry",
+        "strike",
+        "factor_a",
+        "factor_b",
+    ]
+
+
+def test_portfolio_aad_supported_book_risk_filters_and_reports_unsupported_positions():
+    curve = YieldCurve([1.0, 2.0], [0.04, 0.045])
+    bond_context = BondCurveAADMarketContext(
+        curve=curve,
+        settlement=date(2024, 11, 15),
+        curve_name="usd_ois",
+        currency="USD",
+    )
+    option_context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_market_state(),
+        vol_surface_name="spx_flat",
+        currency="USD",
+    )
+    selected_factor = option_context.coordinates()[0].factor_id
+    bond = Bond(
+        face=100.0,
+        coupon=0.05,
+        maturity_date=date(2030, 11, 15),
+        maturity=6,
+        frequency=2,
+    )
+    unsupported = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        exercise_style="chooser",
+    )
+    book = Book({"bond": bond, "unsupported": unsupported})
+
+    result = portfolio_aad_supported_book_risk(
+        book,
+        bond_curve_context=bond_context,
+        equity_option_vol_context=option_context,
+        request=PortfolioAADRequest(selected_factors=(selected_factor,)),
+    )
+
+    assert result.support_status == "partial"
+    assert tuple(result.risk_vector) == ()
+    assert result.missing_selected_factors(
+        PortfolioAADRequest(selected_factors=(selected_factor,))
+    ) == (selected_factor,)
+    assert result.unsupported_positions[0].position_name == "unsupported"
+    assert result.method_metadata["position_support"][0]["lane_id"] == "bond_curve"
 
 
 def test_portfolio_aad_equity_option_vol_risk_reports_unsupported_shapes():

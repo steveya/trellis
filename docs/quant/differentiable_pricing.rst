@@ -260,14 +260,15 @@ runtime reporting must not overstate.
      - unsupported for pathwise AD; the governed fallback is
        ``finite_difference_bump_reprice`` with fail-closed policy metadata
    * - ``portfolio_aad_vjp``
-     - bounded bond-book and option-book portfolio AAD routes
+     - bounded bond-book, option-book, and mixed supported-book portfolio AAD routes
      - ``portfolio_aad_vjp``
      - partial support: shared-curve bond books, European option books over
        shared flat/grid vol, smooth-interior early-exercise option books over
        shared flat vol, arithmetic-Asian smooth path-summary books over shared
-       flat vol, and bounded quanto books over one scalar correlation use
-       VJP-backed reverse-mode aggregates over canonical risk-factor IDs, while
-       unsupported positions are excluded and reported in metadata
+       flat vol, bounded quanto books over one scalar correlation, and mixed
+       books composed from those explicit lanes use VJP-backed reverse-mode
+       aggregates over canonical risk-factor IDs, while unsupported positions
+       are excluded and reported in metadata
 
 Bounded Portfolio-AAD Factor Payload
 ------------------------------------
@@ -343,6 +344,15 @@ the analytical quanto kernel. The resulting factor is a canonical
 with optional ``factor_a`` / ``factor_b`` axes and a ``tanh`` transform label.
 This is not universal hybrid AAD: curves, spots, FX, vols, and any broader
 hybrid factor graph are held fixed outside this lane.
+
+``portfolio_aad_supported_book_risk(...)`` is the mixed supported-book
+dispatcher. Callers pass the explicit market context for each lane they want
+enabled, such as a shared bond curve plus one vanilla option vol surface. The
+dispatcher routes each position to the first supporting adapter, aggregates the
+resulting sparse ``RiskFactorId`` vector across risk classes, preserves
+per-lane support attempts in metadata, and keeps unsupported positions
+fail-closed. This is still bounded runtime aggregation over known adapters, not
+a generic portfolio compiler or an industrial-scale tape.
 
 ``PortfolioAADRequest`` is the request-side support contract. A request may
 select a subset of factors, set the unsupported-position policy, and preserve
