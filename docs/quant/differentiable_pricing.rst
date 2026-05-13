@@ -354,6 +354,14 @@ per-lane support attempts in metadata, and keeps unsupported positions
 fail-closed. This is still bounded runtime aggregation over known adapters, not
 a generic portfolio compiler or an industrial-scale tape.
 
+The local benchmark gate for these bounded lanes is
+``scripts/benchmark_portfolio_aad.py``. It reports book size, lane mix, factor
+count, AAD elapsed time, deterministic bump/reprice baseline elapsed time, and
+relative speedup for the supported bond, flat-vol option, grid-vol option, and
+mixed supported-book fixtures. The gate is evidence for this explicit support
+contract only; it does not change the backend ``portfolio_aad=False`` capability
+or imply broad tape coverage.
+
 ``PortfolioAADRequest`` is the request-side support contract. A request may
 select a subset of factors, set the unsupported-position policy, and preserve
 whether unsupported values should be included when they can still be priced.
