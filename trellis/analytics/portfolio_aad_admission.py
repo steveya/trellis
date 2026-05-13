@@ -362,15 +362,14 @@ def _admit_contract_ir(
             )
         if market_parameterization in {"grid_vol", "grid_node_vols"}:
             return _admission(
-                admitted=False,
+                admitted=True,
                 lane_id="vanilla_equity_option_grid_vol",
-                support_status="planned",
-                reason="grid_vol_option_aad_pending",
+                support_status="supported",
+                reason="supported_terminal_vanilla_grid_vol_aad",
                 semantic_contract_type="ContractIR",
                 product_family=product_family or "vanilla_equity_option",
                 contract_shape="terminal_vanilla_option",
                 factor_requirements=(_grid_vol_requirement(),),
-                metadata={"fail_closed": True},
             )
         return _admission(
             admitted=False,

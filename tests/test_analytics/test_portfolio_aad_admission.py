@@ -82,17 +82,17 @@ def test_terminal_vanilla_contract_ir_admits_existing_flat_vol_lane():
     assert json.loads(json.dumps(payload)) == payload
 
 
-def test_terminal_vanilla_contract_ir_reports_grid_vol_as_planned_fail_closed():
+def test_terminal_vanilla_contract_ir_admits_grid_vol_lane():
     admission = admit_portfolio_aad_lane(
         _terminal_put_ir(),
         market_parameterization="grid_vol",
         product_family="vanilla_equity_option",
     )
 
-    assert admission.admitted is False
-    assert admission.support_status == "planned"
+    assert admission.admitted is True
+    assert admission.support_status == "supported"
     assert admission.lane_id == "vanilla_equity_option_grid_vol"
-    assert admission.reason == "grid_vol_option_aad_pending"
+    assert admission.reason == "supported_terminal_vanilla_grid_vol_aad"
     assert admission.factor_requirements[0].coordinate_type == "black_vol"
 
 

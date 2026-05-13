@@ -53,8 +53,8 @@ would need, and why a shape must fail closed today.
 The current admission vocabulary is deliberately narrow:
 
 - terminal European vanilla option ramps over scalar flat vol are supported
-- the same terminal vanilla shape over grid-vol nodes is planned but still
-  fail-closed until the grid-vol adapter lands
+- the same terminal vanilla shape over grid-vol nodes is supported by the
+  bounded grid-node option-vol adapter
 - dynamic early-exercise/control shapes belong to ``DynamicContractIR`` and are
   planned fail-closed until their exercise-policy derivative treatment is
   checked

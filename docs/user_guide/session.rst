@@ -113,7 +113,8 @@ positions are listed explicitly and are excluded from AAD risk rather than
 silently bumped.
 
 The same factorized portfolio-AAD result contract is available directly for
-bounded vanilla equity option books on one shared flat volatility surface:
+bounded vanilla equity option books on one shared flat volatility surface or
+one shared grid volatility surface:
 
 .. code-block:: python
 
@@ -153,6 +154,7 @@ bounded vanilla equity option books on one shared flat volatility surface:
    print(aad.risk_vector.to_payload())
 
 This option lane is intentionally narrower than ``Session.risk_report(...)``:
-it supports European call/put specs on ``FlatVol`` only, returns a typed
-``PortfolioAADResult`` directly, and reports non-European or non-flat-vol
-positions as unsupported instead of inserting a finite-difference fallback.
+it supports European call/put specs on one shared ``FlatVol`` or
+``GridVolSurface``, returns a typed ``PortfolioAADResult`` directly, and
+reports non-European or unsupported-surface positions as unsupported instead of
+inserting a finite-difference fallback.

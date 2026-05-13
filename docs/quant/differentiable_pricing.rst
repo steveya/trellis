@@ -82,14 +82,15 @@ The checked support contract is intentionally explicit:
    * - Book-level reverse mode
      - reverse-mode curve risk for supported bond books through
        ``trellis.book.portfolio_aad_curve_risk(...)`` and
-       ``Session.risk_report(...)``; reverse-mode flat-vol risk for bounded
+       ``Session.risk_report(...)``; reverse-mode vol risk for bounded
        vanilla equity option books through
        ``trellis.book.portfolio_aad_equity_option_vol_risk(...)``
      - bounded to supported bond positions on a shared ``YieldCurve`` and
-       European call/put option specs on one shared ``FlatVol``; factorized
-       risk uses stable ``RiskFactorId`` coordinates and ``RiskAggregationMap``
-       bucket totals, while unsupported positions are listed in metadata and
-       excluded from the reverse-mode aggregate
+       European call/put option specs on one shared ``FlatVol`` or
+       ``GridVolSurface`` node grid; factorized risk uses stable
+       ``RiskFactorId`` coordinates and ``RiskAggregationMap`` bucket totals,
+       while unsupported positions are listed in metadata and excluded from
+       the reverse-mode aggregate
    * - Flat volatility risk
      - scalar vega through ``autodiff_flat_vol``
      - flat surfaces only
@@ -162,9 +163,10 @@ keeping today's ``autograd`` boundary honest.
   ``YieldCurve``, with factorized sparse risk metadata and unsupported
   positions excluded explicitly in metadata
 - bounded book-level reverse mode for European vanilla equity call/put books on
-  a shared ``FlatVol`` through
+  a shared ``FlatVol`` or ``GridVolSurface`` through
   ``trellis.book.portfolio_aad_equity_option_vol_risk(...)``, verified against
-  independent central finite-difference bump/reprice
+  independent central finite-difference bump/reprice for scalar flat-vol and
+  grid-node sensitivities
 - rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
   matrix
 - flat-vol Vega extraction in the analytics layer
@@ -276,29 +278,31 @@ coordinate. It records object type, object name, coordinate type, optional
 currency or issuer, sorted axes such as ``tenor_years``, and an optional
 provenance namespace. ``RiskFactorRegistry`` discovers supported
 ``YieldCurve`` zero-rate nodes for the executable bond-book lane and supported
-``FlatVol`` scalar-vol coordinates for the bounded vanilla option lane. It can
-also describe credit-curve hazard nodes, grid volatility nodes, and scalar
-model parameters as ``discovery_only`` coordinates for future adapters.
+``FlatVol`` scalar-vol and ``GridVolSurface`` node-vol coordinates for the
+bounded vanilla option lane. It can also describe credit-curve hazard nodes and
+scalar model parameters as ``discovery_only`` coordinates for future adapters.
 
 ``trellis.analytics.admit_portfolio_aad_lane(...)`` is the semantic admission
 gate used before widening those adapters. It classifies ``ContractIR`` and
 ``DynamicContractIR`` shapes into supported, planned, or unsupported
 portfolio-AAD lanes, and records the required market-coordinate family before a
 pricing tape is built. Today terminal European vanilla option ``ContractIR``
-shapes over scalar flat vol are admitted as supported, grid-vol vanilla,
-early-exercise/control, smooth path-dependent, and hybrid/correlation shapes
-are recorded as planned fail-closed lanes, and discontinuous event monitors are
-reported as unsupported. Admission metadata is a support decision only; it is
-not itself a pricing implementation.
+shapes over scalar flat vol and grid-vol node coordinates are admitted as
+supported, early-exercise/control, smooth path-dependent, and
+hybrid/correlation shapes are recorded as planned fail-closed lanes, and
+discontinuous event monitors are reported as unsupported. Admission metadata is
+a support decision only; it is not itself a pricing implementation.
 
 ``portfolio_aad_equity_option_vol_risk(...)`` returns the typed
 ``PortfolioAADResult`` directly. It supports smooth European call/put specs
 that expose ``spot``, ``strike``, ``expiry_date``, ``option_type``, optional
 ``notional``, and optional ``exercise_style="european"``. The lane prices from
-one shared ``FlatVol`` and aggregates all supported positions onto one
-canonical ``vol_surface`` / ``flat_vol`` factor. American, Bermudan, barrier,
-Asian, path-dependent, local-vol, and grid-vol option AAD remain unsupported in
-this lane and are reported as unsupported positions rather than silently bumped.
+one shared ``FlatVol`` or ``GridVolSurface``. Flat-vol books aggregate onto one
+canonical ``vol_surface`` / ``flat_vol`` factor, while grid-vol books aggregate
+onto sparse ``vol_surface`` / ``black_vol`` expiry/strike node factors.
+American, Bermudan, barrier, Asian, path-dependent, and local-vol option AAD
+remain unsupported in this lane and are reported as unsupported positions
+rather than silently bumped.
 
 ``PortfolioAADRequest`` is the request-side support contract. A request may
 select a subset of factors, set the unsupported-position policy, and preserve

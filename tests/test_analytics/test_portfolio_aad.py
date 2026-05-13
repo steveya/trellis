@@ -28,7 +28,7 @@ from trellis.book import Book, portfolio_aad_equity_option_vol_risk
 from trellis.curves.yield_curve import YieldCurve
 from trellis.core.market_state import MarketState
 from trellis.instruments.bond import Bond
-from trellis.models.vol_surface import FlatVol
+from trellis.models.vol_surface import FlatVol, GridVolSurface
 
 
 def _curve_factor(tenor: float) -> RiskFactorId:
@@ -69,6 +69,20 @@ def _equity_market_state(vol: float = 0.2) -> MarketState:
         settlement=settlement,
         discount=YieldCurve.flat(0.05),
         vol_surface=FlatVol(vol),
+    )
+
+
+def _equity_grid_market_state() -> MarketState:
+    settlement = date(2024, 11, 15)
+    return MarketState(
+        as_of=settlement,
+        settlement=settlement,
+        discount=YieldCurve.flat(0.05),
+        vol_surface=GridVolSurface(
+            expiries=(0.5, 1.5),
+            strikes=(90.0, 110.0),
+            vols=((0.18, 0.21), (0.24, 0.27)),
+        ),
     )
 
 
@@ -335,6 +349,49 @@ def test_vanilla_equity_option_vol_adapter_vjp_returns_sparse_vol_risk():
     assert sensitivity > 0.0
 
 
+def test_vanilla_equity_option_vol_adapter_reports_grid_vol_dependencies():
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_grid_market_state(),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+    spec = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+    )
+
+    decision = adapter.support_decision("call", spec, context, PortfolioAADRequest())
+    dependencies = adapter.factor_dependencies(spec, context, PortfolioAADRequest())
+
+    assert decision.supported is True
+    assert decision.reason == "supported_vanilla_equity_grid_vol_aad"
+    assert dependencies == decision.factor_dependencies
+    assert len(dependencies) == 4
+    assert {factor.coordinate_type for factor in dependencies} == {"black_vol"}
+    assert {dict(factor.axes)["expiry_years"] for factor in dependencies} == {"0.5", "1.5"}
+    assert context.coordinates()[0].support_status == "supported"
+
+
+def test_vanilla_equity_option_vol_adapter_vjp_returns_sparse_grid_node_risk():
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_grid_market_state())
+    spec = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        notional=2.0,
+    )
+
+    vector = adapter.vjp(spec, context, PortfolioAADRequest(), weight=5.0)
+
+    assert len(vector) == 4
+    assert all(factor.object_type == "vol_surface" for factor in vector)
+    assert {factor.coordinate_type for factor in vector} == {"black_vol"}
+    assert all(sensitivity > 0.0 for _, sensitivity in vector.items())
+
+
 def test_vanilla_equity_option_vol_adapter_rejects_non_european_options():
     adapter = VanillaEquityOptionVolAADAdapter()
     context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
@@ -392,6 +449,41 @@ def test_portfolio_aad_equity_option_vol_risk_aggregates_shared_flat_vol_factor(
         result.method_metadata["risk_bucket_totals"]["totals"][0]["buckets"]["risk_class"]
         == "volatility"
     )
+
+
+def test_portfolio_aad_equity_option_vol_risk_aggregates_shared_grid_vol_nodes():
+    context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_grid_market_state(),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+    call = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="call",
+    )
+    put = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+    )
+    book = Book({"call": call, "put": put}, notionals={"call": 10.0, "put": 4.0})
+
+    result = portfolio_aad_equity_option_vol_risk(book, context)
+
+    assert result.support_status == "supported"
+    assert result.method_metadata["parameterization"] == "shared_grid_vol"
+    assert result.method_metadata["vol_surface_type"] == "GridVolSurface"
+    assert len(result.risk_vector) == 4
+    assert len(result.coordinates) == 4
+    assert result.method_metadata["risk_bucket_totals"]["bucket_names"] == [
+        "risk_class",
+        "currency",
+        "expiry",
+        "strike",
+    ]
 
 
 def test_portfolio_aad_equity_option_vol_risk_applies_selected_factor_filter():

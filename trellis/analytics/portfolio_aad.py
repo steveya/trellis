@@ -285,7 +285,7 @@ class BondCurveAADAdapter:
 
 @dataclass(frozen=True)
 class VanillaEquityOptionVolAADMarketContext:
-    """Market context for the bounded vanilla-equity flat-vol AAD lane."""
+    """Market context for the bounded vanilla-equity vol-surface AAD lane."""
 
     market_state: object
     vol_surface_name: str = "default_vol_surface"
@@ -294,24 +294,40 @@ class VanillaEquityOptionVolAADMarketContext:
     object_path: str = ""
 
     def coordinates(self) -> tuple[RiskFactorCoordinate, ...]:
-        """Return the supported scalar flat-vol coordinate for this context."""
+        """Return supported vol coordinates for this context."""
         market_state = self.market_state
         vol_surface = getattr(market_state, "vol_surface", None)
         if vol_surface is None:
             raise ValueError("vanilla equity option AAD requires market_state.vol_surface")
-        return RiskFactorRegistry().discover_flat_vol_surface(
-            vol_surface,
-            object_name=self.vol_surface_name,
-            currency=self.currency,
-            object_path=self.object_path,
-            provenance_namespace=self.provenance_namespace,
-            support_status="supported",
+        from trellis.models.vol_surface import FlatVol, GridVolSurface
+
+        registry = RiskFactorRegistry()
+        if isinstance(vol_surface, FlatVol):
+            return registry.discover_flat_vol_surface(
+                vol_surface,
+                object_name=self.vol_surface_name,
+                currency=self.currency,
+                object_path=self.object_path,
+                provenance_namespace=self.provenance_namespace,
+                support_status="supported",
+            )
+        if isinstance(vol_surface, GridVolSurface):
+            return registry.discover_grid_vol_surface(
+                vol_surface,
+                object_name=self.vol_surface_name,
+                currency=self.currency,
+                object_path=self.object_path,
+                provenance_namespace=self.provenance_namespace,
+                support_status="supported",
+            )
+        raise ValueError(
+            "unsupported vol surface parameterization for vanilla equity option AAD"
         )
 
 
 @dataclass(frozen=True)
 class VanillaEquityOptionVolAADAdapter:
-    """Concrete adapter for vanilla European equity-option risk to one FlatVol."""
+    """Concrete adapter for vanilla European equity-option risk to one surface."""
 
     def support_decision(
         self,
@@ -332,9 +348,10 @@ class VanillaEquityOptionVolAADAdapter:
         if getattr(market_state, "vol_surface", None) is None:
             return AADSupportDecision(False, "vol_surface_required")
 
-        from trellis.models.vol_surface import FlatVol
+        from trellis.models.vol_surface import FlatVol, GridVolSurface
 
-        if not isinstance(getattr(market_state, "vol_surface", None), FlatVol):
+        vol_surface = getattr(market_state, "vol_surface", None)
+        if not isinstance(vol_surface, (FlatVol, GridVolSurface)):
             return AADSupportDecision(False, "unsupported_vol_surface_parameterization")
 
         missing_fields = tuple(
@@ -386,7 +403,7 @@ class VanillaEquityOptionVolAADAdapter:
         except Exception as exc:
             return AADSupportDecision(
                 False,
-                "flat_vol_coordinate_unavailable",
+                "vol_surface_coordinate_unavailable",
                 diagnostics=(
                     {
                         "position_name": str(position_name),
@@ -397,7 +414,7 @@ class VanillaEquityOptionVolAADAdapter:
             )
         return AADSupportDecision(
             True,
-            "supported_vanilla_equity_flat_vol_aad",
+            _vanilla_equity_option_support_reason(vol_surface),
             factor_dependencies=dependencies,
         )
 
@@ -407,9 +424,11 @@ class VanillaEquityOptionVolAADAdapter:
         market_context: object,
         request: PortfolioAADRequest,
     ) -> tuple[RiskFactorId, ...]:
-        """Return the shared flat-vol factor for a supported vanilla option."""
+        """Return shared vol-surface factors for a supported vanilla option."""
         context = self._context(market_context)
-        return tuple(coordinate.factor_id for coordinate in context.coordinates())
+        return _sorted_unique_factors(
+            coordinate.factor_id for coordinate in context.coordinates()
+        )
 
     def value(
         self,
@@ -432,26 +451,61 @@ class VanillaEquityOptionVolAADAdapter:
         request: PortfolioAADRequest,
         weight: float = 1.0,
     ) -> SparseRiskVector:
-        """Return the sparse flat-vol VJP vector for one option position."""
+        """Return the sparse vol-surface VJP vector for one option position."""
         from trellis.core.differentiable import get_numpy, vjp
+        from trellis.models.vol_surface import FlatVol, GridVolSurface
 
         context = self._context(market_context)
         market_state = context.market_state
         coordinates = context.coordinates()
         vol_surface = getattr(market_state, "vol_surface", None)
-        base_vol = float(getattr(vol_surface, "vol"))
+        if isinstance(vol_surface, FlatVol):
+            base_vol = float(getattr(vol_surface, "vol"))
 
-        def value_from_vol(vol):
-            return _vanilla_equity_option_value_from_vol(instrument, market_state, vol)
+            def value_from_vol(vol):
+                return _vanilla_equity_option_value_from_vol(
+                    instrument,
+                    market_state,
+                    vol,
+                )
 
-        _value, pullback = vjp(value_from_vol, base_vol)
-        np = get_numpy()
-        gradient = np.asarray(pullback(float(weight)), dtype=float)
-        sensitivity = float(np.reshape(gradient, (-1,))[0])
-        vector = SparseRiskVector.from_items(
-            ((coordinates[0].factor_id, sensitivity),)
+            _value, pullback = vjp(value_from_vol, base_vol)
+            np = get_numpy()
+            gradient = np.asarray(pullback(float(weight)), dtype=float)
+            sensitivity = float(np.reshape(gradient, (-1,))[0])
+            vector = SparseRiskVector.from_items(
+                ((coordinates[0].factor_id, sensitivity),)
+            )
+            return request.filter_vector(vector)
+        if isinstance(vol_surface, GridVolSurface):
+            np = get_numpy()
+            expiries = tuple(float(expiry) for expiry in vol_surface.expiries)
+            strikes = tuple(float(strike) for strike in vol_surface.strikes)
+            base_vols = np.asarray(vol_surface.vols, dtype=float)
+
+            def value_from_nodes(vol_nodes):
+                traced_surface = GridVolSurface(expiries, strikes, vol_nodes)
+                maturity = _vanilla_equity_option_maturity(instrument, market_state)
+                sigma = traced_surface.black_vol(
+                    maturity,
+                    float(getattr(instrument, "strike")),
+                )
+                return _vanilla_equity_option_value_from_vol(
+                    instrument,
+                    market_state,
+                    sigma,
+                )
+
+            _value, pullback = vjp(value_from_nodes, base_vols)
+            gradient = np.asarray(pullback(float(weight)), dtype=float).reshape(-1)
+            vector = SparseRiskVector.from_items(
+                (coordinate.factor_id, sensitivity)
+                for coordinate, sensitivity in zip(coordinates, gradient)
+            )
+            return request.filter_vector(vector)
+        raise ValueError(
+            "unsupported vol surface parameterization for vanilla equity option AAD"
         )
-        return request.filter_vector(vector)
 
     @staticmethod
     def _context(market_context: object) -> VanillaEquityOptionVolAADMarketContext:
@@ -475,6 +529,15 @@ def _vanilla_equity_option_maturity(instrument: object, market_state: object) ->
         raise ValueError("market_state must provide settlement or as_of")
     day_count = getattr(instrument, "day_count", DayCountConvention.ACT_365)
     return float(year_fraction(settlement, getattr(instrument, "expiry_date"), day_count))
+
+
+def _vanilla_equity_option_support_reason(vol_surface: object) -> str:
+    """Return the support reason for the active vanilla-option vol surface."""
+    from trellis.models.vol_surface import GridVolSurface
+
+    if isinstance(vol_surface, GridVolSurface):
+        return "supported_vanilla_equity_grid_vol_aad"
+    return "supported_vanilla_equity_flat_vol_aad"
 
 
 def _vanilla_equity_option_value_from_vol(

@@ -717,6 +717,7 @@ class RiskFactorRegistry:
         currency: str | None = None,
         object_path: str = "",
         provenance_namespace: str | None = None,
+        support_status: str = "discovery_only",
     ) -> tuple[RiskFactorCoordinate, ...]:
         """Return discovery-only Black-vol node coordinates for a grid surface."""
         expiries = getattr(surface, "expiries", None)
@@ -747,7 +748,7 @@ class RiskFactorRegistry:
                         display_name=f"{object_name} {expiry_label}Y {strike_label} vol",
                         unit="volatility",
                         transform="identity",
-                        support_status="discovery_only",
+                        support_status=support_status,
                         reporting_buckets={
                             "risk_class": "volatility",
                             "currency": currency or "",

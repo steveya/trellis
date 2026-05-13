@@ -411,6 +411,24 @@ def portfolio_aad_curve_risk(
     return RiskMeasureOutput(key_rate_durations, metadata=metadata)
 
 
+def _portfolio_aad_option_vol_parameterization(vol_surface: object) -> str:
+    """Return the portfolio-AAD option-vol parameterization id."""
+    from trellis.models.vol_surface import GridVolSurface
+
+    if isinstance(vol_surface, GridVolSurface):
+        return "shared_grid_vol"
+    return "shared_flat_vol"
+
+
+def _portfolio_aad_option_vol_bucket_names(vol_surface: object) -> tuple[str, ...]:
+    """Return risk aggregation buckets for the active option-vol surface."""
+    from trellis.models.vol_surface import GridVolSurface
+
+    if isinstance(vol_surface, GridVolSurface):
+        return ("risk_class", "currency", "expiry", "strike")
+    return ("risk_class", "currency", "object_name")
+
+
 def portfolio_aad_equity_option_vol_risk(
     book: Book,
     market_context: VanillaEquityOptionVolAADMarketContext | object,
@@ -451,7 +469,7 @@ def portfolio_aad_equity_option_vol_risk(
     except Exception as exc:
         diagnostics.append(
             {
-                "code": "flat_vol_coordinate_unavailable",
+                "code": "vol_surface_coordinate_unavailable",
                 "severity": "warning",
                 "error_type": type(exc).__name__,
                 "error": str(exc),
@@ -515,7 +533,16 @@ def portfolio_aad_equity_option_vol_risk(
         else "unsupported"
     )
     selected_vector = resolved_request.filter_vector(full_vector)
-    available_coordinates = tuple(full_coordinates) if supported_position_names else ()
+    full_factors = set(full_vector)
+    available_coordinates = (
+        tuple(
+            coordinate
+            for coordinate in full_coordinates
+            if coordinate.factor_id in full_factors
+        )
+        if supported_position_names
+        else ()
+    )
     selected_factors = set(selected_vector)
     if resolved_request.selects_all_factors:
         selected_coordinates = available_coordinates
@@ -531,7 +558,9 @@ def portfolio_aad_equity_option_vol_risk(
         )
     risk_aggregation_map = RiskAggregationMap.from_coordinates(
         selected_coordinates,
-        bucket_names=("risk_class", "currency", "object_name"),
+        bucket_names=_portfolio_aad_option_vol_bucket_names(
+            getattr(context.market_state, "vol_surface", None)
+        ),
         default_bucket="all",
     )
     fallback_reason = None
@@ -544,7 +573,9 @@ def portfolio_aad_equity_option_vol_risk(
         "portfolio_aad_vjp",
         method_support=support_status,
         backend_id=capabilities.backend_id,
-        parameterization="shared_flat_vol",
+        parameterization=_portfolio_aad_option_vol_parameterization(
+            getattr(context.market_state, "vol_surface", None)
+        ),
         support_status=support_status,
         aad_adapter=type(adapter).__name__,
         vol_surface_name=context.vol_surface_name,
