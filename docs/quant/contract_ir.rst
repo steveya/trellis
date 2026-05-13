@@ -59,9 +59,11 @@ The current admission vocabulary is deliberately narrow:
   bounded flat-vol vanilla option lane is supported under a
   hard-exercise-projection, smooth-interior policy that fails closed near
   exercise-boundary ties, while grid-vol early-exercise AAD remains planned
-- smooth path summaries such as arithmetic averaging are planned fail-closed,
-  while discontinuous event monitors are unsupported for AAD unless a custom
-  derivative policy is explicitly added
+- smooth path summaries such as arithmetic averaging are supported for the
+  bounded flat-vol arithmetic-Asian lane under a lognormal moment-matching
+  derivative policy; grid-vol path AAD remains planned, and discontinuous event
+  monitors are unsupported for AAD unless a custom derivative policy is
+  explicitly added
 - hybrid/composite-underlier shapes require explicit correlation or
   cross-factor coordinates before any AAD lane can be admitted
 

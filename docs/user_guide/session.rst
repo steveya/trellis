@@ -155,6 +155,24 @@ one shared grid volatility surface:
 
 This option lane is intentionally narrower than ``Session.risk_report(...)``:
 it supports European call/put specs on one shared ``FlatVol`` or
-``GridVolSurface``, returns a typed ``PortfolioAADResult`` directly, and
-reports non-European or unsupported-surface positions as unsupported instead of
-inserting a finite-difference fallback.
+``GridVolSurface`` plus bounded smooth-interior American/Bermudan specs over
+``FlatVol``, returns a typed ``PortfolioAADResult`` directly, and reports
+unsupported positions as unsupported instead of inserting a finite-difference
+fallback.
+
+Arithmetic-average Asian options use a separate path-summary lane:
+
+.. code-block:: python
+
+   from trellis.book import portfolio_aad_arithmetic_asian_vol_risk
+
+   aad = portfolio_aad_arithmetic_asian_vol_risk(
+       book,
+       market,
+       vol_surface_name="spx_flat",
+       currency="USD",
+   )
+
+That lane supports bounded European arithmetic-average call/put specs over a
+shared ``FlatVol`` and reports barrier, knock, grid-vol path, and other
+discontinuous or unsupported path features as fail-closed metadata.

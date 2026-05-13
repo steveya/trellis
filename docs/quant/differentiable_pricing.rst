@@ -171,6 +171,10 @@ keeping today's ``autograd`` boundary honest.
   call/put books over a shared ``FlatVol`` under a hard exercise-projection,
   smooth-interior policy; positions close to continuation/intrinsic ties fail
   closed instead of reporting unstable AAD Greeks
+- bounded book-level reverse mode for arithmetic-Asian European call/put books
+  over a shared ``FlatVol`` through
+  ``trellis.book.portfolio_aad_arithmetic_asian_vol_risk(...)`` using a
+  lognormal moment-matching smooth path-summary derivative policy
 - rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
   matrix
 - flat-vol Vega extraction in the analytics layer
@@ -255,10 +259,11 @@ runtime reporting must not overstate.
      - bounded bond-book and option-book portfolio AAD routes
      - ``portfolio_aad_vjp``
      - partial support: shared-curve bond books, European option books over
-       shared flat/grid vol, and smooth-interior early-exercise option books
-       over shared flat vol use VJP-backed reverse-mode aggregates over
-       canonical risk-factor IDs, while unsupported positions are excluded and
-       reported in metadata
+       shared flat/grid vol, smooth-interior early-exercise option books over
+       shared flat vol, and arithmetic-Asian smooth path-summary books over
+       shared flat vol use VJP-backed reverse-mode aggregates over canonical
+       risk-factor IDs, while unsupported positions are excluded and reported
+       in metadata
 
 Bounded Portfolio-AAD Factor Payload
 ------------------------------------
@@ -294,10 +299,12 @@ portfolio-AAD lanes, and records the required market-coordinate family before a
 pricing tape is built. Today terminal European vanilla option ``ContractIR``
 shapes over scalar flat vol and grid-vol node coordinates are admitted as
 supported. Early-exercise/control shapes are admitted for the bounded flat-vol
-vanilla option lane under the smooth-interior hard-projection policy, grid-vol
-early-exercise and smooth path-dependent shapes remain planned fail-closed, and
-discontinuous event monitors are reported as unsupported. Admission metadata is
-a support decision only; it is not itself a pricing implementation.
+vanilla option lane under the smooth-interior hard-projection policy.
+Arithmetic-average path summaries are admitted for the bounded flat-vol
+arithmetic-Asian lane under the lognormal moment-matching policy. Grid-vol
+early-exercise and grid-vol path-dependent shapes remain planned fail-closed,
+and discontinuous event monitors are reported as unsupported. Admission
+metadata is a support decision only; it is not itself a pricing implementation.
 
 ``portfolio_aad_equity_option_vol_risk(...)`` returns the typed
 ``PortfolioAADResult`` directly. It supports smooth European call/put specs
@@ -308,9 +315,19 @@ exercise policy is smooth enough for the configured
 ``early_exercise_boundary_tolerance``. Flat-vol books aggregate onto one
 canonical ``vol_surface`` / ``flat_vol`` factor, while grid-vol European books
 aggregate onto sparse ``vol_surface`` / ``black_vol`` expiry/strike node
-factors. Grid-vol early-exercise, barrier, Asian, path-dependent, and local-vol
-option AAD remain unsupported or planned in this lane and are reported as
-unsupported positions rather than silently bumped.
+factors. Grid-vol early-exercise, arithmetic Asians, barrier, broader
+path-dependent, and local-vol option AAD remain unsupported or planned in this
+lane and are reported as unsupported positions rather than silently bumped.
+
+``portfolio_aad_arithmetic_asian_vol_risk(...)`` is the bounded smooth
+path-summary lane. It supports European arithmetic-average call/put specs that
+expose ``spot``, ``strike``, ``expiry_date``, ``observation_dates`` or
+``n_observations``, ``option_type``, optional ``notional``, and optional
+``dividend_yield``. It prices with the same moment-matched lognormal
+approximation as the bounded arithmetic-Asian helper and differentiates the
+shared ``FlatVol`` scalar with VJP. Barrier, knock, first-hit, grid-vol path,
+early-exercise path, geometric-average, and broader event-monitor shapes fail
+closed with explicit support reasons.
 
 ``PortfolioAADRequest`` is the request-side support contract. A request may
 select a subset of factors, set the unsupported-position policy, and preserve

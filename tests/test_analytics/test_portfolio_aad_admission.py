@@ -180,7 +180,7 @@ def test_dynamic_early_exercise_contract_keeps_grid_vol_control_policy_planned()
     assert admission.factor_requirements[0].coordinate_type == "black_vol"
 
 
-def test_path_dependent_arithmetic_summary_is_explicitly_pending():
+def test_path_dependent_arithmetic_summary_admits_flat_vol_lane():
     averaging_schedule = FiniteSchedule(OBSERVATIONS)
     contract = ContractIR(
         payoff=Max(
@@ -196,10 +196,36 @@ def test_path_dependent_arithmetic_summary_is_explicitly_pending():
 
     admission = admit_portfolio_aad_lane(contract)
 
+    assert admission.admitted is True
+    assert admission.support_status == "supported"
+    assert admission.reason == "supported_arithmetic_asian_flat_vol_aad"
+    assert admission.lane_id == "arithmetic_asian_option_flat_vol"
+    assert admission.contract_shape == "arithmetic_asian_option"
+    assert admission.metadata["derivative_policy"] == (
+        "lognormal_moment_matching_smooth_path_summary"
+    )
+
+
+def test_path_dependent_arithmetic_summary_keeps_grid_vol_lane_planned():
+    averaging_schedule = FiniteSchedule(OBSERVATIONS)
+    contract = ContractIR(
+        payoff=Max(
+            (
+                Sub(ArithmeticMean(Spot("AAPL"), averaging_schedule), Strike(100.0)),
+                Constant(0.0),
+            )
+        ),
+        exercise=Exercise("european", Singleton(EXPIRY)),
+        observation=Observation("path_dependent", averaging_schedule),
+        underlying=Underlying(EquitySpot("AAPL", "gbm")),
+    )
+
+    admission = admit_portfolio_aad_lane(contract, market_parameterization="grid_vol")
+
     assert admission.admitted is False
     assert admission.support_status == "planned"
-    assert admission.reason == "path_dependent_aad_pending"
-    assert admission.contract_shape == "path_dependent_smooth_summary"
+    assert admission.reason == "path_dependent_grid_vol_aad_pending"
+    assert admission.factor_requirements[0].coordinate_type == "black_vol"
 
 
 def test_discontinuous_event_monitor_is_unsupported_not_planned():

@@ -410,6 +410,40 @@ def _admit_contract_ir(
             factor_requirements=(_vol_requirement(market_parameterization),),
             metadata={"exercise_style": contract.exercise.style, "fail_closed": True},
         )
+    if _is_arithmetic_asian_option(contract):
+        if market_parameterization in {"flat_vol", "scalar_flat_vol"}:
+            return _admission(
+                admitted=True,
+                lane_id="arithmetic_asian_option_flat_vol",
+                support_status="supported",
+                reason="supported_arithmetic_asian_flat_vol_aad",
+                semantic_contract_type="ContractIR",
+                product_family=product_family or "arithmetic_asian_option",
+                contract_shape="arithmetic_asian_option",
+                factor_requirements=(_flat_vol_requirement(),),
+                metadata={
+                    "observation_kind": contract.observation.kind,
+                    "path_summary": "arithmetic_average",
+                    "derivative_policy": "lognormal_moment_matching_smooth_path_summary",
+                    "fail_closed_for_discontinuous_monitors": True,
+                },
+            )
+        if market_parameterization in {"grid_vol", "grid_node_vols"}:
+            return _admission(
+                admitted=False,
+                lane_id="path_dependent_option_grid_vol",
+                support_status="planned",
+                reason="path_dependent_grid_vol_aad_pending",
+                semantic_contract_type="ContractIR",
+                product_family=product_family or "arithmetic_asian_option",
+                contract_shape="arithmetic_asian_option",
+                factor_requirements=(_grid_vol_requirement(),),
+                metadata={
+                    "observation_kind": contract.observation.kind,
+                    "path_summary": "arithmetic_average",
+                    "fail_closed": True,
+                },
+            )
     if contract.observation.kind == "path_dependent" or _contains_arithmetic_mean(contract.payoff):
         return _admission(
             admitted=False,
@@ -516,6 +550,19 @@ def _is_terminal_vanilla_option(contract: ContractIR) -> bool:
     return _is_spot_strike_sub(body) or _is_strike_spot_sub(body)
 
 
+def _is_arithmetic_asian_option(contract: ContractIR) -> bool:
+    if contract.exercise.style != "european":
+        return False
+    if contract.observation.kind not in {"path_dependent", "schedule"}:
+        return False
+    body = _vanilla_intrinsic_body(contract.payoff)
+    if body is None:
+        return False
+    if not isinstance(contract.underlying.spec, tuple(_EQUITY_UNDERLYING_TYPES)):
+        return False
+    return _is_arithmetic_mean_strike_sub(body) or _is_strike_arithmetic_mean_sub(body)
+
+
 def _vanilla_intrinsic_body(expr: object) -> object | None:
     if not isinstance(expr, Max) or len(expr.args) != 2:
         return None
@@ -533,6 +580,24 @@ def _is_spot_strike_sub(expr: object) -> bool:
 
 def _is_strike_spot_sub(expr: object) -> bool:
     return isinstance(expr, Sub) and isinstance(expr.lhs, Strike) and isinstance(expr.rhs, Spot)
+
+
+def _is_arithmetic_mean_strike_sub(expr: object) -> bool:
+    return (
+        isinstance(expr, Sub)
+        and isinstance(expr.lhs, ArithmeticMean)
+        and isinstance(expr.lhs.expr, Spot)
+        and isinstance(expr.rhs, Strike)
+    )
+
+
+def _is_strike_arithmetic_mean_sub(expr: object) -> bool:
+    return (
+        isinstance(expr, Sub)
+        and isinstance(expr.lhs, Strike)
+        and isinstance(expr.rhs, ArithmeticMean)
+        and isinstance(expr.rhs.expr, Spot)
+    )
 
 
 def _is_zero_constant(expr: object) -> bool:
