@@ -15,6 +15,11 @@ from trellis.analytics.risk_factors import (
 )
 
 
+_EARLY_EXERCISE_AAD_POLICY = "hard_exercise_projection_smooth_interior"
+_DEFAULT_EARLY_EXERCISE_TREE_STEPS = 128
+_DEFAULT_EARLY_EXERCISE_BOUNDARY_TOLERANCE = 1.0e-12
+
+
 def _sorted_unique_factors(factors: Iterable[RiskFactorId]) -> tuple[RiskFactorId, ...]:
     factor_map: dict[RiskFactorId, RiskFactorId] = {}
     for factor in factors:
@@ -371,10 +376,8 @@ class VanillaEquityOptionVolAADAdapter:
                 ),
             )
 
-        exercise_style = (
-            str(getattr(instrument, "exercise_style", "european")).strip().lower()
-        )
-        if exercise_style != "european":
+        exercise_style = _vanilla_equity_option_exercise_style(instrument)
+        if exercise_style not in {"european", "american", "bermudan"}:
             return AADSupportDecision(False, "unsupported_exercise_style")
 
         option_type = str(getattr(instrument, "option_type", "call")).strip().lower()
@@ -397,6 +400,73 @@ class VanillaEquityOptionVolAADAdapter:
             )
         if maturity <= 0.0:
             return AADSupportDecision(False, "positive_maturity_required")
+
+        if exercise_style in {"american", "bermudan"}:
+            if not isinstance(vol_surface, FlatVol):
+                return AADSupportDecision(
+                    False,
+                    "unsupported_early_exercise_vol_surface_parameterization",
+                )
+            base_vol = float(getattr(vol_surface, "vol"))
+            if base_vol <= 0.0:
+                return AADSupportDecision(False, "positive_vol_required")
+            if exercise_style == "bermudan" and not _vanilla_equity_option_exercise_steps(
+                instrument,
+                market_state,
+                maturity=maturity,
+                n_steps=_vanilla_equity_option_tree_steps(instrument),
+            ):
+                return AADSupportDecision(False, "bermudan_exercise_schedule_required")
+            try:
+                _, boundary_margin = _vanilla_equity_option_early_exercise_value_from_vol(
+                    instrument,
+                    market_state,
+                    base_vol,
+                    return_boundary_margin=True,
+                )
+            except Exception as exc:
+                return AADSupportDecision(
+                    False,
+                    "early_exercise_policy_unavailable",
+                    diagnostics=(
+                        {
+                            "position_name": str(position_name),
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        },
+                    ),
+                )
+            diagnostic = _vanilla_equity_option_early_exercise_diagnostic(
+                instrument,
+                boundary_margin=boundary_margin,
+            )
+            tolerance = _vanilla_equity_option_boundary_tolerance(instrument)
+            if boundary_margin is not None and boundary_margin <= tolerance:
+                return AADSupportDecision(
+                    False,
+                    "early_exercise_boundary_kink",
+                    diagnostics=(diagnostic,),
+                )
+            try:
+                dependencies = self.factor_dependencies(instrument, context, request)
+            except Exception as exc:
+                return AADSupportDecision(
+                    False,
+                    "vol_surface_coordinate_unavailable",
+                    diagnostics=(
+                        {
+                            "position_name": str(position_name),
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        },
+                    ),
+                )
+            return AADSupportDecision(
+                True,
+                "supported_vanilla_equity_early_exercise_flat_vol_aad",
+                factor_dependencies=dependencies,
+                diagnostics=(diagnostic,),
+            )
 
         try:
             dependencies = self.factor_dependencies(instrument, context, request)
@@ -442,6 +512,14 @@ class VanillaEquityOptionVolAADAdapter:
         vol_surface = getattr(market_state, "vol_surface", None)
         maturity = _vanilla_equity_option_maturity(instrument, market_state)
         sigma = vol_surface.black_vol(maturity, float(getattr(instrument, "strike")))
+        if _vanilla_equity_option_exercise_style(instrument) in {"american", "bermudan"}:
+            return float(
+                _vanilla_equity_option_early_exercise_value_from_vol(
+                    instrument,
+                    market_state,
+                    sigma,
+                )
+            )
         return float(_vanilla_equity_option_value_from_vol(instrument, market_state, sigma))
 
     def vjp(
@@ -463,6 +541,15 @@ class VanillaEquityOptionVolAADAdapter:
             base_vol = float(getattr(vol_surface, "vol"))
 
             def value_from_vol(vol):
+                if _vanilla_equity_option_exercise_style(instrument) in {
+                    "american",
+                    "bermudan",
+                }:
+                    return _vanilla_equity_option_early_exercise_value_from_vol(
+                        instrument,
+                        market_state,
+                        vol,
+                    )
                 return _vanilla_equity_option_value_from_vol(
                     instrument,
                     market_state,
@@ -531,6 +618,10 @@ def _vanilla_equity_option_maturity(instrument: object, market_state: object) ->
     return float(year_fraction(settlement, getattr(instrument, "expiry_date"), day_count))
 
 
+def _vanilla_equity_option_exercise_style(instrument: object) -> str:
+    return str(getattr(instrument, "exercise_style", "european")).strip().lower()
+
+
 def _vanilla_equity_option_support_reason(vol_surface: object) -> str:
     """Return the support reason for the active vanilla-option vol surface."""
     from trellis.models.vol_surface import GridVolSurface
@@ -570,6 +661,173 @@ def _vanilla_equity_option_value_from_vol(
     if option_type == "call":
         return notional * df * black76_call(forward, strike, sigma, maturity)
     raise ValueError(f"unsupported option_type: {option_type!r}")
+
+
+def _vanilla_equity_option_tree_steps(instrument: object) -> int:
+    raw_steps = getattr(
+        instrument,
+        "aad_tree_steps",
+        getattr(instrument, "tree_steps", _DEFAULT_EARLY_EXERCISE_TREE_STEPS),
+    )
+    n_steps = int(raw_steps)
+    if n_steps < 2:
+        raise ValueError("early-exercise option AAD requires at least two tree steps")
+    return n_steps
+
+
+def _vanilla_equity_option_boundary_tolerance(instrument: object) -> float:
+    raw_tolerance = getattr(
+        instrument,
+        "early_exercise_boundary_tolerance",
+        _DEFAULT_EARLY_EXERCISE_BOUNDARY_TOLERANCE,
+    )
+    return max(float(raw_tolerance), 0.0)
+
+
+def _vanilla_equity_option_exercise_steps(
+    instrument: object,
+    market_state: object,
+    *,
+    maturity: float,
+    n_steps: int,
+) -> frozenset[int]:
+    style = _vanilla_equity_option_exercise_style(instrument)
+    if style == "american":
+        return frozenset(range(0, n_steps))
+    if style != "bermudan":
+        return frozenset()
+    exercise_dates = tuple(getattr(instrument, "exercise_dates", ()) or ())
+    if not exercise_dates:
+        return frozenset()
+
+    from trellis.core.date_utils import year_fraction
+    from trellis.core.types import DayCountConvention
+
+    settlement = (
+        getattr(market_state, "settlement", None)
+        or getattr(market_state, "as_of", None)
+    )
+    if settlement is None:
+        raise ValueError("market_state must provide settlement or as_of")
+    day_count = getattr(instrument, "day_count", DayCountConvention.ACT_365)
+    steps: set[int] = set()
+    for exercise_date in exercise_dates:
+        exercise_time = float(year_fraction(settlement, exercise_date, day_count))
+        if exercise_time <= 0.0 or exercise_time >= maturity:
+            continue
+        step = int(round(exercise_time / maturity * n_steps))
+        if 0 < step < n_steps:
+            steps.add(step)
+    return frozenset(steps)
+
+
+def _vanilla_equity_option_intrinsic_from_spots(
+    instrument: object,
+    spots: object,
+) -> object:
+    from trellis.core.differentiable import get_numpy
+
+    np = get_numpy()
+    strike = float(getattr(instrument, "strike"))
+    notional = float(getattr(instrument, "notional", 1.0))
+    option_type = str(getattr(instrument, "option_type", "call")).strip().lower()
+    if option_type == "put":
+        return notional * np.maximum(strike - spots, 0.0)
+    if option_type == "call":
+        return notional * np.maximum(spots - strike, 0.0)
+    raise ValueError(f"unsupported option_type: {option_type!r}")
+
+
+def _vanilla_equity_option_early_exercise_value_from_vol(
+    instrument: object,
+    market_state: object,
+    sigma: object,
+    *,
+    return_boundary_margin: bool = False,
+) -> object:
+    from trellis.core.differentiable import get_numpy
+
+    np = get_numpy()
+    maturity = _vanilla_equity_option_maturity(instrument, market_state)
+    if maturity <= 0.0:
+        value = _vanilla_equity_option_intrinsic_from_spots(
+            instrument,
+            float(getattr(instrument, "spot")),
+        )
+        if return_boundary_margin:
+            return value, None
+        return value
+
+    discount = getattr(market_state, "discount", None)
+    if discount is None:
+        raise ValueError("early-exercise option AAD requires market_state.discount")
+    n_steps = _vanilla_equity_option_tree_steps(instrument)
+    dt = maturity / float(n_steps)
+    maturity_df = discount.discount(maturity)
+    rate = -np.log(np.maximum(maturity_df, 1.0e-12)) / maturity
+    one_step_df = np.exp(-rate * dt)
+    up = np.exp(sigma * np.sqrt(dt))
+    down = 1.0 / up
+    growth = np.exp(rate * dt)
+    probability = (growth - down) / (up - down)
+
+    spot = float(getattr(instrument, "spot"))
+    terminal_nodes = np.arange(n_steps + 1)
+    terminal_spots = spot * (up ** terminal_nodes) * (
+        down ** (n_steps - terminal_nodes)
+    )
+    values = _vanilla_equity_option_intrinsic_from_spots(instrument, terminal_spots)
+    exercise_steps = _vanilla_equity_option_exercise_steps(
+        instrument,
+        market_state,
+        maturity=maturity,
+        n_steps=n_steps,
+    )
+
+    min_boundary_margin = None
+    for step in range(n_steps - 1, -1, -1):
+        continuation = one_step_df * (
+            (1.0 - probability) * values[:-1] + probability * values[1:]
+        )
+        if step in exercise_steps:
+            nodes = np.arange(step + 1)
+            spots = spot * (up ** nodes) * (down ** (step - nodes))
+            exercise = _vanilla_equity_option_intrinsic_from_spots(instrument, spots)
+            if return_boundary_margin:
+                spread = np.abs(continuation - exercise)
+                active_scale = np.maximum(np.abs(continuation), np.abs(exercise))
+                active = active_scale > 1.0e-12
+                if bool(np.any(active)):
+                    margin = float(np.min(spread[active]))
+                    min_boundary_margin = (
+                        margin
+                        if min_boundary_margin is None
+                        else min(min_boundary_margin, margin)
+                    )
+            values = np.maximum(continuation, exercise)
+        else:
+            values = continuation
+
+    value = values[0]
+    if return_boundary_margin:
+        return value, min_boundary_margin
+    return value
+
+
+def _vanilla_equity_option_early_exercise_diagnostic(
+    instrument: object,
+    *,
+    boundary_margin: float | None,
+) -> dict[str, Any]:
+    return {
+        "code": "early_exercise_control_policy",
+        "severity": "info",
+        "exercise_style": _vanilla_equity_option_exercise_style(instrument),
+        "derivative_policy": _EARLY_EXERCISE_AAD_POLICY,
+        "tree_steps": _vanilla_equity_option_tree_steps(instrument),
+        "boundary_tolerance": _vanilla_equity_option_boundary_tolerance(instrument),
+        "boundary_margin": boundary_margin,
+    }
 
 
 @dataclass(frozen=True)

@@ -96,7 +96,7 @@ def test_terminal_vanilla_contract_ir_admits_grid_vol_lane():
     assert admission.factor_requirements[0].coordinate_type == "black_vol"
 
 
-def test_dynamic_early_exercise_contract_fails_closed_with_control_metadata():
+def test_dynamic_early_exercise_contract_admits_flat_vol_control_policy():
     base = _terminal_put_ir()
     action = ActionSpec(action_name="exercise", action_type="exercise")
     decision = DecisionEvent(
@@ -128,11 +128,56 @@ def test_dynamic_early_exercise_contract_fails_closed_with_control_metadata():
 
     admission = admit_portfolio_aad_lane(dynamic_contract)
 
+    assert admission.admitted is True
+    assert admission.support_status == "supported"
+    assert admission.reason == "supported_early_exercise_control_policy_flat_vol_aad"
+    assert admission.semantic_contract_type == "DynamicContractIR"
+    assert admission.lane_id == "early_exercise_control_policy_flat_vol"
+    assert admission.metadata["decision_style"] == "optimal_stopping"
+    assert admission.metadata["derivative_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
+
+
+def test_dynamic_early_exercise_contract_keeps_grid_vol_control_policy_planned():
+    base = _terminal_put_ir()
+    action = ActionSpec(action_name="exercise", action_type="exercise")
+    decision = DecisionEvent(
+        label="holder_exercise",
+        schedule_role="exercise",
+        action_set=(action,),
+        controller_role="holder",
+    )
+    dynamic_contract = DynamicContractIR(
+        base_contract=base,
+        semantic_family="american_vanilla_option",
+        base_track="payoff_expression",
+        event_program=EventProgram(
+            buckets=(
+                EventTimeBucket(
+                    event_date=EXPIRY,
+                    phase_sequence=("decision",),
+                    events=(decision,),
+                ),
+            )
+        ),
+        control_program=ControlProgram(
+            controller_role="holder",
+            decision_style="optimal_stopping",
+            decision_event_labels=("holder_exercise",),
+            admissible_actions=(action,),
+        ),
+    )
+
+    admission = admit_portfolio_aad_lane(
+        dynamic_contract,
+        market_parameterization="grid_vol",
+    )
+
     assert admission.admitted is False
     assert admission.support_status == "planned"
-    assert admission.reason == "early_exercise_control_aad_pending"
-    assert admission.semantic_contract_type == "DynamicContractIR"
-    assert admission.metadata["decision_style"] == "optimal_stopping"
+    assert admission.reason == "early_exercise_grid_vol_aad_pending"
+    assert admission.factor_requirements[0].coordinate_type == "black_vol"
 
 
 def test_path_dependent_arithmetic_summary_is_explicitly_pending():

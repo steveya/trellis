@@ -569,6 +569,21 @@ def portfolio_aad_equity_option_vol_risk(
             "code": "portfolio_aad_equity_option_book_unavailable",
             "message": "No supported vanilla equity option positions were found in the book.",
         }
+    early_exercise_policies = tuple(
+        sorted(
+            {
+                str(diagnostic["derivative_policy"])
+                for diagnostic in diagnostics
+                if diagnostic.get("code") == "early_exercise_control_policy"
+                and diagnostic.get("derivative_policy") is not None
+            }
+        )
+    )
+    early_exercise_policy = (
+        early_exercise_policies[0]
+        if len(early_exercise_policies) == 1
+        else early_exercise_policies or None
+    )
     metadata = derivative_method_payload(
         "portfolio_aad_vjp",
         method_support=support_status,
@@ -592,6 +607,8 @@ def portfolio_aad_equity_option_vol_risk(
         risk_aggregation_map=risk_aggregation_map.to_payload(),
         risk_bucket_totals=risk_aggregation_map.aggregate_payload(selected_vector),
         fallback_reason=fallback_reason,
+        early_exercise_policy=early_exercise_policy,
+        early_exercise_policy_count=len(early_exercise_policies),
     )
     metadata["sparse_risk_vector"] = selected_vector.to_payload()
     result = PortfolioAADResult(

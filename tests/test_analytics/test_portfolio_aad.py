@@ -60,6 +60,9 @@ class _VanillaEquitySpec:
     option_type: str = "call"
     notional: float = 1.0
     exercise_style: str = "european"
+    exercise_dates: tuple[date, ...] = ()
+    aad_tree_steps: int = 64
+    early_exercise_boundary_tolerance: float = 1.0e-12
 
 
 def _equity_market_state(vol: float = 0.2) -> MarketState:
@@ -392,20 +395,65 @@ def test_vanilla_equity_option_vol_adapter_vjp_returns_sparse_grid_node_risk():
     assert all(sensitivity > 0.0 for _, sensitivity in vector.items())
 
 
-def test_vanilla_equity_option_vol_adapter_rejects_non_european_options():
+def test_vanilla_equity_option_vol_adapter_supports_american_flat_vol_policy():
     adapter = VanillaEquityOptionVolAADAdapter()
     context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
     spec = _VanillaEquitySpec(
-        spot=100.0,
+        spot=80.0,
         strike=100.0,
         expiry_date=date(2025, 11, 15),
+        option_type="put",
+        exercise_style="american",
+    )
+
+    decision = adapter.support_decision("american", spec, context, PortfolioAADRequest())
+
+    assert decision.supported is True
+    assert decision.reason == "supported_vanilla_equity_early_exercise_flat_vol_aad"
+    assert decision.diagnostics[0]["derivative_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
+    assert decision.diagnostics[0]["exercise_style"] == "american"
+
+
+def test_vanilla_equity_option_vol_adapter_rejects_early_exercise_grid_vol():
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_grid_market_state()
+    )
+    spec = _VanillaEquitySpec(
+        spot=80.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
         exercise_style="american",
     )
 
     decision = adapter.support_decision("american", spec, context, PortfolioAADRequest())
 
     assert decision.supported is False
-    assert decision.reason == "unsupported_exercise_style"
+    assert decision.reason == "unsupported_early_exercise_vol_surface_parameterization"
+
+
+def test_vanilla_equity_option_vol_adapter_fails_closed_near_exercise_boundary():
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
+    spec = _VanillaEquitySpec(
+        spot=80.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+        exercise_style="american",
+        early_exercise_boundary_tolerance=1.0e9,
+    )
+
+    decision = adapter.support_decision("american", spec, context, PortfolioAADRequest())
+
+    assert decision.supported is False
+    assert decision.reason == "early_exercise_boundary_kink"
+    assert decision.diagnostics[0]["derivative_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
 
 
 def test_portfolio_aad_equity_option_vol_risk_aggregates_shared_flat_vol_factor():
@@ -525,7 +573,7 @@ def test_portfolio_aad_equity_option_vol_risk_applies_selected_factor_filter():
     ) == (missing_factor,)
 
 
-def test_portfolio_aad_equity_option_vol_risk_reports_unsupported_shapes():
+def test_portfolio_aad_equity_option_vol_risk_aggregates_early_exercise_policy():
     context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
     european = _VanillaEquitySpec(
         spot=100.0,
@@ -533,17 +581,44 @@ def test_portfolio_aad_equity_option_vol_risk_reports_unsupported_shapes():
         expiry_date=date(2025, 11, 15),
     )
     american = _VanillaEquitySpec(
-        spot=100.0,
+        spot=80.0,
         strike=100.0,
         expiry_date=date(2025, 11, 15),
+        option_type="put",
         exercise_style="american",
     )
     book = Book({"european": european, "american": american})
 
     result = portfolio_aad_equity_option_vol_risk(book, context)
 
+    assert result.support_status == "supported"
+    assert result.method_metadata["supported_position_names"] == ["european", "american"]
+    assert result.method_metadata["early_exercise_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
+    assert result.method_metadata["unsupported_position_count"] == 0
+    assert len(result.risk_vector) == 1
+
+
+def test_portfolio_aad_equity_option_vol_risk_reports_unsupported_shapes():
+    context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
+    european = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+    )
+    exotic_style = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        exercise_style="chooser",
+    )
+    book = Book({"european": european, "chooser": exotic_style})
+
+    result = portfolio_aad_equity_option_vol_risk(book, context)
+
     assert result.support_status == "partial"
     assert result.method_metadata["supported_position_names"] == ["european"]
     assert result.method_metadata["unsupported_position_count"] == 1
-    assert result.unsupported_positions[0].position_name == "american"
+    assert result.unsupported_positions[0].position_name == "chooser"
     assert result.unsupported_positions[0].reason == "unsupported_exercise_style"

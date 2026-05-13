@@ -55,9 +55,10 @@ The current admission vocabulary is deliberately narrow:
 - terminal European vanilla option ramps over scalar flat vol are supported
 - the same terminal vanilla shape over grid-vol nodes is supported by the
   bounded grid-node option-vol adapter
-- dynamic early-exercise/control shapes belong to ``DynamicContractIR`` and are
-  planned fail-closed until their exercise-policy derivative treatment is
-  checked
+- dynamic early-exercise/control shapes belong to ``DynamicContractIR``; the
+  bounded flat-vol vanilla option lane is supported under a
+  hard-exercise-projection, smooth-interior policy that fails closed near
+  exercise-boundary ties, while grid-vol early-exercise AAD remains planned
 - smooth path summaries such as arithmetic averaging are planned fail-closed,
   while discontinuous event monitors are unsupported for AAD unless a custom
   derivative policy is explicitly added

@@ -167,6 +167,10 @@ keeping today's ``autograd`` boundary honest.
   ``trellis.book.portfolio_aad_equity_option_vol_risk(...)``, verified against
   independent central finite-difference bump/reprice for scalar flat-vol and
   grid-node sensitivities
+- bounded book-level reverse mode for American/Bermudan vanilla equity
+  call/put books over a shared ``FlatVol`` under a hard exercise-projection,
+  smooth-interior policy; positions close to continuation/intrinsic ties fail
+  closed instead of reporting unstable AAD Greeks
 - rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
   matrix
 - flat-vol Vega extraction in the analytics layer
@@ -248,12 +252,13 @@ runtime reporting must not overstate.
      - unsupported for pathwise AD; the governed fallback is
        ``finite_difference_bump_reprice`` with fail-closed policy metadata
    * - ``portfolio_aad_vjp``
-     - bounded bond-book and flat-vol option-book portfolio AAD routes
+     - bounded bond-book and option-book portfolio AAD routes
      - ``portfolio_aad_vjp``
-     - partial support: shared-curve bond books and shared-flat-vol European
-       option books use VJP-backed reverse-mode aggregates over canonical
-       risk-factor IDs, while unsupported positions are excluded and reported
-       in metadata
+     - partial support: shared-curve bond books, European option books over
+       shared flat/grid vol, and smooth-interior early-exercise option books
+       over shared flat vol use VJP-backed reverse-mode aggregates over
+       canonical risk-factor IDs, while unsupported positions are excluded and
+       reported in metadata
 
 Bounded Portfolio-AAD Factor Payload
 ------------------------------------
@@ -288,21 +293,24 @@ gate used before widening those adapters. It classifies ``ContractIR`` and
 portfolio-AAD lanes, and records the required market-coordinate family before a
 pricing tape is built. Today terminal European vanilla option ``ContractIR``
 shapes over scalar flat vol and grid-vol node coordinates are admitted as
-supported, early-exercise/control, smooth path-dependent, and
-hybrid/correlation shapes are recorded as planned fail-closed lanes, and
+supported. Early-exercise/control shapes are admitted for the bounded flat-vol
+vanilla option lane under the smooth-interior hard-projection policy, grid-vol
+early-exercise and smooth path-dependent shapes remain planned fail-closed, and
 discontinuous event monitors are reported as unsupported. Admission metadata is
 a support decision only; it is not itself a pricing implementation.
 
 ``portfolio_aad_equity_option_vol_risk(...)`` returns the typed
 ``PortfolioAADResult`` directly. It supports smooth European call/put specs
 that expose ``spot``, ``strike``, ``expiry_date``, ``option_type``, optional
-``notional``, and optional ``exercise_style="european"``. The lane prices from
-one shared ``FlatVol`` or ``GridVolSurface``. Flat-vol books aggregate onto one
-canonical ``vol_surface`` / ``flat_vol`` factor, while grid-vol books aggregate
-onto sparse ``vol_surface`` / ``black_vol`` expiry/strike node factors.
-American, Bermudan, barrier, Asian, path-dependent, and local-vol option AAD
-remain unsupported in this lane and are reported as unsupported positions
-rather than silently bumped.
+``notional``, and optional ``exercise_style="european"``. It also supports
+bounded American/Bermudan vanilla call/put specs over ``FlatVol`` when the CRR
+exercise policy is smooth enough for the configured
+``early_exercise_boundary_tolerance``. Flat-vol books aggregate onto one
+canonical ``vol_surface`` / ``flat_vol`` factor, while grid-vol European books
+aggregate onto sparse ``vol_surface`` / ``black_vol`` expiry/strike node
+factors. Grid-vol early-exercise, barrier, Asian, path-dependent, and local-vol
+option AAD remain unsupported or planned in this lane and are reported as
+unsupported positions rather than silently bumped.
 
 ``PortfolioAADRequest`` is the request-side support contract. A request may
 select a subset of factors, set the unsupported-position policy, and preserve

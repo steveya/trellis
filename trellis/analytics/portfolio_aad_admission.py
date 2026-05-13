@@ -243,11 +243,57 @@ def _admit_dynamic_contract(
             if contract.control_program is None
             else contract.control_program.decision_style
         )
+        if market_parameterization in {"flat_vol", "scalar_flat_vol"}:
+            return _admission(
+                admitted=True,
+                lane_id="early_exercise_control_policy_flat_vol",
+                support_status="supported",
+                reason="supported_early_exercise_control_policy_flat_vol_aad",
+                semantic_contract_type="DynamicContractIR",
+                product_family=(
+                    product_family
+                    or contract.semantic_family
+                    or "early_exercise_option"
+                ),
+                contract_shape="dynamic_control_exercise",
+                factor_requirements=(_flat_vol_requirement(),),
+                metadata={
+                    "base_track": contract.base_track,
+                    "semantic_family": contract.semantic_family,
+                    "decision_style": decision_style,
+                    "decision_event_count": len(decision_events),
+                    "derivative_policy": "hard_exercise_projection_smooth_interior",
+                    "control_policy": "optimal_stopping",
+                    "fail_closed_at_boundary_kinks": True,
+                },
+            )
+        if market_parameterization in {"grid_vol", "grid_node_vols"}:
+            return _admission(
+                admitted=False,
+                lane_id="early_exercise_control_policy_grid_vol",
+                support_status="planned",
+                reason="early_exercise_grid_vol_aad_pending",
+                semantic_contract_type="DynamicContractIR",
+                product_family=(
+                    product_family
+                    or contract.semantic_family
+                    or "early_exercise_option"
+                ),
+                contract_shape="dynamic_control_exercise",
+                factor_requirements=(_grid_vol_requirement(),),
+                metadata={
+                    "base_track": contract.base_track,
+                    "semantic_family": contract.semantic_family,
+                    "decision_style": decision_style,
+                    "decision_event_count": len(decision_events),
+                    "fail_closed": True,
+                },
+            )
         return _admission(
             admitted=False,
             lane_id="early_exercise_control_policy",
-            support_status="planned",
-            reason="early_exercise_control_aad_pending",
+            support_status="unsupported",
+            reason="unsupported_early_exercise_vol_parameterization",
             semantic_contract_type="DynamicContractIR",
             product_family=product_family or contract.semantic_family or "early_exercise_option",
             contract_shape="dynamic_control_exercise",
@@ -325,11 +371,39 @@ def _admit_contract_ir(
             metadata={"fail_closed": True},
         )
     if contract.exercise.style in {"american", "bermudan"}:
+        if market_parameterization in {"flat_vol", "scalar_flat_vol"}:
+            return _admission(
+                admitted=True,
+                lane_id="early_exercise_control_policy_flat_vol",
+                support_status="supported",
+                reason="supported_early_exercise_control_policy_flat_vol_aad",
+                semantic_contract_type="ContractIR",
+                product_family=product_family or "early_exercise_option",
+                contract_shape="early_exercise_option",
+                factor_requirements=(_flat_vol_requirement(),),
+                metadata={
+                    "exercise_style": contract.exercise.style,
+                    "derivative_policy": "hard_exercise_projection_smooth_interior",
+                    "fail_closed_at_boundary_kinks": True,
+                },
+            )
+        if market_parameterization in {"grid_vol", "grid_node_vols"}:
+            return _admission(
+                admitted=False,
+                lane_id="early_exercise_control_policy_grid_vol",
+                support_status="planned",
+                reason="early_exercise_grid_vol_aad_pending",
+                semantic_contract_type="ContractIR",
+                product_family=product_family or "early_exercise_option",
+                contract_shape="early_exercise_option",
+                factor_requirements=(_grid_vol_requirement(),),
+                metadata={"exercise_style": contract.exercise.style, "fail_closed": True},
+            )
         return _admission(
             admitted=False,
             lane_id="early_exercise_control_policy",
-            support_status="planned",
-            reason="early_exercise_control_aad_pending",
+            support_status="unsupported",
+            reason="unsupported_early_exercise_vol_parameterization",
             semantic_contract_type="ContractIR",
             product_family=product_family or "early_exercise_option",
             contract_shape="early_exercise_option",

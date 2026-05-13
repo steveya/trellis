@@ -190,9 +190,14 @@ support contract is:
   financial control, and insurance overlays remain non-executable at the
   route-free execution layer today
 
-In other words, the dynamic slice now has one real executable proving lane:
-issuer-callable fixed coupon bonds over a static-leg base. The other admitted
-families are still structural or benchmark-plan-only contracts.
+In other words, the dynamic execution slice now has one real executable proving
+lane: issuer-callable fixed coupon bonds over a static-leg base. Separately,
+the portfolio-AAD admission gate now recognizes a bounded early-exercise
+vanilla option control-policy lane over flat vol. That AAD lane is a risk
+adapter contract, not a route-free dynamic execution compiler: it uses a hard
+exercise-projection, smooth-interior derivative policy and fails closed near
+exercise-boundary ties. The other admitted dynamic families are still
+structural or benchmark-plan-only contracts.
 
 Later-Family Route-Retirement Readiness
 ---------------------------------------
