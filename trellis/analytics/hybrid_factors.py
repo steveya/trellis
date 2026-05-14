@@ -482,7 +482,9 @@ class HybridFactorGraph:
 
     graph_id: str
     nodes: tuple[HybridDependencyNode, ...] = field(default_factory=tuple)
-    unsupported_dependencies: tuple[HybridUnsupportedDependency, ...] = field(default_factory=tuple)
+    unsupported_dependencies: tuple[HybridUnsupportedDependency, ...] = field(
+        default_factory=tuple
+    )
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
