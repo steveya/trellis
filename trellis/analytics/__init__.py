@@ -20,6 +20,12 @@ from trellis.analytics.portfolio_aad_admission import (
     PortfolioAADLaneAdmission,
     admit_portfolio_aad_lane,
 )
+from trellis.analytics.hybrid_factors import (
+    HybridDependencyNode,
+    HybridFactorGraph,
+    HybridUnsupportedDependency,
+    MarketObjectCoordinateChart,
+)
 from trellis.analytics.risk_factors import (
     RiskAggregationMap,
     RiskFactorCoordinate,
@@ -35,6 +41,10 @@ __all__ = [
     "BondCurveAADAdapter",
     "BondCurveAADMarketContext",
     "DefaultUnsupportedAADPolicy",
+    "HybridDependencyNode",
+    "HybridFactorGraph",
+    "HybridUnsupportedDependency",
+    "MarketObjectCoordinateChart",
     "PortfolioAADRequest",
     "PortfolioAADResult",
     "PortfolioAADFactorRequirement",
