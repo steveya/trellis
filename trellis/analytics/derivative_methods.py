@@ -135,6 +135,15 @@ _METHOD_SPECS = {
             "the VJP backend operator."
         ),
     ),
+    "unsupported_hybrid_structure": DerivativeMethodSpec(
+        "unsupported_hybrid_structure",
+        category="unsupported",
+        support_status="unsupported",
+        description=(
+            "Hybrid derivative request rejected because the required graph "
+            "coordinate chart is not implemented."
+        ),
+    ),
     "autodiff_pathwise": DerivativeMethodSpec(
         "autodiff_pathwise",
         category="autograd",

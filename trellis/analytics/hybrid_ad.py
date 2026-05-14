@@ -21,6 +21,7 @@ from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
 _DERIVATIVE_METHODS = frozenset({"vjp", "jvp", "hvp"})
 _COORDINATE_SPACES = frozenset({"constrained", "unconstrained"})
 _UNSUPPORTED_SELECTED_POLICIES = frozenset({"empty_vector", "fail_closed"})
+_CORRELATION_STRUCTURE_TYPES = frozenset({"correlation_matrix", "correlation_surface"})
 
 
 def _clean_member(value: object, allowed: frozenset[str], field_name: str) -> str:
@@ -104,6 +105,55 @@ class HybridDerivativeRequest:
             return ()
         available_set = set(available)
         return tuple(factor for factor in self.selected_factors if factor not in available_set)
+
+
+@dataclass(frozen=True)
+class HybridCorrelationStructureRequest:
+    """Unsupported correlation matrix/surface derivative request record."""
+
+    object_name: str
+    structure_type: str = "correlation_matrix"
+    factors: tuple[str, ...] = field(default_factory=tuple)
+    requested_derivative_method: str = "vjp"
+    coordinate_space: str = "unconstrained"
+    provenance: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object_name = str(self.object_name).strip()
+        if not object_name:
+            raise ValueError("object_name must be non-empty")
+        object.__setattr__(self, "object_name", object_name)
+        object.__setattr__(
+            self,
+            "structure_type",
+            _clean_member(
+                self.structure_type,
+                _CORRELATION_STRUCTURE_TYPES,
+                "structure_type",
+            ),
+        )
+        factors = tuple(str(factor).strip() for factor in self.factors if str(factor).strip())
+        object.__setattr__(self, "factors", factors)
+        object.__setattr__(
+            self,
+            "requested_derivative_method",
+            _clean_member(
+                self.requested_derivative_method,
+                _DERIVATIVE_METHODS,
+                "requested_derivative_method",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "coordinate_space",
+            _clean_member(self.coordinate_space, _COORDINATE_SPACES, "coordinate_space"),
+        )
+        object.__setattr__(self, "provenance", _freeze_mapping(self.provenance))
+
+    @property
+    def unsupported_reason(self) -> str:
+        """Return the policy reason for this unsupported structure."""
+        return f"{self.structure_type}_chart_not_implemented"
 
 
 @dataclass(frozen=True)
@@ -228,11 +278,13 @@ def _unsupported_result(
     code: str,
     message: str,
     fallback_reason: dict[str, object] | None = None,
+    diagnostic_extra: Mapping[str, object] | None = None,
 ) -> HybridDerivativeResult:
     diagnostic = {
         "code": code,
         "severity": "warning",
         "message": message,
+        **dict(diagnostic_extra or {}),
     }
     metadata = derivative_method_payload(
         "hybrid_scalar_vjp",
@@ -249,6 +301,67 @@ def _unsupported_result(
         support_status="unsupported",
         method_metadata=metadata,
         unsupported_dependencies=graph.unsupported_dependencies,
+        diagnostics=(diagnostic,),
+    )
+
+
+def fail_closed_correlation_structure_derivative(
+    request: HybridCorrelationStructureRequest,
+) -> HybridDerivativeResult:
+    """Return a fail-closed result for unsupported matrix/surface correlation AD."""
+    if not isinstance(request, HybridCorrelationStructureRequest):
+        raise TypeError("request must be a HybridCorrelationStructureRequest")
+    dependency = HybridUnsupportedDependency(
+        dependency_id=f"node:{request.structure_type}:{request.object_name}",
+        node_type=request.structure_type,
+        object_name=request.object_name,
+        reason=request.unsupported_reason,
+        metadata={
+            "factors": request.factors,
+            "requested_derivative_method": request.requested_derivative_method,
+            "coordinate_space": request.coordinate_space,
+            "policy": "fail_closed_no_projection",
+            **dict(request.provenance),
+        },
+    )
+    graph = HybridFactorGraph(
+        graph_id=f"hybrid:{request.structure_type}:{request.object_name}",
+        unsupported_dependencies=(dependency,),
+        metadata={
+            "structure_type": request.structure_type,
+            "object_name": request.object_name,
+            "factors": request.factors,
+        },
+    )
+    diagnostic = {
+        "code": request.unsupported_reason,
+        "severity": "warning",
+        "message": (
+            "Hybrid correlation matrix/surface derivatives require a checked "
+            "coordinate chart and are fail-closed until one exists."
+        ),
+        "structure_type": request.structure_type,
+        "object_name": request.object_name,
+        "factors": request.factors,
+        "psd_chart_required": request.structure_type == "correlation_matrix",
+        "projection_policy": "unsupported_no_smoothing_or_projection",
+    }
+    metadata = derivative_method_payload(
+        "unsupported_hybrid_structure",
+        method_support="unsupported",
+        backend_operator=request.requested_derivative_method,
+        coordinate_space=request.coordinate_space,
+        hybrid_factor_graph_id=graph.graph_id,
+        correlation_structure_type=request.structure_type,
+        fallback_reason=diagnostic,
+    )
+    return HybridDerivativeResult(
+        value=None,
+        risk_vector=SparseRiskVector(),
+        graph=graph,
+        support_status="unsupported",
+        method_metadata=metadata,
+        unsupported_dependencies=(dependency,),
         diagnostics=(diagnostic,),
     )
 
@@ -271,6 +384,28 @@ def differentiate_quanto_scalar_correlation(
     graph.validate()
     value = float(price_quanto_option_raw(spec, resolved_inputs))
 
+    capabilities = get_backend_capabilities()
+    if resolved_request.derivative_method == "jvp":
+        diagnostic_extra = {
+            "backend_id": capabilities.backend_id,
+            "unsupported_operator": "jvp",
+            "backend_notes": capabilities.notes,
+        }
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code="hybrid_jvp_backend_unsupported",
+            message=(
+                "Hybrid JVP remains fail-closed because the active backend "
+                "does not provide checked JVP coverage for pricing primitives."
+            ),
+            diagnostic_extra=diagnostic_extra,
+            fallback_reason={
+                "code": "hybrid_jvp_backend_unsupported",
+                **diagnostic_extra,
+            },
+        )
     if resolved_request.derivative_method != "vjp":
         return _unsupported_result(
             value=value,
@@ -348,7 +483,6 @@ def differentiate_quanto_scalar_correlation(
             selected_vector = SparseRiskVector()
             support_status = "unsupported"
 
-    capabilities = get_backend_capabilities()
     metadata = derivative_method_payload(
         "hybrid_scalar_vjp",
         method_support=support_status,
@@ -376,7 +510,9 @@ def differentiate_quanto_scalar_correlation(
 
 
 __all__ = [
+    "HybridCorrelationStructureRequest",
     "HybridDerivativeRequest",
     "HybridDerivativeResult",
     "differentiate_quanto_scalar_correlation",
+    "fail_closed_correlation_structure_derivative",
 ]

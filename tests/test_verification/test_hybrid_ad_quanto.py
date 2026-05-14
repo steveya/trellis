@@ -7,9 +7,12 @@ from datetime import date
 import pytest
 
 from trellis.analytics.hybrid_ad import (
+    HybridCorrelationStructureRequest,
     HybridDerivativeRequest,
     differentiate_quanto_scalar_correlation,
+    fail_closed_correlation_structure_derivative,
 )
+from trellis.core.differentiable import get_backend_capabilities
 from trellis.analytics.risk_factors import RiskFactorId
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
@@ -132,3 +135,41 @@ def test_quanto_scalar_correlation_vjp_filters_unknown_selected_factor():
     assert result.support_status == "unsupported"
     assert len(result.risk_vector) == 0
     assert result.diagnostics[0]["code"] == "selected_factors_unavailable"
+
+
+def test_quanto_scalar_correlation_jvp_fails_closed_with_backend_reason():
+    spec = _QuantoSpec()
+    result = differentiate_quanto_scalar_correlation(
+        spec,
+        _resolved(0.25),
+        HybridDerivativeRequest(derivative_method="jvp"),
+    )
+
+    assert get_backend_capabilities().supports("jvp") is False
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert result.diagnostics[0]["backend_id"] == "autograd"
+    assert result.method_metadata["backend_operator"] == "jvp"
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "hybrid_jvp_backend_unsupported"
+    )
+
+
+def test_correlation_matrix_derivative_request_fails_closed_without_psd_chart():
+    result = fail_closed_correlation_structure_derivative(
+        HybridCorrelationStructureRequest(
+            object_name="sx5e_eurusd_matrix",
+            structure_type="correlation_matrix",
+            factors=("SX5E", "EURUSD"),
+            requested_derivative_method="vjp",
+        )
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "correlation_matrix_chart_not_implemented"
+    assert result.unsupported_dependencies[0].reason == (
+        "correlation_matrix_chart_not_implemented"
+    )
+    assert result.method_metadata["derivative_method_support"] == "unsupported"
