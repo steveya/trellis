@@ -26,6 +26,11 @@ from trellis.analytics.hybrid_factors import (
     HybridUnsupportedDependency,
     MarketObjectCoordinateChart,
 )
+from trellis.analytics.hybrid_ad import (
+    HybridDerivativeRequest,
+    HybridDerivativeResult,
+    differentiate_quanto_scalar_correlation,
+)
 from trellis.analytics.risk_factors import (
     RiskAggregationMap,
     RiskFactorCoordinate,
@@ -42,6 +47,8 @@ __all__ = [
     "BondCurveAADMarketContext",
     "DefaultUnsupportedAADPolicy",
     "HybridDependencyNode",
+    "HybridDerivativeRequest",
+    "HybridDerivativeResult",
     "HybridFactorGraph",
     "HybridUnsupportedDependency",
     "MarketObjectCoordinateChart",
@@ -62,4 +69,5 @@ __all__ = [
     "VanillaEquityOptionVolAADAdapter",
     "VanillaEquityOptionVolAADMarketContext",
     "admit_portfolio_aad_lane",
+    "differentiate_quanto_scalar_correlation",
 ]
