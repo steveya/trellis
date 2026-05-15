@@ -135,6 +135,16 @@ _METHOD_SPECS = {
             "the VJP backend operator."
         ),
     ),
+    "hybrid_scalar_vector_vjp": DerivativeMethodSpec(
+        "hybrid_scalar_vector_vjp",
+        category="hybrid_ad",
+        support_status="partial",
+        backend_operator="vjp",
+        description=(
+            "Bounded graph-backed hybrid scalar-coordinate vector sensitivity "
+            "using the VJP backend operator."
+        ),
+    ),
     "unsupported_hybrid_structure": DerivativeMethodSpec(
         "unsupported_hybrid_structure",
         category="unsupported",

@@ -31,6 +31,7 @@ from trellis.analytics.hybrid_ad import (
     HybridDerivativeRequest,
     HybridDerivativeResult,
     differentiate_quanto_scalar_correlation,
+    differentiate_quanto_scalar_inputs,
     fail_closed_correlation_structure_derivative,
 )
 from trellis.analytics.risk_factors import (
@@ -73,5 +74,6 @@ __all__ = [
     "VanillaEquityOptionVolAADMarketContext",
     "admit_portfolio_aad_lane",
     "differentiate_quanto_scalar_correlation",
+    "differentiate_quanto_scalar_inputs",
     "fail_closed_correlation_structure_derivative",
 ]
