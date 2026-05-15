@@ -804,6 +804,69 @@ def test_invalid_correlation_matrix_request_fails_closed_with_validation_code():
     )
 
 
+@pytest.mark.parametrize(
+    ("factors", "matrix", "expected_code"),
+    (
+        (
+            ("SX5E", "SX5E"),
+            ((1.0, 0.25), (0.25, 1.0)),
+            "invalid_correlation_matrix_labels",
+        ),
+        (
+            ("SX5E", "EURUSD", "USD-OIS"),
+            ((1.0, 0.25), (0.25, 1.0)),
+            "invalid_correlation_matrix_shape",
+        ),
+        (
+            ("SX5E", "EURUSD"),
+            ((1.0, 0.25), (0.25, 0.99)),
+            "invalid_correlation_matrix_unit_diagonal",
+        ),
+        (
+            ("SX5E", "EURUSD"),
+            ((1.0, 1.20), (1.20, 1.0)),
+            "invalid_correlation_matrix_bounds",
+        ),
+        (
+            ("SX5E", "EURUSD"),
+            ((1.0, 0.25), (0.30, 1.0)),
+            "invalid_correlation_matrix_symmetry",
+        ),
+        (
+            ("SX5E", "EURUSD", "USD-OIS"),
+            ((1.0, 0.95, 0.95), (0.95, 1.0, -0.95), (0.95, -0.95, 1.0)),
+            "invalid_correlation_matrix_psd",
+        ),
+    ),
+)
+def test_invalid_correlation_matrix_requests_report_specific_codes(
+    factors,
+    matrix,
+    expected_code,
+):
+    result = fail_closed_correlation_structure_derivative(
+        HybridCorrelationStructureRequest(
+            object_name="cross_asset_correlation",
+            structure_type="correlation_matrix",
+            factors=factors,
+            requested_derivative_method="hvp",
+            correlation_matrix=matrix,
+        )
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.graph.nodes == ()
+    assert result.diagnostics[0]["code"] == expected_code
+    assert result.diagnostics[0]["chart_policy_status"] == "invalid_fail_closed"
+    assert result.diagnostics[0]["validation_code"] == expected_code
+    assert result.unsupported_dependencies[0].reason == expected_code
+    assert result.unsupported_dependencies[0].metadata["validation_code"] == expected_code
+    assert result.method_metadata["resolved_derivative_method"] == (
+        "unsupported_hybrid_structure"
+    )
+    assert result.method_metadata["fallback_reason"]["code"] == expected_code
+
+
 def test_correlation_surface_request_fails_closed_with_axis_metadata():
     result = fail_closed_correlation_structure_derivative(
         HybridCorrelationStructureRequest(

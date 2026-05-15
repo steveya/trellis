@@ -712,10 +712,10 @@ def _replace_inputs_from_graph(
 
 def _correlation_matrix_validation_code(message: str) -> str:
     normalized = message.lower()
-    if "label" in normalized or "unique" in normalized:
-        return "invalid_correlation_matrix_labels"
     if "square" in normalized:
         return "invalid_correlation_matrix_shape"
+    if "label" in normalized or "unique" in normalized:
+        return "invalid_correlation_matrix_labels"
     if "unit diagonal" in normalized:
         return "invalid_correlation_matrix_unit_diagonal"
     if "inside [-1, 1]" in normalized:
