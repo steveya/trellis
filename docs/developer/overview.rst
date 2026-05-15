@@ -285,6 +285,16 @@ benchmark artifact folder. The report is diagnostic rather than a CI threshold:
 small one-factor fixtures can expose tracing overhead even when higher-factor
 fixtures show the intended bump-count reduction.
 
+Hybrid AD now has a first graph-backed prototype rather than only a planning
+boundary. ``trellis.analytics.HybridFactorGraph`` and the opt-in
+``resolve_quanto_inputs(..., include_hybrid_factor_graph=True)`` path can
+describe the bounded quanto dependencies, while
+``trellis.analytics.differentiate_quanto_scalar_correlation(...)`` computes one
+VJP-backed scalar underlier/FX correlation sensitivity. The developer contract
+is deliberately narrow: curves, spots, FX spot, vols, matrix correlations, and
+surface correlations are held fixed, recorded for provenance, or rejected
+fail-closed until explicit graph-owned derivative lanes exist.
+
 The same benchmarking module now also exposes
 ``supported_counterparty_exposure_benchmark_scenarios()`` and
 ``build_supported_counterparty_exposure_benchmark_report(...)`` for the

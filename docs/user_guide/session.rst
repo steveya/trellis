@@ -197,6 +197,35 @@ Only the scalar correlation in ``resolved_quanto_inputs`` is differentiated;
 the already-resolved curves, spots, FX spot, and volatility inputs are held
 fixed and remain outside the hybrid AAD claim.
 
+For route-level scalar hybrid AD metadata, resolve the quanto inputs with the
+factor graph enabled and call the graph-backed derivative helper directly:
+
+.. code-block:: python
+
+   from trellis.analytics import (
+       HybridDerivativeRequest,
+       differentiate_quanto_scalar_correlation,
+   )
+   from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+   resolved = resolve_quanto_inputs(
+       market,
+       spec,
+       include_hybrid_factor_graph=True,
+   )
+   hybrid = differentiate_quanto_scalar_correlation(
+       spec,
+       resolved,
+       HybridDerivativeRequest(coordinate_space="unconstrained"),
+   )
+   print(hybrid.risk_vector.to_payload())
+   print(hybrid.method_metadata["resolved_derivative_method"])
+
+This route-level helper returns a ``HybridDerivativeResult`` with the typed
+``HybridFactorGraph`` payload and a sparse scalar-correlation risk vector.
+Hybrid ``jvp`` requests and correlation matrix/surface requests fail closed
+until those coordinate charts and backend operators are checked.
+
 For small books that combine already-supported lanes, use the mixed dispatcher:
 
 .. code-block:: python

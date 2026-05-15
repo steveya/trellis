@@ -24,6 +24,8 @@ def test_derivative_method_taxonomy_covers_runtime_and_matrix_methods():
         "spot_central_bump",
         "calendar_roll_down_bump",
         "portfolio_aad_vjp",
+        "hybrid_scalar_vjp",
+        "unsupported_hybrid_structure",
         "autodiff_pathwise",
         "forward_price_only",
         "unsupported_discontinuous_pathwise",
@@ -43,6 +45,7 @@ def test_derivative_method_taxonomy_covers_runtime_and_matrix_methods():
         "autograd",
         "finite_difference_bump",
         "portfolio_aad",
+        "hybrid_ad",
         "forward",
         "unsupported",
         "unavailable",
@@ -92,6 +95,11 @@ def test_derivative_method_taxonomy_covers_runtime_and_matrix_methods():
         "scipy_2point_residual_jacobian"
     )
     assert "backend_operator" not in hybrid_calibration_payload
+
+    hybrid_payload = derivative_method_payload("hybrid_scalar_vjp")
+    assert hybrid_payload["derivative_method_category"] == "hybrid_ad"
+    assert hybrid_payload["derivative_method_support"] == "partial"
+    assert hybrid_payload["backend_operator"] == "vjp"
 
 
 def test_derivative_method_payload_rejects_unknown_method_ids():

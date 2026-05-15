@@ -2,7 +2,17 @@
 
 ## Status
 
-Draft planning document. No Linear tickets have been created from this plan.
+First prototype delivered under the `QUA-1034` epic. Universal hybrid AD is
+still not claimed; this document now records the shipped scalar quanto
+prototype and the remaining prerequisites.
+
+| Ticket | Status | Outcome |
+|---|---|---|
+| `QUA-1035` | Done | Added typed hybrid factor graph primitives and scalar-correlation charts. |
+| `QUA-1036` | Done | Added an opt-in graph-producing path to the quanto resolver. |
+| `QUA-1037` | Done | Added a bounded scalar quanto VJP derivative lane. |
+| `QUA-1038` | Done | Added fail-closed JVP and matrix/surface correlation policy. |
+| `QUA-1039` | Done | Closeout docs, limitations, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -31,6 +41,28 @@ Trellis also has one bounded portfolio-AAD scalar-correlation lane:
 - all curves, spots, FX spot, volatility inputs, and broader hybrid factor
   graph dependencies are held fixed outside this narrow lane
 
+Trellis now also has one graph-backed scalar hybrid-AD prototype:
+
+- `HybridFactorGraph`, `HybridDependencyNode`,
+  `MarketObjectCoordinateChart`, and `HybridUnsupportedDependency` define the
+  typed graph and coordinate payloads
+- `resolve_quanto_inputs(..., include_hybrid_factor_graph=True)` can attach a
+  bounded quanto graph whose nodes describe underlier spot, FX spot,
+  domestic/foreign curves, underlier vol, FX vol, and scalar correlation
+- `differentiate_quanto_scalar_correlation(...)` computes one VJP-backed
+  sensitivity to the graph-owned scalar underlier/FX correlation coordinate
+- the scalar correlation chart supports both constrained `rho` and
+  unconstrained `x` coordinates through `rho = tanh(x)`
+- `HybridDerivativeResult` returns a sparse risk vector, graph payload,
+  method metadata, unsupported dependency records, and diagnostics
+- `jvp` requests and correlation matrix/surface requests fail closed through
+  explicit unsupported derivative-method metadata
+
+This is still a prototype, not universal hybrid AD. The shipped derivative
+lane differentiates one scalar coordinate while curves, spots, FX spot, vols,
+and broader matrix/surface correlations are represented for provenance or
+held-fixed diagnostics rather than differentiated end to end.
+
 Autograd Phase 2 also added a truthful backend capability surface:
 
 - `grad=True`
@@ -42,24 +74,26 @@ Autograd Phase 2 also added a truthful backend capability surface:
 - `portfolio_aad=False`
 
 The current system can compute derivatives for many smooth single-route
-pricing maps and bounded calibration representatives. It cannot yet
-differentiate arbitrary cross-asset hybrid systems end to end.
+pricing maps, bounded calibration representatives, bounded portfolio-AAD
+lanes, and the first scalar graph-backed quanto hybrid derivative. It cannot
+yet differentiate arbitrary cross-asset hybrid systems end to end.
 
 ## Missing Gap Before Implementation
 
-Universal hybrid AD cannot be started until Trellis has a typed factor graph
-and coordinate chart for hybrid market objects.
+Universal hybrid AD still cannot be claimed until the typed graph and
+coordinate chart expand beyond the first scalar quanto prototype.
 
-The missing prerequisite is:
+The first prerequisite now exists in bounded form:
 
 `HybridFactorGraph`: a representation of curves, surfaces, spots, FX rates,
 correlations, basis bridges, parameter sets, and derived market objects as one
 typed differentiable dependency graph with explicit coordinate ownership.
 
-Without that graph, "hybrid AD" would trace whichever floats happen to pass
-through a route. That is not enough to define what a derivative means, how risk
-factors aggregate, how constraints are enforced, or which unsupported
-dependencies were held fixed.
+The remaining gap is breadth and executable derivative ownership. Without a
+complete graph for the requested product family, "hybrid AD" would trace
+whichever floats happen to pass through a route. That is not enough to define
+what a derivative means, how risk factors aggregate, how constraints are
+enforced, or which unsupported dependencies were held fixed.
 
 ## Mathematical Contract
 
@@ -180,6 +214,11 @@ The graph must represent:
 - derivative method selected: AD, VJP, HVP, bump, custom adjoint, smoothed,
   finite-difference fallback, or unsupported
 
+The first shipped subset covers these objects for a bounded quanto graph and
+one scalar correlation coordinate. Broader curve-node, vol-node, FX-spot, spot,
+correlation-matrix, and correlation-surface derivative ownership is still
+future work unless a lane explicitly declares support.
+
 The graph should not hide route-local resolvers. For example,
 `resolve_quanto_inputs(...)` should become a graph-producing or graph-consuming
 boundary, so provenance for spot, FX spot, domestic curve, foreign curve, vol
@@ -197,6 +236,12 @@ Before the first universal-hybrid claim, Trellis needs tests for:
 - VJP/HVP requests match finite-difference checks on smooth hybrid fixtures
 - boundary behavior near correlation limits
 - no derivative path silently traces stale or inferred market data
+
+The `QUA-1034` prototype covers scalar correlation chart derivatives,
+bounded quanto resolver provenance, held-fixed and unsupported dependency
+reporting, JVP fail-closed behavior, and a finite-difference check for the
+smooth scalar VJP lane. Matrix/surface charts, broader coordinate derivatives,
+HVP lanes, and larger hybrid fixtures remain open prerequisites.
 
 The first validation target should be small:
 
@@ -218,6 +263,8 @@ finite differences.
 
 ### Phase 1: Hybrid Factor Graph Prototype
 
+[done in `QUA-1035`]
+
 Define the graph and coordinate dataclasses. Do not change pricing behavior.
 Add tests that build the graph for a bounded quanto route and inspect
 dependencies.
@@ -231,6 +278,8 @@ Deliverables:
 
 ### Phase 2: Resolver Integration
 
+[done in `QUA-1036` for the bounded quanto resolver]
+
 Teach one resolver, likely the quanto resolver, to produce or consume graph
 metadata while preserving current pricing behavior.
 
@@ -241,6 +290,8 @@ Deliverables:
   constants
 
 ### Phase 3: Smooth VJP Route
+
+[done in `QUA-1037` for one scalar quanto correlation coordinate]
 
 Implement one smooth VJP-backed hybrid derivative lane where all coordinates
 are explicit and supported.
@@ -253,6 +304,9 @@ Deliverables:
 
 ### Phase 4: Correlation Matrix Policy
 
+[policy-only fail-closed behavior delivered in `QUA-1038`; derivative support
+still open]
+
 Extend from scalar correlation to matrix or surface correlation only after the
 chart is chosen and validated.
 
@@ -263,6 +317,9 @@ Deliverables:
 - explicit projection or unsupported policy at invalid regions
 
 ### Phase 5: Backend Decision For JVP
+
+[fail-closed runtime policy delivered in `QUA-1038`; checked JVP support still
+open]
 
 Either implement checked JVP primitive coverage or document and enforce a
 VJP/HVP-only hybrid derivative contract.
@@ -294,9 +351,9 @@ Deliverables:
 - How should path-dependent hybrid products report event discontinuities and
   held-fixed path state?
 
-## First Ticket Shape
+## Completed First Ticket Shape
 
-Suggested future ticket:
+Delivered epic:
 
 `Hybrid AD: factor graph and scalar quanto derivative prototype`
 
@@ -307,3 +364,11 @@ Acceptance criteria:
   unsupported
 - one smooth derivative lane is checked against finite differences
 - unsupported `jvp` requests fail closed and report why
+
+## Follow-On Ticket Candidates
+
+- `Hybrid AD: curve and spot coordinates for quanto graph VJP`
+- `Hybrid AD: vol-node coordinates for bounded quanto graph VJP`
+- `Hybrid AD: correlation matrix chart policy and validation`
+- `Hybrid AD: HVP request support for scalar graph-backed lanes`
+- `Hybrid AD: ContractIR admission for graph-owned hybrid derivative lanes`
