@@ -871,8 +871,8 @@ def differentiate_quanto_scalar_inputs(
                 message=str(direction_diagnostic["message"]),
                 method_id=method_id,
                 diagnostic_extra={
-                    key: value
-                    for key, value in direction_diagnostic.items()
+                    key: val
+                    for key, val in direction_diagnostic.items()
                     if key not in {"code", "message"}
                 },
                 fallback_reason=direction_diagnostic,
@@ -892,7 +892,7 @@ def differentiate_quanto_scalar_inputs(
         metadata_extra = {
             "hvp_direction_factor_count": len(resolved_request.hvp_direction),
             "hvp_direction_coordinate_count": sum(
-                1 for value in direction_values if value != 0.0
+                1 for v in direction_values if v != 0.0
             ),
             "hvp_direction_norm": float(np.sqrt(np.sum(direction_vector * direction_vector))),
         }
