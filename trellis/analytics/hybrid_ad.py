@@ -735,12 +735,26 @@ def differentiate_quanto_scalar_inputs(
     missing_factors = resolved_request.missing_selected_factors(available_factors)
     diagnostics: list[dict[str, object]] = []
     support_status = "partial" if graph.unsupported_dependencies else "supported"
+    if graph.unsupported_dependencies:
+        diagnostics.append(
+            {
+                "code": "unsupported_graph_dependencies",
+                "severity": "warning",
+                "unsupported_dependency_ids": [
+                    dependency.dependency_id for dependency in graph.unsupported_dependencies
+                ],
+                "unsupported_dependency_reasons": list(graph.unsupported_reasons),
+            }
+        )
     if missing_factors:
         diagnostics.append(
             {
                 "code": "selected_factors_unavailable",
                 "severity": "warning",
                 "missing_factor_keys": [factor.key for factor in missing_factors],
+                "unsupported_selected_factor_policy": (
+                    resolved_request.unsupported_selected_factor_policy
+                ),
             }
         )
         support_status = "unsupported" if len(selected_vector) == 0 else "partial"
