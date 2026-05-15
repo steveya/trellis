@@ -259,6 +259,51 @@ def _unsupported_dependency(
     )
 
 
+def _float_tuple(values: object) -> tuple[float, ...]:
+    """Return a deterministic tuple of floats from a scalar array-like object."""
+    return tuple(float(value) for value in values)
+
+
+def _float_matrix(values: object) -> tuple[tuple[float, ...], ...]:
+    """Return a deterministic tuple-of-tuples float matrix."""
+    return tuple(tuple(float(value) for value in row) for row in values)
+
+
+def _curve_chart_values(
+    curve: object,
+    *,
+    time_to_expiry: float,
+    discount_factor: float,
+) -> dict[str, object]:
+    """Build executable scalar context for a supported yield-curve chart."""
+    return {
+        "coordinate_family": "curve_zero_rate_nodes",
+        "time_to_expiry": float(time_to_expiry),
+        "discount_factor": float(discount_factor),
+        "tenors": _float_tuple(getattr(curve, "tenors")),
+        "rates": _float_tuple(getattr(curve, "rates")),
+    }
+
+
+def _vol_surface_chart_values(surface: object) -> dict[str, object]:
+    """Build executable scalar context for supported volatility charts."""
+    from trellis.models.vol_surface import FlatVol, GridVolSurface
+
+    if isinstance(surface, FlatVol):
+        return {
+            "surface_type": "FlatVol",
+            "flat_vol": float(surface.vol),
+        }
+    if isinstance(surface, GridVolSurface):
+        return {
+            "surface_type": "GridVolSurface",
+            "expiries": _float_tuple(surface.expiries),
+            "strikes": _float_tuple(surface.strikes),
+            "vols": _float_matrix(surface.vols),
+        }
+    return {"surface_type": type(surface).__name__}
+
+
 def _spot_coordinate(
     spec: QuantoSpecLike,
     resolved: ResolvedQuantoInputs,
@@ -329,6 +374,8 @@ def _curve_node(
     currency: str,
     object_path: str,
     provenance: dict[str, object],
+    time_to_expiry: float,
+    discount_factor: float,
     unsupported_dependencies: list[HybridUnsupportedDependency],
 ) -> HybridDependencyNode:
     node_id = f"node:curve:{role}:{object_name}"
@@ -384,15 +431,16 @@ def _curve_node(
             provenance=provenance,
         )
 
-    source_parameters = dict(provenance.get("source_parameters") or {})
     chart = MarketObjectCoordinateChart.identity(
         chart_id=f"chart:{node_id}",
         object_type="curve",
         object_name=object_name,
         coordinates=coordinates,
-        coordinate_values={
-            "time_to_expiry": source_parameters.get("time_to_expiry", ""),
-        },
+        coordinate_values=_curve_chart_values(
+            curve,
+            time_to_expiry=time_to_expiry,
+            discount_factor=discount_factor,
+        ),
         metadata={"resolved_input": role},
     )
     return HybridDependencyNode(
@@ -506,7 +554,14 @@ def _vol_node(
         object_type="vol_surface",
         object_name=object_name,
         coordinates=coordinates,
-        coordinate_values=coordinate_values,
+        coordinate_values={
+            "coordinate_family": "vol_surface_nodes",
+            "query_expiry": float(coordinate_values["expiry"]),
+            "query_strike": float(coordinate_values["strike"]),
+            "resolved_vol": float(coordinate_values["vol"]),
+            **coordinate_values,
+            **_vol_surface_chart_values(surface),
+        },
         metadata={"resolved_input": role},
     )
     return HybridDependencyNode(
@@ -605,6 +660,8 @@ def build_quanto_hybrid_factor_graph(
             currency=spec.domestic_currency,
             object_path="market_state.discount",
             provenance=_provenance_for(resolved_inputs, "domestic_curve"),
+            time_to_expiry=float(resolved_inputs.T),
+            discount_factor=float(resolved_inputs.domestic_df),
             unsupported_dependencies=unsupported_dependencies,
         )
     )
@@ -637,6 +694,8 @@ def build_quanto_hybrid_factor_graph(
             currency=spec.underlier_currency,
             object_path=f"market_state.forecast_curves[{foreign_name}]",
             provenance=foreign_provenance,
+            time_to_expiry=float(resolved_inputs.T),
+            discount_factor=float(resolved_inputs.foreign_df),
             unsupported_dependencies=unsupported_dependencies,
         )
     )
