@@ -6,6 +6,7 @@ from datetime import date
 
 import pytest
 
+import trellis.core.differentiable as differentiable_core
 from trellis.analytics.hybrid_ad import (
     HybridCorrelationStructureRequest,
     HybridDerivativeRequest,
@@ -15,7 +16,10 @@ from trellis.analytics.hybrid_ad import (
 )
 from trellis.analytics.hybrid_factors import HybridUnsupportedDependency
 from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
-from trellis.core.differentiable import get_backend_capabilities
+from trellis.core.differentiable import (
+    DifferentiableBackendCapabilities,
+    get_backend_capabilities,
+)
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
 from trellis.curves.yield_curve import YieldCurve
@@ -554,6 +558,51 @@ def test_quanto_scalar_inputs_hvp_missing_direction_fails_closed():
 
     assert empty.support_status == "unsupported"
     assert empty.diagnostics[0]["code"] == "hvp_direction_required"
+
+
+def test_quanto_scalar_inputs_hvp_backend_unsupported_fails_closed(monkeypatch):
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    base_result = differentiate_quanto_scalar_inputs(spec, resolved)
+    spot_factor = _factor_by(
+        base_result,
+        object_type="spot",
+        coordinate_type="spot",
+        object_name="EUR",
+    )
+    capabilities = get_backend_capabilities()
+    operators = dict(capabilities.operators)
+    operators["hessian_vector_product"] = False
+    monkeypatch.setattr(
+        differentiable_core,
+        "get_backend_capabilities",
+        lambda: DifferentiableBackendCapabilities(
+            backend_id="test_no_hvp",
+            array_namespace=capabilities.array_namespace,
+            operators=operators,
+            notes=("HVP disabled for test.",),
+        ),
+    )
+
+    result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(
+            derivative_method="hvp",
+            hvp_direction=SparseRiskVector.from_items(((spot_factor, 1.0),)),
+        ),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "hybrid_hvp_backend_unsupported"
+    assert result.diagnostics[0]["backend_id"] == "test_no_hvp"
+    assert result.diagnostics[0]["unsupported_operator"] == "hessian_vector_product"
+    assert result.method_metadata["resolved_derivative_method"] == "hybrid_scalar_vector_hvp"
+    assert result.method_metadata["backend_operator"] == "hessian_vector_product"
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "hybrid_hvp_backend_unsupported"
+    )
 
 
 def test_quanto_scalar_inputs_jvp_fails_closed_with_backend_reason():
