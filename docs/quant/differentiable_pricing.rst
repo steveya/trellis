@@ -8,8 +8,8 @@ Trellis promotes autograd only where it has a clear payoff:
 - flat-vol Vega extraction in ``Session.analyze()``
 - bounded book-level reverse-mode risk for supported bond books and flat-vol
   vanilla equity option books
-- one graph-backed scalar hybrid derivative lane for the bounded quanto
-  correlation coordinate
+- graph-backed scalar hybrid derivative lanes for the bounded single-name
+  quanto scalar-coordinate vector
 - curve bootstrap calibration, where the repricing Jacobian is now traced from
   the public repricing map instead of approximated inside the solver
 - SABR calibration, where a gradient is more useful than repeated finite-difference sweeps
@@ -58,8 +58,12 @@ attach a ``HybridFactorGraph`` describing the resolved quanto dependencies, and
 ``differentiate_quanto_scalar_correlation(...)`` differentiates the graph-owned
 scalar underlier/FX correlation coordinate with a VJP. The scalar chart supports
 both constrained ``rho`` and unconstrained ``x`` coordinates under
-``rho = tanh(x)``. Matrix/surface correlations and hybrid ``jvp`` requests
-remain fail-closed rather than approximated.
+``rho = tanh(x)``. ``differentiate_quanto_scalar_inputs(...)`` widens that
+same bounded route to a sparse VJP vector over supported graph-owned scalar
+coordinates: underlier spot, FX spot, domestic/foreign curve zero-rate nodes,
+flat/grid vol nodes, and scalar correlation. Matrix/surface correlations,
+path-dependent hybrid state, and hybrid ``jvp`` requests remain fail-closed
+rather than approximated.
 
 The goal is not to make every numerical routine differentiable. It is to remove
 unnecessary bump/reprice loops, stabilize calibration, and keep the exact same
@@ -103,12 +107,13 @@ The checked support contract is intentionally explicit:
        while unsupported positions are listed in metadata and excluded from
        the reverse-mode aggregate
    * - Hybrid factor graph
-     - scalar quanto-correlation VJP through
-       ``trellis.analytics.differentiate_quanto_scalar_correlation(...)``
-     - bounded to one graph-owned scalar underlier/FX correlation coordinate;
-       curves, spots, FX spot, vols, matrix correlations, and surface
-       correlations are provenance or fail-closed records unless a future lane
-       explicitly supports them
+     - scalar quanto VJP through
+       ``trellis.analytics.differentiate_quanto_scalar_correlation(...)`` and
+       ``trellis.analytics.differentiate_quanto_scalar_inputs(...)``
+     - bounded to the single-name quanto graph-owned scalar coordinates; broad
+       hybrid product graphs, matrix correlations, surface correlations, and
+       hybrid ``jvp`` remain fail-closed unless a future lane explicitly
+       supports them
    * - Flat volatility risk
      - scalar vega through ``autodiff_flat_vol``
      - flat surfaces only
@@ -138,10 +143,11 @@ scalar quanto-correlation books, and explicitly configured mixed supported
 books. The capability flag stays ``portfolio_aad=False`` because the supported
 contract is still book-specific rather than a claim of universal portfolio-AAD
 coverage.
-The graph-backed scalar quanto derivative lane also uses the executable
-``vjp`` operator, but it reports through ``hybrid_scalar_vjp`` metadata rather
-than widening the backend capability table. It is one scalar-coordinate hybrid
-lane, not a general ``hybrid_ad=True`` backend claim.
+The graph-backed scalar quanto derivative lanes also use the executable
+``vjp`` operator, but they report through ``hybrid_scalar_vjp`` or
+``hybrid_scalar_vector_vjp`` metadata rather than widening the backend
+capability table. They are bounded single-name quanto lanes, not a general
+``hybrid_ad=True`` backend claim.
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
 scalar-objective functions on smooth-interior regions. It is not a claim about
 branch singularities, discontinuous payoffs, or vector-valued objectives. For
@@ -208,6 +214,11 @@ keeping today's ``autograd`` boundary honest.
   ``HybridFactorGraph`` payload, constrained or unconstrained scalar
   correlation coordinates, unsupported dependency diagnostics, and
   fail-closed behavior for unsupported hybrid derivative requests
+- graph-backed bounded quanto scalar-vector VJP through
+  ``trellis.analytics.differentiate_quanto_scalar_inputs(...)``, with sparse
+  graph-owned sensitivities for supported spot, FX spot, curve-node, vol-node,
+  and scalar-correlation coordinates plus selected-factor and unsupported
+  dependency diagnostics
 - bounded mixed supported-book reverse mode through
   ``trellis.book.portfolio_aad_supported_book_risk(...)`` for explicitly
   configured combinations of the supported AAD lanes
@@ -303,10 +314,11 @@ runtime reporting must not overstate.
        are excluded and reported in metadata
    * - ``hybrid_scalar_quanto_vjp``
      - bounded graph-backed scalar quanto derivative route
-     - ``hybrid_scalar_vjp``
-     - partial support: one scalar underlier/FX correlation coordinate is
-       differentiated with VJP through a typed ``HybridFactorGraph``; hybrid
-       ``jvp`` plus correlation matrix/surface derivative requests fail closed
+     - ``hybrid_scalar_vjp`` / ``hybrid_scalar_vector_vjp``
+     - partial support: the scalar underlier/FX correlation coordinate and the
+       bounded single-name quanto scalar-coordinate vector are differentiated
+       with VJP through a typed ``HybridFactorGraph``; hybrid ``jvp`` plus
+       correlation matrix/surface derivative requests fail closed
 
 Bounded Portfolio-AAD Factor Payload
 ------------------------------------
@@ -422,8 +434,9 @@ Bounded Hybrid Factor-Graph Derivatives
 The graph-backed hybrid derivative prototype is intentionally separate from
 the book-level portfolio-AAD lanes. ``HybridFactorGraph`` records the market
 objects and model parameters visible to a bounded hybrid route, while
-``MarketObjectCoordinateChart`` owns the coordinate transform for any supported
-factor. The first shipped chart is scalar correlation:
+``MarketObjectCoordinateChart`` owns the coordinate transform and executable
+chart context for any supported factor. The first constrained chart is scalar
+correlation:
 
 .. code-block:: text
 
@@ -436,6 +449,16 @@ builds a scalar-correlation fallback graph so legacy callers can still receive
 typed metadata. The returned ``HybridDerivativeResult`` contains the base
 value, sparse risk vector, graph payload, method metadata, unsupported
 dependencies, and diagnostics.
+
+``differentiate_quanto_scalar_inputs(...)`` uses the same resolved-input
+boundary but requires graph-owned executable scalar chart context. It returns a
+sparse VJP vector for supported bounded quanto scalar coordinates: underlier
+spot, FX spot, domestic and foreign curve zero-rate nodes, flat or grid
+volatility nodes, and scalar correlation. Sparse zero sensitivities are omitted
+from the vector, so a selected graph-owned factor such as FX spot can be
+available and still return no entry when the raw quanto kernel is insensitive
+to that coordinate. Missing selected factors, unsupported graph dependencies,
+and fail-closed policy decisions are reported in diagnostics.
 
 The supported derivative method is VJP only. ``HybridDerivativeRequest`` may
 ask for constrained ``rho`` sensitivity or unconstrained ``x`` sensitivity, and
@@ -568,6 +591,12 @@ The registry deliberately includes both AD-backed and non-AD lanes:
      - ``partial``
      - ``vjp`` for one graph-owned scalar hybrid coordinate, currently the
        bounded quanto underlier/FX correlation
+   * - ``hybrid_scalar_vector_vjp``
+     - ``hybrid_ad``
+     - ``partial``
+     - ``vjp`` for the bounded single-name quanto graph-owned scalar-coordinate
+       vector over supported spot, curve-node, vol-node, FX spot, and scalar
+       correlation coordinates
    * - ``unsupported_hybrid_structure``
      - ``unsupported``
      - ``unsupported``
@@ -628,11 +657,12 @@ Where Trellis Still Stays Forward-Only
 - scalar vega on unsupported smile surfaces, which now reports an explicit
   representative-flat-vol fallback instead of silently pretending to be a
   surface-native Greek
-- hybrid derivative claims outside the graph-backed scalar
-  ``bounded_quanto_correlation`` VJP bridge; the shipped calibration route
-  still records ``scipy_2point_residual_jacobian`` solve provenance, and the
-  shipped derivative route does not widen into universal hybrid AD, hybrid
-  ``jvp``, matrix/surface correlation AD, or broad ``portfolio_aad`` support
+- hybrid derivative claims outside the graph-backed bounded single-name quanto
+  scalar-coordinate VJP bridge; the shipped calibration route still records
+  ``scipy_2point_residual_jacobian`` solve provenance, and the shipped
+  derivative routes do not widen into universal hybrid AD, hybrid ``jvp``,
+  matrix/surface correlation AD, path-dependent hybrid state, or broad
+  ``portfolio_aad`` support
 - state-aware Monte Carlo contracts with barrier monitors or other
   discontinuous event semantics, which still stay off the traced lane even
   when explicit shocks are supplied; the bounded checked policy is
@@ -744,6 +774,7 @@ Implementation References
 .. autofunction:: trellis.models.rate_style_swaption.price_swaption_black76_raw
 .. autofunction:: trellis.models.analytical.quanto.price_quanto_option_raw
 .. autofunction:: trellis.analytics.differentiate_quanto_scalar_correlation
+.. autofunction:: trellis.analytics.differentiate_quanto_scalar_inputs
 .. autofunction:: trellis.analytics.fail_closed_correlation_structure_derivative
 .. autofunction:: trellis.models.analytical.barrier.down_and_out_call_raw
 .. autofunction:: trellis.models.analytical.barrier.down_and_in_call_raw
