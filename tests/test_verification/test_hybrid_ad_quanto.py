@@ -740,3 +740,92 @@ def test_correlation_matrix_derivative_request_fails_closed_without_psd_chart():
         "correlation_matrix_chart_not_implemented"
     )
     assert result.method_metadata["derivative_method_support"] == "unsupported"
+
+
+def test_valid_correlation_matrix_request_fails_closed_with_chart_metadata():
+    result = fail_closed_correlation_structure_derivative(
+        HybridCorrelationStructureRequest(
+            object_name="cross_asset_correlation",
+            structure_type="correlation_matrix",
+            factors=("SX5E", "EURUSD", "USD-OIS"),
+            requested_derivative_method="hvp",
+            correlation_matrix=(
+                (1.0, 0.25, -0.10),
+                (0.25, 1.0, 0.35),
+                (-0.10, 0.35, 1.0),
+            ),
+        )
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "correlation_matrix_derivative_not_implemented"
+    assert result.diagnostics[0]["chart_policy_status"] == "validated_fail_closed"
+    assert result.diagnostics[0]["matrix_dimension"] == 3
+    assert result.diagnostics[0]["coordinate_count"] == 3
+    assert result.diagnostics[0]["min_eigenvalue"] > 0.0
+    assert result.graph.nodes[0].coordinate_chart.chart_type == (
+        "correlation_matrix_psd_policy"
+    )
+    assert result.unsupported_dependencies[0].metadata["chart_id"] == (
+        "chart:correlation_matrix:cross_asset_correlation"
+    )
+    assert result.unsupported_dependencies[0].metadata["coordinate_count"] == 3
+    assert result.method_metadata["backend_operator"] == "hvp"
+    assert result.method_metadata["fallback_reason"]["chart_policy_status"] == (
+        "validated_fail_closed"
+    )
+
+
+def test_invalid_correlation_matrix_request_fails_closed_with_validation_code():
+    result = fail_closed_correlation_structure_derivative(
+        HybridCorrelationStructureRequest(
+            object_name="cross_asset_correlation",
+            structure_type="correlation_matrix",
+            factors=("SX5E", "EURUSD", "USD-OIS"),
+            correlation_matrix=(
+                (1.0, 0.95, 0.95),
+                (0.95, 1.0, -0.95),
+                (0.95, -0.95, 1.0),
+            ),
+        )
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.graph.nodes == ()
+    assert result.diagnostics[0]["code"] == "invalid_correlation_matrix_psd"
+    assert result.diagnostics[0]["chart_policy_status"] == "invalid_fail_closed"
+    assert "positive semidefinite" in result.diagnostics[0]["message"]
+    assert result.unsupported_dependencies[0].metadata["validation_code"] == (
+        "invalid_correlation_matrix_psd"
+    )
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "invalid_correlation_matrix_psd"
+    )
+
+
+def test_correlation_surface_request_fails_closed_with_axis_metadata():
+    result = fail_closed_correlation_structure_derivative(
+        HybridCorrelationStructureRequest(
+            object_name="base_correlation_surface",
+            structure_type="correlation_surface",
+            factors=("0-3", "3-7"),
+            requested_derivative_method="vjp",
+            surface_axes={
+                "expiry": ("1Y", "3Y"),
+                "attachment_detachment": ("0-3", "3-7"),
+            },
+        )
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.diagnostics[0]["code"] == "correlation_surface_chart_not_implemented"
+    assert result.diagnostics[0]["chart_policy_status"] == "surface_chart_not_implemented"
+    assert result.diagnostics[0]["surface_axes"] == {
+        "attachment_detachment": ("0-3", "3-7"),
+        "expiry": ("1Y", "3Y"),
+    }
+    assert result.unsupported_dependencies[0].metadata["surface_axis_names"] == (
+        "attachment_detachment",
+        "expiry",
+    )
