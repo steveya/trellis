@@ -61,9 +61,11 @@ both constrained ``rho`` and unconstrained ``x`` coordinates under
 ``rho = tanh(x)``. ``differentiate_quanto_scalar_inputs(...)`` widens that
 same bounded route to a sparse VJP vector over supported graph-owned scalar
 coordinates: underlier spot, FX spot, domestic/foreign curve zero-rate nodes,
-flat/grid vol nodes, and scalar correlation. Matrix/surface correlations,
-path-dependent hybrid state, and hybrid ``jvp`` requests remain fail-closed
-rather than approximated.
+flat/grid vol nodes, and scalar correlation. The same helper now accepts
+``HybridDerivativeRequest(derivative_method="hvp", hvp_direction=...)`` for a
+bounded directional HVP, ``H @ v``, over that scalar-coordinate chart.
+Matrix/surface correlations, path-dependent hybrid state, and hybrid ``jvp``
+requests remain fail-closed rather than approximated.
 
 The goal is not to make every numerical routine differentiable. It is to remove
 unnecessary bump/reprice loops, stabilize calibration, and keep the exact same
@@ -143,11 +145,14 @@ scalar quanto-correlation books, and explicitly configured mixed supported
 books. The capability flag stays ``portfolio_aad=False`` because the supported
 contract is still book-specific rather than a claim of universal portfolio-AAD
 coverage.
-The graph-backed scalar quanto derivative lanes also use the executable
-``vjp`` operator, but they report through ``hybrid_scalar_vjp`` or
-``hybrid_scalar_vector_vjp`` metadata rather than widening the backend
+
+The graph-backed scalar quanto derivative lanes also use executable ``vjp``
+and scalar-objective ``hessian_vector_product`` operators, but they report
+through ``hybrid_scalar_vjp``, ``hybrid_scalar_vector_vjp``, or
+``hybrid_scalar_vector_hvp`` metadata rather than widening the backend
 capability table. They are bounded single-name quanto lanes, not a general
 ``hybrid_ad=True`` backend claim.
+
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
 scalar-objective functions on smooth-interior regions. It is not a claim about
 branch singularities, discontinuous payoffs, or vector-valued objectives. For
@@ -219,6 +224,10 @@ keeping today's ``autograd`` boundary honest.
   graph-owned sensitivities for supported spot, FX spot, curve-node, vol-node,
   and scalar-correlation coordinates plus selected-factor and unsupported
   dependency diagnostics
+- graph-backed bounded quanto scalar-vector HVP through
+  ``trellis.analytics.differentiate_quanto_scalar_inputs(...)`` when requested
+  with an explicit sparse ``hvp_direction`` over supported graph-owned
+  coordinates, with fail-closed diagnostics for missing or empty directions
 - bounded mixed supported-book reverse mode through
   ``trellis.book.portfolio_aad_supported_book_risk(...)`` for explicitly
   configured combinations of the supported AAD lanes
@@ -314,10 +323,12 @@ runtime reporting must not overstate.
        are excluded and reported in metadata
    * - ``hybrid_scalar_quanto_vjp``
      - bounded graph-backed scalar quanto derivative route
-     - ``hybrid_scalar_vjp`` / ``hybrid_scalar_vector_vjp``
+     - ``hybrid_scalar_vjp`` / ``hybrid_scalar_vector_vjp`` /
+       ``hybrid_scalar_vector_hvp``
      - partial support: the scalar underlier/FX correlation coordinate and the
        bounded single-name quanto scalar-coordinate vector are differentiated
-       with VJP through a typed ``HybridFactorGraph``; hybrid ``jvp`` plus
+       with VJP, and the scalar-coordinate vector supports checked directional
+       HVP requests through a typed ``HybridFactorGraph``; hybrid ``jvp`` plus
        correlation matrix/surface derivative requests fail closed
 
 Bounded Portfolio-AAD Factor Payload
@@ -451,19 +462,25 @@ value, sparse risk vector, graph payload, method metadata, unsupported
 dependencies, and diagnostics.
 
 ``differentiate_quanto_scalar_inputs(...)`` uses the same resolved-input
-boundary but requires graph-owned executable scalar chart context. It returns a
-sparse VJP vector for supported bounded quanto scalar coordinates: underlier
-spot, FX spot, domestic and foreign curve zero-rate nodes, flat or grid
-volatility nodes, and scalar correlation. Sparse zero sensitivities are omitted
-from the vector, so a selected graph-owned factor such as FX spot can be
-available and still return no entry when the raw quanto kernel is insensitive
-to that coordinate. Missing selected factors, unsupported graph dependencies,
-and fail-closed policy decisions are reported in diagnostics.
+boundary but requires graph-owned executable scalar chart context. By default it
+returns a sparse VJP vector for supported bounded quanto scalar coordinates:
+underlier spot, FX spot, domestic and foreign curve zero-rate nodes, flat or
+grid volatility nodes, and scalar correlation. With
+``derivative_method="hvp"`` and a non-empty sparse ``hvp_direction``, it returns
+the directional second derivative ``H @ v`` over the same coordinate chart.
+Sparse zero sensitivities are omitted from the vector, so a selected
+graph-owned factor such as FX spot can be available and still return no entry
+when the raw quanto kernel is insensitive to that coordinate. Missing selected
+factors, missing HVP direction factors, unsupported graph dependencies, and
+fail-closed policy decisions are reported in diagnostics.
 
-The supported derivative method is VJP only. ``HybridDerivativeRequest`` may
-ask for constrained ``rho`` sensitivity or unconstrained ``x`` sensitivity, and
-may select a subset of graph factors. Unsupported selections can return an
-empty sparse vector or fail closed according to the request policy.
+The supported derivative methods are VJP and scalar-objective HVP for this
+bounded route. ``HybridDerivativeRequest`` may ask for constrained ``rho``
+sensitivity or unconstrained ``x`` sensitivity, may select a subset of graph
+factors, and may provide a sparse HVP direction keyed by ``RiskFactorId``.
+Unsupported selections can return an empty sparse vector or fail closed
+according to the request policy. Empty or unavailable HVP directions always
+fail closed.
 
 Forward mode remains executable-truth governed. A ``derivative_method="jvp"``
 request returns an unsupported result with
@@ -597,6 +614,11 @@ The registry deliberately includes both AD-backed and non-AD lanes:
      - ``vjp`` for the bounded single-name quanto graph-owned scalar-coordinate
        vector over supported spot, curve-node, vol-node, FX spot, and scalar
        correlation coordinates
+   * - ``hybrid_scalar_vector_hvp``
+     - ``hybrid_ad``
+     - ``partial``
+     - ``hessian_vector_product`` for bounded single-name quanto directional
+       second derivatives over the same graph-owned scalar-coordinate vector
    * - ``unsupported_hybrid_structure``
      - ``unsupported``
      - ``unsupported``

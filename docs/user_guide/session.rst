@@ -204,6 +204,7 @@ factor graph enabled and call a graph-backed derivative helper directly:
 
    from trellis.analytics import (
        HybridDerivativeRequest,
+       SparseRiskVector,
        differentiate_quanto_scalar_correlation,
        differentiate_quanto_scalar_inputs,
    )
@@ -220,17 +221,32 @@ factor graph enabled and call a graph-backed derivative helper directly:
        HybridDerivativeRequest(coordinate_space="unconstrained"),
    )
    hybrid_vector = differentiate_quanto_scalar_inputs(spec, resolved)
+   spot_factor = next(
+       factor for factor in hybrid_vector.risk_vector
+       if factor.object_type == "spot"
+   )
+   hybrid_hvp = differentiate_quanto_scalar_inputs(
+       spec,
+       resolved,
+       HybridDerivativeRequest(
+           derivative_method="hvp",
+           hvp_direction=SparseRiskVector.from_items(((spot_factor, 1.0),)),
+       ),
+   )
    print(hybrid.risk_vector.to_payload())
    print(hybrid_vector.risk_vector.to_payload())
-   print(hybrid.method_metadata["resolved_derivative_method"])
+   print(hybrid_hvp.risk_vector.to_payload())
+   print(hybrid_hvp.method_metadata["resolved_derivative_method"])
 
 The scalar-correlation helper returns a ``HybridDerivativeResult`` with the
 typed ``HybridFactorGraph`` payload and one sparse scalar-correlation risk
 vector. The scalar-input helper uses executable chart context from the same
 graph and returns a sparse vector for supported graph-owned underlier spot, FX
 spot, domestic/foreign curve-node, flat/grid vol-node, and scalar-correlation
-coordinates. Hybrid ``jvp`` requests and correlation matrix/surface requests
-fail closed until those coordinate charts and backend operators are checked.
+coordinates. The same helper can return a bounded directional HVP when the
+request supplies a non-empty sparse ``hvp_direction`` over graph-owned factors.
+Hybrid ``jvp`` requests and correlation matrix/surface requests fail closed
+until those coordinate charts and backend operators are checked.
 
 For small books that combine already-supported lanes, use the mixed dispatcher:
 

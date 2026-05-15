@@ -2,8 +2,8 @@
 
 ## Status
 
-First prototypes delivered under the `QUA-1034` and `QUA-1040` epics.
-Universal hybrid AD is still not claimed; this document now records the
+First prototypes delivered under the `QUA-1034`, `QUA-1040`, and `QUA-1045`
+epics. Universal hybrid AD is still not claimed; this document now records the
 shipped bounded quanto scalar-coordinate prototypes and the remaining
 prerequisites.
 
@@ -18,6 +18,9 @@ prerequisites.
 | `QUA-1042` | Done | Added graph-owned multi-factor scalar quanto VJP over supported scalar coordinates. |
 | `QUA-1043` | Done | Hardened selected-factor filtering, zero-sensitivity selections, and fail-closed diagnostics. |
 | `QUA-1044` | Done | Closeout docs, limitations, validation, and final PR preparation. |
+| `QUA-1046` | Done | Added HVP request direction contract and derivative-method taxonomy. |
+| `QUA-1047` | Done | Added graph-owned scalar quanto HVP execution over supported scalar coordinates. |
+| `QUA-1048` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -60,6 +63,9 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   vector over supported graph-owned scalar coordinates for the same bounded
   quanto route: underlier spot, FX spot, domestic/foreign curve zero-rate
   nodes, flat/grid vol nodes, and scalar correlation
+- `differentiate_quanto_scalar_inputs(..., HybridDerivativeRequest(
+  derivative_method="hvp", hvp_direction=...))` computes a bounded
+  graph-owned directional HVP, `H @ v`, over the same scalar-coordinate chart
 - the scalar correlation chart supports both constrained `rho` and
   unconstrained `x` coordinates through `rho = tanh(x)`
 - `HybridDerivativeResult` returns a sparse risk vector, graph payload,
@@ -71,10 +77,10 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   explicit unsupported derivative-method metadata
 
 This is still a prototype, not universal hybrid AD. The shipped derivative
-lanes differentiate a bounded scalar-coordinate vector for one single-name
-quanto route. They do not differentiate arbitrary cross-asset hybrid systems,
-matrix/surface correlations, path-dependent hybrid state, or broad product
-families end to end.
+lanes differentiate a bounded scalar-coordinate vector and a bounded
+directional HVP for one single-name quanto route. They do not differentiate
+arbitrary cross-asset hybrid systems, matrix/surface correlations,
+path-dependent hybrid state, or broad product families end to end.
 
 Autograd Phase 2 also added a truthful backend capability surface:
 
@@ -89,8 +95,8 @@ Autograd Phase 2 also added a truthful backend capability surface:
 The current system can compute derivatives for many smooth single-route
 pricing maps, bounded calibration representatives, bounded portfolio-AAD
 lanes, and the first graph-backed bounded quanto scalar-vector hybrid
-derivative. It cannot yet differentiate arbitrary cross-asset hybrid systems
-end to end.
+VJP/HVP derivatives. It cannot yet differentiate arbitrary cross-asset hybrid
+systems end to end.
 
 ## Missing Gap Before Implementation
 
@@ -258,8 +264,11 @@ reporting, JVP fail-closed behavior, and a finite-difference check for the
 smooth scalar correlation VJP lane. The `QUA-1040` prototype widens that route
 to a bounded scalar-coordinate VJP vector over graph-owned spot, FX spot,
 curve-node, vol-node, and correlation factors, with selected-factor and
-fail-closed policy tests. Matrix/surface charts, HVP lanes, path-dependent
-hybrid state, and larger hybrid fixtures remain open prerequisites.
+fail-closed policy tests. The `QUA-1045` prototype adds an explicit sparse HVP
+direction contract and checks the bounded scalar-coordinate directional HVP
+against independent finite differences of VJP vectors. Matrix/surface charts,
+path-dependent hybrid state, and larger hybrid fixtures remain open
+prerequisites.
 
 The first validation target should be small:
 
@@ -335,6 +344,22 @@ Deliverables:
 - VJP-backed sparse vector for supported scalar coordinates
 - selected-factor filtering and fail-closed diagnostics
 - finite-difference checks for representative smooth coordinates
+
+### Phase 3c: Scalar Coordinate Vector HVP Route
+
+[done in `QUA-1045` for the bounded single-name quanto scalar-coordinate
+vector]
+
+Extend the bounded quanto scalar-coordinate lane from first-order VJP to one
+checked second-order directional HVP over the same executable graph chart.
+
+Deliverables:
+
+- explicit sparse `hvp_direction` request contract keyed by `RiskFactorId`
+- `hybrid_scalar_vector_hvp` derivative-method metadata
+- HVP-backed sparse `H @ v` vector for supported scalar coordinates
+- fail-closed diagnostics for empty or unavailable HVP directions
+- finite-difference checks against VJP-vector perturbations
 
 ### Phase 4: Correlation Matrix Policy
 
@@ -412,10 +437,23 @@ Acceptance criteria:
 - selected-factor requests, known zero-sensitivity factors, unsupported graph
   dependencies, and `jvp` requests are explicitly governed
 
+Third delivered epic:
+
+`Hybrid AD: scalar graph HVP lane`
+
+Acceptance criteria:
+
+- the bounded scalar-coordinate quanto helper accepts an explicit sparse HVP
+  direction over graph-owned `RiskFactorId` coordinates
+- the route-level helper returns a sparse directional second derivative
+  `H @ v` with `hybrid_scalar_vector_hvp` metadata
+- empty or unavailable HVP directions fail closed with typed diagnostics
+- selected-factor requests filter the returned HVP vector without changing
+  full-factor metadata
+
 ## Follow-On Ticket Candidates
 
 - `Hybrid AD: correlation matrix chart policy and validation`
-- `Hybrid AD: HVP request support for scalar graph-backed lanes`
 - `Hybrid AD: ContractIR admission for graph-owned hybrid derivative lanes`
 - `Hybrid AD: path-dependent hybrid state and event policy`
 - `Hybrid AD: multi-product graph-owned derivative fixtures`
