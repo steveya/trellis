@@ -324,6 +324,7 @@ def _unsupported_result(
     method_id: str = "hybrid_scalar_vjp",
     fallback_reason: dict[str, object] | None = None,
     diagnostic_extra: Mapping[str, object] | None = None,
+    backend_operator: str | None = None,
 ) -> HybridDerivativeResult:
     diagnostic = {
         "code": code,
@@ -334,7 +335,7 @@ def _unsupported_result(
     metadata = derivative_method_payload(
         method_id,
         method_support="unsupported",
-        backend_operator=request.derivative_method,
+        backend_operator=backend_operator or request.derivative_method,
         coordinate_space=request.coordinate_space,
         hybrid_factor_graph_id=graph.graph_id,
         fallback_reason=fallback_reason or diagnostic,
@@ -601,6 +602,36 @@ def _values_by_node(
     return {node_id: tuple(values) for node_id, values in grouped.items()}
 
 
+def _hvp_direction_for_entries(
+    request: HybridDerivativeRequest,
+    entries: tuple[_GraphScalarEntry, ...],
+) -> tuple[tuple[float, ...], dict[str, object] | None]:
+    if len(request.hvp_direction) == 0:
+        return (), {
+            "code": "hvp_direction_required",
+            "message": "Hybrid scalar-coordinate HVP requires a non-empty direction vector.",
+        }
+    entry_index_by_factor = {
+        entry.factor_id: index
+        for index, entry in enumerate(entries)
+    }
+    missing_factors = tuple(
+        factor
+        for factor in request.hvp_direction
+        if factor not in entry_index_by_factor
+    )
+    if missing_factors:
+        return (), {
+            "code": "hvp_direction_factors_unavailable",
+            "message": "HVP direction contains factors that are not graph-owned scalar coordinates.",
+            "missing_factor_keys": [factor.key for factor in missing_factors],
+        }
+    values = [0.0] * len(entries)
+    for factor, value in request.hvp_direction.items():
+        values[entry_index_by_factor[factor]] = float(value)
+    return tuple(values), None
+
+
 def _replace_inputs_from_graph(
     resolved_inputs: object,
     graph: HybridFactorGraph,
@@ -705,11 +736,21 @@ def differentiate_quanto_scalar_inputs(
     resolved_inputs: object,
     request: HybridDerivativeRequest | None = None,
 ) -> HybridDerivativeResult:
-    """Return VJP sensitivities to supported graph-owned quanto scalar inputs."""
-    from trellis.core.differentiable import get_backend_capabilities, get_numpy, vjp
+    """Return VJP or HVP sensitivities to supported graph-owned quanto scalar inputs."""
+    from trellis.core.differentiable import (
+        get_backend_capabilities,
+        get_numpy,
+        hessian_vector_product,
+        vjp,
+    )
     from trellis.models.analytical.quanto import price_quanto_option_raw
 
     resolved_request = request or HybridDerivativeRequest()
+    method_id = (
+        "hybrid_scalar_vector_hvp"
+        if resolved_request.derivative_method == "hvp"
+        else "hybrid_scalar_vector_vjp"
+    )
     graph = getattr(resolved_inputs, "hybrid_factor_graph", None)
     if graph is None:
         graph = _fallback_graph(spec, resolved_inputs)
@@ -734,21 +775,21 @@ def differentiate_quanto_scalar_inputs(
                 "Hybrid JVP remains fail-closed because the active backend "
                 "does not provide checked JVP coverage for pricing primitives."
             ),
-            method_id="hybrid_scalar_vector_vjp",
+            method_id=method_id,
             diagnostic_extra=diagnostic_extra,
             fallback_reason={
                 "code": "hybrid_jvp_backend_unsupported",
                 **diagnostic_extra,
             },
         )
-    if resolved_request.derivative_method != "vjp":
+    if resolved_request.derivative_method not in {"vjp", "hvp"}:
         return _unsupported_result(
             value=value,
             graph=graph,
             request=resolved_request,
             code="hybrid_derivative_method_unsupported",
-            message="Only VJP is supported by the bounded scalar quanto input lane.",
-            method_id="hybrid_scalar_vector_vjp",
+            message="Only VJP and HVP are supported by the bounded scalar quanto input lane.",
+            method_id=method_id,
         )
     if not is_dataclass(resolved_inputs):
         return _unsupported_result(
@@ -756,8 +797,8 @@ def differentiate_quanto_scalar_inputs(
             graph=graph,
             request=resolved_request,
             code="resolved_inputs_dataclass_required",
-            message="Scalar quanto input VJP requires dataclass resolved inputs.",
-            method_id="hybrid_scalar_vector_vjp",
+            message="Scalar quanto input VJP/HVP requires dataclass resolved inputs.",
+            method_id=method_id,
         )
 
     extraction = _quanto_scalar_entries(
@@ -772,7 +813,7 @@ def differentiate_quanto_scalar_inputs(
             request=resolved_request,
             code="graph_scalar_coordinates_unavailable",
             message="Hybrid graph does not contain supported scalar quanto coordinates.",
-            method_id="hybrid_scalar_vector_vjp",
+            method_id=method_id,
             diagnostic_extra={
                 "scalar_chart_diagnostics": list(extraction.diagnostics),
             },
@@ -792,8 +833,75 @@ def differentiate_quanto_scalar_inputs(
         )
         return price_quanto_option_raw(spec, traced_inputs)
 
-    _value, pullback = vjp(value_from_vector, base_vector)
-    sensitivities = np.reshape(np.asarray(pullback(np.asarray(1.0))), (-1,))
+    metadata_extra: dict[str, object] = {}
+    if resolved_request.derivative_method == "hvp":
+        if not capabilities.supports("hessian_vector_product"):
+            diagnostic_extra = {
+                "backend_id": capabilities.backend_id,
+                "unsupported_operator": "hessian_vector_product",
+                "backend_notes": capabilities.notes,
+            }
+            return _unsupported_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                code="hybrid_hvp_backend_unsupported",
+                message=(
+                    "Hybrid HVP is fail-closed because the active backend "
+                    "does not provide checked scalar-objective HVP support."
+                ),
+                method_id=method_id,
+                diagnostic_extra=diagnostic_extra,
+                fallback_reason={
+                    "code": "hybrid_hvp_backend_unsupported",
+                    **diagnostic_extra,
+                },
+                backend_operator="hessian_vector_product",
+            )
+        direction_values, direction_diagnostic = _hvp_direction_for_entries(
+            resolved_request,
+            entries,
+        )
+        if direction_diagnostic is not None:
+            return _unsupported_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                code=str(direction_diagnostic["code"]),
+                message=str(direction_diagnostic["message"]),
+                method_id=method_id,
+                diagnostic_extra={
+                    key: value
+                    for key, value in direction_diagnostic.items()
+                    if key not in {"code", "message"}
+                },
+                fallback_reason=direction_diagnostic,
+                backend_operator="hessian_vector_product",
+            )
+        direction_vector = np.asarray(direction_values)
+        sensitivities = np.reshape(
+            np.asarray(
+                hessian_vector_product(
+                    value_from_vector,
+                    base_vector,
+                    direction_vector,
+                )
+            ),
+            (-1,),
+        )
+        metadata_extra = {
+            "hvp_direction_factor_count": len(resolved_request.hvp_direction),
+            "hvp_direction_coordinate_count": sum(
+                1 for value in direction_values if value != 0.0
+            ),
+            "hvp_direction_norm": float(np.sqrt(np.sum(direction_vector * direction_vector))),
+        }
+        backend_operator = "hessian_vector_product"
+    else:
+        _value, pullback = vjp(value_from_vector, base_vector)
+        sensitivities = np.reshape(np.asarray(pullback(np.asarray(1.0))), (-1,))
+        backend_operator = "vjp"
+
     full_vector = SparseRiskVector.from_items(
         (entry.factor_id, float(sensitivities[index]))
         for index, entry in enumerate(entries)
@@ -835,10 +943,10 @@ def differentiate_quanto_scalar_inputs(
             support_status = "unsupported"
 
     metadata = derivative_method_payload(
-        "hybrid_scalar_vector_vjp",
+        method_id,
         method_support=support_status,
         backend_id=capabilities.backend_id,
-        backend_operator="vjp",
+        backend_operator=backend_operator,
         coordinate_space=resolved_request.coordinate_space,
         hybrid_factor_graph_id=graph.graph_id,
         graph_scalar_coordinate_count=len(entries),
@@ -846,6 +954,7 @@ def differentiate_quanto_scalar_inputs(
         node_count=len(graph.nodes),
         unsupported_scalar_node_count=len(extraction.diagnostics),
         unsupported_dependency_count=len(graph.unsupported_dependencies),
+        **metadata_extra,
     )
     if math.isfinite(value):
         metadata["base_value"] = value
