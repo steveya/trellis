@@ -246,7 +246,9 @@ spot, domestic/foreign curve-node, flat/grid vol-node, and scalar-correlation
 coordinates. The same helper can return a bounded directional HVP when the
 request supplies a non-empty sparse ``hvp_direction`` over graph-owned factors.
 Hybrid ``jvp`` requests and correlation matrix/surface requests fail closed
-until those coordinate charts and backend operators are checked.
+until those coordinate charts and backend operators are checked. Correlation
+matrix requests can report checked PSD chart-policy diagnostics, but they do
+not yet return matrix/surface AD sensitivities.
 
 For small books that combine already-supported lanes, use the mixed dispatcher:
 
