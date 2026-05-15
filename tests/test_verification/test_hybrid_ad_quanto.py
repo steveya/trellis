@@ -22,7 +22,7 @@ from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments.fx import FXRate
 from trellis.models.analytical.quanto import price_quanto_option_raw
 from trellis.models.resolution.quanto import resolve_quanto_inputs
-from trellis.models.vol_surface import FlatVol
+from trellis.models.vol_surface import FlatVol, GridVolSurface
 
 
 SETTLEMENT = date(2024, 11, 15)
@@ -134,6 +134,24 @@ def _graph_factor_by(
     raise AssertionError(f"missing graph factor {object_type=} {coordinate_type=} {object_name=}")
 
 
+def _graph_node_by_resolved_input(graph, resolved_input: str):
+    for node in graph.nodes:
+        resolved_inputs = tuple(str(value) for value in node.metadata.get("resolved_inputs", ()))
+        if resolved_input in resolved_inputs:
+            return node
+    raise AssertionError(f"missing graph node for {resolved_input=}")
+
+
+def _replace_graph_node(graph, replacement):
+    return replace(
+        graph,
+        nodes=tuple(
+            replacement if node.node_id == replacement.node_id else node
+            for node in graph.nodes
+        ),
+    )
+
+
 def test_quanto_scalar_inputs_vjp_matches_finite_differences_for_graph_factors():
     spec = _QuantoSpec()
     resolved = _resolved(0.25)
@@ -236,6 +254,67 @@ def test_quanto_scalar_inputs_vjp_matches_finite_differences_for_graph_factors()
         - price_quanto_option_raw(spec, replace(resolved, corr=resolved.corr - bump))
     ) / (2.0 * bump)
     assert result.risk_vector[corr_factor] == pytest.approx(corr_fd, rel=5.0e-6)
+
+
+def test_quanto_scalar_inputs_normalizes_non_round_curve_and_grid_vol_keys():
+    spec = _QuantoSpec()
+    surface = GridVolSurface(
+        expiries=(1.0 / 3.0, 2.0),
+        strikes=(100.0 / 3.0, 120.0),
+        vols=((0.18, 0.19), (0.21, 0.22)),
+    )
+    market = replace(
+        _market_state(0.25),
+        discount=YieldCurve((1.0 / 3.0, 30.0), (0.05, 0.052)),
+        forecast_curves={"EUR-DISC": YieldCurve((1.0 / 3.0, 30.0), (0.03, 0.032))},
+        vol_surface=surface,
+    )
+    resolved = resolve_quanto_inputs(
+        market,
+        spec,
+        include_hybrid_factor_graph=True,
+    )
+
+    result = differentiate_quanto_scalar_inputs(spec, resolved)
+
+    assert result.support_status == "supported"
+    assert result.diagnostics == ()
+    _factor_by(
+        result,
+        object_type="curve",
+        coordinate_type="zero_rate",
+        object_name="USD-OIS",
+        tenor_years=1.0 / 3.0,
+    )
+    assert any(
+        factor.object_type == "vol_surface" and factor.coordinate_type == "black_vol"
+        for factor in result.risk_vector
+    )
+
+
+def test_quanto_scalar_inputs_missing_chart_context_fails_partial_without_raising():
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    curve_node = _graph_node_by_resolved_input(
+        resolved.hybrid_factor_graph,
+        "domestic_curve",
+    )
+    bad_chart = replace(curve_node.coordinate_chart, coordinate_values={})
+    bad_graph = _replace_graph_node(
+        resolved.hybrid_factor_graph,
+        replace(curve_node, coordinate_chart=bad_chart),
+    )
+
+    result = differentiate_quanto_scalar_inputs(
+        spec,
+        replace(resolved, hybrid_factor_graph=bad_graph),
+    )
+
+    assert result.support_status == "partial"
+    assert result.method_metadata["unsupported_scalar_node_count"] == 1
+    assert result.diagnostics[0]["code"] == "scalar_chart_context_unavailable"
+    assert result.diagnostics[0]["node_id"] == curve_node.node_id
+    assert result.diagnostics[0]["reason"] == "executable_chart_context_invalid"
 
 
 def test_quanto_scalar_inputs_selected_subset_keeps_full_factor_metadata():

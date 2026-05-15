@@ -16,6 +16,7 @@ from trellis.analytics.hybrid_factors import (
     MarketObjectCoordinateChart,
 )
 from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
+from trellis.models.vol_surface import _bracket_and_weight
 
 
 _DERIVATIVE_METHODS = frozenset({"vjp", "jvp", "hvp"})
@@ -223,6 +224,12 @@ class _GraphScalarEntry:
     base_value: float
 
 
+@dataclass(frozen=True)
+class _GraphScalarExtraction:
+    entries: tuple[_GraphScalarEntry, ...]
+    diagnostics: tuple[dict[str, object], ...] = ()
+
+
 def _correlation_nodes(graph: HybridFactorGraph) -> tuple[HybridDependencyNode, ...]:
     return tuple(
         node
@@ -334,10 +341,18 @@ def _node_role(node: HybridDependencyNode) -> str | None:
 
 
 def _axis_float(factor_id: RiskFactorId, axis_name: str) -> float:
+    return float(_axis_key(factor_id, axis_name))
+
+
+def _axis_key(factor_id: RiskFactorId, axis_name: str) -> str:
     axes = dict(factor_id.axes)
     if axis_name not in axes:
         raise KeyError(axis_name)
-    return float(axes[axis_name])
+    return str(axes[axis_name])
+
+
+def _float_key(value: object) -> str:
+    return format(float(value), ".12g")
 
 
 def _chart_float_tuple(chart: MarketObjectCoordinateChart, key: str) -> tuple[float, ...]:
@@ -349,26 +364,6 @@ def _chart_float_matrix(
     key: str,
 ) -> tuple[tuple[float, ...], ...]:
     return tuple(tuple(float(value) for value in row) for row in chart.coordinate_values[key])
-
-
-def _bracket_and_weight(value: float, grid: tuple[float, ...]) -> tuple[int, int, float]:
-    if len(grid) == 1:
-        return 0, 0, 0.0
-    if value <= grid[0]:
-        return 0, 0, 0.0
-    if value >= grid[-1]:
-        last = len(grid) - 1
-        return last, last, 0.0
-    for lower in range(len(grid) - 1):
-        upper = lower + 1
-        left = grid[lower]
-        right = grid[upper]
-        if left <= value <= right:
-            if right == left:
-                return lower, upper, 0.0
-            return lower, upper, (value - left) / (right - left)
-    last = len(grid) - 1
-    return last, last, 0.0
 
 
 def _linear_interp_from_values(value: float, grid: tuple[float, ...], node_values: tuple[object, ...]):
@@ -384,10 +379,10 @@ def _discount_from_curve_chart(
     tenors = _chart_float_tuple(chart, "tenors")
     expiry = float(chart.coordinate_values["time_to_expiry"])
     rate_by_tenor = {
-        _axis_float(coordinate.factor_id, "tenor_years"): node_values[index]
+        _axis_key(coordinate.factor_id, "tenor_years"): node_values[index]
         for index, coordinate in enumerate(chart.coordinates)
     }
-    ordered_rates = tuple(rate_by_tenor[tenor] for tenor in tenors)
+    ordered_rates = tuple(rate_by_tenor[_float_key(tenor)] for tenor in tenors)
     rate = _linear_interp_from_values(expiry, tenors, ordered_rates)
     return np.exp(-rate * expiry)
 
@@ -408,14 +403,19 @@ def _vol_from_surface_chart(
     strike_lower, strike_upper, strike_weight = _bracket_and_weight(strike, strikes)
     value_by_node = {
         (
-            _axis_float(coordinate.factor_id, "expiry_years"),
-            _axis_float(coordinate.factor_id, "strike"),
+            _axis_key(coordinate.factor_id, "expiry_years"),
+            _axis_key(coordinate.factor_id, "strike"),
         ): node_values[index]
         for index, coordinate in enumerate(chart.coordinates)
     }
 
     def at(expiry_index: int, strike_index: int):
-        return value_by_node[(expiries[expiry_index], strikes[strike_index])]
+        return value_by_node[
+            (
+                _float_key(expiries[expiry_index]),
+                _float_key(strikes[strike_index]),
+            )
+        ]
 
     lower = (1.0 - strike_weight) * at(expiry_lower, strike_lower) + strike_weight * at(
         expiry_lower,
@@ -452,13 +452,13 @@ def _entries_for_node(
     if role in {"domestic_curve", "foreign_curve"}:
         tenors = _chart_float_tuple(chart, "tenors")
         rates = _chart_float_tuple(chart, "rates")
-        rate_by_tenor = dict(zip(tenors, rates))
+        rate_by_tenor = {_float_key(tenor): rate for tenor, rate in zip(tenors, rates)}
         return tuple(
             _GraphScalarEntry(
                 node_id=node.node_id,
                 role=role,
                 factor_id=coordinate.factor_id,
-                base_value=rate_by_tenor[_axis_float(coordinate.factor_id, "tenor_years")],
+                base_value=rate_by_tenor[_axis_key(coordinate.factor_id, "tenor_years")],
             )
             for coordinate in chart.coordinates
             if coordinate.factor_id.coordinate_type == "zero_rate"
@@ -477,7 +477,7 @@ def _entries_for_node(
         strikes = _chart_float_tuple(chart, "strikes")
         vols = _chart_float_matrix(chart, "vols")
         vol_by_node = {
-            (expiry, strike): vols[expiry_index][strike_index]
+            (_float_key(expiry), _float_key(strike)): vols[expiry_index][strike_index]
             for expiry_index, expiry in enumerate(expiries)
             for strike_index, strike in enumerate(strikes)
         }
@@ -488,8 +488,8 @@ def _entries_for_node(
                 factor_id=coordinate.factor_id,
                 base_value=vol_by_node[
                     (
-                        _axis_float(coordinate.factor_id, "expiry_years"),
-                        _axis_float(coordinate.factor_id, "strike"),
+                        _axis_key(coordinate.factor_id, "expiry_years"),
+                        _axis_key(coordinate.factor_id, "strike"),
                     )
                 ],
             )
@@ -515,16 +515,62 @@ def _entries_for_node(
     return ()
 
 
+def _scalar_chart_diagnostic(
+    node: HybridDependencyNode,
+    role: str,
+    reason: str,
+    exc: Exception | None = None,
+) -> dict[str, object]:
+    diagnostic: dict[str, object] = {
+        "code": "scalar_chart_context_unavailable",
+        "severity": "warning",
+        "node_id": node.node_id,
+        "node_type": node.node_type,
+        "object_name": node.object_name,
+        "resolved_input": role,
+        "reason": reason,
+    }
+    if exc is not None:
+        diagnostic["error_type"] = type(exc).__name__
+        diagnostic["error"] = str(exc)
+    return diagnostic
+
+
+def _extract_entries_for_node(
+    node: HybridDependencyNode,
+    *,
+    coordinate_space: str,
+) -> _GraphScalarExtraction:
+    role = _node_role(node)
+    if role is None or node.coordinate_chart is None or node.support_status != "supported":
+        return _GraphScalarExtraction(())
+    try:
+        entries = _entries_for_node(node, coordinate_space=coordinate_space)
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        return _GraphScalarExtraction(
+            (),
+            (_scalar_chart_diagnostic(node, role, "executable_chart_context_invalid", exc),),
+        )
+    if not entries:
+        return _GraphScalarExtraction(
+            (),
+            (_scalar_chart_diagnostic(node, role, "executable_chart_coordinates_unavailable"),),
+        )
+    return _GraphScalarExtraction(entries)
+
+
 def _quanto_scalar_entries(
     graph: HybridFactorGraph,
     *,
     coordinate_space: str,
-) -> tuple[_GraphScalarEntry, ...]:
-    return tuple(
-        entry
-        for node in graph.nodes
-        for entry in _entries_for_node(node, coordinate_space=coordinate_space)
-    )
+) -> _GraphScalarExtraction:
+    entries: list[_GraphScalarEntry] = []
+    diagnostics: list[dict[str, object]] = []
+    for node in graph.nodes:
+        extraction = _extract_entries_for_node(node, coordinate_space=coordinate_space)
+        entries.extend(extraction.entries)
+        diagnostics.extend(extraction.diagnostics)
+    return _GraphScalarExtraction(tuple(entries), tuple(diagnostics))
 
 
 def _values_by_node(
@@ -696,10 +742,11 @@ def differentiate_quanto_scalar_inputs(
             method_id="hybrid_scalar_vector_vjp",
         )
 
-    entries = _quanto_scalar_entries(
+    extraction = _quanto_scalar_entries(
         graph,
         coordinate_space=resolved_request.coordinate_space,
     )
+    entries = extraction.entries
     if not entries:
         return _unsupported_result(
             value=value,
@@ -708,6 +755,9 @@ def differentiate_quanto_scalar_inputs(
             code="graph_scalar_coordinates_unavailable",
             message="Hybrid graph does not contain supported scalar quanto coordinates.",
             method_id="hybrid_scalar_vector_vjp",
+            diagnostic_extra={
+                "scalar_chart_diagnostics": list(extraction.diagnostics),
+            },
         )
 
     np = get_numpy()
@@ -733,8 +783,12 @@ def differentiate_quanto_scalar_inputs(
     selected_vector = resolved_request.filter_vector(full_vector)
     available_factors = tuple(entry.factor_id for entry in entries)
     missing_factors = resolved_request.missing_selected_factors(available_factors)
-    diagnostics: list[dict[str, object]] = []
-    support_status = "partial" if graph.unsupported_dependencies else "supported"
+    diagnostics: list[dict[str, object]] = list(extraction.diagnostics)
+    support_status = (
+        "partial"
+        if graph.unsupported_dependencies or extraction.diagnostics
+        else "supported"
+    )
     if graph.unsupported_dependencies:
         diagnostics.append(
             {
@@ -772,6 +826,7 @@ def differentiate_quanto_scalar_inputs(
         graph_scalar_coordinate_count=len(entries),
         factor_count=len(full_vector),
         node_count=len(graph.nodes),
+        unsupported_scalar_node_count=len(extraction.diagnostics),
         unsupported_dependency_count=len(graph.unsupported_dependencies),
     )
     if math.isfinite(value):
