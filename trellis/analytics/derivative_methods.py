@@ -145,6 +145,16 @@ _METHOD_SPECS = {
             "using the VJP backend operator."
         ),
     ),
+    "hybrid_scalar_vector_hvp": DerivativeMethodSpec(
+        "hybrid_scalar_vector_hvp",
+        category="hybrid_ad",
+        support_status="partial",
+        backend_operator="hessian_vector_product",
+        description=(
+            "Bounded graph-backed hybrid scalar-coordinate directional second "
+            "derivative using the HVP backend operator."
+        ),
+    ),
     "unsupported_hybrid_structure": DerivativeMethodSpec(
         "unsupported_hybrid_structure",
         category="unsupported",

@@ -14,8 +14,8 @@ from trellis.analytics.hybrid_ad import (
     fail_closed_correlation_structure_derivative,
 )
 from trellis.analytics.hybrid_factors import HybridUnsupportedDependency
+from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
 from trellis.core.differentiable import get_backend_capabilities
-from trellis.analytics.risk_factors import RiskFactorId
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
 from trellis.curves.yield_curve import YieldCurve
@@ -399,6 +399,31 @@ def test_quanto_scalar_inputs_known_zero_sensitivity_selected_factor_is_not_miss
     assert selected.support_status == "supported"
     assert len(selected.risk_vector) == 0
     assert selected.diagnostics == ()
+
+
+def test_hybrid_derivative_request_normalizes_hvp_direction():
+    factor = RiskFactorId(
+        object_type="spot",
+        object_name="EUR",
+        coordinate_type="spot",
+        provenance_namespace="hybrid_ad",
+    )
+
+    request = HybridDerivativeRequest(
+        derivative_method="hvp",
+        hvp_direction=SparseRiskVector.from_items(
+            (
+                (factor, 2.0),
+                (factor, -0.5),
+                (factor, 0.0),
+            )
+        ),
+    )
+
+    assert request.derivative_method == "hvp"
+    assert request.hvp_direction[factor] == pytest.approx(1.5)
+    assert tuple(request.hvp_direction) == (factor,)
+    assert HybridDerivativeRequest().hvp_direction == SparseRiskVector()
 
 
 def test_quanto_scalar_inputs_jvp_fails_closed_with_backend_reason():

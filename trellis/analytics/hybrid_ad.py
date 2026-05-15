@@ -62,6 +62,18 @@ def _sorted_unique_factors(factors: Iterable[RiskFactorId]) -> tuple[RiskFactorI
     return tuple(factor for _, factor in sorted(factor_map.items(), key=lambda item: item[0].key))
 
 
+def _normalize_sparse_vector(value: object, field_name: str) -> SparseRiskVector:
+    if isinstance(value, SparseRiskVector):
+        return value
+    if value is None:
+        return SparseRiskVector()
+    items = value.items() if isinstance(value, Mapping) else value
+    try:
+        return SparseRiskVector.from_items(items)  # type: ignore[arg-type]
+    except TypeError as exc:
+        raise TypeError(f"{field_name} must contain RiskFactorId keyed numeric entries") from exc
+
+
 @dataclass(frozen=True)
 class HybridDerivativeRequest:
     """Request policy for bounded graph-backed hybrid derivative helpers."""
@@ -70,6 +82,7 @@ class HybridDerivativeRequest:
     coordinate_space: str = "constrained"
     selected_factors: tuple[RiskFactorId, ...] = field(default_factory=tuple)
     unsupported_selected_factor_policy: str = "empty_vector"
+    hvp_direction: SparseRiskVector = field(default_factory=SparseRiskVector)
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -95,6 +108,11 @@ class HybridDerivativeRequest:
                 _UNSUPPORTED_SELECTED_POLICIES,
                 "unsupported_selected_factor_policy",
             ),
+        )
+        object.__setattr__(
+            self,
+            "hvp_direction",
+            _normalize_sparse_vector(self.hvp_direction, "hvp_direction"),
         )
 
     @property
