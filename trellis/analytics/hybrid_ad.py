@@ -16,12 +16,24 @@ from trellis.analytics.hybrid_factors import (
     MarketObjectCoordinateChart,
 )
 from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
+from trellis.models.vol_surface import _bracket_and_weight
 
 
 _DERIVATIVE_METHODS = frozenset({"vjp", "jvp", "hvp"})
 _COORDINATE_SPACES = frozenset({"constrained", "unconstrained"})
 _UNSUPPORTED_SELECTED_POLICIES = frozenset({"empty_vector", "fail_closed"})
 _CORRELATION_STRUCTURE_TYPES = frozenset({"correlation_matrix", "correlation_surface"})
+_QUANTO_SCALAR_ROLES = frozenset(
+    {
+        "underlier_spot",
+        "fx_spot",
+        "domestic_curve",
+        "foreign_curve",
+        "underlier_vol",
+        "fx_vol",
+        "correlation",
+    }
+)
 
 
 def _clean_member(value: object, allowed: frozenset[str], field_name: str) -> str:
@@ -204,6 +216,20 @@ class HybridDerivativeResult:
         }
 
 
+@dataclass(frozen=True)
+class _GraphScalarEntry:
+    node_id: str
+    role: str
+    factor_id: RiskFactorId
+    base_value: float
+
+
+@dataclass(frozen=True)
+class _GraphScalarExtraction:
+    entries: tuple[_GraphScalarEntry, ...]
+    diagnostics: tuple[dict[str, object], ...] = ()
+
+
 def _correlation_nodes(graph: HybridFactorGraph) -> tuple[HybridDependencyNode, ...]:
     return tuple(
         node
@@ -277,6 +303,7 @@ def _unsupported_result(
     request: HybridDerivativeRequest,
     code: str,
     message: str,
+    method_id: str = "hybrid_scalar_vjp",
     fallback_reason: dict[str, object] | None = None,
     diagnostic_extra: Mapping[str, object] | None = None,
 ) -> HybridDerivativeResult:
@@ -287,7 +314,7 @@ def _unsupported_result(
         **dict(diagnostic_extra or {}),
     }
     metadata = derivative_method_payload(
-        "hybrid_scalar_vjp",
+        method_id,
         method_support="unsupported",
         backend_operator=request.derivative_method,
         coordinate_space=request.coordinate_space,
@@ -303,6 +330,295 @@ def _unsupported_result(
         unsupported_dependencies=graph.unsupported_dependencies,
         diagnostics=(diagnostic,),
     )
+
+
+def _node_role(node: HybridDependencyNode) -> str | None:
+    roles = tuple(str(role) for role in node.metadata.get("resolved_inputs", ()))
+    for role in roles:
+        if role in _QUANTO_SCALAR_ROLES:
+            return role
+    return None
+
+
+def _axis_float(factor_id: RiskFactorId, axis_name: str) -> float:
+    return float(_axis_key(factor_id, axis_name))
+
+
+def _axis_key(factor_id: RiskFactorId, axis_name: str) -> str:
+    axes = dict(factor_id.axes)
+    if axis_name not in axes:
+        raise KeyError(axis_name)
+    return str(axes[axis_name])
+
+
+def _float_key(value: object) -> str:
+    return format(float(value), ".12g")
+
+
+def _chart_float_tuple(chart: MarketObjectCoordinateChart, key: str) -> tuple[float, ...]:
+    return tuple(float(value) for value in chart.coordinate_values[key])
+
+
+def _chart_float_matrix(
+    chart: MarketObjectCoordinateChart,
+    key: str,
+) -> tuple[tuple[float, ...], ...]:
+    return tuple(tuple(float(value) for value in row) for row in chart.coordinate_values[key])
+
+
+def _linear_interp_from_values(value: float, grid: tuple[float, ...], node_values: tuple[object, ...]):
+    lower, upper, weight = _bracket_and_weight(value, grid)
+    return (1.0 - weight) * node_values[lower] + weight * node_values[upper]
+
+
+def _discount_from_curve_chart(
+    chart: MarketObjectCoordinateChart,
+    node_values: tuple[object, ...],
+    np: object,
+):
+    tenors = _chart_float_tuple(chart, "tenors")
+    expiry = float(chart.coordinate_values["time_to_expiry"])
+    rate_by_tenor = {
+        _axis_key(coordinate.factor_id, "tenor_years"): node_values[index]
+        for index, coordinate in enumerate(chart.coordinates)
+    }
+    ordered_rates = tuple(rate_by_tenor[_float_key(tenor)] for tenor in tenors)
+    rate = _linear_interp_from_values(expiry, tenors, ordered_rates)
+    return np.exp(-rate * expiry)
+
+
+def _vol_from_surface_chart(
+    chart: MarketObjectCoordinateChart,
+    node_values: tuple[object, ...],
+):
+    surface_type = str(chart.coordinate_values.get("surface_type", ""))
+    if surface_type == "FlatVol":
+        return node_values[0]
+
+    expiries = _chart_float_tuple(chart, "expiries")
+    strikes = _chart_float_tuple(chart, "strikes")
+    expiry = float(chart.coordinate_values["query_expiry"])
+    strike = float(chart.coordinate_values["query_strike"])
+    expiry_lower, expiry_upper, expiry_weight = _bracket_and_weight(expiry, expiries)
+    strike_lower, strike_upper, strike_weight = _bracket_and_weight(strike, strikes)
+    value_by_node = {
+        (
+            _axis_key(coordinate.factor_id, "expiry_years"),
+            _axis_key(coordinate.factor_id, "strike"),
+        ): node_values[index]
+        for index, coordinate in enumerate(chart.coordinates)
+    }
+
+    def at(expiry_index: int, strike_index: int):
+        return value_by_node[
+            (
+                _float_key(expiries[expiry_index]),
+                _float_key(strikes[strike_index]),
+            )
+        ]
+
+    lower = (1.0 - strike_weight) * at(expiry_lower, strike_lower) + strike_weight * at(
+        expiry_lower,
+        strike_upper,
+    )
+    upper = (1.0 - strike_weight) * at(expiry_upper, strike_lower) + strike_weight * at(
+        expiry_upper,
+        strike_upper,
+    )
+    return (1.0 - expiry_weight) * lower + expiry_weight * upper
+
+
+def _entries_for_node(
+    node: HybridDependencyNode,
+    *,
+    coordinate_space: str,
+) -> tuple[_GraphScalarEntry, ...]:
+    role = _node_role(node)
+    chart = node.coordinate_chart
+    if role is None or chart is None or node.support_status != "supported":
+        return ()
+    values = dict(chart.coordinate_values)
+    if role in {"underlier_spot", "fx_spot"}:
+        if len(chart.coordinates) != 1:
+            return ()
+        return (
+            _GraphScalarEntry(
+                node_id=node.node_id,
+                role=role,
+                factor_id=chart.coordinates[0].factor_id,
+                base_value=float(values["spot"]),
+            ),
+        )
+    if role in {"domestic_curve", "foreign_curve"}:
+        tenors = _chart_float_tuple(chart, "tenors")
+        rates = _chart_float_tuple(chart, "rates")
+        rate_by_tenor = {_float_key(tenor): rate for tenor, rate in zip(tenors, rates)}
+        return tuple(
+            _GraphScalarEntry(
+                node_id=node.node_id,
+                role=role,
+                factor_id=coordinate.factor_id,
+                base_value=rate_by_tenor[_axis_key(coordinate.factor_id, "tenor_years")],
+            )
+            for coordinate in chart.coordinates
+            if coordinate.factor_id.coordinate_type == "zero_rate"
+        )
+    if role in {"underlier_vol", "fx_vol"}:
+        if str(values.get("surface_type")) == "FlatVol":
+            return (
+                _GraphScalarEntry(
+                    node_id=node.node_id,
+                    role=role,
+                    factor_id=chart.coordinates[0].factor_id,
+                    base_value=float(values["flat_vol"]),
+                ),
+            )
+        expiries = _chart_float_tuple(chart, "expiries")
+        strikes = _chart_float_tuple(chart, "strikes")
+        vols = _chart_float_matrix(chart, "vols")
+        vol_by_node = {
+            (_float_key(expiry), _float_key(strike)): vols[expiry_index][strike_index]
+            for expiry_index, expiry in enumerate(expiries)
+            for strike_index, strike in enumerate(strikes)
+        }
+        return tuple(
+            _GraphScalarEntry(
+                node_id=node.node_id,
+                role=role,
+                factor_id=coordinate.factor_id,
+                base_value=vol_by_node[
+                    (
+                        _axis_key(coordinate.factor_id, "expiry_years"),
+                        _axis_key(coordinate.factor_id, "strike"),
+                    )
+                ],
+            )
+            for coordinate in chart.coordinates
+            if coordinate.factor_id.coordinate_type == "black_vol"
+        )
+    if role == "correlation":
+        if len(chart.coordinates) != 1:
+            return ()
+        base_value = (
+            chart.unconstrained_value
+            if coordinate_space == "unconstrained"
+            else chart.constrained_value
+        )
+        return (
+            _GraphScalarEntry(
+                node_id=node.node_id,
+                role=role,
+                factor_id=chart.coordinates[0].factor_id,
+                base_value=float(base_value),
+            ),
+        )
+    return ()
+
+
+def _scalar_chart_diagnostic(
+    node: HybridDependencyNode,
+    role: str,
+    reason: str,
+    exc: Exception | None = None,
+) -> dict[str, object]:
+    diagnostic: dict[str, object] = {
+        "code": "scalar_chart_context_unavailable",
+        "severity": "warning",
+        "node_id": node.node_id,
+        "node_type": node.node_type,
+        "object_name": node.object_name,
+        "resolved_input": role,
+        "reason": reason,
+    }
+    if exc is not None:
+        diagnostic["error_type"] = type(exc).__name__
+        diagnostic["error"] = str(exc)
+    return diagnostic
+
+
+def _extract_entries_for_node(
+    node: HybridDependencyNode,
+    *,
+    coordinate_space: str,
+) -> _GraphScalarExtraction:
+    role = _node_role(node)
+    if role is None or node.coordinate_chart is None or node.support_status != "supported":
+        return _GraphScalarExtraction(())
+    try:
+        entries = _entries_for_node(node, coordinate_space=coordinate_space)
+    except (KeyError, TypeError, ValueError, IndexError) as exc:
+        return _GraphScalarExtraction(
+            (),
+            (_scalar_chart_diagnostic(node, role, "executable_chart_context_invalid", exc),),
+        )
+    if not entries:
+        return _GraphScalarExtraction(
+            (),
+            (_scalar_chart_diagnostic(node, role, "executable_chart_coordinates_unavailable"),),
+        )
+    return _GraphScalarExtraction(entries)
+
+
+def _quanto_scalar_entries(
+    graph: HybridFactorGraph,
+    *,
+    coordinate_space: str,
+) -> _GraphScalarExtraction:
+    entries: list[_GraphScalarEntry] = []
+    diagnostics: list[dict[str, object]] = []
+    for node in graph.nodes:
+        extraction = _extract_entries_for_node(node, coordinate_space=coordinate_space)
+        entries.extend(extraction.entries)
+        diagnostics.extend(extraction.diagnostics)
+    return _GraphScalarExtraction(tuple(entries), tuple(diagnostics))
+
+
+def _values_by_node(
+    entries: tuple[_GraphScalarEntry, ...],
+    theta,
+) -> dict[str, tuple[object, ...]]:
+    grouped: dict[str, list[object]] = {}
+    for index, entry in enumerate(entries):
+        grouped.setdefault(entry.node_id, []).append(theta[index])
+    return {node_id: tuple(values) for node_id, values in grouped.items()}
+
+
+def _replace_inputs_from_graph(
+    resolved_inputs: object,
+    graph: HybridFactorGraph,
+    entries: tuple[_GraphScalarEntry, ...],
+    theta,
+    *,
+    coordinate_space: str,
+    np: object,
+):
+    grouped_values = _values_by_node(entries, theta)
+    updates: dict[str, object] = {}
+    for node in graph.nodes:
+        role = _node_role(node)
+        chart = node.coordinate_chart
+        node_values = grouped_values.get(node.node_id)
+        if role is None or chart is None or node_values is None:
+            continue
+        if role == "underlier_spot":
+            updates["spot"] = node_values[0]
+        elif role == "fx_spot":
+            updates["fx_spot"] = node_values[0]
+        elif role == "domestic_curve":
+            updates["domestic_df"] = _discount_from_curve_chart(chart, node_values, np)
+        elif role == "foreign_curve":
+            updates["foreign_df"] = _discount_from_curve_chart(chart, node_values, np)
+        elif role == "underlier_vol":
+            updates["sigma_underlier"] = _vol_from_surface_chart(chart, node_values)
+        elif role == "fx_vol":
+            updates["sigma_fx"] = _vol_from_surface_chart(chart, node_values)
+        elif role == "correlation":
+            updates["corr"] = (
+                np.tanh(node_values[0])
+                if coordinate_space == "unconstrained"
+                else node_values[0]
+            )
+    return replace(resolved_inputs, **updates)
 
 
 def fail_closed_correlation_structure_derivative(
@@ -363,6 +679,167 @@ def fail_closed_correlation_structure_derivative(
         method_metadata=metadata,
         unsupported_dependencies=(dependency,),
         diagnostics=(diagnostic,),
+    )
+
+
+def differentiate_quanto_scalar_inputs(
+    spec: object,
+    resolved_inputs: object,
+    request: HybridDerivativeRequest | None = None,
+) -> HybridDerivativeResult:
+    """Return VJP sensitivities to supported graph-owned quanto scalar inputs."""
+    from trellis.core.differentiable import get_backend_capabilities, get_numpy, vjp
+    from trellis.models.analytical.quanto import price_quanto_option_raw
+
+    resolved_request = request or HybridDerivativeRequest()
+    graph = getattr(resolved_inputs, "hybrid_factor_graph", None)
+    if graph is None:
+        graph = _fallback_graph(spec, resolved_inputs)
+    if not isinstance(graph, HybridFactorGraph):
+        raise TypeError("resolved_inputs.hybrid_factor_graph must be a HybridFactorGraph")
+    graph.validate()
+    value = float(price_quanto_option_raw(spec, resolved_inputs))
+    capabilities = get_backend_capabilities()
+
+    if resolved_request.derivative_method == "jvp":
+        diagnostic_extra = {
+            "backend_id": capabilities.backend_id,
+            "unsupported_operator": "jvp",
+            "backend_notes": capabilities.notes,
+        }
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code="hybrid_jvp_backend_unsupported",
+            message=(
+                "Hybrid JVP remains fail-closed because the active backend "
+                "does not provide checked JVP coverage for pricing primitives."
+            ),
+            method_id="hybrid_scalar_vector_vjp",
+            diagnostic_extra=diagnostic_extra,
+            fallback_reason={
+                "code": "hybrid_jvp_backend_unsupported",
+                **diagnostic_extra,
+            },
+        )
+    if resolved_request.derivative_method != "vjp":
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code="hybrid_derivative_method_unsupported",
+            message="Only VJP is supported by the bounded scalar quanto input lane.",
+            method_id="hybrid_scalar_vector_vjp",
+        )
+    if not is_dataclass(resolved_inputs):
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code="resolved_inputs_dataclass_required",
+            message="Scalar quanto input VJP requires dataclass resolved inputs.",
+            method_id="hybrid_scalar_vector_vjp",
+        )
+
+    extraction = _quanto_scalar_entries(
+        graph,
+        coordinate_space=resolved_request.coordinate_space,
+    )
+    entries = extraction.entries
+    if not entries:
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code="graph_scalar_coordinates_unavailable",
+            message="Hybrid graph does not contain supported scalar quanto coordinates.",
+            method_id="hybrid_scalar_vector_vjp",
+            diagnostic_extra={
+                "scalar_chart_diagnostics": list(extraction.diagnostics),
+            },
+        )
+
+    np = get_numpy()
+    base_vector = np.asarray(tuple(entry.base_value for entry in entries))
+
+    def value_from_vector(theta):
+        traced_inputs = _replace_inputs_from_graph(
+            resolved_inputs,
+            graph,
+            entries,
+            theta,
+            coordinate_space=resolved_request.coordinate_space,
+            np=np,
+        )
+        return price_quanto_option_raw(spec, traced_inputs)
+
+    _value, pullback = vjp(value_from_vector, base_vector)
+    sensitivities = np.reshape(np.asarray(pullback(np.asarray(1.0))), (-1,))
+    full_vector = SparseRiskVector.from_items(
+        (entry.factor_id, float(sensitivities[index]))
+        for index, entry in enumerate(entries)
+    )
+    selected_vector = resolved_request.filter_vector(full_vector)
+    available_factors = tuple(entry.factor_id for entry in entries)
+    missing_factors = resolved_request.missing_selected_factors(available_factors)
+    diagnostics: list[dict[str, object]] = list(extraction.diagnostics)
+    support_status = (
+        "partial"
+        if graph.unsupported_dependencies or extraction.diagnostics
+        else "supported"
+    )
+    if graph.unsupported_dependencies:
+        diagnostics.append(
+            {
+                "code": "unsupported_graph_dependencies",
+                "severity": "warning",
+                "unsupported_dependency_ids": [
+                    dependency.dependency_id for dependency in graph.unsupported_dependencies
+                ],
+                "unsupported_dependency_reasons": list(graph.unsupported_reasons),
+            }
+        )
+    if missing_factors:
+        diagnostics.append(
+            {
+                "code": "selected_factors_unavailable",
+                "severity": "warning",
+                "missing_factor_keys": [factor.key for factor in missing_factors],
+                "unsupported_selected_factor_policy": (
+                    resolved_request.unsupported_selected_factor_policy
+                ),
+            }
+        )
+        support_status = "unsupported" if len(selected_vector) == 0 else "partial"
+        if resolved_request.unsupported_selected_factor_policy == "fail_closed":
+            selected_vector = SparseRiskVector()
+            support_status = "unsupported"
+
+    metadata = derivative_method_payload(
+        "hybrid_scalar_vector_vjp",
+        method_support=support_status,
+        backend_id=capabilities.backend_id,
+        backend_operator="vjp",
+        coordinate_space=resolved_request.coordinate_space,
+        hybrid_factor_graph_id=graph.graph_id,
+        graph_scalar_coordinate_count=len(entries),
+        factor_count=len(full_vector),
+        node_count=len(graph.nodes),
+        unsupported_scalar_node_count=len(extraction.diagnostics),
+        unsupported_dependency_count=len(graph.unsupported_dependencies),
+    )
+    if math.isfinite(value):
+        metadata["base_value"] = value
+
+    return HybridDerivativeResult(
+        value=value,
+        risk_vector=selected_vector,
+        graph=graph,
+        support_status=support_status,
+        method_metadata=metadata,
+        unsupported_dependencies=graph.unsupported_dependencies,
+        diagnostics=tuple(diagnostics),
     )
 
 
@@ -513,6 +990,7 @@ __all__ = [
     "HybridCorrelationStructureRequest",
     "HybridDerivativeRequest",
     "HybridDerivativeResult",
+    "differentiate_quanto_scalar_inputs",
     "differentiate_quanto_scalar_correlation",
     "fail_closed_correlation_structure_derivative",
 ]

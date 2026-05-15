@@ -198,13 +198,14 @@ the already-resolved curves, spots, FX spot, and volatility inputs are held
 fixed and remain outside the hybrid AAD claim.
 
 For route-level scalar hybrid AD metadata, resolve the quanto inputs with the
-factor graph enabled and call the graph-backed derivative helper directly:
+factor graph enabled and call a graph-backed derivative helper directly:
 
 .. code-block:: python
 
    from trellis.analytics import (
        HybridDerivativeRequest,
        differentiate_quanto_scalar_correlation,
+       differentiate_quanto_scalar_inputs,
    )
    from trellis.models.resolution.quanto import resolve_quanto_inputs
 
@@ -218,13 +219,18 @@ factor graph enabled and call the graph-backed derivative helper directly:
        resolved,
        HybridDerivativeRequest(coordinate_space="unconstrained"),
    )
+   hybrid_vector = differentiate_quanto_scalar_inputs(spec, resolved)
    print(hybrid.risk_vector.to_payload())
+   print(hybrid_vector.risk_vector.to_payload())
    print(hybrid.method_metadata["resolved_derivative_method"])
 
-This route-level helper returns a ``HybridDerivativeResult`` with the typed
-``HybridFactorGraph`` payload and a sparse scalar-correlation risk vector.
-Hybrid ``jvp`` requests and correlation matrix/surface requests fail closed
-until those coordinate charts and backend operators are checked.
+The scalar-correlation helper returns a ``HybridDerivativeResult`` with the
+typed ``HybridFactorGraph`` payload and one sparse scalar-correlation risk
+vector. The scalar-input helper uses executable chart context from the same
+graph and returns a sparse vector for supported graph-owned underlier spot, FX
+spot, domestic/foreign curve-node, flat/grid vol-node, and scalar-correlation
+coordinates. Hybrid ``jvp`` requests and correlation matrix/surface requests
+fail closed until those coordinate charts and backend operators are checked.
 
 For small books that combine already-supported lanes, use the mixed dispatcher:
 
