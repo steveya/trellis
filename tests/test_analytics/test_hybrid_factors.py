@@ -96,6 +96,78 @@ def test_scalar_correlation_chart_rejects_boundary_values():
         )
 
 
+def test_correlation_matrix_policy_chart_payload_round_trips():
+    chart = MarketObjectCoordinateChart.correlation_matrix_policy(
+        object_name="cross_asset_correlation",
+        factor_labels=("SX5E", "EURUSD", "USD-OIS"),
+        correlation_matrix=(
+            (1.0, 0.25, -0.10),
+            (0.25, 1.0, 0.35),
+            (-0.10, 0.35, 1.0),
+        ),
+        chart_id="chart:correlation_matrix:cross_asset",
+    )
+
+    assert chart.chart_type == "correlation_matrix_psd_policy"
+    assert chart.coordinate_space == "matrix"
+    assert chart.differentiability_class == "smooth"
+    assert chart.support_status == "unsupported"
+    assert chart.coordinate_values["dimension"] == 3
+    assert chart.coordinate_values["factor_labels"] == ("SX5E", "EURUSD", "USD-OIS")
+    assert chart.coordinate_values["correlation_matrix"] == (
+        (1.0, 0.25, -0.10),
+        (0.25, 1.0, 0.35),
+        (-0.10, 0.35, 1.0),
+    )
+    assert chart.constraints["psd"] is True
+    assert chart.constraints["projection_policy"] == "unsupported_no_smoothing_or_projection"
+    assert chart.metadata["chart_family"] == "correlation_matrix"
+    assert chart.metadata["coordinate_count"] == 3
+    assert chart.metadata["min_eigenvalue"] > 0.0
+    assert [coordinate.factor_id.axes for coordinate in chart.coordinates] == [
+        (("column", "EURUSD"), ("column_index", "1"), ("row", "SX5E"), ("row_index", "0")),
+        (("column", "USD-OIS"), ("column_index", "2"), ("row", "EURUSD"), ("row_index", "1")),
+        (("column", "USD-OIS"), ("column_index", "2"), ("row", "SX5E"), ("row_index", "0")),
+    ]
+
+    payload = chart.to_payload()
+    rebuilt = MarketObjectCoordinateChart.from_payload(payload)
+
+    assert rebuilt == chart
+    assert payload["coordinate_keys"] == [
+        coordinate.factor_id.key for coordinate in chart.coordinates
+    ]
+
+
+def test_correlation_matrix_policy_chart_rejects_duplicate_labels():
+    with pytest.raises(ValueError, match="unique"):
+        MarketObjectCoordinateChart.correlation_matrix_policy(
+            object_name="cross_asset_correlation",
+            factor_labels=("SX5E", "SX5E"),
+            correlation_matrix=((1.0, 0.25), (0.25, 1.0)),
+        )
+
+
+@pytest.mark.parametrize(
+    ("matrix", "match"),
+    (
+        (((1.0, 0.25, 0.10), (0.25, 1.0, 0.20)), "square"),
+        (((1.0, 0.25), (0.25, 0.99)), "unit diagonal"),
+        (((1.0, 0.25), (0.30, 1.0)), "symmetric"),
+        (((1.0, 1.20), (1.20, 1.0)), "inside \\[-1, 1\\]"),
+        (((1.0, 0.95, 0.95), (0.95, 1.0, -0.95), (0.95, -0.95, 1.0)), "positive semidefinite"),
+    ),
+)
+def test_correlation_matrix_policy_chart_rejects_invalid_matrices(matrix, match):
+    labels = tuple(f"factor_{index}" for index in range(len(matrix)))
+    with pytest.raises(ValueError, match=match):
+        MarketObjectCoordinateChart.correlation_matrix_policy(
+            object_name="cross_asset_correlation",
+            factor_labels=labels,
+            correlation_matrix=matrix,
+        )
+
+
 def test_hybrid_factor_graph_collects_coordinates_and_dependencies():
     spot_chart = MarketObjectCoordinateChart.identity(
         chart_id="chart:spot:SX5E",
