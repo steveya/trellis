@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date
 from typing import Any, Protocol
 
+from trellis.analytics.hybrid_factors import (
+    HybridDependencyNode,
+    HybridFactorGraph,
+    HybridUnsupportedDependency,
+    MarketObjectCoordinateChart,
+)
+from trellis.analytics.risk_factors import (
+    RiskFactorCoordinate,
+    RiskFactorId,
+    RiskFactorRegistry,
+)
 from trellis.core.date_utils import year_fraction
 from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
@@ -39,6 +50,7 @@ class ResolvedQuantoInputs:
     sigma_fx: float
     corr: float
     provenance: dict[str, object] = field(default_factory=dict)
+    hybrid_factor_graph: HybridFactorGraph | None = None
 
     _ALIASES = {
         "underlier_spot": "spot",
@@ -158,6 +170,606 @@ def _build_quanto_input_provenance(
     if source_seed is not None:
         payload["source_seed"] = int(source_seed)
     return payload
+
+
+def _provenance_for(resolved: ResolvedQuantoInputs, role: str) -> dict[str, object]:
+    return dict((resolved.provenance or {}).get(role) or {})
+
+
+def _source_key_for(
+    resolved: ResolvedQuantoInputs,
+    role: str,
+    fallback: str,
+) -> str:
+    return str(_provenance_for(resolved, role).get("source_key") or fallback)
+
+
+def _identity_coordinate_node(
+    *,
+    node_id: str,
+    node_type: str,
+    object_name: str,
+    coordinate: RiskFactorCoordinate,
+    resolved_input: str,
+    coordinate_values: dict[str, object],
+    provenance: dict[str, object],
+    metadata: dict[str, object] | None = None,
+) -> HybridDependencyNode:
+    chart = MarketObjectCoordinateChart.identity(
+        chart_id=f"chart:{node_id}",
+        object_type=coordinate.factor_id.object_type,
+        object_name=coordinate.factor_id.object_name,
+        coordinates=(coordinate,),
+        coordinate_values=coordinate_values,
+        metadata=metadata or {},
+    )
+    return HybridDependencyNode(
+        node_id=node_id,
+        node_type=node_type,
+        object_name=object_name,
+        coordinate_chart=chart,
+        derivative_method="vjp",
+        support_status="supported",
+        provenance=provenance,
+        metadata={
+            "resolved_inputs": (resolved_input,),
+            **dict(metadata or {}),
+        },
+    )
+
+
+def _held_fixed_node(
+    *,
+    node_id: str,
+    node_type: str,
+    object_name: str,
+    resolved_input: str,
+    reason: str,
+    provenance: dict[str, object] | None = None,
+) -> HybridDependencyNode:
+    return HybridDependencyNode(
+        node_id=node_id,
+        node_type=node_type,
+        object_name=object_name,
+        differentiability_class="held_fixed",
+        derivative_method="held_fixed",
+        support_status="held_fixed",
+        provenance=provenance or {},
+        metadata={
+            "resolved_inputs": (resolved_input,),
+            "reason": reason,
+        },
+    )
+
+
+def _unsupported_dependency(
+    *,
+    dependency_id: str,
+    node_type: str,
+    object_name: str,
+    reason: str,
+    metadata: dict[str, object] | None = None,
+) -> HybridUnsupportedDependency:
+    return HybridUnsupportedDependency(
+        dependency_id=dependency_id,
+        node_type=node_type,
+        object_name=object_name,
+        reason=reason,
+        metadata=metadata or {},
+    )
+
+
+def _float_tuple(values: object) -> tuple[float, ...]:
+    """Return a deterministic tuple of floats from a scalar array-like object."""
+    return tuple(float(value) for value in values)
+
+
+def _float_matrix(values: object) -> tuple[tuple[float, ...], ...]:
+    """Return a deterministic tuple-of-tuples float matrix."""
+    return tuple(tuple(float(value) for value in row) for row in values)
+
+
+def _curve_chart_values(
+    curve: object,
+    *,
+    time_to_expiry: float,
+    discount_factor: float,
+) -> dict[str, object]:
+    """Build executable scalar context for a supported yield-curve chart."""
+    return {
+        "coordinate_family": "curve_zero_rate_nodes",
+        "time_to_expiry": float(time_to_expiry),
+        "discount_factor": float(discount_factor),
+        "tenors": _float_tuple(getattr(curve, "tenors")),
+        "rates": _float_tuple(getattr(curve, "rates")),
+    }
+
+
+def _vol_surface_chart_values(surface: object) -> dict[str, object]:
+    """Build executable scalar context for supported volatility charts."""
+    from trellis.models.vol_surface import FlatVol, GridVolSurface
+
+    if isinstance(surface, FlatVol):
+        return {
+            "surface_type": "FlatVol",
+            "flat_vol": float(surface.vol),
+        }
+    if isinstance(surface, GridVolSurface):
+        return {
+            "surface_type": "GridVolSurface",
+            "expiries": _float_tuple(surface.expiries),
+            "strikes": _float_tuple(surface.strikes),
+            "vols": _float_matrix(surface.vols),
+        }
+    return {"surface_type": type(surface).__name__}
+
+
+def _spot_coordinate(
+    spec: QuantoSpecLike,
+    resolved: ResolvedQuantoInputs,
+) -> RiskFactorCoordinate:
+    source_key = _source_key_for(resolved, "underlier_spot", spec.underlier_currency)
+    object_path = (
+        f"market_state.underlier_spots[{source_key}]"
+        if source_key != "spot"
+        else "market_state.spot"
+    )
+    return RiskFactorCoordinate(
+        factor_id=RiskFactorId(
+            object_type="spot",
+            object_name=source_key,
+            coordinate_type="spot",
+            currency=spec.underlier_currency,
+            provenance_namespace="hybrid_ad",
+        ),
+        object_path=object_path,
+        display_name=f"{source_key} spot",
+        unit="price",
+        transform="identity",
+        support_status="supported",
+        reporting_buckets={
+            "risk_class": "spot",
+            "currency": spec.underlier_currency,
+            "object_name": source_key,
+        },
+    )
+
+
+def _fx_spot_coordinate(
+    spec: QuantoSpecLike,
+    resolved: ResolvedQuantoInputs,
+) -> RiskFactorCoordinate:
+    source_key = _source_key_for(resolved, "fx_spot", spec.fx_pair)
+    return RiskFactorCoordinate(
+        factor_id=RiskFactorId(
+            object_type="fx_rate",
+            object_name=source_key,
+            coordinate_type="spot",
+            currency=spec.domestic_currency,
+            axes={
+                "foreign_currency": spec.underlier_currency,
+                "domestic_currency": spec.domestic_currency,
+            },
+            provenance_namespace="hybrid_ad",
+        ),
+        object_path=f"market_state.fx_rates[{source_key}].spot",
+        display_name=f"{source_key} FX spot",
+        unit="fx_rate",
+        transform="identity",
+        support_status="supported",
+        reporting_buckets={
+            "risk_class": "fx",
+            "currency": spec.domestic_currency,
+            "object_name": source_key,
+            "foreign_currency": spec.underlier_currency,
+        },
+    )
+
+
+def _curve_node(
+    *,
+    role: str,
+    curve: object | None,
+    object_name: str,
+    currency: str,
+    object_path: str,
+    provenance: dict[str, object],
+    time_to_expiry: float,
+    discount_factor: float,
+    unsupported_dependencies: list[HybridUnsupportedDependency],
+) -> HybridDependencyNode:
+    node_id = f"node:curve:{role}:{object_name}"
+    if curve is None:
+        reason = f"{role}_unresolved"
+        unsupported_dependencies.append(
+            _unsupported_dependency(
+                dependency_id=node_id,
+                node_type="curve",
+                object_name=object_name,
+                reason=reason,
+                metadata={"resolved_input": role},
+            )
+        )
+        return _held_fixed_node(
+            node_id=node_id,
+            node_type="curve",
+            object_name=object_name,
+            resolved_input=role,
+            reason=reason,
+            provenance=provenance,
+        )
+
+    try:
+        coordinates = RiskFactorRegistry().discover_yield_curve(
+            curve,
+            object_name=object_name,
+            currency=currency,
+            object_path=object_path,
+            provenance_namespace="hybrid_ad",
+        )
+    except Exception as exc:
+        reason = f"{role}_nodes_unavailable"
+        unsupported_dependencies.append(
+            _unsupported_dependency(
+                dependency_id=node_id,
+                node_type="curve",
+                object_name=object_name,
+                reason=reason,
+                metadata={
+                    "resolved_input": role,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
+        )
+        return _held_fixed_node(
+            node_id=node_id,
+            node_type="curve",
+            object_name=object_name,
+            resolved_input=role,
+            reason=reason,
+            provenance=provenance,
+        )
+
+    chart = MarketObjectCoordinateChart.identity(
+        chart_id=f"chart:{node_id}",
+        object_type="curve",
+        object_name=object_name,
+        coordinates=coordinates,
+        coordinate_values=_curve_chart_values(
+            curve,
+            time_to_expiry=time_to_expiry,
+            discount_factor=discount_factor,
+        ),
+        metadata={"resolved_input": role},
+    )
+    return HybridDependencyNode(
+        node_id=node_id,
+        node_type="curve",
+        object_name=object_name,
+        coordinate_chart=chart,
+        derivative_method="vjp",
+        support_status="supported",
+        provenance=provenance,
+        metadata={"resolved_inputs": (role,)},
+    )
+
+
+def _vol_surface_coordinates(
+    surface: object,
+    *,
+    object_name: str,
+    currency: str,
+    object_path: str,
+) -> tuple[RiskFactorCoordinate, ...]:
+    from trellis.models.vol_surface import FlatVol, GridVolSurface
+
+    registry = RiskFactorRegistry()
+    if isinstance(surface, FlatVol):
+        return registry.discover_flat_vol_surface(
+            surface,
+            object_name=object_name,
+            currency=currency,
+            object_path=object_path,
+            provenance_namespace="hybrid_ad",
+            support_status="supported",
+        )
+    if isinstance(surface, GridVolSurface):
+        return registry.discover_grid_vol_surface(
+            surface,
+            object_name=object_name,
+            currency=currency,
+            object_path=object_path,
+            provenance_namespace="hybrid_ad",
+            support_status="supported",
+        )
+    raise TypeError(f"unsupported vol surface type {type(surface).__name__!r}")
+
+
+def _vol_node(
+    *,
+    role: str,
+    surface: object | None,
+    object_name: str,
+    currency: str,
+    object_path: str,
+    coordinate_values: dict[str, object],
+    provenance: dict[str, object],
+    unsupported_dependencies: list[HybridUnsupportedDependency],
+) -> HybridDependencyNode:
+    node_id = f"node:vol_surface:{role}:{object_name}"
+    if surface is None:
+        reason = f"{role}_surface_unresolved"
+        unsupported_dependencies.append(
+            _unsupported_dependency(
+                dependency_id=node_id,
+                node_type="vol_surface",
+                object_name=object_name,
+                reason=reason,
+                metadata={"resolved_input": role},
+            )
+        )
+        return _held_fixed_node(
+            node_id=node_id,
+            node_type="vol_surface",
+            object_name=object_name,
+            resolved_input=role,
+            reason=reason,
+            provenance=provenance,
+        )
+
+    try:
+        coordinates = _vol_surface_coordinates(
+            surface,
+            object_name=object_name,
+            currency=currency,
+            object_path=object_path,
+        )
+    except Exception as exc:
+        reason = f"{role}_surface_coordinates_unavailable"
+        unsupported_dependencies.append(
+            _unsupported_dependency(
+                dependency_id=node_id,
+                node_type="vol_surface",
+                object_name=object_name,
+                reason=reason,
+                metadata={
+                    "resolved_input": role,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                },
+            )
+        )
+        return _held_fixed_node(
+            node_id=node_id,
+            node_type="vol_surface",
+            object_name=object_name,
+            resolved_input=role,
+            reason=reason,
+            provenance=provenance,
+        )
+
+    chart = MarketObjectCoordinateChart.identity(
+        chart_id=f"chart:{node_id}",
+        object_type="vol_surface",
+        object_name=object_name,
+        coordinates=coordinates,
+        coordinate_values={
+            "coordinate_family": "vol_surface_nodes",
+            "query_expiry": float(coordinate_values["expiry"]),
+            "query_strike": float(coordinate_values["strike"]),
+            "resolved_vol": float(coordinate_values["vol"]),
+            **coordinate_values,
+            **_vol_surface_chart_values(surface),
+        },
+        metadata={"resolved_input": role},
+    )
+    return HybridDependencyNode(
+        node_id=node_id,
+        node_type="vol_surface",
+        object_name=object_name,
+        coordinate_chart=chart,
+        derivative_method="vjp",
+        support_status="supported",
+        provenance=provenance,
+        metadata={"resolved_inputs": (role,)},
+    )
+
+
+def _correlation_node(
+    spec: QuantoSpecLike,
+    resolved: ResolvedQuantoInputs,
+) -> HybridDependencyNode:
+    provenance = _provenance_for(resolved, "correlation")
+    object_name = str(
+        provenance.get("source_key")
+        or spec.quanto_correlation_key
+        or "quanto_correlation"
+    )
+    coordinate = RiskFactorRegistry().discover_scalar_correlation(
+        resolved.corr,
+        object_name=object_name,
+        factor_a=spec.underlier_currency,
+        factor_b=spec.fx_pair,
+        currency=spec.underlier_currency,
+        object_path=f"market_state.model_parameters[{object_name}].value",
+        provenance_namespace="hybrid_ad",
+        support_status="supported",
+    )[0]
+    chart = MarketObjectCoordinateChart.scalar_correlation(
+        coordinate=coordinate,
+        correlation=float(resolved.corr),
+        chart_id=f"chart:node:correlation:{object_name}",
+        metadata={"source_kind": provenance.get("source_kind", "")},
+    )
+    return HybridDependencyNode(
+        node_id=f"node:correlation:{object_name}",
+        node_type="correlation",
+        object_name=object_name,
+        coordinate_chart=chart,
+        derivative_method="vjp",
+        support_status="supported",
+        provenance=provenance,
+        metadata={"resolved_inputs": ("correlation",)},
+    )
+
+
+def build_quanto_hybrid_factor_graph(
+    market_state: MarketState,
+    spec: QuantoSpecLike,
+    resolved_inputs: ResolvedQuantoInputs,
+) -> HybridFactorGraph:
+    """Build a typed hybrid factor graph for one resolved quanto route."""
+    selected_curve_names = dict(getattr(market_state, "selected_curve_names", None) or {})
+    unsupported_dependencies: list[HybridUnsupportedDependency] = []
+    underlier_spot_key = _source_key_for(
+        resolved_inputs,
+        "underlier_spot",
+        spec.underlier_currency,
+    )
+    nodes: list[HybridDependencyNode] = [
+        _identity_coordinate_node(
+            node_id=f"node:spot:{underlier_spot_key}",
+            node_type="spot",
+            object_name=underlier_spot_key,
+            coordinate=_spot_coordinate(spec, resolved_inputs),
+            resolved_input="underlier_spot",
+            coordinate_values={"spot": float(resolved_inputs.spot)},
+            provenance=_provenance_for(resolved_inputs, "underlier_spot"),
+        ),
+        _identity_coordinate_node(
+            node_id=f"node:fx_spot:{spec.fx_pair}",
+            node_type="fx_rate",
+            object_name=spec.fx_pair,
+            coordinate=_fx_spot_coordinate(spec, resolved_inputs),
+            resolved_input="fx_spot",
+            coordinate_values={"spot": float(resolved_inputs.fx_spot)},
+            provenance=_provenance_for(resolved_inputs, "fx_spot"),
+        ),
+    ]
+
+    domestic_name = str(
+        selected_curve_names.get("discount_curve")
+        or _source_key_for(resolved_inputs, "domestic_curve", f"{spec.domestic_currency}-DISC")
+    )
+    nodes.append(
+        _curve_node(
+            role="domestic_curve",
+            curve=market_state.discount,
+            object_name=domestic_name,
+            currency=spec.domestic_currency,
+            object_path="market_state.discount",
+            provenance=_provenance_for(resolved_inputs, "domestic_curve"),
+            time_to_expiry=float(resolved_inputs.T),
+            discount_factor=float(resolved_inputs.domestic_df),
+            unsupported_dependencies=unsupported_dependencies,
+        )
+    )
+
+    try:
+        foreign_curve, foreign_provenance = _resolve_quanto_foreign_curve_details(
+            market_state,
+            spec,
+        )
+    except Exception as exc:
+        foreign_curve = None
+        foreign_provenance = {
+            "source_family": "unsupported",
+            "source_kind": "missing_foreign_curve",
+            "source_parameters": {
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            },
+        }
+    foreign_name = str(
+        foreign_provenance.get("source_key")
+        or selected_curve_names.get("forecast_curve")
+        or f"{spec.underlier_currency}-DISC"
+    )
+    nodes.append(
+        _curve_node(
+            role="foreign_curve",
+            curve=foreign_curve,
+            object_name=foreign_name,
+            currency=spec.underlier_currency,
+            object_path=f"market_state.forecast_curves[{foreign_name}]",
+            provenance=foreign_provenance,
+            time_to_expiry=float(resolved_inputs.T),
+            discount_factor=float(resolved_inputs.foreign_df),
+            unsupported_dependencies=unsupported_dependencies,
+        )
+    )
+
+    vol_surface_name = str(
+        selected_curve_names.get("vol_surface")
+        or _source_key_for(resolved_inputs, "underlier_vol", "default_vol_surface")
+    )
+    vol_surface = getattr(market_state, "vol_surface", None)
+    nodes.append(
+        _vol_node(
+            role="underlier_vol",
+            surface=vol_surface,
+            object_name=vol_surface_name,
+            currency=spec.underlier_currency,
+            object_path="market_state.vol_surface",
+            coordinate_values={
+                "expiry": float(resolved_inputs.T),
+                "strike": float(spec.strike),
+                "vol": float(resolved_inputs.sigma_underlier),
+            },
+            provenance=_provenance_for(resolved_inputs, "underlier_vol"),
+            unsupported_dependencies=unsupported_dependencies,
+        )
+    )
+    nodes.append(
+        _vol_node(
+            role="fx_vol",
+            surface=vol_surface,
+            object_name=vol_surface_name,
+            currency=spec.domestic_currency,
+            object_path="market_state.vol_surface",
+            coordinate_values={
+                "expiry": float(resolved_inputs.T),
+                "strike": float(resolved_inputs.fx_spot),
+                "vol": float(resolved_inputs.sigma_fx),
+            },
+            provenance=_provenance_for(resolved_inputs, "fx_vol"),
+            unsupported_dependencies=unsupported_dependencies,
+        )
+    )
+    nodes.append(_correlation_node(spec, resolved_inputs))
+    return HybridFactorGraph(
+        graph_id=f"quanto:{spec.underlier_currency}:{spec.domestic_currency}:{spec.fx_pair}",
+        nodes=tuple(nodes),
+        unsupported_dependencies=tuple(unsupported_dependencies),
+        metadata={
+            "route_family": "bounded_quanto",
+            "fx_pair": spec.fx_pair,
+            "underlier_currency": spec.underlier_currency,
+            "domestic_currency": spec.domestic_currency,
+            "valuation_date": resolved_inputs.valuation_date.isoformat(),
+            "time_to_expiry": float(resolved_inputs.T),
+        },
+    )
+
+
+def _attach_quanto_hybrid_factor_graph(
+    market_state: MarketState,
+    spec: QuantoSpecLike,
+    resolved_inputs: ResolvedQuantoInputs,
+    *,
+    include_hybrid_factor_graph: bool,
+) -> ResolvedQuantoInputs:
+    if not include_hybrid_factor_graph:
+        return resolved_inputs
+    return replace(
+        resolved_inputs,
+        hybrid_factor_graph=build_quanto_hybrid_factor_graph(
+            market_state,
+            spec,
+            resolved_inputs,
+        ),
+    )
 
 
 def resolve_quanto_underlier_spot(
@@ -495,6 +1107,8 @@ def _resolve_quanto_correlation_details(
 def resolve_quanto_inputs(
     market_state: MarketState,
     spec: QuantoSpecLike,
+    *,
+    include_hybrid_factor_graph: bool = False,
 ) -> ResolvedQuantoInputs:
     """Resolve the deterministic market inputs needed by quanto routes."""
     if market_state.discount is None:
@@ -513,7 +1127,7 @@ def resolve_quanto_inputs(
     T = year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)
     if T <= 0.0:
         market_provenance = dict(getattr(market_state, "market_provenance", None) or {})
-        return ResolvedQuantoInputs(
+        resolved = ResolvedQuantoInputs(
             spot=spot,
             fx_spot=fx_spot,
             valuation_date=market_state.settlement,
@@ -541,6 +1155,12 @@ def resolve_quanto_inputs(
                 "correlation": {"source_family": "identity", "source_kind": "identity_default"},
             },
         )
+        return _attach_quanto_hybrid_factor_graph(
+            market_state,
+            spec,
+            resolved,
+            include_hybrid_factor_graph=include_hybrid_factor_graph,
+        )
 
     foreign_curve, foreign_curve_provenance = _resolve_quanto_foreign_curve_details(
         market_state,
@@ -555,7 +1175,7 @@ def resolve_quanto_inputs(
     market_provenance = dict(getattr(market_state, "market_provenance", None) or {})
     surface_source_family = _market_input_source_family(market_state)
     surface_source_kind = _market_input_source_kind(market_state)
-    return ResolvedQuantoInputs(
+    resolved = ResolvedQuantoInputs(
         spot=spot,
         fx_spot=fx_spot,
         valuation_date=market_state.settlement,
@@ -619,6 +1239,12 @@ def resolve_quanto_inputs(
             ),
             "correlation": correlation_provenance,
         },
+    )
+    return _attach_quanto_hybrid_factor_graph(
+        market_state,
+        spec,
+        resolved,
+        include_hybrid_factor_graph=include_hybrid_factor_graph,
     )
 
 

@@ -20,6 +20,20 @@ from trellis.analytics.portfolio_aad_admission import (
     PortfolioAADLaneAdmission,
     admit_portfolio_aad_lane,
 )
+from trellis.analytics.hybrid_factors import (
+    HybridDependencyNode,
+    HybridFactorGraph,
+    HybridUnsupportedDependency,
+    MarketObjectCoordinateChart,
+)
+from trellis.analytics.hybrid_ad import (
+    HybridCorrelationStructureRequest,
+    HybridDerivativeRequest,
+    HybridDerivativeResult,
+    differentiate_quanto_scalar_correlation,
+    differentiate_quanto_scalar_inputs,
+    fail_closed_correlation_structure_derivative,
+)
 from trellis.analytics.risk_factors import (
     RiskAggregationMap,
     RiskFactorCoordinate,
@@ -35,6 +49,13 @@ __all__ = [
     "BondCurveAADAdapter",
     "BondCurveAADMarketContext",
     "DefaultUnsupportedAADPolicy",
+    "HybridCorrelationStructureRequest",
+    "HybridDependencyNode",
+    "HybridDerivativeRequest",
+    "HybridDerivativeResult",
+    "HybridFactorGraph",
+    "HybridUnsupportedDependency",
+    "MarketObjectCoordinateChart",
     "PortfolioAADRequest",
     "PortfolioAADResult",
     "PortfolioAADFactorRequirement",
@@ -52,4 +73,7 @@ __all__ = [
     "VanillaEquityOptionVolAADAdapter",
     "VanillaEquityOptionVolAADMarketContext",
     "admit_portfolio_aad_lane",
+    "differentiate_quanto_scalar_correlation",
+    "differentiate_quanto_scalar_inputs",
+    "fail_closed_correlation_structure_derivative",
 ]

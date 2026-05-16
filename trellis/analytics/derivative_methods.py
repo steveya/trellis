@@ -125,6 +125,35 @@ _METHOD_SPECS = {
         backend_operator="vjp",
         description="Bounded book-level reverse-mode curve risk using the VJP backend operator.",
     ),
+    "hybrid_scalar_vjp": DerivativeMethodSpec(
+        "hybrid_scalar_vjp",
+        category="hybrid_ad",
+        support_status="partial",
+        backend_operator="vjp",
+        description=(
+            "Bounded graph-backed hybrid scalar-coordinate sensitivity using "
+            "the VJP backend operator."
+        ),
+    ),
+    "hybrid_scalar_vector_vjp": DerivativeMethodSpec(
+        "hybrid_scalar_vector_vjp",
+        category="hybrid_ad",
+        support_status="partial",
+        backend_operator="vjp",
+        description=(
+            "Bounded graph-backed hybrid scalar-coordinate vector sensitivity "
+            "using the VJP backend operator."
+        ),
+    ),
+    "unsupported_hybrid_structure": DerivativeMethodSpec(
+        "unsupported_hybrid_structure",
+        category="unsupported",
+        support_status="unsupported",
+        description=(
+            "Hybrid derivative request rejected because the required graph "
+            "coordinate chart is not implemented."
+        ),
+    ),
     "autodiff_pathwise": DerivativeMethodSpec(
         "autodiff_pathwise",
         category="autograd",
