@@ -94,6 +94,127 @@ def _validate_correlation(value: object, field_name: str = "correlation") -> flo
     return correlation
 
 
+def _normalize_factor_labels(factor_labels: Iterable[object]) -> tuple[str, ...]:
+    labels = tuple(_clean_required(label, "factor label") for label in factor_labels)
+    if len(labels) < 2:
+        raise ValueError("factor_labels must contain at least two labels")
+    if len(set(labels)) != len(labels):
+        raise ValueError("factor_labels must be unique")
+    return labels
+
+
+def _normalize_correlation_matrix(
+    matrix: Iterable[Iterable[object]],
+    *,
+    dimension: int,
+    tolerance: float,
+) -> tuple[tuple[float, ...], ...]:
+    rows = tuple(
+        tuple(_as_float(value, "correlation_matrix entry") for value in row)
+        for row in matrix
+    )
+    if len(rows) != dimension or any(len(row) != dimension for row in rows):
+        raise ValueError("correlation_matrix must be a square matrix matching factor_labels")
+    for index, row in enumerate(rows):
+        if abs(row[index] - 1.0) > tolerance:
+            raise ValueError("correlation_matrix must have unit diagonal")
+    for row in rows:
+        for value in row:
+            if value < -1.0 - tolerance or value > 1.0 + tolerance:
+                raise ValueError("correlation_matrix entries must be inside [-1, 1]")
+    for row_index in range(dimension):
+        for column_index in range(row_index + 1, dimension):
+            if abs(rows[row_index][column_index] - rows[column_index][row_index]) > tolerance:
+                raise ValueError("correlation_matrix must be symmetric")
+    return rows
+
+
+def _min_symmetric_eigenvalue(matrix: tuple[tuple[float, ...], ...]) -> float:
+    from trellis.core.differentiable import get_numpy
+
+    np = get_numpy()
+    return float(np.min(np.linalg.eigvalsh(np.asarray(matrix, dtype=float))))
+
+
+def _correlation_matrix_coordinates(
+    *,
+    object_name: str,
+    factor_labels: tuple[str, ...],
+) -> tuple[RiskFactorCoordinate, ...]:
+    coordinates: list[RiskFactorCoordinate] = []
+    dimension = len(factor_labels)
+    for row_index, row_label in enumerate(factor_labels):
+        for column_index in range(row_index + 1, dimension):
+            column_label = factor_labels[column_index]
+            factor_id = RiskFactorId(
+                object_type="correlation_matrix",
+                object_name=object_name,
+                coordinate_type="correlation",
+                axes={
+                    "row": row_label,
+                    "row_index": row_index,
+                    "column": column_label,
+                    "column_index": column_index,
+                },
+                provenance_namespace="hybrid_ad",
+            )
+            coordinates.append(
+                RiskFactorCoordinate(
+                    factor_id=factor_id,
+                    object_path=(
+                        f"correlation_matrix.{object_name}[{row_index},{column_index}]"
+                    ),
+                    display_name=f"{row_label}/{column_label} correlation",
+                    unit="correlation",
+                    transform="identity",
+                    support_status="unsupported",
+                    reporting_buckets={
+                        "risk_class": "hybrid",
+                        "object_name": object_name,
+                        "factor_a": row_label,
+                        "factor_b": column_label,
+                    },
+                    metadata={
+                        "matrix_dimension": dimension,
+                        "row_index": row_index,
+                        "column_index": column_index,
+                    },
+                )
+            )
+    return tuple(coordinates)
+
+
+def _restore_correlation_matrix_coordinate_values(
+    raw: Mapping[str, object],
+) -> dict[str, object]:
+    """Restore tuple types in correlation_matrix_psd_policy coordinate_values."""
+    result = dict(raw)
+    if "factor_labels" in result:
+        labels = result["factor_labels"]
+        if not isinstance(labels, tuple):
+            result["factor_labels"] = tuple(labels) if isinstance(labels, (list, tuple)) else (labels,)
+    if "correlation_matrix" in result:
+        matrix = result["correlation_matrix"]
+        if isinstance(matrix, (list, tuple)):
+            result["correlation_matrix"] = tuple(
+                tuple(row) if isinstance(row, (list, tuple)) else (row,)
+                for row in matrix
+            )
+    return result
+
+
+def _restore_correlation_matrix_constraints(
+    raw: Mapping[str, object],
+) -> dict[str, object]:
+    """Restore tuple types in correlation_matrix_psd_policy constraints."""
+    result = dict(raw)
+    bounds = result.get("bounds")
+    if bounds is not None and not isinstance(bounds, tuple):
+        if isinstance(bounds, (list, tuple)):
+            result["bounds"] = tuple(bounds)
+    return result
+
+
 @dataclass(frozen=True)
 class MarketObjectCoordinateChart:
     """Coordinate chart owned by one market or model object in a hybrid graph."""
@@ -206,6 +327,73 @@ class MarketObjectCoordinateChart:
             },
         )
 
+    @classmethod
+    def correlation_matrix_policy(
+        cls,
+        *,
+        object_name: str,
+        factor_labels: Iterable[object],
+        correlation_matrix: Iterable[Iterable[object]],
+        chart_id: str | None = None,
+        tolerance: float = 1.0e-10,
+        metadata: Mapping[str, object] | None = None,
+    ) -> MarketObjectCoordinateChart:
+        """Build the checked fail-closed policy chart for a correlation matrix."""
+        clean_object_name = _clean_required(object_name, "object_name")
+        tol = _as_float(tolerance, "tolerance")
+        if tol < 0.0:
+            raise ValueError("tolerance must be non-negative")
+        labels = _normalize_factor_labels(factor_labels)
+        matrix = _normalize_correlation_matrix(
+            correlation_matrix,
+            dimension=len(labels),
+            tolerance=tol,
+        )
+        min_eigenvalue = _min_symmetric_eigenvalue(matrix)
+        if min_eigenvalue < -tol:
+            raise ValueError("correlation_matrix must be positive semidefinite")
+        coordinates = _correlation_matrix_coordinates(
+            object_name=clean_object_name,
+            factor_labels=labels,
+        )
+        off_diagonal_values = {
+            f"{labels[row_index]}|{labels[column_index]}": matrix[row_index][column_index]
+            for row_index in range(len(labels))
+            for column_index in range(row_index + 1, len(labels))
+        }
+        return cls(
+            chart_id=chart_id or f"chart:correlation_matrix:{clean_object_name}",
+            object_type="correlation_matrix",
+            object_name=clean_object_name,
+            coordinates=coordinates,
+            chart_type="correlation_matrix_psd_policy",
+            coordinate_space="matrix",
+            coordinate_values={
+                "dimension": len(labels),
+                "factor_labels": labels,
+                "correlation_matrix": matrix,
+                "off_diagonal_values": off_diagonal_values,
+            },
+            constraints={
+                "diagonal": 1.0,
+                "symmetric": True,
+                "bounds": (-1.0, 1.0),
+                "psd": True,
+                "tolerance": tol,
+                "parameterization": "checked_correlation_matrix_entries",
+                "projection_policy": "unsupported_no_smoothing_or_projection",
+            },
+            differentiability_class="smooth",
+            support_status="unsupported",
+            metadata={
+                "coordinate_type": "correlation",
+                "chart_family": "correlation_matrix",
+                "coordinate_count": len(coordinates),
+                "min_eigenvalue": min_eigenvalue,
+                **dict(metadata or {}),
+            },
+        )
+
     @property
     def coordinate_keys(self) -> tuple[str, ...]:
         """Return coordinate factor keys in deterministic order."""
@@ -269,8 +457,14 @@ class MarketObjectCoordinateChart:
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> MarketObjectCoordinateChart:
+    def from_payload(cls, payload: Mapping[str, object]) -> "MarketObjectCoordinateChart":
         """Rebuild a chart from :meth:`to_payload` output."""
+        chart_type = str(payload.get("chart_type", "identity"))
+        coordinate_values: Mapping[str, object] = payload.get("coordinate_values") or {}
+        constraints: Mapping[str, object] = payload.get("constraints") or {}
+        if chart_type == "correlation_matrix_psd_policy":
+            coordinate_values = _restore_correlation_matrix_coordinate_values(coordinate_values)
+            constraints = _restore_correlation_matrix_constraints(constraints)
         return cls(
             chart_id=str(payload["chart_id"]),
             object_type=str(payload["object_type"]),
@@ -279,10 +473,10 @@ class MarketObjectCoordinateChart:
                 RiskFactorCoordinate.from_payload(entry)
                 for entry in payload.get("coordinates", ())
             ),
-            chart_type=str(payload.get("chart_type", "identity")),
+            chart_type=chart_type,
             coordinate_space=str(payload.get("coordinate_space", "constrained")),
-            coordinate_values=payload.get("coordinate_values") or {},
-            constraints=payload.get("constraints") or {},
+            coordinate_values=coordinate_values,
+            constraints=constraints,
             differentiability_class=str(payload.get("differentiability_class", "smooth")),
             support_status=str(payload.get("support_status", "supported")),
             metadata=payload.get("metadata") or {},

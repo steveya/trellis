@@ -47,6 +47,33 @@ def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object
     return MappingProxyType(dict(mapping or {}))
 
 
+def _freeze_surface_axes(
+    surface_axes: Mapping[str, object] | None,
+) -> Mapping[str, tuple[str, ...]]:
+    normalized: dict[str, tuple[str, ...]] = {}
+    for key, raw_values in sorted((surface_axes or {}).items()):
+        axis_name = str(key).strip()
+        if not axis_name:
+            raise ValueError("surface_axes keys must be non-empty")
+        if isinstance(raw_values, str):
+            values = (raw_values,)
+        else:
+            try:
+                values = tuple(raw_values)  # type: ignore[arg-type]
+            except TypeError:
+                values = (raw_values,)
+        normalized[axis_name] = tuple(str(value).strip() for value in values)
+    return MappingProxyType(normalized)
+
+
+def _freeze_optional_matrix(
+    matrix: Iterable[Iterable[object]] | None,
+) -> tuple[tuple[object, ...], ...] | None:
+    if matrix is None:
+        return None
+    return tuple(tuple(row) for row in matrix)
+
+
 def _freeze_diagnostics(
     diagnostics: Iterable[Mapping[str, object]] | None,
 ) -> tuple[Mapping[str, object], ...]:
@@ -146,6 +173,9 @@ class HybridCorrelationStructureRequest:
     factors: tuple[str, ...] = field(default_factory=tuple)
     requested_derivative_method: str = "vjp"
     coordinate_space: str = "unconstrained"
+    correlation_matrix: tuple[tuple[object, ...], ...] | None = None
+    surface_axes: Mapping[str, object] = field(default_factory=dict)
+    chart_tolerance: float = 1.0e-10
     provenance: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -178,6 +208,16 @@ class HybridCorrelationStructureRequest:
             "coordinate_space",
             _clean_member(self.coordinate_space, _COORDINATE_SPACES, "coordinate_space"),
         )
+        object.__setattr__(
+            self,
+            "correlation_matrix",
+            _freeze_optional_matrix(self.correlation_matrix),
+        )
+        object.__setattr__(self, "surface_axes", _freeze_surface_axes(self.surface_axes))
+        chart_tolerance = float(self.chart_tolerance)
+        if chart_tolerance < 0.0:
+            raise ValueError("chart_tolerance must be non-negative")
+        object.__setattr__(self, "chart_tolerance", chart_tolerance)
         object.__setattr__(self, "provenance", _freeze_mapping(self.provenance))
 
     @property
@@ -670,46 +710,159 @@ def _replace_inputs_from_graph(
     return replace(resolved_inputs, **updates)
 
 
+def _correlation_matrix_validation_code(message: str) -> str:
+    normalized = message.lower()
+    if "square" in normalized:
+        return "invalid_correlation_matrix_shape"
+    if "label" in normalized or "unique" in normalized:
+        return "invalid_correlation_matrix_labels"
+    if "unit diagonal" in normalized:
+        return "invalid_correlation_matrix_unit_diagonal"
+    if "inside [-1, 1]" in normalized:
+        return "invalid_correlation_matrix_bounds"
+    if "symmetric" in normalized:
+        return "invalid_correlation_matrix_symmetry"
+    if "positive semidefinite" in normalized:
+        return "invalid_correlation_matrix_psd"
+    return "invalid_correlation_matrix_chart"
+
+
+def _surface_axes_payload(request: HybridCorrelationStructureRequest) -> dict[str, object]:
+    surface_axes = {key: tuple(values) for key, values in request.surface_axes.items()}
+    axis_names = tuple(sorted(surface_axes))
+    return {
+        "surface_axes": surface_axes,
+        "surface_axis_names": axis_names,
+        "surface_axis_count": len(axis_names),
+    }
+
+
+def _correlation_structure_policy_payload(
+    request: HybridCorrelationStructureRequest,
+) -> tuple[str, str, dict[str, object], MarketObjectCoordinateChart | None]:
+    if request.structure_type == "correlation_surface":
+        extra = {
+            "chart_policy_status": "surface_chart_not_implemented",
+            **_surface_axes_payload(request),
+        }
+        return (
+            request.unsupported_reason,
+            (
+                "Hybrid correlation surface derivatives require a checked "
+                "surface chart and are fail-closed until one exists."
+            ),
+            extra,
+            None,
+        )
+    if request.correlation_matrix is None:
+        return (
+            request.unsupported_reason,
+            (
+                "Hybrid correlation matrix derivatives require a checked "
+                "coordinate chart and are fail-closed until one exists."
+            ),
+            {"chart_policy_status": "matrix_payload_missing"},
+            None,
+        )
+    try:
+        chart = MarketObjectCoordinateChart.correlation_matrix_policy(
+            object_name=request.object_name,
+            factor_labels=request.factors,
+            correlation_matrix=request.correlation_matrix,
+            tolerance=request.chart_tolerance,
+        )
+    except ValueError as exc:
+        validation_message = str(exc)
+        code = _correlation_matrix_validation_code(validation_message)
+        return (
+            code,
+            f"Hybrid correlation matrix request failed chart validation: {validation_message}.",
+            {
+                "chart_policy_status": "invalid_fail_closed",
+                "validation_code": code,
+                "validation_message": validation_message,
+            },
+            None,
+        )
+    extra = {
+        "chart_policy_status": "validated_fail_closed",
+        "chart_id": chart.chart_id,
+        "chart_type": chart.chart_type,
+        "matrix_dimension": chart.coordinate_values["dimension"],
+        "coordinate_count": chart.metadata["coordinate_count"],
+        "coordinate_keys": chart.coordinate_keys,
+        "factor_labels": chart.coordinate_values["factor_labels"],
+        "min_eigenvalue": chart.metadata["min_eigenvalue"],
+        "projection_policy": chart.constraints["projection_policy"],
+    }
+    return (
+        "correlation_matrix_derivative_not_implemented",
+        (
+            "Hybrid correlation matrix derivatives remain fail-closed because "
+            "the checked matrix chart policy is not yet an executable AD lane."
+        ),
+        extra,
+        chart,
+    )
+
+
 def fail_closed_correlation_structure_derivative(
     request: HybridCorrelationStructureRequest,
 ) -> HybridDerivativeResult:
     """Return a fail-closed result for unsupported matrix/surface correlation AD."""
     if not isinstance(request, HybridCorrelationStructureRequest):
         raise TypeError("request must be a HybridCorrelationStructureRequest")
+    code, message, policy_extra, chart = _correlation_structure_policy_payload(request)
+    node = None
+    if chart is not None:
+        node = HybridDependencyNode(
+            node_id=f"node:{request.structure_type}:{request.object_name}",
+            node_type=request.structure_type,
+            object_name=request.object_name,
+            coordinate_chart=chart,
+            differentiability_class=chart.differentiability_class,
+            derivative_method="unsupported",
+            support_status=chart.support_status,
+            metadata={
+                "policy": "fail_closed_no_projection",
+                "chart_policy_status": policy_extra["chart_policy_status"],
+            },
+        )
     dependency = HybridUnsupportedDependency(
         dependency_id=f"node:{request.structure_type}:{request.object_name}",
         node_type=request.structure_type,
         object_name=request.object_name,
-        reason=request.unsupported_reason,
+        reason=code,
         metadata={
             "factors": request.factors,
             "requested_derivative_method": request.requested_derivative_method,
             "coordinate_space": request.coordinate_space,
             "policy": "fail_closed_no_projection",
+            **policy_extra,
             **dict(request.provenance),
         },
     )
     graph = HybridFactorGraph(
         graph_id=f"hybrid:{request.structure_type}:{request.object_name}",
+        nodes=(node,) if node is not None else (),
         unsupported_dependencies=(dependency,),
         metadata={
             "structure_type": request.structure_type,
             "object_name": request.object_name,
             "factors": request.factors,
+            **policy_extra,
         },
     )
     diagnostic = {
-        "code": request.unsupported_reason,
+        "code": code,
         "severity": "warning",
-        "message": (
-            "Hybrid correlation matrix/surface derivatives require a checked "
-            "coordinate chart and are fail-closed until one exists."
-        ),
+        "message": message,
         "structure_type": request.structure_type,
         "object_name": request.object_name,
         "factors": request.factors,
         "psd_chart_required": request.structure_type == "correlation_matrix",
         "projection_policy": "unsupported_no_smoothing_or_projection",
+        **policy_extra,
     }
     metadata = derivative_method_payload(
         "unsupported_hybrid_structure",

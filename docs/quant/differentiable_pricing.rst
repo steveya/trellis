@@ -64,8 +64,10 @@ coordinates: underlier spot, FX spot, domestic/foreign curve zero-rate nodes,
 flat/grid vol nodes, and scalar correlation. The same helper now accepts
 ``HybridDerivativeRequest(derivative_method="hvp", hvp_direction=...)`` for a
 bounded directional HVP, ``H @ v``, over that scalar-coordinate chart.
-Matrix/surface correlations, path-dependent hybrid state, and hybrid ``jvp``
-requests remain fail-closed rather than approximated.
+Correlation matrix requests can now carry a checked PSD chart-policy payload
+with deterministic off-diagonal factor coordinates and validation diagnostics,
+but matrix/surface correlations, path-dependent hybrid state, and hybrid
+``jvp`` requests remain fail-closed rather than approximated.
 
 The goal is not to make every numerical routine differentiable. It is to remove
 unnecessary bump/reprice loops, stabilize calibration, and keep the exact same
@@ -152,6 +154,10 @@ through ``hybrid_scalar_vjp``, ``hybrid_scalar_vector_vjp``, or
 ``hybrid_scalar_vector_hvp`` metadata rather than widening the backend
 capability table. They are bounded single-name quanto lanes, not a general
 ``hybrid_ad=True`` backend claim.
+Correlation matrix chart policy validation is likewise a reporting and
+governance surface: valid PSD matrix payloads can be represented with
+deterministic off-diagonal factor coordinates, while executable matrix and
+surface correlation AD still reports ``unsupported_hybrid_structure``.
 
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
 scalar-objective functions on smooth-interior regions. It is not a claim about
@@ -487,8 +493,13 @@ request returns an unsupported result with
 ``fallback_reason.code="hybrid_jvp_backend_unsupported"`` because the active
 ``autograd`` backend still reports ``jvp=False`` for pricing primitives.
 ``fail_closed_correlation_structure_derivative(...)`` provides the same
-fail-closed envelope for correlation matrix and correlation surface requests
-until a checked positive-semidefinite chart exists.
+fail-closed envelope for correlation matrix and correlation surface requests.
+For matrix requests it can validate factor labels, square shape, finite
+entries, symmetry, unit diagonal, bounds, and positive semidefiniteness, then
+attach chart metadata while still returning
+``correlation_matrix_derivative_not_implemented``. Invalid matrix payloads and
+surface requests return typed diagnostics and an empty sparse vector; no
+projection, smoothing, or matrix/surface AD execution is implied.
 
 Runtime Derivative-Method Taxonomy
 ----------------------------------
@@ -622,8 +633,9 @@ The registry deliberately includes both AD-backed and non-AD lanes:
    * - ``unsupported_hybrid_structure``
      - ``unsupported``
      - ``unsupported``
-     - fail-closed hybrid request when the required graph coordinate chart,
-       such as a correlation matrix or surface chart, is not implemented
+     - fail-closed hybrid request when a matrix chart is valid but lacks an
+       executable lane, when matrix validation fails, or when a surface chart
+       is not implemented
    * - ``autodiff_pathwise``
      - ``autograd``
      - ``supported``

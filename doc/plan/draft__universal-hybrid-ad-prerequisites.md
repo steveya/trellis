@@ -2,10 +2,10 @@
 
 ## Status
 
-First prototypes delivered under the `QUA-1034`, `QUA-1040`, and `QUA-1045`
-epics. Universal hybrid AD is still not claimed; this document now records the
-shipped bounded quanto scalar-coordinate prototypes and the remaining
-prerequisites.
+First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`, and
+`QUA-1049` epics. Universal hybrid AD is still not claimed; this document now
+records the shipped bounded quanto scalar-coordinate prototypes, the checked
+correlation matrix policy surface, and the remaining prerequisites.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -21,6 +21,10 @@ prerequisites.
 | `QUA-1046` | Done | Added HVP request direction contract and derivative-method taxonomy. |
 | `QUA-1047` | Done | Added graph-owned scalar quanto HVP execution over supported scalar coordinates. |
 | `QUA-1048` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
+| `QUA-1050` | Done | Added checked correlation matrix chart-policy construction and payload round trips. |
+| `QUA-1051` | Done | Hardened matrix/surface correlation fail-closed diagnostics with chart metadata. |
+| `QUA-1052` | Done | Added invalid matrix diagnostic-code coverage and public-surface checks. |
+| `QUA-1053` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -73,13 +77,20 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
 - selected-factor requests filter the returned sparse vector without changing
   the full-factor metadata; missing selected factors and unsupported graph
   dependencies are reported explicitly
+- `MarketObjectCoordinateChart.correlation_matrix_policy(...)` can validate a
+  correlation matrix policy payload, derive deterministic off-diagonal
+  `RiskFactorId` coordinates, record the minimum eigenvalue, and enforce the
+  no-projection policy
+- `fail_closed_correlation_structure_derivative(...)` distinguishes valid but
+  non-executable matrix charts, invalid matrix charts, and unsupported surface
+  charts through typed diagnostics and `unsupported_hybrid_structure` metadata
 - `jvp` requests and correlation matrix/surface requests fail closed through
   explicit unsupported derivative-method metadata
 
 This is still a prototype, not universal hybrid AD. The shipped derivative
 lanes differentiate a bounded scalar-coordinate vector and a bounded
 directional HVP for one single-name quanto route. They do not differentiate
-arbitrary cross-asset hybrid systems, matrix/surface correlations,
+arbitrary cross-asset hybrid systems, executable matrix/surface correlations,
 path-dependent hybrid state, or broad product families end to end.
 
 Autograd Phase 2 also added a truthful backend capability surface:
@@ -363,17 +374,20 @@ Deliverables:
 
 ### Phase 4: Correlation Matrix Policy
 
-[policy-only fail-closed behavior delivered in `QUA-1038`; derivative support
-still open]
+[checked policy and fail-closed diagnostics delivered in `QUA-1049`;
+derivative support still open]
 
 Extend from scalar correlation to matrix or surface correlation only after the
 chart is chosen and validated.
 
 Deliverables:
 
-- positive-semidefinite chart validation
-- derivative tests away from singularities
-- explicit projection or unsupported policy at invalid regions
+- positive-semidefinite chart validation [done in `QUA-1049`]
+- deterministic off-diagonal matrix `RiskFactorId` coordinates [done in
+  `QUA-1049`]
+- explicit projection or unsupported policy at invalid regions [done in
+  `QUA-1049` as fail-closed no-projection diagnostics]
+- executable derivative tests away from singularities [open]
 
 ### Phase 5: Backend Decision For JVP
 
@@ -451,9 +465,24 @@ Acceptance criteria:
 - selected-factor requests filter the returned HVP vector without changing
   full-factor metadata
 
+Fourth delivered epic:
+
+`Hybrid AD: correlation matrix chart policy and validation`
+
+Acceptance criteria:
+
+- valid correlation matrix policy payloads are checked for factor labels,
+  shape, finite entries, symmetry, unit diagonal, bounds, and PSD tolerance
+- the policy chart records deterministic off-diagonal factor coordinates,
+  matrix dimension, factor labels, minimum eigenvalue, and no-projection policy
+- valid matrix derivative requests fail closed as
+  `correlation_matrix_derivative_not_implemented` with chart metadata
+- invalid matrix and unsupported surface requests fail closed with typed
+  diagnostics and `unsupported_hybrid_structure` metadata
+
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: correlation matrix chart policy and validation`
 - `Hybrid AD: ContractIR admission for graph-owned hybrid derivative lanes`
+- `Hybrid AD: executable matrix-coordinate derivative lane away from PSD boundary`
 - `Hybrid AD: path-dependent hybrid state and event policy`
 - `Hybrid AD: multi-product graph-owned derivative fixtures`
