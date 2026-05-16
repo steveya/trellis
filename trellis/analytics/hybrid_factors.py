@@ -109,7 +109,10 @@ def _normalize_correlation_matrix(
     dimension: int,
     tolerance: float,
 ) -> tuple[tuple[float, ...], ...]:
-    rows = tuple(tuple(_as_float(value, "correlation_matrix entry") for value in row) for row in matrix)
+    rows = tuple(
+        tuple(_as_float(value, "correlation_matrix entry") for value in row)
+        for row in matrix
+    )
     if len(rows) != dimension or any(len(row) != dimension for row in rows):
         raise ValueError("correlation_matrix must be a square matrix matching factor_labels")
     for index, row in enumerate(rows):
@@ -179,6 +182,30 @@ def _correlation_matrix_coordinates(
                 )
             )
     return tuple(coordinates)
+
+
+def _restore_correlation_matrix_coordinate_values(
+    raw: Mapping[str, object],
+) -> dict[str, object]:
+    """Restore tuple types in correlation_matrix_psd_policy coordinate_values."""
+    result = dict(raw)
+    if "factor_labels" in result:
+        result["factor_labels"] = tuple(result["factor_labels"])  # type: ignore[arg-type]
+    if "correlation_matrix" in result:
+        result["correlation_matrix"] = tuple(
+            tuple(row) for row in result["correlation_matrix"]  # type: ignore[union-attr]
+        )
+    return result
+
+
+def _restore_correlation_matrix_constraints(
+    raw: Mapping[str, object],
+) -> dict[str, object]:
+    """Restore tuple types in correlation_matrix_psd_policy constraints."""
+    result = dict(raw)
+    if "bounds" in result and not isinstance(result["bounds"], tuple):
+        result["bounds"] = tuple(result["bounds"])  # type: ignore[arg-type]
+    return result
 
 
 @dataclass(frozen=True)
@@ -423,8 +450,14 @@ class MarketObjectCoordinateChart:
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> MarketObjectCoordinateChart:
+    def from_payload(cls, payload: Mapping[str, object]) -> "MarketObjectCoordinateChart":
         """Rebuild a chart from :meth:`to_payload` output."""
+        chart_type = str(payload.get("chart_type", "identity"))
+        coordinate_values: Mapping[str, object] = payload.get("coordinate_values") or {}
+        constraints: Mapping[str, object] = payload.get("constraints") or {}
+        if chart_type == "correlation_matrix_psd_policy":
+            coordinate_values = _restore_correlation_matrix_coordinate_values(coordinate_values)
+            constraints = _restore_correlation_matrix_constraints(constraints)
         return cls(
             chart_id=str(payload["chart_id"]),
             object_type=str(payload["object_type"]),
@@ -433,10 +466,10 @@ class MarketObjectCoordinateChart:
                 RiskFactorCoordinate.from_payload(entry)
                 for entry in payload.get("coordinates", ())
             ),
-            chart_type=str(payload.get("chart_type", "identity")),
+            chart_type=chart_type,
             coordinate_space=str(payload.get("coordinate_space", "constrained")),
-            coordinate_values=payload.get("coordinate_values") or {},
-            constraints=payload.get("constraints") or {},
+            coordinate_values=coordinate_values,
+            constraints=constraints,
             differentiability_class=str(payload.get("differentiability_class", "smooth")),
             support_status=str(payload.get("support_status", "supported")),
             metadata=payload.get("metadata") or {},

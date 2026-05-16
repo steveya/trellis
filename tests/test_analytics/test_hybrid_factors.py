@@ -139,6 +139,31 @@ def test_correlation_matrix_policy_chart_payload_round_trips():
     ]
 
 
+def test_correlation_matrix_policy_chart_json_round_trips():
+    import json
+
+    chart = MarketObjectCoordinateChart.correlation_matrix_policy(
+        object_name="cross_asset_correlation",
+        factor_labels=("SX5E", "EURUSD", "USD-OIS"),
+        correlation_matrix=(
+            (1.0, 0.25, -0.10),
+            (0.25, 1.0, 0.35),
+            (-0.10, 0.35, 1.0),
+        ),
+        chart_id="chart:correlation_matrix:cross_asset",
+    )
+
+    rebuilt = MarketObjectCoordinateChart.from_payload(json.loads(json.dumps(chart.to_payload())))
+    assert rebuilt == chart
+    assert rebuilt.coordinate_values["factor_labels"] == ("SX5E", "EURUSD", "USD-OIS")
+    assert rebuilt.coordinate_values["correlation_matrix"] == (
+        (1.0, 0.25, -0.10),
+        (0.25, 1.0, 0.35),
+        (-0.10, 0.35, 1.0),
+    )
+    assert rebuilt.constraints["bounds"] == (-1.0, 1.0)
+
+
 def test_correlation_matrix_policy_chart_rejects_duplicate_labels():
     with pytest.raises(ValueError, match="unique"):
         MarketObjectCoordinateChart.correlation_matrix_policy(

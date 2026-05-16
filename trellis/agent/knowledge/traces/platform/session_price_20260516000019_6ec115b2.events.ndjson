@@ -1,0 +1,2 @@
+{"event": "request_compiled", "status": "ok", "timestamp": "2026-05-16T00:00:19.520995+00:00", "details": {"action": "price_book", "route_method": "direct_existing", "requires_build": false}}
+{"event": "request_succeeded", "status": "ok", "timestamp": "2026-05-16T00:00:19.776661+00:00", "details": {"run_id": "run_20260516000019_d987f0d5", "action": "price_book", "status": "succeeded"}}
