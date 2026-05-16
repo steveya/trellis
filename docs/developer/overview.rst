@@ -295,19 +295,23 @@ VJP-backed scalar underlier/FX correlation sensitivity and
 bounded single-name quanto scalar-coordinate vector over supported graph-owned
 spot, FX spot, curve-node, vol-node, and scalar-correlation factors with VJP,
 and can compute a bounded directional HVP over the same scalar-coordinate
-chart when the request supplies an explicit sparse ``hvp_direction``. The
-developer contract is deliberately narrow: matrix correlations, surface
-correlations, path-dependent hybrid state, broader product graphs, and hybrid
-``jvp`` are rejected fail-closed until explicit graph-owned derivative lanes
-exist. ``trellis.analytics.admit_hybrid_ad_lane(...)`` is the semantic
-ContractIR admission guard for this helper family; supported terminal quanto
-VJP/HVP admissions can be passed through
+chart when the request supplies an explicit sparse ``hvp_direction``.
+``trellis.analytics.differentiate_quanto_correlation_matrix(...)`` adds the
+bounded terminal-quanto matrix-coordinate lane: valid, well-conditioned direct
+correlation-matrix payloads produce off-diagonal ``RiskFactorId`` coordinates
+and can return VJP or directional HVP risk for the active underlier/FX matrix
+entry. The developer contract is deliberately narrow: correlation surfaces,
+matrix projection or repair, PSD-boundary behavior, path-dependent hybrid
+state, broader product graphs, and hybrid ``jvp`` are rejected fail-closed
+until explicit graph-owned derivative lanes exist.
+``trellis.analytics.admit_hybrid_ad_lane(...)`` is the semantic ContractIR
+admission guard for this helper family; supported terminal quanto scalar or
+matrix VJP/HVP admissions can be passed through
 ``HybridDerivativeRequest.semantic_admission`` and are preserved in result
-metadata, while planned or unsupported admissions return empty risk with typed
-diagnostics before AD execution. Matrix-correlation requests may now carry
-checked PSD chart-policy payloads with deterministic off-diagonal factor
-coordinates and validation diagnostics, but they still report
-``unsupported_hybrid_structure`` rather than executable matrix AD.
+metadata, while wrong-lane, planned, or unsupported admissions return empty
+risk with typed diagnostics before AD execution. Matrix-correlation requests
+outside the executable bounded lane still use
+``unsupported_hybrid_structure`` fail-closed diagnostics.
 
 The same benchmarking module now also exposes
 ``supported_counterparty_exposure_benchmark_scenarios()`` and
