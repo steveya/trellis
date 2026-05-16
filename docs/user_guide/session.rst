@@ -297,6 +297,11 @@ is the admission guard for the scalar-input and matrix-coordinate helpers:
 supported same-lane terminal quanto VJP/HVP admissions are copied into result
 metadata, while wrong-lane, planned, or unsupported admissions return an empty
 risk vector with the admission reason in diagnostics.
+For path-dependent, discontinuous-event, early-exercise, or DynamicContractIR
+hybrid shapes, that fail-closed result also carries ``semantic_state_policy``
+metadata. It tells you whether the blocked shape was a smooth path summary, a
+discontinuous event monitor, an early-exercise control, or dynamic state; it
+does not mean those shapes have executable pathwise hybrid AD.
 
 For small books that combine already-supported lanes, use the mixed dispatcher:
 
