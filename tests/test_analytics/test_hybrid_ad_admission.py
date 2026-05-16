@@ -26,6 +26,7 @@ from trellis.agent.contract_ir import (
     Sub,
     Underlying,
 )
+from trellis.agent.dynamic_contract_ir import DynamicContractIR
 from trellis.analytics import (
     HybridADFactorRequirement,
     HybridADLaneAdmission,
@@ -92,6 +93,14 @@ def _american_call_ir() -> ContractIR:
         exercise=Exercise("american", exercise_schedule),
         observation=Observation("terminal", observation_schedule),
         underlying=Underlying(EquitySpot("EUR", "gbm")),
+    )
+
+
+def _dynamic_hybrid_ir() -> DynamicContractIR:
+    return DynamicContractIR(
+        base_contract=_terminal_call_ir(),
+        semantic_family="autocallable_note",
+        base_track="payoff_expression",
     )
 
 
@@ -175,6 +184,23 @@ def test_jvp_request_fails_closed_at_admission():
     assert admission.supported is False
     assert admission.support_status == "unsupported"
     assert admission.reason == "hybrid_jvp_backend_unsupported"
+    assert admission.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert admission.metadata["requested_derivative_method"] == "jvp"
+
+
+def test_dynamic_contract_jvp_request_fails_closed_as_backend_unsupported():
+    admission = admit_hybrid_ad_lane(
+        _dynamic_hybrid_ir(),
+        product_family="autocallable_note",
+        derivative_method="jvp",
+    )
+
+    assert admission.admitted is False
+    assert admission.supported is False
+    assert admission.support_status == "unsupported"
+    assert admission.reason == "hybrid_jvp_backend_unsupported"
+    assert admission.semantic_contract_type == "DynamicContractIR"
+    assert admission.contract_shape == "dynamic_hybrid_state"
     assert admission.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
     assert admission.metadata["requested_derivative_method"] == "jvp"
 

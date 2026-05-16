@@ -302,13 +302,39 @@ def _dynamic_contract_admission(
     derivative_method: str,
     product_family: str | None,
 ) -> HybridADLaneAdmission:
+    family = product_family or contract.semantic_family or "dynamic_hybrid_contract"
+    if derivative_method == "jvp":
+        return _admission(
+            admitted=False,
+            lane_id="dynamic_hybrid_state_jvp",
+            support_status="unsupported",
+            reason="hybrid_jvp_backend_unsupported",
+            semantic_contract_type="DynamicContractIR",
+            product_family=family,
+            contract_shape="dynamic_hybrid_state",
+            derivative_methods=("vjp", "hvp"),
+            factor_requirements=(_scalar_correlation_requirement(),),
+            metadata={
+                "requested_derivative_method": derivative_method,
+                "backend_operator": "jvp",
+                "base_track": contract.base_track,
+                "fail_closed": True,
+            },
+            diagnostics=(
+                {
+                    "code": "hybrid_jvp_backend_unsupported",
+                    "severity": "warning",
+                    "backend_operator": "jvp",
+                },
+            ),
+        )
     return _admission(
         admitted=False,
         lane_id="dynamic_hybrid_state_policy",
         support_status="planned",
         reason="dynamic_hybrid_state_admission_pending",
         semantic_contract_type="DynamicContractIR",
-        product_family=product_family or contract.semantic_family or "dynamic_hybrid_contract",
+        product_family=family,
         contract_shape="dynamic_hybrid_state",
         derivative_methods=("vjp", "hvp"),
         factor_requirements=(_scalar_correlation_requirement(),),
