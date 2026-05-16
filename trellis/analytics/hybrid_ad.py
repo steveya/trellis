@@ -16,7 +16,11 @@ from trellis.analytics.hybrid_factors import (
     HybridUnsupportedDependency,
     MarketObjectCoordinateChart,
 )
-from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
+from trellis.analytics.risk_factors import (
+    RiskFactorCoordinate,
+    RiskFactorId,
+    SparseRiskVector,
+)
 from trellis.models.vol_surface import _bracket_and_weight
 
 
@@ -243,6 +247,119 @@ class HybridCorrelationStructureRequest:
     def unsupported_reason(self) -> str:
         """Return the policy reason for this unsupported structure."""
         return f"{self.structure_type}_chart_not_implemented"
+
+
+@dataclass(frozen=True)
+class HybridMatrixCoordinateContext:
+    """Executable context for a checked correlation-matrix coordinate chart."""
+
+    chart: MarketObjectCoordinateChart
+    min_eigenvalue_floor: float = 1.0e-6
+    active_factor_id: RiskFactorId | Mapping[str, object] | None = None
+    support_status: str = "supported"
+    diagnostics: tuple[Mapping[str, object], ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.chart, MarketObjectCoordinateChart):
+            raise TypeError("chart must be a MarketObjectCoordinateChart")
+        if self.chart.chart_type != "correlation_matrix_psd_policy":
+            raise ValueError("chart must be a correlation_matrix_psd_policy chart")
+        floor = float(self.min_eigenvalue_floor)
+        if not math.isfinite(floor) or floor < 0.0:
+            raise ValueError("min_eigenvalue_floor must be a finite non-negative float")
+        object.__setattr__(self, "min_eigenvalue_floor", floor)
+        if self.chart.support_status != "supported":
+            raise ValueError("matrix-coordinate context requires a supported chart")
+        status = str(self.support_status).strip()
+        if status != "supported":
+            raise ValueError("matrix-coordinate context support_status must be supported")
+        object.__setattr__(self, "support_status", status)
+        active = self.active_factor_id
+        if isinstance(active, Mapping):
+            active = RiskFactorId.from_payload(active)
+        if active is not None and active not in self.factor_ids:
+            raise ValueError("active_factor_id must be one of the chart coordinates")
+        object.__setattr__(self, "active_factor_id", active)
+        object.__setattr__(self, "diagnostics", _freeze_diagnostics(self.diagnostics))
+
+    @property
+    def factor_labels(self) -> tuple[str, ...]:
+        """Return matrix factor labels in chart order."""
+        return tuple(str(label) for label in self.chart.coordinate_values["factor_labels"])
+
+    @property
+    def correlation_matrix(self) -> tuple[tuple[float, ...], ...]:
+        """Return the checked constrained correlation matrix."""
+        return tuple(
+            tuple(float(value) for value in row)
+            for row in self.chart.coordinate_values["correlation_matrix"]
+        )
+
+    @property
+    def min_eigenvalue(self) -> float:
+        """Return the checked minimum symmetric eigenvalue."""
+        return float(self.chart.metadata["min_eigenvalue"])
+
+    @property
+    def coordinate_count(self) -> int:
+        """Return the number of off-diagonal matrix coordinates."""
+        return len(self.chart.coordinates)
+
+    @property
+    def factor_ids(self) -> tuple[RiskFactorId, ...]:
+        """Return supported off-diagonal coordinate factor ids."""
+        return tuple(coordinate.factor_id for coordinate in self.chart.coordinates)
+
+    def coordinate_index_for_pair(self, factor_a: object, factor_b: object) -> int:
+        """Return the deterministic coordinate index for an unordered factor pair."""
+        target = frozenset((str(factor_a).strip(), str(factor_b).strip()))
+        if len(target) != 2:
+            raise ValueError("matrix coordinate pair must contain two distinct factors")
+        for index, coordinate in enumerate(self.chart.coordinates):
+            axes = dict(coordinate.factor_id.axes)
+            if frozenset((axes.get("row", ""), axes.get("column", ""))) == target:
+                return index
+        raise KeyError(f"matrix coordinate pair {sorted(target)!r} is not chart-owned")
+
+    def coordinate_for_pair(self, factor_a: object, factor_b: object) -> RiskFactorCoordinate:
+        """Return the chart coordinate for an unordered factor pair."""
+        return self.chart.coordinates[self.coordinate_index_for_pair(factor_a, factor_b)]
+
+    @property
+    def active_coordinate_index(self) -> int | None:
+        """Return the active coordinate index when one was requested."""
+        if self.active_factor_id is None:
+            return None
+        index_by_factor = {
+            coordinate.factor_id: index
+            for index, coordinate in enumerate(self.chart.coordinates)
+        }
+        return index_by_factor[self.active_factor_id]
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly context payload."""
+        return {
+            "chart": self.chart.to_payload(),
+            "min_eigenvalue_floor": self.min_eigenvalue_floor,
+            "active_factor_id": (
+                self.active_factor_id.to_payload()
+                if self.active_factor_id is not None
+                else None
+            ),
+            "support_status": self.support_status,
+            "diagnostics": [dict(diagnostic) for diagnostic in self.diagnostics],
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> "HybridMatrixCoordinateContext":
+        """Rebuild a context from :meth:`to_payload` output."""
+        return cls(
+            chart=MarketObjectCoordinateChart.from_payload(payload["chart"]),
+            min_eigenvalue_floor=float(payload.get("min_eigenvalue_floor", 1.0e-6)),
+            active_factor_id=payload.get("active_factor_id"),
+            support_status=str(payload.get("support_status", "supported")),
+            diagnostics=tuple(payload.get("diagnostics") or ()),
+        )
 
 
 @dataclass(frozen=True)
@@ -827,6 +944,513 @@ def _correlation_structure_policy_payload(
     )
 
 
+def _clean_min_eigenvalue_floor(value: object) -> float:
+    floor = float(value)
+    if not math.isfinite(floor) or floor < 0.0:
+        raise ValueError("min_eigenvalue_floor must be a finite non-negative float")
+    return floor
+
+
+def _executable_correlation_matrix_chart(
+    chart: MarketObjectCoordinateChart,
+    *,
+    min_eigenvalue_floor: float,
+) -> MarketObjectCoordinateChart:
+    supported_coordinates = tuple(
+        replace(coordinate, support_status="supported")
+        for coordinate in chart.coordinates
+    )
+    return replace(
+        chart,
+        coordinates=supported_coordinates,
+        support_status="supported",
+        metadata={
+            **dict(chart.metadata),
+            "chart_policy_status": "validated_executable",
+            "min_eigenvalue_floor": min_eigenvalue_floor,
+            "projection_policy": chart.constraints["projection_policy"],
+        },
+    )
+
+
+def build_correlation_matrix_coordinate_context(
+    request: HybridCorrelationStructureRequest,
+    *,
+    active_factor_pair: tuple[object, object] | None = None,
+    min_eigenvalue_floor: float = 1.0e-6,
+) -> HybridMatrixCoordinateContext:
+    """Build an executable context for a well-conditioned matrix chart.
+
+    The context uses the checked matrix entries directly. It does not smooth,
+    project, or repair invalid matrices, and it rejects matrices too close to
+    the PSD boundary for stable coordinate derivatives.
+    """
+    if not isinstance(request, HybridCorrelationStructureRequest):
+        raise TypeError("request must be a HybridCorrelationStructureRequest")
+    floor = _clean_min_eigenvalue_floor(min_eigenvalue_floor)
+    code, message, _, chart = _correlation_structure_policy_payload(request)
+    if chart is None:
+        raise ValueError(f"{code}: {message}")
+    min_eigenvalue = float(chart.metadata["min_eigenvalue"])
+    if min_eigenvalue < floor:
+        raise ValueError(
+            "correlation_matrix_near_psd_boundary: "
+            f"minimum eigenvalue {min_eigenvalue:.12g} is below the executable "
+            f"context floor {floor:.12g}."
+        )
+
+    supported_chart = _executable_correlation_matrix_chart(
+        chart,
+        min_eigenvalue_floor=floor,
+    )
+    context = HybridMatrixCoordinateContext(
+        chart=supported_chart,
+        min_eigenvalue_floor=floor,
+        diagnostics=(
+            {
+                "code": "correlation_matrix_context_executable",
+                "severity": "info",
+                "message": (
+                    "Correlation matrix chart is well-conditioned enough for "
+                    "direct off-diagonal coordinate execution."
+                ),
+                "min_eigenvalue": min_eigenvalue,
+                "min_eigenvalue_floor": floor,
+                "projection_policy": supported_chart.constraints["projection_policy"],
+            },
+        ),
+    )
+    if active_factor_pair is None:
+        return context
+    try:
+        active_coordinate = context.coordinate_for_pair(*active_factor_pair)
+    except (KeyError, ValueError) as exc:
+        raise ValueError(
+            "active_factor_pair_unavailable: "
+            f"{tuple(str(factor) for factor in active_factor_pair)!r} "
+            "is not an off-diagonal coordinate in the matrix chart."
+        ) from exc
+    return replace(context, active_factor_id=active_coordinate.factor_id)
+
+
+def _quanto_matrix_active_factor_pair(spec: object) -> tuple[str, str]:
+    return (
+        str(getattr(spec, "underlier_currency", "underlier")),
+        str(getattr(spec, "fx_pair", "fx")),
+    )
+
+
+def _matrix_coordinate_values(
+    context: HybridMatrixCoordinateContext,
+) -> tuple[float, ...]:
+    matrix = context.correlation_matrix
+    values: list[float] = []
+    for coordinate in context.chart.coordinates:
+        axes = dict(coordinate.factor_id.axes)
+        row_index = int(axes["row_index"])
+        column_index = int(axes["column_index"])
+        values.append(float(matrix[row_index][column_index]))
+    return tuple(values)
+
+
+def _matrix_entries_for_context(
+    request: HybridCorrelationStructureRequest,
+    context: HybridMatrixCoordinateContext,
+) -> tuple[_GraphScalarEntry, ...]:
+    node_id = f"node:{request.structure_type}:{request.object_name}"
+    values = _matrix_coordinate_values(context)
+    return tuple(
+        _GraphScalarEntry(
+            node_id=node_id,
+            role="correlation_matrix",
+            factor_id=coordinate.factor_id,
+            base_value=values[index],
+        )
+        for index, coordinate in enumerate(context.chart.coordinates)
+    )
+
+
+def _matrix_context_graph(
+    request: HybridCorrelationStructureRequest,
+    context: HybridMatrixCoordinateContext,
+    *,
+    derivative_method: str,
+) -> HybridFactorGraph:
+    active_factor_key = (
+        context.active_factor_id.key
+        if context.active_factor_id is not None
+        else None
+    )
+    node = HybridDependencyNode(
+        node_id=f"node:{request.structure_type}:{request.object_name}",
+        node_type=request.structure_type,
+        object_name=request.object_name,
+        coordinate_chart=context.chart,
+        differentiability_class=context.chart.differentiability_class,
+        derivative_method=derivative_method,
+        support_status=context.support_status,
+        metadata={
+            "policy": "executable_no_projection",
+            "chart_policy_status": context.chart.metadata["chart_policy_status"],
+            "resolved_inputs": ("correlation_matrix", "correlation"),
+            "active_factor_key": active_factor_key,
+            "active_coordinate_index": context.active_coordinate_index,
+        },
+    )
+    graph = HybridFactorGraph(
+        graph_id=f"hybrid:{request.structure_type}:{request.object_name}",
+        nodes=(node,),
+        metadata={
+            "structure_type": request.structure_type,
+            "object_name": request.object_name,
+            "factors": request.factors,
+            "chart_policy_status": context.chart.metadata["chart_policy_status"],
+            "matrix_dimension": context.chart.coordinate_values["dimension"],
+            "matrix_coordinate_count": context.coordinate_count,
+            "active_factor_key": active_factor_key,
+            "min_eigenvalue": context.min_eigenvalue,
+            "min_eigenvalue_floor": context.min_eigenvalue_floor,
+            "projection_policy": context.chart.constraints["projection_policy"],
+        },
+    )
+    graph.validate()
+    return graph
+
+
+def _matrix_context_error_code_and_message(exc: ValueError) -> tuple[str, str]:
+    raw = str(exc)
+    code, separator, message = raw.partition(":")
+    if separator:
+        return code.strip(), message.strip()
+    return "correlation_matrix_context_unavailable", raw
+
+
+def _unsupported_correlation_matrix_result(
+    *,
+    value: float | None,
+    correlation_request: HybridCorrelationStructureRequest,
+    derivative_request: HybridDerivativeRequest,
+    code: str,
+    message: str,
+    method_id: str = "hybrid_matrix_vector_vjp",
+    backend_operator: str | None = None,
+    diagnostic_extra: Mapping[str, object] | None = None,
+    method_metadata_extra: Mapping[str, object] | None = None,
+) -> HybridDerivativeResult:
+    dependency = HybridUnsupportedDependency(
+        dependency_id=f"node:{correlation_request.structure_type}:{correlation_request.object_name}",
+        node_type=correlation_request.structure_type,
+        object_name=correlation_request.object_name,
+        reason=code,
+        metadata={
+            "factors": correlation_request.factors,
+            "requested_derivative_method": derivative_request.derivative_method,
+            "coordinate_space": "matrix",
+            "policy": "fail_closed_no_projection",
+            **dict(correlation_request.provenance),
+            **dict(diagnostic_extra or {}),
+        },
+    )
+    graph = HybridFactorGraph(
+        graph_id=f"hybrid:{correlation_request.structure_type}:{correlation_request.object_name}",
+        unsupported_dependencies=(dependency,),
+        metadata={
+            "structure_type": correlation_request.structure_type,
+            "object_name": correlation_request.object_name,
+            "factors": correlation_request.factors,
+            "chart_policy_status": "matrix_context_unavailable",
+            **dict(diagnostic_extra or {}),
+        },
+    )
+    return _unsupported_result(
+        value=value,
+        graph=graph,
+        request=derivative_request,
+        code=code,
+        message=message,
+        method_id=method_id,
+        diagnostic_extra={
+            "structure_type": correlation_request.structure_type,
+            "object_name": correlation_request.object_name,
+            "factors": correlation_request.factors,
+            "coordinate_space": "matrix",
+            **dict(diagnostic_extra or {}),
+        },
+        fallback_reason={
+            "code": code,
+            "structure_type": correlation_request.structure_type,
+            "object_name": correlation_request.object_name,
+            "coordinate_space": "matrix",
+            **dict(diagnostic_extra or {}),
+        },
+        backend_operator=backend_operator,
+        method_metadata_extra=method_metadata_extra,
+    )
+
+
+def differentiate_quanto_correlation_matrix(
+    spec: object,
+    resolved_inputs: object,
+    correlation_request: HybridCorrelationStructureRequest,
+    request: HybridDerivativeRequest | None = None,
+    *,
+    active_factor_pair: tuple[object, object] | None = None,
+    min_eigenvalue_floor: float = 1.0e-6,
+) -> HybridDerivativeResult:
+    """Return VJP or HVP risk for a checked quanto correlation-matrix coordinate."""
+    from trellis.core.differentiable import (
+        get_backend_capabilities,
+        get_numpy,
+        hessian_vector_product,
+        vjp,
+    )
+    from trellis.models.analytical.quanto import price_quanto_option_raw
+
+    if not isinstance(correlation_request, HybridCorrelationStructureRequest):
+        raise TypeError("correlation_request must be a HybridCorrelationStructureRequest")
+    resolved_request = request or HybridDerivativeRequest()
+    method_id = (
+        "hybrid_matrix_vector_hvp"
+        if resolved_request.derivative_method == "hvp"
+        else "hybrid_matrix_vector_vjp"
+    )
+    active_pair = active_factor_pair or _quanto_matrix_active_factor_pair(spec)
+    base_value = float(price_quanto_option_raw(spec, resolved_inputs))
+    admission_metadata = _semantic_admission_metadata(resolved_request.semantic_admission)
+    try:
+        context = build_correlation_matrix_coordinate_context(
+            correlation_request,
+            active_factor_pair=active_pair,
+            min_eigenvalue_floor=min_eigenvalue_floor,
+        )
+    except ValueError as exc:
+        code, message = _matrix_context_error_code_and_message(exc)
+        return _unsupported_correlation_matrix_result(
+            value=base_value,
+            correlation_request=correlation_request,
+            derivative_request=resolved_request,
+            code=code,
+            message=message,
+            diagnostic_extra={"active_factor_pair": tuple(str(factor) for factor in active_pair)},
+            method_metadata_extra=admission_metadata,
+        )
+
+    graph = _matrix_context_graph(
+        correlation_request,
+        context,
+        derivative_method=resolved_request.derivative_method,
+    )
+    capabilities = get_backend_capabilities()
+    if resolved_request.semantic_admission is not None:
+        admission_result = _unsupported_semantic_admission_result(
+            value=base_value,
+            graph=graph,
+            request=resolved_request,
+            admission=resolved_request.semantic_admission,
+            method_id=method_id,
+            allowed_lane_prefixes=("quanto_matrix_graph_",),
+        )
+        if admission_result is not None:
+            return admission_result
+    if resolved_request.derivative_method == "jvp":
+        diagnostic_extra = {
+            "backend_id": capabilities.backend_id,
+            "unsupported_operator": "jvp",
+            "backend_notes": capabilities.notes,
+            "active_factor_key": context.active_factor_id.key,
+        }
+        return _unsupported_result(
+            value=base_value,
+            graph=graph,
+            request=resolved_request,
+            code="hybrid_jvp_backend_unsupported",
+            message=(
+                "Hybrid matrix-coordinate JVP remains fail-closed because the "
+                "active backend does not provide checked JVP coverage."
+            ),
+            method_id=method_id,
+            diagnostic_extra=diagnostic_extra,
+            fallback_reason={
+                "code": "hybrid_jvp_backend_unsupported",
+                **diagnostic_extra,
+            },
+            method_metadata_extra=admission_metadata,
+        )
+    if resolved_request.derivative_method not in {"vjp", "hvp"}:
+        return _unsupported_result(
+            value=base_value,
+            graph=graph,
+            request=resolved_request,
+            code="hybrid_derivative_method_unsupported",
+            message="Only VJP and HVP are supported by the bounded matrix-coordinate lane.",
+            method_id=method_id,
+            backend_operator=resolved_request.derivative_method,
+            diagnostic_extra={"active_factor_key": context.active_factor_id.key},
+            method_metadata_extra=admission_metadata,
+        )
+    if not is_dataclass(resolved_inputs):
+        return _unsupported_result(
+            value=base_value,
+            graph=graph,
+            request=resolved_request,
+            code="resolved_inputs_dataclass_required",
+            message="Matrix-coordinate quanto VJP requires dataclass resolved inputs.",
+            method_id=method_id,
+            diagnostic_extra={"active_factor_key": context.active_factor_id.key},
+            method_metadata_extra=admission_metadata,
+        )
+    if context.active_coordinate_index is None or context.active_factor_id is None:
+        return _unsupported_result(
+            value=base_value,
+            graph=graph,
+            request=resolved_request,
+            code="active_matrix_coordinate_required",
+            message="Matrix-coordinate quanto VJP requires one active correlation pair.",
+            method_id=method_id,
+            method_metadata_extra=admission_metadata,
+        )
+
+    np = get_numpy()
+    entries = _matrix_entries_for_context(correlation_request, context)
+    base_vector = np.asarray(tuple(entry.base_value for entry in entries))
+    active_index = context.active_coordinate_index
+
+    def value_from_matrix_entries(theta):
+        traced_inputs = replace(resolved_inputs, corr=theta[active_index])
+        return price_quanto_option_raw(spec, traced_inputs)
+
+    metadata_extra: dict[str, object] = {}
+    if resolved_request.derivative_method == "hvp":
+        if not capabilities.supports("hessian_vector_product"):
+            diagnostic_extra = {
+                "backend_id": capabilities.backend_id,
+                "unsupported_operator": "hessian_vector_product",
+                "backend_notes": capabilities.notes,
+                "active_factor_key": context.active_factor_id.key,
+            }
+            return _unsupported_result(
+                value=base_value,
+                graph=graph,
+                request=resolved_request,
+                code="hybrid_hvp_backend_unsupported",
+                message=(
+                    "Hybrid matrix-coordinate HVP is fail-closed because the "
+                    "active backend does not provide checked scalar-objective HVP support."
+                ),
+                method_id=method_id,
+                diagnostic_extra=diagnostic_extra,
+                fallback_reason={
+                    "code": "hybrid_hvp_backend_unsupported",
+                    **diagnostic_extra,
+                },
+                backend_operator="hessian_vector_product",
+                method_metadata_extra=admission_metadata,
+            )
+        direction_values, direction_diagnostic = _hvp_direction_for_entries(
+            resolved_request,
+            entries,
+        )
+        if direction_diagnostic is not None:
+            return _unsupported_result(
+                value=base_value,
+                graph=graph,
+                request=resolved_request,
+                code=str(direction_diagnostic["code"]),
+                message=str(direction_diagnostic["message"]),
+                method_id=method_id,
+                diagnostic_extra={
+                    key: val
+                    for key, val in direction_diagnostic.items()
+                    if key not in {"code", "message"}
+                },
+                fallback_reason=direction_diagnostic,
+                backend_operator="hessian_vector_product",
+                method_metadata_extra=admission_metadata,
+            )
+        direction_vector = np.asarray(direction_values)
+        traced_value = value_from_matrix_entries(base_vector)
+        sensitivities = np.reshape(
+            np.asarray(
+                hessian_vector_product(
+                    value_from_matrix_entries,
+                    base_vector,
+                    direction_vector,
+                )
+            ),
+            (-1,),
+        )
+        metadata_extra = {
+            "hvp_direction_factor_count": len(resolved_request.hvp_direction),
+            "hvp_direction_coordinate_count": sum(
+                1 for value in direction_values if value != 0.0
+            ),
+            "hvp_direction_norm": float(np.sqrt(np.sum(direction_vector * direction_vector))),
+        }
+        backend_operator = "hessian_vector_product"
+    else:
+        traced_value, pullback = vjp(value_from_matrix_entries, base_vector)
+        sensitivities = np.reshape(np.asarray(pullback(np.asarray(1.0))), (-1,))
+        backend_operator = "vjp"
+    full_vector = SparseRiskVector.from_items(
+        (entry.factor_id, float(sensitivities[index]))
+        for index, entry in enumerate(entries)
+    )
+    selected_vector = resolved_request.filter_vector(full_vector)
+    missing_factors = resolved_request.missing_selected_factors(context.factor_ids)
+    diagnostics: list[dict[str, object]] = []
+    support_status = "supported"
+    if missing_factors:
+        diagnostics.append(
+            {
+                "code": "selected_factors_unavailable",
+                "severity": "warning",
+                "missing_factor_keys": [factor.key for factor in missing_factors],
+                "unsupported_selected_factor_policy": (
+                    resolved_request.unsupported_selected_factor_policy
+                ),
+            }
+        )
+        support_status = "unsupported" if len(selected_vector) == 0 else "partial"
+        if resolved_request.unsupported_selected_factor_policy == "fail_closed":
+            selected_vector = SparseRiskVector()
+            support_status = "unsupported"
+
+    value = float(traced_value)
+    metadata = derivative_method_payload(
+        method_id,
+        method_support=support_status,
+        backend_id=capabilities.backend_id,
+        backend_operator=backend_operator,
+        coordinate_space=context.chart.coordinate_space,
+        chart_type=context.chart.chart_type,
+        hybrid_factor_graph_id=graph.graph_id,
+        matrix_dimension=context.chart.coordinate_values["dimension"],
+        matrix_coordinate_count=context.coordinate_count,
+        factor_count=context.coordinate_count,
+        sparse_nonzero_factor_count=len(full_vector),
+        active_factor_key=context.active_factor_id.key,
+        active_coordinate_index=active_index,
+        min_eigenvalue=context.min_eigenvalue,
+        min_eigenvalue_floor=context.min_eigenvalue_floor,
+        projection_policy=context.chart.constraints["projection_policy"],
+        node_count=len(graph.nodes),
+        unsupported_dependency_count=0,
+        **metadata_extra,
+    )
+    if math.isfinite(value):
+        metadata["base_value"] = value
+    metadata.update(admission_metadata)
+
+    return HybridDerivativeResult(
+        value=value,
+        risk_vector=selected_vector,
+        graph=graph,
+        support_status=support_status,
+        method_metadata=metadata,
+        diagnostics=tuple(diagnostics),
+    )
+
+
 def fail_closed_correlation_structure_derivative(
     request: HybridCorrelationStructureRequest,
 ) -> HybridDerivativeResult:
@@ -920,6 +1544,7 @@ def _unsupported_semantic_admission_result(
     request: HybridDerivativeRequest,
     admission: HybridADLaneAdmission,
     method_id: str,
+    allowed_lane_prefixes: tuple[str, ...] = ("quanto_scalar_graph_",),
 ) -> HybridDerivativeResult | None:
     admission_metadata = _semantic_admission_metadata(admission)
     if not admission.supported:
@@ -973,7 +1598,7 @@ def _unsupported_semantic_admission_result(
             fallback_reason=fallback_reason,
             method_metadata_extra=admission_metadata,
         )
-    if not admission.lane_id.startswith("quanto_scalar_graph_"):
+    if not any(admission.lane_id.startswith(prefix) for prefix in allowed_lane_prefixes):
         fallback_reason = {
             "code": "semantic_admission_lane_unavailable",
             "semantic_admission_status": admission.support_status,
@@ -1401,6 +2026,9 @@ __all__ = [
     "HybridCorrelationStructureRequest",
     "HybridDerivativeRequest",
     "HybridDerivativeResult",
+    "HybridMatrixCoordinateContext",
+    "build_correlation_matrix_coordinate_context",
+    "differentiate_quanto_correlation_matrix",
     "differentiate_quanto_scalar_inputs",
     "differentiate_quanto_scalar_correlation",
     "fail_closed_correlation_structure_derivative",

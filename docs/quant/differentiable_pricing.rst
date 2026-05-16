@@ -66,8 +66,12 @@ flat/grid vol nodes, and scalar correlation. The same helper now accepts
 bounded directional HVP, ``H @ v``, over that scalar-coordinate chart.
 Correlation matrix requests can now carry a checked PSD chart-policy payload
 with deterministic off-diagonal factor coordinates and validation diagnostics,
-but matrix/surface correlations, path-dependent hybrid state, and hybrid
-``jvp`` requests remain fail-closed rather than approximated.
+and ``differentiate_quanto_correlation_matrix(...)`` provides a bounded VJP
+and directional HVP lane for the active off-diagonal underlier/FX matrix
+coordinate in the terminal quanto route, provided the matrix is
+well-conditioned and away from the PSD boundary. Correlation surfaces, matrix
+projection or repair, path-dependent hybrid state, and hybrid ``jvp`` requests
+remain fail-closed rather than approximated.
 
 The goal is not to make every numerical routine differentiable. It is to remove
 unnecessary bump/reprice loops, stabilize calibration, and keep the exact same
@@ -113,11 +117,13 @@ The checked support contract is intentionally explicit:
    * - Hybrid factor graph
      - scalar quanto VJP through
        ``trellis.analytics.differentiate_quanto_scalar_correlation(...)`` and
-       ``trellis.analytics.differentiate_quanto_scalar_inputs(...)``
+       ``trellis.analytics.differentiate_quanto_scalar_inputs(...)``; bounded
+       matrix-coordinate VJP/HVP through
+       ``trellis.analytics.differentiate_quanto_correlation_matrix(...)``
      - bounded to the single-name quanto graph-owned scalar coordinates; broad
-       hybrid product graphs, matrix correlations, surface correlations, and
-       hybrid ``jvp`` remain fail-closed unless a future lane explicitly
-       supports them
+       hybrid product graphs, correlation surfaces, matrix projection/repair,
+       PSD-boundary behavior, and hybrid ``jvp`` remain fail-closed unless a
+       future lane explicitly supports them
    * - Flat volatility risk
      - scalar vega through ``autodiff_flat_vol``
      - flat surfaces only
@@ -152,12 +158,14 @@ The graph-backed scalar quanto derivative lanes also use executable ``vjp``
 and scalar-objective ``hessian_vector_product`` operators, but they report
 through ``hybrid_scalar_vjp``, ``hybrid_scalar_vector_vjp``, or
 ``hybrid_scalar_vector_hvp`` metadata rather than widening the backend
-capability table. They are bounded single-name quanto lanes, not a general
-``hybrid_ad=True`` backend claim.
-Correlation matrix chart policy validation is likewise a reporting and
-governance surface: valid PSD matrix payloads can be represented with
-deterministic off-diagonal factor coordinates, while executable matrix and
-surface correlation AD still reports ``unsupported_hybrid_structure``.
+capability table. The bounded matrix-coordinate lane reports through
+``hybrid_matrix_vector_vjp`` and ``hybrid_matrix_vector_hvp`` metadata for the
+terminal quanto active off-diagonal coordinate. These are bounded single-name
+quanto lanes, not a general ``hybrid_ad=True`` backend claim. Correlation
+matrix chart policy validation remains the governance boundary: valid PSD
+matrix payloads can be represented with deterministic off-diagonal factor
+coordinates, but matrix requests near the PSD boundary, projected/repaired
+matrix charts, and surface correlation AD still fail closed.
 
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
 scalar-objective functions on smooth-interior regions. It is not a claim about
@@ -234,6 +242,12 @@ keeping today's ``autograd`` boundary honest.
   ``trellis.analytics.differentiate_quanto_scalar_inputs(...)`` when requested
   with an explicit sparse ``hvp_direction`` over supported graph-owned
   coordinates, with fail-closed diagnostics for missing or empty directions
+- graph-backed bounded terminal quanto matrix-coordinate VJP/HVP through
+  ``trellis.analytics.differentiate_quanto_correlation_matrix(...)`` for a
+  checked, well-conditioned direct correlation matrix payload; the sparse risk
+  vector is keyed by off-diagonal ``correlation_matrix`` ``RiskFactorId``
+  coordinates and HVP directions are explicit sparse vectors over those
+  coordinates
 - bounded mixed supported-book reverse mode through
   ``trellis.book.portfolio_aad_supported_book_risk(...)`` for explicitly
   configured combinations of the supported AAD lanes
@@ -330,12 +344,16 @@ runtime reporting must not overstate.
    * - ``hybrid_scalar_quanto_vjp``
      - bounded graph-backed scalar quanto derivative route
      - ``hybrid_scalar_vjp`` / ``hybrid_scalar_vector_vjp`` /
-       ``hybrid_scalar_vector_hvp``
+       ``hybrid_scalar_vector_hvp`` / ``hybrid_matrix_vector_vjp`` /
+       ``hybrid_matrix_vector_hvp``
      - partial support: the scalar underlier/FX correlation coordinate and the
        bounded single-name quanto scalar-coordinate vector are differentiated
        with VJP, and the scalar-coordinate vector supports checked directional
-       HVP requests through a typed ``HybridFactorGraph``; hybrid ``jvp`` plus
-       correlation matrix/surface derivative requests fail closed
+       HVP requests through a typed ``HybridFactorGraph``; a checked terminal
+       quanto correlation matrix payload supports direct off-diagonal
+       matrix-coordinate VJP/HVP away from the PSD boundary; hybrid ``jvp``,
+       correlation surfaces, matrix projection/repair, and broader hybrid
+       graphs fail closed
 
 Bounded Portfolio-AAD Factor Payload
 ------------------------------------
@@ -488,20 +506,39 @@ Unsupported selections can return an empty sparse vector or fail closed
 according to the request policy. Empty or unavailable HVP directions always
 fail closed.
 
+``differentiate_quanto_correlation_matrix(...)`` uses the same terminal quanto
+pricing kernel with an explicit correlation-matrix request. The request must
+provide factor labels, a finite symmetric unit-diagonal matrix, bounded
+entries, and a positive-semidefinite payload whose minimum eigenvalue is above
+the executable context floor. Trellis then promotes the checked policy chart
+to a supported matrix-coordinate context without projection, smoothing, or
+repair. The active quanto pair defaults to ``(spec.underlier_currency,
+spec.fx_pair)`` and maps to one off-diagonal matrix ``RiskFactorId``; other
+off-diagonal coordinates remain graph-owned coordinates and can be selected or
+used in sparse HVP directions. VJP returns ``hybrid_matrix_vector_vjp``
+metadata. HVP requests with ``derivative_method="hvp"`` return
+``hybrid_matrix_vector_hvp`` metadata and directional ``H @ v`` values. Empty
+or unavailable HVP directions, invalid matrices, matrices too close to the PSD
+boundary, surface requests, and ``jvp`` all fail closed with empty risk and
+typed diagnostics.
+
 ``admit_hybrid_ad_lane(...)`` is the semantic admission boundary for these
 graph-owned lanes. Given a ``ContractIR`` and requested derivative method, it
 returns a JSON-friendly ``HybridADLaneAdmission`` payload that admits only
-bounded terminal quanto VJP/HVP requests over scalar graph coordinates. The
-same payload records factor-coordinate requirements for underlier spot, FX
-spot, domestic and foreign curve nodes, vol nodes, and scalar correlation.
-``jvp`` requests, matrix or surface correlation structures, composite
-underliers, path-dependent contracts, and early-exercise hybrid state are
-classified as unsupported or planned before runtime AD is invoked.
-``HybridDerivativeRequest`` can carry that admission object, or its payload,
-as ``semantic_admission``. Supported admissions are copied into
-``HybridDerivativeResult.method_metadata["semantic_admission"]``; planned or
-unsupported admissions return an empty risk vector with the admission reason in
-diagnostics and ``fallback_reason``.
+bounded terminal quanto VJP/HVP requests over scalar graph coordinates or the
+direct matrix-coordinate lane. The scalar payload records requirements for
+underlier spot, FX spot, domestic and foreign curve nodes, vol nodes, and
+scalar correlation; the matrix payload replaces the scalar-correlation
+requirement with a ``correlation_matrix`` requirement using the
+``correlation_matrix_psd_policy`` parameterization. ``jvp`` requests,
+correlation surfaces, composite underliers, path-dependent contracts, and
+early-exercise hybrid state are classified as unsupported or planned before
+runtime AD is invoked. ``HybridDerivativeRequest`` can carry that admission
+object, or its payload, as ``semantic_admission``. Supported same-lane
+admissions are copied into
+``HybridDerivativeResult.method_metadata["semantic_admission"]``; wrong-lane,
+planned, or unsupported admissions return an empty risk vector with the
+admission reason in diagnostics and ``fallback_reason``.
 
 Forward mode remains executable-truth governed. A ``derivative_method="jvp"``
 request returns an unsupported result with
@@ -512,9 +549,12 @@ fail-closed envelope for correlation matrix and correlation surface requests.
 For matrix requests it can validate factor labels, square shape, finite
 entries, symmetry, unit diagonal, bounds, and positive semidefiniteness, then
 attach chart metadata while still returning
-``correlation_matrix_derivative_not_implemented``. Invalid matrix payloads and
-surface requests return typed diagnostics and an empty sparse vector; no
-projection, smoothing, or matrix/surface AD execution is implied.
+``correlation_matrix_derivative_not_implemented`` for callers using that
+explicit fail-closed helper. Executable matrix sensitivities are exposed only
+through ``differentiate_quanto_correlation_matrix(...)`` under the bounded
+terminal quanto contract described above. Invalid matrix payloads and surface
+requests return typed diagnostics and an empty sparse vector; no projection,
+smoothing, surface AD, or universal matrix AD execution is implied.
 
 Runtime Derivative-Method Taxonomy
 ----------------------------------
@@ -645,12 +685,23 @@ The registry deliberately includes both AD-backed and non-AD lanes:
      - ``partial``
      - ``hessian_vector_product`` for bounded single-name quanto directional
        second derivatives over the same graph-owned scalar-coordinate vector
+   * - ``hybrid_matrix_vector_vjp``
+     - ``hybrid_ad``
+     - ``partial``
+     - ``vjp`` for bounded terminal quanto direct matrix-coordinate risk over
+       checked off-diagonal correlation-matrix coordinates
+   * - ``hybrid_matrix_vector_hvp``
+     - ``hybrid_ad``
+     - ``partial``
+     - ``hessian_vector_product`` for bounded terminal quanto directional
+       second derivatives over the checked off-diagonal matrix-coordinate
+       vector
    * - ``unsupported_hybrid_structure``
      - ``unsupported``
      - ``unsupported``
-     - fail-closed hybrid request when a matrix chart is valid but lacks an
-       executable lane, when matrix validation fails, or when a surface chart
-       is not implemented
+     - fail-closed hybrid request when matrix context validation fails, when a
+       matrix request is outside the executable bounded lane, or when a surface
+       chart is not implemented
    * - ``autodiff_pathwise``
      - ``autograd``
      - ``supported``
@@ -707,11 +758,12 @@ Where Trellis Still Stays Forward-Only
   representative-flat-vol fallback instead of silently pretending to be a
   surface-native Greek
 - hybrid derivative claims outside the graph-backed bounded single-name quanto
-  scalar-coordinate VJP bridge; the shipped calibration route still records
-  ``scipy_2point_residual_jacobian`` solve provenance, and the shipped
-  derivative routes do not widen into universal hybrid AD, hybrid ``jvp``,
-  matrix/surface correlation AD, path-dependent hybrid state, or broad
-  ``portfolio_aad`` support
+  scalar-coordinate and matrix-coordinate VJP/HVP bridges; the shipped
+  calibration route still records ``scipy_2point_residual_jacobian`` solve
+  provenance, and the shipped derivative routes do not widen into universal
+  hybrid AD, hybrid ``jvp``, correlation-surface AD, matrix projection/repair
+  or PSD-boundary AD, path-dependent hybrid state, or broad ``portfolio_aad``
+  support
 - state-aware Monte Carlo contracts with barrier monitors or other
   discontinuous event semantics, which still stay off the traced lane even
   when explicit shocks are supplied; the bounded checked policy is
@@ -824,6 +876,7 @@ Implementation References
 .. autofunction:: trellis.models.analytical.quanto.price_quanto_option_raw
 .. autofunction:: trellis.analytics.differentiate_quanto_scalar_correlation
 .. autofunction:: trellis.analytics.differentiate_quanto_scalar_inputs
+.. autofunction:: trellis.analytics.differentiate_quanto_correlation_matrix
 .. autofunction:: trellis.analytics.admit_hybrid_ad_lane
 .. autofunction:: trellis.analytics.fail_closed_correlation_structure_derivative
 .. autofunction:: trellis.models.analytical.barrier.down_and_out_call_raw

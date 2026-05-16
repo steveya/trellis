@@ -3,10 +3,11 @@
 ## Status
 
 First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`,
-`QUA-1049`, and `QUA-1054` epics. Universal hybrid AD is still not claimed;
-this document now records the shipped bounded quanto scalar-coordinate
-prototypes, the checked correlation matrix policy surface, the ContractIR
-admission boundary, and the remaining prerequisites.
+`QUA-1049`, `QUA-1054`, and `QUA-1059` epics. Universal hybrid AD is still
+not claimed; this document now records the shipped bounded quanto
+scalar-coordinate prototypes, the checked correlation matrix policy surface,
+the executable matrix-coordinate lane, the ContractIR admission boundary, and
+the remaining prerequisites.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -30,6 +31,11 @@ admission boundary, and the remaining prerequisites.
 | `QUA-1056` | Done | Bridged supported/planned/unsupported semantic admissions into bounded quanto derivative result metadata. |
 | `QUA-1057` | Done | Locked public exports and fail-closed admission matrix coverage across supported, planned, and unsupported shapes. |
 | `QUA-1058` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
+| `QUA-1060` | Done | Added executable, well-conditioned correlation-matrix coordinate context. |
+| `QUA-1061` | Done | Added bounded matrix-coordinate VJP over off-diagonal matrix coordinates. |
+| `QUA-1062` | Done | Added bounded matrix-coordinate directional HVP with finite-difference checks. |
+| `QUA-1063` | Done | Wired terminal quanto matrix-coordinate VJP/HVP into semantic admission and runtime metadata. |
+| `QUA-1064` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -86,26 +92,37 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   correlation matrix policy payload, derive deterministic off-diagonal
   `RiskFactorId` coordinates, record the minimum eigenvalue, and enforce the
   no-projection policy
+- `build_correlation_matrix_coordinate_context(...)` promotes valid,
+  well-conditioned matrix payloads into executable off-diagonal coordinate
+  context while failing closed near the PSD boundary
+- `differentiate_quanto_correlation_matrix(...)` computes bounded terminal
+  quanto VJP and directional HVP risk for the active underlier/FX off-diagonal
+  matrix coordinate, with sparse direction validation and finite-difference
+  verification away from singularities
 - `fail_closed_correlation_structure_derivative(...)` distinguishes valid but
-  non-executable matrix charts, invalid matrix charts, and unsupported surface
-  charts through typed diagnostics and `unsupported_hybrid_structure` metadata
-- `jvp` requests and correlation matrix/surface requests fail closed through
+  non-executable matrix-policy calls, invalid matrix charts, and unsupported
+  surface charts through typed diagnostics and `unsupported_hybrid_structure`
+  metadata
+- `jvp` requests, correlation surfaces, matrix requests at the PSD boundary,
+  and matrix requests that require projection or smoothing fail closed through
   explicit unsupported derivative-method metadata
 - `admit_hybrid_ad_lane(...)` admits only ContractIR terminal quanto VJP/HVP
-  requests into the bounded graph-owned scalar-coordinate lanes; JVP,
-  matrix/surface correlation, composite-underlier, path-dependent, and
-  early-exercise hybrid shapes are classified as unsupported or planned before
-  runtime AD is invoked
-- `HybridDerivativeRequest.semantic_admission` carries that decision into
-  `differentiate_quanto_scalar_inputs(...)`; supported admissions are preserved
-  in result metadata while planned or unsupported admissions fail closed with
-  empty risk and typed diagnostics
+  requests into the bounded graph-owned scalar-coordinate lanes or the bounded
+  matrix-coordinate lane; JVP, correlation surfaces, composite-underlier,
+  path-dependent, and early-exercise hybrid shapes are classified as
+  unsupported or planned before runtime AD is invoked
+- `HybridDerivativeRequest.semantic_admission` carries that decision into the
+  scalar and matrix quanto derivative helpers; supported admissions are
+  preserved in result metadata while wrong-lane, planned, or unsupported
+  admissions fail closed with empty risk and typed diagnostics
 
 This is still a prototype, not universal hybrid AD. The shipped derivative
 lanes differentiate a bounded scalar-coordinate vector and a bounded
-directional HVP for one single-name quanto route. They do not differentiate
-arbitrary cross-asset hybrid systems, executable matrix/surface correlations,
-path-dependent hybrid state, or broad product families end to end.
+directional HVP for one single-name quanto route plus one bounded
+well-conditioned matrix-coordinate lane for that same terminal quanto shape.
+They do not differentiate arbitrary cross-asset hybrid systems, correlation
+surfaces, matrix projections or PSD-boundary behavior, path-dependent hybrid
+state, or broad product families end to end.
 
 Autograd Phase 2 also added a truthful backend capability surface:
 
@@ -260,10 +277,12 @@ The graph must represent:
   finite-difference fallback, or unsupported
 
 The first shipped subset covers these objects for a bounded single-name quanto
-graph and a scalar-coordinate vector over spot, FX spot, curve zero-rate
-nodes, flat/grid vol nodes, and scalar correlation. Matrix correlations,
-surface correlations, path-dependent hybrid state, and other product-family
-graphs remain future work unless a lane explicitly declares support.
+graph, a scalar-coordinate vector over spot, FX spot, curve zero-rate nodes,
+flat/grid vol nodes, scalar correlation, and a direct off-diagonal
+correlation-matrix coordinate lane away from the PSD boundary. Surface
+correlations, path-dependent hybrid state, projected matrix charts, and other
+product-family graphs remain future work unless a lane explicitly declares
+support.
 
 The graph should not hide route-local resolvers. For example,
 `resolve_quanto_inputs(...)` should become a graph-producing or graph-consuming
@@ -291,7 +310,10 @@ to a bounded scalar-coordinate VJP vector over graph-owned spot, FX spot,
 curve-node, vol-node, and correlation factors, with selected-factor and
 fail-closed policy tests. The `QUA-1045` prototype adds an explicit sparse HVP
 direction contract and checks the bounded scalar-coordinate directional HVP
-against independent finite differences of VJP vectors. Matrix/surface charts,
+against independent finite differences of VJP vectors. The `QUA-1059`
+prototype adds a well-conditioned direct matrix-coordinate context plus VJP
+and directional HVP verification for the terminal quanto active off-diagonal
+coordinate. Surface charts, projected or boundary matrix charts,
 path-dependent hybrid state, and larger hybrid fixtures remain open
 prerequisites.
 
@@ -386,10 +408,10 @@ Deliverables:
 - fail-closed diagnostics for empty or unavailable HVP directions
 - finite-difference checks against VJP-vector perturbations
 
-### Phase 4: Correlation Matrix Policy
+### Phase 4: Correlation Matrix Policy And Executable Matrix Lane
 
-[checked policy and fail-closed diagnostics delivered in `QUA-1049`;
-derivative support still open]
+[checked policy and fail-closed diagnostics delivered in `QUA-1049`; bounded
+direct matrix-coordinate VJP/HVP delivered in `QUA-1059`]
 
 Extend from scalar correlation to matrix or surface correlation only after the
 chart is chosen and validated.
@@ -401,7 +423,8 @@ Deliverables:
   `QUA-1049`]
 - explicit projection or unsupported policy at invalid regions [done in
   `QUA-1049` as fail-closed no-projection diagnostics]
-- executable derivative tests away from singularities [open]
+- executable derivative tests away from singularities for the terminal quanto
+  active off-diagonal matrix coordinate [done in `QUA-1059`]
 
 ### Phase 5: Backend Decision For JVP
 
@@ -489,8 +512,8 @@ Acceptance criteria:
   shape, finite entries, symmetry, unit diagonal, bounds, and PSD tolerance
 - the policy chart records deterministic off-diagonal factor coordinates,
   matrix dimension, factor labels, minimum eigenvalue, and no-projection policy
-- valid matrix derivative requests fail closed as
-  `correlation_matrix_derivative_not_implemented` with chart metadata
+- valid matrix derivative requests through the policy-only helper fail closed
+  as `correlation_matrix_derivative_not_implemented` with chart metadata
 - invalid matrix and unsupported surface requests fail closed with typed
   diagnostics and `unsupported_hybrid_structure` metadata
 
@@ -503,15 +526,31 @@ Acceptance criteria:
 - immutable admission dataclasses round-trip through JSON-friendly payloads
 - terminal quanto ContractIR VJP/HVP requests are admitted into the existing
   graph-owned scalar-coordinate lanes
-- JVP, executable matrix/surface correlation, composite-underlier,
+- JVP, matrix/surface correlation as of that epic, composite-underlier,
   path-dependent, and early-exercise hybrid shapes are classified as
   unsupported or planned before runtime AD executes
 - supported admissions can be carried through
   `HybridDerivativeRequest.semantic_admission` into derivative result metadata
 - planned or unsupported admissions return empty risk and typed diagnostics
 
+Sixth delivered epic:
+
+`Hybrid AD: executable matrix-coordinate derivative lane`
+
+Acceptance criteria:
+
+- well-conditioned correlation-matrix payloads produce executable
+  off-diagonal coordinate context without projection or repair
+- terminal quanto matrix-coordinate VJP returns `hybrid_matrix_vector_vjp`
+  metadata and sparse risk keyed by matrix `RiskFactorId` coordinates
+- terminal quanto matrix-coordinate HVP returns `hybrid_matrix_vector_hvp`
+  metadata and sparse `H @ v` values for explicit sparse directions
+- empty, unknown, unsafe, JVP, surface, and PSD-boundary requests fail closed
+  with typed diagnostics
+- ContractIR admission supports only bounded terminal quanto matrix-coordinate
+  VJP/HVP and carries the supported admission payload into runtime metadata
+
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: executable matrix-coordinate derivative lane away from PSD boundary`
 - `Hybrid AD: path-dependent hybrid state and event policy`
 - `Hybrid AD: multi-product graph-owned derivative fixtures`

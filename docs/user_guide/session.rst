@@ -203,9 +203,11 @@ factor graph enabled and call a graph-backed derivative helper directly:
 .. code-block:: python
 
    from trellis.analytics import (
+       HybridCorrelationStructureRequest,
        HybridDerivativeRequest,
        SparseRiskVector,
        admit_hybrid_ad_lane,
+       differentiate_quanto_correlation_matrix,
        differentiate_quanto_scalar_correlation,
        differentiate_quanto_scalar_inputs,
    )
@@ -245,11 +247,34 @@ factor graph enabled and call a graph-backed derivative helper directly:
            hvp_direction=SparseRiskVector.from_items(((spot_factor, 1.0),)),
        ),
    )
+   matrix_request = HybridCorrelationStructureRequest(
+       object_name="cross_asset_correlation",
+       factors=("EUR", "EURUSD", "USD-OIS"),
+       correlation_matrix=(
+           (1.0, resolved.corr, 0.10),
+           (resolved.corr, 1.0, -0.20),
+           (0.10, -0.20, 1.0),
+       ),
+   )
+   matrix_admission = admit_hybrid_ad_lane(
+       contract_ir,
+       product_family="quanto_option",
+       derivative_method="vjp",
+       correlation_structure="correlation_matrix",
+   )
+   hybrid_matrix = differentiate_quanto_correlation_matrix(
+       spec,
+       resolved,
+       matrix_request,
+       HybridDerivativeRequest(semantic_admission=matrix_admission),
+   )
    print(hybrid.risk_vector.to_payload())
    print(hybrid_vector.risk_vector.to_payload())
    print(admitted_hybrid_vector.method_metadata["semantic_admission"])
    print(hybrid_hvp.risk_vector.to_payload())
    print(hybrid_hvp.method_metadata["resolved_derivative_method"])
+   print(hybrid_matrix.risk_vector.to_payload())
+   print(hybrid_matrix.method_metadata["resolved_derivative_method"])
 
 The scalar-correlation helper returns a ``HybridDerivativeResult`` with the
 typed ``HybridFactorGraph`` payload and one sparse scalar-correlation risk
@@ -258,15 +283,20 @@ graph and returns a sparse vector for supported graph-owned underlier spot, FX
 spot, domestic/foreign curve-node, flat/grid vol-node, and scalar-correlation
 coordinates. The same helper can return a bounded directional HVP when the
 request supplies a non-empty sparse ``hvp_direction`` over graph-owned factors.
-Hybrid ``jvp`` requests and correlation matrix/surface requests fail closed
-until those coordinate charts and backend operators are checked. Correlation
-matrix requests can report checked PSD chart-policy diagnostics, but they do
-not yet return matrix/surface AD sensitivities.
+For terminal quanto contracts, a checked direct correlation-matrix payload can
+also return bounded matrix-coordinate VJP/HVP through
+``differentiate_quanto_correlation_matrix(...)``. The executable matrix lane is
+strictly direct-entry and smooth-interior: the matrix must be finite,
+symmetric, unit diagonal, bounded, positive semidefinite, and above the
+minimum-eigenvalue floor. Trellis does not project or repair matrices, and it
+does not support correlation surfaces through this lane. Hybrid ``jvp``
+requests, surface requests, near-boundary matrices, and broader hybrid product
+graphs fail closed.
 When a ContractIR semantic contract is available, ``admit_hybrid_ad_lane(...)``
-is the admission guard for the scalar-input helper: supported terminal quanto
-VJP/HVP admissions are copied into result metadata, while planned or
-unsupported admissions return an empty risk vector with the admission reason in
-diagnostics.
+is the admission guard for the scalar-input and matrix-coordinate helpers:
+supported same-lane terminal quanto VJP/HVP admissions are copied into result
+metadata, while wrong-lane, planned, or unsupported admissions return an empty
+risk vector with the admission reason in diagnostics.
 
 For small books that combine already-supported lanes, use the mixed dispatcher:
 
