@@ -529,6 +529,7 @@ def _contract_ir_admission(
             ),
         )
     if _contains_indicator(contract.payoff):
+        state_policy = _discontinuous_event_state_policy(contract)
         return _admission(
             admitted=False,
             lane_id="path_dependent_event_policy",
@@ -539,11 +540,17 @@ def _contract_ir_admission(
             contract_shape="discontinuous_event_monitor",
             derivative_methods=("vjp", "hvp"),
             factor_requirements=(_scalar_correlation_requirement(),),
-            metadata={"requested_derivative_method": derivative_method, "fail_closed": True},
+            metadata={
+                "requested_derivative_method": derivative_method,
+                "fail_closed": True,
+                **_state_policy_metadata(state_policy),
+            },
             diagnostics=(
                 {
                     "code": "unsupported_discontinuous_event_monitor",
                     "severity": "warning",
+                    "state_kind": state_policy.state_kind,
+                    "event_policy": state_policy.event_policy,
                 },
             ),
         )
@@ -571,6 +578,7 @@ def _contract_ir_admission(
             ),
         )
     if _is_path_dependent(contract):
+        state_policy = _smooth_path_summary_state_policy(contract)
         return _admission(
             admitted=False,
             lane_id="path_dependent_hybrid_state",
@@ -585,11 +593,14 @@ def _contract_ir_admission(
                 "requested_derivative_method": derivative_method,
                 "observation_kind": contract.observation.kind,
                 "fail_closed": True,
+                **_state_policy_metadata(state_policy),
             },
             diagnostics=(
                 {
                     "code": "path_dependent_hybrid_state_pending",
                     "severity": "warning",
+                    "state_kind": state_policy.state_kind,
+                    "event_policy": state_policy.event_policy,
                 },
             ),
         )
@@ -734,6 +745,74 @@ def _correlation_structure_admission(
                 "severity": "warning",
                 "correlation_structure": structure_type,
                 "chart_policy_status": chart_policy_status,
+            },
+        ),
+    )
+
+
+def _state_policy_metadata(policy: HybridADStatePolicy) -> dict[str, Any]:
+    return {
+        "state_policy": policy.to_payload(),
+        "state_kind": policy.state_kind,
+        "state_policy_support_status": policy.support_status,
+        "state_differentiability_class": policy.differentiability_class,
+        "state_event_policy": policy.event_policy,
+        "state_control_policy": policy.control_policy,
+        "state_fail_closed": policy.fail_closed,
+    }
+
+
+def _discontinuous_event_state_policy(contract: ContractIR) -> HybridADStatePolicy:
+    return HybridADStatePolicy(
+        state_kind="discontinuous_event_monitor",
+        support_status="unsupported",
+        differentiability_class="discontinuous",
+        reason="unsupported_discontinuous_event_monitor",
+        event_policy="fail_closed_no_smoothing",
+        control_policy="none",
+        state_variable_roles=("indicator_event", "underlier_terminal_state"),
+        fail_closed=True,
+        metadata={
+            "observation_kind": contract.observation.kind,
+            "path_summary_type": "none",
+            "event_monitor_type": "indicator",
+        },
+        diagnostics=(
+            {
+                "code": "unsupported_discontinuous_event_monitor",
+                "severity": "warning",
+            },
+        ),
+    )
+
+
+def _smooth_path_summary_state_policy(contract: ContractIR) -> HybridADStatePolicy:
+    path_summary_type = (
+        "arithmetic_mean" if _contains_arithmetic_mean(contract.payoff) else "path"
+    )
+    state_roles = (
+        ("arithmetic_mean", "underlier_path")
+        if path_summary_type == "arithmetic_mean"
+        else ("underlier_path",)
+    )
+    return HybridADStatePolicy(
+        state_kind="smooth_path_summary",
+        support_status="planned",
+        differentiability_class="smooth",
+        reason="path_dependent_hybrid_state_pending",
+        event_policy="sampled_path_summary",
+        control_policy="none",
+        state_variable_roles=state_roles,
+        fail_closed=True,
+        metadata={
+            "observation_kind": contract.observation.kind,
+            "path_summary_type": path_summary_type,
+            "event_monitor_type": "none",
+        },
+        diagnostics=(
+            {
+                "code": "path_dependent_hybrid_state_pending",
+                "severity": "warning",
             },
         ),
     )

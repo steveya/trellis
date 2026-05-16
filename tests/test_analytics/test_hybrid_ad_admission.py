@@ -344,10 +344,21 @@ def test_discontinuous_event_monitor_is_unsupported():
         product_family="quanto_option",
     )
 
+    state_policy = admission.metadata["state_policy"]
+
     assert admission.admitted is False
     assert admission.support_status == "unsupported"
     assert admission.reason == "unsupported_discontinuous_event_monitor"
     assert admission.contract_shape == "discontinuous_event_monitor"
+    assert state_policy["state_kind"] == "discontinuous_event_monitor"
+    assert state_policy["support_status"] == "unsupported"
+    assert state_policy["differentiability_class"] == "discontinuous"
+    assert state_policy["event_policy"] == "fail_closed_no_smoothing"
+    assert state_policy["fail_closed"] is True
+    assert state_policy["state_variable_roles"] == [
+        "indicator_event",
+        "underlier_terminal_state",
+    ]
 
 
 def test_composite_underlying_is_classified_as_planned_not_admitted():
@@ -381,10 +392,22 @@ def test_path_dependent_contract_shape_is_classified_as_planned():
         product_family="quanto_option",
     )
 
+    state_policy = admission.metadata["state_policy"]
+
     assert admission.admitted is False
     assert admission.support_status == "planned"
     assert admission.reason == "path_dependent_hybrid_state_pending"
     assert admission.contract_shape == "path_dependent_hybrid_state"
+    assert state_policy["state_kind"] == "smooth_path_summary"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["differentiability_class"] == "smooth"
+    assert state_policy["event_policy"] == "sampled_path_summary"
+    assert state_policy["control_policy"] == "none"
+    assert state_policy["state_variable_roles"] == [
+        "arithmetic_mean",
+        "underlier_path",
+    ]
+    assert state_policy["metadata"]["observation_kind"] == "path_dependent"
 
 
 def test_factor_requirement_payload_round_trips_directly():
