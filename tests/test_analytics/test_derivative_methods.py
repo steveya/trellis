@@ -27,6 +27,7 @@ def test_derivative_method_taxonomy_covers_runtime_and_matrix_methods():
         "hybrid_scalar_vjp",
         "hybrid_scalar_vector_vjp",
         "hybrid_scalar_vector_hvp",
+        "hybrid_matrix_vector_vjp",
         "unsupported_hybrid_structure",
         "autodiff_pathwise",
         "forward_price_only",
@@ -112,6 +113,11 @@ def test_derivative_method_taxonomy_covers_runtime_and_matrix_methods():
     assert hybrid_hvp_payload["derivative_method_category"] == "hybrid_ad"
     assert hybrid_hvp_payload["derivative_method_support"] == "partial"
     assert hybrid_hvp_payload["backend_operator"] == "hessian_vector_product"
+
+    hybrid_matrix_payload = derivative_method_payload("hybrid_matrix_vector_vjp")
+    assert hybrid_matrix_payload["derivative_method_category"] == "hybrid_ad"
+    assert hybrid_matrix_payload["derivative_method_support"] == "partial"
+    assert hybrid_matrix_payload["backend_operator"] == "vjp"
 
 
 def test_derivative_method_payload_rejects_unknown_method_ids():

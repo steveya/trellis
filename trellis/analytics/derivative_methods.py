@@ -155,6 +155,16 @@ _METHOD_SPECS = {
             "derivative using the HVP backend operator."
         ),
     ),
+    "hybrid_matrix_vector_vjp": DerivativeMethodSpec(
+        "hybrid_matrix_vector_vjp",
+        category="hybrid_ad",
+        support_status="partial",
+        backend_operator="vjp",
+        description=(
+            "Bounded graph-backed hybrid correlation-matrix coordinate "
+            "sensitivity using the VJP backend operator."
+        ),
+    ),
     "unsupported_hybrid_structure": DerivativeMethodSpec(
         "unsupported_hybrid_structure",
         category="unsupported",
