@@ -30,6 +30,7 @@ from trellis.agent.dynamic_contract_ir import DynamicContractIR
 from trellis.analytics import (
     HybridADFactorRequirement,
     HybridADLaneAdmission,
+    HybridADStatePolicy,
     admit_hybrid_ad_lane,
 )
 
@@ -121,10 +122,51 @@ def _discontinuous_event_ir() -> ContractIR:
 def test_public_api_exports_hybrid_ad_admission_symbols():
     assert analytics.HybridADFactorRequirement is HybridADFactorRequirement
     assert analytics.HybridADLaneAdmission is HybridADLaneAdmission
+    assert analytics.HybridADStatePolicy is HybridADStatePolicy
     assert analytics.admit_hybrid_ad_lane is admit_hybrid_ad_lane
     assert "HybridADFactorRequirement" in analytics.__all__
     assert "HybridADLaneAdmission" in analytics.__all__
+    assert "HybridADStatePolicy" in analytics.__all__
     assert "admit_hybrid_ad_lane" in analytics.__all__
+
+
+def test_state_policy_payload_round_trips_and_validates_members():
+    policy = HybridADStatePolicy(
+        state_kind="smooth_path_summary",
+        support_status="planned",
+        differentiability_class="smooth",
+        reason="path_dependent_hybrid_state_pending",
+        event_policy="sampled_path_summary",
+        control_policy="none",
+        state_variable_roles=("arithmetic_mean", "underlier_path"),
+        metadata={"observation_kind": "path_dependent"},
+        diagnostics=(
+            {
+                "code": "path_dependent_hybrid_state_pending",
+                "severity": "warning",
+            },
+        ),
+    )
+
+    payload = policy.to_payload()
+
+    assert policy.supported is False
+    assert payload["state_kind"] == "smooth_path_summary"
+    assert payload["state_variable_roles"] == ["arithmetic_mean", "underlier_path"]
+    assert json.loads(json.dumps(payload)) == payload
+    assert HybridADStatePolicy.from_payload(payload) == policy
+
+    try:
+        HybridADStatePolicy(
+            state_kind="unclassified_path",
+            support_status="planned",
+            differentiability_class="smooth",
+            reason="path_dependent_hybrid_state_pending",
+        )
+    except ValueError as exc:
+        assert "state_kind" in str(exc)
+    else:  # pragma: no cover - defensive assertion
+        raise AssertionError("invalid state_kind should fail validation")
 
 
 def test_supported_quanto_vjp_admission_payload_round_trips():

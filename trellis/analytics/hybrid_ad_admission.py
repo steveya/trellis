@@ -33,6 +33,26 @@ from trellis.agent.dynamic_contract_ir import DynamicContractIR
 
 
 _DERIVATIVE_METHODS = frozenset({"vjp", "jvp", "hvp"})
+_STATE_KINDS = frozenset(
+    {
+        "terminal_state",
+        "smooth_path_summary",
+        "discontinuous_event_monitor",
+        "early_exercise_control",
+        "dynamic_state",
+    }
+)
+_STATE_SUPPORT_STATUSES = frozenset({"supported", "planned", "unsupported"})
+_STATE_DIFFERENTIABILITY_CLASSES = frozenset(
+    {
+        "smooth",
+        "piecewise",
+        "discontinuous",
+        "projected",
+        "held_fixed",
+        "unsupported",
+    }
+)
 _SCALAR_CORRELATION_STRUCTURES = frozenset(
     {
         "scalar",
@@ -59,6 +79,103 @@ def _copy_diagnostics(
     diagnostics: Iterable[Mapping[str, Any]] | None,
 ) -> tuple[dict[str, Any], ...]:
     return tuple(dict(diagnostic) for diagnostic in (diagnostics or ()))
+
+
+@dataclass(frozen=True)
+class HybridADStatePolicy:
+    """Semantic state/event policy for bounded hybrid AD admission."""
+
+    state_kind: str
+    support_status: str
+    differentiability_class: str
+    reason: str
+    event_policy: str = "not_applicable"
+    control_policy: str = "not_applicable"
+    state_variable_roles: tuple[str, ...] = field(default_factory=tuple)
+    fail_closed: bool = True
+    metadata: Mapping[str, Any] = field(default_factory=dict, hash=False)
+    diagnostics: tuple[Mapping[str, Any], ...] = field(default_factory=tuple, hash=False)
+
+    def __post_init__(self) -> None:
+        state_kind = _normalize(self.state_kind)
+        if state_kind not in _STATE_KINDS:
+            raise ValueError(f"state_kind must be one of {sorted(_STATE_KINDS)}")
+        object.__setattr__(self, "state_kind", state_kind)
+        support_status = _normalize(self.support_status)
+        if support_status not in _STATE_SUPPORT_STATUSES:
+            raise ValueError(
+                f"support_status must be one of {sorted(_STATE_SUPPORT_STATUSES)}"
+            )
+        object.__setattr__(self, "support_status", support_status)
+        differentiability_class = _normalize(self.differentiability_class)
+        if differentiability_class not in _STATE_DIFFERENTIABILITY_CLASSES:
+            raise ValueError(
+                "differentiability_class must be one of "
+                f"{sorted(_STATE_DIFFERENTIABILITY_CLASSES)}"
+            )
+        object.__setattr__(self, "differentiability_class", differentiability_class)
+        object.__setattr__(self, "reason", _clean(self.reason, "reason"))
+        object.__setattr__(
+            self,
+            "event_policy",
+            str(self.event_policy or "not_applicable").strip() or "not_applicable",
+        )
+        object.__setattr__(
+            self,
+            "control_policy",
+            str(self.control_policy or "not_applicable").strip() or "not_applicable",
+        )
+        object.__setattr__(
+            self,
+            "state_variable_roles",
+            tuple(
+                role
+                for role in (
+                    str(raw_role).strip()
+                    for raw_role in self.state_variable_roles
+                )
+                if role
+            ),
+        )
+        object.__setattr__(self, "fail_closed", bool(self.fail_closed))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+        object.__setattr__(self, "diagnostics", _copy_diagnostics(self.diagnostics))
+
+    @property
+    def supported(self) -> bool:
+        """Return whether this state policy admits runtime derivative execution."""
+        return self.support_status == "supported"
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly policy payload."""
+        return {
+            "state_kind": self.state_kind,
+            "support_status": self.support_status,
+            "differentiability_class": self.differentiability_class,
+            "reason": self.reason,
+            "event_policy": self.event_policy,
+            "control_policy": self.control_policy,
+            "state_variable_roles": list(self.state_variable_roles),
+            "fail_closed": self.fail_closed,
+            "metadata": dict(self.metadata),
+            "diagnostics": [dict(diagnostic) for diagnostic in self.diagnostics],
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> "HybridADStatePolicy":
+        """Build a state policy from :meth:`to_payload` output."""
+        return cls(
+            state_kind=str(payload["state_kind"]),
+            support_status=str(payload["support_status"]),
+            differentiability_class=str(payload["differentiability_class"]),
+            reason=str(payload["reason"]),
+            event_policy=str(payload.get("event_policy", "not_applicable")),
+            control_policy=str(payload.get("control_policy", "not_applicable")),
+            state_variable_roles=tuple(payload.get("state_variable_roles", ())),
+            fail_closed=bool(payload.get("fail_closed", True)),
+            metadata=payload.get("metadata") or {},
+            diagnostics=payload.get("diagnostics") or (),
+        )
 
 
 @dataclass(frozen=True)
@@ -863,5 +980,6 @@ def _is_quanto_family(product_family: str | None) -> bool:
 __all__ = [
     "HybridADFactorRequirement",
     "HybridADLaneAdmission",
+    "HybridADStatePolicy",
     "admit_hybrid_ad_lane",
 ]
