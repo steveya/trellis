@@ -488,6 +488,16 @@ Unsupported selections can return an empty sparse vector or fail closed
 according to the request policy. Empty or unavailable HVP directions always
 fail closed.
 
+``admit_hybrid_ad_lane(...)`` is the semantic admission boundary for these
+graph-owned lanes. Given a ``ContractIR`` and requested derivative method, it
+returns a JSON-friendly ``HybridADLaneAdmission`` payload that admits only
+bounded terminal quanto VJP/HVP requests over scalar graph coordinates. The
+same payload records factor-coordinate requirements for underlier spot, FX
+spot, domestic and foreign curve nodes, vol nodes, and scalar correlation.
+``jvp`` requests, matrix or surface correlation structures, composite
+underliers, path-dependent contracts, and early-exercise hybrid state are
+classified as unsupported or planned before runtime AD is invoked.
+
 Forward mode remains executable-truth governed. A ``derivative_method="jvp"``
 request returns an unsupported result with
 ``fallback_reason.code="hybrid_jvp_backend_unsupported"`` because the active

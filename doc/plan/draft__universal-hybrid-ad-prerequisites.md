@@ -25,6 +25,7 @@ correlation matrix policy surface, and the remaining prerequisites.
 | `QUA-1051` | Done | Hardened matrix/surface correlation fail-closed diagnostics with chart metadata. |
 | `QUA-1052` | Done | Added invalid matrix diagnostic-code coverage and public-surface checks. |
 | `QUA-1053` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
+| `QUA-1055` | Done | Added ContractIR-backed semantic admission dataclasses and classifier for bounded graph-owned hybrid AD lanes. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -86,6 +87,11 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   charts through typed diagnostics and `unsupported_hybrid_structure` metadata
 - `jvp` requests and correlation matrix/surface requests fail closed through
   explicit unsupported derivative-method metadata
+- `admit_hybrid_ad_lane(...)` admits only ContractIR terminal quanto VJP/HVP
+  requests into the bounded graph-owned scalar-coordinate lanes; JVP,
+  matrix/surface correlation, composite-underlier, path-dependent, and
+  early-exercise hybrid shapes are classified as unsupported or planned before
+  runtime AD is invoked
 
 This is still a prototype, not universal hybrid AD. The shipped derivative
 lanes differentiate a bounded scalar-coordinate vector and a bounded
