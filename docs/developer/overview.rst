@@ -293,7 +293,9 @@ describe the bounded quanto dependencies, while
 VJP-backed scalar underlier/FX correlation sensitivity and
 ``trellis.analytics.differentiate_quanto_scalar_inputs(...)`` computes the
 bounded single-name quanto scalar-coordinate vector over supported graph-owned
-spot, FX spot, curve-node, vol-node, and scalar-correlation factors. The
+spot, FX spot, curve-node, vol-node, and scalar-correlation factors with VJP,
+and can compute a bounded directional HVP over the same scalar-coordinate
+chart when the request supplies an explicit sparse ``hvp_direction``. The
 developer contract is deliberately narrow: matrix correlations, surface
 correlations, path-dependent hybrid state, broader product graphs, and hybrid
 ``jvp`` are rejected fail-closed until explicit graph-owned derivative lanes

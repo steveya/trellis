@@ -6,6 +6,7 @@ from datetime import date
 
 import pytest
 
+import trellis.core.differentiable as differentiable_core
 from trellis.analytics.hybrid_ad import (
     HybridCorrelationStructureRequest,
     HybridDerivativeRequest,
@@ -14,8 +15,11 @@ from trellis.analytics.hybrid_ad import (
     fail_closed_correlation_structure_derivative,
 )
 from trellis.analytics.hybrid_factors import HybridUnsupportedDependency
-from trellis.core.differentiable import get_backend_capabilities
-from trellis.analytics.risk_factors import RiskFactorId
+from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
+from trellis.core.differentiable import (
+    DifferentiableBackendCapabilities,
+    get_backend_capabilities,
+)
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
 from trellis.curves.yield_curve import YieldCurve
@@ -150,6 +154,18 @@ def _replace_graph_node(graph, replacement):
             for node in graph.nodes
         ),
     )
+
+
+def _bump_scalar_chart_value(resolved, resolved_input: str, key: str, bump: float, **updates):
+    node = _graph_node_by_resolved_input(resolved.hybrid_factor_graph, resolved_input)
+    chart = node.coordinate_chart
+    chart_values = dict(chart.coordinate_values)
+    chart_values[key] = float(chart_values[key]) + bump
+    bumped_graph = _replace_graph_node(
+        resolved.hybrid_factor_graph,
+        replace(node, coordinate_chart=replace(chart, coordinate_values=chart_values)),
+    )
+    return replace(resolved, hybrid_factor_graph=bumped_graph, **updates)
 
 
 def test_quanto_scalar_inputs_vjp_matches_finite_differences_for_graph_factors():
@@ -399,6 +415,194 @@ def test_quanto_scalar_inputs_known_zero_sensitivity_selected_factor_is_not_miss
     assert selected.support_status == "supported"
     assert len(selected.risk_vector) == 0
     assert selected.diagnostics == ()
+
+
+def test_hybrid_derivative_request_normalizes_hvp_direction():
+    factor = RiskFactorId(
+        object_type="spot",
+        object_name="EUR",
+        coordinate_type="spot",
+        provenance_namespace="hybrid_ad",
+    )
+
+    request = HybridDerivativeRequest(
+        derivative_method="hvp",
+        hvp_direction=SparseRiskVector.from_items(
+            (
+                (factor, 2.0),
+                (factor, -0.5),
+                (factor, 0.0),
+            )
+        ),
+    )
+
+    assert request.derivative_method == "hvp"
+    assert request.hvp_direction[factor] == pytest.approx(1.5)
+    assert tuple(request.hvp_direction) == (factor,)
+    assert HybridDerivativeRequest().hvp_direction == SparseRiskVector()
+
+
+def test_quanto_scalar_inputs_hvp_matches_finite_difference_of_vjp():
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    base_vjp = differentiate_quanto_scalar_inputs(spec, resolved)
+    spot_factor = _factor_by(
+        base_vjp,
+        object_type="spot",
+        coordinate_type="spot",
+        object_name="EUR",
+    )
+    corr_factor = _factor_by(
+        base_vjp,
+        object_type="model_parameter",
+        coordinate_type="correlation",
+        object_name="sx5e_eurusd",
+    )
+    direction = SparseRiskVector.from_items(((spot_factor, 1.0),))
+
+    full_result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(
+            derivative_method="hvp",
+            hvp_direction=direction,
+        ),
+    )
+    selected_result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(
+            derivative_method="hvp",
+            hvp_direction=direction,
+            selected_factors=(spot_factor, corr_factor),
+        ),
+    )
+
+    bump = 1.0e-4
+    up = _bump_scalar_chart_value(
+        resolved,
+        "underlier_spot",
+        "spot",
+        bump,
+        spot=resolved.spot + bump,
+    )
+    down = _bump_scalar_chart_value(
+        resolved,
+        "underlier_spot",
+        "spot",
+        -bump,
+        spot=resolved.spot - bump,
+    )
+    up_vjp = differentiate_quanto_scalar_inputs(spec, up)
+    down_vjp = differentiate_quanto_scalar_inputs(spec, down)
+    spot_fd = (up_vjp.risk_vector[spot_factor] - down_vjp.risk_vector[spot_factor]) / (
+        2.0 * bump
+    )
+    corr_fd = (up_vjp.risk_vector[corr_factor] - down_vjp.risk_vector[corr_factor]) / (
+        2.0 * bump
+    )
+
+    assert full_result.support_status == "supported"
+    assert selected_result.support_status == "supported"
+    assert selected_result.method_metadata["resolved_derivative_method"] == (
+        "hybrid_scalar_vector_hvp"
+    )
+    assert selected_result.method_metadata["backend_operator"] == "hessian_vector_product"
+    assert selected_result.method_metadata["hvp_direction_factor_count"] == 1
+    assert selected_result.method_metadata["factor_count"] == full_result.method_metadata[
+        "factor_count"
+    ]
+    assert set(selected_result.risk_vector) == {spot_factor, corr_factor}
+    assert selected_result.risk_vector[spot_factor] == full_result.risk_vector[spot_factor]
+    assert selected_result.risk_vector[corr_factor] == full_result.risk_vector[corr_factor]
+    assert selected_result.risk_vector[spot_factor] == pytest.approx(
+        spot_fd,
+        rel=5.0e-5,
+        abs=1.0e-6,
+    )
+    assert selected_result.risk_vector[corr_factor] == pytest.approx(
+        corr_fd,
+        rel=5.0e-5,
+        abs=1.0e-6,
+    )
+
+
+def test_quanto_scalar_inputs_hvp_missing_direction_fails_closed():
+    spec = _QuantoSpec()
+    missing_factor = RiskFactorId(
+        object_type="model_parameter",
+        object_name="missing",
+        coordinate_type="correlation",
+        provenance_namespace="hybrid_ad",
+    )
+
+    missing = differentiate_quanto_scalar_inputs(
+        spec,
+        _resolved(0.25),
+        HybridDerivativeRequest(
+            derivative_method="hvp",
+            hvp_direction=SparseRiskVector.from_items(((missing_factor, 1.0),)),
+        ),
+    )
+    empty = differentiate_quanto_scalar_inputs(
+        spec,
+        _resolved(0.25),
+        HybridDerivativeRequest(derivative_method="hvp"),
+    )
+
+    assert missing.support_status == "unsupported"
+    assert len(missing.risk_vector) == 0
+    assert missing.diagnostics[0]["code"] == "hvp_direction_factors_unavailable"
+    assert missing.diagnostics[0]["missing_factor_keys"] == [missing_factor.key]
+    assert missing.method_metadata["resolved_derivative_method"] == "hybrid_scalar_vector_hvp"
+
+    assert empty.support_status == "unsupported"
+    assert empty.diagnostics[0]["code"] == "hvp_direction_required"
+
+
+def test_quanto_scalar_inputs_hvp_backend_unsupported_fails_closed(monkeypatch):
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    base_result = differentiate_quanto_scalar_inputs(spec, resolved)
+    spot_factor = _factor_by(
+        base_result,
+        object_type="spot",
+        coordinate_type="spot",
+        object_name="EUR",
+    )
+    capabilities = get_backend_capabilities()
+    operators = dict(capabilities.operators)
+    operators["hessian_vector_product"] = False
+    monkeypatch.setattr(
+        differentiable_core,
+        "get_backend_capabilities",
+        lambda: DifferentiableBackendCapabilities(
+            backend_id="test_no_hvp",
+            array_namespace=capabilities.array_namespace,
+            operators=operators,
+            notes=("HVP disabled for test.",),
+        ),
+    )
+
+    result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(
+            derivative_method="hvp",
+            hvp_direction=SparseRiskVector.from_items(((spot_factor, 1.0),)),
+        ),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "hybrid_hvp_backend_unsupported"
+    assert result.diagnostics[0]["backend_id"] == "test_no_hvp"
+    assert result.diagnostics[0]["unsupported_operator"] == "hessian_vector_product"
+    assert result.method_metadata["resolved_derivative_method"] == "hybrid_scalar_vector_hvp"
+    assert result.method_metadata["backend_operator"] == "hessian_vector_product"
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "hybrid_hvp_backend_unsupported"
+    )
 
 
 def test_quanto_scalar_inputs_jvp_fails_closed_with_backend_reason():
