@@ -824,6 +824,7 @@ Implementation References
 .. autofunction:: trellis.models.analytical.quanto.price_quanto_option_raw
 .. autofunction:: trellis.analytics.differentiate_quanto_scalar_correlation
 .. autofunction:: trellis.analytics.differentiate_quanto_scalar_inputs
+.. autofunction:: trellis.analytics.admit_hybrid_ad_lane
 .. autofunction:: trellis.analytics.fail_closed_correlation_structure_derivative
 .. autofunction:: trellis.models.analytical.barrier.down_and_out_call_raw
 .. autofunction:: trellis.models.analytical.barrier.down_and_in_call_raw

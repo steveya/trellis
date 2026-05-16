@@ -205,6 +205,7 @@ factor graph enabled and call a graph-backed derivative helper directly:
    from trellis.analytics import (
        HybridDerivativeRequest,
        SparseRiskVector,
+       admit_hybrid_ad_lane,
        differentiate_quanto_scalar_correlation,
        differentiate_quanto_scalar_inputs,
    )
@@ -221,6 +222,17 @@ factor graph enabled and call a graph-backed derivative helper directly:
        HybridDerivativeRequest(coordinate_space="unconstrained"),
    )
    hybrid_vector = differentiate_quanto_scalar_inputs(spec, resolved)
+   # contract_ir is the terminal quanto ContractIR for the same product.
+   admission = admit_hybrid_ad_lane(
+       contract_ir,
+       product_family="quanto_option",
+       derivative_method="vjp",
+   )
+   admitted_hybrid_vector = differentiate_quanto_scalar_inputs(
+       spec,
+       resolved,
+       HybridDerivativeRequest(semantic_admission=admission),
+   )
    spot_factor = next(
        factor for factor in hybrid_vector.risk_vector
        if factor.object_type == "spot"
@@ -235,6 +247,7 @@ factor graph enabled and call a graph-backed derivative helper directly:
    )
    print(hybrid.risk_vector.to_payload())
    print(hybrid_vector.risk_vector.to_payload())
+   print(admitted_hybrid_vector.method_metadata["semantic_admission"])
    print(hybrid_hvp.risk_vector.to_payload())
    print(hybrid_hvp.method_metadata["resolved_derivative_method"])
 
@@ -249,6 +262,11 @@ Hybrid ``jvp`` requests and correlation matrix/surface requests fail closed
 until those coordinate charts and backend operators are checked. Correlation
 matrix requests can report checked PSD chart-policy diagnostics, but they do
 not yet return matrix/surface AD sensitivities.
+When a ContractIR semantic contract is available, ``admit_hybrid_ad_lane(...)``
+is the admission guard for the scalar-input helper: supported terminal quanto
+VJP/HVP admissions are copied into result metadata, while planned or
+unsupported admissions return an empty risk vector with the admission reason in
+diagnostics.
 
 For small books that combine already-supported lanes, use the mixed dispatcher:
 

@@ -299,10 +299,15 @@ chart when the request supplies an explicit sparse ``hvp_direction``. The
 developer contract is deliberately narrow: matrix correlations, surface
 correlations, path-dependent hybrid state, broader product graphs, and hybrid
 ``jvp`` are rejected fail-closed until explicit graph-owned derivative lanes
-exist. Matrix-correlation requests may now carry checked PSD chart-policy
-payloads with deterministic off-diagonal factor coordinates and validation
-diagnostics, but they still report ``unsupported_hybrid_structure`` rather
-than executable matrix AD.
+exist. ``trellis.analytics.admit_hybrid_ad_lane(...)`` is the semantic
+ContractIR admission guard for this helper family; supported terminal quanto
+VJP/HVP admissions can be passed through
+``HybridDerivativeRequest.semantic_admission`` and are preserved in result
+metadata, while planned or unsupported admissions return empty risk with typed
+diagnostics before AD execution. Matrix-correlation requests may now carry
+checked PSD chart-policy payloads with deterministic off-diagonal factor
+coordinates and validation diagnostics, but they still report
+``unsupported_hybrid_structure`` rather than executable matrix AD.
 
 The same benchmarking module now also exposes
 ``supported_counterparty_exposure_benchmark_scenarios()`` and
