@@ -237,6 +237,8 @@ def test_dynamic_contract_jvp_request_fails_closed_as_backend_unsupported():
         derivative_method="jvp",
     )
 
+    state_policy = admission.metadata["state_policy"]
+
     assert admission.admitted is False
     assert admission.supported is False
     assert admission.support_status == "unsupported"
@@ -245,6 +247,36 @@ def test_dynamic_contract_jvp_request_fails_closed_as_backend_unsupported():
     assert admission.contract_shape == "dynamic_hybrid_state"
     assert admission.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
     assert admission.metadata["requested_derivative_method"] == "jvp"
+    assert state_policy["state_kind"] == "dynamic_state"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["differentiability_class"] == "piecewise"
+    assert state_policy["event_policy"] == "stateful_event_program"
+    assert state_policy["control_policy"] == "dynamic_control_fail_closed"
+    assert state_policy["metadata"]["base_track"] == "payoff_expression"
+
+
+def test_dynamic_contract_vjp_request_is_planned_with_state_policy():
+    admission = admit_hybrid_ad_lane(
+        _dynamic_hybrid_ir(),
+        product_family="autocallable_note",
+        derivative_method="vjp",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+
+    assert admission.admitted is False
+    assert admission.support_status == "planned"
+    assert admission.reason == "dynamic_hybrid_state_admission_pending"
+    assert admission.semantic_contract_type == "DynamicContractIR"
+    assert admission.contract_shape == "dynamic_hybrid_state"
+    assert state_policy["state_kind"] == "dynamic_state"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["event_policy"] == "stateful_event_program"
+    assert state_policy["control_policy"] == "dynamic_control_fail_closed"
+    assert state_policy["state_variable_roles"] == [
+        "dynamic_state",
+        "control_state",
+    ]
 
 
 def test_unknown_derivative_method_fails_closed_at_admission():
@@ -380,10 +412,22 @@ def test_early_exercise_contract_shape_is_classified_as_planned():
         product_family="quanto_option",
     )
 
+    state_policy = admission.metadata["state_policy"]
+
     assert admission.admitted is False
     assert admission.support_status == "planned"
     assert admission.reason == "early_exercise_hybrid_state_pending"
     assert admission.contract_shape == "early_exercise_hybrid_state"
+    assert state_policy["state_kind"] == "early_exercise_control"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["differentiability_class"] == "piecewise"
+    assert state_policy["event_policy"] == "exercise_decision_schedule"
+    assert state_policy["control_policy"] == "smooth_interior_control_pending"
+    assert state_policy["state_variable_roles"] == [
+        "continuation_value",
+        "exercise_decision",
+    ]
+    assert state_policy["metadata"]["exercise_style"] == "american"
 
 
 def test_path_dependent_contract_shape_is_classified_as_planned():

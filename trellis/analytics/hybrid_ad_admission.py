@@ -420,6 +420,7 @@ def _dynamic_contract_admission(
     product_family: str | None,
 ) -> HybridADLaneAdmission:
     family = product_family or contract.semantic_family or "dynamic_hybrid_contract"
+    state_policy = _dynamic_state_policy(contract)
     if derivative_method == "jvp":
         return _admission(
             admitted=False,
@@ -436,12 +437,15 @@ def _dynamic_contract_admission(
                 "backend_operator": "jvp",
                 "base_track": contract.base_track,
                 "fail_closed": True,
+                **_state_policy_metadata(state_policy),
             },
             diagnostics=(
                 {
                     "code": "hybrid_jvp_backend_unsupported",
                     "severity": "warning",
                     "backend_operator": "jvp",
+                    "state_kind": state_policy.state_kind,
+                    "event_policy": state_policy.event_policy,
                 },
             ),
         )
@@ -459,11 +463,14 @@ def _dynamic_contract_admission(
             "requested_derivative_method": derivative_method,
             "base_track": contract.base_track,
             "fail_closed": True,
+            **_state_policy_metadata(state_policy),
         },
         diagnostics=(
             {
                 "code": "dynamic_hybrid_state_admission_pending",
                 "severity": "warning",
+                "state_kind": state_policy.state_kind,
+                "event_policy": state_policy.event_policy,
             },
         ),
     )
@@ -605,6 +612,7 @@ def _contract_ir_admission(
             ),
         )
     if contract.exercise.style in {"american", "bermudan"}:
+        state_policy = _early_exercise_state_policy(contract)
         return _admission(
             admitted=False,
             lane_id="early_exercise_hybrid_state",
@@ -619,11 +627,14 @@ def _contract_ir_admission(
                 "requested_derivative_method": derivative_method,
                 "exercise_style": contract.exercise.style,
                 "fail_closed": True,
+                **_state_policy_metadata(state_policy),
             },
             diagnostics=(
                 {
                     "code": "early_exercise_hybrid_state_pending",
                     "severity": "warning",
+                    "state_kind": state_policy.state_kind,
+                    "event_policy": state_policy.event_policy,
                 },
             ),
         )
@@ -812,6 +823,53 @@ def _smooth_path_summary_state_policy(contract: ContractIR) -> HybridADStatePoli
         diagnostics=(
             {
                 "code": "path_dependent_hybrid_state_pending",
+                "severity": "warning",
+            },
+        ),
+    )
+
+
+def _early_exercise_state_policy(contract: ContractIR) -> HybridADStatePolicy:
+    return HybridADStatePolicy(
+        state_kind="early_exercise_control",
+        support_status="planned",
+        differentiability_class="piecewise",
+        reason="early_exercise_hybrid_state_pending",
+        event_policy="exercise_decision_schedule",
+        control_policy="smooth_interior_control_pending",
+        state_variable_roles=("continuation_value", "exercise_decision"),
+        fail_closed=True,
+        metadata={
+            "exercise_style": contract.exercise.style,
+            "observation_kind": contract.observation.kind,
+            "path_summary_type": "none",
+        },
+        diagnostics=(
+            {
+                "code": "early_exercise_hybrid_state_pending",
+                "severity": "warning",
+            },
+        ),
+    )
+
+
+def _dynamic_state_policy(contract: DynamicContractIR) -> HybridADStatePolicy:
+    return HybridADStatePolicy(
+        state_kind="dynamic_state",
+        support_status="planned",
+        differentiability_class="piecewise",
+        reason="dynamic_hybrid_state_admission_pending",
+        event_policy="stateful_event_program",
+        control_policy="dynamic_control_fail_closed",
+        state_variable_roles=("dynamic_state", "control_state"),
+        fail_closed=True,
+        metadata={
+            "base_track": contract.base_track,
+            "semantic_family": contract.semantic_family,
+        },
+        diagnostics=(
+            {
+                "code": "dynamic_hybrid_state_admission_pending",
                 "severity": "warning",
             },
         ),
