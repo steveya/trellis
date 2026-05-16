@@ -26,6 +26,7 @@ correlation matrix policy surface, and the remaining prerequisites.
 | `QUA-1052` | Done | Added invalid matrix diagnostic-code coverage and public-surface checks. |
 | `QUA-1053` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 | `QUA-1055` | Done | Added ContractIR-backed semantic admission dataclasses and classifier for bounded graph-owned hybrid AD lanes. |
+| `QUA-1056` | Done | Bridged supported/planned/unsupported semantic admissions into bounded quanto derivative result metadata. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -92,6 +93,10 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   matrix/surface correlation, composite-underlier, path-dependent, and
   early-exercise hybrid shapes are classified as unsupported or planned before
   runtime AD is invoked
+- `HybridDerivativeRequest.semantic_admission` carries that decision into
+  `differentiate_quanto_scalar_inputs(...)`; supported admissions are preserved
+  in result metadata while planned or unsupported admissions fail closed with
+  empty risk and typed diagnostics
 
 This is still a prototype, not universal hybrid AD. The shipped derivative
 lanes differentiate a bounded scalar-coordinate vector and a bounded

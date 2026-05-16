@@ -497,6 +497,11 @@ spot, domestic and foreign curve nodes, vol nodes, and scalar correlation.
 ``jvp`` requests, matrix or surface correlation structures, composite
 underliers, path-dependent contracts, and early-exercise hybrid state are
 classified as unsupported or planned before runtime AD is invoked.
+``HybridDerivativeRequest`` can carry that admission object, or its payload,
+as ``semantic_admission``. Supported admissions are copied into
+``HybridDerivativeResult.method_metadata["semantic_admission"]``; planned or
+unsupported admissions return an empty risk vector with the admission reason in
+diagnostics and ``fallback_reason``.
 
 Forward mode remains executable-truth governed. A ``derivative_method="jvp"``
 request returns an unsupported result with
