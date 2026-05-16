@@ -16,7 +16,11 @@ from trellis.analytics.hybrid_factors import (
     HybridUnsupportedDependency,
     MarketObjectCoordinateChart,
 )
-from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
+from trellis.analytics.risk_factors import (
+    RiskFactorCoordinate,
+    RiskFactorId,
+    SparseRiskVector,
+)
 from trellis.models.vol_surface import _bracket_and_weight
 
 
@@ -243,6 +247,119 @@ class HybridCorrelationStructureRequest:
     def unsupported_reason(self) -> str:
         """Return the policy reason for this unsupported structure."""
         return f"{self.structure_type}_chart_not_implemented"
+
+
+@dataclass(frozen=True)
+class HybridMatrixCoordinateContext:
+    """Executable context for a checked correlation-matrix coordinate chart."""
+
+    chart: MarketObjectCoordinateChart
+    min_eigenvalue_floor: float = 1.0e-6
+    active_factor_id: RiskFactorId | Mapping[str, object] | None = None
+    support_status: str = "supported"
+    diagnostics: tuple[Mapping[str, object], ...] = field(default_factory=tuple)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.chart, MarketObjectCoordinateChart):
+            raise TypeError("chart must be a MarketObjectCoordinateChart")
+        if self.chart.chart_type != "correlation_matrix_psd_policy":
+            raise ValueError("chart must be a correlation_matrix_psd_policy chart")
+        floor = float(self.min_eigenvalue_floor)
+        if not math.isfinite(floor) or floor < 0.0:
+            raise ValueError("min_eigenvalue_floor must be a finite non-negative float")
+        object.__setattr__(self, "min_eigenvalue_floor", floor)
+        if self.chart.support_status != "supported":
+            raise ValueError("matrix-coordinate context requires a supported chart")
+        status = str(self.support_status).strip()
+        if status != "supported":
+            raise ValueError("matrix-coordinate context support_status must be supported")
+        object.__setattr__(self, "support_status", status)
+        active = self.active_factor_id
+        if isinstance(active, Mapping):
+            active = RiskFactorId.from_payload(active)
+        if active is not None and active not in self.factor_ids:
+            raise ValueError("active_factor_id must be one of the chart coordinates")
+        object.__setattr__(self, "active_factor_id", active)
+        object.__setattr__(self, "diagnostics", _freeze_diagnostics(self.diagnostics))
+
+    @property
+    def factor_labels(self) -> tuple[str, ...]:
+        """Return matrix factor labels in chart order."""
+        return tuple(str(label) for label in self.chart.coordinate_values["factor_labels"])
+
+    @property
+    def correlation_matrix(self) -> tuple[tuple[float, ...], ...]:
+        """Return the checked constrained correlation matrix."""
+        return tuple(
+            tuple(float(value) for value in row)
+            for row in self.chart.coordinate_values["correlation_matrix"]
+        )
+
+    @property
+    def min_eigenvalue(self) -> float:
+        """Return the checked minimum symmetric eigenvalue."""
+        return float(self.chart.metadata["min_eigenvalue"])
+
+    @property
+    def coordinate_count(self) -> int:
+        """Return the number of off-diagonal matrix coordinates."""
+        return len(self.chart.coordinates)
+
+    @property
+    def factor_ids(self) -> tuple[RiskFactorId, ...]:
+        """Return supported off-diagonal coordinate factor ids."""
+        return tuple(coordinate.factor_id for coordinate in self.chart.coordinates)
+
+    def coordinate_index_for_pair(self, factor_a: object, factor_b: object) -> int:
+        """Return the deterministic coordinate index for an unordered factor pair."""
+        target = frozenset((str(factor_a).strip(), str(factor_b).strip()))
+        if len(target) != 2:
+            raise ValueError("matrix coordinate pair must contain two distinct factors")
+        for index, coordinate in enumerate(self.chart.coordinates):
+            axes = dict(coordinate.factor_id.axes)
+            if frozenset((axes.get("row", ""), axes.get("column", ""))) == target:
+                return index
+        raise KeyError(f"matrix coordinate pair {sorted(target)!r} is not chart-owned")
+
+    def coordinate_for_pair(self, factor_a: object, factor_b: object) -> RiskFactorCoordinate:
+        """Return the chart coordinate for an unordered factor pair."""
+        return self.chart.coordinates[self.coordinate_index_for_pair(factor_a, factor_b)]
+
+    @property
+    def active_coordinate_index(self) -> int | None:
+        """Return the active coordinate index when one was requested."""
+        if self.active_factor_id is None:
+            return None
+        index_by_factor = {
+            coordinate.factor_id: index
+            for index, coordinate in enumerate(self.chart.coordinates)
+        }
+        return index_by_factor[self.active_factor_id]
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly context payload."""
+        return {
+            "chart": self.chart.to_payload(),
+            "min_eigenvalue_floor": self.min_eigenvalue_floor,
+            "active_factor_id": (
+                self.active_factor_id.to_payload()
+                if self.active_factor_id is not None
+                else None
+            ),
+            "support_status": self.support_status,
+            "diagnostics": [dict(diagnostic) for diagnostic in self.diagnostics],
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> "HybridMatrixCoordinateContext":
+        """Rebuild a context from :meth:`to_payload` output."""
+        return cls(
+            chart=MarketObjectCoordinateChart.from_payload(payload["chart"]),
+            min_eigenvalue_floor=float(payload.get("min_eigenvalue_floor", 1.0e-6)),
+            active_factor_id=payload.get("active_factor_id"),
+            support_status=str(payload.get("support_status", "supported")),
+            diagnostics=tuple(payload.get("diagnostics") or ()),
+        )
 
 
 @dataclass(frozen=True)
@@ -827,6 +944,95 @@ def _correlation_structure_policy_payload(
     )
 
 
+def _clean_min_eigenvalue_floor(value: object) -> float:
+    floor = float(value)
+    if not math.isfinite(floor) or floor < 0.0:
+        raise ValueError("min_eigenvalue_floor must be a finite non-negative float")
+    return floor
+
+
+def _executable_correlation_matrix_chart(
+    chart: MarketObjectCoordinateChart,
+    *,
+    min_eigenvalue_floor: float,
+) -> MarketObjectCoordinateChart:
+    supported_coordinates = tuple(
+        replace(coordinate, support_status="supported")
+        for coordinate in chart.coordinates
+    )
+    return replace(
+        chart,
+        coordinates=supported_coordinates,
+        support_status="supported",
+        metadata={
+            **dict(chart.metadata),
+            "chart_policy_status": "validated_executable",
+            "min_eigenvalue_floor": min_eigenvalue_floor,
+            "projection_policy": chart.constraints["projection_policy"],
+        },
+    )
+
+
+def build_correlation_matrix_coordinate_context(
+    request: HybridCorrelationStructureRequest,
+    *,
+    active_factor_pair: tuple[object, object] | None = None,
+    min_eigenvalue_floor: float = 1.0e-6,
+) -> HybridMatrixCoordinateContext:
+    """Build an executable context for a well-conditioned matrix chart.
+
+    The context uses the checked matrix entries directly. It does not smooth,
+    project, or repair invalid matrices, and it rejects matrices too close to
+    the PSD boundary for stable coordinate derivatives.
+    """
+    if not isinstance(request, HybridCorrelationStructureRequest):
+        raise TypeError("request must be a HybridCorrelationStructureRequest")
+    floor = _clean_min_eigenvalue_floor(min_eigenvalue_floor)
+    code, message, _, chart = _correlation_structure_policy_payload(request)
+    if chart is None:
+        raise ValueError(f"{code}: {message}")
+    min_eigenvalue = float(chart.metadata["min_eigenvalue"])
+    if min_eigenvalue < floor:
+        raise ValueError(
+            "correlation_matrix_near_psd_boundary: "
+            f"minimum eigenvalue {min_eigenvalue:.12g} is below the executable "
+            f"context floor {floor:.12g}."
+        )
+
+    supported_chart = _executable_correlation_matrix_chart(
+        chart,
+        min_eigenvalue_floor=floor,
+    )
+    context = HybridMatrixCoordinateContext(
+        chart=supported_chart,
+        min_eigenvalue_floor=floor,
+        diagnostics=(
+            {
+                "code": "correlation_matrix_context_executable",
+                "severity": "info",
+                "message": (
+                    "Correlation matrix chart is well-conditioned enough for "
+                    "direct off-diagonal coordinate execution."
+                ),
+                "min_eigenvalue": min_eigenvalue,
+                "min_eigenvalue_floor": floor,
+                "projection_policy": supported_chart.constraints["projection_policy"],
+            },
+        ),
+    )
+    if active_factor_pair is None:
+        return context
+    try:
+        active_coordinate = context.coordinate_for_pair(*active_factor_pair)
+    except (KeyError, ValueError) as exc:
+        raise ValueError(
+            "active_factor_pair_unavailable: "
+            f"{tuple(str(factor) for factor in active_factor_pair)!r} "
+            "is not an off-diagonal coordinate in the matrix chart."
+        ) from exc
+    return replace(context, active_factor_id=active_coordinate.factor_id)
+
+
 def fail_closed_correlation_structure_derivative(
     request: HybridCorrelationStructureRequest,
 ) -> HybridDerivativeResult:
@@ -1401,6 +1607,8 @@ __all__ = [
     "HybridCorrelationStructureRequest",
     "HybridDerivativeRequest",
     "HybridDerivativeResult",
+    "HybridMatrixCoordinateContext",
+    "build_correlation_matrix_coordinate_context",
     "differentiate_quanto_scalar_inputs",
     "differentiate_quanto_scalar_correlation",
     "fail_closed_correlation_structure_derivative",
