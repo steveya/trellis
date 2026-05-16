@@ -7,6 +7,19 @@ from datetime import date
 import pytest
 
 import trellis.core.differentiable as differentiable_core
+from trellis.agent.contract_ir import (
+    Constant,
+    ContractIR,
+    EquitySpot,
+    Exercise,
+    Max,
+    Observation,
+    Singleton,
+    Spot,
+    Strike,
+    Sub,
+    Underlying,
+)
 from trellis.analytics.hybrid_ad import (
     HybridCorrelationStructureRequest,
     HybridDerivativeRequest,
@@ -14,6 +27,7 @@ from trellis.analytics.hybrid_ad import (
     differentiate_quanto_scalar_inputs,
     fail_closed_correlation_structure_derivative,
 )
+from trellis.analytics.hybrid_ad_admission import admit_hybrid_ad_lane
 from trellis.analytics.hybrid_factors import HybridUnsupportedDependency
 from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
 from trellis.core.differentiable import (
@@ -43,6 +57,16 @@ class _QuantoSpec:
     option_type: str = "call"
     day_count: DayCountConvention = DayCountConvention.ACT_365
     quanto_correlation_key: str | None = "sx5e_eurusd"
+
+
+def _terminal_quanto_contract_ir() -> ContractIR:
+    schedule = Singleton(_QuantoSpec().expiry_date)
+    return ContractIR(
+        payoff=Max((Sub(Spot("EUR"), Strike(100.0)), Constant(0.0))),
+        exercise=Exercise("european", schedule),
+        observation=Observation("terminal", schedule),
+        underlying=Underlying(EquitySpot("EUR", "gbm")),
+    )
 
 
 def _market_state(corr: float = 0.25) -> MarketState:
@@ -270,6 +294,107 @@ def test_quanto_scalar_inputs_vjp_matches_finite_differences_for_graph_factors()
         - price_quanto_option_raw(spec, replace(resolved, corr=resolved.corr - bump))
     ) / (2.0 * bump)
     assert result.risk_vector[corr_factor] == pytest.approx(corr_fd, rel=5.0e-6)
+
+
+def test_quanto_scalar_inputs_carries_supported_semantic_admission_metadata():
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    admission = admit_hybrid_ad_lane(
+        _terminal_quanto_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+    )
+
+    result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(semantic_admission=admission),
+    )
+
+    assert result.support_status == "supported"
+    assert result.method_metadata["semantic_admission"]["admitted"] is True
+    assert result.method_metadata["semantic_admission"]["lane_id"] == (
+        "quanto_scalar_graph_vjp"
+    )
+    assert result.method_metadata["semantic_admission"]["derivative_methods"] == [
+        "vjp",
+        "hvp",
+    ]
+
+
+def test_quanto_scalar_inputs_accepts_semantic_admission_payload_mapping():
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    admission = admit_hybrid_ad_lane(
+        _terminal_quanto_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+    )
+
+    result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(semantic_admission=admission.to_payload()),
+    )
+
+    assert result.support_status == "supported"
+    assert result.method_metadata["semantic_admission"]["reason"] == (
+        "supported_quanto_scalar_graph_vjp"
+    )
+
+
+def test_quanto_scalar_inputs_fails_closed_for_planned_semantic_admission():
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    admission = admit_hybrid_ad_lane(
+        _terminal_quanto_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+        correlation_structure="correlation_matrix",
+    )
+
+    result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(semantic_admission=admission),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "correlation_matrix_derivative_not_implemented"
+    assert result.method_metadata["semantic_admission"]["support_status"] == "planned"
+    assert result.method_metadata["fallback_reason"]["semantic_admission_reason"] == (
+        "correlation_matrix_derivative_not_implemented"
+    )
+
+
+def test_quanto_scalar_inputs_fails_closed_for_admission_method_mismatch():
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    admission = admit_hybrid_ad_lane(
+        _terminal_quanto_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+    )
+    vjp_only_admission = replace(admission, derivative_methods=("vjp",))
+
+    result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(
+            derivative_method="hvp",
+            semantic_admission=vjp_only_admission,
+        ),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == (
+        "semantic_admission_derivative_method_unavailable"
+    )
+    assert result.method_metadata["semantic_admission"]["lane_id"] == (
+        "quanto_scalar_graph_vjp"
+    )
 
 
 def test_quanto_scalar_inputs_normalizes_non_round_curve_and_grid_vol_keys():

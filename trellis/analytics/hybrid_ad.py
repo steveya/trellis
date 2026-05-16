@@ -9,6 +9,7 @@ from types import MappingProxyType
 from typing import Any
 
 from trellis.analytics.derivative_methods import derivative_method_payload
+from trellis.analytics.hybrid_ad_admission import HybridADLaneAdmission
 from trellis.analytics.hybrid_factors import (
     HybridDependencyNode,
     HybridFactorGraph,
@@ -101,6 +102,18 @@ def _normalize_sparse_vector(value: object, field_name: str) -> SparseRiskVector
         raise TypeError(f"{field_name} must contain RiskFactorId keyed numeric entries") from exc
 
 
+def _normalize_semantic_admission(value: object) -> HybridADLaneAdmission | None:
+    if value is None:
+        return None
+    if isinstance(value, HybridADLaneAdmission):
+        return value
+    if isinstance(value, Mapping):
+        return HybridADLaneAdmission.from_payload(value)
+    raise TypeError(
+        "semantic_admission must be a HybridADLaneAdmission, payload mapping, or None"
+    )
+
+
 @dataclass(frozen=True)
 class HybridDerivativeRequest:
     """Request policy for bounded graph-backed hybrid derivative helpers."""
@@ -110,6 +123,7 @@ class HybridDerivativeRequest:
     selected_factors: tuple[RiskFactorId, ...] = field(default_factory=tuple)
     unsupported_selected_factor_policy: str = "empty_vector"
     hvp_direction: SparseRiskVector = field(default_factory=SparseRiskVector)
+    semantic_admission: HybridADLaneAdmission | Mapping[str, object] | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -140,6 +154,11 @@ class HybridDerivativeRequest:
             self,
             "hvp_direction",
             _normalize_sparse_vector(self.hvp_direction, "hvp_direction"),
+        )
+        object.__setattr__(
+            self,
+            "semantic_admission",
+            _normalize_semantic_admission(self.semantic_admission),
         )
 
     @property
@@ -365,6 +384,7 @@ def _unsupported_result(
     fallback_reason: dict[str, object] | None = None,
     diagnostic_extra: Mapping[str, object] | None = None,
     backend_operator: str | None = None,
+    method_metadata_extra: Mapping[str, object] | None = None,
 ) -> HybridDerivativeResult:
     diagnostic = {
         "code": code,
@@ -380,6 +400,7 @@ def _unsupported_result(
         hybrid_factor_graph_id=graph.graph_id,
         fallback_reason=fallback_reason or diagnostic,
     )
+    metadata.update(dict(method_metadata_extra or {}))
     return HybridDerivativeResult(
         value=value,
         risk_vector=SparseRiskVector(),
@@ -884,6 +905,98 @@ def fail_closed_correlation_structure_derivative(
     )
 
 
+def _semantic_admission_metadata(
+    admission: HybridADLaneAdmission | None,
+) -> dict[str, object]:
+    if admission is None:
+        return {}
+    return {"semantic_admission": admission.to_payload()}
+
+
+def _unsupported_semantic_admission_result(
+    *,
+    value: float,
+    graph: HybridFactorGraph,
+    request: HybridDerivativeRequest,
+    admission: HybridADLaneAdmission,
+    method_id: str,
+) -> HybridDerivativeResult | None:
+    admission_metadata = _semantic_admission_metadata(admission)
+    if not admission.supported:
+        fallback_reason = {
+            "code": admission.reason,
+            "semantic_admission_status": admission.support_status,
+            "semantic_admission_reason": admission.reason,
+            "semantic_admission_lane_id": admission.lane_id,
+        }
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=request,
+            code=admission.reason,
+            message=(
+                "Semantic hybrid AD admission did not allow runtime execution: "
+                f"{admission.reason}."
+            ),
+            method_id=method_id,
+            diagnostic_extra={
+                "semantic_admission_status": admission.support_status,
+                "semantic_admission_lane_id": admission.lane_id,
+            },
+            fallback_reason=fallback_reason,
+            method_metadata_extra=admission_metadata,
+        )
+    if request.derivative_method not in admission.derivative_methods:
+        fallback_reason = {
+            "code": "semantic_admission_derivative_method_unavailable",
+            "semantic_admission_status": admission.support_status,
+            "semantic_admission_reason": admission.reason,
+            "semantic_admission_lane_id": admission.lane_id,
+            "requested_derivative_method": request.derivative_method,
+            "admitted_derivative_methods": list(admission.derivative_methods),
+        }
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=request,
+            code="semantic_admission_derivative_method_unavailable",
+            message=(
+                "Semantic hybrid AD admission does not include the requested "
+                "derivative method."
+            ),
+            method_id=method_id,
+            diagnostic_extra={
+                "semantic_admission_lane_id": admission.lane_id,
+                "requested_derivative_method": request.derivative_method,
+                "admitted_derivative_methods": list(admission.derivative_methods),
+            },
+            fallback_reason=fallback_reason,
+            method_metadata_extra=admission_metadata,
+        )
+    if not admission.lane_id.startswith("quanto_scalar_graph_"):
+        fallback_reason = {
+            "code": "semantic_admission_lane_unavailable",
+            "semantic_admission_status": admission.support_status,
+            "semantic_admission_reason": admission.reason,
+            "semantic_admission_lane_id": admission.lane_id,
+        }
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=request,
+            code="semantic_admission_lane_unavailable",
+            message=(
+                "Semantic hybrid AD admission refers to a lane that this "
+                "bounded quanto helper does not execute."
+            ),
+            method_id=method_id,
+            diagnostic_extra={"semantic_admission_lane_id": admission.lane_id},
+            fallback_reason=fallback_reason,
+            method_metadata_extra=admission_metadata,
+        )
+    return None
+
+
 def differentiate_quanto_scalar_inputs(
     spec: object,
     resolved_inputs: object,
@@ -912,6 +1025,17 @@ def differentiate_quanto_scalar_inputs(
     graph.validate()
     value = float(price_quanto_option_raw(spec, resolved_inputs))
     capabilities = get_backend_capabilities()
+    admission_metadata = _semantic_admission_metadata(resolved_request.semantic_admission)
+    if resolved_request.semantic_admission is not None:
+        admission_result = _unsupported_semantic_admission_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            admission=resolved_request.semantic_admission,
+            method_id=method_id,
+        )
+        if admission_result is not None:
+            return admission_result
 
     if resolved_request.derivative_method == "jvp":
         diagnostic_extra = {
@@ -934,6 +1058,7 @@ def differentiate_quanto_scalar_inputs(
                 "code": "hybrid_jvp_backend_unsupported",
                 **diagnostic_extra,
             },
+            method_metadata_extra=admission_metadata,
         )
     if resolved_request.derivative_method not in {"vjp", "hvp"}:
         return _unsupported_result(
@@ -943,6 +1068,7 @@ def differentiate_quanto_scalar_inputs(
             code="hybrid_derivative_method_unsupported",
             message="Only VJP and HVP are supported by the bounded scalar quanto input lane.",
             method_id=method_id,
+            method_metadata_extra=admission_metadata,
         )
     if not is_dataclass(resolved_inputs):
         return _unsupported_result(
@@ -952,6 +1078,7 @@ def differentiate_quanto_scalar_inputs(
             code="resolved_inputs_dataclass_required",
             message="Scalar quanto input VJP/HVP requires dataclass resolved inputs.",
             method_id=method_id,
+            method_metadata_extra=admission_metadata,
         )
 
     extraction = _quanto_scalar_entries(
@@ -970,6 +1097,7 @@ def differentiate_quanto_scalar_inputs(
             diagnostic_extra={
                 "scalar_chart_diagnostics": list(extraction.diagnostics),
             },
+            method_metadata_extra=admission_metadata,
         )
 
     np = get_numpy()
@@ -1010,6 +1138,7 @@ def differentiate_quanto_scalar_inputs(
                     **diagnostic_extra,
                 },
                 backend_operator="hessian_vector_product",
+                method_metadata_extra=admission_metadata,
             )
         direction_values, direction_diagnostic = _hvp_direction_for_entries(
             resolved_request,
@@ -1030,6 +1159,7 @@ def differentiate_quanto_scalar_inputs(
                 },
                 fallback_reason=direction_diagnostic,
                 backend_operator="hessian_vector_product",
+                method_metadata_extra=admission_metadata,
             )
         direction_vector = np.asarray(direction_values)
         sensitivities = np.reshape(
@@ -1111,6 +1241,7 @@ def differentiate_quanto_scalar_inputs(
     )
     if math.isfinite(value):
         metadata["base_value"] = value
+    metadata.update(admission_metadata)
 
     return HybridDerivativeResult(
         value=value,

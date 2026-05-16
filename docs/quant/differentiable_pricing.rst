@@ -488,6 +488,21 @@ Unsupported selections can return an empty sparse vector or fail closed
 according to the request policy. Empty or unavailable HVP directions always
 fail closed.
 
+``admit_hybrid_ad_lane(...)`` is the semantic admission boundary for these
+graph-owned lanes. Given a ``ContractIR`` and requested derivative method, it
+returns a JSON-friendly ``HybridADLaneAdmission`` payload that admits only
+bounded terminal quanto VJP/HVP requests over scalar graph coordinates. The
+same payload records factor-coordinate requirements for underlier spot, FX
+spot, domestic and foreign curve nodes, vol nodes, and scalar correlation.
+``jvp`` requests, matrix or surface correlation structures, composite
+underliers, path-dependent contracts, and early-exercise hybrid state are
+classified as unsupported or planned before runtime AD is invoked.
+``HybridDerivativeRequest`` can carry that admission object, or its payload,
+as ``semantic_admission``. Supported admissions are copied into
+``HybridDerivativeResult.method_metadata["semantic_admission"]``; planned or
+unsupported admissions return an empty risk vector with the admission reason in
+diagnostics and ``fallback_reason``.
+
 Forward mode remains executable-truth governed. A ``derivative_method="jvp"``
 request returns an unsupported result with
 ``fallback_reason.code="hybrid_jvp_backend_unsupported"`` because the active
@@ -809,6 +824,7 @@ Implementation References
 .. autofunction:: trellis.models.analytical.quanto.price_quanto_option_raw
 .. autofunction:: trellis.analytics.differentiate_quanto_scalar_correlation
 .. autofunction:: trellis.analytics.differentiate_quanto_scalar_inputs
+.. autofunction:: trellis.analytics.admit_hybrid_ad_lane
 .. autofunction:: trellis.analytics.fail_closed_correlation_structure_derivative
 .. autofunction:: trellis.models.analytical.barrier.down_and_out_call_raw
 .. autofunction:: trellis.models.analytical.barrier.down_and_in_call_raw

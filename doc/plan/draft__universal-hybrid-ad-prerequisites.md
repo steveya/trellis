@@ -2,10 +2,11 @@
 
 ## Status
 
-First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`, and
-`QUA-1049` epics. Universal hybrid AD is still not claimed; this document now
-records the shipped bounded quanto scalar-coordinate prototypes, the checked
-correlation matrix policy surface, and the remaining prerequisites.
+First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`,
+`QUA-1049`, and `QUA-1054` epics. Universal hybrid AD is still not claimed;
+this document now records the shipped bounded quanto scalar-coordinate
+prototypes, the checked correlation matrix policy surface, the ContractIR
+admission boundary, and the remaining prerequisites.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -25,6 +26,10 @@ correlation matrix policy surface, and the remaining prerequisites.
 | `QUA-1051` | Done | Hardened matrix/surface correlation fail-closed diagnostics with chart metadata. |
 | `QUA-1052` | Done | Added invalid matrix diagnostic-code coverage and public-surface checks. |
 | `QUA-1053` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
+| `QUA-1055` | Done | Added ContractIR-backed semantic admission dataclasses and classifier for bounded graph-owned hybrid AD lanes. |
+| `QUA-1056` | Done | Bridged supported/planned/unsupported semantic admissions into bounded quanto derivative result metadata. |
+| `QUA-1057` | Done | Locked public exports and fail-closed admission matrix coverage across supported, planned, and unsupported shapes. |
+| `QUA-1058` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -86,6 +91,15 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   charts through typed diagnostics and `unsupported_hybrid_structure` metadata
 - `jvp` requests and correlation matrix/surface requests fail closed through
   explicit unsupported derivative-method metadata
+- `admit_hybrid_ad_lane(...)` admits only ContractIR terminal quanto VJP/HVP
+  requests into the bounded graph-owned scalar-coordinate lanes; JVP,
+  matrix/surface correlation, composite-underlier, path-dependent, and
+  early-exercise hybrid shapes are classified as unsupported or planned before
+  runtime AD is invoked
+- `HybridDerivativeRequest.semantic_admission` carries that decision into
+  `differentiate_quanto_scalar_inputs(...)`; supported admissions are preserved
+  in result metadata while planned or unsupported admissions fail closed with
+  empty risk and typed diagnostics
 
 This is still a prototype, not universal hybrid AD. The shipped derivative
 lanes differentiate a bounded scalar-coordinate vector and a bounded
@@ -480,9 +494,24 @@ Acceptance criteria:
 - invalid matrix and unsupported surface requests fail closed with typed
   diagnostics and `unsupported_hybrid_structure` metadata
 
+Fifth delivered epic:
+
+`Semantic hybrid AD: ContractIR admission for graph-owned lanes`
+
+Acceptance criteria:
+
+- immutable admission dataclasses round-trip through JSON-friendly payloads
+- terminal quanto ContractIR VJP/HVP requests are admitted into the existing
+  graph-owned scalar-coordinate lanes
+- JVP, executable matrix/surface correlation, composite-underlier,
+  path-dependent, and early-exercise hybrid shapes are classified as
+  unsupported or planned before runtime AD executes
+- supported admissions can be carried through
+  `HybridDerivativeRequest.semantic_admission` into derivative result metadata
+- planned or unsupported admissions return empty risk and typed diagnostics
+
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: ContractIR admission for graph-owned hybrid derivative lanes`
 - `Hybrid AD: executable matrix-coordinate derivative lane away from PSD boundary`
 - `Hybrid AD: path-dependent hybrid state and event policy`
 - `Hybrid AD: multi-product graph-owned derivative fixtures`
