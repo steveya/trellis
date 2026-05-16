@@ -21,6 +21,16 @@ Trellis now has a bounded hybrid quanto-correlation calibration route:
 - derivative reporting classifies this as a governed finite-difference
   fallback, not as hybrid AD or AAD
 
+Trellis also has one bounded portfolio-AAD scalar-correlation lane:
+
+- `portfolio_aad_quanto_correlation_risk(...)` differentiates an already
+  resolved single-name quanto option book with respect to one scalar
+  underlier/FX correlation
+- the lane uses canonical `RiskFactorId` coordinates with
+  `object_type="model_parameter"` and `coordinate_type="correlation"`
+- all curves, spots, FX spot, volatility inputs, and broader hybrid factor
+  graph dependencies are held fixed outside this narrow lane
+
 Autograd Phase 2 also added a truthful backend capability surface:
 
 - `grad=True`

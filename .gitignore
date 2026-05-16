@@ -52,6 +52,9 @@ coverage.xml
 .pytest_cache/
 cover/
 
+# Local benchmark scratch reports
+benchmark_runs/
+
 # Translations
 *.mo
 *.pot

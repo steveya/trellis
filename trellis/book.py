@@ -10,11 +10,15 @@ from typing import Any
 
 from trellis.analytics.derivative_methods import derivative_method_payload
 from trellis.analytics.portfolio_aad import (
+    AADSupportDecision,
+    ArithmeticAsianOptionVolAADAdapter,
     BondCurveAADAdapter,
     BondCurveAADMarketContext,
     DefaultUnsupportedAADPolicy,
     PortfolioAADRequest,
     PortfolioAADResult,
+    QuantoCorrelationAADAdapter,
+    QuantoCorrelationAADMarketContext,
     UnsupportedAADPosition,
     VanillaEquityOptionVolAADAdapter,
     VanillaEquityOptionVolAADMarketContext,
@@ -411,6 +415,24 @@ def portfolio_aad_curve_risk(
     return RiskMeasureOutput(key_rate_durations, metadata=metadata)
 
 
+def _portfolio_aad_option_vol_parameterization(vol_surface: object) -> str:
+    """Return the portfolio-AAD option-vol parameterization id."""
+    from trellis.models.vol_surface import GridVolSurface
+
+    if isinstance(vol_surface, GridVolSurface):
+        return "shared_grid_vol"
+    return "shared_flat_vol"
+
+
+def _portfolio_aad_option_vol_bucket_names(vol_surface: object) -> tuple[str, ...]:
+    """Return risk aggregation buckets for the active option-vol surface."""
+    from trellis.models.vol_surface import GridVolSurface
+
+    if isinstance(vol_surface, GridVolSurface):
+        return ("risk_class", "currency", "expiry", "strike")
+    return ("risk_class", "currency", "object_name")
+
+
 def portfolio_aad_equity_option_vol_risk(
     book: Book,
     market_context: VanillaEquityOptionVolAADMarketContext | object,
@@ -451,7 +473,7 @@ def portfolio_aad_equity_option_vol_risk(
     except Exception as exc:
         diagnostics.append(
             {
-                "code": "flat_vol_coordinate_unavailable",
+                "code": "vol_surface_coordinate_unavailable",
                 "severity": "warning",
                 "error_type": type(exc).__name__,
                 "error": str(exc),
@@ -515,7 +537,16 @@ def portfolio_aad_equity_option_vol_risk(
         else "unsupported"
     )
     selected_vector = resolved_request.filter_vector(full_vector)
-    available_coordinates = tuple(full_coordinates) if supported_position_names else ()
+    full_factors = set(full_vector)
+    available_coordinates = (
+        tuple(
+            coordinate
+            for coordinate in full_coordinates
+            if coordinate.factor_id in full_factors
+        )
+        if supported_position_names
+        else ()
+    )
     selected_factors = set(selected_vector)
     if resolved_request.selects_all_factors:
         selected_coordinates = available_coordinates
@@ -531,7 +562,9 @@ def portfolio_aad_equity_option_vol_risk(
         )
     risk_aggregation_map = RiskAggregationMap.from_coordinates(
         selected_coordinates,
-        bucket_names=("risk_class", "currency", "object_name"),
+        bucket_names=_portfolio_aad_option_vol_bucket_names(
+            getattr(context.market_state, "vol_surface", None)
+        ),
         default_bucket="all",
     )
     fallback_reason = None
@@ -540,11 +573,28 @@ def portfolio_aad_equity_option_vol_risk(
             "code": "portfolio_aad_equity_option_book_unavailable",
             "message": "No supported vanilla equity option positions were found in the book.",
         }
+    early_exercise_policies = tuple(
+        sorted(
+            {
+                str(diagnostic["derivative_policy"])
+                for diagnostic in diagnostics
+                if diagnostic.get("code") == "early_exercise_control_policy"
+                and diagnostic.get("derivative_policy") is not None
+            }
+        )
+    )
+    early_exercise_policy = (
+        early_exercise_policies[0]
+        if len(early_exercise_policies) == 1
+        else early_exercise_policies or None
+    )
     metadata = derivative_method_payload(
         "portfolio_aad_vjp",
         method_support=support_status,
         backend_id=capabilities.backend_id,
-        parameterization="shared_flat_vol",
+        parameterization=_portfolio_aad_option_vol_parameterization(
+            getattr(context.market_state, "vol_surface", None)
+        ),
         support_status=support_status,
         aad_adapter=type(adapter).__name__,
         vol_surface_name=context.vol_surface_name,
@@ -561,6 +611,8 @@ def portfolio_aad_equity_option_vol_risk(
         risk_aggregation_map=risk_aggregation_map.to_payload(),
         risk_bucket_totals=risk_aggregation_map.aggregate_payload(selected_vector),
         fallback_reason=fallback_reason,
+        early_exercise_policy=early_exercise_policy,
+        early_exercise_policy_count=len(early_exercise_policies),
     )
     metadata["sparse_risk_vector"] = selected_vector.to_payload()
     result = PortfolioAADResult(
@@ -580,6 +632,677 @@ def portfolio_aad_equity_option_vol_risk(
         method_metadata=metadata,
         diagnostics=tuple(diagnostics),
     )
+
+
+def portfolio_aad_arithmetic_asian_vol_risk(
+    book: Book,
+    market_context: VanillaEquityOptionVolAADMarketContext | object,
+    request: PortfolioAADRequest | None = None,
+    *,
+    vol_surface_name: str = "default_vol_surface",
+    currency: str | None = None,
+) -> PortfolioAADResult:
+    """Return factorized flat-vol AAD risk for arithmetic-Asian option books."""
+    resolved_request = request or PortfolioAADRequest()
+    if isinstance(market_context, VanillaEquityOptionVolAADMarketContext):
+        context = market_context
+    else:
+        context = VanillaEquityOptionVolAADMarketContext(
+            market_state=market_context,
+            vol_surface_name=vol_surface_name,
+            currency=currency,
+        )
+
+    adapter = ArithmeticAsianOptionVolAADAdapter()
+    unsupported_policy = DefaultUnsupportedAADPolicy(
+        include_value_when_priced=resolved_request.include_unsupported_value
+    )
+    capabilities = get_backend_capabilities()
+    full_vector = SparseRiskVector()
+    portfolio_value = 0.0
+    supported_position_names: list[str] = []
+    unsupported_positions: list[UnsupportedAADPosition] = []
+    diagnostics: list[dict[str, Any]] = []
+    full_coordinates: tuple[Any, ...] = ()
+    try:
+        full_coordinates = context.coordinates()
+    except Exception as exc:
+        diagnostics.append(
+            {
+                "code": "vol_surface_coordinate_unavailable",
+                "severity": "warning",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+        )
+
+    for name in book:
+        instrument = book[name]
+        decision = adapter.support_decision(name, instrument, context, resolved_request)
+        diagnostics.extend(dict(diagnostic) for diagnostic in decision.diagnostics)
+        if not decision.supported:
+            unsupported_positions.append(
+                unsupported_policy.record(
+                    position_name=name,
+                    instrument=instrument,
+                    reason=decision.reason,
+                    request=resolved_request,
+                    priced_value_available=False,
+                )
+            )
+            continue
+
+        try:
+            weight = book.notional(name)
+            full_request = PortfolioAADRequest()
+            portfolio_value += float(weight) * adapter.value(
+                instrument,
+                context,
+                full_request,
+            )
+            full_vector = full_vector + adapter.vjp(
+                instrument,
+                context,
+                full_request,
+                weight=weight,
+            )
+        except Exception as exc:
+            diagnostics.append(
+                {
+                    "code": "portfolio_aad_arithmetic_asian_trace_failed",
+                    "severity": "warning",
+                    "position_name": name,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+            unsupported_positions.append(
+                unsupported_policy.record(
+                    position_name=name,
+                    instrument=instrument,
+                    reason="portfolio_aad_trace_failed",
+                    request=resolved_request,
+                    priced_value_available=False,
+                )
+            )
+            continue
+
+        supported_position_names.append(name)
+
+    support_status = (
+        "supported"
+        if supported_position_names and not unsupported_positions
+        else "partial"
+        if supported_position_names
+        else "unsupported"
+    )
+    selected_vector = resolved_request.filter_vector(full_vector)
+    full_factors = set(full_vector)
+    available_coordinates = (
+        tuple(
+            coordinate
+            for coordinate in full_coordinates
+            if coordinate.factor_id in full_factors
+        )
+        if supported_position_names
+        else ()
+    )
+    selected_factors = set(selected_vector)
+    if resolved_request.selects_all_factors:
+        selected_coordinates = available_coordinates
+    else:
+        requested_factors = set(resolved_request.selected_factors)
+        selected_coordinates = tuple(
+            coordinate
+            for coordinate in available_coordinates
+            if (
+                coordinate.factor_id in requested_factors
+                and coordinate.factor_id in selected_factors
+            )
+        )
+    risk_aggregation_map = RiskAggregationMap.from_coordinates(
+        selected_coordinates,
+        bucket_names=_portfolio_aad_option_vol_bucket_names(
+            getattr(context.market_state, "vol_surface", None)
+        ),
+        default_bucket="all",
+    )
+    fallback_reason = None
+    if not supported_position_names:
+        fallback_reason = {
+            "code": "portfolio_aad_arithmetic_asian_book_unavailable",
+            "message": "No supported arithmetic-Asian option positions were found in the book.",
+        }
+    path_policies = tuple(
+        sorted(
+            {
+                str(diagnostic["derivative_policy"])
+                for diagnostic in diagnostics
+                if diagnostic.get("code") == "path_dependent_smooth_summary_policy"
+                and diagnostic.get("derivative_policy") is not None
+            }
+        )
+    )
+    path_derivative_policy = (
+        path_policies[0] if len(path_policies) == 1 else path_policies or None
+    )
+    metadata = derivative_method_payload(
+        "portfolio_aad_vjp",
+        method_support=support_status,
+        backend_id=capabilities.backend_id,
+        parameterization=_portfolio_aad_option_vol_parameterization(
+            getattr(context.market_state, "vol_surface", None)
+        ),
+        support_status=support_status,
+        aad_adapter=type(adapter).__name__,
+        product_family="arithmetic_asian_option",
+        vol_surface_name=context.vol_surface_name,
+        vol_surface_type=type(getattr(context.market_state, "vol_surface", None)).__name__,
+        supported_position_names=supported_position_names,
+        supported_position_count=len(supported_position_names),
+        unsupported_position_count=len(unsupported_positions),
+        unsupported_positions=[position.to_payload() for position in unsupported_positions],
+        book_position_count=len(book),
+        risk_factor_coordinates=[
+            coordinate.to_payload()
+            for coordinate in selected_coordinates
+        ],
+        risk_aggregation_map=risk_aggregation_map.to_payload(),
+        risk_bucket_totals=risk_aggregation_map.aggregate_payload(selected_vector),
+        fallback_reason=fallback_reason,
+        path_derivative_policy=path_derivative_policy,
+        path_derivative_policy_count=len(path_policies),
+    )
+    metadata["sparse_risk_vector"] = selected_vector.to_payload()
+    result = PortfolioAADResult(
+        portfolio_value=portfolio_value,
+        risk_vector=selected_vector,
+        coordinates=selected_coordinates,
+        unsupported_positions=tuple(unsupported_positions),
+        method_metadata=metadata,
+        diagnostics=tuple(diagnostics),
+    )
+    metadata["portfolio_aad_result"] = result.to_payload()
+    return PortfolioAADResult(
+        portfolio_value=portfolio_value,
+        risk_vector=selected_vector,
+        coordinates=selected_coordinates,
+        unsupported_positions=tuple(unsupported_positions),
+        method_metadata=metadata,
+        diagnostics=tuple(diagnostics),
+    )
+
+
+def portfolio_aad_quanto_correlation_risk(
+    book: Book,
+    market_context: QuantoCorrelationAADMarketContext,
+    request: PortfolioAADRequest | None = None,
+) -> PortfolioAADResult:
+    """Return factorized scalar-correlation AAD risk for bounded quanto books."""
+    resolved_request = request or PortfolioAADRequest()
+    if not isinstance(market_context, QuantoCorrelationAADMarketContext):
+        raise TypeError(
+            "portfolio_aad_quanto_correlation_risk requires "
+            "QuantoCorrelationAADMarketContext"
+        )
+    context = market_context
+    adapter = QuantoCorrelationAADAdapter()
+    unsupported_policy = DefaultUnsupportedAADPolicy(
+        include_value_when_priced=resolved_request.include_unsupported_value
+    )
+    capabilities = get_backend_capabilities()
+    full_vector = SparseRiskVector()
+    portfolio_value = 0.0
+    supported_position_names: list[str] = []
+    unsupported_positions: list[UnsupportedAADPosition] = []
+    diagnostics: list[dict[str, Any]] = []
+    full_coordinates: tuple[Any, ...] = ()
+    try:
+        full_coordinates = context.coordinates()
+    except Exception as exc:
+        diagnostics.append(
+            {
+                "code": "correlation_coordinate_unavailable",
+                "severity": "warning",
+                "error_type": type(exc).__name__,
+                "error": str(exc),
+            }
+        )
+
+    for name in book:
+        instrument = book[name]
+        decision = adapter.support_decision(name, instrument, context, resolved_request)
+        diagnostics.extend(dict(diagnostic) for diagnostic in decision.diagnostics)
+        if not decision.supported:
+            unsupported_positions.append(
+                unsupported_policy.record(
+                    position_name=name,
+                    instrument=instrument,
+                    reason=decision.reason,
+                    request=resolved_request,
+                    priced_value_available=False,
+                )
+            )
+            continue
+
+        try:
+            weight = book.notional(name)
+            full_request = PortfolioAADRequest()
+            portfolio_value += float(weight) * adapter.value(
+                instrument,
+                context,
+                full_request,
+            )
+            full_vector = full_vector + adapter.vjp(
+                instrument,
+                context,
+                full_request,
+                weight=weight,
+            )
+        except Exception as exc:
+            diagnostics.append(
+                {
+                    "code": "portfolio_aad_quanto_correlation_trace_failed",
+                    "severity": "warning",
+                    "position_name": name,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+            unsupported_positions.append(
+                unsupported_policy.record(
+                    position_name=name,
+                    instrument=instrument,
+                    reason="portfolio_aad_trace_failed",
+                    request=resolved_request,
+                    priced_value_available=False,
+                )
+            )
+            continue
+
+        supported_position_names.append(name)
+
+    support_status = (
+        "supported"
+        if supported_position_names and not unsupported_positions
+        else "partial"
+        if supported_position_names
+        else "unsupported"
+    )
+    selected_vector = resolved_request.filter_vector(full_vector)
+    full_factors = set(full_vector)
+    available_coordinates = (
+        tuple(
+            coordinate
+            for coordinate in full_coordinates
+            if coordinate.factor_id in full_factors
+        )
+        if supported_position_names
+        else ()
+    )
+    selected_factors = set(selected_vector)
+    if resolved_request.selects_all_factors:
+        selected_coordinates = available_coordinates
+    else:
+        requested_factors = set(resolved_request.selected_factors)
+        selected_coordinates = tuple(
+            coordinate
+            for coordinate in available_coordinates
+            if (
+                coordinate.factor_id in requested_factors
+                and coordinate.factor_id in selected_factors
+            )
+        )
+    risk_aggregation_map = RiskAggregationMap.from_coordinates(
+        selected_coordinates,
+        bucket_names=("risk_class", "currency", "object_name", "factor_a", "factor_b"),
+        default_bucket="all",
+    )
+    fallback_reason = None
+    if not supported_position_names:
+        fallback_reason = {
+            "code": "portfolio_aad_quanto_correlation_book_unavailable",
+            "message": "No supported quanto positions were found in the book.",
+        }
+    hybrid_policies = tuple(
+        sorted(
+            {
+                str(diagnostic["hybrid_derivative_policy"])
+                for diagnostic in diagnostics
+                if diagnostic.get("code") == "hybrid_scalar_correlation_policy"
+                and diagnostic.get("hybrid_derivative_policy") is not None
+            }
+        )
+    )
+    hybrid_derivative_policy = (
+        hybrid_policies[0] if len(hybrid_policies) == 1 else hybrid_policies or None
+    )
+    metadata = derivative_method_payload(
+        "portfolio_aad_vjp",
+        method_support=support_status,
+        backend_id=capabilities.backend_id,
+        parameterization="scalar_correlation",
+        support_status=support_status,
+        aad_adapter=type(adapter).__name__,
+        product_family="quanto_option",
+        correlation_name=context.correlation_name,
+        supported_position_names=supported_position_names,
+        supported_position_count=len(supported_position_names),
+        unsupported_position_count=len(unsupported_positions),
+        unsupported_positions=[position.to_payload() for position in unsupported_positions],
+        book_position_count=len(book),
+        risk_factor_coordinates=[
+            coordinate.to_payload()
+            for coordinate in selected_coordinates
+        ],
+        risk_aggregation_map=risk_aggregation_map.to_payload(),
+        risk_bucket_totals=risk_aggregation_map.aggregate_payload(selected_vector),
+        fallback_reason=fallback_reason,
+        hybrid_derivative_policy=hybrid_derivative_policy,
+        hybrid_derivative_policy_count=len(hybrid_policies),
+    )
+    metadata["sparse_risk_vector"] = selected_vector.to_payload()
+    result = PortfolioAADResult(
+        portfolio_value=portfolio_value,
+        risk_vector=selected_vector,
+        coordinates=selected_coordinates,
+        unsupported_positions=tuple(unsupported_positions),
+        method_metadata=metadata,
+        diagnostics=tuple(diagnostics),
+    )
+    metadata["portfolio_aad_result"] = result.to_payload()
+    return PortfolioAADResult(
+        portfolio_value=portfolio_value,
+        risk_vector=selected_vector,
+        coordinates=selected_coordinates,
+        unsupported_positions=tuple(unsupported_positions),
+        method_metadata=metadata,
+        diagnostics=tuple(diagnostics),
+    )
+
+
+_MIXED_AAD_BUCKET_NAMES = (
+    "risk_class",
+    "currency",
+    "object_name",
+    "tenor",
+    "expiry",
+    "strike",
+    "factor_a",
+    "factor_b",
+)
+
+
+def portfolio_aad_supported_book_risk(
+    book: Book,
+    *,
+    bond_curve_context: BondCurveAADMarketContext | None = None,
+    equity_option_vol_context: VanillaEquityOptionVolAADMarketContext | None = None,
+    arithmetic_asian_vol_context: VanillaEquityOptionVolAADMarketContext | None = None,
+    quanto_correlation_context: QuantoCorrelationAADMarketContext | None = None,
+    request: PortfolioAADRequest | None = None,
+) -> PortfolioAADResult:
+    """Return bounded mixed-book portfolio AAD across explicit supported lanes."""
+    resolved_request = request or PortfolioAADRequest()
+    lane_specs: list[tuple[str, object, object]] = []
+    if bond_curve_context is not None:
+        lane_specs.append(("bond_curve", BondCurveAADAdapter(), bond_curve_context))
+    if equity_option_vol_context is not None:
+        lane_specs.append(
+            ("equity_option_vol", VanillaEquityOptionVolAADAdapter(), equity_option_vol_context)
+        )
+    if arithmetic_asian_vol_context is not None:
+        lane_specs.append(
+            (
+                "arithmetic_asian_vol",
+                ArithmeticAsianOptionVolAADAdapter(),
+                arithmetic_asian_vol_context,
+            )
+        )
+    if quanto_correlation_context is not None:
+        lane_specs.append(
+            ("quanto_correlation", QuantoCorrelationAADAdapter(), quanto_correlation_context)
+        )
+
+    unsupported_policy = DefaultUnsupportedAADPolicy(
+        include_value_when_priced=resolved_request.include_unsupported_value
+    )
+    capabilities = get_backend_capabilities()
+    full_vector = SparseRiskVector()
+    portfolio_value = 0.0
+    supported_position_names: list[str] = []
+    unsupported_positions: list[UnsupportedAADPosition] = []
+    diagnostics: list[dict[str, Any]] = []
+    position_support: list[dict[str, Any]] = []
+    lane_summaries: dict[str, dict[str, Any]] = {
+        lane_id: {
+            "lane_id": lane_id,
+            "adapter": type(adapter).__name__,
+            "supported_position_names": [],
+            "unsupported_attempt_count": 0,
+        }
+        for lane_id, adapter, _ in lane_specs
+    }
+
+    coordinate_map: dict[Any, Any] = {}
+    for lane_id, _, context in lane_specs:
+        try:
+            for coordinate in context.coordinates():
+                coordinate_map[coordinate.factor_id] = coordinate
+        except Exception as exc:
+            diagnostics.append(
+                {
+                    "code": "mixed_portfolio_aad_coordinate_unavailable",
+                    "severity": "warning",
+                    "lane_id": lane_id,
+                    "error_type": type(exc).__name__,
+                    "error": str(exc),
+                }
+            )
+    full_coordinates = tuple(
+        coordinate
+        for _, coordinate in sorted(
+            coordinate_map.items(),
+            key=lambda item: item[0].key,
+        )
+    )
+
+    for name in book:
+        instrument = book[name]
+        attempts: list[dict[str, Any]] = []
+        position_resolved = False
+        for lane_id, adapter, context in lane_specs:
+            decision = adapter.support_decision(name, instrument, context, resolved_request)
+            attempts.append({"lane_id": lane_id, "decision": decision.to_payload()})
+            if not decision.supported:
+                lane_summaries[lane_id]["unsupported_attempt_count"] += 1
+                continue
+
+            diagnostics.extend(dict(diagnostic) for diagnostic in decision.diagnostics)
+            try:
+                weight = book.notional(name)
+                full_request = PortfolioAADRequest()
+                portfolio_value += float(weight) * adapter.value(
+                    instrument,
+                    context,
+                    full_request,
+                )
+                full_vector = full_vector + adapter.vjp(
+                    instrument,
+                    context,
+                    full_request,
+                    weight=weight,
+                )
+            except Exception as exc:
+                diagnostics.append(
+                    {
+                        "code": "mixed_portfolio_aad_trace_failed",
+                        "severity": "warning",
+                        "position_name": name,
+                        "lane_id": lane_id,
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    }
+                )
+                unsupported_positions.append(
+                    unsupported_policy.record(
+                        position_name=name,
+                        instrument=instrument,
+                        reason="portfolio_aad_trace_failed",
+                        request=resolved_request,
+                        priced_value_available=False,
+                    )
+                )
+                position_support.append(
+                    {
+                        "position_name": name,
+                        "support_status": "unsupported",
+                        "reason": "portfolio_aad_trace_failed",
+                        "lane_id": lane_id,
+                        "attempts": attempts,
+                    }
+                )
+                position_resolved = True
+                break
+
+            supported_position_names.append(name)
+            lane_summaries[lane_id]["supported_position_names"].append(name)
+            position_support.append(
+                {
+                    "position_name": name,
+                    "support_status": "supported",
+                    "reason": decision.reason,
+                    "lane_id": lane_id,
+                    "attempts": attempts,
+                }
+            )
+            position_resolved = True
+            break
+
+        if position_resolved:
+            continue
+        selected_decision = _select_mixed_aad_unsupported_decision(attempts)
+        if selected_decision is not None:
+            diagnostics.extend(
+                dict(diagnostic) for diagnostic in selected_decision.diagnostics
+            )
+            reason = selected_decision.reason
+        else:
+            reason = "no_portfolio_aad_lanes_configured"
+        unsupported_positions.append(
+            unsupported_policy.record(
+                position_name=name,
+                instrument=instrument,
+                reason=reason,
+                request=resolved_request,
+                priced_value_available=False,
+            )
+        )
+        position_support.append(
+            {
+                "position_name": name,
+                "support_status": "unsupported",
+                "reason": reason,
+                "lane_id": None,
+                "attempts": attempts,
+            }
+        )
+
+    support_status = (
+        "supported"
+        if supported_position_names and not unsupported_positions
+        else "partial"
+        if supported_position_names
+        else "unsupported"
+    )
+    selected_vector = resolved_request.filter_vector(full_vector)
+    full_factors = set(full_vector)
+    available_coordinates = (
+        tuple(
+            coordinate
+            for coordinate in full_coordinates
+            if coordinate.factor_id in full_factors
+        )
+        if supported_position_names
+        else ()
+    )
+    if resolved_request.selects_all_factors:
+        selected_coordinates = available_coordinates
+    else:
+        requested_factors = set(resolved_request.selected_factors)
+        selected_factors = set(selected_vector)
+        selected_coordinates = tuple(
+            coordinate
+            for coordinate in available_coordinates
+            if (
+                coordinate.factor_id in requested_factors
+                and coordinate.factor_id in selected_factors
+            )
+        )
+    risk_aggregation_map = RiskAggregationMap.from_coordinates(
+        selected_coordinates,
+        bucket_names=_MIXED_AAD_BUCKET_NAMES,
+        default_bucket="all",
+    )
+    fallback_reason = None
+    if not supported_position_names:
+        fallback_reason = {
+            "code": "mixed_portfolio_aad_book_unavailable",
+            "message": "No supported positions were found for the configured AAD lanes.",
+        }
+    metadata = derivative_method_payload(
+        "portfolio_aad_vjp",
+        method_support=support_status,
+        backend_id=capabilities.backend_id,
+        parameterization="mixed_supported_lanes",
+        support_status=support_status,
+        aad_adapter="MixedPortfolioAADDispatcher",
+        supported_position_names=supported_position_names,
+        supported_position_count=len(supported_position_names),
+        unsupported_position_count=len(unsupported_positions),
+        unsupported_positions=[position.to_payload() for position in unsupported_positions],
+        book_position_count=len(book),
+        lane_count=len(lane_specs),
+        lane_summaries=list(lane_summaries.values()),
+        position_support=position_support,
+        risk_factor_coordinates=[
+            coordinate.to_payload()
+            for coordinate in selected_coordinates
+        ],
+        risk_aggregation_map=risk_aggregation_map.to_payload(),
+        risk_bucket_totals=risk_aggregation_map.aggregate_payload(selected_vector),
+        fallback_reason=fallback_reason,
+    )
+    metadata["sparse_risk_vector"] = selected_vector.to_payload()
+    result = PortfolioAADResult(
+        portfolio_value=portfolio_value,
+        risk_vector=selected_vector,
+        coordinates=selected_coordinates,
+        unsupported_positions=tuple(unsupported_positions),
+        method_metadata=metadata,
+        diagnostics=tuple(diagnostics),
+    )
+    metadata["portfolio_aad_result"] = result.to_payload()
+    return result
+
+
+def _select_mixed_aad_unsupported_decision(
+    attempts: list[dict[str, Any]],
+) -> Any | None:
+    generic_reasons = {
+        "unsupported_instrument_type",
+        "vanilla_equity_contract_fields_required",
+        "arithmetic_asian_contract_fields_required",
+        "quanto_contract_fields_required",
+        "unsupported_market_context",
+    }
+    fallback = None
+    for attempt in attempts:
+        decision = AADSupportDecision.from_payload(attempt["decision"])
+        fallback = fallback or decision
+        if decision.reason not in generic_reasons:
+            return decision
+    return fallback
 
 
 class ScenarioResultCube(Mapping[str, BookResult]):

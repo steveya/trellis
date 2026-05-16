@@ -3,9 +3,10 @@
 ## Status
 
 Execution mirror for `QUA-1011`, the first AAD substrate epic under the broader
-portfolio-AAD program, and `QUA-1019`, the first second-product-family adapter
-epic. The child tickets below were created from this plan and implemented as
-local commits on their epic branches before the final PR.
+portfolio-AAD program, `QUA-1019`, the first second-product-family adapter
+epic, and `QUA-1025`, the ContractIR-aligned AAD expansion epic. The child
+tickets below were created from this plan and implemented as local commits on
+their epic branches before the final PR.
 
 | Ticket | Scope | Status |
 |---|---|---|
@@ -21,11 +22,20 @@ local commits on their epic branches before the final PR.
 | `QUA-1022` | Vanilla equity flat-vol portfolio-AAD adapter and public book entrypoint | Done |
 | `QUA-1023` | Independent finite-difference verification for option flat-vol AAD | Done |
 | `QUA-1024` | Second-product-family docs, limitations, plan mirror, and PR gate | Done |
+| `QUA-1026` | Semantic ContractIR portfolio-AAD lane admission | Done |
+| `QUA-1027` | Vanilla equity grid-vol option node adapter | Done |
+| `QUA-1028` | Early-exercise option control-policy AAD lane | Done |
+| `QUA-1029` | Arithmetic-Asian path-dependent option AAD policy | Done |
+| `QUA-1030` | Quanto scalar-correlation AAD lane | Done |
+| `QUA-1031` | Mixed supported-book runtime aggregation | Done |
+| `QUA-1032` | Local scale/latency benchmark gate | Done |
+| `QUA-1033` | Expansion docs, limitations, plan mirror, and PR gate | Done |
 
 This document still describes the prerequisites for broad portfolio AAD. The
 first prerequisite, stable factor identity plus typed result contracts, is now
-implemented. Broad portfolio AAD remains open until product-family adapters,
-hybrid factor graphs, scenario/bucket aggregation, and scale validation exist.
+implemented. Broad portfolio AAD remains open until broader product-family
+adapters, hybrid factor graphs, scenario aggregation, enterprise-scale
+validation, and production portfolio orchestration exist.
 
 ## Current Shipped Boundary
 
@@ -34,18 +44,32 @@ Trellis currently has bounded book-level reverse-mode lanes:
 - `trellis.book.portfolio_aad_curve_risk(...)`
 - supported bond positions on a shared `YieldCurve`
 - `trellis.book.portfolio_aad_equity_option_vol_risk(...)`
-- supported European vanilla call/put specs on one shared `FlatVol`
+- supported European vanilla call/put specs on one shared `FlatVol` or
+  `GridVolSurface`
+- bounded American/Bermudan vanilla call/put specs on shared `FlatVol` under a
+  hard exercise-projection smooth-interior policy
+- `trellis.book.portfolio_aad_arithmetic_asian_vol_risk(...)`
+- bounded arithmetic-average European call/put specs on shared `FlatVol` under
+  a lognormal moment-matching smooth path-summary policy
+- `trellis.book.portfolio_aad_quanto_correlation_risk(...)`
+- bounded single-name quanto option books over one scalar underlier/FX
+  correlation coordinate
+- `trellis.book.portfolio_aad_supported_book_risk(...)`
+- mixed books composed from explicitly configured supported lanes
 - canonical `RiskFactorId` coordinates and sparse risk vectors in metadata
 - typed `PortfolioAADRequest` / `PortfolioAADResult` payloads
 - `RiskAggregationMap` bucket maps and bucket totals for factor reporting
 - unsupported positions excluded and reported in metadata
 - runtime reporting integrated through the derivative-method taxonomy
+- semantic admission through `trellis.analytics.admit_portfolio_aad_lane(...)`
+- local benchmark evidence through `scripts/benchmark_portfolio_aad.py`
 - backend VJP support is checked and executable
 
 This is useful, but it is not broad portfolio AAD. It does not yet cover
-general asset classes, grid-vol option surfaces, early-exercise or
-path-dependent option products, hybrid objects, large mixed books, or a full
-risk aggregation graph.
+general asset classes, credit products, broad rate derivatives, grid-vol
+early-exercise/path-dependent option products, discontinuous event monitors,
+broad hybrid factor graphs, large mixed books, or a full risk aggregation
+graph.
 
 ## Missing Gap Before Implementation
 
@@ -271,10 +295,10 @@ Deliverables:
 - stable ID tests
 - `MarketState` factor discovery tests
 
-Status: delivered in `QUA-1012` and `QUA-1013` for canonical identity,
-sparse vectors, supported yield-curve nodes, and discovery-only credit,
-volatility, and scalar model-parameter coordinates. Scalar correlation
-coordinates remain part of the hybrid-factor follow-on.
+Status: delivered in `QUA-1012`, `QUA-1013`, and `QUA-1030` for canonical
+identity, sparse vectors, supported yield-curve nodes, supported vol-surface
+coordinates, discovery-only credit and scalar model-parameter coordinates, and
+the bounded scalar-correlation coordinate used by the quanto AAD lane.
 
 ### Phase 2: Portfolio AAD Request And Result Schema
 
@@ -314,12 +338,16 @@ Status: delivered. `QUA-1016` added the protocol and unsupported policy,
 Add one new product family with a small smooth book. A good first target is a
 vanilla option book on a shared flat-vol or grid-vol surface.
 
-Status: delivered for the first bounded second-family slice. `QUA-1022` added
+Status: delivered for the first bounded second-family slices. `QUA-1022` added
 `VanillaEquityOptionVolAADAdapter` /
 `VanillaEquityOptionVolAADMarketContext` plus
 `portfolio_aad_equity_option_vol_risk(...)` for European call/put specs on one
 shared `FlatVol`. `QUA-1023` verifies the sparse flat-vol VJP against an
 independent central finite-difference Black76 bump/reprice reference.
+`QUA-1027` widened the same vanilla lane to shared `GridVolSurface` node
+coordinates. `QUA-1028` added bounded smooth-interior early-exercise support
+over shared `FlatVol`. `QUA-1029` added a bounded arithmetic-Asian path-summary
+lane over shared `FlatVol`. `QUA-1030` added the scalar quanto-correlation lane.
 
 Deliverables:
 
@@ -333,10 +361,12 @@ Deliverables:
 Expose broad AAD through `Session.risk_report(...)` only for supported books.
 Add latency and coverage reporting.
 
-Status: partially delivered for session reporting of the existing bounded
-bond-book lane, direct typed result exposure for the bounded flat-vol option
-lane, and documentation of the current support boundary. Broad runtime
-exposure, grid/surface support, and latency benchmarking remain open.
+Status: delivered for the bounded scope. Session reporting exposes the existing
+bond-book lane; direct typed book entrypoints expose the bounded option,
+path-summary, scalar-correlation, and mixed supported-book lanes; and
+`QUA-1032` added the local benchmark gate. Broad runtime exposure, enterprise
+trade-store integration, broad hybrid graphs, and large-book production
+validation remain open.
 
 Deliverables:
 
@@ -346,36 +376,36 @@ Deliverables:
 
 ## Explicit Non-Goals
 
-- Do not claim universal portfolio AAD from the bounded bond-book or flat-vol
-  option lanes.
+- Do not claim universal portfolio AAD from the bounded supported-book lanes.
 - Do not silently bump unsupported trades inside an AAD result.
 - Do not aggregate risk by display labels alone.
 - Do not include path-dependent discontinuous products until their derivative
   policy is explicit.
 - Do not require dense Jacobian materialization for large books.
 
-## Open Design Questions
+## Residual Design Questions
 
-- Should factor IDs live in `trellis.core`, `trellis.analytics`, or a new
-  `trellis.risk` module?
-- Should a risk result include both low-level factors and bucketed factors by
-  default?
-- Should bump fallback be part of the AAD result or a separate comparison
-  report?
+- Factor IDs currently live in `trellis.analytics.risk_factors`; moving them
+  would be a compatibility project, not part of the bounded AAD lane work.
+- The current result contract includes low-level sparse factors plus optional
+  bucket totals in metadata. A richer first-class bucketed risk object remains
+  open.
+- Bump fallback remains outside the AAD result. The benchmark gate compares
+  against bump/reprice baselines as evidence, but unsupported positions still
+  fail closed inside AAD payloads.
 - How should risk factor identity handle multiple market snapshots or scenario
   namespaces in one session?
 
-## First Ticket Shape
+## Next Ticket Shape
 
 Suggested future ticket:
 
-`Portfolio AAD: risk factor registry and adapter contract`
+`Portfolio AAD: scenario-aware factor namespace and aggregation graph`
 
 Acceptance criteria:
 
-- factor IDs are stable for curves, surfaces, credit curves, and scalar
-  parameter sets
-- existing bond-book reverse-mode risk migrates behind the adapter interface
-  with no numeric regression
-- unsupported positions are represented in result metadata
+- factor IDs can distinguish base, shocked, calibrated, and scenario-local
+  market objects without relying on display labels
+- bucket aggregation works across mixed supported books and scenario axes
+- unsupported positions remain explicit in scenario-aware payloads
 - no broad `portfolio_aad=True` capability is advertised yet

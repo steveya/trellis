@@ -9,11 +9,14 @@ import pytest
 from trellis.analytics.derivative_methods import derivative_method_payload
 from trellis.analytics.portfolio_aad import (
     AADSupportDecision,
+    ArithmeticAsianOptionVolAADAdapter,
     BondCurveAADAdapter,
     BondCurveAADMarketContext,
     DefaultUnsupportedAADPolicy,
     PortfolioAADRequest,
     PortfolioAADResult,
+    QuantoCorrelationAADAdapter,
+    QuantoCorrelationAADMarketContext,
     TradeAADAdapter,
     UnsupportedAADPosition,
     VanillaEquityOptionVolAADAdapter,
@@ -24,11 +27,17 @@ from trellis.analytics.risk_factors import (
     RiskFactorId,
     SparseRiskVector,
 )
-from trellis.book import Book, portfolio_aad_equity_option_vol_risk
+from trellis.book import (
+    Book,
+    portfolio_aad_arithmetic_asian_vol_risk,
+    portfolio_aad_equity_option_vol_risk,
+    portfolio_aad_supported_book_risk,
+)
 from trellis.curves.yield_curve import YieldCurve
 from trellis.core.market_state import MarketState
 from trellis.instruments.bond import Bond
-from trellis.models.vol_surface import FlatVol
+from trellis.models.vol_surface import FlatVol, GridVolSurface
+from trellis.models.resolution.quanto import ResolvedQuantoInputs
 
 
 def _curve_factor(tenor: float) -> RiskFactorId:
@@ -60,6 +69,30 @@ class _VanillaEquitySpec:
     option_type: str = "call"
     notional: float = 1.0
     exercise_style: str = "european"
+    exercise_dates: tuple[date, ...] = ()
+    aad_tree_steps: int = 64
+    early_exercise_boundary_tolerance: float = 1.0e-12
+
+
+@dataclass(frozen=True)
+class _ArithmeticAsianSpec:
+    spot: float
+    strike: float
+    expiry_date: date
+    observation_dates: tuple[date, ...]
+    option_type: str = "call"
+    notional: float = 1.0
+    exercise_style: str = "european"
+    averaging_type: str = "arithmetic"
+    dividend_yield: float = 0.0
+    barrier: float | None = None
+
+
+@dataclass(frozen=True)
+class _QuantoSpec:
+    strike: float
+    option_type: str = "call"
+    notional: float = 1.0
 
 
 def _equity_market_state(vol: float = 0.2) -> MarketState:
@@ -69,6 +102,34 @@ def _equity_market_state(vol: float = 0.2) -> MarketState:
         settlement=settlement,
         discount=YieldCurve.flat(0.05),
         vol_surface=FlatVol(vol),
+    )
+
+
+def _equity_grid_market_state() -> MarketState:
+    settlement = date(2024, 11, 15)
+    return MarketState(
+        as_of=settlement,
+        settlement=settlement,
+        discount=YieldCurve.flat(0.05),
+        vol_surface=GridVolSurface(
+            expiries=(0.5, 1.5),
+            strikes=(90.0, 110.0),
+            vols=((0.18, 0.21), (0.24, 0.27)),
+        ),
+    )
+
+
+def _resolved_quanto_inputs(corr: float = 0.25) -> ResolvedQuantoInputs:
+    return ResolvedQuantoInputs(
+        spot=100.0,
+        fx_spot=1.10,
+        valuation_date=date(2024, 11, 15),
+        T=1.0,
+        domestic_df=0.95,
+        foreign_df=0.97,
+        sigma_underlier=0.22,
+        sigma_fx=0.12,
+        corr=corr,
     )
 
 
@@ -335,20 +396,232 @@ def test_vanilla_equity_option_vol_adapter_vjp_returns_sparse_vol_risk():
     assert sensitivity > 0.0
 
 
-def test_vanilla_equity_option_vol_adapter_rejects_non_european_options():
+def test_vanilla_equity_option_vol_adapter_reports_grid_vol_dependencies():
     adapter = VanillaEquityOptionVolAADAdapter()
-    context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
+    context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_grid_market_state(),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
     spec = _VanillaEquitySpec(
         spot=100.0,
         strike=100.0,
         expiry_date=date(2025, 11, 15),
+    )
+
+    decision = adapter.support_decision("call", spec, context, PortfolioAADRequest())
+    dependencies = adapter.factor_dependencies(spec, context, PortfolioAADRequest())
+
+    assert decision.supported is True
+    assert decision.reason == "supported_vanilla_equity_grid_vol_aad"
+    assert dependencies == decision.factor_dependencies
+    assert len(dependencies) == 4
+    assert {factor.coordinate_type for factor in dependencies} == {"black_vol"}
+    assert {dict(factor.axes)["expiry_years"] for factor in dependencies} == {"0.5", "1.5"}
+    assert context.coordinates()[0].support_status == "supported"
+
+
+def test_vanilla_equity_option_vol_adapter_vjp_returns_sparse_grid_node_risk():
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_grid_market_state())
+    spec = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        notional=2.0,
+    )
+
+    vector = adapter.vjp(spec, context, PortfolioAADRequest(), weight=5.0)
+
+    assert len(vector) == 4
+    assert all(factor.object_type == "vol_surface" for factor in vector)
+    assert {factor.coordinate_type for factor in vector} == {"black_vol"}
+    assert all(sensitivity > 0.0 for _, sensitivity in vector.items())
+
+
+def test_vanilla_equity_option_vol_adapter_rejects_path_dependent_shape():
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
+    spec = _ArithmeticAsianSpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        observation_dates=(date(2025, 5, 15), date(2025, 11, 15)),
+    )
+
+    decision = adapter.support_decision("asian", spec, context, PortfolioAADRequest())
+
+    assert decision.supported is False
+    assert decision.reason == "path_dependent_option_shape_requires_path_adapter"
+
+
+def test_arithmetic_asian_option_vol_adapter_supports_flat_vol_lane():
+    adapter = ArithmeticAsianOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_market_state(),
+        vol_surface_name="spx_flat",
+        currency="USD",
+    )
+    spec = _ArithmeticAsianSpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        observation_dates=(
+            date(2025, 2, 15),
+            date(2025, 5, 15),
+            date(2025, 8, 15),
+            date(2025, 11, 15),
+        ),
+    )
+
+    decision = adapter.support_decision("asian", spec, context, PortfolioAADRequest())
+
+    assert decision.supported is True
+    assert decision.reason == "supported_arithmetic_asian_flat_vol_aad"
+    assert decision.factor_dependencies == (context.coordinates()[0].factor_id,)
+    assert decision.diagnostics[0]["derivative_policy"] == (
+        "lognormal_moment_matching_smooth_path_summary"
+    )
+    assert decision.diagnostics[0]["observation_count"] == 4
+
+
+def test_arithmetic_asian_option_vol_adapter_rejects_discontinuous_or_grid_shapes():
+    adapter = ArithmeticAsianOptionVolAADAdapter()
+    grid_context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_grid_market_state()
+    )
+    spec = _ArithmeticAsianSpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        observation_dates=(date(2025, 5, 15), date(2025, 11, 15)),
+    )
+    barrier_like = _ArithmeticAsianSpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        observation_dates=(date(2025, 5, 15), date(2025, 11, 15)),
+        barrier=80.0,
+    )
+
+    grid_decision = adapter.support_decision(
+        "asian_grid",
+        spec,
+        grid_context,
+        PortfolioAADRequest(),
+    )
+    barrier_decision = adapter.support_decision(
+        "barrier",
+        barrier_like,
+        VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state()),
+        PortfolioAADRequest(),
+    )
+
+    assert grid_decision.supported is False
+    assert grid_decision.reason == "path_dependent_grid_vol_aad_pending"
+    assert barrier_decision.supported is False
+    assert barrier_decision.reason == "unsupported_discontinuous_event_monitor"
+
+
+def test_quanto_correlation_adapter_reports_scalar_correlation_dependency():
+    adapter = QuantoCorrelationAADAdapter()
+    context = QuantoCorrelationAADMarketContext(
+        resolved_inputs=_resolved_quanto_inputs(),
+        correlation_name="sx5e_eurusd",
+        factor_a="SX5E",
+        factor_b="EURUSD",
+        currency="EUR",
+    )
+    spec = _QuantoSpec(strike=100.0)
+
+    decision = adapter.support_decision("quanto", spec, context, PortfolioAADRequest())
+    dependencies = adapter.factor_dependencies(spec, context, PortfolioAADRequest())
+
+    assert decision.supported is True
+    assert decision.reason == "supported_quanto_scalar_correlation_aad"
+    assert dependencies == decision.factor_dependencies
+    assert dependencies[0].coordinate_type == "correlation"
+    assert decision.diagnostics[0]["hybrid_derivative_policy"] == (
+        "bounded_quanto_scalar_correlation_vjp"
+    )
+
+
+def test_quanto_correlation_adapter_fails_closed_near_correlation_bounds():
+    adapter = QuantoCorrelationAADAdapter()
+    context = QuantoCorrelationAADMarketContext(
+        resolved_inputs=_resolved_quanto_inputs(corr=0.9999),
+    )
+
+    decision = adapter.support_decision(
+        "quanto",
+        _QuantoSpec(strike=100.0),
+        context,
+        PortfolioAADRequest(),
+    )
+
+    assert decision.supported is False
+    assert decision.reason == "correlation_bounds_required"
+
+
+def test_vanilla_equity_option_vol_adapter_supports_american_flat_vol_policy():
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
+    spec = _VanillaEquitySpec(
+        spot=80.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+        exercise_style="american",
+    )
+
+    decision = adapter.support_decision("american", spec, context, PortfolioAADRequest())
+
+    assert decision.supported is True
+    assert decision.reason == "supported_vanilla_equity_early_exercise_flat_vol_aad"
+    assert decision.diagnostics[0]["derivative_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
+    assert decision.diagnostics[0]["exercise_style"] == "american"
+
+
+def test_vanilla_equity_option_vol_adapter_rejects_early_exercise_grid_vol():
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_grid_market_state()
+    )
+    spec = _VanillaEquitySpec(
+        spot=80.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
         exercise_style="american",
     )
 
     decision = adapter.support_decision("american", spec, context, PortfolioAADRequest())
 
     assert decision.supported is False
-    assert decision.reason == "unsupported_exercise_style"
+    assert decision.reason == "unsupported_early_exercise_vol_surface_parameterization"
+
+
+def test_vanilla_equity_option_vol_adapter_fails_closed_near_exercise_boundary():
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
+    spec = _VanillaEquitySpec(
+        spot=80.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+        exercise_style="american",
+        early_exercise_boundary_tolerance=1.0e9,
+    )
+
+    decision = adapter.support_decision("american", spec, context, PortfolioAADRequest())
+
+    assert decision.supported is False
+    assert decision.reason == "early_exercise_boundary_kink"
+    assert decision.diagnostics[0]["derivative_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
 
 
 def test_portfolio_aad_equity_option_vol_risk_aggregates_shared_flat_vol_factor():
@@ -394,6 +667,41 @@ def test_portfolio_aad_equity_option_vol_risk_aggregates_shared_flat_vol_factor(
     )
 
 
+def test_portfolio_aad_equity_option_vol_risk_aggregates_shared_grid_vol_nodes():
+    context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_grid_market_state(),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+    call = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="call",
+    )
+    put = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+    )
+    book = Book({"call": call, "put": put}, notionals={"call": 10.0, "put": 4.0})
+
+    result = portfolio_aad_equity_option_vol_risk(book, context)
+
+    assert result.support_status == "supported"
+    assert result.method_metadata["parameterization"] == "shared_grid_vol"
+    assert result.method_metadata["vol_surface_type"] == "GridVolSurface"
+    assert len(result.risk_vector) == 4
+    assert len(result.coordinates) == 4
+    assert result.method_metadata["risk_bucket_totals"]["bucket_names"] == [
+        "risk_class",
+        "currency",
+        "expiry",
+        "strike",
+    ]
+
+
 def test_portfolio_aad_equity_option_vol_risk_applies_selected_factor_filter():
     context = VanillaEquityOptionVolAADMarketContext(
         market_state=_equity_market_state(),
@@ -433,7 +741,7 @@ def test_portfolio_aad_equity_option_vol_risk_applies_selected_factor_filter():
     ) == (missing_factor,)
 
 
-def test_portfolio_aad_equity_option_vol_risk_reports_unsupported_shapes():
+def test_portfolio_aad_equity_option_vol_risk_aggregates_early_exercise_policy():
     context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
     european = _VanillaEquitySpec(
         spot=100.0,
@@ -441,17 +749,172 @@ def test_portfolio_aad_equity_option_vol_risk_reports_unsupported_shapes():
         expiry_date=date(2025, 11, 15),
     )
     american = _VanillaEquitySpec(
-        spot=100.0,
+        spot=80.0,
         strike=100.0,
         expiry_date=date(2025, 11, 15),
+        option_type="put",
         exercise_style="american",
     )
     book = Book({"european": european, "american": american})
 
     result = portfolio_aad_equity_option_vol_risk(book, context)
 
+    assert result.support_status == "supported"
+    assert result.method_metadata["supported_position_names"] == ["european", "american"]
+    assert result.method_metadata["early_exercise_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
+    assert result.method_metadata["unsupported_position_count"] == 0
+    assert len(result.risk_vector) == 1
+
+
+def test_portfolio_aad_arithmetic_asian_vol_risk_aggregates_shared_flat_vol():
+    context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_market_state(),
+        vol_surface_name="spx_flat",
+        currency="USD",
+    )
+    asian_call = _ArithmeticAsianSpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        observation_dates=(
+            date(2025, 2, 15),
+            date(2025, 5, 15),
+            date(2025, 8, 15),
+            date(2025, 11, 15),
+        ),
+    )
+    book = Book({"asian_call": asian_call}, notionals={"asian_call": 3.0})
+
+    result = portfolio_aad_arithmetic_asian_vol_risk(book, context)
+
+    assert result.support_status == "supported"
+    assert result.method_metadata["product_family"] == "arithmetic_asian_option"
+    assert result.method_metadata["path_derivative_policy"] == (
+        "lognormal_moment_matching_smooth_path_summary"
+    )
+    assert result.method_metadata["supported_position_names"] == ["asian_call"]
+    assert len(result.risk_vector) == 1
+
+
+def test_portfolio_aad_supported_book_risk_combines_bond_and_option_lanes():
+    curve = YieldCurve([1.0, 2.0], [0.04, 0.045])
+    bond_context = BondCurveAADMarketContext(
+        curve=curve,
+        settlement=date(2024, 11, 15),
+        curve_name="usd_ois",
+        currency="USD",
+    )
+    option_context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_market_state(),
+        vol_surface_name="spx_flat",
+        currency="USD",
+    )
+    bond = Bond(
+        face=100.0,
+        coupon=0.05,
+        maturity_date=date(2030, 11, 15),
+        maturity=6,
+        frequency=2,
+    )
+    call = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+    )
+    book = Book({"bond": bond, "call": call}, notionals={"bond": 100.0, "call": 5.0})
+
+    result = portfolio_aad_supported_book_risk(
+        book,
+        bond_curve_context=bond_context,
+        equity_option_vol_context=option_context,
+    )
+
+    assert result.support_status == "supported"
+    assert result.method_metadata["supported_position_names"] == ["bond", "call"]
+    assert result.method_metadata["lane_count"] == 2
+    assert len(result.risk_vector) == 3
+    assert {factor.object_type for factor in result.risk_vector} == {
+        "curve",
+        "vol_surface",
+    }
+    assert result.method_metadata["risk_bucket_totals"]["bucket_names"] == [
+        "risk_class",
+        "currency",
+        "object_name",
+        "tenor",
+        "expiry",
+        "strike",
+        "factor_a",
+        "factor_b",
+    ]
+
+
+def test_portfolio_aad_supported_book_risk_filters_and_reports_unsupported_positions():
+    curve = YieldCurve([1.0, 2.0], [0.04, 0.045])
+    bond_context = BondCurveAADMarketContext(
+        curve=curve,
+        settlement=date(2024, 11, 15),
+        curve_name="usd_ois",
+        currency="USD",
+    )
+    option_context = VanillaEquityOptionVolAADMarketContext(
+        market_state=_equity_market_state(),
+        vol_surface_name="spx_flat",
+        currency="USD",
+    )
+    selected_factor = option_context.coordinates()[0].factor_id
+    bond = Bond(
+        face=100.0,
+        coupon=0.05,
+        maturity_date=date(2030, 11, 15),
+        maturity=6,
+        frequency=2,
+    )
+    unsupported = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        exercise_style="chooser",
+    )
+    book = Book({"bond": bond, "unsupported": unsupported})
+
+    result = portfolio_aad_supported_book_risk(
+        book,
+        bond_curve_context=bond_context,
+        equity_option_vol_context=option_context,
+        request=PortfolioAADRequest(selected_factors=(selected_factor,)),
+    )
+
+    assert result.support_status == "partial"
+    assert tuple(result.risk_vector) == ()
+    assert result.missing_selected_factors(
+        PortfolioAADRequest(selected_factors=(selected_factor,))
+    ) == (selected_factor,)
+    assert result.unsupported_positions[0].position_name == "unsupported"
+    assert result.method_metadata["position_support"][0]["lane_id"] == "bond_curve"
+
+
+def test_portfolio_aad_equity_option_vol_risk_reports_unsupported_shapes():
+    context = VanillaEquityOptionVolAADMarketContext(market_state=_equity_market_state())
+    european = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+    )
+    exotic_style = _VanillaEquitySpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        exercise_style="chooser",
+    )
+    book = Book({"european": european, "chooser": exotic_style})
+
+    result = portfolio_aad_equity_option_vol_risk(book, context)
+
     assert result.support_status == "partial"
     assert result.method_metadata["supported_position_names"] == ["european"]
     assert result.method_metadata["unsupported_position_count"] == 1
-    assert result.unsupported_positions[0].position_name == "american"
+    assert result.unsupported_positions[0].position_name == "chooser"
     assert result.unsupported_positions[0].reason == "unsupported_exercise_style"

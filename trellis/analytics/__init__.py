@@ -2,15 +2,23 @@
 
 from trellis.analytics.portfolio_aad import (
     AADSupportDecision,
+    ArithmeticAsianOptionVolAADAdapter,
     BondCurveAADAdapter,
     BondCurveAADMarketContext,
     DefaultUnsupportedAADPolicy,
     PortfolioAADRequest,
     PortfolioAADResult,
+    QuantoCorrelationAADAdapter,
+    QuantoCorrelationAADMarketContext,
     TradeAADAdapter,
     UnsupportedAADPosition,
     VanillaEquityOptionVolAADAdapter,
     VanillaEquityOptionVolAADMarketContext,
+)
+from trellis.analytics.portfolio_aad_admission import (
+    PortfolioAADFactorRequirement,
+    PortfolioAADLaneAdmission,
+    admit_portfolio_aad_lane,
 )
 from trellis.analytics.risk_factors import (
     RiskAggregationMap,
@@ -23,11 +31,16 @@ from trellis.analytics.risk_factors import (
 
 __all__ = [
     "AADSupportDecision",
+    "ArithmeticAsianOptionVolAADAdapter",
     "BondCurveAADAdapter",
     "BondCurveAADMarketContext",
     "DefaultUnsupportedAADPolicy",
     "PortfolioAADRequest",
     "PortfolioAADResult",
+    "PortfolioAADFactorRequirement",
+    "PortfolioAADLaneAdmission",
+    "QuantoCorrelationAADAdapter",
+    "QuantoCorrelationAADMarketContext",
     "RiskAggregationMap",
     "RiskFactorCoordinate",
     "RiskFactorId",
@@ -38,4 +51,5 @@ __all__ = [
     "UnsupportedRiskFactorObject",
     "VanillaEquityOptionVolAADAdapter",
     "VanillaEquityOptionVolAADMarketContext",
+    "admit_portfolio_aad_lane",
 ]

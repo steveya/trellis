@@ -28,6 +28,9 @@ class _VanillaEquitySpec:
     option_type: str = "call"
     notional: float = 1.0
     exercise_style: str = "european"
+    exercise_dates: tuple[date, ...] = ()
+    aad_tree_steps: int = 80
+    early_exercise_boundary_tolerance: float = 1.0e-12
 
 
 def _market_state(vol: float = 0.20) -> MarketState:
@@ -62,11 +65,13 @@ def _black76_equity_value(spec: _VanillaEquitySpec, vol: float) -> float:
 
 
 def _book_value(book: Book, vol: float) -> float:
-    return sum(
-        book.notional(name) * _black76_equity_value(book[name], vol)
-        for name in book
-        if getattr(book[name], "exercise_style", "european") == "european"
-    )
+    if all(getattr(book[name], "exercise_style", "european") == "european" for name in book):
+        return sum(
+            book.notional(name) * _black76_equity_value(book[name], vol)
+            for name in book
+        )
+    supported = portfolio_aad_equity_option_vol_risk(book, _market_state(vol))
+    return float(supported.portfolio_value)
 
 
 def _option_book() -> Book:
@@ -155,6 +160,39 @@ def test_missing_selected_flat_vol_factor_is_reported_not_guessed():
     assert len(filtered.risk_vector) == 0
 
 
+def test_early_exercise_flat_vol_vjp_matches_finite_difference_bump():
+    book = Book(
+        {
+            "american_put": _VanillaEquitySpec(
+                spot=90.0,
+                strike=100.0,
+                expiry_date=date(2025, 11, 15),
+                option_type="put",
+                exercise_style="american",
+                notional=1.5,
+            )
+        },
+        notionals={"american_put": 25.0},
+    )
+    result = _factorized_result(book, vol=0.20)
+    selected_factor = tuple(result.risk_vector)[0]
+    bump = 1.0e-5
+
+    finite_difference = (
+        _book_value(book, 0.20 + bump) - _book_value(book, 0.20 - bump)
+    ) / (2.0 * bump)
+
+    assert result.support_status == "supported"
+    assert result.method_metadata["early_exercise_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
+    assert result.risk_vector[selected_factor] == pytest.approx(
+        finite_difference,
+        rel=5.0e-5,
+        abs=1.0e-5,
+    )
+
+
 def test_unsupported_option_shapes_are_reported_not_guessed():
     book = Book(
         {
@@ -163,11 +201,11 @@ def test_unsupported_option_shapes_are_reported_not_guessed():
                 strike=100.0,
                 expiry_date=date(2025, 11, 15),
             ),
-            "american": _VanillaEquitySpec(
+            "chooser": _VanillaEquitySpec(
                 spot=100.0,
                 strike=100.0,
                 expiry_date=date(2025, 11, 15),
-                exercise_style="american",
+                exercise_style="chooser",
             ),
         }
     )
@@ -176,5 +214,5 @@ def test_unsupported_option_shapes_are_reported_not_guessed():
 
     assert result.support_status == "partial"
     assert len(result.risk_vector) == 1
-    assert result.unsupported_positions[0].position_name == "american"
+    assert result.unsupported_positions[0].position_name == "chooser"
     assert result.unsupported_positions[0].reason == "unsupported_exercise_style"

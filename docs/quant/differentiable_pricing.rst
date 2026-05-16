@@ -82,14 +82,15 @@ The checked support contract is intentionally explicit:
    * - Book-level reverse mode
      - reverse-mode curve risk for supported bond books through
        ``trellis.book.portfolio_aad_curve_risk(...)`` and
-       ``Session.risk_report(...)``; reverse-mode flat-vol risk for bounded
+       ``Session.risk_report(...)``; reverse-mode vol risk for bounded
        vanilla equity option books through
        ``trellis.book.portfolio_aad_equity_option_vol_risk(...)``
      - bounded to supported bond positions on a shared ``YieldCurve`` and
-       European call/put option specs on one shared ``FlatVol``; factorized
-       risk uses stable ``RiskFactorId`` coordinates and ``RiskAggregationMap``
-       bucket totals, while unsupported positions are listed in metadata and
-       excluded from the reverse-mode aggregate
+       European call/put option specs on one shared ``FlatVol`` or
+       ``GridVolSurface`` node grid; factorized risk uses stable
+       ``RiskFactorId`` coordinates and ``RiskAggregationMap`` bucket totals,
+       while unsupported positions are listed in metadata and excluded from
+       the reverse-mode aggregate
    * - Flat volatility risk
      - scalar vega through ``autodiff_flat_vol``
      - flat surfaces only
@@ -113,10 +114,12 @@ the executable operator truth table ``grad=True``, ``jacobian=True``,
 ``jvp=False``, and ``portfolio_aad=False``. The ``vjp`` wrapper returns the
 primal value plus a pullback closure for vector-valued smooth functions, and
 the bounded book-level reverse-mode lanes now build on that surface for
-supported curve-linked bond books and flat-vol vanilla option books.
-The capability flag stays
-``portfolio_aad=False`` because the supported contract is still book-specific
-rather than a claim of universal portfolio-AAD coverage.
+supported curve-linked bond books, flat/grid-vol vanilla option books,
+smooth-interior early-exercise options, arithmetic-Asian path summaries,
+scalar quanto-correlation books, and explicitly configured mixed supported
+books. The capability flag stays ``portfolio_aad=False`` because the supported
+contract is still book-specific rather than a claim of universal portfolio-AAD
+coverage.
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
 scalar-objective functions on smooth-interior regions. It is not a claim about
 branch singularities, discontinuous payoffs, or vector-valued objectives. For
@@ -162,9 +165,25 @@ keeping today's ``autograd`` boundary honest.
   ``YieldCurve``, with factorized sparse risk metadata and unsupported
   positions excluded explicitly in metadata
 - bounded book-level reverse mode for European vanilla equity call/put books on
-  a shared ``FlatVol`` through
+  a shared ``FlatVol`` or ``GridVolSurface`` through
   ``trellis.book.portfolio_aad_equity_option_vol_risk(...)``, verified against
-  independent central finite-difference bump/reprice
+  independent central finite-difference bump/reprice for scalar flat-vol and
+  grid-node sensitivities
+- bounded book-level reverse mode for American/Bermudan vanilla equity
+  call/put books over a shared ``FlatVol`` under a hard exercise-projection,
+  smooth-interior policy; positions close to continuation/intrinsic ties fail
+  closed instead of reporting unstable AAD Greeks
+- bounded book-level reverse mode for arithmetic-Asian European call/put books
+  over a shared ``FlatVol`` through
+  ``trellis.book.portfolio_aad_arithmetic_asian_vol_risk(...)`` using a
+  lognormal moment-matching smooth path-summary derivative policy
+- bounded book-level reverse mode for single-name quanto option books over one
+  scalar underlier/FX correlation through
+  ``trellis.book.portfolio_aad_quanto_correlation_risk(...)``, with canonical
+  ``model_parameter`` / ``correlation`` risk-factor coordinates
+- bounded mixed supported-book reverse mode through
+  ``trellis.book.portfolio_aad_supported_book_risk(...)`` for explicitly
+  configured combinations of the supported AAD lanes
 - rates bootstrap calibration through an ``autodiff_vector_jacobian`` repricing
   matrix
 - flat-vol Vega extraction in the analytics layer
@@ -246,12 +265,15 @@ runtime reporting must not overstate.
      - unsupported for pathwise AD; the governed fallback is
        ``finite_difference_bump_reprice`` with fail-closed policy metadata
    * - ``portfolio_aad_vjp``
-     - bounded bond-book and flat-vol option-book portfolio AAD routes
+     - bounded bond-book, option-book, and mixed supported-book portfolio AAD routes
      - ``portfolio_aad_vjp``
-     - partial support: shared-curve bond books and shared-flat-vol European
-       option books use VJP-backed reverse-mode aggregates over canonical
-       risk-factor IDs, while unsupported positions are excluded and reported
-       in metadata
+     - partial support: shared-curve bond books, European option books over
+       shared flat/grid vol, smooth-interior early-exercise option books over
+       shared flat vol, arithmetic-Asian smooth path-summary books over shared
+       flat vol, bounded quanto books over one scalar correlation, and mixed
+       books composed from those explicit lanes use VJP-backed reverse-mode
+       aggregates over canonical risk-factor IDs, while unsupported positions
+       are excluded and reported in metadata
 
 Bounded Portfolio-AAD Factor Payload
 ------------------------------------
@@ -276,18 +298,74 @@ coordinate. It records object type, object name, coordinate type, optional
 currency or issuer, sorted axes such as ``tenor_years``, and an optional
 provenance namespace. ``RiskFactorRegistry`` discovers supported
 ``YieldCurve`` zero-rate nodes for the executable bond-book lane and supported
-``FlatVol`` scalar-vol coordinates for the bounded vanilla option lane. It can
-also describe credit-curve hazard nodes, grid volatility nodes, and scalar
-model parameters as ``discovery_only`` coordinates for future adapters.
+``FlatVol`` scalar-vol and ``GridVolSurface`` node-vol coordinates for the
+bounded vanilla option lane. It can also describe credit-curve hazard nodes and
+scalar model parameters as ``discovery_only`` coordinates for future adapters.
+
+``trellis.analytics.admit_portfolio_aad_lane(...)`` is the semantic admission
+gate used before widening those adapters. It classifies ``ContractIR`` and
+``DynamicContractIR`` shapes into supported, planned, or unsupported
+portfolio-AAD lanes, and records the required market-coordinate family before a
+pricing tape is built. Today terminal European vanilla option ``ContractIR``
+shapes over scalar flat vol and grid-vol node coordinates are admitted as
+supported. Early-exercise/control shapes are admitted for the bounded flat-vol
+vanilla option lane under the smooth-interior hard-projection policy.
+Arithmetic-average path summaries are admitted for the bounded flat-vol
+arithmetic-Asian lane under the lognormal moment-matching policy. Grid-vol
+early-exercise and grid-vol path-dependent shapes remain planned fail-closed,
+and discontinuous event monitors are reported as unsupported. The bounded
+quanto family is admitted only for the scalar underlier/FX correlation
+parameterization. Admission metadata is a support decision only; it is not
+itself a pricing implementation.
 
 ``portfolio_aad_equity_option_vol_risk(...)`` returns the typed
 ``PortfolioAADResult`` directly. It supports smooth European call/put specs
 that expose ``spot``, ``strike``, ``expiry_date``, ``option_type``, optional
-``notional``, and optional ``exercise_style="european"``. The lane prices from
-one shared ``FlatVol`` and aggregates all supported positions onto one
-canonical ``vol_surface`` / ``flat_vol`` factor. American, Bermudan, barrier,
-Asian, path-dependent, local-vol, and grid-vol option AAD remain unsupported in
-this lane and are reported as unsupported positions rather than silently bumped.
+``notional``, and optional ``exercise_style="european"``. It also supports
+bounded American/Bermudan vanilla call/put specs over ``FlatVol`` when the CRR
+exercise policy is smooth enough for the configured
+``early_exercise_boundary_tolerance``. Flat-vol books aggregate onto one
+canonical ``vol_surface`` / ``flat_vol`` factor, while grid-vol European books
+aggregate onto sparse ``vol_surface`` / ``black_vol`` expiry/strike node
+factors. Grid-vol early-exercise, arithmetic Asians, barrier, broader
+path-dependent, and local-vol option AAD remain unsupported or planned in this
+lane and are reported as unsupported positions rather than silently bumped.
+
+``portfolio_aad_arithmetic_asian_vol_risk(...)`` is the bounded smooth
+path-summary lane. It supports European arithmetic-average call/put specs that
+expose ``spot``, ``strike``, ``expiry_date``, ``observation_dates`` or
+``n_observations``, ``option_type``, optional ``notional``, and optional
+``dividend_yield``. It prices with the same moment-matched lognormal
+approximation as the bounded arithmetic-Asian helper and differentiates the
+shared ``FlatVol`` scalar with VJP. Barrier, knock, first-hit, grid-vol path,
+early-exercise path, geometric-average, and broader event-monitor shapes fail
+closed with explicit support reasons.
+
+``portfolio_aad_quanto_correlation_risk(...)`` is the bounded hybrid lane. It
+accepts a ``QuantoCorrelationAADMarketContext`` with already-resolved quanto
+inputs and one scalar ``corr`` value, then differentiates that scalar through
+the analytical quanto kernel. The resulting factor is a canonical
+``RiskFactorId(object_type="model_parameter", coordinate_type="correlation")``
+with optional ``factor_a`` / ``factor_b`` axes and a ``tanh`` transform label.
+This is not universal hybrid AAD: curves, spots, FX, vols, and any broader
+hybrid factor graph are held fixed outside this lane.
+
+``portfolio_aad_supported_book_risk(...)`` is the mixed supported-book
+dispatcher. Callers pass the explicit market context for each lane they want
+enabled, such as a shared bond curve plus one vanilla option vol surface. The
+dispatcher routes each position to the first supporting adapter, aggregates the
+resulting sparse ``RiskFactorId`` vector across risk classes, preserves
+per-lane support attempts in metadata, and keeps unsupported positions
+fail-closed. This is still bounded runtime aggregation over known adapters, not
+a generic portfolio compiler or an industrial-scale tape.
+
+The local benchmark gate for these bounded lanes is
+``scripts/benchmark_portfolio_aad.py``. It reports book size, lane mix, factor
+count, AAD elapsed time, deterministic bump/reprice baseline elapsed time, and
+relative speedup for the supported bond, flat-vol option, grid-vol option, and
+mixed supported-book fixtures. The gate is evidence for this explicit support
+contract only; it does not change the backend ``portfolio_aad=False`` capability
+or imply broad tape coverage.
 
 ``PortfolioAADRequest`` is the request-side support contract. A request may
 select a subset of factors, set the unsupported-position policy, and preserve

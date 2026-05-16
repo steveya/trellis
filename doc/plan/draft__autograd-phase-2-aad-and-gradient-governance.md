@@ -132,11 +132,15 @@ The Phase 2 question is not only whether this derivative exists. It is how to
 compute it without scaling linearly through repeated bump/reprice loops across
 every trade and risk factor.
 
-`QUA-968` landed the first bounded answer: supported bond books on a shared
-public `YieldCurve` can compute reverse-mode curve risk through
-`trellis.book.portfolio_aad_curve_risk(...)`, with unsupported positions
-reported explicitly. This is not universal portfolio AAD; broader books,
-non-smooth routes, and richer risk vectors remain follow-on work.
+`QUA-968`, `QUA-1011`, `QUA-1019`, and `QUA-1025` landed the bounded answer:
+supported bond books on a shared public `YieldCurve`, vanilla option books on
+shared flat/grid vol surfaces, smooth-interior early-exercise options over flat
+vol, arithmetic-Asian smooth path summaries, scalar quanto-correlation books,
+and explicitly configured mixed supported books can compute reverse-mode risk
+through the bounded `trellis.book.portfolio_aad_*` entrypoints, with unsupported
+positions reported explicitly. This is not universal portfolio AAD; broad
+product coverage, discontinuous routes, industrial mixed books, and richer risk
+graphs remain follow-on work.
 
 ### Discontinuities
 
@@ -179,7 +183,7 @@ Instead:
 The Phase 2 program should be considered complete when:
 
 1. backend operator capabilities are checked by tests and accurately reported
-2. one bounded portfolio AAD path exists with provenance and benchmark evidence
+2. bounded portfolio AAD paths exist with provenance and benchmark evidence
 3. discontinuous derivative policy is implemented for at least one bounded
    product family
 4. a product-family gradient matrix guards the public support contract

@@ -274,6 +274,17 @@ baseline under ``docs/benchmarks/pod_risk_workflows.{json,md}``. The same
 folder-level contract applies there: checked benchmark payloads are repo
 artifacts, not ad hoc local output dumps.
 
+Portfolio-AAD throughput has a local benchmark gate for the bounded supported
+lanes. Run
+``/Users/steveyang/miniforge3/bin/python3 scripts/benchmark_portfolio_aad.py``
+to compare shared-curve bond books, flat/grid-vol option books, and mixed
+supported books against deterministic bump/reprice baselines. The default
+output goes under ignored ``benchmark_runs/portfolio_aad/`` scratch space so
+developers can keep machine-specific timing evidence out of the checked
+benchmark artifact folder. The report is diagnostic rather than a CI threshold:
+small one-factor fixtures can expose tracing overhead even when higher-factor
+fixtures show the intended bump-count reduction.
+
 The same benchmarking module now also exposes
 ``supported_counterparty_exposure_benchmark_scenarios()`` and
 ``build_supported_counterparty_exposure_benchmark_report(...)`` for the

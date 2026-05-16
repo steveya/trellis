@@ -113,7 +113,8 @@ positions are listed explicitly and are excluded from AAD risk rather than
 silently bumped.
 
 The same factorized portfolio-AAD result contract is available directly for
-bounded vanilla equity option books on one shared flat volatility surface:
+bounded vanilla equity option books on one shared flat volatility surface or
+one shared grid volatility surface:
 
 .. code-block:: python
 
@@ -153,6 +154,75 @@ bounded vanilla equity option books on one shared flat volatility surface:
    print(aad.risk_vector.to_payload())
 
 This option lane is intentionally narrower than ``Session.risk_report(...)``:
-it supports European call/put specs on ``FlatVol`` only, returns a typed
-``PortfolioAADResult`` directly, and reports non-European or non-flat-vol
-positions as unsupported instead of inserting a finite-difference fallback.
+it supports European call/put specs on one shared ``FlatVol`` or
+``GridVolSurface`` plus bounded smooth-interior American/Bermudan specs over
+``FlatVol``, returns a typed ``PortfolioAADResult`` directly, and reports
+unsupported positions as unsupported instead of inserting a finite-difference
+fallback.
+
+Arithmetic-average Asian options use a separate path-summary lane:
+
+.. code-block:: python
+
+   from trellis.book import portfolio_aad_arithmetic_asian_vol_risk
+
+   aad = portfolio_aad_arithmetic_asian_vol_risk(
+       book,
+       market,
+       vol_surface_name="spx_flat",
+       currency="USD",
+   )
+
+That lane supports bounded European arithmetic-average call/put specs over a
+shared ``FlatVol`` and reports barrier, knock, grid-vol path, and other
+discontinuous or unsupported path features as fail-closed metadata.
+
+Single-name quanto correlation risk has its own bounded hybrid lane:
+
+.. code-block:: python
+
+   from trellis.analytics import QuantoCorrelationAADMarketContext
+   from trellis.book import portfolio_aad_quanto_correlation_risk
+
+   context = QuantoCorrelationAADMarketContext(
+       resolved_inputs=resolved_quanto_inputs,
+       correlation_name="sx5e_eurusd",
+       factor_a="SX5E",
+       factor_b="EURUSD",
+       currency="EUR",
+   )
+   aad = portfolio_aad_quanto_correlation_risk(book, context)
+
+Only the scalar correlation in ``resolved_quanto_inputs`` is differentiated;
+the already-resolved curves, spots, FX spot, and volatility inputs are held
+fixed and remain outside the hybrid AAD claim.
+
+For small books that combine already-supported lanes, use the mixed dispatcher:
+
+.. code-block:: python
+
+   from trellis.analytics import (
+       BondCurveAADMarketContext,
+       VanillaEquityOptionVolAADMarketContext,
+   )
+   from trellis.book import portfolio_aad_supported_book_risk
+
+   aad = portfolio_aad_supported_book_risk(
+       book,
+       bond_curve_context=BondCurveAADMarketContext(
+           curve=curve,
+           settlement=date(2024, 11, 15),
+           curve_name="usd_ois",
+           currency="USD",
+       ),
+       equity_option_vol_context=VanillaEquityOptionVolAADMarketContext(
+           market_state=market,
+           vol_surface_name="spx_flat",
+           currency="USD",
+       ),
+   )
+
+It combines the explicit bond, vanilla/grid-vol option, bounded
+arithmetic-Asian, and scalar quanto-correlation AAD lanes when their contexts
+are supplied. Unsupported positions remain listed in the typed result and are
+excluded from AAD risk.

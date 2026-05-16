@@ -41,6 +41,33 @@ Leg-based and dynamic contracts now have separate sibling semantic homes:
 - :doc:`static_leg_contract_ir` for static scheduled coupon/cashflow products
 - :doc:`dynamic_contract_ir` for event/state/control wrappers over static bases
 
+Portfolio-AAD Admission
+-----------------------
+
+``ContractIR`` is also the semantic input to the bounded portfolio-AAD support
+gate in ``trellis.analytics.admit_portfolio_aad_lane(...)``. That helper does
+not price anything. It answers whether a structural contract shape is allowed
+to enter a portfolio-AAD adapter, which factor-coordinate family the adapter
+would need, and why a shape must fail closed today.
+
+The current admission vocabulary is deliberately narrow:
+
+- terminal European vanilla option ramps over scalar flat vol are supported
+- the same terminal vanilla shape over grid-vol nodes is supported by the
+  bounded grid-node option-vol adapter
+- dynamic early-exercise/control shapes belong to ``DynamicContractIR``; the
+  bounded flat-vol vanilla option lane is supported under a
+  hard-exercise-projection, smooth-interior policy that fails closed near
+  exercise-boundary ties, while grid-vol early-exercise AAD remains planned
+- smooth path summaries such as arithmetic averaging are supported for the
+  bounded flat-vol arithmetic-Asian lane under a lognormal moment-matching
+  derivative policy; grid-vol path AAD remains planned, and discontinuous event
+  monitors are unsupported for AAD unless a custom derivative policy is
+  explicitly added
+- the bounded single-name quanto lane supports one scalar underlier/FX
+  correlation coordinate; broader hybrid/composite-underlier shapes still
+  require explicit factor-graph ownership before any AAD lane can be admitted
+
 Execution IR Bridge
 -------------------
 

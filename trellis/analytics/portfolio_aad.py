@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, is_dataclass, replace
 from datetime import date
 from typing import Any, Protocol, runtime_checkable
 
@@ -13,6 +13,11 @@ from trellis.analytics.risk_factors import (
     RiskFactorRegistry,
     SparseRiskVector,
 )
+
+
+_EARLY_EXERCISE_AAD_POLICY = "hard_exercise_projection_smooth_interior"
+_DEFAULT_EARLY_EXERCISE_TREE_STEPS = 128
+_DEFAULT_EARLY_EXERCISE_BOUNDARY_TOLERANCE = 1.0e-12
 
 
 def _sorted_unique_factors(factors: Iterable[RiskFactorId]) -> tuple[RiskFactorId, ...]:
@@ -285,7 +290,7 @@ class BondCurveAADAdapter:
 
 @dataclass(frozen=True)
 class VanillaEquityOptionVolAADMarketContext:
-    """Market context for the bounded vanilla-equity flat-vol AAD lane."""
+    """Market context for the bounded vanilla-equity vol-surface AAD lane."""
 
     market_state: object
     vol_surface_name: str = "default_vol_surface"
@@ -294,14 +299,59 @@ class VanillaEquityOptionVolAADMarketContext:
     object_path: str = ""
 
     def coordinates(self) -> tuple[RiskFactorCoordinate, ...]:
-        """Return the supported scalar flat-vol coordinate for this context."""
+        """Return supported vol coordinates for this context."""
         market_state = self.market_state
         vol_surface = getattr(market_state, "vol_surface", None)
         if vol_surface is None:
             raise ValueError("vanilla equity option AAD requires market_state.vol_surface")
-        return RiskFactorRegistry().discover_flat_vol_surface(
-            vol_surface,
-            object_name=self.vol_surface_name,
+        from trellis.models.vol_surface import FlatVol, GridVolSurface
+
+        registry = RiskFactorRegistry()
+        if isinstance(vol_surface, FlatVol):
+            return registry.discover_flat_vol_surface(
+                vol_surface,
+                object_name=self.vol_surface_name,
+                currency=self.currency,
+                object_path=self.object_path,
+                provenance_namespace=self.provenance_namespace,
+                support_status="supported",
+            )
+        if isinstance(vol_surface, GridVolSurface):
+            return registry.discover_grid_vol_surface(
+                vol_surface,
+                object_name=self.vol_surface_name,
+                currency=self.currency,
+                object_path=self.object_path,
+                provenance_namespace=self.provenance_namespace,
+                support_status="supported",
+            )
+        raise ValueError(
+            "unsupported vol surface parameterization for vanilla equity option AAD"
+        )
+
+
+@dataclass(frozen=True)
+class QuantoCorrelationAADMarketContext:
+    """Market context for the bounded quanto scalar-correlation AAD lane."""
+
+    resolved_inputs: object
+    correlation_name: str = "quanto_correlation"
+    factor_a: str | None = None
+    factor_b: str | None = None
+    currency: str | None = None
+    provenance_namespace: str | None = "portfolio_aad"
+    object_path: str = ""
+
+    def coordinates(self) -> tuple[RiskFactorCoordinate, ...]:
+        """Return the scalar correlation coordinate for this context."""
+        corr = getattr(self.resolved_inputs, "corr", None)
+        if corr is None:
+            raise ValueError("quanto correlation AAD requires resolved_inputs.corr")
+        return RiskFactorRegistry().discover_scalar_correlation(
+            corr,
+            object_name=self.correlation_name,
+            factor_a=self.factor_a,
+            factor_b=self.factor_b,
             currency=self.currency,
             object_path=self.object_path,
             provenance_namespace=self.provenance_namespace,
@@ -311,7 +361,7 @@ class VanillaEquityOptionVolAADMarketContext:
 
 @dataclass(frozen=True)
 class VanillaEquityOptionVolAADAdapter:
-    """Concrete adapter for vanilla European equity-option risk to one FlatVol."""
+    """Concrete adapter for vanilla European equity-option risk to one surface."""
 
     def support_decision(
         self,
@@ -332,9 +382,10 @@ class VanillaEquityOptionVolAADAdapter:
         if getattr(market_state, "vol_surface", None) is None:
             return AADSupportDecision(False, "vol_surface_required")
 
-        from trellis.models.vol_surface import FlatVol
+        from trellis.models.vol_surface import FlatVol, GridVolSurface
 
-        if not isinstance(getattr(market_state, "vol_surface", None), FlatVol):
+        vol_surface = getattr(market_state, "vol_surface", None)
+        if not isinstance(vol_surface, (FlatVol, GridVolSurface)):
             return AADSupportDecision(False, "unsupported_vol_surface_parameterization")
 
         missing_fields = tuple(
@@ -353,11 +404,14 @@ class VanillaEquityOptionVolAADAdapter:
                     },
                 ),
             )
+        if _looks_path_dependent_option_shape(instrument):
+            return AADSupportDecision(
+                False,
+                "path_dependent_option_shape_requires_path_adapter",
+            )
 
-        exercise_style = (
-            str(getattr(instrument, "exercise_style", "european")).strip().lower()
-        )
-        if exercise_style != "european":
+        exercise_style = _vanilla_equity_option_exercise_style(instrument)
+        if exercise_style not in {"european", "american", "bermudan"}:
             return AADSupportDecision(False, "unsupported_exercise_style")
 
         option_type = str(getattr(instrument, "option_type", "call")).strip().lower()
@@ -381,12 +435,79 @@ class VanillaEquityOptionVolAADAdapter:
         if maturity <= 0.0:
             return AADSupportDecision(False, "positive_maturity_required")
 
+        if exercise_style in {"american", "bermudan"}:
+            if not isinstance(vol_surface, FlatVol):
+                return AADSupportDecision(
+                    False,
+                    "unsupported_early_exercise_vol_surface_parameterization",
+                )
+            base_vol = float(getattr(vol_surface, "vol"))
+            if base_vol <= 0.0:
+                return AADSupportDecision(False, "positive_vol_required")
+            if exercise_style == "bermudan" and not _vanilla_equity_option_exercise_steps(
+                instrument,
+                market_state,
+                maturity=maturity,
+                n_steps=_vanilla_equity_option_tree_steps(instrument),
+            ):
+                return AADSupportDecision(False, "bermudan_exercise_schedule_required")
+            try:
+                _, boundary_margin = _vanilla_equity_option_early_exercise_value_from_vol(
+                    instrument,
+                    market_state,
+                    base_vol,
+                    return_boundary_margin=True,
+                )
+            except Exception as exc:
+                return AADSupportDecision(
+                    False,
+                    "early_exercise_policy_unavailable",
+                    diagnostics=(
+                        {
+                            "position_name": str(position_name),
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        },
+                    ),
+                )
+            diagnostic = _vanilla_equity_option_early_exercise_diagnostic(
+                instrument,
+                boundary_margin=boundary_margin,
+            )
+            tolerance = _vanilla_equity_option_boundary_tolerance(instrument)
+            if boundary_margin is not None and boundary_margin <= tolerance:
+                return AADSupportDecision(
+                    False,
+                    "early_exercise_boundary_kink",
+                    diagnostics=(diagnostic,),
+                )
+            try:
+                dependencies = self.factor_dependencies(instrument, context, request)
+            except Exception as exc:
+                return AADSupportDecision(
+                    False,
+                    "vol_surface_coordinate_unavailable",
+                    diagnostics=(
+                        {
+                            "position_name": str(position_name),
+                            "error_type": type(exc).__name__,
+                            "error": str(exc),
+                        },
+                    ),
+                )
+            return AADSupportDecision(
+                True,
+                "supported_vanilla_equity_early_exercise_flat_vol_aad",
+                factor_dependencies=dependencies,
+                diagnostics=(diagnostic,),
+            )
+
         try:
             dependencies = self.factor_dependencies(instrument, context, request)
         except Exception as exc:
             return AADSupportDecision(
                 False,
-                "flat_vol_coordinate_unavailable",
+                "vol_surface_coordinate_unavailable",
                 diagnostics=(
                     {
                         "position_name": str(position_name),
@@ -397,7 +518,7 @@ class VanillaEquityOptionVolAADAdapter:
             )
         return AADSupportDecision(
             True,
-            "supported_vanilla_equity_flat_vol_aad",
+            _vanilla_equity_option_support_reason(vol_surface),
             factor_dependencies=dependencies,
         )
 
@@ -407,9 +528,11 @@ class VanillaEquityOptionVolAADAdapter:
         market_context: object,
         request: PortfolioAADRequest,
     ) -> tuple[RiskFactorId, ...]:
-        """Return the shared flat-vol factor for a supported vanilla option."""
+        """Return shared vol-surface factors for a supported vanilla option."""
         context = self._context(market_context)
-        return tuple(coordinate.factor_id for coordinate in context.coordinates())
+        return _sorted_unique_factors(
+            coordinate.factor_id for coordinate in context.coordinates()
+        )
 
     def value(
         self,
@@ -423,6 +546,14 @@ class VanillaEquityOptionVolAADAdapter:
         vol_surface = getattr(market_state, "vol_surface", None)
         maturity = _vanilla_equity_option_maturity(instrument, market_state)
         sigma = vol_surface.black_vol(maturity, float(getattr(instrument, "strike")))
+        if _vanilla_equity_option_exercise_style(instrument) in {"american", "bermudan"}:
+            return float(
+                _vanilla_equity_option_early_exercise_value_from_vol(
+                    instrument,
+                    market_state,
+                    sigma,
+                )
+            )
         return float(_vanilla_equity_option_value_from_vol(instrument, market_state, sigma))
 
     def vjp(
@@ -432,17 +563,244 @@ class VanillaEquityOptionVolAADAdapter:
         request: PortfolioAADRequest,
         weight: float = 1.0,
     ) -> SparseRiskVector:
-        """Return the sparse flat-vol VJP vector for one option position."""
+        """Return the sparse vol-surface VJP vector for one option position."""
         from trellis.core.differentiable import get_numpy, vjp
+        from trellis.models.vol_surface import FlatVol, GridVolSurface
 
         context = self._context(market_context)
         market_state = context.market_state
         coordinates = context.coordinates()
         vol_surface = getattr(market_state, "vol_surface", None)
+        if isinstance(vol_surface, FlatVol):
+            base_vol = float(getattr(vol_surface, "vol"))
+
+            def value_from_vol(vol):
+                if _vanilla_equity_option_exercise_style(instrument) in {
+                    "american",
+                    "bermudan",
+                }:
+                    return _vanilla_equity_option_early_exercise_value_from_vol(
+                        instrument,
+                        market_state,
+                        vol,
+                    )
+                return _vanilla_equity_option_value_from_vol(
+                    instrument,
+                    market_state,
+                    vol,
+                )
+
+            _value, pullback = vjp(value_from_vol, base_vol)
+            np = get_numpy()
+            gradient = np.asarray(pullback(float(weight)), dtype=float)
+            sensitivity = float(np.reshape(gradient, (-1,))[0])
+            vector = SparseRiskVector.from_items(
+                ((coordinates[0].factor_id, sensitivity),)
+            )
+            return request.filter_vector(vector)
+        if isinstance(vol_surface, GridVolSurface):
+            np = get_numpy()
+            expiries = tuple(float(expiry) for expiry in vol_surface.expiries)
+            strikes = tuple(float(strike) for strike in vol_surface.strikes)
+            base_vols = np.asarray(vol_surface.vols, dtype=float)
+
+            def value_from_nodes(vol_nodes):
+                traced_surface = GridVolSurface(expiries, strikes, vol_nodes)
+                maturity = _vanilla_equity_option_maturity(instrument, market_state)
+                sigma = traced_surface.black_vol(
+                    maturity,
+                    float(getattr(instrument, "strike")),
+                )
+                return _vanilla_equity_option_value_from_vol(
+                    instrument,
+                    market_state,
+                    sigma,
+                )
+
+            _value, pullback = vjp(value_from_nodes, base_vols)
+            gradient = np.asarray(pullback(float(weight)), dtype=float).reshape(-1)
+            vector = SparseRiskVector.from_items(
+                (coordinate.factor_id, sensitivity)
+                for coordinate, sensitivity in zip(coordinates, gradient)
+            )
+            return request.filter_vector(vector)
+        raise ValueError(
+            "unsupported vol surface parameterization for vanilla equity option AAD"
+        )
+
+    @staticmethod
+    def _context(market_context: object) -> VanillaEquityOptionVolAADMarketContext:
+        if not isinstance(market_context, VanillaEquityOptionVolAADMarketContext):
+            raise TypeError(
+                "VanillaEquityOptionVolAADAdapter requires "
+                "VanillaEquityOptionVolAADMarketContext"
+            )
+        return market_context
+
+
+@dataclass(frozen=True)
+class ArithmeticAsianOptionVolAADAdapter:
+    """Adapter for bounded arithmetic-Asian option risk to one flat vol."""
+
+    def support_decision(
+        self,
+        position_name: str,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> AADSupportDecision:
+        """Return whether this adapter supports an arithmetic-Asian option."""
+        try:
+            context = self._context(market_context)
+        except TypeError:
+            return AADSupportDecision(False, "unsupported_market_context")
+
+        market_state = context.market_state
+        if getattr(market_state, "discount", None) is None:
+            return AADSupportDecision(False, "discount_curve_required")
+        if getattr(market_state, "vol_surface", None) is None:
+            return AADSupportDecision(False, "vol_surface_required")
+        if _has_discontinuous_path_feature(instrument):
+            return AADSupportDecision(False, "unsupported_discontinuous_event_monitor")
+
+        from trellis.models.vol_surface import FlatVol, GridVolSurface
+
+        vol_surface = getattr(market_state, "vol_surface", None)
+        if isinstance(vol_surface, GridVolSurface):
+            return AADSupportDecision(False, "path_dependent_grid_vol_aad_pending")
+        if not isinstance(vol_surface, FlatVol):
+            return AADSupportDecision(False, "unsupported_vol_surface_parameterization")
+        if float(getattr(vol_surface, "vol")) <= 0.0:
+            return AADSupportDecision(False, "positive_vol_required")
+
+        missing_fields = tuple(
+            field_name
+            for field_name in ("spot", "strike", "expiry_date")
+            if not hasattr(instrument, field_name)
+        )
+        if missing_fields:
+            return AADSupportDecision(
+                False,
+                "arithmetic_asian_contract_fields_required",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "missing_fields": list(missing_fields),
+                    },
+                ),
+            )
+        exercise_style = _vanilla_equity_option_exercise_style(instrument)
+        if exercise_style != "european":
+            return AADSupportDecision(False, "unsupported_path_dependent_exercise_style")
+        option_type = str(getattr(instrument, "option_type", "call")).strip().lower()
+        if option_type not in {"call", "put"}:
+            return AADSupportDecision(False, "unsupported_option_type")
+        averaging_type = str(
+            getattr(instrument, "averaging_type", "arithmetic")
+        ).strip().lower()
+        if averaging_type != "arithmetic":
+            return AADSupportDecision(False, "unsupported_path_average_type")
+
+        try:
+            maturity = _vanilla_equity_option_maturity(instrument, market_state)
+            observation_times = _arithmetic_asian_option_observation_times(
+                instrument,
+                market_state,
+                maturity=maturity,
+            )
+        except Exception as exc:
+            return AADSupportDecision(
+                False,
+                "path_observation_schedule_unavailable",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                ),
+            )
+        if maturity <= 0.0:
+            return AADSupportDecision(False, "positive_maturity_required")
+
+        try:
+            dependencies = self.factor_dependencies(instrument, context, request)
+        except Exception as exc:
+            return AADSupportDecision(
+                False,
+                "vol_surface_coordinate_unavailable",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                ),
+            )
+        return AADSupportDecision(
+            True,
+            "supported_arithmetic_asian_flat_vol_aad",
+            factor_dependencies=dependencies,
+            diagnostics=(
+                _arithmetic_asian_option_diagnostic(
+                    observation_count=len(observation_times),
+                ),
+            ),
+        )
+
+    def factor_dependencies(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> tuple[RiskFactorId, ...]:
+        """Return the shared flat-vol factor for a supported Asian option."""
+        context = self._context(market_context)
+        return _sorted_unique_factors(
+            coordinate.factor_id for coordinate in context.coordinates()
+        )
+
+    def value(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> float:
+        """Return the moment-matched arithmetic-Asian value."""
+        context = self._context(market_context)
+        market_state = context.market_state
+        vol_surface = getattr(market_state, "vol_surface", None)
+        maturity = _vanilla_equity_option_maturity(instrument, market_state)
+        sigma = vol_surface.black_vol(maturity, float(getattr(instrument, "strike")))
+        return float(
+            _arithmetic_asian_option_value_from_vol(instrument, market_state, sigma)
+        )
+
+    def vjp(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+        weight: float = 1.0,
+    ) -> SparseRiskVector:
+        """Return the sparse flat-vol VJP vector for one Asian option."""
+        from trellis.core.differentiable import get_numpy, vjp
+        from trellis.models.vol_surface import FlatVol
+
+        context = self._context(market_context)
+        market_state = context.market_state
+        coordinates = context.coordinates()
+        vol_surface = getattr(market_state, "vol_surface", None)
+        if not isinstance(vol_surface, FlatVol):
+            raise ValueError("arithmetic Asian option AAD requires FlatVol")
         base_vol = float(getattr(vol_surface, "vol"))
 
         def value_from_vol(vol):
-            return _vanilla_equity_option_value_from_vol(instrument, market_state, vol)
+            return _arithmetic_asian_option_value_from_vol(
+                instrument,
+                market_state,
+                vol,
+            )
 
         _value, pullback = vjp(value_from_vol, base_vol)
         np = get_numpy()
@@ -457,9 +815,162 @@ class VanillaEquityOptionVolAADAdapter:
     def _context(market_context: object) -> VanillaEquityOptionVolAADMarketContext:
         if not isinstance(market_context, VanillaEquityOptionVolAADMarketContext):
             raise TypeError(
-                "VanillaEquityOptionVolAADAdapter requires "
+                "ArithmeticAsianOptionVolAADAdapter requires "
                 "VanillaEquityOptionVolAADMarketContext"
             )
+        return market_context
+
+
+@dataclass(frozen=True)
+class QuantoCorrelationAADAdapter:
+    """Adapter for bounded quanto option risk to one scalar correlation."""
+
+    def support_decision(
+        self,
+        position_name: str,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> AADSupportDecision:
+        """Return whether this adapter supports the quanto correlation lane."""
+        try:
+            context = self._context(market_context)
+        except TypeError:
+            return AADSupportDecision(False, "unsupported_market_context")
+
+        resolved = context.resolved_inputs
+        if not is_dataclass(resolved):
+            return AADSupportDecision(False, "quanto_resolved_inputs_dataclass_required")
+        missing_fields = tuple(
+            field_name
+            for field_name in ("strike", "option_type", "notional")
+            if not hasattr(instrument, field_name)
+        )
+        if missing_fields:
+            return AADSupportDecision(
+                False,
+                "quanto_contract_fields_required",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "missing_fields": list(missing_fields),
+                    },
+                ),
+            )
+        required_inputs = (
+            "spot",
+            "domestic_df",
+            "foreign_df",
+            "sigma_underlier",
+            "sigma_fx",
+            "corr",
+            "T",
+        )
+        missing_inputs = tuple(
+            input_name for input_name in required_inputs if not hasattr(resolved, input_name)
+        )
+        if missing_inputs:
+            return AADSupportDecision(
+                False,
+                "quanto_resolved_inputs_required",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "missing_inputs": list(missing_inputs),
+                    },
+                ),
+            )
+        option_type = str(getattr(instrument, "option_type", "call")).strip().lower()
+        if option_type not in {"call", "put"}:
+            return AADSupportDecision(False, "unsupported_option_type")
+        corr = float(getattr(resolved, "corr"))
+        if not -0.999 < corr < 0.999:
+            return AADSupportDecision(False, "correlation_bounds_required")
+        if float(getattr(resolved, "T")) <= 0.0:
+            return AADSupportDecision(False, "positive_maturity_required")
+        if float(getattr(resolved, "sigma_underlier")) <= 0.0:
+            return AADSupportDecision(False, "positive_underlier_vol_required")
+        if float(getattr(resolved, "sigma_fx")) <= 0.0:
+            return AADSupportDecision(False, "positive_fx_vol_required")
+
+        try:
+            dependencies = self.factor_dependencies(instrument, context, request)
+        except Exception as exc:
+            return AADSupportDecision(
+                False,
+                "correlation_coordinate_unavailable",
+                diagnostics=(
+                    {
+                        "position_name": str(position_name),
+                        "error_type": type(exc).__name__,
+                        "error": str(exc),
+                    },
+                ),
+            )
+        return AADSupportDecision(
+            True,
+            "supported_quanto_scalar_correlation_aad",
+            factor_dependencies=dependencies,
+            diagnostics=(_quanto_correlation_diagnostic(context),),
+        )
+
+    def factor_dependencies(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> tuple[RiskFactorId, ...]:
+        """Return the scalar correlation factor for a supported quanto option."""
+        context = self._context(market_context)
+        return _sorted_unique_factors(
+            coordinate.factor_id for coordinate in context.coordinates()
+        )
+
+    def value(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+    ) -> float:
+        """Return the scalar quanto value for this adapter's context."""
+        from trellis.models.analytical.quanto import price_quanto_option_raw
+
+        context = self._context(market_context)
+        return float(price_quanto_option_raw(instrument, context.resolved_inputs))
+
+    def vjp(
+        self,
+        instrument: object,
+        market_context: object,
+        request: PortfolioAADRequest,
+        weight: float = 1.0,
+    ) -> SparseRiskVector:
+        """Return the sparse scalar-correlation VJP vector for one option."""
+        from trellis.core.differentiable import get_numpy, vjp
+        from trellis.models.analytical.quanto import price_quanto_option_raw
+
+        context = self._context(market_context)
+        coordinates = context.coordinates()
+        resolved = context.resolved_inputs
+        base_corr = float(getattr(resolved, "corr"))
+
+        def value_from_corr(corr):
+            traced_inputs = replace(resolved, corr=corr)
+            return price_quanto_option_raw(instrument, traced_inputs)
+
+        _value, pullback = vjp(value_from_corr, base_corr)
+        np = get_numpy()
+        gradient = np.asarray(pullback(np.asarray(float(weight))), dtype=float)
+        sensitivity = float(np.reshape(gradient, (-1,))[0])
+        vector = SparseRiskVector.from_items(
+            ((coordinates[0].factor_id, sensitivity),)
+        )
+        return request.filter_vector(vector)
+
+    @staticmethod
+    def _context(market_context: object) -> QuantoCorrelationAADMarketContext:
+        if not isinstance(market_context, QuantoCorrelationAADMarketContext):
+            raise TypeError("QuantoCorrelationAADAdapter requires QuantoCorrelationAADMarketContext")
         return market_context
 
 
@@ -475,6 +986,36 @@ def _vanilla_equity_option_maturity(instrument: object, market_state: object) ->
         raise ValueError("market_state must provide settlement or as_of")
     day_count = getattr(instrument, "day_count", DayCountConvention.ACT_365)
     return float(year_fraction(settlement, getattr(instrument, "expiry_date"), day_count))
+
+
+def _vanilla_equity_option_exercise_style(instrument: object) -> str:
+    return str(getattr(instrument, "exercise_style", "european")).strip().lower()
+
+
+def _looks_path_dependent_option_shape(instrument: object) -> bool:
+    if tuple(getattr(instrument, "observation_dates", ()) or ()):
+        return True
+    if int(getattr(instrument, "n_observations", 0) or 0) > 0:
+        return True
+    if getattr(instrument, "averaging_type", None) is not None:
+        return True
+    return _has_discontinuous_path_feature(instrument)
+
+
+def _has_discontinuous_path_feature(instrument: object) -> bool:
+    for field_name in ("barrier", "barrier_level", "barrier_type", "knock", "knock_type"):
+        if getattr(instrument, field_name, None) is not None:
+            return True
+    return False
+
+
+def _vanilla_equity_option_support_reason(vol_surface: object) -> str:
+    """Return the support reason for the active vanilla-option vol surface."""
+    from trellis.models.vol_surface import GridVolSurface
+
+    if isinstance(vol_surface, GridVolSurface):
+        return "supported_vanilla_equity_grid_vol_aad"
+    return "supported_vanilla_equity_flat_vol_aad"
 
 
 def _vanilla_equity_option_value_from_vol(
@@ -507,6 +1048,303 @@ def _vanilla_equity_option_value_from_vol(
     if option_type == "call":
         return notional * df * black76_call(forward, strike, sigma, maturity)
     raise ValueError(f"unsupported option_type: {option_type!r}")
+
+
+def _vanilla_equity_option_tree_steps(instrument: object) -> int:
+    raw_steps = getattr(
+        instrument,
+        "aad_tree_steps",
+        getattr(instrument, "tree_steps", _DEFAULT_EARLY_EXERCISE_TREE_STEPS),
+    )
+    n_steps = int(raw_steps)
+    if n_steps < 2:
+        raise ValueError("early-exercise option AAD requires at least two tree steps")
+    return n_steps
+
+
+def _vanilla_equity_option_boundary_tolerance(instrument: object) -> float:
+    raw_tolerance = getattr(
+        instrument,
+        "early_exercise_boundary_tolerance",
+        _DEFAULT_EARLY_EXERCISE_BOUNDARY_TOLERANCE,
+    )
+    return max(float(raw_tolerance), 0.0)
+
+
+def _vanilla_equity_option_exercise_steps(
+    instrument: object,
+    market_state: object,
+    *,
+    maturity: float,
+    n_steps: int,
+) -> frozenset[int]:
+    style = _vanilla_equity_option_exercise_style(instrument)
+    if style == "american":
+        return frozenset(range(0, n_steps))
+    if style != "bermudan":
+        return frozenset()
+    exercise_dates = tuple(getattr(instrument, "exercise_dates", ()) or ())
+    if not exercise_dates:
+        return frozenset()
+
+    from trellis.core.date_utils import year_fraction
+    from trellis.core.types import DayCountConvention
+
+    settlement = (
+        getattr(market_state, "settlement", None)
+        or getattr(market_state, "as_of", None)
+    )
+    if settlement is None:
+        raise ValueError("market_state must provide settlement or as_of")
+    day_count = getattr(instrument, "day_count", DayCountConvention.ACT_365)
+    steps: set[int] = set()
+    for exercise_date in exercise_dates:
+        exercise_time = float(year_fraction(settlement, exercise_date, day_count))
+        if exercise_time <= 0.0 or exercise_time >= maturity:
+            continue
+        step = int(round(exercise_time / maturity * n_steps))
+        if 0 < step < n_steps:
+            steps.add(step)
+    return frozenset(steps)
+
+
+def _vanilla_equity_option_intrinsic_from_spots(
+    instrument: object,
+    spots: object,
+) -> object:
+    from trellis.core.differentiable import get_numpy
+
+    np = get_numpy()
+    strike = float(getattr(instrument, "strike"))
+    notional = float(getattr(instrument, "notional", 1.0))
+    option_type = str(getattr(instrument, "option_type", "call")).strip().lower()
+    if option_type == "put":
+        return notional * np.maximum(strike - spots, 0.0)
+    if option_type == "call":
+        return notional * np.maximum(spots - strike, 0.0)
+    raise ValueError(f"unsupported option_type: {option_type!r}")
+
+
+def _vanilla_equity_option_early_exercise_value_from_vol(
+    instrument: object,
+    market_state: object,
+    sigma: object,
+    *,
+    return_boundary_margin: bool = False,
+) -> object:
+    from trellis.core.differentiable import get_numpy
+
+    np = get_numpy()
+    maturity = _vanilla_equity_option_maturity(instrument, market_state)
+    if maturity <= 0.0:
+        value = _vanilla_equity_option_intrinsic_from_spots(
+            instrument,
+            float(getattr(instrument, "spot")),
+        )
+        if return_boundary_margin:
+            return value, None
+        return value
+
+    discount = getattr(market_state, "discount", None)
+    if discount is None:
+        raise ValueError("early-exercise option AAD requires market_state.discount")
+    n_steps = _vanilla_equity_option_tree_steps(instrument)
+    dt = maturity / float(n_steps)
+    maturity_df = discount.discount(maturity)
+    rate = -np.log(np.maximum(maturity_df, 1.0e-12)) / maturity
+    one_step_df = np.exp(-rate * dt)
+    up = np.exp(sigma * np.sqrt(dt))
+    down = 1.0 / up
+    growth = np.exp(rate * dt)
+    probability = (growth - down) / (up - down)
+
+    spot = float(getattr(instrument, "spot"))
+    terminal_nodes = np.arange(n_steps + 1)
+    terminal_spots = spot * (up ** terminal_nodes) * (
+        down ** (n_steps - terminal_nodes)
+    )
+    values = _vanilla_equity_option_intrinsic_from_spots(instrument, terminal_spots)
+    exercise_steps = _vanilla_equity_option_exercise_steps(
+        instrument,
+        market_state,
+        maturity=maturity,
+        n_steps=n_steps,
+    )
+
+    min_boundary_margin = None
+    for step in range(n_steps - 1, -1, -1):
+        continuation = one_step_df * (
+            (1.0 - probability) * values[:-1] + probability * values[1:]
+        )
+        if step in exercise_steps:
+            nodes = np.arange(step + 1)
+            spots = spot * (up ** nodes) * (down ** (step - nodes))
+            exercise = _vanilla_equity_option_intrinsic_from_spots(instrument, spots)
+            if return_boundary_margin:
+                spread = np.abs(continuation - exercise)
+                active_scale = np.maximum(np.abs(continuation), np.abs(exercise))
+                active = active_scale > 1.0e-12
+                if bool(np.any(active)):
+                    margin = float(np.min(spread[active]))
+                    min_boundary_margin = (
+                        margin
+                        if min_boundary_margin is None
+                        else min(min_boundary_margin, margin)
+                    )
+            values = np.maximum(continuation, exercise)
+        else:
+            values = continuation
+
+    value = values[0]
+    if return_boundary_margin:
+        return value, min_boundary_margin
+    return value
+
+
+def _vanilla_equity_option_early_exercise_diagnostic(
+    instrument: object,
+    *,
+    boundary_margin: float | None,
+) -> dict[str, Any]:
+    return {
+        "code": "early_exercise_control_policy",
+        "severity": "info",
+        "exercise_style": _vanilla_equity_option_exercise_style(instrument),
+        "derivative_policy": _EARLY_EXERCISE_AAD_POLICY,
+        "tree_steps": _vanilla_equity_option_tree_steps(instrument),
+        "boundary_tolerance": _vanilla_equity_option_boundary_tolerance(instrument),
+        "boundary_margin": boundary_margin,
+    }
+
+
+def _arithmetic_asian_option_observation_times(
+    instrument: object,
+    market_state: object,
+    *,
+    maturity: float,
+) -> tuple[float, ...]:
+    from trellis.core.date_utils import year_fraction
+    from trellis.core.types import DayCountConvention
+
+    settlement = (
+        getattr(market_state, "settlement", None)
+        or getattr(market_state, "as_of", None)
+    )
+    if settlement is None:
+        raise ValueError("market_state must provide settlement or as_of")
+    day_count = getattr(instrument, "day_count", DayCountConvention.ACT_365)
+    expiry_date = getattr(instrument, "expiry_date")
+    observation_dates = tuple(getattr(instrument, "observation_dates", ()) or ())
+    if observation_dates:
+        if tuple(sorted(observation_dates)) != observation_dates:
+            raise ValueError("observation_dates must be strictly increasing")
+        if observation_dates[-1] != expiry_date:
+            raise ValueError("final observation date must equal expiry_date")
+        observation_times = tuple(
+            float(year_fraction(settlement, observation_date, day_count))
+            for observation_date in observation_dates
+        )
+        if any(observation_time <= 0.0 for observation_time in observation_times):
+            raise ValueError("observation dates must be after settlement")
+        return observation_times
+
+    n_observations = int(getattr(instrument, "n_observations", 0) or 0)
+    if n_observations <= 0:
+        raise ValueError("arithmetic Asian AAD requires observation_dates or n_observations")
+    if n_observations == 1:
+        return (maturity,)
+    step = maturity / float(n_observations - 1)
+    return tuple(step * index for index in range(n_observations))
+
+
+def _arithmetic_asian_option_value_from_vol(
+    instrument: object,
+    market_state: object,
+    sigma: object,
+) -> object:
+    from autograd.scipy.stats import norm
+    from trellis.core.differentiable import get_numpy
+
+    np = get_numpy()
+    maturity = _vanilla_equity_option_maturity(instrument, market_state)
+    spot = float(getattr(instrument, "spot"))
+    strike = float(getattr(instrument, "strike"))
+    notional = float(getattr(instrument, "notional", 1.0))
+    option_type = str(getattr(instrument, "option_type", "call")).strip().lower()
+    discount = getattr(market_state, "discount", None)
+    if discount is None:
+        raise ValueError("arithmetic Asian option AAD requires market_state.discount")
+    if maturity <= 0.0:
+        if option_type == "put":
+            return notional * np.maximum(strike - spot, 0.0)
+        return notional * np.maximum(spot - strike, 0.0)
+
+    observation_times = _arithmetic_asian_option_observation_times(
+        instrument,
+        market_state,
+        maturity=maturity,
+    )
+    discount_factor = discount.discount(maturity)
+    rate = -np.log(np.maximum(discount_factor, 1.0e-12)) / maturity
+    dividend_yield = float(getattr(instrument, "dividend_yield", 0.0) or 0.0)
+    times = np.asarray(observation_times, dtype=float)
+    drift = rate - dividend_yield
+    matched_mean = spot * np.mean(np.exp(drift * times))
+
+    left = times[:, None]
+    right = times[None, :]
+    min_times = np.minimum(left, right)
+    second_terms = np.exp(drift * (left + right) + sigma * sigma * min_times)
+    matched_second_moment = spot * spot * np.mean(second_terms)
+    matched_lognormal_var = np.maximum(
+        np.log(
+            np.maximum(matched_second_moment, 1.0e-300)
+            / np.maximum(matched_mean * matched_mean, 1.0e-300)
+        ),
+        0.0,
+    )
+    if strike <= 0.0:
+        if option_type == "put":
+            return 0.0
+        return notional * discount_factor * (matched_mean - strike)
+    std = np.sqrt(np.maximum(matched_lognormal_var, 1.0e-16))
+    d1 = (np.log(matched_mean / strike) + 0.5 * matched_lognormal_var) / std
+    d2 = d1 - std
+    if option_type == "put":
+        return notional * discount_factor * (
+            strike * norm.cdf(-d2) - matched_mean * norm.cdf(-d1)
+        )
+    if option_type == "call":
+        return notional * discount_factor * (
+            matched_mean * norm.cdf(d1) - strike * norm.cdf(d2)
+        )
+    raise ValueError(f"unsupported option_type: {option_type!r}")
+
+
+def _arithmetic_asian_option_diagnostic(*, observation_count: int) -> dict[str, Any]:
+    return {
+        "code": "path_dependent_smooth_summary_policy",
+        "severity": "info",
+        "path_summary": "arithmetic_average",
+        "derivative_policy": "lognormal_moment_matching_smooth_path_summary",
+        "observation_count": int(observation_count),
+        "discontinuous_features": (),
+    }
+
+
+def _quanto_correlation_diagnostic(
+    context: QuantoCorrelationAADMarketContext,
+) -> dict[str, Any]:
+    return {
+        "code": "hybrid_scalar_correlation_policy",
+        "severity": "info",
+        "hybrid_derivative_policy": "bounded_quanto_scalar_correlation_vjp",
+        "correlation_name": context.correlation_name,
+        "factor_a": context.factor_a,
+        "factor_b": context.factor_b,
+        "correlation_transform": "tanh",
+        "correlation_constraint": "-1 < rho < 1",
+    }
 
 
 @dataclass(frozen=True)
@@ -745,11 +1583,14 @@ class PortfolioAADResult:
 
 __all__ = [
     "AADSupportDecision",
+    "ArithmeticAsianOptionVolAADAdapter",
     "BondCurveAADAdapter",
     "BondCurveAADMarketContext",
     "DefaultUnsupportedAADPolicy",
     "PortfolioAADRequest",
     "PortfolioAADResult",
+    "QuantoCorrelationAADAdapter",
+    "QuantoCorrelationAADMarketContext",
     "TradeAADAdapter",
     "UnsupportedAADPosition",
     "VanillaEquityOptionVolAADAdapter",
