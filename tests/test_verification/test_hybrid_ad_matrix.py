@@ -13,6 +13,7 @@ from trellis.analytics import (
 )
 from trellis.agent.contract_ir import (
     Constant,
+    ContinuousInterval,
     ContractIR,
     EquitySpot,
     Exercise,
@@ -79,6 +80,18 @@ def _terminal_quanto_contract_ir() -> ContractIR:
         payoff=Max((Sub(Spot("EUR"), Strike(100.0)), Constant(0.0))),
         exercise=Exercise("european", schedule),
         observation=Observation("terminal", schedule),
+        underlying=Underlying(EquitySpot("EUR", "gbm")),
+    )
+
+
+def _american_quanto_contract_ir() -> ContractIR:
+    expiry = _QuantoSpec().expiry_date
+    observation_schedule = Singleton(expiry)
+    exercise_schedule = ContinuousInterval(date(2025, 2, 15), expiry)
+    return ContractIR(
+        payoff=Max((Sub(Spot("EUR"), Strike(100.0)), Constant(0.0))),
+        exercise=Exercise("american", exercise_schedule),
+        observation=Observation("terminal", observation_schedule),
         underlying=Underlying(EquitySpot("EUR", "gbm")),
     )
 
@@ -373,4 +386,36 @@ def test_quanto_correlation_matrix_rejects_scalar_semantic_admission_metadata() 
     assert result.diagnostics[0]["code"] == "semantic_admission_lane_unavailable"
     assert result.method_metadata["semantic_admission"]["lane_id"] == (
         "quanto_scalar_graph_vjp"
+    )
+
+
+def test_quanto_correlation_matrix_fail_closed_metadata_includes_exercise_policy() -> None:
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    admission = admit_hybrid_ad_lane(
+        _american_quanto_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+        correlation_structure="correlation_matrix",
+    )
+
+    result = differentiate_quanto_correlation_matrix(
+        spec,
+        resolved,
+        _matrix_request(0.25),
+        HybridDerivativeRequest(semantic_admission=admission),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "early_exercise_hybrid_state_pending"
+    assert result.diagnostics[0]["semantic_state_kind"] == "early_exercise_control"
+    assert result.method_metadata["semantic_state_policy"]["state_kind"] == (
+        "early_exercise_control"
+    )
+    assert result.method_metadata["semantic_state_control_policy"] == (
+        "smooth_interior_control_pending"
+    )
+    assert result.method_metadata["fallback_reason"]["semantic_state_kind"] == (
+        "early_exercise_control"
     )
