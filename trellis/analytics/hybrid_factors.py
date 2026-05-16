@@ -190,11 +190,16 @@ def _restore_correlation_matrix_coordinate_values(
     """Restore tuple types in correlation_matrix_psd_policy coordinate_values."""
     result = dict(raw)
     if "factor_labels" in result:
-        result["factor_labels"] = tuple(result["factor_labels"])  # type: ignore[arg-type]
+        labels = result["factor_labels"]
+        if not isinstance(labels, tuple):
+            result["factor_labels"] = tuple(labels) if isinstance(labels, (list, tuple)) else (labels,)
     if "correlation_matrix" in result:
-        result["correlation_matrix"] = tuple(
-            tuple(row) for row in result["correlation_matrix"]  # type: ignore[union-attr]
-        )
+        matrix = result["correlation_matrix"]
+        if isinstance(matrix, (list, tuple)):
+            result["correlation_matrix"] = tuple(
+                tuple(row) if isinstance(row, (list, tuple)) else (row,)
+                for row in matrix
+            )
     return result
 
 
@@ -203,8 +208,10 @@ def _restore_correlation_matrix_constraints(
 ) -> dict[str, object]:
     """Restore tuple types in correlation_matrix_psd_policy constraints."""
     result = dict(raw)
-    if "bounds" in result and not isinstance(result["bounds"], tuple):
-        result["bounds"] = tuple(result["bounds"])  # type: ignore[arg-type]
+    bounds = result.get("bounds")
+    if bounds is not None and not isinstance(bounds, tuple):
+        if isinstance(bounds, (list, tuple)):
+            result["bounds"] = tuple(bounds)
     return result
 
 
