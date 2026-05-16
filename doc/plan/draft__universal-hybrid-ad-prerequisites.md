@@ -27,6 +27,7 @@ correlation matrix policy surface, and the remaining prerequisites.
 | `QUA-1053` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 | `QUA-1055` | Done | Added ContractIR-backed semantic admission dataclasses and classifier for bounded graph-owned hybrid AD lanes. |
 | `QUA-1056` | Done | Bridged supported/planned/unsupported semantic admissions into bounded quanto derivative result metadata. |
+| `QUA-1057` | Done | Locked public exports and fail-closed admission matrix coverage across supported, planned, and unsupported shapes. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic

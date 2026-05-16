@@ -5,16 +5,21 @@ from __future__ import annotations
 import json
 from datetime import date
 
+import trellis.analytics as analytics
 from trellis.agent.contract_ir import (
     ArithmeticMean,
     CompositeUnderlying,
     Constant,
+    ContinuousInterval,
     ContractIR,
     EquitySpot,
     Exercise,
     FiniteSchedule,
+    Gt,
+    Indicator,
     Max,
     Observation,
+    Scaled,
     Singleton,
     Spot,
     Strike,
@@ -79,6 +84,40 @@ def _path_dependent_ir() -> ContractIR:
     )
 
 
+def _american_call_ir() -> ContractIR:
+    observation_schedule = Singleton(EXPIRY)
+    exercise_schedule = ContinuousInterval(OBSERVATIONS[0], EXPIRY)
+    return ContractIR(
+        payoff=Max((Sub(Spot("EUR"), Strike(100.0)), Constant(0.0))),
+        exercise=Exercise("american", exercise_schedule),
+        observation=Observation("terminal", observation_schedule),
+        underlying=Underlying(EquitySpot("EUR", "gbm")),
+    )
+
+
+def _discontinuous_event_ir() -> ContractIR:
+    schedule = Singleton(EXPIRY)
+    payoff = Scaled(
+        Indicator(Gt(Spot("EUR"), Constant(80.0))),
+        Max((Sub(Spot("EUR"), Strike(100.0)), Constant(0.0))),
+    )
+    return ContractIR(
+        payoff=payoff,
+        exercise=Exercise("european", schedule),
+        observation=Observation("terminal", schedule),
+        underlying=Underlying(EquitySpot("EUR", "gbm")),
+    )
+
+
+def test_public_api_exports_hybrid_ad_admission_symbols():
+    assert analytics.HybridADFactorRequirement is HybridADFactorRequirement
+    assert analytics.HybridADLaneAdmission is HybridADLaneAdmission
+    assert analytics.admit_hybrid_ad_lane is admit_hybrid_ad_lane
+    assert "HybridADFactorRequirement" in analytics.__all__
+    assert "HybridADLaneAdmission" in analytics.__all__
+    assert "admit_hybrid_ad_lane" in analytics.__all__
+
+
 def test_supported_quanto_vjp_admission_payload_round_trips():
     admission = admit_hybrid_ad_lane(
         _terminal_call_ir(),
@@ -140,6 +179,22 @@ def test_jvp_request_fails_closed_at_admission():
     assert admission.metadata["requested_derivative_method"] == "jvp"
 
 
+def test_unknown_derivative_method_fails_closed_at_admission():
+    admission = admit_hybrid_ad_lane(
+        _terminal_call_ir(),
+        product_family="quanto_option",
+        derivative_method="reverse_mode",
+    )
+
+    payload = admission.to_payload()
+
+    assert admission.admitted is False
+    assert admission.support_status == "unsupported"
+    assert admission.reason == "hybrid_derivative_method_unsupported"
+    assert admission.diagnostics[0]["code"] == "hybrid_derivative_method_unsupported"
+    assert json.loads(json.dumps(payload)) == payload
+
+
 def test_matrix_correlation_structure_stays_planned_and_fail_closed():
     admission = admit_hybrid_ad_lane(
         _terminal_call_ir(),
@@ -154,6 +209,21 @@ def test_matrix_correlation_structure_stays_planned_and_fail_closed():
     assert admission.factor_requirements[0].parameterization == "correlation_matrix_psd_policy"
     assert admission.diagnostics[0]["code"] == "correlation_matrix_derivative_not_implemented"
     assert admission.metadata["chart_policy_status"] == "validated_fail_closed"
+
+
+def test_unknown_correlation_structure_fails_closed():
+    admission = admit_hybrid_ad_lane(
+        _terminal_call_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+        correlation_structure="cholesky_angle",
+    )
+
+    assert admission.admitted is False
+    assert admission.support_status == "unsupported"
+    assert admission.reason == "unsupported_correlation_structure"
+    assert admission.diagnostics[0]["code"] == "unsupported_correlation_structure"
+    assert admission.metadata["correlation_structure"] == "cholesky_angle"
 
 
 def test_surface_correlation_structure_stays_planned_and_fail_closed():
@@ -171,6 +241,18 @@ def test_surface_correlation_structure_stays_planned_and_fail_closed():
     assert admission.diagnostics[0]["code"] == "correlation_surface_chart_not_implemented"
 
 
+def test_discontinuous_event_monitor_is_unsupported():
+    admission = admit_hybrid_ad_lane(
+        _discontinuous_event_ir(),
+        product_family="quanto_option",
+    )
+
+    assert admission.admitted is False
+    assert admission.support_status == "unsupported"
+    assert admission.reason == "unsupported_discontinuous_event_monitor"
+    assert admission.contract_shape == "discontinuous_event_monitor"
+
+
 def test_composite_underlying_is_classified_as_planned_not_admitted():
     admission = admit_hybrid_ad_lane(
         _composite_underlying_ir(),
@@ -182,6 +264,18 @@ def test_composite_underlying_is_classified_as_planned_not_admitted():
     assert admission.reason == "hybrid_factor_graph_admission_pending"
     assert admission.contract_shape == "hybrid_composite_underlying"
     assert admission.factor_requirements[0].semantic_role == "cross_factor_dependence"
+
+
+def test_early_exercise_contract_shape_is_classified_as_planned():
+    admission = admit_hybrid_ad_lane(
+        _american_call_ir(),
+        product_family="quanto_option",
+    )
+
+    assert admission.admitted is False
+    assert admission.support_status == "planned"
+    assert admission.reason == "early_exercise_hybrid_state_pending"
+    assert admission.contract_shape == "early_exercise_hybrid_state"
 
 
 def test_path_dependent_contract_shape_is_classified_as_planned():
