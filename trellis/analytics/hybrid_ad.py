@@ -1053,6 +1053,23 @@ def _matrix_coordinate_values(
     return tuple(values)
 
 
+def _matrix_entries_for_context(
+    request: HybridCorrelationStructureRequest,
+    context: HybridMatrixCoordinateContext,
+) -> tuple[_GraphScalarEntry, ...]:
+    node_id = f"node:{request.structure_type}:{request.object_name}"
+    values = _matrix_coordinate_values(context)
+    return tuple(
+        _GraphScalarEntry(
+            node_id=node_id,
+            role="correlation_matrix",
+            factor_id=coordinate.factor_id,
+            base_value=values[index],
+        )
+        for index, coordinate in enumerate(context.chart.coordinates)
+    )
+
+
 def _matrix_context_graph(
     request: HybridCorrelationStructureRequest,
     context: HybridMatrixCoordinateContext,
@@ -1178,14 +1195,23 @@ def differentiate_quanto_correlation_matrix(
     active_factor_pair: tuple[object, object] | None = None,
     min_eigenvalue_floor: float = 1.0e-6,
 ) -> HybridDerivativeResult:
-    """Return VJP risk for a checked quanto correlation-matrix coordinate."""
-    from trellis.core.differentiable import get_backend_capabilities, get_numpy, vjp
+    """Return VJP or HVP risk for a checked quanto correlation-matrix coordinate."""
+    from trellis.core.differentiable import (
+        get_backend_capabilities,
+        get_numpy,
+        hessian_vector_product,
+        vjp,
+    )
     from trellis.models.analytical.quanto import price_quanto_option_raw
 
     if not isinstance(correlation_request, HybridCorrelationStructureRequest):
         raise TypeError("correlation_request must be a HybridCorrelationStructureRequest")
     resolved_request = request or HybridDerivativeRequest()
-    method_id = "hybrid_matrix_vector_vjp"
+    method_id = (
+        "hybrid_matrix_vector_hvp"
+        if resolved_request.derivative_method == "hvp"
+        else "hybrid_matrix_vector_vjp"
+    )
     active_pair = active_factor_pair or _quanto_matrix_active_factor_pair(spec)
     base_value = float(price_quanto_option_raw(spec, resolved_inputs))
     try:
@@ -1234,13 +1260,13 @@ def differentiate_quanto_correlation_matrix(
                 **diagnostic_extra,
             },
         )
-    if resolved_request.derivative_method != "vjp":
+    if resolved_request.derivative_method not in {"vjp", "hvp"}:
         return _unsupported_result(
             value=base_value,
             graph=graph,
             request=resolved_request,
             code="hybrid_derivative_method_unsupported",
-            message="Only VJP is supported by the bounded matrix-coordinate lane.",
+            message="Only VJP and HVP are supported by the bounded matrix-coordinate lane.",
             method_id=method_id,
             backend_operator=resolved_request.derivative_method,
             diagnostic_extra={"active_factor_key": context.active_factor_id.key},
@@ -1266,18 +1292,87 @@ def differentiate_quanto_correlation_matrix(
         )
 
     np = get_numpy()
-    base_vector = np.asarray(_matrix_coordinate_values(context))
+    entries = _matrix_entries_for_context(correlation_request, context)
+    base_vector = np.asarray(tuple(entry.base_value for entry in entries))
     active_index = context.active_coordinate_index
 
     def value_from_matrix_entries(theta):
         traced_inputs = replace(resolved_inputs, corr=theta[active_index])
         return price_quanto_option_raw(spec, traced_inputs)
 
-    traced_value, pullback = vjp(value_from_matrix_entries, base_vector)
-    sensitivities = np.reshape(np.asarray(pullback(np.asarray(1.0))), (-1,))
+    metadata_extra: dict[str, object] = {}
+    if resolved_request.derivative_method == "hvp":
+        if not capabilities.supports("hessian_vector_product"):
+            diagnostic_extra = {
+                "backend_id": capabilities.backend_id,
+                "unsupported_operator": "hessian_vector_product",
+                "backend_notes": capabilities.notes,
+                "active_factor_key": context.active_factor_id.key,
+            }
+            return _unsupported_result(
+                value=base_value,
+                graph=graph,
+                request=resolved_request,
+                code="hybrid_hvp_backend_unsupported",
+                message=(
+                    "Hybrid matrix-coordinate HVP is fail-closed because the "
+                    "active backend does not provide checked scalar-objective HVP support."
+                ),
+                method_id=method_id,
+                diagnostic_extra=diagnostic_extra,
+                fallback_reason={
+                    "code": "hybrid_hvp_backend_unsupported",
+                    **diagnostic_extra,
+                },
+                backend_operator="hessian_vector_product",
+            )
+        direction_values, direction_diagnostic = _hvp_direction_for_entries(
+            resolved_request,
+            entries,
+        )
+        if direction_diagnostic is not None:
+            return _unsupported_result(
+                value=base_value,
+                graph=graph,
+                request=resolved_request,
+                code=str(direction_diagnostic["code"]),
+                message=str(direction_diagnostic["message"]),
+                method_id=method_id,
+                diagnostic_extra={
+                    key: val
+                    for key, val in direction_diagnostic.items()
+                    if key not in {"code", "message"}
+                },
+                fallback_reason=direction_diagnostic,
+                backend_operator="hessian_vector_product",
+            )
+        direction_vector = np.asarray(direction_values)
+        traced_value = value_from_matrix_entries(base_vector)
+        sensitivities = np.reshape(
+            np.asarray(
+                hessian_vector_product(
+                    value_from_matrix_entries,
+                    base_vector,
+                    direction_vector,
+                )
+            ),
+            (-1,),
+        )
+        metadata_extra = {
+            "hvp_direction_factor_count": len(resolved_request.hvp_direction),
+            "hvp_direction_coordinate_count": sum(
+                1 for value in direction_values if value != 0.0
+            ),
+            "hvp_direction_norm": float(np.sqrt(np.sum(direction_vector * direction_vector))),
+        }
+        backend_operator = "hessian_vector_product"
+    else:
+        traced_value, pullback = vjp(value_from_matrix_entries, base_vector)
+        sensitivities = np.reshape(np.asarray(pullback(np.asarray(1.0))), (-1,))
+        backend_operator = "vjp"
     full_vector = SparseRiskVector.from_items(
-        (coordinate.factor_id, float(sensitivities[index]))
-        for index, coordinate in enumerate(context.chart.coordinates)
+        (entry.factor_id, float(sensitivities[index]))
+        for index, entry in enumerate(entries)
     )
     selected_vector = resolved_request.filter_vector(full_vector)
     missing_factors = resolved_request.missing_selected_factors(context.factor_ids)
@@ -1304,7 +1399,7 @@ def differentiate_quanto_correlation_matrix(
         method_id,
         method_support=support_status,
         backend_id=capabilities.backend_id,
-        backend_operator="vjp",
+        backend_operator=backend_operator,
         coordinate_space=context.chart.coordinate_space,
         chart_type=context.chart.chart_type,
         hybrid_factor_graph_id=graph.graph_id,
@@ -1319,6 +1414,7 @@ def differentiate_quanto_correlation_matrix(
         projection_policy=context.chart.constraints["projection_policy"],
         node_count=len(graph.nodes),
         unsupported_dependency_count=0,
+        **metadata_extra,
     )
     if math.isfinite(value):
         metadata["base_value"] = value

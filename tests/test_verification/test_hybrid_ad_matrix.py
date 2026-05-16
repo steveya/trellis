@@ -10,7 +10,7 @@ from trellis.analytics import (
     HybridDerivativeRequest,
     differentiate_quanto_correlation_matrix,
 )
-from trellis.analytics.risk_factors import RiskFactorId
+from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
 from trellis.curves.yield_curve import YieldCurve
@@ -217,3 +217,85 @@ def test_quanto_correlation_matrix_jvp_fails_closed() -> None:
     assert result.support_status == "unsupported"
     assert len(result.risk_vector) == 0
     assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+
+
+def test_quanto_correlation_matrix_hvp_matches_finite_difference_of_vjp() -> None:
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    base_vjp = differentiate_quanto_correlation_matrix(spec, resolved, _matrix_request(0.25))
+    active_factor = _matrix_factor_by_pair(base_vjp, "EUR", "EURUSD")
+    direction = SparseRiskVector.from_items(((active_factor, 1.0),))
+
+    hvp = differentiate_quanto_correlation_matrix(
+        spec,
+        resolved,
+        _matrix_request(0.25),
+        HybridDerivativeRequest(
+            derivative_method="hvp",
+            hvp_direction=direction,
+        ),
+    )
+    bump = 1.0e-4
+    up_vjp = differentiate_quanto_correlation_matrix(
+        spec,
+        resolved,
+        _matrix_request(0.25 + bump),
+    )
+    down_vjp = differentiate_quanto_correlation_matrix(
+        spec,
+        resolved,
+        _matrix_request(0.25 - bump),
+    )
+    finite_difference = (
+        up_vjp.risk_vector[active_factor] - down_vjp.risk_vector[active_factor]
+    ) / (2.0 * bump)
+
+    assert hvp.support_status == "supported"
+    assert hvp.method_metadata["resolved_derivative_method"] == "hybrid_matrix_vector_hvp"
+    assert hvp.method_metadata["backend_operator"] == "hessian_vector_product"
+    assert hvp.method_metadata["matrix_coordinate_count"] == 3
+    assert hvp.method_metadata["hvp_direction_factor_count"] == 1
+    assert hvp.risk_vector[active_factor] == pytest.approx(
+        finite_difference,
+        rel=5.0e-5,
+        abs=1.0e-5,
+    )
+
+
+def test_quanto_correlation_matrix_hvp_direction_failures_are_typed() -> None:
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    full = differentiate_quanto_correlation_matrix(spec, resolved, _matrix_request(0.25))
+    missing_factor = RiskFactorId(
+        object_type="correlation_matrix",
+        object_name="missing",
+        coordinate_type="correlation",
+        axes={"row": "EUR", "column": "GBPUSD"},
+        provenance_namespace="hybrid_ad",
+    )
+
+    empty = differentiate_quanto_correlation_matrix(
+        spec,
+        resolved,
+        _matrix_request(0.25),
+        HybridDerivativeRequest(derivative_method="hvp"),
+    )
+    unknown = differentiate_quanto_correlation_matrix(
+        spec,
+        resolved,
+        _matrix_request(0.25),
+        HybridDerivativeRequest(
+            derivative_method="hvp",
+            hvp_direction=SparseRiskVector.from_items(((missing_factor, 1.0),)),
+        ),
+    )
+
+    assert full.support_status == "supported"
+    assert empty.support_status == "unsupported"
+    assert len(empty.risk_vector) == 0
+    assert empty.diagnostics[0]["code"] == "hvp_direction_required"
+
+    assert unknown.support_status == "unsupported"
+    assert len(unknown.risk_vector) == 0
+    assert unknown.diagnostics[0]["code"] == "hvp_direction_factors_unavailable"
+    assert unknown.diagnostics[0]["missing_factor_keys"] == [missing_factor.key]
