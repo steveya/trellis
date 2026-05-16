@@ -343,7 +343,7 @@ def test_quanto_scalar_inputs_accepts_semantic_admission_payload_mapping():
     )
 
 
-def test_quanto_scalar_inputs_fails_closed_for_planned_semantic_admission():
+def test_quanto_scalar_inputs_rejects_matrix_semantic_admission_lane():
     spec = _QuantoSpec()
     resolved = _resolved(0.25)
     admission = admit_hybrid_ad_lane(
@@ -361,10 +361,10 @@ def test_quanto_scalar_inputs_fails_closed_for_planned_semantic_admission():
 
     assert result.support_status == "unsupported"
     assert len(result.risk_vector) == 0
-    assert result.diagnostics[0]["code"] == "correlation_matrix_derivative_not_implemented"
-    assert result.method_metadata["semantic_admission"]["support_status"] == "planned"
+    assert result.diagnostics[0]["code"] == "semantic_admission_lane_unavailable"
+    assert result.method_metadata["semantic_admission"]["support_status"] == "supported"
     assert result.method_metadata["fallback_reason"]["semantic_admission_reason"] == (
-        "correlation_matrix_derivative_not_implemented"
+        "supported_quanto_matrix_graph_vjp"
     )
 
 

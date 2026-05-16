@@ -1135,6 +1135,7 @@ def _unsupported_correlation_matrix_result(
     method_id: str = "hybrid_matrix_vector_vjp",
     backend_operator: str | None = None,
     diagnostic_extra: Mapping[str, object] | None = None,
+    method_metadata_extra: Mapping[str, object] | None = None,
 ) -> HybridDerivativeResult:
     dependency = HybridUnsupportedDependency(
         dependency_id=f"node:{correlation_request.structure_type}:{correlation_request.object_name}",
@@ -1183,6 +1184,7 @@ def _unsupported_correlation_matrix_result(
             **dict(diagnostic_extra or {}),
         },
         backend_operator=backend_operator,
+        method_metadata_extra=method_metadata_extra,
     )
 
 
@@ -1214,6 +1216,7 @@ def differentiate_quanto_correlation_matrix(
     )
     active_pair = active_factor_pair or _quanto_matrix_active_factor_pair(spec)
     base_value = float(price_quanto_option_raw(spec, resolved_inputs))
+    admission_metadata = _semantic_admission_metadata(resolved_request.semantic_admission)
     try:
         context = build_correlation_matrix_coordinate_context(
             correlation_request,
@@ -1229,6 +1232,7 @@ def differentiate_quanto_correlation_matrix(
             code=code,
             message=message,
             diagnostic_extra={"active_factor_pair": tuple(str(factor) for factor in active_pair)},
+            method_metadata_extra=admission_metadata,
         )
 
     graph = _matrix_context_graph(
@@ -1237,6 +1241,17 @@ def differentiate_quanto_correlation_matrix(
         derivative_method=resolved_request.derivative_method,
     )
     capabilities = get_backend_capabilities()
+    if resolved_request.semantic_admission is not None:
+        admission_result = _unsupported_semantic_admission_result(
+            value=base_value,
+            graph=graph,
+            request=resolved_request,
+            admission=resolved_request.semantic_admission,
+            method_id=method_id,
+            allowed_lane_prefixes=("quanto_matrix_graph_",),
+        )
+        if admission_result is not None:
+            return admission_result
     if resolved_request.derivative_method == "jvp":
         diagnostic_extra = {
             "backend_id": capabilities.backend_id,
@@ -1259,6 +1274,7 @@ def differentiate_quanto_correlation_matrix(
                 "code": "hybrid_jvp_backend_unsupported",
                 **diagnostic_extra,
             },
+            method_metadata_extra=admission_metadata,
         )
     if resolved_request.derivative_method not in {"vjp", "hvp"}:
         return _unsupported_result(
@@ -1270,6 +1286,7 @@ def differentiate_quanto_correlation_matrix(
             method_id=method_id,
             backend_operator=resolved_request.derivative_method,
             diagnostic_extra={"active_factor_key": context.active_factor_id.key},
+            method_metadata_extra=admission_metadata,
         )
     if not is_dataclass(resolved_inputs):
         return _unsupported_result(
@@ -1280,6 +1297,7 @@ def differentiate_quanto_correlation_matrix(
             message="Matrix-coordinate quanto VJP requires dataclass resolved inputs.",
             method_id=method_id,
             diagnostic_extra={"active_factor_key": context.active_factor_id.key},
+            method_metadata_extra=admission_metadata,
         )
     if context.active_coordinate_index is None or context.active_factor_id is None:
         return _unsupported_result(
@@ -1289,6 +1307,7 @@ def differentiate_quanto_correlation_matrix(
             code="active_matrix_coordinate_required",
             message="Matrix-coordinate quanto VJP requires one active correlation pair.",
             method_id=method_id,
+            method_metadata_extra=admission_metadata,
         )
 
     np = get_numpy()
@@ -1325,6 +1344,7 @@ def differentiate_quanto_correlation_matrix(
                     **diagnostic_extra,
                 },
                 backend_operator="hessian_vector_product",
+                method_metadata_extra=admission_metadata,
             )
         direction_values, direction_diagnostic = _hvp_direction_for_entries(
             resolved_request,
@@ -1345,6 +1365,7 @@ def differentiate_quanto_correlation_matrix(
                 },
                 fallback_reason=direction_diagnostic,
                 backend_operator="hessian_vector_product",
+                method_metadata_extra=admission_metadata,
             )
         direction_vector = np.asarray(direction_values)
         traced_value = value_from_matrix_entries(base_vector)
@@ -1418,6 +1439,7 @@ def differentiate_quanto_correlation_matrix(
     )
     if math.isfinite(value):
         metadata["base_value"] = value
+    metadata.update(admission_metadata)
 
     return HybridDerivativeResult(
         value=value,
@@ -1522,6 +1544,7 @@ def _unsupported_semantic_admission_result(
     request: HybridDerivativeRequest,
     admission: HybridADLaneAdmission,
     method_id: str,
+    allowed_lane_prefixes: tuple[str, ...] = ("quanto_scalar_graph_",),
 ) -> HybridDerivativeResult | None:
     admission_metadata = _semantic_admission_metadata(admission)
     if not admission.supported:
@@ -1575,7 +1598,7 @@ def _unsupported_semantic_admission_result(
             fallback_reason=fallback_reason,
             method_metadata_extra=admission_metadata,
         )
-    if not admission.lane_id.startswith("quanto_scalar_graph_"):
+    if not any(admission.lane_id.startswith(prefix) for prefix in allowed_lane_prefixes):
         fallback_reason = {
             "code": "semantic_admission_lane_unavailable",
             "semantic_admission_status": admission.support_status,

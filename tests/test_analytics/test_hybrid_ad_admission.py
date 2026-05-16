@@ -221,7 +221,7 @@ def test_unknown_derivative_method_fails_closed_at_admission():
     assert json.loads(json.dumps(payload)) == payload
 
 
-def test_matrix_correlation_structure_stays_planned_and_fail_closed():
+def test_matrix_correlation_structure_is_supported_for_terminal_quanto_vjp():
     admission = admit_hybrid_ad_lane(
         _terminal_call_ir(),
         product_family="quanto_option",
@@ -229,12 +229,41 @@ def test_matrix_correlation_structure_stays_planned_and_fail_closed():
         correlation_structure="correlation_matrix",
     )
 
-    assert admission.admitted is False
-    assert admission.support_status == "planned"
-    assert admission.reason == "correlation_matrix_derivative_not_implemented"
-    assert admission.factor_requirements[0].parameterization == "correlation_matrix_psd_policy"
-    assert admission.diagnostics[0]["code"] == "correlation_matrix_derivative_not_implemented"
-    assert admission.metadata["chart_policy_status"] == "validated_fail_closed"
+    requirements = {
+        requirement.semantic_role: requirement
+        for requirement in admission.factor_requirements
+    }
+
+    assert admission.admitted is True
+    assert admission.supported is True
+    assert admission.support_status == "supported"
+    assert admission.lane_id == "quanto_matrix_graph_vjp"
+    assert admission.reason == "supported_quanto_matrix_graph_vjp"
+    assert requirements["cross_factor_dependence"].object_type == "correlation_matrix"
+    assert requirements["cross_factor_dependence"].parameterization == (
+        "correlation_matrix_psd_policy"
+    )
+    assert requirements["cross_factor_dependence"].graph_role == "correlation_matrix"
+    assert admission.metadata["chart_policy_status"] == "validated_executable"
+    assert admission.metadata["runtime_helper"] == (
+        "trellis.analytics.hybrid_ad.differentiate_quanto_correlation_matrix"
+    )
+
+
+def test_matrix_correlation_structure_is_supported_for_terminal_quanto_hvp():
+    admission = admit_hybrid_ad_lane(
+        _terminal_call_ir(),
+        product_family="quanto_option",
+        derivative_method="hvp",
+        correlation_structure="correlation_matrix",
+    )
+
+    assert admission.admitted is True
+    assert admission.supported is True
+    assert admission.lane_id == "quanto_matrix_graph_hvp"
+    assert admission.reason == "supported_quanto_matrix_graph_hvp"
+    assert admission.metadata["coordinate_space"] == "matrix"
+    assert admission.metadata["projection_policy"] == "unsupported_no_smoothing_or_projection"
 
 
 def test_unknown_correlation_structure_fails_closed():

@@ -383,21 +383,11 @@ def _contract_ir_admission(
                 },
             ),
         )
-    if correlation_structure in _MATRIX_CORRELATION_STRUCTURES:
-        return _correlation_structure_admission(
-            contract,
-            product_family=product_family,
-            derivative_method=derivative_method,
-            structure_type="correlation_matrix",
-        )
-    if correlation_structure in _SURFACE_CORRELATION_STRUCTURES:
-        return _correlation_structure_admission(
-            contract,
-            product_family=product_family,
-            derivative_method=derivative_method,
-            structure_type="correlation_surface",
-        )
-    if correlation_structure not in _SCALAR_CORRELATION_STRUCTURES:
+    if (
+        correlation_structure not in _SCALAR_CORRELATION_STRUCTURES
+        and correlation_structure not in _MATRIX_CORRELATION_STRUCTURES
+        and correlation_structure not in _SURFACE_CORRELATION_STRUCTURES
+    ):
         return _admission(
             admitted=False,
             lane_id="unsupported_correlation_structure",
@@ -509,6 +499,20 @@ def _contract_ir_admission(
                 },
             ),
         )
+    if correlation_structure in _MATRIX_CORRELATION_STRUCTURES:
+        return _correlation_structure_admission(
+            contract,
+            product_family=product_family,
+            derivative_method=derivative_method,
+            structure_type="correlation_matrix",
+        )
+    if correlation_structure in _SURFACE_CORRELATION_STRUCTURES:
+        return _correlation_structure_admission(
+            contract,
+            product_family=product_family,
+            derivative_method=derivative_method,
+            structure_type="correlation_surface",
+        )
     if _is_quanto_family(product_family) and _is_terminal_vanilla_option(contract):
         lane_id = f"quanto_scalar_graph_{derivative_method}"
         return _admission(
@@ -558,6 +562,32 @@ def _correlation_structure_admission(
     structure_type: str,
 ) -> HybridADLaneAdmission:
     if structure_type == "correlation_matrix":
+        if _is_quanto_family(product_family) and _is_terminal_vanilla_option(contract):
+            lane_id = f"quanto_matrix_graph_{derivative_method}"
+            return _admission(
+                admitted=True,
+                lane_id=lane_id,
+                support_status="supported",
+                reason=f"supported_{lane_id}",
+                semantic_contract_type="ContractIR",
+                product_family=product_family or "quanto_option",
+                contract_shape="quanto_terminal_vanilla_option",
+                derivative_methods=("vjp", "hvp"),
+                factor_requirements=_quanto_matrix_requirements(),
+                metadata={
+                    "requested_derivative_method": derivative_method,
+                    "correlation_structure": "correlation_matrix",
+                    "chart_policy_status": "validated_executable",
+                    "coordinate_space": "matrix",
+                    "projection_policy": "unsupported_no_smoothing_or_projection",
+                    "hybrid_derivative_policy": "bounded_quanto_matrix_graph_vjp_hvp",
+                    "runtime_helper": (
+                        "trellis.analytics.hybrid_ad."
+                        "differentiate_quanto_correlation_matrix"
+                    ),
+                    "fail_closed_near_psd_boundary": True,
+                },
+            )
         reason = "correlation_matrix_derivative_not_implemented"
         requirement = _correlation_matrix_requirement()
         chart_policy_status = "validated_fail_closed"
@@ -776,6 +806,10 @@ def _quanto_scalar_requirements() -> tuple[HybridADFactorRequirement, ...]:
             graph_role="correlation",
         ),
     )
+
+
+def _quanto_matrix_requirements() -> tuple[HybridADFactorRequirement, ...]:
+    return _quanto_scalar_requirements()[:-1] + (_correlation_matrix_requirement(),)
 
 
 def _scalar_correlation_requirement() -> HybridADFactorRequirement:

@@ -8,7 +8,21 @@ import pytest
 from trellis.analytics import (
     HybridCorrelationStructureRequest,
     HybridDerivativeRequest,
+    admit_hybrid_ad_lane,
     differentiate_quanto_correlation_matrix,
+)
+from trellis.agent.contract_ir import (
+    Constant,
+    ContractIR,
+    EquitySpot,
+    Exercise,
+    Max,
+    Observation,
+    Singleton,
+    Spot,
+    Strike,
+    Sub,
+    Underlying,
 )
 from trellis.analytics.risk_factors import RiskFactorId, SparseRiskVector
 from trellis.core.market_state import MarketState
@@ -56,6 +70,16 @@ def _resolved(corr: float = 0.25):
         _market_state(corr),
         _QuantoSpec(),
         include_hybrid_factor_graph=True,
+    )
+
+
+def _terminal_quanto_contract_ir() -> ContractIR:
+    schedule = Singleton(_QuantoSpec().expiry_date)
+    return ContractIR(
+        payoff=Max((Sub(Spot("EUR"), Strike(100.0)), Constant(0.0))),
+        exercise=Exercise("european", schedule),
+        observation=Observation("terminal", schedule),
+        underlying=Underlying(EquitySpot("EUR", "gbm")),
     )
 
 
@@ -299,3 +323,54 @@ def test_quanto_correlation_matrix_hvp_direction_failures_are_typed() -> None:
     assert len(unknown.risk_vector) == 0
     assert unknown.diagnostics[0]["code"] == "hvp_direction_factors_unavailable"
     assert unknown.diagnostics[0]["missing_factor_keys"] == [missing_factor.key]
+
+
+def test_quanto_correlation_matrix_preserves_supported_semantic_admission_metadata() -> None:
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    admission = admit_hybrid_ad_lane(
+        _terminal_quanto_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+        correlation_structure="correlation_matrix",
+    )
+
+    result = differentiate_quanto_correlation_matrix(
+        spec,
+        resolved,
+        _matrix_request(0.25),
+        HybridDerivativeRequest(semantic_admission=admission),
+    )
+
+    assert result.support_status == "supported"
+    assert result.method_metadata["semantic_admission"]["admitted"] is True
+    assert result.method_metadata["semantic_admission"]["lane_id"] == (
+        "quanto_matrix_graph_vjp"
+    )
+    assert result.method_metadata["semantic_admission"]["metadata"]["coordinate_space"] == (
+        "matrix"
+    )
+
+
+def test_quanto_correlation_matrix_rejects_scalar_semantic_admission_metadata() -> None:
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    scalar_admission = admit_hybrid_ad_lane(
+        _terminal_quanto_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+    )
+
+    result = differentiate_quanto_correlation_matrix(
+        spec,
+        resolved,
+        _matrix_request(0.25),
+        HybridDerivativeRequest(semantic_admission=scalar_admission),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "semantic_admission_lane_unavailable"
+    assert result.method_metadata["semantic_admission"]["lane_id"] == (
+        "quanto_scalar_graph_vjp"
+    )
