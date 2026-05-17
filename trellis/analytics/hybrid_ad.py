@@ -1534,7 +1534,30 @@ def _semantic_admission_metadata(
 ) -> dict[str, object]:
     if admission is None:
         return {}
-    return {"semantic_admission": admission.to_payload()}
+    return {
+        "semantic_admission": admission.to_payload(),
+        **_semantic_state_policy_metadata(admission),
+    }
+
+
+def _semantic_state_policy_metadata(
+    admission: HybridADLaneAdmission,
+) -> dict[str, object]:
+    state_policy = admission.metadata.get("state_policy")
+    if not isinstance(state_policy, Mapping):
+        return {}
+    payload = dict(state_policy)
+    return {
+        "semantic_state_policy": payload,
+        "semantic_state_kind": str(payload.get("state_kind", "")),
+        "semantic_state_policy_support_status": str(payload.get("support_status", "")),
+        "semantic_state_differentiability_class": str(
+            payload.get("differentiability_class", "")
+        ),
+        "semantic_state_event_policy": str(payload.get("event_policy", "")),
+        "semantic_state_control_policy": str(payload.get("control_policy", "")),
+        "semantic_state_fail_closed": bool(payload.get("fail_closed", True)),
+    }
 
 
 def _unsupported_semantic_admission_result(
@@ -1547,12 +1570,14 @@ def _unsupported_semantic_admission_result(
     allowed_lane_prefixes: tuple[str, ...] = ("quanto_scalar_graph_",),
 ) -> HybridDerivativeResult | None:
     admission_metadata = _semantic_admission_metadata(admission)
+    state_metadata = _semantic_state_policy_metadata(admission)
     if not admission.supported:
         fallback_reason = {
             "code": admission.reason,
             "semantic_admission_status": admission.support_status,
             "semantic_admission_reason": admission.reason,
             "semantic_admission_lane_id": admission.lane_id,
+            **state_metadata,
         }
         return _unsupported_result(
             value=value,
@@ -1567,6 +1592,7 @@ def _unsupported_semantic_admission_result(
             diagnostic_extra={
                 "semantic_admission_status": admission.support_status,
                 "semantic_admission_lane_id": admission.lane_id,
+                **state_metadata,
             },
             fallback_reason=fallback_reason,
             method_metadata_extra=admission_metadata,
@@ -1579,6 +1605,7 @@ def _unsupported_semantic_admission_result(
             "semantic_admission_lane_id": admission.lane_id,
             "requested_derivative_method": request.derivative_method,
             "admitted_derivative_methods": list(admission.derivative_methods),
+            **state_metadata,
         }
         return _unsupported_result(
             value=value,
@@ -1594,6 +1621,7 @@ def _unsupported_semantic_admission_result(
                 "semantic_admission_lane_id": admission.lane_id,
                 "requested_derivative_method": request.derivative_method,
                 "admitted_derivative_methods": list(admission.derivative_methods),
+                **state_metadata,
             },
             fallback_reason=fallback_reason,
             method_metadata_extra=admission_metadata,
@@ -1604,6 +1632,7 @@ def _unsupported_semantic_admission_result(
             "semantic_admission_status": admission.support_status,
             "semantic_admission_reason": admission.reason,
             "semantic_admission_lane_id": admission.lane_id,
+            **state_metadata,
         }
         return _unsupported_result(
             value=value,
@@ -1615,7 +1644,10 @@ def _unsupported_semantic_admission_result(
                 "bounded quanto helper does not execute."
             ),
             method_id=method_id,
-            diagnostic_extra={"semantic_admission_lane_id": admission.lane_id},
+            diagnostic_extra={
+                "semantic_admission_lane_id": admission.lane_id,
+                **state_metadata,
+            },
             fallback_reason=fallback_reason,
             method_metadata_extra=admission_metadata,
         )

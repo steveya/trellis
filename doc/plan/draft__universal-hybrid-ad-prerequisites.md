@@ -3,11 +3,11 @@
 ## Status
 
 First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`,
-`QUA-1049`, `QUA-1054`, and `QUA-1059` epics. Universal hybrid AD is still
-not claimed; this document now records the shipped bounded quanto
+`QUA-1049`, `QUA-1054`, `QUA-1059`, and `QUA-1065` epics. Universal hybrid
+AD is still not claimed; this document now records the shipped bounded quanto
 scalar-coordinate prototypes, the checked correlation matrix policy surface,
-the executable matrix-coordinate lane, the ContractIR admission boundary, and
-the remaining prerequisites.
+the executable matrix-coordinate lane, the ContractIR admission boundary, the
+typed path-state/event policy guardrail, and the remaining prerequisites.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -36,6 +36,11 @@ the remaining prerequisites.
 | `QUA-1062` | Done | Added bounded matrix-coordinate directional HVP with finite-difference checks. |
 | `QUA-1063` | Done | Wired terminal quanto matrix-coordinate VJP/HVP into semantic admission and runtime metadata. |
 | `QUA-1064` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
+| `QUA-1066` | Done | Added immutable path-state/event policy admission payloads. |
+| `QUA-1067` | Done | Added ContractIR path-summary and discontinuous-event policy classification. |
+| `QUA-1068` | Done | Added DynamicContractIR and early-exercise state policy classification. |
+| `QUA-1069` | Done | Bridged state-policy payloads into runtime fail-closed metadata. |
+| `QUA-1070` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -109,20 +114,28 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
 - `admit_hybrid_ad_lane(...)` admits only ContractIR terminal quanto VJP/HVP
   requests into the bounded graph-owned scalar-coordinate lanes or the bounded
   matrix-coordinate lane; JVP, correlation surfaces, composite-underlier,
-  path-dependent, and early-exercise hybrid shapes are classified as
+  path-dependent, early-exercise, and dynamic hybrid shapes are classified as
   unsupported or planned before runtime AD is invoked
+- `HybridADStatePolicy` records the semantic state/event policy for those
+  fail-closed shapes: smooth path summaries remain planned, discontinuous
+  event monitors remain unsupported, early-exercise controls remain planned,
+  and DynamicContractIR state/control requests remain planned except for
+  backend-unsupported JVP
 - `HybridDerivativeRequest.semantic_admission` carries that decision into the
   scalar and matrix quanto derivative helpers; supported admissions are
   preserved in result metadata while wrong-lane, planned, or unsupported
-  admissions fail closed with empty risk and typed diagnostics
+  admissions fail closed with empty risk, typed diagnostics, and searchable
+  `semantic_state_policy` metadata when the admission carries a state policy
 
 This is still a prototype, not universal hybrid AD. The shipped derivative
 lanes differentiate a bounded scalar-coordinate vector and a bounded
 directional HVP for one single-name quanto route plus one bounded
 well-conditioned matrix-coordinate lane for that same terminal quanto shape.
 They do not differentiate arbitrary cross-asset hybrid systems, correlation
-surfaces, matrix projections or PSD-boundary behavior, path-dependent hybrid
-state, or broad product families end to end.
+surfaces, matrix projections or PSD-boundary behavior, path-dependent or
+dynamic state execution, early-exercise hybrid execution, or broad product
+families end to end. The path-state/event policy payload is a guardrail and
+reporting contract, not a pathwise derivative lane.
 
 Autograd Phase 2 also added a truthful backend capability surface:
 
@@ -315,7 +328,11 @@ prototype adds a well-conditioned direct matrix-coordinate context plus VJP
 and directional HVP verification for the terminal quanto active off-diagonal
 coordinate. Surface charts, projected or boundary matrix charts,
 path-dependent hybrid state, and larger hybrid fixtures remain open
-prerequisites.
+prerequisites. The `QUA-1065` prototype adds typed state/event policy payloads
+for smooth path summaries, discontinuous event monitors, early-exercise
+controls, and DynamicContractIR state/control requests, and carries those
+payloads into runtime fail-closed metadata. Those policies are not executable
+pathwise or dynamic derivative lanes.
 
 The first validation target should be small:
 
@@ -425,6 +442,24 @@ Deliverables:
   `QUA-1049` as fail-closed no-projection diagnostics]
 - executable derivative tests away from singularities for the terminal quanto
   active off-diagonal matrix coordinate [done in `QUA-1059`]
+
+### Phase 4b: Path-State And Event Policy Guardrail
+
+[semantic/runtime fail-closed policy delivered in `QUA-1065`]
+
+Classify path-dependent, discontinuous-event, early-exercise, and dynamic
+hybrid shapes before runtime derivative helpers execute.
+
+Deliverables:
+
+- immutable `HybridADStatePolicy` payload with JSON round trips [done in
+  `QUA-1066`]
+- ContractIR path-summary and discontinuous-event classification [done in
+  `QUA-1067`]
+- DynamicContractIR and early-exercise control policy classification [done in
+  `QUA-1068`]
+- runtime fail-closed metadata bridge for planned/unsupported state policies
+  [done in `QUA-1069`]
 
 ### Phase 5: Backend Decision For JVP
 
@@ -550,7 +585,25 @@ Acceptance criteria:
 - ContractIR admission supports only bounded terminal quanto matrix-coordinate
   VJP/HVP and carries the supported admission payload into runtime metadata
 
+Seventh delivered epic:
+
+`Hybrid AD: path-dependent state and event policy`
+
+Acceptance criteria:
+
+- `HybridADStatePolicy` captures state kind, differentiability class, support
+  status, event/control policy, state-variable roles, metadata, and diagnostics
+- ContractIR path summaries, discontinuous event monitors, and early-exercise
+  shapes carry deterministic state-policy payloads
+- DynamicContractIR VJP/HVP admissions remain planned with dynamic-state
+  policy, while JVP remains unsupported because backend JVP is unavailable
+- scalar and matrix quanto helpers preserve state-policy payloads in runtime
+  fail-closed diagnostics and method metadata
+- no pathwise, dynamic, or early-exercise hybrid derivative execution is
+  claimed
+
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: path-dependent hybrid state and event policy`
+- `Hybrid AD: executable smooth path-summary derivative lane`
+- `Hybrid AD: executable early-exercise smooth-interior derivative lane`
 - `Hybrid AD: multi-product graph-owned derivative fixtures`

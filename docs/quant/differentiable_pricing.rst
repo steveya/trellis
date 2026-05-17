@@ -72,6 +72,11 @@ coordinate in the terminal quanto route, provided the matrix is
 well-conditioned and away from the PSD boundary. Correlation surfaces, matrix
 projection or repair, path-dependent hybrid state, and hybrid ``jvp`` requests
 remain fail-closed rather than approximated.
+The semantic admission layer now carries a ``HybridADStatePolicy`` for
+path-dependent, discontinuous-event, early-exercise, and dynamic-state hybrid
+shapes. That payload is copied into runtime fail-closed metadata as
+``semantic_state_policy`` when such a request is rejected; it is a reporting
+guardrail, not pathwise hybrid AD execution.
 
 The goal is not to make every numerical routine differentiable. It is to remove
 unnecessary bump/reprice loops, stabilize calibration, and keep the exact same
@@ -122,8 +127,9 @@ The checked support contract is intentionally explicit:
        ``trellis.analytics.differentiate_quanto_correlation_matrix(...)``
      - bounded to the single-name quanto graph-owned scalar coordinates; broad
        hybrid product graphs, correlation surfaces, matrix projection/repair,
-       PSD-boundary behavior, and hybrid ``jvp`` remain fail-closed unless a
-       future lane explicitly supports them
+       PSD-boundary behavior, path-dependent/dynamic state execution,
+       early-exercise hybrid execution, and hybrid ``jvp`` remain fail-closed
+       unless a future lane explicitly supports them
    * - Flat volatility risk
      - scalar vega through ``autodiff_flat_vol``
      - flat surfaces only
@@ -166,6 +172,11 @@ matrix chart policy validation remains the governance boundary: valid PSD
 matrix payloads can be represented with deterministic off-diagonal factor
 coordinates, but matrix requests near the PSD boundary, projected/repaired
 matrix charts, and surface correlation AD still fail closed.
+Path-dependent and dynamic hybrid requests have a separate semantic state
+policy boundary: smooth path summaries, discontinuous event monitors,
+early-exercise controls, and DynamicContractIR state/control requests are
+classified before runtime AD executes and remain planned or unsupported with
+typed fail-closed metadata.
 
 ``hessian_vector_product`` returns an exact reverse-over-reverse HVP for
 scalar-objective functions on smooth-interior regions. It is not a claim about
@@ -352,7 +363,8 @@ runtime reporting must not overstate.
        HVP requests through a typed ``HybridFactorGraph``; a checked terminal
        quanto correlation matrix payload supports direct off-diagonal
        matrix-coordinate VJP/HVP away from the PSD boundary; hybrid ``jvp``,
-       correlation surfaces, matrix projection/repair, and broader hybrid
+       correlation surfaces, matrix projection/repair, path-dependent/dynamic
+       state execution, early-exercise hybrid execution, and broader hybrid
        graphs fail closed
 
 Bounded Portfolio-AAD Factor Payload
@@ -539,6 +551,12 @@ admissions are copied into
 ``HybridDerivativeResult.method_metadata["semantic_admission"]``; wrong-lane,
 planned, or unsupported admissions return an empty risk vector with the
 admission reason in diagnostics and ``fallback_reason``.
+When the blocked admission concerns path state or event policy, the runtime
+metadata also includes ``semantic_state_policy`` plus searchable fields such
+as ``semantic_state_kind``, ``semantic_state_event_policy``, and
+``semantic_state_control_policy``. Smooth path summaries and early-exercise or
+dynamic controls remain planned, while discontinuous event monitors remain
+unsupported; none of these state-policy payloads execute pathwise hybrid AD.
 
 Forward mode remains executable-truth governed. A ``derivative_method="jvp"``
 request returns an unsupported result with
@@ -762,8 +780,8 @@ Where Trellis Still Stays Forward-Only
   calibration route still records ``scipy_2point_residual_jacobian`` solve
   provenance, and the shipped derivative routes do not widen into universal
   hybrid AD, hybrid ``jvp``, correlation-surface AD, matrix projection/repair
-  or PSD-boundary AD, path-dependent hybrid state, or broad ``portfolio_aad``
-  support
+  or PSD-boundary AD, path-dependent/dynamic state execution, early-exercise
+  hybrid execution, or broad ``portfolio_aad`` support
 - state-aware Monte Carlo contracts with barrier monitors or other
   discontinuous event semantics, which still stay off the traced lane even
   when explicit shocks are supplied; the bounded checked policy is

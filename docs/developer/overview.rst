@@ -312,6 +312,13 @@ metadata, while wrong-lane, planned, or unsupported admissions return empty
 risk with typed diagnostics before AD execution. Matrix-correlation requests
 outside the executable bounded lane still use
 ``unsupported_hybrid_structure`` fail-closed diagnostics.
+Path-dependent and dynamic hybrid shapes now go through the same semantic
+guardrail with a typed ``HybridADStatePolicy`` payload. Smooth path summaries,
+discontinuous event monitors, early-exercise controls, and DynamicContractIR
+state/control requests are classified before runtime AD executes, and blocked
+runtime helpers surface that payload as ``semantic_state_policy`` metadata.
+This remains a fail-closed policy boundary, not pathwise or dynamic hybrid AD
+execution.
 
 The same benchmarking module now also exposes
 ``supported_counterparty_exposure_benchmark_scenarios()`` and

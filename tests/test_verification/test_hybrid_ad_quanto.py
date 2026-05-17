@@ -8,12 +8,17 @@ import pytest
 
 import trellis.core.differentiable as differentiable_core
 from trellis.agent.contract_ir import (
+    ArithmeticMean,
     Constant,
     ContractIR,
     EquitySpot,
     Exercise,
+    FiniteSchedule,
+    Gt,
+    Indicator,
     Max,
     Observation,
+    Scaled,
     Singleton,
     Spot,
     Strike,
@@ -44,6 +49,12 @@ from trellis.models.vol_surface import FlatVol, GridVolSurface
 
 
 SETTLEMENT = date(2024, 11, 15)
+OBSERVATIONS = (
+    date(2025, 2, 15),
+    date(2025, 5, 15),
+    date(2025, 8, 15),
+    date(2025, 11, 15),
+)
 
 
 @dataclass(frozen=True)
@@ -63,6 +74,35 @@ def _terminal_quanto_contract_ir() -> ContractIR:
     schedule = Singleton(_QuantoSpec().expiry_date)
     return ContractIR(
         payoff=Max((Sub(Spot("EUR"), Strike(100.0)), Constant(0.0))),
+        exercise=Exercise("european", schedule),
+        observation=Observation("terminal", schedule),
+        underlying=Underlying(EquitySpot("EUR", "gbm")),
+    )
+
+
+def _path_dependent_quanto_contract_ir() -> ContractIR:
+    schedule = FiniteSchedule(OBSERVATIONS)
+    return ContractIR(
+        payoff=Max(
+            (
+                Sub(ArithmeticMean(Spot("EUR"), schedule), Strike(100.0)),
+                Constant(0.0),
+            )
+        ),
+        exercise=Exercise("european", Singleton(_QuantoSpec().expiry_date)),
+        observation=Observation("path_dependent", schedule),
+        underlying=Underlying(EquitySpot("EUR", "gbm")),
+    )
+
+
+def _discontinuous_event_quanto_contract_ir() -> ContractIR:
+    schedule = Singleton(_QuantoSpec().expiry_date)
+    payoff = Scaled(
+        Indicator(Gt(Spot("EUR"), Constant(80.0))),
+        Max((Sub(Spot("EUR"), Strike(100.0)), Constant(0.0))),
+    )
+    return ContractIR(
+        payoff=payoff,
         exercise=Exercise("european", schedule),
         observation=Observation("terminal", schedule),
         underlying=Underlying(EquitySpot("EUR", "gbm")),
@@ -365,6 +405,61 @@ def test_quanto_scalar_inputs_rejects_matrix_semantic_admission_lane():
     assert result.method_metadata["semantic_admission"]["support_status"] == "supported"
     assert result.method_metadata["fallback_reason"]["semantic_admission_reason"] == (
         "supported_quanto_matrix_graph_vjp"
+    )
+
+
+def test_quanto_scalar_inputs_fail_closed_metadata_includes_path_state_policy():
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    admission = admit_hybrid_ad_lane(
+        _path_dependent_quanto_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+    )
+
+    result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(semantic_admission=admission),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "path_dependent_hybrid_state_pending"
+    assert result.diagnostics[0]["semantic_state_kind"] == "smooth_path_summary"
+    assert result.method_metadata["semantic_state_policy"]["state_kind"] == (
+        "smooth_path_summary"
+    )
+    assert result.method_metadata["semantic_state_event_policy"] == "sampled_path_summary"
+    assert result.method_metadata["fallback_reason"]["semantic_state_kind"] == (
+        "smooth_path_summary"
+    )
+
+
+def test_quanto_scalar_inputs_fail_closed_metadata_includes_event_policy():
+    spec = _QuantoSpec()
+    resolved = _resolved(0.25)
+    admission = admit_hybrid_ad_lane(
+        _discontinuous_event_quanto_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+    )
+
+    result = differentiate_quanto_scalar_inputs(
+        spec,
+        resolved,
+        HybridDerivativeRequest(semantic_admission=admission),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "unsupported_discontinuous_event_monitor"
+    assert result.diagnostics[0]["semantic_state_kind"] == "discontinuous_event_monitor"
+    assert result.method_metadata["semantic_state_policy"]["state_kind"] == (
+        "discontinuous_event_monitor"
+    )
+    assert result.method_metadata["semantic_state_event_policy"] == (
+        "fail_closed_no_smoothing"
     )
 
 

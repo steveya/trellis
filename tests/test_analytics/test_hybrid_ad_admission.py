@@ -30,6 +30,7 @@ from trellis.agent.dynamic_contract_ir import DynamicContractIR
 from trellis.analytics import (
     HybridADFactorRequirement,
     HybridADLaneAdmission,
+    HybridADStatePolicy,
     admit_hybrid_ad_lane,
 )
 
@@ -121,10 +122,51 @@ def _discontinuous_event_ir() -> ContractIR:
 def test_public_api_exports_hybrid_ad_admission_symbols():
     assert analytics.HybridADFactorRequirement is HybridADFactorRequirement
     assert analytics.HybridADLaneAdmission is HybridADLaneAdmission
+    assert analytics.HybridADStatePolicy is HybridADStatePolicy
     assert analytics.admit_hybrid_ad_lane is admit_hybrid_ad_lane
     assert "HybridADFactorRequirement" in analytics.__all__
     assert "HybridADLaneAdmission" in analytics.__all__
+    assert "HybridADStatePolicy" in analytics.__all__
     assert "admit_hybrid_ad_lane" in analytics.__all__
+
+
+def test_state_policy_payload_round_trips_and_validates_members():
+    policy = HybridADStatePolicy(
+        state_kind="smooth_path_summary",
+        support_status="planned",
+        differentiability_class="smooth",
+        reason="path_dependent_hybrid_state_pending",
+        event_policy="sampled_path_summary",
+        control_policy="none",
+        state_variable_roles=("arithmetic_mean", "underlier_path"),
+        metadata={"observation_kind": "path_dependent"},
+        diagnostics=(
+            {
+                "code": "path_dependent_hybrid_state_pending",
+                "severity": "warning",
+            },
+        ),
+    )
+
+    payload = policy.to_payload()
+
+    assert policy.supported is False
+    assert payload["state_kind"] == "smooth_path_summary"
+    assert payload["state_variable_roles"] == ["arithmetic_mean", "underlier_path"]
+    assert json.loads(json.dumps(payload)) == payload
+    assert HybridADStatePolicy.from_payload(payload) == policy
+
+    try:
+        HybridADStatePolicy(
+            state_kind="unclassified_path",
+            support_status="planned",
+            differentiability_class="smooth",
+            reason="path_dependent_hybrid_state_pending",
+        )
+    except ValueError as exc:
+        assert "state_kind" in str(exc)
+    else:  # pragma: no cover - defensive assertion
+        raise AssertionError("invalid state_kind should fail validation")
 
 
 def test_supported_quanto_vjp_admission_payload_round_trips():
@@ -195,6 +237,8 @@ def test_dynamic_contract_jvp_request_fails_closed_as_backend_unsupported():
         derivative_method="jvp",
     )
 
+    state_policy = admission.metadata["state_policy"]
+
     assert admission.admitted is False
     assert admission.supported is False
     assert admission.support_status == "unsupported"
@@ -203,6 +247,36 @@ def test_dynamic_contract_jvp_request_fails_closed_as_backend_unsupported():
     assert admission.contract_shape == "dynamic_hybrid_state"
     assert admission.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
     assert admission.metadata["requested_derivative_method"] == "jvp"
+    assert state_policy["state_kind"] == "dynamic_state"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["differentiability_class"] == "piecewise"
+    assert state_policy["event_policy"] == "stateful_event_program"
+    assert state_policy["control_policy"] == "dynamic_control_fail_closed"
+    assert state_policy["metadata"]["base_track"] == "payoff_expression"
+
+
+def test_dynamic_contract_vjp_request_is_planned_with_state_policy():
+    admission = admit_hybrid_ad_lane(
+        _dynamic_hybrid_ir(),
+        product_family="autocallable_note",
+        derivative_method="vjp",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+
+    assert admission.admitted is False
+    assert admission.support_status == "planned"
+    assert admission.reason == "dynamic_hybrid_state_admission_pending"
+    assert admission.semantic_contract_type == "DynamicContractIR"
+    assert admission.contract_shape == "dynamic_hybrid_state"
+    assert state_policy["state_kind"] == "dynamic_state"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["event_policy"] == "stateful_event_program"
+    assert state_policy["control_policy"] == "dynamic_control_fail_closed"
+    assert state_policy["state_variable_roles"] == [
+        "dynamic_state",
+        "control_state",
+    ]
 
 
 def test_unknown_derivative_method_fails_closed_at_admission():
@@ -302,10 +376,21 @@ def test_discontinuous_event_monitor_is_unsupported():
         product_family="quanto_option",
     )
 
+    state_policy = admission.metadata["state_policy"]
+
     assert admission.admitted is False
     assert admission.support_status == "unsupported"
     assert admission.reason == "unsupported_discontinuous_event_monitor"
     assert admission.contract_shape == "discontinuous_event_monitor"
+    assert state_policy["state_kind"] == "discontinuous_event_monitor"
+    assert state_policy["support_status"] == "unsupported"
+    assert state_policy["differentiability_class"] == "discontinuous"
+    assert state_policy["event_policy"] == "fail_closed_no_smoothing"
+    assert state_policy["fail_closed"] is True
+    assert state_policy["state_variable_roles"] == [
+        "indicator_event",
+        "underlier_terminal_state",
+    ]
 
 
 def test_composite_underlying_is_classified_as_planned_not_admitted():
@@ -327,10 +412,22 @@ def test_early_exercise_contract_shape_is_classified_as_planned():
         product_family="quanto_option",
     )
 
+    state_policy = admission.metadata["state_policy"]
+
     assert admission.admitted is False
     assert admission.support_status == "planned"
     assert admission.reason == "early_exercise_hybrid_state_pending"
     assert admission.contract_shape == "early_exercise_hybrid_state"
+    assert state_policy["state_kind"] == "early_exercise_control"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["differentiability_class"] == "piecewise"
+    assert state_policy["event_policy"] == "exercise_decision_schedule"
+    assert state_policy["control_policy"] == "smooth_interior_control_pending"
+    assert state_policy["state_variable_roles"] == [
+        "continuation_value",
+        "exercise_decision",
+    ]
+    assert state_policy["metadata"]["exercise_style"] == "american"
 
 
 def test_path_dependent_contract_shape_is_classified_as_planned():
@@ -339,10 +436,22 @@ def test_path_dependent_contract_shape_is_classified_as_planned():
         product_family="quanto_option",
     )
 
+    state_policy = admission.metadata["state_policy"]
+
     assert admission.admitted is False
     assert admission.support_status == "planned"
     assert admission.reason == "path_dependent_hybrid_state_pending"
     assert admission.contract_shape == "path_dependent_hybrid_state"
+    assert state_policy["state_kind"] == "smooth_path_summary"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["differentiability_class"] == "smooth"
+    assert state_policy["event_policy"] == "sampled_path_summary"
+    assert state_policy["control_policy"] == "none"
+    assert state_policy["state_variable_roles"] == [
+        "arithmetic_mean",
+        "underlier_path",
+    ]
+    assert state_policy["metadata"]["observation_kind"] == "path_dependent"
 
 
 def test_factor_requirement_payload_round_trips_directly():

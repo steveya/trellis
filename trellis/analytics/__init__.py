@@ -23,6 +23,7 @@ from trellis.analytics.portfolio_aad_admission import (
 from trellis.analytics.hybrid_ad_admission import (
     HybridADFactorRequirement,
     HybridADLaneAdmission,
+    HybridADStatePolicy,
     admit_hybrid_ad_lane,
 )
 from trellis.analytics.hybrid_factors import (
@@ -59,6 +60,7 @@ __all__ = [
     "DefaultUnsupportedAADPolicy",
     "HybridADFactorRequirement",
     "HybridADLaneAdmission",
+    "HybridADStatePolicy",
     "HybridCorrelationStructureRequest",
     "HybridDependencyNode",
     "HybridDerivativeRequest",

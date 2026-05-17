@@ -33,6 +33,26 @@ from trellis.agent.dynamic_contract_ir import DynamicContractIR
 
 
 _DERIVATIVE_METHODS = frozenset({"vjp", "jvp", "hvp"})
+_STATE_KINDS = frozenset(
+    {
+        "terminal_state",
+        "smooth_path_summary",
+        "discontinuous_event_monitor",
+        "early_exercise_control",
+        "dynamic_state",
+    }
+)
+_STATE_SUPPORT_STATUSES = frozenset({"supported", "planned", "unsupported"})
+_STATE_DIFFERENTIABILITY_CLASSES = frozenset(
+    {
+        "smooth",
+        "piecewise",
+        "discontinuous",
+        "projected",
+        "held_fixed",
+        "unsupported",
+    }
+)
 _SCALAR_CORRELATION_STRUCTURES = frozenset(
     {
         "scalar",
@@ -59,6 +79,103 @@ def _copy_diagnostics(
     diagnostics: Iterable[Mapping[str, Any]] | None,
 ) -> tuple[dict[str, Any], ...]:
     return tuple(dict(diagnostic) for diagnostic in (diagnostics or ()))
+
+
+@dataclass(frozen=True)
+class HybridADStatePolicy:
+    """Semantic state/event policy for bounded hybrid AD admission."""
+
+    state_kind: str
+    support_status: str
+    differentiability_class: str
+    reason: str
+    event_policy: str = "not_applicable"
+    control_policy: str = "not_applicable"
+    state_variable_roles: tuple[str, ...] = field(default_factory=tuple)
+    fail_closed: bool = True
+    metadata: Mapping[str, Any] = field(default_factory=dict, hash=False)
+    diagnostics: tuple[Mapping[str, Any], ...] = field(default_factory=tuple, hash=False)
+
+    def __post_init__(self) -> None:
+        state_kind = _normalize(self.state_kind)
+        if state_kind not in _STATE_KINDS:
+            raise ValueError(f"state_kind must be one of {sorted(_STATE_KINDS)}")
+        object.__setattr__(self, "state_kind", state_kind)
+        support_status = _normalize(self.support_status)
+        if support_status not in _STATE_SUPPORT_STATUSES:
+            raise ValueError(
+                f"support_status must be one of {sorted(_STATE_SUPPORT_STATUSES)}"
+            )
+        object.__setattr__(self, "support_status", support_status)
+        differentiability_class = _normalize(self.differentiability_class)
+        if differentiability_class not in _STATE_DIFFERENTIABILITY_CLASSES:
+            raise ValueError(
+                "differentiability_class must be one of "
+                f"{sorted(_STATE_DIFFERENTIABILITY_CLASSES)}"
+            )
+        object.__setattr__(self, "differentiability_class", differentiability_class)
+        object.__setattr__(self, "reason", _clean(self.reason, "reason"))
+        object.__setattr__(
+            self,
+            "event_policy",
+            str(self.event_policy or "not_applicable").strip() or "not_applicable",
+        )
+        object.__setattr__(
+            self,
+            "control_policy",
+            str(self.control_policy or "not_applicable").strip() or "not_applicable",
+        )
+        object.__setattr__(
+            self,
+            "state_variable_roles",
+            tuple(
+                role
+                for role in (
+                    str(raw_role).strip()
+                    for raw_role in self.state_variable_roles
+                )
+                if role
+            ),
+        )
+        object.__setattr__(self, "fail_closed", bool(self.fail_closed))
+        object.__setattr__(self, "metadata", _copy_mapping(self.metadata))
+        object.__setattr__(self, "diagnostics", _copy_diagnostics(self.diagnostics))
+
+    @property
+    def supported(self) -> bool:
+        """Return whether this state policy admits runtime derivative execution."""
+        return self.support_status == "supported"
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return a deterministic JSON-friendly policy payload."""
+        return {
+            "state_kind": self.state_kind,
+            "support_status": self.support_status,
+            "differentiability_class": self.differentiability_class,
+            "reason": self.reason,
+            "event_policy": self.event_policy,
+            "control_policy": self.control_policy,
+            "state_variable_roles": list(self.state_variable_roles),
+            "fail_closed": self.fail_closed,
+            "metadata": dict(self.metadata),
+            "diagnostics": [dict(diagnostic) for diagnostic in self.diagnostics],
+        }
+
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> "HybridADStatePolicy":
+        """Build a state policy from :meth:`to_payload` output."""
+        return cls(
+            state_kind=str(payload["state_kind"]),
+            support_status=str(payload["support_status"]),
+            differentiability_class=str(payload["differentiability_class"]),
+            reason=str(payload["reason"]),
+            event_policy=str(payload.get("event_policy", "not_applicable")),
+            control_policy=str(payload.get("control_policy", "not_applicable")),
+            state_variable_roles=tuple(payload.get("state_variable_roles", ())),
+            fail_closed=bool(payload.get("fail_closed", True)),
+            metadata=payload.get("metadata") or {},
+            diagnostics=payload.get("diagnostics") or (),
+        )
 
 
 @dataclass(frozen=True)
@@ -303,6 +420,7 @@ def _dynamic_contract_admission(
     product_family: str | None,
 ) -> HybridADLaneAdmission:
     family = product_family or contract.semantic_family or "dynamic_hybrid_contract"
+    state_policy = _dynamic_state_policy(contract)
     if derivative_method == "jvp":
         return _admission(
             admitted=False,
@@ -319,12 +437,15 @@ def _dynamic_contract_admission(
                 "backend_operator": "jvp",
                 "base_track": contract.base_track,
                 "fail_closed": True,
+                **_state_policy_metadata(state_policy),
             },
             diagnostics=(
                 {
                     "code": "hybrid_jvp_backend_unsupported",
                     "severity": "warning",
                     "backend_operator": "jvp",
+                    "state_kind": state_policy.state_kind,
+                    "event_policy": state_policy.event_policy,
                 },
             ),
         )
@@ -342,11 +463,14 @@ def _dynamic_contract_admission(
             "requested_derivative_method": derivative_method,
             "base_track": contract.base_track,
             "fail_closed": True,
+            **_state_policy_metadata(state_policy),
         },
         diagnostics=(
             {
                 "code": "dynamic_hybrid_state_admission_pending",
                 "severity": "warning",
+                "state_kind": state_policy.state_kind,
+                "event_policy": state_policy.event_policy,
             },
         ),
     )
@@ -412,6 +536,7 @@ def _contract_ir_admission(
             ),
         )
     if _contains_indicator(contract.payoff):
+        state_policy = _discontinuous_event_state_policy(contract)
         return _admission(
             admitted=False,
             lane_id="path_dependent_event_policy",
@@ -422,11 +547,17 @@ def _contract_ir_admission(
             contract_shape="discontinuous_event_monitor",
             derivative_methods=("vjp", "hvp"),
             factor_requirements=(_scalar_correlation_requirement(),),
-            metadata={"requested_derivative_method": derivative_method, "fail_closed": True},
+            metadata={
+                "requested_derivative_method": derivative_method,
+                "fail_closed": True,
+                **_state_policy_metadata(state_policy),
+            },
             diagnostics=(
                 {
                     "code": "unsupported_discontinuous_event_monitor",
                     "severity": "warning",
+                    "state_kind": state_policy.state_kind,
+                    "event_policy": state_policy.event_policy,
                 },
             ),
         )
@@ -454,6 +585,7 @@ def _contract_ir_admission(
             ),
         )
     if _is_path_dependent(contract):
+        state_policy = _smooth_path_summary_state_policy(contract)
         return _admission(
             admitted=False,
             lane_id="path_dependent_hybrid_state",
@@ -468,15 +600,19 @@ def _contract_ir_admission(
                 "requested_derivative_method": derivative_method,
                 "observation_kind": contract.observation.kind,
                 "fail_closed": True,
+                **_state_policy_metadata(state_policy),
             },
             diagnostics=(
                 {
                     "code": "path_dependent_hybrid_state_pending",
                     "severity": "warning",
+                    "state_kind": state_policy.state_kind,
+                    "event_policy": state_policy.event_policy,
                 },
             ),
         )
     if contract.exercise.style in {"american", "bermudan"}:
+        state_policy = _early_exercise_state_policy(contract)
         return _admission(
             admitted=False,
             lane_id="early_exercise_hybrid_state",
@@ -491,11 +627,14 @@ def _contract_ir_admission(
                 "requested_derivative_method": derivative_method,
                 "exercise_style": contract.exercise.style,
                 "fail_closed": True,
+                **_state_policy_metadata(state_policy),
             },
             diagnostics=(
                 {
                     "code": "early_exercise_hybrid_state_pending",
                     "severity": "warning",
+                    "state_kind": state_policy.state_kind,
+                    "event_policy": state_policy.event_policy,
                 },
             ),
         )
@@ -617,6 +756,121 @@ def _correlation_structure_admission(
                 "severity": "warning",
                 "correlation_structure": structure_type,
                 "chart_policy_status": chart_policy_status,
+            },
+        ),
+    )
+
+
+def _state_policy_metadata(policy: HybridADStatePolicy) -> dict[str, Any]:
+    return {
+        "state_policy": policy.to_payload(),
+        "state_kind": policy.state_kind,
+        "state_policy_support_status": policy.support_status,
+        "state_differentiability_class": policy.differentiability_class,
+        "state_event_policy": policy.event_policy,
+        "state_control_policy": policy.control_policy,
+        "state_fail_closed": policy.fail_closed,
+    }
+
+
+def _discontinuous_event_state_policy(contract: ContractIR) -> HybridADStatePolicy:
+    return HybridADStatePolicy(
+        state_kind="discontinuous_event_monitor",
+        support_status="unsupported",
+        differentiability_class="discontinuous",
+        reason="unsupported_discontinuous_event_monitor",
+        event_policy="fail_closed_no_smoothing",
+        control_policy="none",
+        state_variable_roles=("indicator_event", "underlier_terminal_state"),
+        fail_closed=True,
+        metadata={
+            "observation_kind": contract.observation.kind,
+            "path_summary_type": "none",
+            "event_monitor_type": "indicator",
+        },
+        diagnostics=(
+            {
+                "code": "unsupported_discontinuous_event_monitor",
+                "severity": "warning",
+            },
+        ),
+    )
+
+
+def _smooth_path_summary_state_policy(contract: ContractIR) -> HybridADStatePolicy:
+    path_summary_type = (
+        "arithmetic_mean" if _contains_arithmetic_mean(contract.payoff) else "path"
+    )
+    state_roles = (
+        ("arithmetic_mean", "underlier_path")
+        if path_summary_type == "arithmetic_mean"
+        else ("underlier_path",)
+    )
+    return HybridADStatePolicy(
+        state_kind="smooth_path_summary",
+        support_status="planned",
+        differentiability_class="smooth",
+        reason="path_dependent_hybrid_state_pending",
+        event_policy="sampled_path_summary",
+        control_policy="none",
+        state_variable_roles=state_roles,
+        fail_closed=True,
+        metadata={
+            "observation_kind": contract.observation.kind,
+            "path_summary_type": path_summary_type,
+            "event_monitor_type": "none",
+        },
+        diagnostics=(
+            {
+                "code": "path_dependent_hybrid_state_pending",
+                "severity": "warning",
+            },
+        ),
+    )
+
+
+def _early_exercise_state_policy(contract: ContractIR) -> HybridADStatePolicy:
+    return HybridADStatePolicy(
+        state_kind="early_exercise_control",
+        support_status="planned",
+        differentiability_class="piecewise",
+        reason="early_exercise_hybrid_state_pending",
+        event_policy="exercise_decision_schedule",
+        control_policy="smooth_interior_control_pending",
+        state_variable_roles=("continuation_value", "exercise_decision"),
+        fail_closed=True,
+        metadata={
+            "exercise_style": contract.exercise.style,
+            "observation_kind": contract.observation.kind,
+            "path_summary_type": "none",
+        },
+        diagnostics=(
+            {
+                "code": "early_exercise_hybrid_state_pending",
+                "severity": "warning",
+            },
+        ),
+    )
+
+
+def _dynamic_state_policy(contract: DynamicContractIR) -> HybridADStatePolicy:
+    return HybridADStatePolicy(
+        state_kind="dynamic_state",
+        support_status="planned",
+        differentiability_class="piecewise",
+        reason="dynamic_hybrid_state_admission_pending",
+        event_policy="stateful_event_program",
+        control_policy="dynamic_control_fail_closed",
+        state_variable_roles=("dynamic_state", "control_state"),
+        fail_closed=True,
+        metadata={
+            "base_track": contract.base_track,
+            "semantic_family": contract.semantic_family,
+        },
+        diagnostics=(
+            {
+                "code": "dynamic_hybrid_state_admission_pending",
+                "severity": "warning",
             },
         ),
     )
@@ -863,5 +1117,6 @@ def _is_quanto_family(product_family: str | None) -> bool:
 __all__ = [
     "HybridADFactorRequirement",
     "HybridADLaneAdmission",
+    "HybridADStatePolicy",
     "admit_hybrid_ad_lane",
 ]
