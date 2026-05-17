@@ -454,6 +454,63 @@ def test_path_dependent_contract_shape_is_classified_as_planned():
     assert state_policy["metadata"]["observation_kind"] == "path_dependent"
 
 
+def test_arithmetic_path_summary_vjp_is_supported_for_bounded_lane():
+    admission = admit_hybrid_ad_lane(
+        _path_dependent_ir(),
+        product_family="arithmetic_asian_option",
+        derivative_method="vjp",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+    requirements = {
+        requirement.semantic_role: requirement
+        for requirement in admission.factor_requirements
+    }
+
+    assert admission.admitted is True
+    assert admission.supported is True
+    assert admission.support_status == "supported"
+    assert admission.lane_id == "arithmetic_asian_path_summary_vjp"
+    assert admission.reason == "supported_arithmetic_asian_path_summary_vjp"
+    assert admission.contract_shape == "arithmetic_asian_smooth_path_summary"
+    assert admission.derivative_methods == ("vjp",)
+    assert state_policy["state_kind"] == "smooth_path_summary"
+    assert state_policy["support_status"] == "supported"
+    assert state_policy["differentiability_class"] == "smooth"
+    assert state_policy["reason"] == "supported_arithmetic_asian_path_summary_vjp"
+    assert state_policy["fail_closed"] is False
+    assert state_policy["metadata"]["path_summary_type"] == "arithmetic_mean"
+    assert requirements["underlier_vol"].object_type == "vol_surface"
+    assert requirements["underlier_vol"].coordinate_type == "black_vol"
+    assert requirements["underlier_vol"].parameterization == "flat_vol"
+    assert admission.metadata["runtime_helper"] == (
+        "trellis.analytics.hybrid_ad.differentiate_arithmetic_asian_path_summary"
+    )
+    assert admission.metadata["path_derivative_policy"] == (
+        "lognormal_moment_matching_smooth_path_summary"
+    )
+
+
+def test_arithmetic_path_summary_hvp_remains_planned_until_runtime_exists():
+    admission = admit_hybrid_ad_lane(
+        _path_dependent_ir(),
+        product_family="arithmetic_asian_option",
+        derivative_method="hvp",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+
+    assert admission.admitted is False
+    assert admission.support_status == "planned"
+    assert admission.reason == "path_summary_hvp_pending"
+    assert admission.contract_shape == "arithmetic_asian_smooth_path_summary"
+    assert state_policy["state_kind"] == "smooth_path_summary"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["reason"] == "path_summary_hvp_pending"
+    assert state_policy["metadata"]["path_summary_type"] == "arithmetic_mean"
+    assert admission.diagnostics[0]["code"] == "path_summary_hvp_pending"
+
+
 def test_factor_requirement_payload_round_trips_directly():
     requirement = HybridADFactorRequirement(
         object_type="model_parameter",
