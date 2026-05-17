@@ -302,6 +302,14 @@ hybrid shapes, that fail-closed result also carries ``semantic_state_policy``
 metadata. It tells you whether the blocked shape was a smooth path summary, a
 discontinuous event monitor, an early-exercise control, or dynamic state; it
 does not mean those shapes have executable pathwise hybrid AD.
+The one executable path-summary exception is the bounded arithmetic-average
+Asian flat-vol VJP lane exposed as
+``differentiate_arithmetic_asian_path_summary(...)``. Use
+``admit_hybrid_ad_lane(..., product_family="arithmetic_asian_option",
+derivative_method="vjp")`` and pass that admission through
+``HybridDerivativeRequest.semantic_admission`` to preserve the supported
+``semantic_state_policy`` metadata. Grid-vol path summaries, event monitors,
+early exercise, dynamic state, HVP, and JVP still fail closed.
 
 For small books that combine already-supported lanes, use the mixed dispatcher:
 

@@ -301,9 +301,14 @@ bounded terminal-quanto matrix-coordinate lane: valid, well-conditioned direct
 correlation-matrix payloads produce off-diagonal ``RiskFactorId`` coordinates
 and can return VJP or directional HVP risk for the active underlier/FX matrix
 entry. The developer contract is deliberately narrow: correlation surfaces,
-matrix projection or repair, PSD-boundary behavior, path-dependent hybrid
-state, broader product graphs, and hybrid ``jvp`` are rejected fail-closed
-until explicit graph-owned derivative lanes exist.
+matrix projection or repair, PSD-boundary behavior, broader product graphs,
+and hybrid ``jvp`` are rejected fail-closed until explicit graph-owned
+derivative lanes exist. The first executable path-state lane is also narrow:
+``trellis.analytics.differentiate_arithmetic_asian_path_summary(...)`` returns
+``hybrid_path_summary_vjp`` metadata for bounded arithmetic-average European
+path summaries over one graph-owned ``FlatVol`` coordinate. Grid-vol path
+summaries, discontinuous event monitors, HVP/JVP, early exercise, and dynamic
+state remain fail-closed or planned.
 ``trellis.analytics.admit_hybrid_ad_lane(...)`` is the semantic ContractIR
 admission guard for this helper family; supported terminal quanto scalar or
 matrix VJP/HVP admissions can be passed through
@@ -313,11 +318,13 @@ risk with typed diagnostics before AD execution. Matrix-correlation requests
 outside the executable bounded lane still use
 ``unsupported_hybrid_structure`` fail-closed diagnostics.
 Path-dependent and dynamic hybrid shapes now go through the same semantic
-guardrail with a typed ``HybridADStatePolicy`` payload. Smooth path summaries,
-discontinuous event monitors, early-exercise controls, and DynamicContractIR
-state/control requests are classified before runtime AD executes, and blocked
-runtime helpers surface that payload as ``semantic_state_policy`` metadata.
-This remains a fail-closed policy boundary, not pathwise or dynamic hybrid AD
+guardrail with a typed ``HybridADStatePolicy`` payload. Arithmetic-average
+path summaries can be supported for the bounded flat-vol VJP lane; other
+smooth path summaries, discontinuous event monitors, early-exercise controls,
+and DynamicContractIR state/control requests are classified before runtime AD
+executes, and blocked runtime helpers surface that payload as
+``semantic_state_policy`` metadata. This remains a bounded summary lane and a
+fail-closed policy boundary, not broad pathwise or dynamic hybrid AD
 execution.
 
 The same benchmarking module now also exposes

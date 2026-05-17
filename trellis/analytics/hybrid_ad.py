@@ -529,6 +529,112 @@ def _unsupported_result(
     )
 
 
+def _path_summary_market_context(
+    market_context: object,
+    *,
+    vol_surface_name: str,
+    currency: str | None,
+) -> object:
+    from trellis.analytics.portfolio_aad import VanillaEquityOptionVolAADMarketContext
+
+    if isinstance(market_context, VanillaEquityOptionVolAADMarketContext):
+        if market_context.provenance_namespace == "hybrid_ad":
+            return market_context
+        return replace(market_context, provenance_namespace="hybrid_ad")
+    return VanillaEquityOptionVolAADMarketContext(
+        market_state=market_context,
+        vol_surface_name=vol_surface_name,
+        currency=currency,
+        provenance_namespace="hybrid_ad",
+    )
+
+
+def _path_summary_graph(
+    context: object,
+    *,
+    derivative_method: str,
+    position_name: str,
+) -> HybridFactorGraph:
+    from trellis.analytics.portfolio_aad import VanillaEquityOptionVolAADMarketContext
+    from trellis.models.vol_surface import FlatVol
+
+    if not isinstance(context, VanillaEquityOptionVolAADMarketContext):
+        raise TypeError("path-summary helper requires VanillaEquityOptionVolAADMarketContext")
+    coordinates = context.coordinates()
+    vol_surface = getattr(context.market_state, "vol_surface", None)
+    coordinate_values: dict[str, object] = {}
+    if isinstance(vol_surface, FlatVol):
+        coordinate_values["vol"] = float(vol_surface.vol)
+    chart = MarketObjectCoordinateChart.identity(
+        chart_id=f"chart:path_summary_vol:{context.vol_surface_name}",
+        object_type="vol_surface",
+        object_name=context.vol_surface_name,
+        coordinates=coordinates,
+        coordinate_values=coordinate_values,
+        metadata={
+            "coordinate_type": "flat_vol",
+            "chart_family": "flat_vol",
+            "path_summary_type": "arithmetic_mean",
+        },
+    )
+    node = HybridDependencyNode(
+        node_id=f"node:path_summary_vol:{context.vol_surface_name}",
+        node_type="vol_surface",
+        object_name=context.vol_surface_name,
+        coordinate_chart=chart,
+        derivative_method=derivative_method,
+        support_status="supported",
+        metadata={
+            "resolved_inputs": ("underlier_vol",),
+            "position_name": str(position_name),
+            "path_summary_type": "arithmetic_mean",
+            "path_derivative_policy": "lognormal_moment_matching_smooth_path_summary",
+        },
+    )
+    graph = HybridFactorGraph(
+        graph_id=f"hybrid:path_summary:{context.vol_surface_name}:{position_name}",
+        nodes=(node,),
+        metadata={
+            "route_family": "bounded_arithmetic_asian",
+            "graph_source": "arithmetic_asian_path_summary",
+            "path_summary_type": "arithmetic_mean",
+            "path_derivative_policy": "lognormal_moment_matching_smooth_path_summary",
+            "vol_surface_name": context.vol_surface_name,
+            "position_name": str(position_name),
+        },
+    )
+    graph.validate()
+    return graph
+
+
+def _unsupported_path_summary_graph(
+    *,
+    reason: str,
+    position_name: str,
+    vol_surface_name: str,
+) -> HybridFactorGraph:
+    dependency = HybridUnsupportedDependency(
+        dependency_id=f"node:path_summary:{position_name}",
+        node_type="path_summary",
+        object_name=str(position_name),
+        reason=reason,
+        metadata={
+            "vol_surface_name": vol_surface_name,
+            "path_summary_type": "arithmetic_mean",
+        },
+    )
+    return HybridFactorGraph(
+        graph_id=f"hybrid:path_summary:{vol_surface_name}:{position_name}",
+        unsupported_dependencies=(dependency,),
+        metadata={
+            "route_family": "bounded_arithmetic_asian",
+            "graph_source": "arithmetic_asian_path_summary",
+            "path_summary_type": "arithmetic_mean",
+            "vol_surface_name": vol_surface_name,
+        },
+    )
+
+
 def _node_role(node: HybridDependencyNode) -> str | None:
     roles = tuple(str(role) for role in node.metadata.get("resolved_inputs", ()))
     for role in roles:
@@ -1188,6 +1294,190 @@ def _unsupported_correlation_matrix_result(
     )
 
 
+def differentiate_arithmetic_asian_path_summary(
+    instrument: object,
+    market_context: object,
+    request: HybridDerivativeRequest | None = None,
+    *,
+    position_name: str = "path_summary",
+    vol_surface_name: str = "default_vol_surface",
+    currency: str | None = None,
+) -> HybridDerivativeResult:
+    """Return VJP risk for one bounded arithmetic-average smooth path summary."""
+    from trellis.analytics.portfolio_aad import (
+        ArithmeticAsianOptionVolAADAdapter,
+        PortfolioAADRequest,
+    )
+    from trellis.core.differentiable import get_backend_capabilities
+
+    resolved_request = request or HybridDerivativeRequest()
+    method_id = "hybrid_path_summary_vjp"
+    adapter = ArithmeticAsianOptionVolAADAdapter()
+    context = _path_summary_market_context(
+        market_context,
+        vol_surface_name=vol_surface_name,
+        currency=currency,
+    )
+    portfolio_request = PortfolioAADRequest()
+    decision = adapter.support_decision(
+        position_name,
+        instrument,
+        context,
+        portfolio_request,
+    )
+    admission_metadata = _semantic_admission_metadata(
+        resolved_request.semantic_admission
+    )
+
+    graph: HybridFactorGraph
+    try:
+        graph = _path_summary_graph(
+            context,
+            derivative_method="vjp",
+            position_name=position_name,
+        )
+    except Exception:
+        graph = _unsupported_path_summary_graph(
+            reason=decision.reason,
+            position_name=position_name,
+            vol_surface_name=vol_surface_name,
+        )
+
+    value: float | None = None
+    if decision.supported:
+        value = float(adapter.value(instrument, context, portfolio_request))
+
+    if resolved_request.semantic_admission is not None:
+        admission_result = _unsupported_semantic_admission_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            admission=resolved_request.semantic_admission,
+            method_id=method_id,
+            allowed_lane_prefixes=("arithmetic_asian_path_summary_",),
+        )
+        if admission_result is not None:
+            return admission_result
+
+    if resolved_request.derivative_method != "vjp":
+        code = (
+            "hybrid_jvp_backend_unsupported"
+            if resolved_request.derivative_method == "jvp"
+            else "path_summary_hvp_pending"
+        )
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code=code,
+            message=(
+                "Smooth path-summary hybrid AD currently supports only the "
+                "bounded arithmetic-Asian VJP lane."
+            ),
+            method_id=method_id,
+            diagnostic_extra={
+                "requested_derivative_method": resolved_request.derivative_method,
+                "path_summary_type": "arithmetic_mean",
+            },
+            fallback_reason={
+                "code": code,
+                "requested_derivative_method": resolved_request.derivative_method,
+                "path_summary_type": "arithmetic_mean",
+            },
+            method_metadata_extra=admission_metadata,
+        )
+
+    if not decision.supported:
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code=decision.reason,
+            message=(
+                "Arithmetic-Asian path-summary VJP is unavailable for this "
+                f"instrument or market context: {decision.reason}."
+            ),
+            method_id=method_id,
+            diagnostic_extra={
+                "position_name": str(position_name),
+                "path_summary_type": "arithmetic_mean",
+                "support_decision": decision.to_payload(),
+            },
+            fallback_reason={
+                "code": decision.reason,
+                "position_name": str(position_name),
+                "path_summary_type": "arithmetic_mean",
+            },
+            method_metadata_extra=admission_metadata,
+        )
+
+    capabilities = get_backend_capabilities()
+    full_vector = adapter.vjp(
+        instrument,
+        context,
+        portfolio_request,
+        weight=1.0,
+    )
+    selected_vector = resolved_request.filter_vector(full_vector)
+    missing_factors = resolved_request.missing_selected_factors(full_vector)
+    selected_diagnostics: list[dict[str, object]] = []
+    support_status = "supported"
+    if missing_factors:
+        selected_diagnostics.append(
+            {
+                "code": "selected_factors_unavailable",
+                "severity": "warning",
+                "missing_factor_keys": [factor.key for factor in missing_factors],
+                "unsupported_selected_factor_policy": (
+                    resolved_request.unsupported_selected_factor_policy
+                ),
+            }
+        )
+        support_status = "unsupported" if len(selected_vector) == 0 else "partial"
+        if resolved_request.unsupported_selected_factor_policy == "fail_closed":
+            selected_vector = SparseRiskVector()
+            support_status = "unsupported"
+
+    coordinates = graph.coordinates
+    metadata = derivative_method_payload(
+        method_id,
+        method_support=support_status,
+        backend_id=capabilities.backend_id,
+        backend_operator="vjp",
+        coordinate_space="constrained",
+        chart_type="identity",
+        hybrid_factor_graph_id=graph.graph_id,
+        path_summary_type="arithmetic_mean",
+        path_derivative_policy="lognormal_moment_matching_smooth_path_summary",
+        factor_count=len(full_vector),
+        sparse_nonzero_factor_count=len(full_vector),
+        selected_factor_count=len(selected_vector),
+        node_count=len(graph.nodes),
+        unsupported_dependency_count=len(graph.unsupported_dependencies),
+        risk_factor_coordinates=[
+            coordinate.to_payload()
+            for coordinate in coordinates
+            if coordinate.factor_id in set(full_vector)
+        ],
+    )
+    if value is not None and math.isfinite(value):
+        metadata["base_value"] = value
+    metadata.update(admission_metadata)
+
+    diagnostics = tuple(selected_diagnostics) + tuple(
+        dict(diagnostic) for diagnostic in decision.diagnostics
+    )
+    return HybridDerivativeResult(
+        value=value,
+        risk_vector=selected_vector,
+        graph=graph,
+        support_status=support_status,
+        method_metadata=metadata,
+        unsupported_dependencies=graph.unsupported_dependencies,
+        diagnostics=diagnostics,
+    )
+
+
 def differentiate_quanto_correlation_matrix(
     spec: object,
     resolved_inputs: object,
@@ -1562,7 +1852,7 @@ def _semantic_state_policy_metadata(
 
 def _unsupported_semantic_admission_result(
     *,
-    value: float,
+    value: float | None,
     graph: HybridFactorGraph,
     request: HybridDerivativeRequest,
     admission: HybridADLaneAdmission,
@@ -2060,6 +2350,7 @@ __all__ = [
     "HybridDerivativeResult",
     "HybridMatrixCoordinateContext",
     "build_correlation_matrix_coordinate_context",
+    "differentiate_arithmetic_asian_path_summary",
     "differentiate_quanto_correlation_matrix",
     "differentiate_quanto_scalar_inputs",
     "differentiate_quanto_scalar_correlation",

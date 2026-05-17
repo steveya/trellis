@@ -585,6 +585,75 @@ def _contract_ir_admission(
             ),
         )
     if _is_path_dependent(contract):
+        if _is_arithmetic_asian_family(product_family) and _is_bounded_arithmetic_path_summary(
+            contract
+        ):
+            if derivative_method == "vjp":
+                state_policy = _smooth_path_summary_state_policy(
+                    contract,
+                    support_status="supported",
+                    reason="supported_arithmetic_asian_path_summary_vjp",
+                    fail_closed=False,
+                )
+                return _admission(
+                    admitted=True,
+                    lane_id="arithmetic_asian_path_summary_vjp",
+                    support_status="supported",
+                    reason="supported_arithmetic_asian_path_summary_vjp",
+                    semantic_contract_type="ContractIR",
+                    product_family=product_family or "arithmetic_asian_option",
+                    contract_shape="arithmetic_asian_smooth_path_summary",
+                    derivative_methods=("vjp",),
+                    factor_requirements=_path_summary_vol_requirements(),
+                    metadata={
+                        "requested_derivative_method": derivative_method,
+                        "observation_kind": contract.observation.kind,
+                        "path_derivative_policy": (
+                            "lognormal_moment_matching_smooth_path_summary"
+                        ),
+                        "runtime_helper": (
+                            "trellis.analytics.hybrid_ad."
+                            "differentiate_arithmetic_asian_path_summary"
+                        ),
+                        "grid_vol_support_status": "planned",
+                        "fail_closed": False,
+                        **_state_policy_metadata(state_policy),
+                    },
+                )
+            state_policy = _smooth_path_summary_state_policy(
+                contract,
+                support_status="planned",
+                reason="path_summary_hvp_pending",
+                fail_closed=True,
+            )
+            return _admission(
+                admitted=False,
+                lane_id="arithmetic_asian_path_summary_hvp",
+                support_status="planned",
+                reason="path_summary_hvp_pending",
+                semantic_contract_type="ContractIR",
+                product_family=product_family or "arithmetic_asian_option",
+                contract_shape="arithmetic_asian_smooth_path_summary",
+                derivative_methods=("vjp",),
+                factor_requirements=_path_summary_vol_requirements(),
+                metadata={
+                    "requested_derivative_method": derivative_method,
+                    "observation_kind": contract.observation.kind,
+                    "path_derivative_policy": (
+                        "lognormal_moment_matching_smooth_path_summary"
+                    ),
+                    "fail_closed": True,
+                    **_state_policy_metadata(state_policy),
+                },
+                diagnostics=(
+                    {
+                        "code": "path_summary_hvp_pending",
+                        "severity": "warning",
+                        "state_kind": state_policy.state_kind,
+                        "event_policy": state_policy.event_policy,
+                    },
+                ),
+            )
         state_policy = _smooth_path_summary_state_policy(contract)
         return _admission(
             admitted=False,
@@ -797,7 +866,13 @@ def _discontinuous_event_state_policy(contract: ContractIR) -> HybridADStatePoli
     )
 
 
-def _smooth_path_summary_state_policy(contract: ContractIR) -> HybridADStatePolicy:
+def _smooth_path_summary_state_policy(
+    contract: ContractIR,
+    *,
+    support_status: str = "planned",
+    reason: str = "path_dependent_hybrid_state_pending",
+    fail_closed: bool = True,
+) -> HybridADStatePolicy:
     path_summary_type = (
         "arithmetic_mean" if _contains_arithmetic_mean(contract.payoff) else "path"
     )
@@ -808,13 +883,13 @@ def _smooth_path_summary_state_policy(contract: ContractIR) -> HybridADStatePoli
     )
     return HybridADStatePolicy(
         state_kind="smooth_path_summary",
-        support_status="planned",
+        support_status=support_status,
         differentiability_class="smooth",
-        reason="path_dependent_hybrid_state_pending",
+        reason=reason,
         event_policy="sampled_path_summary",
         control_policy="none",
         state_variable_roles=state_roles,
-        fail_closed=True,
+        fail_closed=fail_closed,
         metadata={
             "observation_kind": contract.observation.kind,
             "path_summary_type": path_summary_type,
@@ -822,8 +897,8 @@ def _smooth_path_summary_state_policy(contract: ContractIR) -> HybridADStatePoli
         },
         diagnostics=(
             {
-                "code": "path_dependent_hybrid_state_pending",
-                "severity": "warning",
+                "code": reason,
+                "severity": "info" if support_status == "supported" else "warning",
             },
         ),
     )
@@ -936,6 +1011,19 @@ def _is_path_dependent(contract: ContractIR) -> bool:
     )
 
 
+def _is_bounded_arithmetic_path_summary(contract: ContractIR) -> bool:
+    if contract.exercise.style != "european":
+        return False
+    if not isinstance(contract.underlying.spec, EquitySpot):
+        return False
+    if contract.observation.kind != "path_dependent":
+        return False
+    body = _vanilla_intrinsic_body(contract.payoff)
+    if body is None:
+        return False
+    return _is_arithmetic_mean_strike_sub(body) or _is_strike_arithmetic_mean_sub(body)
+
+
 def _vanilla_intrinsic_body(expr: object) -> object | None:
     if not isinstance(expr, Max) or len(expr.args) != 2:
         return None
@@ -953,6 +1041,24 @@ def _is_spot_strike_sub(expr: object) -> bool:
 
 def _is_strike_spot_sub(expr: object) -> bool:
     return isinstance(expr, Sub) and isinstance(expr.lhs, Strike) and isinstance(expr.rhs, Spot)
+
+
+def _is_arithmetic_mean_strike_sub(expr: object) -> bool:
+    return (
+        isinstance(expr, Sub)
+        and isinstance(expr.lhs, ArithmeticMean)
+        and isinstance(expr.lhs.expr, Spot)
+        and isinstance(expr.rhs, Strike)
+    )
+
+
+def _is_strike_arithmetic_mean_sub(expr: object) -> bool:
+    return (
+        isinstance(expr, Sub)
+        and isinstance(expr.lhs, Strike)
+        and isinstance(expr.rhs, ArithmeticMean)
+        and isinstance(expr.rhs.expr, Spot)
+    )
 
 
 def _is_zero_constant(expr: object) -> bool:
@@ -1066,6 +1172,19 @@ def _quanto_matrix_requirements() -> tuple[HybridADFactorRequirement, ...]:
     return _quanto_scalar_requirements()[:-1] + (_correlation_matrix_requirement(),)
 
 
+def _path_summary_vol_requirements() -> tuple[HybridADFactorRequirement, ...]:
+    return (
+        HybridADFactorRequirement(
+            object_type="vol_surface",
+            coordinate_type="flat_vol",
+            risk_class="volatility",
+            parameterization="flat_vol",
+            semantic_role="underlier_vol",
+            graph_role="underlier_vol",
+        ),
+    )
+
+
 def _scalar_correlation_requirement() -> HybridADFactorRequirement:
     return HybridADFactorRequirement(
         object_type="model_parameter",
@@ -1112,6 +1231,14 @@ def _normalize(value: object) -> str:
 
 def _is_quanto_family(product_family: str | None) -> bool:
     return _normalize(product_family) in {"quanto_option", "single_name_quanto_option"}
+
+
+def _is_arithmetic_asian_family(product_family: str | None) -> bool:
+    return _normalize(product_family) in {
+        "arithmetic_asian",
+        "arithmetic_asian_option",
+        "path_summary_arithmetic_asian_option",
+    }
 
 
 __all__ = [
