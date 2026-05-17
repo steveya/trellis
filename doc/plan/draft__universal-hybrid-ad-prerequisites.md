@@ -48,7 +48,7 @@ the remaining prerequisites.
 | `QUA-1074` | Done | Added independent flat-vol finite-difference verification and unsupported-shape hardening. |
 | `QUA-1075` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 | `QUA-1077` | Done | Added supported admission for the bounded vanilla early-exercise flat-vol VJP lane. |
-| `QUA-1078` | Backlog | Add the executable vanilla early-exercise VJP runtime helper. |
+| `QUA-1078` | Done | Added the executable vanilla early-exercise VJP runtime helper. |
 | `QUA-1079` | Backlog | Add independent flat-vol finite-difference verification and unsupported-shape hardening. |
 | `QUA-1080` | Backlog | Closeout docs, limitations review, validation, and final PR preparation. |
 
@@ -504,7 +504,7 @@ Deliverables:
 
 ### Phase 4d: Executable Early-Exercise Smooth-Interior Lane
 
-[admission contract delivered in `QUA-1077`; runtime planned in `QUA-1078`]
+[admission contract delivered in `QUA-1077`; runtime delivered in `QUA-1078`]
 
 Turn one early-exercise control policy into an executable bounded derivative
 lane without claiming broad dynamic-state or pathwise hybrid AD.
@@ -515,7 +515,7 @@ Deliverables:
   lane with supported early-exercise state-policy metadata [done in
   `QUA-1077`]
 - American/Bermudan flat-vol requests return `hybrid_early_exercise_vjp`
-  metadata and graph-owned sparse risk [planned in `QUA-1078`]
+  metadata and graph-owned sparse risk [done in `QUA-1078`]
 - independent finite-difference verification covers American and Bermudan
   flat-vol VJP and unsupported shapes remain fail-closed [planned in
   `QUA-1079`]

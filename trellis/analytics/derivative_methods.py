@@ -185,6 +185,16 @@ _METHOD_SPECS = {
             "VJP backend operator."
         ),
     ),
+    "hybrid_early_exercise_vjp": DerivativeMethodSpec(
+        "hybrid_early_exercise_vjp",
+        category="hybrid_ad",
+        support_status="partial",
+        backend_operator="vjp",
+        description=(
+            "Bounded graph-backed early-exercise smooth-interior sensitivity "
+            "using the VJP backend operator."
+        ),
+    ),
     "unsupported_hybrid_structure": DerivativeMethodSpec(
         "unsupported_hybrid_structure",
         category="unsupported",
