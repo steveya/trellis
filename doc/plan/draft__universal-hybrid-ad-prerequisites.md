@@ -49,7 +49,7 @@ the remaining prerequisites.
 | `QUA-1075` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 | `QUA-1077` | Done | Added supported admission for the bounded vanilla early-exercise flat-vol VJP lane. |
 | `QUA-1078` | Done | Added the executable vanilla early-exercise VJP runtime helper. |
-| `QUA-1079` | Backlog | Add independent flat-vol finite-difference verification and unsupported-shape hardening. |
+| `QUA-1079` | Done | Added independent flat-vol finite-difference verification and unsupported-shape hardening. |
 | `QUA-1080` | Backlog | Closeout docs, limitations review, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
@@ -517,7 +517,7 @@ Deliverables:
 - American/Bermudan flat-vol requests return `hybrid_early_exercise_vjp`
   metadata and graph-owned sparse risk [done in `QUA-1078`]
 - independent finite-difference verification covers American and Bermudan
-  flat-vol VJP and unsupported shapes remain fail-closed [planned in
+  flat-vol VJP and unsupported shapes remain fail-closed [done in
   `QUA-1079`]
 - official docs, limitations, final validation, and PR closeout [planned in
   `QUA-1080`]
