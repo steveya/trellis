@@ -175,6 +175,16 @@ _METHOD_SPECS = {
             "directional second derivative using the HVP backend operator."
         ),
     ),
+    "hybrid_path_summary_vjp": DerivativeMethodSpec(
+        "hybrid_path_summary_vjp",
+        category="hybrid_ad",
+        support_status="partial",
+        backend_operator="vjp",
+        description=(
+            "Bounded graph-backed smooth path-summary sensitivity using the "
+            "VJP backend operator."
+        ),
+    ),
     "unsupported_hybrid_structure": DerivativeMethodSpec(
         "unsupported_hybrid_structure",
         category="unsupported",

@@ -1176,7 +1176,7 @@ def _path_summary_vol_requirements() -> tuple[HybridADFactorRequirement, ...]:
     return (
         HybridADFactorRequirement(
             object_type="vol_surface",
-            coordinate_type="black_vol",
+            coordinate_type="flat_vol",
             risk_class="volatility",
             parameterization="flat_vol",
             semantic_role="underlier_vol",

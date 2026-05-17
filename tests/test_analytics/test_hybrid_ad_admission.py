@@ -481,7 +481,7 @@ def test_arithmetic_path_summary_vjp_is_supported_for_bounded_lane():
     assert state_policy["fail_closed"] is False
     assert state_policy["metadata"]["path_summary_type"] == "arithmetic_mean"
     assert requirements["underlier_vol"].object_type == "vol_surface"
-    assert requirements["underlier_vol"].coordinate_type == "black_vol"
+    assert requirements["underlier_vol"].coordinate_type == "flat_vol"
     assert requirements["underlier_vol"].parameterization == "flat_vol"
     assert admission.metadata["runtime_helper"] == (
         "trellis.analytics.hybrid_ad.differentiate_arithmetic_asian_path_summary"
