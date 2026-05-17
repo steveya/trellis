@@ -3,12 +3,13 @@
 ## Status
 
 First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`,
-`QUA-1049`, `QUA-1054`, `QUA-1059`, `QUA-1065`, and `QUA-1071` epics. Universal hybrid
+`QUA-1049`, `QUA-1054`, `QUA-1059`, `QUA-1065`, `QUA-1071`, and `QUA-1076` epics. Universal hybrid
 AD is still not claimed; this document now records the shipped bounded quanto
 scalar-coordinate prototypes, the checked correlation matrix policy surface,
 the executable matrix-coordinate lane, the ContractIR admission boundary, the
 typed path-state/event policy guardrail, the first executable smooth
-path-summary lane, and the remaining prerequisites.
+path-summary lane, the in-progress early-exercise smooth-interior lane, and
+the remaining prerequisites.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -46,6 +47,10 @@ path-summary lane, and the remaining prerequisites.
 | `QUA-1073` | Done | Added the executable arithmetic-Asian path-summary VJP runtime helper. |
 | `QUA-1074` | Done | Added independent flat-vol finite-difference verification and unsupported-shape hardening. |
 | `QUA-1075` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
+| `QUA-1077` | Done | Added supported admission for the bounded vanilla early-exercise flat-vol VJP lane. |
+| `QUA-1078` | Backlog | Add the executable vanilla early-exercise VJP runtime helper. |
+| `QUA-1079` | Backlog | Add independent flat-vol finite-difference verification and unsupported-shape hardening. |
+| `QUA-1080` | Backlog | Closeout docs, limitations review, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -497,6 +502,26 @@ Deliverables:
 - official docs, limitations, final validation, and PR closeout [done in
   `QUA-1075`]
 
+### Phase 4d: Executable Early-Exercise Smooth-Interior Lane
+
+[admission contract delivered in `QUA-1077`; runtime planned in `QUA-1078`]
+
+Turn one early-exercise control policy into an executable bounded derivative
+lane without claiming broad dynamic-state or pathwise hybrid AD.
+
+Deliverables:
+
+- vanilla American/Bermudan ContractIR shapes admit the bounded flat-vol VJP
+  lane with supported early-exercise state-policy metadata [done in
+  `QUA-1077`]
+- American/Bermudan flat-vol requests return `hybrid_early_exercise_vjp`
+  metadata and graph-owned sparse risk [planned in `QUA-1078`]
+- independent finite-difference verification covers American and Bermudan
+  flat-vol VJP and unsupported shapes remain fail-closed [planned in
+  `QUA-1079`]
+- official docs, limitations, final validation, and PR closeout [planned in
+  `QUA-1080`]
+
 ### Phase 5: Backend Decision For JVP
 
 [fail-closed runtime policy delivered in `QUA-1038`; checked JVP support still
@@ -658,5 +683,4 @@ Acceptance criteria:
 
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: executable early-exercise smooth-interior derivative lane`
 - `Hybrid AD: multi-product graph-owned derivative fixtures`
