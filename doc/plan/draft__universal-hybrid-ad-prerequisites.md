@@ -41,6 +41,10 @@ typed path-state/event policy guardrail, and the remaining prerequisites.
 | `QUA-1068` | Done | Added DynamicContractIR and early-exercise state policy classification. |
 | `QUA-1069` | Done | Bridged state-policy payloads into runtime fail-closed metadata. |
 | `QUA-1070` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
+| `QUA-1072` | Done | Added supported admission for the bounded arithmetic-average smooth path-summary VJP lane. |
+| `QUA-1073` | Done | Added the executable arithmetic-Asian path-summary VJP runtime helper. |
+| `QUA-1074` | Done | Added independent flat-vol finite-difference verification and unsupported-shape hardening. |
+| `QUA-1075` | Backlog | Closeout docs, limitations review, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -461,6 +465,25 @@ Deliverables:
 - runtime fail-closed metadata bridge for planned/unsupported state policies
   [done in `QUA-1069`]
 
+### Phase 4c: Executable Smooth Path-Summary Lane
+
+[admission/runtime/verification in progress under `QUA-1071`]
+
+Turn one smooth path-summary policy into an executable bounded derivative
+lane without claiming broad pathwise hybrid AD.
+
+Deliverables:
+
+- arithmetic-average ContractIR path summaries admit the bounded VJP lane
+  [done in `QUA-1072`]
+- arithmetic-Asian flat-vol path-summary requests return
+  `hybrid_path_summary_vjp` metadata and graph-owned sparse risk [done in
+  `QUA-1073`]
+- independent finite-difference verification covers call and put flat-vol VJP
+  and unsupported shapes remain fail-closed [done in `QUA-1074`]
+- official docs, limitations, final validation, and PR closeout [planned in
+  `QUA-1075`]
+
 ### Phase 5: Backend Decision For JVP
 
 [fail-closed runtime policy delivered in `QUA-1038`; checked JVP support still
@@ -604,6 +627,5 @@ Acceptance criteria:
 
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: executable smooth path-summary derivative lane`
 - `Hybrid AD: executable early-exercise smooth-interior derivative lane`
 - `Hybrid AD: multi-product graph-owned derivative fixtures`
