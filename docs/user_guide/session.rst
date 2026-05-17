@@ -207,6 +207,7 @@ factor graph enabled and call a graph-backed derivative helper directly:
        HybridDerivativeRequest,
        SparseRiskVector,
        admit_hybrid_ad_lane,
+       differentiate_vanilla_early_exercise,
        differentiate_quanto_correlation_matrix,
        differentiate_quanto_scalar_correlation,
        differentiate_quanto_scalar_inputs,
@@ -297,11 +298,12 @@ is the admission guard for the scalar-input and matrix-coordinate helpers:
 supported same-lane terminal quanto VJP/HVP admissions are copied into result
 metadata, while wrong-lane, planned, or unsupported admissions return an empty
 risk vector with the admission reason in diagnostics.
-For path-dependent, discontinuous-event, early-exercise, or DynamicContractIR
-hybrid shapes, that fail-closed result also carries ``semantic_state_policy``
-metadata. It tells you whether the blocked shape was a smooth path summary, a
-discontinuous event monitor, an early-exercise control, or dynamic state; it
-does not mean those shapes have executable pathwise hybrid AD.
+For unsupported or wrong-lane path-dependent, discontinuous-event,
+early-exercise, or DynamicContractIR hybrid shapes, the fail-closed result also
+carries ``semantic_state_policy`` metadata. It tells you whether the blocked
+shape was a smooth path summary, a discontinuous event monitor, an
+early-exercise control, or dynamic state; it does not mean those shapes have
+executable pathwise hybrid AD.
 The one executable path-summary exception is the bounded arithmetic-average
 Asian flat-vol VJP lane exposed as
 ``differentiate_arithmetic_asian_path_summary(...)``. Use
@@ -309,7 +311,16 @@ Asian flat-vol VJP lane exposed as
 derivative_method="vjp")`` and pass that admission through
 ``HybridDerivativeRequest.semantic_admission`` to preserve the supported
 ``semantic_state_policy`` metadata. Grid-vol path summaries, event monitors,
-early exercise, dynamic state, HVP, and JVP still fail closed.
+dynamic state, HVP, and JVP still fail closed.
+The executable early-exercise exception is the bounded vanilla American or
+Bermudan flat-vol VJP lane exposed as
+``differentiate_vanilla_early_exercise(...)``. Use
+``admit_hybrid_ad_lane(..., product_family="american_vanilla_option",
+derivative_method="vjp")`` or the Bermudan product family and pass that
+admission through ``HybridDerivativeRequest.semantic_admission``. The helper
+returns ``hybrid_early_exercise_vjp`` metadata for smooth-interior
+hard-projection cases and fails closed for grid-vol early exercise,
+exercise-boundary ties, HVP, and JVP.
 
 For small books that combine already-supported lanes, use the mixed dispatcher:
 

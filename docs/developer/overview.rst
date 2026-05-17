@@ -307,8 +307,13 @@ derivative lanes exist. The first executable path-state lane is also narrow:
 ``trellis.analytics.differentiate_arithmetic_asian_path_summary(...)`` returns
 ``hybrid_path_summary_vjp`` metadata for bounded arithmetic-average European
 path summaries over one graph-owned ``FlatVol`` coordinate. Grid-vol path
-summaries, discontinuous event monitors, HVP/JVP, early exercise, and dynamic
-state remain fail-closed or planned.
+summaries, discontinuous event monitors, HVP/JVP, and dynamic state remain
+fail-closed or planned.
+``trellis.analytics.differentiate_vanilla_early_exercise(...)`` adds the
+bounded vanilla American/Bermudan early-exercise lane over one graph-owned
+``FlatVol`` coordinate; it reports
+``hybrid_early_exercise_vjp`` metadata and fails closed for grid-vol
+early-exercise, exercise-boundary ties, HVP, and JVP.
 ``trellis.analytics.admit_hybrid_ad_lane(...)`` is the semantic ContractIR
 admission guard for this helper family; supported terminal quanto scalar or
 matrix VJP/HVP admissions can be passed through
@@ -319,13 +324,15 @@ outside the executable bounded lane still use
 ``unsupported_hybrid_structure`` fail-closed diagnostics.
 Path-dependent and dynamic hybrid shapes now go through the same semantic
 guardrail with a typed ``HybridADStatePolicy`` payload. Arithmetic-average
-path summaries can be supported for the bounded flat-vol VJP lane; other
-smooth path summaries, discontinuous event monitors, early-exercise controls,
-and DynamicContractIR state/control requests are classified before runtime AD
-executes, and blocked runtime helpers surface that payload as
-``semantic_state_policy`` metadata. This remains a bounded summary lane and a
-fail-closed policy boundary, not broad pathwise or dynamic hybrid AD
-execution.
+path summaries can be supported for the bounded flat-vol VJP lane, and
+vanilla early-exercise controls can be supported for the bounded flat-vol VJP
+lane under the hard exercise-projection smooth-interior policy. Other smooth
+path summaries, discontinuous event monitors, grid-vol or boundary-kink
+early-exercise controls, and DynamicContractIR state/control requests are
+classified before runtime AD executes, and blocked runtime helpers surface
+that payload as ``semantic_state_policy`` metadata. These remain bounded
+summary/control lanes and fail-closed policy boundaries, not broad pathwise or
+dynamic hybrid AD execution.
 
 The same benchmarking module now also exposes
 ``supported_counterparty_exposure_benchmark_scenarios()`` and
