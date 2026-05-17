@@ -1349,7 +1349,7 @@ def differentiate_arithmetic_asian_path_summary(
 
     if resolved_request.semantic_admission is not None:
         admission_result = _unsupported_semantic_admission_result(
-            value=value if value is not None else 0.0,
+            value=value,
             graph=graph,
             request=resolved_request,
             admission=resolved_request.semantic_admission,
@@ -1852,7 +1852,7 @@ def _semantic_state_policy_metadata(
 
 def _unsupported_semantic_admission_result(
     *,
-    value: float,
+    value: float | None,
     graph: HybridFactorGraph,
     request: HybridDerivativeRequest,
     admission: HybridADLaneAdmission,

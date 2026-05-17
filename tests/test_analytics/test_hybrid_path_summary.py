@@ -174,6 +174,34 @@ def test_path_summary_runtime_fail_closes_unsupported_semantic_admission():
     )
 
 
+def test_path_summary_semantic_fail_close_preserves_unpriced_value():
+    admission = admit_hybrid_ad_lane(
+        _path_summary_contract_ir(),
+        product_family="quanto_option",
+        derivative_method="vjp",
+    )
+    request = HybridDerivativeRequest(semantic_admission=admission)
+    unsupported_spec = _ArithmeticAsianSpec(
+        spot=100.0,
+        strike=100.0,
+        expiry_date=EXPIRY,
+        observation_dates=OBSERVATIONS,
+        averaging_type="geometric",
+    )
+
+    result = differentiate_arithmetic_asian_path_summary(
+        unsupported_spec,
+        _market_state(),
+        request,
+        vol_surface_name="spx_flat",
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.value is None
+    assert result.diagnostics[0]["code"] == "path_dependent_hybrid_state_pending"
+    assert len(result.risk_vector) == 0
+
+
 def test_path_summary_selected_factor_fail_closed_policy():
     missing_factor = RiskFactorId(
         object_type="vol_surface",
