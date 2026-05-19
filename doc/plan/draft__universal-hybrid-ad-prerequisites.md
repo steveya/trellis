@@ -3,13 +3,15 @@
 ## Status
 
 First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`,
-`QUA-1049`, `QUA-1054`, `QUA-1059`, `QUA-1065`, `QUA-1071`, and `QUA-1076` epics. Universal hybrid
+`QUA-1049`, `QUA-1054`, `QUA-1059`, `QUA-1065`, `QUA-1071`,
+`QUA-1076`, and `QUA-1081` epics. Universal hybrid
 AD is still not claimed; this document now records the shipped bounded quanto
 scalar-coordinate prototypes, the checked correlation matrix policy surface,
 the executable matrix-coordinate lane, the ContractIR admission boundary, the
 typed path-state/event policy guardrail, the first executable smooth
 path-summary lane, the first executable early-exercise smooth-interior lane, and
-the remaining prerequisites.
+the Phase 5 backend decision that enforces a VJP/HVP-only hybrid derivative
+contract while JVP remains fail-closed.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -51,6 +53,9 @@ the remaining prerequisites.
 | `QUA-1078` | Done | Added the executable vanilla early-exercise VJP runtime helper. |
 | `QUA-1079` | Done | Added independent flat-vol finite-difference verification and unsupported-shape hardening. |
 | `QUA-1080` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
+| `QUA-1082` | Done | Added backend operator support records and explicit JVP unsupported reasons. |
+| `QUA-1083` | Done | Normalized hybrid JVP fail-closed runtime and admission metadata through `unsupported_hybrid_jvp`. |
+| `QUA-1084` | Done | Documented the VJP/HVP-only backend decision and updated limitations/plan closeout. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -175,6 +180,11 @@ Autograd Phase 2 also added a truthful backend capability surface:
 - `hessian_vector_product=True`
 - `jvp=False`
 - `portfolio_aad=False`
+
+The backend payload also exposes a `support_matrix`, `operator_support(...)`
+records, and `unsupported_reasons`. Hybrid JVP requests now resolve through
+`unsupported_hybrid_jvp` metadata with `requested_backend_operator="jvp"` and
+the backend support record, not an executable JVP `backend_operator`.
 
 The current system can compute derivatives for many smooth single-route
 pricing maps, bounded calibration representatives, bounded portfolio-AAD
@@ -534,17 +544,18 @@ Deliverables:
 
 ### Phase 5: Backend Decision For JVP
 
-[fail-closed runtime policy delivered in `QUA-1038`; checked JVP support still
-open]
+[VJP/HVP-only backend contract delivered in `QUA-1081`; checked JVP support
+remains a future backend/primitive-rule prerequisite]
 
-Either implement checked JVP primitive coverage or document and enforce a
-VJP/HVP-only hybrid derivative contract.
+Document and enforce a VJP/HVP-only hybrid derivative contract. Trellis does
+not report JVP support until a backend wrapper computes checked values on
+pricing primitives such as `norm.cdf`.
 
 Deliverables:
 
-- backend capability tests
-- support matrix update
-- runtime metadata update
+- backend capability tests [done in `QUA-1082`]
+- support matrix update [done in `QUA-1082` and documented in `QUA-1084`]
+- runtime metadata update [done in `QUA-1083`]
 
 ## Explicit Non-Goals
 
@@ -709,6 +720,22 @@ Acceptance criteria:
 - no broad pathwise, dynamic, grid-vol early-exercise, boundary-kink
   early-exercise, or early-exercise HVP/JVP hybrid derivative execution is
   claimed
+
+Tenth delivered epic:
+
+`Hybrid AD: enforce VJP-HVP-only backend contract`
+
+Acceptance criteria:
+
+- backend capability payloads expose stable `support_matrix` records and
+  explicit unsupported reasons for `jvp` and `portfolio_aad`
+- hybrid JVP runtime and admission paths resolve to
+  `unsupported_hybrid_jvp` with `requested_backend_operator="jvp"` and backend
+  support metadata
+- unsupported JVP payloads do not advertise an executable
+  `backend_operator="jvp"`
+- docs and limitations state that checked JVP support remains a future
+  backend or primitive-rule prerequisite
 
 ## Follow-On Ticket Candidates
 

@@ -185,6 +185,16 @@ books. The capability flag stays ``portfolio_aad=False`` because the supported
 contract is still book-specific rather than a claim of universal portfolio-AAD
 coverage.
 
+The same capability payload now exposes an auditable ``support_matrix`` keyed
+by backend operator name. Each entry is available through
+``operator_support(...)`` and records ``supported``, ``backend_id``,
+``array_namespace``, and ``unsupported_reason``. The payload also carries
+``unsupported_reasons`` for disabled hooks. Today the ``jvp`` record is
+unsupported because stock ``autograd.make_jvp`` has no checked
+pricing-primitive coverage for routes that depend on ``norm.cdf``; the
+``portfolio_aad`` record is unsupported because book-level AAD remains a set
+of bounded lanes rather than one universal backend operator.
+
 The graph-backed scalar quanto derivative lanes also use executable ``vjp``
 and scalar-objective ``hessian_vector_product`` operators, but they report
 through ``hybrid_scalar_vjp``, ``hybrid_scalar_vector_vjp``, or
@@ -608,8 +618,13 @@ pathwise hybrid AD.
 
 Forward mode remains executable-truth governed. A ``derivative_method="jvp"``
 request returns an unsupported result with
+``resolved_derivative_method="unsupported_hybrid_jvp"`` and
 ``fallback_reason.code="hybrid_jvp_backend_unsupported"`` because the active
 ``autograd`` backend still reports ``jvp=False`` for pricing primitives.
+Those fail-closed payloads carry ``requested_backend_operator="jvp"`` plus the
+``backend_support`` record from the capability ``support_matrix``. They do not
+carry an executable ``backend_operator`` field for JVP, because no JVP backend
+hook ran.
 ``fail_closed_correlation_structure_derivative(...)`` provides the same
 fail-closed envelope for correlation matrix and correlation surface requests.
 For matrix requests it can validate factor labels, square shape, finite
@@ -652,6 +667,12 @@ normalized reporting envelope:
      - executable backend hook when applicable, for example ``grad``,
        ``jacobian``, ``vjp``, or ``hessian_vector_product``; unsupported
        hooks such as ``jvp`` must not be advertised as executed methods
+   * - ``requested_backend_operator``
+     - backend hook requested by a fail-closed call, such as ``jvp``; this is
+       separate from ``backend_operator`` because no hook executed
+   * - ``backend_support``
+     - the ``operator_support(...)`` record from the backend
+       ``support_matrix`` for the requested unsupported hook
    * - ``fallback_derivative_method``
      - declared fallback lane when the requested derivative is unsupported or
        intentionally bump-based, for example ``finite_difference_bump_reprice``
@@ -772,6 +793,12 @@ The registry deliberately includes both AD-backed and non-AD lanes:
      - ``partial``
      - ``vjp`` for bounded vanilla American/Bermudan smooth-interior
        early-exercise flat-vol risk
+   * - ``unsupported_hybrid_jvp``
+     - ``unsupported``
+     - ``unsupported``
+     - fail-closed hybrid forward-mode request; payloads include
+       ``requested_backend_operator="jvp"`` and ``backend_support`` instead
+       of an executable ``backend_operator``
    * - ``unsupported_hybrid_structure``
      - ``unsupported``
      - ``unsupported``
