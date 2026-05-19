@@ -64,6 +64,28 @@ def test_backend_capabilities_describe_current_and_future_surface():
     assert "hessian_vector_product" in capabilities.supported_operators
 
 
+def test_backend_capabilities_publish_operator_support_matrix():
+    capabilities = get_backend_capabilities()
+    matrix = capabilities.support_matrix
+
+    assert tuple(matrix) == tuple(sorted(capabilities.operators))
+    assert matrix["grad"]["supported"] is True
+    assert matrix["grad"]["unsupported_reason"] is None
+    assert matrix["grad"]["backend_id"] == "autograd"
+    assert matrix["jvp"]["supported"] is False
+    assert matrix["jvp"]["backend_id"] == "autograd"
+    assert "norm.cdf" in matrix["jvp"]["unsupported_reason"]
+    assert matrix["portfolio_aad"]["supported"] is False
+    assert "book-specific" in matrix["portfolio_aad"]["unsupported_reason"]
+
+    payload = capabilities.to_payload()
+    assert payload["support_matrix"] == matrix
+    assert payload["unsupported_reasons"]["jvp"] == matrix["jvp"]["unsupported_reason"]
+    assert capabilities.operator_support("jvp") == matrix["jvp"]
+    with pytest.raises(ValueError, match="unknown differentiable backend capability"):
+        capabilities.operator_support("custom_adjoint")
+
+
 def test_require_capability_accepts_current_operators_and_rejects_future_hooks():
     require_capability("grad")
     require_capability("jacobian")
