@@ -838,8 +838,10 @@ def test_quanto_scalar_inputs_jvp_fails_closed_with_backend_reason():
     assert len(result.risk_vector) == 0
     assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
     assert result.diagnostics[0]["backend_id"] == "autograd"
-    assert result.method_metadata["resolved_derivative_method"] == "hybrid_scalar_vector_vjp"
-    assert result.method_metadata["backend_operator"] == "jvp"
+    assert result.method_metadata["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    assert result.method_metadata["requested_backend_operator"] == "jvp"
+    assert result.method_metadata["backend_support"]["supported"] is False
+    assert "backend_operator" not in result.method_metadata
     assert result.method_metadata["fallback_reason"]["code"] == (
         "hybrid_jvp_backend_unsupported"
     )
@@ -937,7 +939,10 @@ def test_quanto_scalar_correlation_jvp_fails_closed_with_backend_reason():
     assert len(result.risk_vector) == 0
     assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
     assert result.diagnostics[0]["backend_id"] == "autograd"
-    assert result.method_metadata["backend_operator"] == "jvp"
+    assert result.method_metadata["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    assert result.method_metadata["requested_backend_operator"] == "jvp"
+    assert result.method_metadata["backend_support"]["supported"] is False
+    assert "backend_operator" not in result.method_metadata
     assert result.method_metadata["fallback_reason"]["code"] == (
         "hybrid_jvp_backend_unsupported"
     )

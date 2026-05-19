@@ -81,6 +81,18 @@ def _copy_diagnostics(
     return tuple(dict(diagnostic) for diagnostic in (diagnostics or ()))
 
 
+def _backend_operator_support_metadata(operator: str) -> dict[str, Any]:
+    from trellis.core.differentiable import get_backend_capabilities
+
+    capabilities = get_backend_capabilities()
+    support = capabilities.operator_support(operator)
+    return {
+        "requested_backend_operator": operator,
+        "backend_support": support,
+        "backend_notes": list(capabilities.notes),
+    }
+
+
 @dataclass(frozen=True)
 class HybridADStatePolicy:
     """Semantic state/event policy for bounded hybrid AD admission."""
@@ -422,6 +434,7 @@ def _dynamic_contract_admission(
     family = product_family or contract.semantic_family or "dynamic_hybrid_contract"
     state_policy = _dynamic_state_policy(contract)
     if derivative_method == "jvp":
+        backend_metadata = _backend_operator_support_metadata("jvp")
         return _admission(
             admitted=False,
             lane_id="dynamic_hybrid_state_jvp",
@@ -434,7 +447,7 @@ def _dynamic_contract_admission(
             factor_requirements=(_scalar_correlation_requirement(),),
             metadata={
                 "requested_derivative_method": derivative_method,
-                "backend_operator": "jvp",
+                **backend_metadata,
                 "base_track": contract.base_track,
                 "fail_closed": True,
                 **_state_policy_metadata(state_policy),
@@ -443,7 +456,8 @@ def _dynamic_contract_admission(
                 {
                     "code": "hybrid_jvp_backend_unsupported",
                     "severity": "warning",
-                    "backend_operator": "jvp",
+                    "requested_backend_operator": "jvp",
+                    "backend_support": backend_metadata["backend_support"],
                     "state_kind": state_policy.state_kind,
                     "event_policy": state_policy.event_policy,
                 },
@@ -484,6 +498,7 @@ def _contract_ir_admission(
     product_family: str | None,
 ) -> HybridADLaneAdmission:
     if derivative_method == "jvp":
+        backend_metadata = _backend_operator_support_metadata("jvp")
         return _admission(
             admitted=False,
             lane_id="quanto_scalar_graph_jvp",
@@ -496,14 +511,15 @@ def _contract_ir_admission(
             factor_requirements=_quanto_scalar_requirements(),
             metadata={
                 "requested_derivative_method": derivative_method,
-                "backend_operator": "jvp",
+                **backend_metadata,
                 "fail_closed": True,
             },
             diagnostics=(
                 {
                     "code": "hybrid_jvp_backend_unsupported",
                     "severity": "warning",
-                    "backend_operator": "jvp",
+                    "requested_backend_operator": "jvp",
+                    "backend_support": backend_metadata["backend_support"],
                 },
             ),
         )

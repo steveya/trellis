@@ -303,7 +303,12 @@ and can return VJP or directional HVP risk for the active underlier/FX matrix
 entry. The developer contract is deliberately narrow: correlation surfaces,
 matrix projection or repair, PSD-boundary behavior, broader product graphs,
 and hybrid ``jvp`` are rejected fail-closed until explicit graph-owned
-derivative lanes exist. The first executable path-state lane is also narrow:
+derivative lanes exist. The backend capability payload exposes the same
+decision through ``support_matrix`` / ``operator_support(...)`` records, and
+hybrid JVP runtime payloads report ``unsupported_hybrid_jvp`` with
+``requested_backend_operator="jvp"`` plus ``backend_support`` rather than an
+executable ``backend_operator``. The first executable path-state lane is also
+narrow:
 ``trellis.analytics.differentiate_arithmetic_asian_path_summary(...)`` returns
 ``hybrid_path_summary_vjp`` metadata for bounded arithmetic-average European
 path summaries over one graph-owned ``FlatVol`` coordinate. Grid-vol path

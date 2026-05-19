@@ -254,6 +254,10 @@ def test_quanto_correlation_matrix_jvp_fails_closed() -> None:
     assert result.support_status == "unsupported"
     assert len(result.risk_vector) == 0
     assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert result.method_metadata["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    assert result.method_metadata["requested_backend_operator"] == "jvp"
+    assert result.method_metadata["backend_support"]["supported"] is False
+    assert "backend_operator" not in result.method_metadata
 
 
 def test_quanto_correlation_matrix_hvp_matches_finite_difference_of_vjp() -> None:

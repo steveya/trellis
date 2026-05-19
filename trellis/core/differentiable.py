@@ -9,7 +9,7 @@ surface to target.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -38,6 +38,7 @@ class DifferentiableBackendCapabilities:
     array_namespace: str
     operators: Mapping[str, bool]
     notes: tuple[str, ...] = ()
+    unsupported_reasons: Mapping[str, str] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         unknown = set(self.operators) - _SUPPORTED_OPERATOR_NAMES
@@ -48,14 +49,54 @@ class DifferentiableBackendCapabilities:
             )
         if missing:
             raise ValueError(f"missing differentiable backend capabilities: {sorted(missing)}")
+        reason_keys = set(self.unsupported_reasons)
+        unknown_reasons = reason_keys - _SUPPORTED_OPERATOR_NAMES
+        if unknown_reasons:
+            raise ValueError(
+                f"unknown differentiable backend unsupported reasons: {sorted(unknown_reasons)}"
+            )
         object.__setattr__(self, "operators", MappingProxyType(dict(self.operators)))
         object.__setattr__(self, "notes", tuple(str(note) for note in self.notes))
+        object.__setattr__(
+            self,
+            "unsupported_reasons",
+            MappingProxyType(
+                {
+                    str(operator): str(reason)
+                    for operator, reason in self.unsupported_reasons.items()
+                    if str(reason)
+                }
+            ),
+        )
 
     def supports(self, capability: str) -> bool:
         """Return whether the backend supports a named differentiable operator."""
         if capability not in _SUPPORTED_OPERATOR_NAMES:
             raise ValueError(f"unknown differentiable backend capability: {capability}")
         return bool(self.operators[capability])
+
+    def operator_support(self, capability: str) -> dict[str, Any]:
+        """Return a JSON-friendly support record for one backend operator."""
+        if capability not in _SUPPORTED_OPERATOR_NAMES:
+            raise ValueError(f"unknown differentiable backend capability: {capability}")
+        supported = bool(self.operators[capability])
+        return {
+            "operator": capability,
+            "supported": supported,
+            "backend_id": self.backend_id,
+            "array_namespace": self.array_namespace,
+            "unsupported_reason": (
+                None if supported else self.unsupported_reasons.get(capability)
+            ),
+        }
+
+    @property
+    def support_matrix(self) -> dict[str, dict[str, Any]]:
+        """Return stable operator support records keyed by operator name."""
+        return {
+            name: self.operator_support(name)
+            for name in sorted(_SUPPORTED_OPERATOR_NAMES)
+        }
 
     @property
     def supported_operators(self) -> tuple[str, ...]:
@@ -75,6 +116,8 @@ class DifferentiableBackendCapabilities:
             "operators": dict(self.operators),
             "supported_operators": list(self.supported_operators),
             "unsupported_operators": list(self.unsupported_operators),
+            "unsupported_reasons": dict(self.unsupported_reasons),
+            "support_matrix": self.support_matrix,
             "notes": list(self.notes),
         }
 
@@ -97,6 +140,16 @@ _AUTOGRAD_CAPABILITIES = DifferentiableBackendCapabilities(
         "JVP and portfolio AAD are explicit future extension hooks.",
         "JVP remains disabled because stock autograd lacks JVP coverage for pricing primitives such as norm.cdf.",
     ),
+    unsupported_reasons={
+        "jvp": (
+            "stock autograd make_jvp lacks checked JVP coverage for pricing "
+            "primitives such as norm.cdf"
+        ),
+        "portfolio_aad": (
+            "portfolio AAD is still exposed through bounded book-specific "
+            "lanes, not a universal backend operator"
+        ),
+    },
 )
 
 
@@ -161,10 +214,15 @@ def jvp(fn, primals, tangents):
     missing primitive rules or adopts a backend with complete coverage.
     """
     if not supports_capability("jvp"):
-        backend_id = get_backend_capabilities().backend_id
+        capabilities = get_backend_capabilities()
+        backend_id = capabilities.backend_id
+        support = capabilities.operator_support("jvp")
+        reason = support.get("unsupported_reason") or (
+            "the active backend does not provide checked JVP coverage"
+        )
         raise NotImplementedError(
             f"differentiable backend {backend_id!r} does not support 'jvp'; "
-            "stock autograd make_jvp lacks a JVP rule for norm.cdf, so Trellis "
+            f"{reason}, so Trellis "
             "keeps JVP fail-closed until it owns the required pricing primitive rules"
         )
     raise NotImplementedError("jvp is declared supported but no implementation is wired")
