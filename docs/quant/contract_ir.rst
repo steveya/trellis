@@ -68,6 +68,15 @@ The current admission vocabulary is deliberately narrow:
   correlation coordinate; broader hybrid/composite-underlier shapes still
   require explicit factor-graph ownership before any AAD lane can be admitted
 
+The hybrid AD admission gate in ``trellis.analytics.admit_hybrid_ad_lane(...)``
+uses the same semantic surface for graph-owned derivative lanes. In addition
+to bounded terminal quanto and arithmetic-average path-summary admissions, it
+now admits vanilla American/Bermudan early-exercise VJP requests over one
+``FlatVol`` coordinate under the hard-exercise-projection smooth-interior
+policy. Grid-vol early exercise, exercise-boundary ties, HVP, JVP, dynamic
+state, and broader pathwise controls stay fail-closed until an explicit lane
+owns those semantics.
+
 Execution IR Bridge
 -------------------
 

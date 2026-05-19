@@ -535,6 +535,19 @@ def _path_summary_market_context(
     vol_surface_name: str,
     currency: str | None,
 ) -> object:
+    return _vanilla_equity_vol_market_context(
+        market_context,
+        vol_surface_name=vol_surface_name,
+        currency=currency,
+    )
+
+
+def _vanilla_equity_vol_market_context(
+    market_context: object,
+    *,
+    vol_surface_name: str,
+    currency: str | None,
+) -> object:
     from trellis.analytics.portfolio_aad import VanillaEquityOptionVolAADMarketContext
 
     if isinstance(market_context, VanillaEquityOptionVolAADMarketContext):
@@ -547,6 +560,68 @@ def _path_summary_market_context(
         currency=currency,
         provenance_namespace="hybrid_ad",
     )
+
+
+def _early_exercise_graph(
+    context: object,
+    *,
+    derivative_method: str,
+    position_name: str,
+    exercise_style: str,
+) -> HybridFactorGraph:
+    from trellis.analytics.portfolio_aad import VanillaEquityOptionVolAADMarketContext
+    from trellis.models.vol_surface import FlatVol
+
+    if not isinstance(context, VanillaEquityOptionVolAADMarketContext):
+        raise TypeError(
+            "early-exercise helper requires VanillaEquityOptionVolAADMarketContext"
+        )
+    vol_surface = getattr(context.market_state, "vol_surface", None)
+    if not isinstance(vol_surface, FlatVol):
+        raise ValueError("early-exercise hybrid AD requires FlatVol")
+    coordinates = context.coordinates()
+    coordinate_values = {"vol": float(vol_surface.vol)}
+    chart = MarketObjectCoordinateChart.identity(
+        chart_id=f"chart:early_exercise_vol:{context.vol_surface_name}",
+        object_type="vol_surface",
+        object_name=context.vol_surface_name,
+        coordinates=coordinates,
+        coordinate_values=coordinate_values,
+        metadata={
+            "coordinate_type": "flat_vol",
+            "chart_family": "flat_vol",
+            "exercise_style": exercise_style,
+            "early_exercise_policy": "hard_exercise_projection_smooth_interior",
+        },
+    )
+    node = HybridDependencyNode(
+        node_id=f"node:early_exercise_vol:{context.vol_surface_name}",
+        node_type="vol_surface",
+        object_name=context.vol_surface_name,
+        coordinate_chart=chart,
+        derivative_method=derivative_method,
+        support_status="supported",
+        metadata={
+            "resolved_inputs": ("underlier_vol",),
+            "position_name": str(position_name),
+            "exercise_style": exercise_style,
+            "early_exercise_policy": "hard_exercise_projection_smooth_interior",
+        },
+    )
+    graph = HybridFactorGraph(
+        graph_id=f"hybrid:early_exercise:{context.vol_surface_name}:{position_name}",
+        nodes=(node,),
+        metadata={
+            "route_family": "bounded_vanilla_early_exercise",
+            "graph_source": "vanilla_early_exercise_smooth_interior",
+            "exercise_style": exercise_style,
+            "early_exercise_policy": "hard_exercise_projection_smooth_interior",
+            "vol_surface_name": context.vol_surface_name,
+            "position_name": str(position_name),
+        },
+    )
+    graph.validate()
+    return graph
 
 
 def _path_summary_graph(
@@ -605,6 +680,36 @@ def _path_summary_graph(
     )
     graph.validate()
     return graph
+
+
+def _unsupported_early_exercise_graph(
+    *,
+    reason: str,
+    position_name: str,
+    vol_surface_name: str,
+    exercise_style: str,
+) -> HybridFactorGraph:
+    dependency = HybridUnsupportedDependency(
+        dependency_id=f"node:early_exercise:{position_name}",
+        node_type="early_exercise_control",
+        object_name=str(position_name),
+        reason=reason,
+        metadata={
+            "vol_surface_name": vol_surface_name,
+            "exercise_style": exercise_style,
+            "early_exercise_policy": "hard_exercise_projection_smooth_interior",
+        },
+    )
+    return HybridFactorGraph(
+        graph_id=f"hybrid:early_exercise:{vol_surface_name}:{position_name}",
+        unsupported_dependencies=(dependency,),
+        metadata={
+            "route_family": "bounded_vanilla_early_exercise",
+            "graph_source": "vanilla_early_exercise_smooth_interior",
+            "exercise_style": exercise_style,
+            "vol_surface_name": vol_surface_name,
+        },
+    )
 
 
 def _unsupported_path_summary_graph(
@@ -1478,6 +1583,217 @@ def differentiate_arithmetic_asian_path_summary(
     )
 
 
+def differentiate_vanilla_early_exercise(
+    instrument: object,
+    market_context: object,
+    request: HybridDerivativeRequest | None = None,
+    *,
+    position_name: str = "early_exercise",
+    vol_surface_name: str = "default_vol_surface",
+    currency: str | None = None,
+) -> HybridDerivativeResult:
+    """Return VJP risk for one bounded vanilla early-exercise smooth-interior lane."""
+    from trellis.analytics.portfolio_aad import (
+        AADSupportDecision,
+        PortfolioAADRequest,
+        VanillaEquityOptionVolAADAdapter,
+    )
+    from trellis.core.differentiable import get_backend_capabilities
+
+    resolved_request = request or HybridDerivativeRequest()
+    method_id = "hybrid_early_exercise_vjp"
+    adapter = VanillaEquityOptionVolAADAdapter()
+    context = _vanilla_equity_vol_market_context(
+        market_context,
+        vol_surface_name=vol_surface_name,
+        currency=currency,
+    )
+    portfolio_request = PortfolioAADRequest()
+    decision = adapter.support_decision(
+        position_name,
+        instrument,
+        context,
+        portfolio_request,
+    )
+    exercise_style = str(getattr(instrument, "exercise_style", "european")).strip().lower()
+    if exercise_style not in {"american", "bermudan"}:
+        decision = AADSupportDecision(
+            False,
+            "unsupported_early_exercise_style",
+            diagnostics=(
+                {
+                    "position_name": str(position_name),
+                    "exercise_style": exercise_style,
+                },
+            ),
+        )
+    admission_metadata = _semantic_admission_metadata(
+        resolved_request.semantic_admission
+    )
+
+    graph: HybridFactorGraph
+    try:
+        graph = _early_exercise_graph(
+            context,
+            derivative_method="vjp",
+            position_name=position_name,
+            exercise_style=exercise_style,
+        )
+    except Exception:
+        graph = _unsupported_early_exercise_graph(
+            reason=decision.reason,
+            position_name=position_name,
+            vol_surface_name=vol_surface_name,
+            exercise_style=exercise_style,
+        )
+
+    value: float | None = None
+    if decision.supported:
+        value = float(adapter.value(instrument, context, portfolio_request))
+
+    if resolved_request.semantic_admission is not None:
+        admission_result = _unsupported_semantic_admission_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            admission=resolved_request.semantic_admission,
+            method_id=method_id,
+            allowed_lane_prefixes=("early_exercise_smooth_interior_",),
+        )
+        if admission_result is not None:
+            return admission_result
+
+    if resolved_request.derivative_method != "vjp":
+        code = (
+            "hybrid_jvp_backend_unsupported"
+            if resolved_request.derivative_method == "jvp"
+            else "early_exercise_hvp_pending"
+        )
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code=code,
+            message=(
+                "Early-exercise hybrid AD currently supports only the bounded "
+                "vanilla flat-vol VJP lane."
+            ),
+            method_id=method_id,
+            diagnostic_extra={
+                "requested_derivative_method": resolved_request.derivative_method,
+                "exercise_style": exercise_style,
+                "early_exercise_policy": (
+                    "hard_exercise_projection_smooth_interior"
+                ),
+            },
+            fallback_reason={
+                "code": code,
+                "requested_derivative_method": resolved_request.derivative_method,
+                "exercise_style": exercise_style,
+                "early_exercise_policy": (
+                    "hard_exercise_projection_smooth_interior"
+                ),
+            },
+            method_metadata_extra=admission_metadata,
+        )
+
+    if not decision.supported:
+        return _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code=decision.reason,
+            message=(
+                "Vanilla early-exercise VJP is unavailable for this instrument "
+                f"or market context: {decision.reason}."
+            ),
+            method_id=method_id,
+            diagnostic_extra={
+                "position_name": str(position_name),
+                "exercise_style": exercise_style,
+                "early_exercise_policy": (
+                    "hard_exercise_projection_smooth_interior"
+                ),
+                "support_decision": decision.to_payload(),
+            },
+            fallback_reason={
+                "code": decision.reason,
+                "position_name": str(position_name),
+                "exercise_style": exercise_style,
+                "early_exercise_policy": (
+                    "hard_exercise_projection_smooth_interior"
+                ),
+            },
+            method_metadata_extra=admission_metadata,
+        )
+
+    capabilities = get_backend_capabilities()
+    full_vector = adapter.vjp(
+        instrument,
+        context,
+        portfolio_request,
+        weight=1.0,
+    )
+    selected_vector = resolved_request.filter_vector(full_vector)
+    missing_factors = resolved_request.missing_selected_factors(full_vector)
+    selected_diagnostics: list[dict[str, object]] = []
+    support_status = "supported"
+    if missing_factors:
+        selected_diagnostics.append(
+            {
+                "code": "selected_factors_unavailable",
+                "severity": "warning",
+                "missing_factor_keys": [factor.key for factor in missing_factors],
+                "unsupported_selected_factor_policy": (
+                    resolved_request.unsupported_selected_factor_policy
+                ),
+            }
+        )
+        support_status = "unsupported" if len(selected_vector) == 0 else "partial"
+        if resolved_request.unsupported_selected_factor_policy == "fail_closed":
+            selected_vector = SparseRiskVector()
+            support_status = "unsupported"
+
+    coordinates = graph.coordinates
+    metadata = derivative_method_payload(
+        method_id,
+        method_support=support_status,
+        backend_id=capabilities.backend_id,
+        backend_operator="vjp",
+        coordinate_space="constrained",
+        chart_type="identity",
+        hybrid_factor_graph_id=graph.graph_id,
+        exercise_style=exercise_style,
+        early_exercise_policy="hard_exercise_projection_smooth_interior",
+        factor_count=len(full_vector),
+        sparse_nonzero_factor_count=len(full_vector),
+        selected_factor_count=len(selected_vector),
+        node_count=len(graph.nodes),
+        unsupported_dependency_count=len(graph.unsupported_dependencies),
+        risk_factor_coordinates=[
+            coordinate.to_payload()
+            for coordinate in coordinates
+            if coordinate.factor_id in set(full_vector)
+        ],
+    )
+    if value is not None and math.isfinite(value):
+        metadata["base_value"] = value
+    metadata.update(admission_metadata)
+
+    diagnostics = tuple(selected_diagnostics) + tuple(
+        dict(diagnostic) for diagnostic in decision.diagnostics
+    )
+    return HybridDerivativeResult(
+        value=value,
+        risk_vector=selected_vector,
+        graph=graph,
+        support_status=support_status,
+        method_metadata=metadata,
+        unsupported_dependencies=graph.unsupported_dependencies,
+        diagnostics=diagnostics,
+    )
+
+
 def differentiate_quanto_correlation_matrix(
     spec: object,
     resolved_inputs: object,
@@ -1931,7 +2247,7 @@ def _unsupported_semantic_admission_result(
             code="semantic_admission_lane_unavailable",
             message=(
                 "Semantic hybrid AD admission refers to a lane that this "
-                "bounded quanto helper does not execute."
+                "runtime helper does not execute."
             ),
             method_id=method_id,
             diagnostic_extra={
@@ -2351,6 +2667,7 @@ __all__ = [
     "HybridMatrixCoordinateContext",
     "build_correlation_matrix_coordinate_context",
     "differentiate_arithmetic_asian_path_summary",
+    "differentiate_vanilla_early_exercise",
     "differentiate_quanto_correlation_matrix",
     "differentiate_quanto_scalar_inputs",
     "differentiate_quanto_scalar_correlation",

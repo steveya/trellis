@@ -97,6 +97,17 @@ def _american_call_ir() -> ContractIR:
     )
 
 
+def _bermudan_put_ir() -> ContractIR:
+    observation_schedule = Singleton(EXPIRY)
+    exercise_schedule = FiniteSchedule(OBSERVATIONS)
+    return ContractIR(
+        payoff=Max((Sub(Strike(100.0), Spot("EUR")), Constant(0.0))),
+        exercise=Exercise("bermudan", exercise_schedule),
+        observation=Observation("terminal", observation_schedule),
+        underlying=Underlying(EquitySpot("EUR", "gbm")),
+    )
+
+
 def _dynamic_hybrid_ir() -> DynamicContractIR:
     return DynamicContractIR(
         base_contract=_terminal_call_ir(),
@@ -428,6 +439,80 @@ def test_early_exercise_contract_shape_is_classified_as_planned():
         "exercise_decision",
     ]
     assert state_policy["metadata"]["exercise_style"] == "american"
+
+
+def test_american_vanilla_early_exercise_vjp_is_supported_for_flat_vol_lane():
+    admission = admit_hybrid_ad_lane(
+        _american_call_ir(),
+        product_family="american_vanilla_option",
+        derivative_method="vjp",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+    requirements = {
+        requirement.semantic_role: requirement
+        for requirement in admission.factor_requirements
+    }
+
+    assert admission.admitted is True
+    assert admission.supported is True
+    assert admission.support_status == "supported"
+    assert admission.lane_id == "early_exercise_smooth_interior_vjp"
+    assert admission.reason == "supported_early_exercise_smooth_interior_vjp"
+    assert admission.contract_shape == "early_exercise_smooth_interior"
+    assert admission.derivative_methods == ("vjp",)
+    assert state_policy["state_kind"] == "early_exercise_control"
+    assert state_policy["support_status"] == "supported"
+    assert state_policy["control_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
+    assert state_policy["fail_closed"] is False
+    assert state_policy["metadata"]["exercise_style"] == "american"
+    assert requirements["underlier_vol"].object_type == "vol_surface"
+    assert requirements["underlier_vol"].coordinate_type == "flat_vol"
+    assert requirements["underlier_vol"].parameterization == "flat_vol"
+    assert admission.metadata["runtime_helper"] == (
+        "trellis.analytics.hybrid_ad.differentiate_vanilla_early_exercise"
+    )
+
+
+def test_bermudan_vanilla_early_exercise_vjp_is_supported_for_flat_vol_lane():
+    admission = admit_hybrid_ad_lane(
+        _bermudan_put_ir(),
+        product_family="bermudan_vanilla_option",
+        derivative_method="vjp",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+
+    assert admission.admitted is True
+    assert admission.support_status == "supported"
+    assert admission.lane_id == "early_exercise_smooth_interior_vjp"
+    assert admission.contract_shape == "early_exercise_smooth_interior"
+    assert state_policy["state_kind"] == "early_exercise_control"
+    assert state_policy["support_status"] == "supported"
+    assert state_policy["metadata"]["exercise_style"] == "bermudan"
+
+
+def test_early_exercise_hvp_remains_planned_until_runtime_exists():
+    admission = admit_hybrid_ad_lane(
+        _american_call_ir(),
+        product_family="american_vanilla_option",
+        derivative_method="hvp",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+
+    assert admission.admitted is False
+    assert admission.support_status == "planned"
+    assert admission.reason == "early_exercise_hvp_pending"
+    assert admission.contract_shape == "early_exercise_smooth_interior"
+    assert state_policy["state_kind"] == "early_exercise_control"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["control_policy"] == (
+        "hard_exercise_projection_smooth_interior"
+    )
+    assert admission.diagnostics[0]["code"] == "early_exercise_hvp_pending"
 
 
 def test_path_dependent_contract_shape_is_classified_as_planned():

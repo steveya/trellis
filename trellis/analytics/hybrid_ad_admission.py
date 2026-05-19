@@ -681,6 +681,77 @@ def _contract_ir_admission(
             ),
         )
     if contract.exercise.style in {"american", "bermudan"}:
+        if _is_early_exercise_family(product_family) and _is_bounded_vanilla_early_exercise(
+            contract
+        ):
+            if derivative_method == "vjp":
+                state_policy = _early_exercise_state_policy(
+                    contract,
+                    support_status="supported",
+                    reason="supported_early_exercise_smooth_interior_vjp",
+                    control_policy="hard_exercise_projection_smooth_interior",
+                    fail_closed=False,
+                )
+                return _admission(
+                    admitted=True,
+                    lane_id="early_exercise_smooth_interior_vjp",
+                    support_status="supported",
+                    reason="supported_early_exercise_smooth_interior_vjp",
+                    semantic_contract_type="ContractIR",
+                    product_family=product_family or "early_exercise_option",
+                    contract_shape="early_exercise_smooth_interior",
+                    derivative_methods=("vjp",),
+                    factor_requirements=_flat_vol_requirements(),
+                    metadata={
+                        "requested_derivative_method": derivative_method,
+                        "exercise_style": contract.exercise.style,
+                        "early_exercise_policy": (
+                            "hard_exercise_projection_smooth_interior"
+                        ),
+                        "runtime_helper": (
+                            "trellis.analytics.hybrid_ad."
+                            "differentiate_vanilla_early_exercise"
+                        ),
+                        "grid_vol_support_status": "planned",
+                        "fail_closed": False,
+                        **_state_policy_metadata(state_policy),
+                    },
+                )
+            state_policy = _early_exercise_state_policy(
+                contract,
+                support_status="planned",
+                reason="early_exercise_hvp_pending",
+                control_policy="hard_exercise_projection_smooth_interior",
+                fail_closed=True,
+            )
+            return _admission(
+                admitted=False,
+                lane_id="early_exercise_smooth_interior_hvp",
+                support_status="planned",
+                reason="early_exercise_hvp_pending",
+                semantic_contract_type="ContractIR",
+                product_family=product_family or "early_exercise_option",
+                contract_shape="early_exercise_smooth_interior",
+                derivative_methods=("vjp",),
+                factor_requirements=_flat_vol_requirements(),
+                metadata={
+                    "requested_derivative_method": derivative_method,
+                    "exercise_style": contract.exercise.style,
+                    "early_exercise_policy": (
+                        "hard_exercise_projection_smooth_interior"
+                    ),
+                    "fail_closed": True,
+                    **_state_policy_metadata(state_policy),
+                },
+                diagnostics=(
+                    {
+                        "code": "early_exercise_hvp_pending",
+                        "severity": "warning",
+                        "state_kind": state_policy.state_kind,
+                        "control_policy": state_policy.control_policy,
+                    },
+                ),
+            )
         state_policy = _early_exercise_state_policy(contract)
         return _admission(
             admitted=False,
@@ -904,25 +975,33 @@ def _smooth_path_summary_state_policy(
     )
 
 
-def _early_exercise_state_policy(contract: ContractIR) -> HybridADStatePolicy:
+def _early_exercise_state_policy(
+    contract: ContractIR,
+    *,
+    support_status: str = "planned",
+    reason: str = "early_exercise_hybrid_state_pending",
+    control_policy: str = "smooth_interior_control_pending",
+    fail_closed: bool = True,
+) -> HybridADStatePolicy:
     return HybridADStatePolicy(
         state_kind="early_exercise_control",
-        support_status="planned",
+        support_status=support_status,
         differentiability_class="piecewise",
-        reason="early_exercise_hybrid_state_pending",
+        reason=reason,
         event_policy="exercise_decision_schedule",
-        control_policy="smooth_interior_control_pending",
+        control_policy=control_policy,
         state_variable_roles=("continuation_value", "exercise_decision"),
-        fail_closed=True,
+        fail_closed=fail_closed,
         metadata={
             "exercise_style": contract.exercise.style,
             "observation_kind": contract.observation.kind,
+            "early_exercise_policy": control_policy,
             "path_summary_type": "none",
         },
         diagnostics=(
             {
-                "code": "early_exercise_hybrid_state_pending",
-                "severity": "warning",
+                "code": reason,
+                "severity": "info" if support_status == "supported" else "warning",
             },
         ),
     )
@@ -996,6 +1075,19 @@ def _contract_shape(contract: ContractIR) -> str:
 
 def _is_terminal_vanilla_option(contract: ContractIR) -> bool:
     if contract.exercise.style != "european" or contract.observation.kind != "terminal":
+        return False
+    body = _vanilla_intrinsic_body(contract.payoff)
+    if body is None:
+        return False
+    if not isinstance(contract.underlying.spec, EquitySpot):
+        return False
+    return _is_spot_strike_sub(body) or _is_strike_spot_sub(body)
+
+
+def _is_bounded_vanilla_early_exercise(contract: ContractIR) -> bool:
+    if contract.exercise.style not in {"american", "bermudan"}:
+        return False
+    if contract.observation.kind != "terminal":
         return False
     body = _vanilla_intrinsic_body(contract.payoff)
     if body is None:
@@ -1173,6 +1265,10 @@ def _quanto_matrix_requirements() -> tuple[HybridADFactorRequirement, ...]:
 
 
 def _path_summary_vol_requirements() -> tuple[HybridADFactorRequirement, ...]:
+    return _flat_vol_requirements()
+
+
+def _flat_vol_requirements() -> tuple[HybridADFactorRequirement, ...]:
     return (
         HybridADFactorRequirement(
             object_type="vol_surface",
@@ -1238,6 +1334,16 @@ def _is_arithmetic_asian_family(product_family: str | None) -> bool:
         "arithmetic_asian",
         "arithmetic_asian_option",
         "path_summary_arithmetic_asian_option",
+    }
+
+
+def _is_early_exercise_family(product_family: str | None) -> bool:
+    return _normalize(product_family) in {
+        "american_vanilla_option",
+        "bermudan_vanilla_option",
+        "early_exercise_option",
+        "early_exercise_hybrid_option",
+        "vanilla_early_exercise_option",
     }
 
 

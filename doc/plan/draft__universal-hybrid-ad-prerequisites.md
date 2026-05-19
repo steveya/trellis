@@ -3,12 +3,13 @@
 ## Status
 
 First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`,
-`QUA-1049`, `QUA-1054`, `QUA-1059`, `QUA-1065`, and `QUA-1071` epics. Universal hybrid
+`QUA-1049`, `QUA-1054`, `QUA-1059`, `QUA-1065`, `QUA-1071`, and `QUA-1076` epics. Universal hybrid
 AD is still not claimed; this document now records the shipped bounded quanto
 scalar-coordinate prototypes, the checked correlation matrix policy surface,
 the executable matrix-coordinate lane, the ContractIR admission boundary, the
 typed path-state/event policy guardrail, the first executable smooth
-path-summary lane, and the remaining prerequisites.
+path-summary lane, the first executable early-exercise smooth-interior lane, and
+the remaining prerequisites.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -46,6 +47,10 @@ path-summary lane, and the remaining prerequisites.
 | `QUA-1073` | Done | Added the executable arithmetic-Asian path-summary VJP runtime helper. |
 | `QUA-1074` | Done | Added independent flat-vol finite-difference verification and unsupported-shape hardening. |
 | `QUA-1075` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
+| `QUA-1077` | Done | Added supported admission for the bounded vanilla early-exercise flat-vol VJP lane. |
+| `QUA-1078` | Done | Added the executable vanilla early-exercise VJP runtime helper. |
+| `QUA-1079` | Done | Added independent flat-vol finite-difference verification and unsupported-shape hardening. |
+| `QUA-1080` | Done | Closeout docs, limitations review, validation, and final PR preparation. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -124,9 +129,10 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
 - `HybridADStatePolicy` records the semantic state/event policy for those
   stateful shapes: arithmetic-average flat-vol path summaries can be supported
   by the bounded VJP lane, other smooth path summaries remain planned,
-  discontinuous event monitors remain unsupported, early-exercise controls
-  remain planned, and DynamicContractIR state/control requests remain planned
-  except for backend-unsupported JVP
+  discontinuous event monitors remain unsupported, vanilla flat-vol
+  early-exercise controls can be supported by the bounded VJP lane, and
+  DynamicContractIR state/control requests remain planned except for
+  backend-unsupported JVP
 - `HybridDerivativeRequest.semantic_admission` carries that decision into the
   scalar and matrix quanto derivative helpers; supported admissions are
   preserved in result metadata while wrong-lane, planned, or unsupported
@@ -137,19 +143,28 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   requests over one `FlatVol` coordinate return `hybrid_path_summary_vjp`
   metadata, graph-owned sparse risk, semantic admission metadata, and
   supported `HybridADStatePolicy` payloads
+- `differentiate_vanilla_early_exercise(...)` is the first executable
+  smooth-interior early-exercise lane: bounded vanilla American/Bermudan
+  call/put requests over one `FlatVol` coordinate return
+  `hybrid_early_exercise_vjp` metadata, graph-owned sparse risk, semantic
+  admission metadata, and supported hard-exercise-projection
+  `HybridADStatePolicy` payloads
 - non-arithmetic path summaries, grid-vol path summaries, discontinuous event
-  monitors, early exercise, dynamic state, path-summary HVP, and JVP remain
-  fail closed with typed diagnostics
+  monitors, grid-vol or boundary-kink early-exercise controls, dynamic state,
+  path-summary/early-exercise HVP, and JVP remain fail closed with typed
+  diagnostics
 
 This is still a prototype, not universal hybrid AD. The shipped derivative
 lanes differentiate a bounded scalar-coordinate vector and a bounded
 directional HVP for one single-name quanto route plus one bounded
 well-conditioned matrix-coordinate lane for that same terminal quanto shape,
-and one bounded arithmetic-average flat-vol path-summary VJP lane.
+one bounded arithmetic-average flat-vol path-summary VJP lane, and one
+bounded vanilla flat-vol early-exercise VJP lane.
 They do not differentiate arbitrary cross-asset hybrid systems, correlation
 surfaces, matrix projections or PSD-boundary behavior, grid-vol or
-event-monitor path-state execution, dynamic state execution, early-exercise
-hybrid execution, path-summary HVP/JVP, or broad product families end to end.
+event-monitor path-state execution, dynamic state execution, grid-vol or
+boundary-kink early-exercise controls, path-summary/early-exercise HVP/JVP, or
+broad product families end to end.
 
 Autograd Phase 2 also added a truthful backend capability surface:
 
@@ -497,6 +512,26 @@ Deliverables:
 - official docs, limitations, final validation, and PR closeout [done in
   `QUA-1075`]
 
+### Phase 4d: Executable Early-Exercise Smooth-Interior Lane
+
+[admission contract delivered in `QUA-1077`; runtime delivered in `QUA-1078`]
+
+Turn one early-exercise control policy into an executable bounded derivative
+lane without claiming broad dynamic-state or pathwise hybrid AD.
+
+Deliverables:
+
+- vanilla American/Bermudan ContractIR shapes admit the bounded flat-vol VJP
+  lane with supported early-exercise state-policy metadata [done in
+  `QUA-1077`]
+- American/Bermudan flat-vol requests return `hybrid_early_exercise_vjp`
+  metadata and graph-owned sparse risk [done in `QUA-1078`]
+- independent finite-difference verification covers American and Bermudan
+  flat-vol VJP and unsupported shapes remain fail-closed [done in
+  `QUA-1079`]
+- official docs, limitations, final validation, and PR closeout [done in
+  `QUA-1080`]
+
 ### Phase 5: Backend Decision For JVP
 
 [fail-closed runtime policy delivered in `QUA-1038`; checked JVP support still
@@ -656,7 +691,25 @@ Acceptance criteria:
 - no broad pathwise, dynamic, early-exercise, or grid-vol path-summary hybrid
   derivative execution is claimed
 
+Ninth delivered epic:
+
+`Hybrid AD: executable early-exercise smooth-interior derivative lane`
+
+Acceptance criteria:
+
+- bounded vanilla American/Bermudan ContractIR shapes admit the flat-vol VJP
+  lane with supported hard-exercise-projection `HybridADStatePolicy` metadata
+- `differentiate_vanilla_early_exercise(...)` returns
+  `hybrid_early_exercise_vjp` metadata, a graph-owned flat-vol risk
+  coordinate, sparse VJP risk, and semantic admission/state-policy payloads
+- American and Bermudan flat-vol VJP results match independent
+  finite-difference bumps
+- grid-vol early exercise, exercise-boundary ties, HVP, JVP, and wrong-lane
+  semantic admissions fail closed with searchable diagnostics
+- no broad pathwise, dynamic, grid-vol early-exercise, boundary-kink
+  early-exercise, or early-exercise HVP/JVP hybrid derivative execution is
+  claimed
+
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: executable early-exercise smooth-interior derivative lane`
 - `Hybrid AD: multi-product graph-owned derivative fixtures`
