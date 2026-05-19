@@ -195,6 +195,15 @@ _METHOD_SPECS = {
             "using the VJP backend operator."
         ),
     ),
+    "unsupported_hybrid_jvp": DerivativeMethodSpec(
+        "unsupported_hybrid_jvp",
+        category="unsupported",
+        support_status="unsupported",
+        description=(
+            "Hybrid JVP request rejected because the active backend has no "
+            "checked forward-mode pricing-primitive coverage."
+        ),
+    ),
     "unsupported_hybrid_structure": DerivativeMethodSpec(
         "unsupported_hybrid_structure",
         category="unsupported",

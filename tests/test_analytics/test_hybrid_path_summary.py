@@ -174,6 +174,22 @@ def test_path_summary_runtime_fail_closes_unsupported_semantic_admission():
     )
 
 
+def test_path_summary_runtime_rejects_jvp_fail_closed():
+    result = differentiate_arithmetic_asian_path_summary(
+        _asian_spec(),
+        _market_state(),
+        HybridDerivativeRequest(derivative_method="jvp"),
+        vol_surface_name="spx_flat",
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert result.method_metadata["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    assert result.method_metadata["requested_backend_operator"] == "jvp"
+    assert result.method_metadata["backend_support"]["supported"] is False
+    assert "backend_operator" not in result.method_metadata
+
+
 def test_path_summary_semantic_fail_close_preserves_unpriced_value():
     admission = admit_hybrid_ad_lane(
         _path_summary_contract_ir(),

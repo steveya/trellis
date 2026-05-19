@@ -239,6 +239,12 @@ def test_jvp_request_fails_closed_at_admission():
     assert admission.reason == "hybrid_jvp_backend_unsupported"
     assert admission.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
     assert admission.metadata["requested_derivative_method"] == "jvp"
+    assert admission.metadata["requested_backend_operator"] == "jvp"
+    assert admission.metadata["backend_support"]["supported"] is False
+    assert "norm.cdf" in admission.metadata["backend_support"]["unsupported_reason"]
+    assert "backend_operator" not in admission.metadata
+    assert admission.diagnostics[0]["requested_backend_operator"] == "jvp"
+    assert "backend_operator" not in admission.diagnostics[0]
 
 
 def test_dynamic_contract_jvp_request_fails_closed_as_backend_unsupported():
@@ -258,6 +264,9 @@ def test_dynamic_contract_jvp_request_fails_closed_as_backend_unsupported():
     assert admission.contract_shape == "dynamic_hybrid_state"
     assert admission.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
     assert admission.metadata["requested_derivative_method"] == "jvp"
+    assert admission.metadata["requested_backend_operator"] == "jvp"
+    assert admission.metadata["backend_support"]["supported"] is False
+    assert "backend_operator" not in admission.metadata
     assert state_policy["state_kind"] == "dynamic_state"
     assert state_policy["support_status"] == "planned"
     assert state_policy["differentiability_class"] == "piecewise"

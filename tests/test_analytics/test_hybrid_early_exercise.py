@@ -365,3 +365,7 @@ def test_early_exercise_runtime_rejects_jvp_fail_closed():
 
     assert result.support_status == "unsupported"
     assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert result.method_metadata["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    assert result.method_metadata["requested_backend_operator"] == "jvp"
+    assert result.method_metadata["backend_support"]["supported"] is False
+    assert "backend_operator" not in result.method_metadata

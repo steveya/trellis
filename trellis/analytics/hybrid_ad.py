@@ -501,6 +501,7 @@ def _unsupported_result(
     fallback_reason: dict[str, object] | None = None,
     diagnostic_extra: Mapping[str, object] | None = None,
     backend_operator: str | None = None,
+    suppress_backend_operator: bool = False,
     method_metadata_extra: Mapping[str, object] | None = None,
 ) -> HybridDerivativeResult:
     diagnostic = {
@@ -512,7 +513,11 @@ def _unsupported_result(
     metadata = derivative_method_payload(
         method_id,
         method_support="unsupported",
-        backend_operator=backend_operator or request.derivative_method,
+        backend_operator=(
+            None
+            if suppress_backend_operator
+            else backend_operator or request.derivative_method
+        ),
         coordinate_space=request.coordinate_space,
         hybrid_factor_graph_id=graph.graph_id,
         fallback_reason=fallback_reason or diagnostic,
@@ -526,6 +531,56 @@ def _unsupported_result(
         method_metadata=metadata,
         unsupported_dependencies=graph.unsupported_dependencies,
         diagnostics=(diagnostic,),
+    )
+
+
+def _jvp_backend_support_payload() -> tuple[dict[str, object], tuple[str, ...]]:
+    from trellis.core.differentiable import get_backend_capabilities
+
+    capabilities = get_backend_capabilities()
+    return capabilities.operator_support("jvp"), capabilities.notes
+
+
+def _unsupported_jvp_result(
+    *,
+    value: float | None,
+    graph: HybridFactorGraph,
+    request: HybridDerivativeRequest,
+    message: str,
+    diagnostic_extra: Mapping[str, object] | None = None,
+    method_metadata_extra: Mapping[str, object] | None = None,
+) -> HybridDerivativeResult:
+    support, notes = _jvp_backend_support_payload()
+    note_payload = list(notes)
+    diagnostic = {
+        "backend_id": support["backend_id"],
+        "unsupported_operator": "jvp",
+        "requested_backend_operator": "jvp",
+        "backend_support": support,
+        "backend_notes": note_payload,
+        **dict(diagnostic_extra or {}),
+    }
+    metadata_extra = {
+        "requested_derivative_method": request.derivative_method,
+        "requested_backend_operator": "jvp",
+        "backend_support": support,
+        "backend_notes": note_payload,
+        **dict(method_metadata_extra or {}),
+    }
+    return _unsupported_result(
+        value=value,
+        graph=graph,
+        request=request,
+        code="hybrid_jvp_backend_unsupported",
+        message=message,
+        method_id="unsupported_hybrid_jvp",
+        diagnostic_extra=diagnostic,
+        fallback_reason={
+            "code": "hybrid_jvp_backend_unsupported",
+            **diagnostic,
+        },
+        suppress_backend_operator=True,
+        method_metadata_extra=metadata_extra,
     )
 
 
@@ -1465,16 +1520,27 @@ def differentiate_arithmetic_asian_path_summary(
             return admission_result
 
     if resolved_request.derivative_method != "vjp":
-        code = (
-            "hybrid_jvp_backend_unsupported"
-            if resolved_request.derivative_method == "jvp"
-            else "path_summary_hvp_pending"
-        )
+        if resolved_request.derivative_method == "jvp":
+            return _unsupported_jvp_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                message=(
+                    "Smooth path-summary hybrid AD currently supports only "
+                    "the bounded arithmetic-Asian VJP lane; JVP remains "
+                    "fail-closed at the backend boundary."
+                ),
+                diagnostic_extra={
+                    "requested_derivative_method": resolved_request.derivative_method,
+                    "path_summary_type": "arithmetic_mean",
+                },
+                method_metadata_extra=admission_metadata,
+            )
         return _unsupported_result(
             value=value,
             graph=graph,
             request=resolved_request,
-            code=code,
+            code="path_summary_hvp_pending",
             message=(
                 "Smooth path-summary hybrid AD currently supports only the "
                 "bounded arithmetic-Asian VJP lane."
@@ -1485,7 +1551,7 @@ def differentiate_arithmetic_asian_path_summary(
                 "path_summary_type": "arithmetic_mean",
             },
             fallback_reason={
-                "code": code,
+                "code": "path_summary_hvp_pending",
                 "requested_derivative_method": resolved_request.derivative_method,
                 "path_summary_type": "arithmetic_mean",
             },
@@ -1664,16 +1730,30 @@ def differentiate_vanilla_early_exercise(
             return admission_result
 
     if resolved_request.derivative_method != "vjp":
-        code = (
-            "hybrid_jvp_backend_unsupported"
-            if resolved_request.derivative_method == "jvp"
-            else "early_exercise_hvp_pending"
-        )
+        if resolved_request.derivative_method == "jvp":
+            return _unsupported_jvp_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                message=(
+                    "Early-exercise hybrid AD currently supports only the "
+                    "bounded vanilla flat-vol VJP lane; JVP remains "
+                    "fail-closed at the backend boundary."
+                ),
+                diagnostic_extra={
+                    "requested_derivative_method": resolved_request.derivative_method,
+                    "exercise_style": exercise_style,
+                    "early_exercise_policy": (
+                        "hard_exercise_projection_smooth_interior"
+                    ),
+                },
+                method_metadata_extra=admission_metadata,
+            )
         return _unsupported_result(
             value=value,
             graph=graph,
             request=resolved_request,
-            code=code,
+            code="early_exercise_hvp_pending",
             message=(
                 "Early-exercise hybrid AD currently supports only the bounded "
                 "vanilla flat-vol VJP lane."
@@ -1687,7 +1767,7 @@ def differentiate_vanilla_early_exercise(
                 ),
             },
             fallback_reason={
-                "code": code,
+                "code": "early_exercise_hvp_pending",
                 "requested_derivative_method": resolved_request.derivative_method,
                 "exercise_style": exercise_style,
                 "early_exercise_policy": (
@@ -1859,27 +1939,15 @@ def differentiate_quanto_correlation_matrix(
         if admission_result is not None:
             return admission_result
     if resolved_request.derivative_method == "jvp":
-        diagnostic_extra = {
-            "backend_id": capabilities.backend_id,
-            "unsupported_operator": "jvp",
-            "backend_notes": capabilities.notes,
-            "active_factor_key": context.active_factor_id.key,
-        }
-        return _unsupported_result(
+        return _unsupported_jvp_result(
             value=base_value,
             graph=graph,
             request=resolved_request,
-            code="hybrid_jvp_backend_unsupported",
             message=(
                 "Hybrid matrix-coordinate JVP remains fail-closed because the "
                 "active backend does not provide checked JVP coverage."
             ),
-            method_id=method_id,
-            diagnostic_extra=diagnostic_extra,
-            fallback_reason={
-                "code": "hybrid_jvp_backend_unsupported",
-                **diagnostic_extra,
-            },
+            diagnostic_extra={"active_factor_key": context.active_factor_id.key},
             method_metadata_extra=admission_metadata,
         )
     if resolved_request.derivative_method not in {"vjp", "hvp"}:
@@ -2301,26 +2369,14 @@ def differentiate_quanto_scalar_inputs(
             return admission_result
 
     if resolved_request.derivative_method == "jvp":
-        diagnostic_extra = {
-            "backend_id": capabilities.backend_id,
-            "unsupported_operator": "jvp",
-            "backend_notes": capabilities.notes,
-        }
-        return _unsupported_result(
+        return _unsupported_jvp_result(
             value=value,
             graph=graph,
             request=resolved_request,
-            code="hybrid_jvp_backend_unsupported",
             message=(
                 "Hybrid JVP remains fail-closed because the active backend "
                 "does not provide checked JVP coverage for pricing primitives."
             ),
-            method_id=method_id,
-            diagnostic_extra=diagnostic_extra,
-            fallback_reason={
-                "code": "hybrid_jvp_backend_unsupported",
-                **diagnostic_extra,
-            },
             method_metadata_extra=admission_metadata,
         )
     if resolved_request.derivative_method not in {"vjp", "hvp"}:
@@ -2537,25 +2593,14 @@ def differentiate_quanto_scalar_correlation(
 
     capabilities = get_backend_capabilities()
     if resolved_request.derivative_method == "jvp":
-        diagnostic_extra = {
-            "backend_id": capabilities.backend_id,
-            "unsupported_operator": "jvp",
-            "backend_notes": capabilities.notes,
-        }
-        return _unsupported_result(
+        return _unsupported_jvp_result(
             value=value,
             graph=graph,
             request=resolved_request,
-            code="hybrid_jvp_backend_unsupported",
             message=(
                 "Hybrid JVP remains fail-closed because the active backend "
                 "does not provide checked JVP coverage for pricing primitives."
             ),
-            diagnostic_extra=diagnostic_extra,
-            fallback_reason={
-                "code": "hybrid_jvp_backend_unsupported",
-                **diagnostic_extra,
-            },
         )
     if resolved_request.derivative_method != "vjp":
         return _unsupported_result(
