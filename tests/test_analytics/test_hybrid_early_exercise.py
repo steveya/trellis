@@ -7,6 +7,7 @@ from datetime import date
 
 import trellis.analytics as analytics
 from trellis.agent.contract_ir import (
+    ArithmeticMean,
     Constant,
     ContinuousInterval,
     ContractIR,
@@ -120,6 +121,21 @@ def _bermudan_put_ir() -> ContractIR:
     )
 
 
+def _path_summary_contract_ir() -> ContractIR:
+    averaging_schedule = FiniteSchedule(EXERCISE_DATES + (EXPIRY,))
+    return ContractIR(
+        payoff=Max(
+            (
+                Sub(ArithmeticMean(Spot("SPX"), averaging_schedule), Strike(100.0)),
+                Constant(0.0),
+            )
+        ),
+        exercise=Exercise("european", Singleton(EXPIRY)),
+        observation=Observation("path_dependent", averaging_schedule),
+        underlying=Underlying(EquitySpot("SPX", "gbm")),
+    )
+
+
 def test_public_api_exports_early_exercise_helper():
     assert (
         analytics.differentiate_vanilla_early_exercise
@@ -211,6 +227,27 @@ def test_early_exercise_runtime_fail_closes_wrong_semantic_admission():
     assert result.method_metadata["semantic_state_policy"]["state_kind"] == (
         "early_exercise_control"
     )
+
+
+def test_early_exercise_runtime_fail_closes_wrong_supported_semantic_lane():
+    wrong_admission = admit_hybrid_ad_lane(
+        _path_summary_contract_ir(),
+        product_family="arithmetic_asian_option",
+        derivative_method="vjp",
+    )
+
+    result = differentiate_vanilla_early_exercise(
+        _american_put_spec(),
+        _market_state(),
+        HybridDerivativeRequest(semantic_admission=wrong_admission),
+        vol_surface_name="spx_flat",
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.diagnostics[0]["code"] == "semantic_admission_lane_unavailable"
+    assert "runtime helper" in result.diagnostics[0]["message"]
+    assert "quanto" not in result.diagnostics[0]["message"]
+    assert result.method_metadata["semantic_admission"]["support_status"] == "supported"
 
 
 def test_early_exercise_selected_factor_fail_closed_policy():

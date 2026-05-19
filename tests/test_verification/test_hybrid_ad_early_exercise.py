@@ -267,4 +267,3 @@ def test_hybrid_early_exercise_verification_keeps_unsupported_shapes_fail_closed
     assert result.value is None
     assert len(result.risk_vector) == 0
     assert result.diagnostics[0]["code"] == expected_code
-

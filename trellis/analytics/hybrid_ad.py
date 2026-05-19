@@ -2247,7 +2247,7 @@ def _unsupported_semantic_admission_result(
             code="semantic_admission_lane_unavailable",
             message=(
                 "Semantic hybrid AD admission refers to a lane that this "
-                "bounded quanto helper does not execute."
+                "runtime helper does not execute."
             ),
             method_id=method_id,
             diagnostic_extra={
