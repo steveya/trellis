@@ -117,6 +117,49 @@ def _unsupported_result() -> HybridDerivativeResult:
     )
 
 
+def _unsupported_operator_result(
+    *,
+    code: str,
+    requested_backend_operator: str,
+    resolved_derivative_method: str,
+    backend_operator: str | None = None,
+) -> HybridDerivativeResult:
+    dependency = HybridUnsupportedDependency(
+        dependency_id=f"node:unsupported:{code}",
+        node_type="hybrid_derivative_operator",
+        object_name=code,
+        reason=code,
+        metadata={"requested_backend_operator": requested_backend_operator},
+    )
+    graph = HybridFactorGraph(
+        graph_id=f"hybrid:test:{code}",
+        unsupported_dependencies=(dependency,),
+        metadata={"fixture": "unsupported_operator"},
+    )
+    metadata = {
+        "resolved_derivative_method": resolved_derivative_method,
+        "requested_backend_operator": requested_backend_operator,
+        "fallback_reason": {"code": code, "requested_backend_operator": requested_backend_operator},
+    }
+    if backend_operator is not None:
+        metadata["backend_operator"] = backend_operator
+    return HybridDerivativeResult(
+        value=None,
+        risk_vector=SparseRiskVector(),
+        graph=graph,
+        support_status="unsupported",
+        method_metadata=metadata,
+        unsupported_dependencies=graph.unsupported_dependencies,
+        diagnostics=(
+            {
+                "code": code,
+                "severity": "warning",
+                "requested_backend_operator": requested_backend_operator,
+            },
+        ),
+    )
+
+
 def _admission(lane_id: str, product_family: str) -> HybridADLaneAdmission:
     return HybridADLaneAdmission(
         admitted=True,
@@ -289,6 +332,98 @@ def test_multi_product_result_fail_closed_policy_suppresses_aggregate_risk():
     assert len(result.risk_vector) == 0
     assert result.value_contribution is None
     assert result.to_payload()["risk_vector"]["values"] == []
+
+
+def test_multi_product_unsupported_lane_diagnostics_preserve_operator_metadata():
+    supported = HybridADMultiProductLaneResult(
+        lane_id="lane:supported",
+        position_name="asian_call",
+        product_family="arithmetic_asian_option",
+        requested_derivative_method="vjp",
+        derivative_result=_supported_result("spx_flat", value=10.0, sensitivity=2.0),
+    )
+    unsupported_jvp = HybridADMultiProductLaneResult(
+        lane_id="lane:jvp",
+        position_name="quanto_jvp",
+        product_family="terminal_quanto_option",
+        requested_derivative_method="jvp",
+        derivative_result=_unsupported_operator_result(
+            code="hybrid_jvp_backend_unsupported",
+            requested_backend_operator="jvp",
+            resolved_derivative_method="unsupported_hybrid_jvp",
+        ),
+    )
+    unsupported_event = HybridADMultiProductLaneResult(
+        lane_id="lane:event",
+        position_name="barrier_event",
+        product_family="barrier_option",
+        requested_derivative_method="vjp",
+        derivative_result=_unsupported_operator_result(
+            code="discontinuous_event_monitor_unsupported",
+            requested_backend_operator="vjp",
+            resolved_derivative_method="unsupported_hybrid_structure",
+            backend_operator="vjp",
+        ),
+    )
+
+    result = aggregate_hybrid_ad_lane_results(
+        HybridADMultiProductRequest(request_id="diagnostic_mix"),
+        (unsupported_jvp, supported, unsupported_event),
+    )
+
+    diagnostics = {
+        diagnostic["lane_id"]: diagnostic
+        for diagnostic in result.unsupported_lane_diagnostics
+    }
+
+    assert result.support_status == "partial"
+    assert result.risk_vector[_factor("spx_flat")] == pytest.approx(2.0)
+    assert result.diagnostic_codes == (
+        "discontinuous_event_monitor_unsupported",
+        "hybrid_jvp_backend_unsupported",
+    )
+    assert diagnostics["lane:jvp"]["requested_backend_operator"] == "jvp"
+    assert diagnostics["lane:jvp"]["backend_operator"] is None
+    assert diagnostics["lane:jvp"]["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    assert diagnostics["lane:event"]["backend_operator"] == "vjp"
+    assert diagnostics["lane:event"]["unsupported_dependency_reasons"] == (
+        "discontinuous_event_monitor_unsupported",
+    )
+    assert result.to_payload()["unsupported_lane_diagnostics"] == [
+        dict(diagnostic)
+        for diagnostic in result.unsupported_lane_diagnostics
+    ]
+
+
+def test_multi_product_strict_policy_reports_aggregate_fail_closed_diagnostic():
+    result = aggregate_hybrid_ad_lane_results(
+        HybridADMultiProductRequest(
+            request_id="strict_diagnostic_mix",
+            unsupported_lane_policy="fail_closed",
+        ),
+        (
+            HybridADMultiProductLaneResult(
+                lane_id="lane:dynamic",
+                position_name="dynamic_state",
+                product_family="dynamic_hybrid_contract",
+                requested_derivative_method="vjp",
+                derivative_result=_unsupported_operator_result(
+                    code="dynamic_hybrid_state_admission_pending",
+                    requested_backend_operator="vjp",
+                    resolved_derivative_method="unsupported_hybrid_structure",
+                    backend_operator="vjp",
+                ),
+            ),
+        ),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.diagnostic_codes == (
+        "aggregate_fail_closed_by_unsupported_lane_policy",
+        "dynamic_hybrid_state_admission_pending",
+    )
+    assert result.to_payload()["diagnostics"][-1]["unsupported_lane_policy"] == "fail_closed"
 
 
 def test_multi_product_request_validates_policy_and_selected_factor_payloads():

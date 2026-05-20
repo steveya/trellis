@@ -323,6 +323,92 @@ class HybridADMultiProductResult:
         return sum(1 for lane in self.lane_results if lane.support_status == "unsupported")
 
     @property
+    def unsupported_lane_diagnostics(self) -> tuple[Mapping[str, object], ...]:
+        """Return structured diagnostics for unsupported lane-local results."""
+        diagnostics: list[Mapping[str, object]] = []
+        for lane in self.lane_results:
+            if lane.support_status != "unsupported":
+                continue
+            metadata = dict(lane.derivative_result.method_metadata)
+            fallback_reason = metadata.get("fallback_reason")
+            fallback_payload = (
+                dict(fallback_reason)
+                if isinstance(fallback_reason, Mapping)
+                else None
+            )
+            code = (
+                str(fallback_payload["code"])
+                if fallback_payload is not None and "code" in fallback_payload
+                else (
+                    lane.diagnostic_codes[0]
+                    if lane.diagnostic_codes
+                    else "unsupported_hybrid_lane"
+                )
+            )
+            dependency_reasons = tuple(
+                sorted(
+                    {
+                        dependency.reason
+                        for dependency in lane.derivative_result.unsupported_dependencies
+                    }
+                )
+            )
+            diagnostics.append(
+                MappingProxyType(
+                    {
+                        "code": code,
+                        "severity": "warning",
+                        "lane_id": lane.lane_id,
+                        "position_name": lane.position_name,
+                        "product_family": lane.product_family,
+                        "support_status": lane.support_status,
+                        "requested_derivative_method": lane.requested_derivative_method,
+                        "resolved_derivative_method": metadata.get(
+                            "resolved_derivative_method"
+                        ),
+                        "requested_backend_operator": metadata.get(
+                            "requested_backend_operator",
+                            lane.requested_derivative_method,
+                        ),
+                        "backend_operator": metadata.get("backend_operator"),
+                        "fallback_reason": fallback_payload,
+                        "diagnostic_codes": lane.diagnostic_codes,
+                        "unsupported_dependency_reasons": dependency_reasons,
+                        "unsupported_dependency_ids": tuple(
+                            dependency.dependency_id
+                            for dependency in lane.derivative_result.unsupported_dependencies
+                        ),
+                    }
+                )
+            )
+        return tuple(diagnostics)
+
+    @property
+    def diagnostics(self) -> tuple[Mapping[str, object], ...]:
+        """Return aggregate diagnostics for unsupported-lane policy decisions."""
+        diagnostics = list(self.unsupported_lane_diagnostics)
+        if (
+            self.unsupported_lane_count
+            and self.request.unsupported_lane_policy == "fail_closed"
+        ):
+            diagnostics.append(
+                MappingProxyType(
+                    {
+                        "code": "aggregate_fail_closed_by_unsupported_lane_policy",
+                        "severity": "warning",
+                        "unsupported_lane_policy": self.request.unsupported_lane_policy,
+                        "unsupported_lane_count": self.unsupported_lane_count,
+                        "unsupported_lane_ids": tuple(
+                            lane.lane_id
+                            for lane in self.lane_results
+                            if lane.support_status == "unsupported"
+                        ),
+                    }
+                )
+            )
+        return tuple(diagnostics)
+
+    @property
     def support_status(self) -> str:
         """Return aggregate support status implied by the lane set and policy."""
         if not self.lane_results:
@@ -346,9 +432,9 @@ class HybridADMultiProductResult:
         return tuple(
             sorted(
                 {
-                    code
-                    for lane in self.lane_results
-                    for code in lane.diagnostic_codes
+                    str(diagnostic["code"])
+                    for diagnostic in self.diagnostics
+                    if "code" in diagnostic
                 }
             )
         )
@@ -399,6 +485,11 @@ class HybridADMultiProductResult:
             "lane_ids": list(self.lane_ids),
             "supported_lane_count": self.supported_lane_count,
             "unsupported_lane_count": self.unsupported_lane_count,
+            "unsupported_lane_diagnostics": [
+                dict(diagnostic)
+                for diagnostic in self.unsupported_lane_diagnostics
+            ],
+            "diagnostics": [dict(diagnostic) for diagnostic in self.diagnostics],
             "diagnostic_codes": list(self.diagnostic_codes),
             "risk_vector": self.risk_vector.to_payload(),
             "risk_factor_keys": list(self.risk_factor_keys),
