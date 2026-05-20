@@ -8,6 +8,7 @@ from trellis.analytics.hybrid_ad_multi_product import (
     HybridADMultiProductLaneResult,
     HybridADMultiProductRequest,
     HybridADMultiProductResult,
+    aggregate_hybrid_ad_lane_results,
 )
 from trellis.analytics.hybrid_factors import (
     HybridDependencyNode,
@@ -201,6 +202,93 @@ def test_multi_product_result_records_supported_and_unsupported_lanes():
     assert rebuilt == multi
     assert payload["lane_results"][0]["support_status"] == "unsupported"
     assert payload["unsupported_lane_count"] == 1
+
+
+def test_multi_product_result_aggregates_supported_lane_values_and_sparse_risk():
+    shared_factor = _factor("shared_flat")
+    lane_a_result = _supported_result("shared_flat", value=10.0, sensitivity=2.0)
+    lane_b_graph = _supported_graph("shared_flat")
+    lane_b_result = HybridDerivativeResult(
+        value=7.0,
+        risk_vector=SparseRiskVector.from_items(((shared_factor, 5.0),)),
+        graph=lane_b_graph,
+        support_status="supported",
+        method_metadata={
+            "resolved_derivative_method": "hybrid_early_exercise_vjp",
+            "backend_operator": "vjp",
+            "hybrid_factor_graph_id": lane_b_graph.graph_id,
+        },
+    )
+    lane_c_result = _supported_result("quanto_corr", value=3.0, sensitivity=-4.0)
+    lane_a = HybridADMultiProductLaneResult(
+        lane_id="lane:a",
+        position_name="asian_call",
+        product_family="arithmetic_asian_option",
+        requested_derivative_method="vjp",
+        quantity=2.0,
+        derivative_result=lane_a_result,
+    )
+    lane_b = HybridADMultiProductLaneResult(
+        lane_id="lane:b",
+        position_name="american_put",
+        product_family="american_vanilla_option",
+        requested_derivative_method="vjp",
+        quantity=3.0,
+        derivative_result=lane_b_result,
+    )
+    lane_c = HybridADMultiProductLaneResult(
+        lane_id="lane:c",
+        position_name="quanto_call",
+        product_family="terminal_quanto_option",
+        requested_derivative_method="vjp",
+        quantity=-1.0,
+        derivative_result=lane_c_result,
+    )
+
+    result = aggregate_hybrid_ad_lane_results(
+        HybridADMultiProductRequest(request_id="supported_mix"),
+        (lane_c, lane_a, lane_b),
+        metadata={"fixture": "supported"},
+    )
+
+    assert isinstance(result, HybridADMultiProductResult)
+    assert result.support_status == "supported"
+    assert result.value_contribution == pytest.approx(38.0)
+    assert result.risk_vector[shared_factor] == pytest.approx(19.0)
+    assert result.risk_vector[_factor("quanto_corr")] == pytest.approx(4.0)
+    assert result.risk_factor_keys == tuple(factor.key for factor in result.risk_vector)
+    assert result.to_payload()["risk_vector"] == result.risk_vector.to_payload()
+    assert result.to_payload()["lane_results"][0]["lane_id"] == "lane:a"
+
+
+def test_multi_product_result_fail_closed_policy_suppresses_aggregate_risk():
+    supported = HybridADMultiProductLaneResult(
+        lane_id="lane:supported",
+        position_name="asian_call",
+        product_family="arithmetic_asian_option",
+        requested_derivative_method="vjp",
+        derivative_result=_supported_result("spx_flat", value=10.0, sensitivity=2.0),
+    )
+    unsupported = HybridADMultiProductLaneResult(
+        lane_id="lane:unsupported",
+        position_name="event_monitor",
+        product_family="barrier_option",
+        requested_derivative_method="vjp",
+        derivative_result=_unsupported_result(),
+    )
+
+    result = aggregate_hybrid_ad_lane_results(
+        HybridADMultiProductRequest(
+            request_id="strict_mix",
+            unsupported_lane_policy="fail_closed",
+        ),
+        (supported, unsupported),
+    )
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert result.value_contribution is None
+    assert result.to_payload()["risk_vector"]["values"] == []
 
 
 def test_multi_product_request_validates_policy_and_selected_factor_payloads():

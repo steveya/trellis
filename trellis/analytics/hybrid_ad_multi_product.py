@@ -354,8 +354,33 @@ class HybridADMultiProductResult:
         )
 
     @property
+    def risk_vector(self) -> SparseRiskVector:
+        """Return aggregate sparse risk over supported lane contributions."""
+        if (
+            self.unsupported_lane_count
+            and self.request.unsupported_lane_policy == "fail_closed"
+        ):
+            return SparseRiskVector()
+        return SparseRiskVector.from_items(
+            item
+            for lane in self.lane_results
+            if lane.support_status in {"supported", "partial"}
+            for item in lane.risk_vector_contribution.items()
+        )
+
+    @property
+    def risk_factor_keys(self) -> tuple[str, ...]:
+        """Return aggregate risk factor keys in deterministic order."""
+        return tuple(factor.key for factor in self.risk_vector)
+
+    @property
     def value_contribution(self) -> float | None:
         """Return the sum of lane value contributions, ignoring absent values."""
+        if (
+            self.unsupported_lane_count
+            and self.request.unsupported_lane_policy == "fail_closed"
+        ):
+            return None
         values = tuple(
             value
             for value in (lane.value_contribution for lane in self.lane_results)
@@ -375,6 +400,8 @@ class HybridADMultiProductResult:
             "supported_lane_count": self.supported_lane_count,
             "unsupported_lane_count": self.unsupported_lane_count,
             "diagnostic_codes": list(self.diagnostic_codes),
+            "risk_vector": self.risk_vector.to_payload(),
+            "risk_factor_keys": list(self.risk_factor_keys),
             "value_contribution": self.value_contribution,
             "metadata": dict(self.metadata),
         }
@@ -392,8 +419,23 @@ class HybridADMultiProductResult:
         )
 
 
+def aggregate_hybrid_ad_lane_results(
+    request: HybridADMultiProductRequest | Mapping[str, object],
+    lane_results: Iterable[HybridADMultiProductLaneResult | Mapping[str, object]],
+    *,
+    metadata: Mapping[str, object] | None = None,
+) -> HybridADMultiProductResult:
+    """Build a bounded aggregate result from lane-local Hybrid AD results."""
+    return HybridADMultiProductResult(
+        request=request,
+        lane_results=tuple(lane_results),
+        metadata=metadata or {},
+    )
+
+
 __all__ = [
     "HybridADMultiProductLaneResult",
     "HybridADMultiProductRequest",
     "HybridADMultiProductResult",
+    "aggregate_hybrid_ad_lane_results",
 ]

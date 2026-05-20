@@ -49,6 +49,7 @@ from trellis.analytics.hybrid_ad_multi_product import (
     HybridADMultiProductLaneResult,
     HybridADMultiProductRequest,
     HybridADMultiProductResult,
+    aggregate_hybrid_ad_lane_results,
 )
 from trellis.analytics.risk_factors import (
     RiskAggregationMap,
@@ -97,6 +98,7 @@ __all__ = [
     "VanillaEquityOptionVolAADMarketContext",
     "admit_hybrid_ad_lane",
     "admit_portfolio_aad_lane",
+    "aggregate_hybrid_ad_lane_results",
     "build_correlation_matrix_coordinate_context",
     "differentiate_arithmetic_asian_path_summary",
     "differentiate_vanilla_early_exercise",
