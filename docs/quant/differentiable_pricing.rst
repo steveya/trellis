@@ -95,6 +95,18 @@ the payload into runtime fail-closed metadata as ``semantic_state_policy``.
 These are bounded state-summary/control lanes, not broad pathwise or dynamic
 hybrid AD execution.
 
+The bounded hybrid composition surface is now represented by
+``HybridADMultiProductRequest``, ``HybridADMultiProductLaneResult``,
+``HybridADMultiProductResult``, and
+``aggregate_hybrid_ad_lane_results(...)``. This helper composes already-run
+lane-local ``HybridDerivativeResult`` objects: it sums supported sparse VJP
+risk vectors by ``RiskFactorId``, scales lane value and risk by explicit
+quantities, preserves lane-level semantic admission and derivative-method
+metadata, and records unsupported lanes as structured diagnostics. It is not a
+cross-lane tape. Unsupported lanes can either coexist with supported lanes
+under ``unsupported_lane_policy="collect_supported"`` or suppress aggregate
+risk/value under ``unsupported_lane_policy="fail_closed"``.
+
 The goal is not to make every numerical routine differentiable. It is to remove
 unnecessary bump/reprice loops, stabilize calibration, and keep the exact same
 pricing logic available to both value and sensitivity workflows.
@@ -149,16 +161,19 @@ The checked support contract is intentionally explicit:
        bounded arithmetic-average path-summary VJP through
        ``trellis.analytics.differentiate_arithmetic_asian_path_summary(...)``;
        bounded vanilla early-exercise VJP through
-       ``trellis.analytics.differentiate_vanilla_early_exercise(...)``
+       ``trellis.analytics.differentiate_vanilla_early_exercise(...)``; bounded
+       multi-product composition through
+       ``trellis.analytics.aggregate_hybrid_ad_lane_results(...)``
      - bounded to the single-name quanto graph-owned scalar/matrix coordinates
        and one arithmetic-Asian flat-vol path-summary coordinate plus one
-       vanilla American/Bermudan flat-vol early-exercise coordinate; broad
-       hybrid product graphs, correlation surfaces, matrix projection/repair,
-       PSD-boundary behavior, grid-vol path summaries, discontinuous event
-       monitors, dynamic state execution, grid-vol or boundary-kink
-       early-exercise derivatives, path-summary/early-exercise HVP or JVP,
-       and hybrid ``jvp`` remain fail-closed unless a future lane explicitly
-       supports them
+       vanilla American/Bermudan flat-vol early-exercise coordinate; the
+       multi-product helper aggregates only completed lane-local results and
+       keeps unsupported lanes explicit. Broad hybrid product graphs,
+       correlation surfaces, matrix projection/repair, PSD-boundary behavior,
+       grid-vol path summaries, discontinuous event monitors, dynamic state
+       execution, grid-vol or boundary-kink early-exercise derivatives,
+       path-summary/early-exercise HVP or JVP, and hybrid ``jvp`` remain
+       fail-closed unless a future lane explicitly supports them.
    * - Flat volatility risk
      - scalar vega through ``autodiff_flat_vol``
      - flat surfaces only

@@ -738,6 +738,43 @@ These lanes exist because they are mathematically defensible and testable
 within a bounded smooth region. They are not broad pathwise AD for arbitrary
 stateful contracts.
 
+Multi-Product Hybrid Fixtures
+-----------------------------
+
+The multi-product Hybrid AD surface composes lane-local results; it does not
+differentiate one global multi-product program. Each product lane first
+produces a ``HybridDerivativeResult`` with its own graph, sparse risk vector,
+semantic admission metadata, derivative-method metadata, unsupported
+dependencies, and diagnostics. The multi-product wrapper then records:
+
+- one ``HybridADMultiProductLaneResult`` per lane
+- the requested derivative method and product family for that lane
+- the lane quantity used to scale value and risk
+- the lane-local ``HybridDerivativeResult`` payload
+- any lane-local semantic admission payload
+
+For supported VJP lanes, aggregate risk is the sparse sum:
+
+.. math::
+
+   R_{\mathrm{agg}}[f]
+   =
+   \sum_{\ell \in L_{\mathrm{supported}}}
+   q_\ell R_\ell[f]
+
+where :math:`f` is a ``RiskFactorId`` and :math:`q_\ell` is the lane quantity.
+This is ordinary linear aggregation of already-computed adjoints, not a new
+cross-lane adjoint.
+
+Unsupported lanes remain visible through ``unsupported_lane_diagnostics``. A
+permissive request can use ``unsupported_lane_policy="collect_supported"`` to
+return supported aggregate risk while listing unsupported JVP, event-monitor,
+dynamic-state, missing-chart, or other fail-closed lanes. A strict request can
+use ``unsupported_lane_policy="fail_closed"``; in that case the aggregate value
+and aggregate risk are unavailable when any unsupported lane is present. In
+both cases, lane-local metadata still records the requested backend operator,
+the resolved derivative method, and whether a backend operator actually ran.
+
 Runtime Metadata Mirrors The Mathematics
 ----------------------------------------
 
@@ -869,6 +906,10 @@ Implementation Map
    * - Runtime derivative classification
      - derivative-method metadata in result payloads
      - Distinguishes AD, AAD, HVP, finite-difference, and unsupported lanes
+   * - Multi-product hybrid fixture
+     - ``HybridADMultiProductResult``
+     - Linear sparse-risk aggregation over lane-local ``HybridDerivativeResult``
+       values plus structured unsupported-lane diagnostics
 
 Practical Rule For New Lanes
 ----------------------------
