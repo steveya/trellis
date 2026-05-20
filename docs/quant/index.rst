@@ -26,6 +26,7 @@ Core Quant Topics
    dynamic_contract_ir
    dsl_algebra
    lattice_algebra
+   ad_aad_methodology
    differentiable_pricing
    analytical_route_cookbook
    basis_claim_patterns

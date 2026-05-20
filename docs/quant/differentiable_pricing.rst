@@ -99,6 +99,10 @@ The goal is not to make every numerical routine differentiable. It is to remove
 unnecessary bump/reprice loops, stabilize calibration, and keep the exact same
 pricing logic available to both value and sensitivity workflows.
 
+For the mathematical methodology behind these support boundaries, including
+the VJP/HVP notation, sparse portfolio-AAD aggregation model, and hybrid
+factor-graph coordinate policy, see :doc:`ad_aad_methodology`.
+
 Where Autograd Helps
 --------------------
 
