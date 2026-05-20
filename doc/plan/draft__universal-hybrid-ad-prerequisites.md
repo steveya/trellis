@@ -4,14 +4,16 @@
 
 First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`,
 `QUA-1049`, `QUA-1054`, `QUA-1059`, `QUA-1065`, `QUA-1071`,
-`QUA-1076`, and `QUA-1081` epics. Universal hybrid
+`QUA-1076`, `QUA-1081`, and `QUA-1086` epics. Universal hybrid
 AD is still not claimed; this document now records the shipped bounded quanto
 scalar-coordinate prototypes, the checked correlation matrix policy surface,
 the executable matrix-coordinate lane, the ContractIR admission boundary, the
 typed path-state/event policy guardrail, the first executable smooth
 path-summary lane, the first executable early-exercise smooth-interior lane, and
 the Phase 5 backend decision that enforces a VJP/HVP-only hybrid derivative
-contract while JVP remains fail-closed.
+contract while JVP remains fail-closed. It also records the bounded
+multi-product fixture surface that linearly aggregates already-computed
+lane-local VJP outputs while preserving unsupported-lane diagnostics.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -56,6 +58,10 @@ contract while JVP remains fail-closed.
 | `QUA-1082` | Done | Added backend operator support records and explicit JVP unsupported reasons. |
 | `QUA-1083` | Done | Normalized hybrid JVP fail-closed runtime and admission metadata through `unsupported_hybrid_jvp`. |
 | `QUA-1084` | Done | Documented the VJP/HVP-only backend decision and updated limitations/plan closeout. |
+| `QUA-1087` | Done | Added frozen multi-product Hybrid AD request, lane-result, and result contracts. |
+| `QUA-1088` | Done | Added bounded sparse VJP aggregation across lane-local Hybrid AD results. |
+| `QUA-1089` | Done | Added structured mixed unsupported-shape diagnostics and strict fail-closed policy behavior. |
+| `QUA-1090` | Done | Added executable multi-product verification plus docs, limitations, and plan closeout. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -158,13 +164,27 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   monitors, grid-vol or boundary-kink early-exercise controls, dynamic state,
   path-summary/early-exercise HVP, and JVP remain fail closed with typed
   diagnostics
+- `HybridADMultiProductRequest`, `HybridADMultiProductLaneResult`,
+  `HybridADMultiProductResult`, and
+  `aggregate_hybrid_ad_lane_results(...)` now compose already-executed
+  lane-local `HybridDerivativeResult` values. The aggregate helper sums
+  supported sparse VJP vectors by stable `RiskFactorId`, scales lane value and
+  risk by explicit quantity, preserves lane-level semantic admission and
+  derivative-method metadata, and records unsupported lanes as structured
+  diagnostics. It is composition over supported lane-local outputs, not one
+  global hybrid tape.
+- permissive multi-product requests can collect supported aggregate risk while
+  reporting unsupported lanes; strict requests fail closed and suppress
+  aggregate value/risk when any unsupported lane is present
 
 This is still a prototype, not universal hybrid AD. The shipped derivative
 lanes differentiate a bounded scalar-coordinate vector and a bounded
 directional HVP for one single-name quanto route plus one bounded
 well-conditioned matrix-coordinate lane for that same terminal quanto shape,
 one bounded arithmetic-average flat-vol path-summary VJP lane, and one
-bounded vanilla flat-vol early-exercise VJP lane.
+bounded vanilla flat-vol early-exercise VJP lane. The shipped multi-product
+surface aggregates those lane-local results; it does not create a cross-product
+AD tape or admit unsupported product families.
 They do not differentiate arbitrary cross-asset hybrid systems, correlation
 surfaces, matrix projections or PSD-boundary behavior, grid-vol or
 event-monitor path-state execution, dynamic state execution, grid-vol or
@@ -739,4 +759,6 @@ Acceptance criteria:
 
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: multi-product graph-owned derivative fixtures`
+- `Hybrid AD: grid-vol path-summary or early-exercise derivative policy`
+- `Hybrid AD: dynamic-state executable derivative lane`
+- `Hybrid AD: correlation-surface chart policy and fail-closed diagnostics`
