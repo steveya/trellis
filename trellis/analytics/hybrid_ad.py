@@ -409,6 +409,26 @@ class HybridDerivativeResult:
             "diagnostics": [dict(diagnostic) for diagnostic in self.diagnostics],
         }
 
+    @classmethod
+    def from_payload(cls, payload: Mapping[str, object]) -> "HybridDerivativeResult":
+        """Rebuild a result from :meth:`to_payload` output."""
+        return cls(
+            value=(
+                None
+                if payload.get("value") is None
+                else float(payload["value"])  # type: ignore[arg-type]
+            ),
+            risk_vector=SparseRiskVector.from_payload(payload.get("risk_vector") or {}),
+            graph=HybridFactorGraph.from_payload(payload["graph"]),
+            support_status=str(payload.get("support_status", "unsupported")),
+            method_metadata=payload.get("method_metadata") or {},
+            unsupported_dependencies=tuple(
+                HybridUnsupportedDependency.from_payload(entry)
+                for entry in payload.get("unsupported_dependencies", ())
+            ),
+            diagnostics=tuple(payload.get("diagnostics") or ()),
+        )
+
 
 @dataclass(frozen=True)
 class _GraphScalarEntry:

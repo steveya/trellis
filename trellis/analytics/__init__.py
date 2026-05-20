@@ -45,6 +45,11 @@ from trellis.analytics.hybrid_ad import (
     differentiate_quanto_scalar_inputs,
     fail_closed_correlation_structure_derivative,
 )
+from trellis.analytics.hybrid_ad_multi_product import (
+    HybridADMultiProductLaneResult,
+    HybridADMultiProductRequest,
+    HybridADMultiProductResult,
+)
 from trellis.analytics.risk_factors import (
     RiskAggregationMap,
     RiskFactorCoordinate,
@@ -62,6 +67,9 @@ __all__ = [
     "DefaultUnsupportedAADPolicy",
     "HybridADFactorRequirement",
     "HybridADLaneAdmission",
+    "HybridADMultiProductLaneResult",
+    "HybridADMultiProductRequest",
+    "HybridADMultiProductResult",
     "HybridADStatePolicy",
     "HybridCorrelationStructureRequest",
     "HybridDependencyNode",
