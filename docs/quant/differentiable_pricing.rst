@@ -103,6 +103,12 @@ the active grid-vol node ``RiskFactorId`` keys, interpolation basis, locality
 policy, selected-factor policy, and fail-closed reasons for missing surfaces,
 unsupported interpolation, unsupported selected factors, event monitors, and
 exercise-boundary kinks.
+When the arithmetic path-summary runtime sees a grid-vol surface, it now
+returns a first-class unsupported ``HybridDerivativeResult`` with that policy
+chart and an ``unsupported_grid_vol_interpolation`` dependency instead of
+falling back to a flat-vol-like graph. Known selected grid-vol nodes and
+missing selected nodes are reported deterministically, but no node VJP is
+executed.
 These are bounded state-summary/control lanes, not broad pathwise or dynamic
 hybrid AD execution.
 
@@ -632,7 +638,10 @@ summaries or vanilla early-exercise controls, admission records a planned
 policy; it deliberately omits a runtime helper until an executable lane is
 validated. The corresponding grid-vol state/control coordinate chart is
 discovery-only: it preserves node identity and selected-factor behavior for
-runtime diagnostics, but does not authorize VJP execution by itself. ``jvp``
+runtime diagnostics, but does not authorize VJP execution by itself. The
+arithmetic path-summary runtime uses that chart to fail closed with
+``unsupported_grid_vol_interpolation`` until a true node-local path-summary
+surface derivative is mathematically defined and verified. ``jvp``
 requests, correlation surfaces, composite underliers,
 grid-vol path summaries, discontinuous event monitors, non-arithmetic path
 summaries, path-summary HVP, grid-vol early-exercise, early-exercise HVP, and

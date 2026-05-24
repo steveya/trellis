@@ -706,12 +706,79 @@ def _path_summary_graph(
     position_name: str,
 ) -> HybridFactorGraph:
     from trellis.analytics.portfolio_aad import VanillaEquityOptionVolAADMarketContext
-    from trellis.models.vol_surface import FlatVol
+    from trellis.models.vol_surface import FlatVol, GridVolSurface
 
     if not isinstance(context, VanillaEquityOptionVolAADMarketContext):
         raise TypeError("path-summary helper requires VanillaEquityOptionVolAADMarketContext")
     coordinates = context.coordinates()
     vol_surface = getattr(context.market_state, "vol_surface", None)
+    if isinstance(vol_surface, GridVolSurface):
+        discovery_coordinates = tuple(
+            replace(coordinate, support_status="discovery_only")
+            for coordinate in coordinates
+        )
+        chart = MarketObjectCoordinateChart.grid_vol_state_control_policy(
+            object_name=context.vol_surface_name,
+            lane_family="path_summary",
+            coordinates=discovery_coordinates,
+            metadata={
+                "path_summary_type": "arithmetic_mean",
+                "path_derivative_policy": (
+                    "lognormal_moment_matching_smooth_path_summary"
+                ),
+            },
+        )
+        dependency = HybridUnsupportedDependency.grid_vol_state_control_policy(
+            object_name=context.vol_surface_name,
+            lane_family="path_summary",
+            reason="unsupported_grid_vol_interpolation",
+            metadata={
+                "position_name": str(position_name),
+                "path_summary_type": "arithmetic_mean",
+                "path_derivative_policy": (
+                    "lognormal_moment_matching_smooth_path_summary"
+                ),
+                "policy_reason": "path_summary_grid_vol_vjp_pending",
+            },
+        )
+        node = HybridDependencyNode(
+            node_id=f"node:path_summary_grid_vol:{context.vol_surface_name}",
+            node_type="vol_surface",
+            object_name=context.vol_surface_name,
+            coordinate_chart=chart,
+            derivative_method="unsupported",
+            differentiability_class=chart.differentiability_class,
+            support_status=chart.support_status,
+            metadata={
+                "resolved_inputs": ("underlier_vol",),
+                "position_name": str(position_name),
+                "path_summary_type": "arithmetic_mean",
+                "path_derivative_policy": (
+                    "lognormal_moment_matching_smooth_path_summary"
+                ),
+                "grid_vol_support_status": "planned",
+            },
+        )
+        graph = HybridFactorGraph(
+            graph_id=f"hybrid:path_summary:{context.vol_surface_name}:{position_name}",
+            nodes=(node,),
+            unsupported_dependencies=(dependency,),
+            metadata={
+                "route_family": "bounded_arithmetic_asian",
+                "graph_source": "arithmetic_asian_grid_vol_path_summary_policy",
+                "path_summary_type": "arithmetic_mean",
+                "path_derivative_policy": (
+                    "lognormal_moment_matching_smooth_path_summary"
+                ),
+                "vol_surface_name": context.vol_surface_name,
+                "position_name": str(position_name),
+                "market_parameterization": "grid_vol",
+                "grid_vol_support_status": "planned",
+                "grid_vol_coordinate_policy": chart.to_payload(),
+            },
+        )
+        graph.validate()
+        return graph
     coordinate_values: dict[str, object] = {}
     if isinstance(vol_surface, FlatVol):
         coordinate_values["vol"] = float(vol_surface.vol)
@@ -813,6 +880,104 @@ def _unsupported_path_summary_graph(
             "vol_surface_name": vol_surface_name,
         },
     )
+
+
+def _grid_vol_state_control_chart(
+    graph: HybridFactorGraph,
+) -> MarketObjectCoordinateChart | None:
+    for chart in graph.coordinate_charts:
+        if chart.chart_type == "grid_vol_state_control_policy":
+            return chart
+    return None
+
+
+def _grid_vol_path_summary_policy_metadata(
+    graph: HybridFactorGraph,
+) -> dict[str, object]:
+    chart = _grid_vol_state_control_chart(graph)
+    if chart is None:
+        return {}
+    return {
+        "grid_vol_coordinate_policy": chart.to_payload(),
+        "grid_vol_unsupported_dependency_reasons": list(graph.unsupported_reasons),
+    }
+
+
+def _grid_vol_selected_factor_diagnostics(
+    request: HybridDerivativeRequest,
+    graph: HybridFactorGraph,
+) -> tuple[dict[str, object], ...]:
+    if request.selects_all_factors:
+        return ()
+    available_factors = tuple(coordinate.factor_id for coordinate in graph.coordinates)
+    missing_factors = request.missing_selected_factors(available_factors)
+    if missing_factors:
+        return (
+            {
+                "code": "selected_factors_unavailable",
+                "severity": "warning",
+                "missing_factor_keys": [factor.key for factor in missing_factors],
+                "unsupported_selected_factor_policy": (
+                    request.unsupported_selected_factor_policy
+                ),
+            },
+        )
+    selected_factor_keys = [factor.key for factor in request.selected_factors]
+    if selected_factor_keys:
+        return (
+            {
+                "code": "unsupported_selected_grid_vol_factors",
+                "severity": "warning",
+                "selected_factor_keys": selected_factor_keys,
+                "unsupported_selected_factor_policy": (
+                    request.unsupported_selected_factor_policy
+                ),
+            },
+        )
+    return ()
+
+
+def _unsupported_grid_vol_path_summary_result(
+    *,
+    value: float | None,
+    graph: HybridFactorGraph,
+    request: HybridDerivativeRequest,
+    code: str,
+    message: str,
+    diagnostic_extra: Mapping[str, object] | None = None,
+    fallback_reason: dict[str, object] | None = None,
+    method_metadata_extra: Mapping[str, object] | None = None,
+) -> HybridDerivativeResult:
+    policy_metadata = _grid_vol_path_summary_policy_metadata(graph)
+    unsupported_reasons = list(graph.unsupported_reasons)
+    fallback_payload = {
+        "code": code,
+        "unsupported_dependency_reasons": unsupported_reasons,
+        **dict(fallback_reason or {}),
+    }
+    result = _unsupported_result(
+        value=value,
+        graph=graph,
+        request=request,
+        code=code,
+        message=message,
+        method_id="hybrid_path_summary_vjp",
+        diagnostic_extra={
+            "path_summary_type": "arithmetic_mean",
+            "market_parameterization": "grid_vol",
+            "unsupported_dependency_reasons": unsupported_reasons,
+            **dict(diagnostic_extra or {}),
+        },
+        fallback_reason=fallback_payload,
+        method_metadata_extra={
+            **policy_metadata,
+            **dict(method_metadata_extra or {}),
+        },
+    )
+    selected_diagnostics = _grid_vol_selected_factor_diagnostics(request, graph)
+    if selected_diagnostics:
+        return replace(result, diagnostics=result.diagnostics + selected_diagnostics)
+    return result
 
 
 def _node_role(node: HybridDependencyNode) -> str | None:
@@ -1522,20 +1687,52 @@ def differentiate_arithmetic_asian_path_summary(
             position_name=position_name,
             vol_surface_name=vol_surface_name,
         )
+    grid_vol_policy_metadata = _grid_vol_path_summary_policy_metadata(graph)
 
     value: float | None = None
     if decision.supported:
         value = float(adapter.value(instrument, context, portfolio_request))
 
     if resolved_request.semantic_admission is not None:
-        admission_result = _unsupported_semantic_admission_result(
-            value=value,
-            graph=graph,
-            request=resolved_request,
-            admission=resolved_request.semantic_admission,
-            method_id=method_id,
-            allowed_lane_prefixes=("arithmetic_asian_path_summary_",),
-        )
+        admission = resolved_request.semantic_admission
+        if grid_vol_policy_metadata and not admission.supported:
+            state_metadata = _semantic_state_policy_metadata(admission)
+            admission_metadata = _semantic_admission_metadata(admission)
+            admission_result = _unsupported_grid_vol_path_summary_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                code=admission.reason,
+                message=(
+                    "Semantic hybrid AD admission did not allow grid-vol "
+                    f"path-summary execution: {admission.reason}."
+                ),
+                diagnostic_extra={
+                    "semantic_admission_status": admission.support_status,
+                    "semantic_admission_lane_id": admission.lane_id,
+                    **state_metadata,
+                },
+                fallback_reason={
+                    "code": admission.reason,
+                    "semantic_admission_status": admission.support_status,
+                    "semantic_admission_reason": admission.reason,
+                    "semantic_admission_lane_id": admission.lane_id,
+                    **state_metadata,
+                },
+                method_metadata_extra={
+                    **grid_vol_policy_metadata,
+                    **admission_metadata,
+                },
+            )
+        else:
+            admission_result = _unsupported_semantic_admission_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                admission=admission,
+                method_id=method_id,
+                allowed_lane_prefixes=("arithmetic_asian_path_summary_",),
+            )
         if admission_result is not None:
             return admission_result
 
@@ -1579,6 +1776,32 @@ def differentiate_arithmetic_asian_path_summary(
         )
 
     if not decision.supported:
+        if grid_vol_policy_metadata:
+            return _unsupported_grid_vol_path_summary_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                code=decision.reason,
+                message=(
+                    "Arithmetic-Asian path-summary VJP is unavailable for "
+                    "this grid-vol market context under the current coordinate "
+                    f"policy: {decision.reason}."
+                ),
+                diagnostic_extra={
+                    "position_name": str(position_name),
+                    "support_decision": decision.to_payload(),
+                },
+                fallback_reason={
+                    "code": decision.reason,
+                    "position_name": str(position_name),
+                    "path_summary_type": "arithmetic_mean",
+                    "support_decision": decision.to_payload(),
+                },
+                method_metadata_extra={
+                    **grid_vol_policy_metadata,
+                    **admission_metadata,
+                },
+            )
         return _unsupported_result(
             value=value,
             graph=graph,

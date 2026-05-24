@@ -733,7 +733,12 @@ requirement and a planned smooth path-summary state policy, but no runtime
 helper is attached until the coordinate policy and verification exist. The
 coordinate policy is a discovery-only
 ``grid_vol_state_control_policy`` chart carrying the active node keys,
-interpolation basis, locality policy, and selected-factor behavior.
+interpolation basis, locality policy, and selected-factor behavior. The
+runtime currently consumes this chart only to return a first-class fail-closed
+result with an ``unsupported_grid_vol_interpolation`` dependency. That is
+intentional: differentiating the existing single-effective-volatility
+moment-matched formula through one surface interpolation point would not define
+a robust path-summary node-risk contract.
 
 The early-exercise hybrid lane is also intentionally narrow. Vanilla
 American/Bermudan call/put contracts over one ``FlatVol`` coordinate can be
