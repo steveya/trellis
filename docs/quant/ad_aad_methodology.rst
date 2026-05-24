@@ -727,12 +727,19 @@ options are admitted only through the bounded smooth path-summary policy. The
 current executable lane differentiates one graph-owned ``FlatVol`` coordinate
 and reports ``hybrid_path_summary_vjp`` metadata. Grid-vol path summaries,
 non-arithmetic summaries, discontinuous event monitors, dynamic state, HVP, and
-JVP fail closed.
+JVP fail closed. The admission layer can still identify a grid-vol
+path-summary request: it records a planned ``grid_node_vols`` volatility
+requirement and a planned smooth path-summary state policy, but no runtime
+helper is attached until the coordinate policy and verification exist.
 
 The early-exercise hybrid lane is also intentionally narrow. Vanilla
 American/Bermudan call/put contracts over one ``FlatVol`` coordinate can be
 admitted under the hard exercise-projection smooth-interior policy. Grid-vol
-early exercise, boundary ties, HVP, and JVP fail closed.
+early exercise, boundary ties, HVP, and JVP fail closed. Grid-vol
+early-exercise admission records the requested node-vol parameterization and a
+planned hard-exercise-projection control policy so downstream runtime code can
+fail closed with the same state/control contract instead of silently widening
+support.
 
 These lanes exist because they are mathematically defensible and testable
 within a bounded smooth region. They are not broad pathwise AD for arbitrary

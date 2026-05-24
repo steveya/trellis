@@ -116,6 +116,14 @@ def _dynamic_hybrid_ir() -> DynamicContractIR:
     )
 
 
+def _dynamic_early_exercise_ir() -> DynamicContractIR:
+    return DynamicContractIR(
+        base_contract=_american_call_ir(),
+        semantic_family="american_vanilla_option",
+        base_track="payoff_expression",
+    )
+
+
 def _discontinuous_event_ir() -> ContractIR:
     schedule = Singleton(EXPIRY)
     payoff = Scaled(
@@ -483,6 +491,7 @@ def test_american_vanilla_early_exercise_vjp_is_supported_for_flat_vol_lane():
     assert admission.metadata["runtime_helper"] == (
         "trellis.analytics.hybrid_ad.differentiate_vanilla_early_exercise"
     )
+    assert admission.metadata["fail_closed_at_boundary_kinks"] is True
 
 
 def test_bermudan_vanilla_early_exercise_vjp_is_supported_for_flat_vol_lane():
@@ -522,6 +531,71 @@ def test_early_exercise_hvp_remains_planned_until_runtime_exists():
         "hard_exercise_projection_smooth_interior"
     )
     assert admission.diagnostics[0]["code"] == "early_exercise_hvp_pending"
+
+
+def test_early_exercise_grid_vol_vjp_is_planned_not_runtime_supported():
+    admission = admit_hybrid_ad_lane(
+        _american_call_ir(),
+        product_family="american_vanilla_option",
+        derivative_method="vjp",
+        market_parameterization="grid_vol",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+    requirements = {
+        requirement.semantic_role: requirement
+        for requirement in admission.factor_requirements
+    }
+
+    assert admission.admitted is False
+    assert admission.supported is False
+    assert admission.support_status == "planned"
+    assert admission.lane_id == "early_exercise_grid_vol_control_vjp"
+    assert admission.reason == "early_exercise_grid_vol_vjp_pending"
+    assert admission.contract_shape == "early_exercise_grid_vol_control"
+    assert admission.derivative_methods == ("vjp",)
+    assert state_policy["state_kind"] == "early_exercise_control"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["control_policy"] == (
+        "grid_vol_hard_exercise_projection_pending"
+    )
+    assert state_policy["fail_closed"] is True
+    assert state_policy["metadata"]["market_parameterization"] == "grid_vol"
+    assert state_policy["metadata"]["grid_vol_support_status"] == "planned"
+    assert requirements["underlier_vol"].object_type == "vol_surface"
+    assert requirements["underlier_vol"].coordinate_type == "black_vol"
+    assert requirements["underlier_vol"].parameterization == "grid_node_vols"
+    assert admission.metadata["market_parameterization"] == "grid_vol"
+    assert admission.metadata["grid_vol_support_status"] == "planned"
+    assert "runtime_helper" not in admission.metadata
+    assert admission.diagnostics[0]["code"] == "early_exercise_grid_vol_vjp_pending"
+
+
+def test_dynamic_early_exercise_grid_vol_vjp_is_classified_with_state_policy():
+    admission = admit_hybrid_ad_lane(
+        _dynamic_early_exercise_ir(),
+        product_family="american_vanilla_option",
+        derivative_method="vjp",
+        market_parameterization="grid_vol",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+
+    assert admission.admitted is False
+    assert admission.support_status == "planned"
+    assert admission.semantic_contract_type == "DynamicContractIR"
+    assert admission.lane_id == "dynamic_early_exercise_grid_vol_control_vjp"
+    assert admission.reason == "early_exercise_grid_vol_vjp_pending"
+    assert admission.contract_shape == "dynamic_early_exercise_grid_vol_control"
+    assert state_policy["state_kind"] == "early_exercise_control"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["control_policy"] == (
+        "grid_vol_hard_exercise_projection_pending"
+    )
+    assert state_policy["metadata"]["market_parameterization"] == "grid_vol"
+    assert admission.metadata["base_track"] == "payoff_expression"
+    assert admission.metadata["semantic_family"] == "american_vanilla_option"
+    assert admission.diagnostics[0]["code"] == "early_exercise_grid_vol_vjp_pending"
 
 
 def test_path_dependent_contract_shape_is_classified_as_planned():
@@ -583,6 +657,41 @@ def test_arithmetic_path_summary_vjp_is_supported_for_bounded_lane():
     assert admission.metadata["path_derivative_policy"] == (
         "lognormal_moment_matching_smooth_path_summary"
     )
+
+
+def test_arithmetic_path_summary_grid_vol_vjp_is_planned_not_runtime_supported():
+    admission = admit_hybrid_ad_lane(
+        _path_dependent_ir(),
+        product_family="arithmetic_asian_option",
+        derivative_method="vjp",
+        market_parameterization="grid_vol",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+    requirements = {
+        requirement.semantic_role: requirement
+        for requirement in admission.factor_requirements
+    }
+
+    assert admission.admitted is False
+    assert admission.supported is False
+    assert admission.support_status == "planned"
+    assert admission.lane_id == "arithmetic_asian_path_summary_grid_vol_vjp"
+    assert admission.reason == "path_summary_grid_vol_vjp_pending"
+    assert admission.contract_shape == "arithmetic_asian_grid_vol_path_summary"
+    assert admission.derivative_methods == ("vjp",)
+    assert state_policy["state_kind"] == "smooth_path_summary"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["reason"] == "path_summary_grid_vol_vjp_pending"
+    assert state_policy["metadata"]["market_parameterization"] == "grid_vol"
+    assert state_policy["metadata"]["grid_vol_support_status"] == "planned"
+    assert requirements["underlier_vol"].object_type == "vol_surface"
+    assert requirements["underlier_vol"].coordinate_type == "black_vol"
+    assert requirements["underlier_vol"].parameterization == "grid_node_vols"
+    assert admission.metadata["market_parameterization"] == "grid_vol"
+    assert admission.metadata["grid_vol_support_status"] == "planned"
+    assert "runtime_helper" not in admission.metadata
+    assert admission.diagnostics[0]["code"] == "path_summary_grid_vol_vjp_pending"
 
 
 def test_arithmetic_path_summary_hvp_remains_planned_until_runtime_exists():

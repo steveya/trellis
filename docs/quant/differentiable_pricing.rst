@@ -92,6 +92,11 @@ shapes. Supported arithmetic-average VJP admissions carry that payload as a
 supported state policy, and supported vanilla early-exercise VJP admissions
 carry it as a supported hard-exercise-projection policy. Blocked shapes copy
 the payload into runtime fail-closed metadata as ``semantic_state_policy``.
+Admission also accepts a market-parameterization label. Grid-vol path-summary
+and grid-vol early-exercise state/control requests receive deterministic
+``grid_node_vols`` factor requirements, planned state-policy payloads, and no
+runtime helper, so the metadata is a support-boundary record rather than an
+execution claim.
 These are bounded state-summary/control lanes, not broad pathwise or dynamic
 hybrid AD execution.
 
@@ -614,10 +619,15 @@ matrix payload replaces the scalar-correlation requirement with a
 ``correlation_matrix_psd_policy`` parameterization. The path-summary payload
 records one graph-owned ``FlatVol`` requirement, and the early-exercise
 payload records the same one graph-owned ``FlatVol`` requirement under the
-hard exercise-projection smooth-interior policy. ``jvp`` requests,
-correlation surfaces, composite underliers, grid-vol path summaries,
-discontinuous event monitors, non-arithmetic path summaries, path-summary HVP,
-grid-vol early-exercise, early-exercise HVP, and boundary-kink
+hard exercise-projection smooth-interior policy. When
+``market_parameterization="grid_vol"`` is requested for arithmetic path
+summaries or vanilla early-exercise controls, admission records a planned
+``grid_node_vols`` volatility requirement and a fail-closed state/control
+policy; it deliberately omits a runtime helper until an executable lane is
+validated. ``jvp`` requests, correlation surfaces, composite underliers,
+grid-vol path summaries, discontinuous event monitors, non-arithmetic path
+summaries, path-summary HVP, grid-vol early-exercise, early-exercise HVP, and
+boundary-kink
 early-exercise shapes are classified as unsupported or planned before runtime
 AD is invoked. ``HybridDerivativeRequest`` can carry that admission object, or
 its payload, as ``semantic_admission``. Supported
