@@ -738,7 +738,9 @@ runtime currently consumes this chart only to return a first-class fail-closed
 result with an ``unsupported_grid_vol_interpolation`` dependency. That is
 intentional: differentiating the existing single-effective-volatility
 moment-matched formula through one surface interpolation point would not define
-a robust path-summary node-risk contract.
+a robust path-summary node-risk contract. Grid-vol path-summary HVP and JVP
+requests preserve the same chart while failing closed, rather than dropping the
+node-coordinate policy from their diagnostics.
 
 The early-exercise hybrid lane is also intentionally narrow. Vanilla
 American/Bermudan call/put contracts over one ``FlatVol`` coordinate can be
@@ -752,8 +754,9 @@ for missing surfaces, unsupported interpolation, unsupported selected factors,
 event monitors, and exercise-boundary kinks. Runtime grid-vol early-exercise
 results preserve this chart and the
 ``grid_vol_hard_exercise_projection_pending`` policy while returning no value
-or risk. Flat-vol boundary-kink failures continue to use the distinct
-``early_exercise_boundary_kink`` reason.
+or risk. Grid-vol early-exercise HVP and JVP requests preserve that same
+state/control policy while failing closed. Flat-vol boundary-kink failures
+continue to use the distinct ``early_exercise_boundary_kink`` reason.
 
 These lanes exist because they are mathematically defensible and testable
 within a bounded smooth region. They are not broad pathwise AD for arbitrary

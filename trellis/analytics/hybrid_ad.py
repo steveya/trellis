@@ -1010,6 +1010,34 @@ def _grid_vol_selected_factor_diagnostics(
     return ()
 
 
+def _unsupported_grid_vol_jvp_result(
+    *,
+    value: float | None,
+    graph: HybridFactorGraph,
+    request: HybridDerivativeRequest,
+    message: str,
+    diagnostic_extra: Mapping[str, object] | None = None,
+    method_metadata_extra: Mapping[str, object] | None = None,
+) -> HybridDerivativeResult:
+    policy_metadata = _grid_vol_state_control_policy_metadata(graph)
+    unsupported_reasons = list(graph.unsupported_reasons)
+    return _unsupported_jvp_result(
+        value=value,
+        graph=graph,
+        request=request,
+        message=message,
+        diagnostic_extra={
+            "market_parameterization": "grid_vol",
+            "unsupported_dependency_reasons": unsupported_reasons,
+            **dict(diagnostic_extra or {}),
+        },
+        method_metadata_extra={
+            **policy_metadata,
+            **dict(method_metadata_extra or {}),
+        },
+    )
+
+
 def _unsupported_grid_vol_path_summary_result(
     *,
     value: float | None,
@@ -1816,32 +1844,53 @@ def differentiate_arithmetic_asian_path_summary(
         if grid_vol_policy_metadata and not admission.supported:
             state_metadata = _semantic_state_policy_metadata(admission)
             admission_metadata = _semantic_admission_metadata(admission)
-            admission_result = _unsupported_grid_vol_path_summary_result(
-                value=value,
-                graph=graph,
-                request=resolved_request,
-                code=admission.reason,
-                message=(
-                    "Semantic hybrid AD admission did not allow grid-vol "
-                    f"path-summary execution: {admission.reason}."
-                ),
-                diagnostic_extra={
-                    "semantic_admission_status": admission.support_status,
-                    "semantic_admission_lane_id": admission.lane_id,
-                    **state_metadata,
-                },
-                fallback_reason={
-                    "code": admission.reason,
-                    "semantic_admission_status": admission.support_status,
-                    "semantic_admission_reason": admission.reason,
-                    "semantic_admission_lane_id": admission.lane_id,
-                    **state_metadata,
-                },
-                method_metadata_extra={
-                    **grid_vol_policy_metadata,
-                    **admission_metadata,
-                },
-            )
+            if admission.reason == "hybrid_jvp_backend_unsupported":
+                admission_result = _unsupported_grid_vol_jvp_result(
+                    value=value,
+                    graph=graph,
+                    request=resolved_request,
+                    message=(
+                        "Semantic hybrid AD admission rejected grid-vol "
+                        "path-summary JVP at the backend boundary."
+                    ),
+                    diagnostic_extra={
+                        "semantic_admission_status": admission.support_status,
+                        "semantic_admission_lane_id": admission.lane_id,
+                        "path_summary_type": "arithmetic_mean",
+                        **state_metadata,
+                    },
+                    method_metadata_extra={
+                        **grid_vol_policy_metadata,
+                        **admission_metadata,
+                    },
+                )
+            else:
+                admission_result = _unsupported_grid_vol_path_summary_result(
+                    value=value,
+                    graph=graph,
+                    request=resolved_request,
+                    code=admission.reason,
+                    message=(
+                        "Semantic hybrid AD admission did not allow grid-vol "
+                        f"path-summary execution: {admission.reason}."
+                    ),
+                    diagnostic_extra={
+                        "semantic_admission_status": admission.support_status,
+                        "semantic_admission_lane_id": admission.lane_id,
+                        **state_metadata,
+                    },
+                    fallback_reason={
+                        "code": admission.reason,
+                        "semantic_admission_status": admission.support_status,
+                        "semantic_admission_reason": admission.reason,
+                        "semantic_admission_lane_id": admission.lane_id,
+                        **state_metadata,
+                    },
+                    method_metadata_extra={
+                        **grid_vol_policy_metadata,
+                        **admission_metadata,
+                    },
+                )
         else:
             admission_result = _unsupported_semantic_admission_result(
                 value=value,
@@ -1855,6 +1904,47 @@ def differentiate_arithmetic_asian_path_summary(
             return admission_result
 
     if resolved_request.derivative_method != "vjp":
+        if grid_vol_policy_metadata:
+            if resolved_request.derivative_method == "jvp":
+                return _unsupported_grid_vol_jvp_result(
+                    value=value,
+                    graph=graph,
+                    request=resolved_request,
+                    message=(
+                        "Grid-vol path-summary hybrid AD currently supports "
+                        "no executable JVP lane; JVP remains fail-closed at "
+                        "the backend boundary."
+                    ),
+                    diagnostic_extra={
+                        "requested_derivative_method": (
+                            resolved_request.derivative_method
+                        ),
+                        "path_summary_type": "arithmetic_mean",
+                    },
+                    method_metadata_extra=admission_metadata,
+                )
+            return _unsupported_grid_vol_path_summary_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                code=(
+                    "path_summary_grid_vol_"
+                    f"{resolved_request.derivative_method}_pending"
+                ),
+                message=(
+                    "Grid-vol path-summary hybrid AD currently has no "
+                    "executable HVP lane under the current coordinate policy."
+                ),
+                diagnostic_extra={
+                    "requested_derivative_method": resolved_request.derivative_method,
+                    "path_summary_type": "arithmetic_mean",
+                },
+                fallback_reason={
+                    "requested_derivative_method": resolved_request.derivative_method,
+                    "path_summary_type": "arithmetic_mean",
+                },
+                method_metadata_extra=admission_metadata,
+            )
         if resolved_request.derivative_method == "jvp":
             return _unsupported_jvp_result(
                 value=value,
@@ -2084,33 +2174,57 @@ def differentiate_vanilla_early_exercise(
         if grid_vol_policy_metadata and not admission.supported:
             state_metadata = _semantic_state_policy_metadata(admission)
             admission_metadata = _semantic_admission_metadata(admission)
-            admission_result = _unsupported_grid_vol_early_exercise_result(
-                value=value,
-                graph=graph,
-                request=resolved_request,
-                code=admission.reason,
-                message=(
-                    "Semantic hybrid AD admission did not allow grid-vol "
-                    f"early-exercise execution: {admission.reason}."
-                ),
-                exercise_style=exercise_style,
-                diagnostic_extra={
-                    "semantic_admission_status": admission.support_status,
-                    "semantic_admission_lane_id": admission.lane_id,
-                    **state_metadata,
-                },
-                fallback_reason={
-                    "code": admission.reason,
-                    "semantic_admission_status": admission.support_status,
-                    "semantic_admission_reason": admission.reason,
-                    "semantic_admission_lane_id": admission.lane_id,
-                    **state_metadata,
-                },
-                method_metadata_extra={
-                    **grid_vol_policy_metadata,
-                    **admission_metadata,
-                },
-            )
+            if admission.reason == "hybrid_jvp_backend_unsupported":
+                admission_result = _unsupported_grid_vol_jvp_result(
+                    value=value,
+                    graph=graph,
+                    request=resolved_request,
+                    message=(
+                        "Semantic hybrid AD admission rejected grid-vol "
+                        "early-exercise JVP at the backend boundary."
+                    ),
+                    diagnostic_extra={
+                        "semantic_admission_status": admission.support_status,
+                        "semantic_admission_lane_id": admission.lane_id,
+                        "exercise_style": exercise_style,
+                        "early_exercise_policy": (
+                            "grid_vol_hard_exercise_projection_pending"
+                        ),
+                        **state_metadata,
+                    },
+                    method_metadata_extra={
+                        **grid_vol_policy_metadata,
+                        **admission_metadata,
+                    },
+                )
+            else:
+                admission_result = _unsupported_grid_vol_early_exercise_result(
+                    value=value,
+                    graph=graph,
+                    request=resolved_request,
+                    code=admission.reason,
+                    message=(
+                        "Semantic hybrid AD admission did not allow grid-vol "
+                        f"early-exercise execution: {admission.reason}."
+                    ),
+                    exercise_style=exercise_style,
+                    diagnostic_extra={
+                        "semantic_admission_status": admission.support_status,
+                        "semantic_admission_lane_id": admission.lane_id,
+                        **state_metadata,
+                    },
+                    fallback_reason={
+                        "code": admission.reason,
+                        "semantic_admission_status": admission.support_status,
+                        "semantic_admission_reason": admission.reason,
+                        "semantic_admission_lane_id": admission.lane_id,
+                        **state_metadata,
+                    },
+                    method_metadata_extra={
+                        **grid_vol_policy_metadata,
+                        **admission_metadata,
+                    },
+                )
         else:
             admission_result = _unsupported_semantic_admission_result(
                 value=value,
@@ -2124,6 +2238,51 @@ def differentiate_vanilla_early_exercise(
             return admission_result
 
     if resolved_request.derivative_method != "vjp":
+        if grid_vol_policy_metadata:
+            if resolved_request.derivative_method == "jvp":
+                return _unsupported_grid_vol_jvp_result(
+                    value=value,
+                    graph=graph,
+                    request=resolved_request,
+                    message=(
+                        "Grid-vol early-exercise hybrid AD currently supports "
+                        "no executable JVP lane; JVP remains fail-closed at "
+                        "the backend boundary."
+                    ),
+                    diagnostic_extra={
+                        "requested_derivative_method": (
+                            resolved_request.derivative_method
+                        ),
+                        "exercise_style": exercise_style,
+                        "early_exercise_policy": (
+                            "grid_vol_hard_exercise_projection_pending"
+                        ),
+                    },
+                    method_metadata_extra=admission_metadata,
+                )
+            return _unsupported_grid_vol_early_exercise_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                code=(
+                    "early_exercise_grid_vol_"
+                    f"{resolved_request.derivative_method}_pending"
+                ),
+                message=(
+                    "Grid-vol early-exercise hybrid AD currently has no "
+                    "executable HVP lane under the current coordinate policy."
+                ),
+                exercise_style=exercise_style,
+                diagnostic_extra={
+                    "requested_derivative_method": resolved_request.derivative_method,
+                    "exercise_style": exercise_style,
+                },
+                fallback_reason={
+                    "requested_derivative_method": resolved_request.derivative_method,
+                    "exercise_style": exercise_style,
+                },
+                method_metadata_extra=admission_metadata,
+            )
         if resolved_request.derivative_method == "jvp":
             return _unsupported_jvp_result(
                 value=value,

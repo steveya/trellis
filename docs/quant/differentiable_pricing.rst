@@ -108,10 +108,14 @@ returns a first-class unsupported ``HybridDerivativeResult`` with that policy
 chart and an ``unsupported_grid_vol_interpolation`` dependency instead of
 falling back to a flat-vol-like graph. Known selected grid-vol nodes and
 missing selected nodes are reported deterministically, but no node VJP is
-executed. Grid-vol early-exercise runtime requests use the same chart family
+executed. Grid-vol path-summary HVP and JVP requests use the same fail-closed
+policy surface, so unsupported second-order or forward-mode requests still
+carry the grid node coordinate chart instead of degrading to a generic flat-vol
+diagnostic. Grid-vol early-exercise runtime requests use the same chart family
 with ``lane_family="early_exercise_control"`` and fail closed through the
-planned hard-exercise-projection control policy; this remains distinct from
-flat-vol exercise-boundary kink diagnostics.
+planned hard-exercise-projection control policy; HVP and JVP requests preserve
+that policy metadata as well. This remains distinct from flat-vol
+exercise-boundary kink diagnostics.
 These are bounded state-summary/control lanes, not broad pathwise or dynamic
 hybrid AD execution.
 
@@ -647,11 +651,13 @@ arithmetic path-summary runtime uses that chart to fail closed with
 surface derivative is mathematically defined and verified. The vanilla
 early-exercise runtime also uses that chart for grid-vol inputs, but reports
 the state/control policy as ``grid_vol_hard_exercise_projection_pending`` and
-does not evaluate value or risk. ``jvp`` requests, correlation surfaces,
-composite underliers,
+does not evaluate value or risk. Grid-vol HVP and JVP runtime requests also
+preserve the chart payload while failing closed; JVP remains a backend-level
+unsupported operator and HVP remains planned for these state/control lanes.
+Correlation surfaces, composite underliers,
 grid-vol path summaries, discontinuous event monitors, non-arithmetic path
-summaries, path-summary HVP, grid-vol early-exercise, early-exercise HVP, and
-boundary-kink
+summaries, path-summary HVP, grid-vol early-exercise, early-exercise HVP, JVP,
+and boundary-kink
 early-exercise shapes are classified as unsupported or planned before runtime
 AD is invoked. ``HybridDerivativeRequest`` can carry that admission object, or
 its payload, as ``semantic_admission``. Supported

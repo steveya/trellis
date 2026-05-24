@@ -364,6 +364,52 @@ def test_grid_vol_path_summary_missing_selected_factor_is_reported():
     assert result.diagnostics[-1]["missing_factor_keys"] == [missing_factor.key]
 
 
+def test_grid_vol_path_summary_hvp_preserves_policy_fail_closed():
+    result = differentiate_arithmetic_asian_path_summary(
+        _asian_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(derivative_method="hvp"),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.value is None
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "path_summary_grid_vol_hvp_pending"
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "path_summary_grid_vol_hvp_pending"
+    )
+    assert result.method_metadata["backend_operator"] == "hvp"
+    assert result.graph.unsupported_reasons == ("unsupported_grid_vol_interpolation",)
+    assert result.method_metadata["grid_vol_coordinate_policy"]["chart_type"] == (
+        "grid_vol_state_control_policy"
+    )
+
+
+def test_grid_vol_path_summary_jvp_preserves_policy_fail_closed():
+    result = differentiate_arithmetic_asian_path_summary(
+        _asian_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(derivative_method="jvp"),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.value is None
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert result.method_metadata["resolved_derivative_method"] == (
+        "unsupported_hybrid_jvp"
+    )
+    assert result.method_metadata["requested_backend_operator"] == "jvp"
+    assert "backend_operator" not in result.method_metadata
+    assert result.method_metadata["grid_vol_coordinate_policy"]["chart_type"] == (
+        "grid_vol_state_control_policy"
+    )
+
+
 @pytest.mark.parametrize(
     ("spec", "market_state", "expected_code"),
     (

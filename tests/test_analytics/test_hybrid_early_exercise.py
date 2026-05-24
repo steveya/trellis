@@ -405,6 +405,28 @@ def test_early_exercise_runtime_rejects_hvp_with_state_policy_metadata():
     )
 
 
+def test_grid_vol_early_exercise_hvp_preserves_policy_fail_closed():
+    result = differentiate_vanilla_early_exercise(
+        _american_put_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(derivative_method="hvp"),
+        vol_surface_name="spx_grid",
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.value is None
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "early_exercise_grid_vol_hvp_pending"
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "early_exercise_grid_vol_hvp_pending"
+    )
+    assert result.method_metadata["backend_operator"] == "hvp"
+    assert result.graph.unsupported_reasons == ("unsupported_grid_vol_interpolation",)
+    assert result.method_metadata["grid_vol_coordinate_policy"]["metadata"][
+        "lane_family"
+    ] == "early_exercise_control"
+
+
 def test_early_exercise_runtime_rejects_jvp_fail_closed():
     result = differentiate_vanilla_early_exercise(
         _american_put_spec(),
@@ -419,3 +441,25 @@ def test_early_exercise_runtime_rejects_jvp_fail_closed():
     assert result.method_metadata["requested_backend_operator"] == "jvp"
     assert result.method_metadata["backend_support"]["supported"] is False
     assert "backend_operator" not in result.method_metadata
+
+
+def test_grid_vol_early_exercise_jvp_preserves_policy_fail_closed():
+    result = differentiate_vanilla_early_exercise(
+        _american_put_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(derivative_method="jvp"),
+        vol_surface_name="spx_grid",
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.value is None
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert result.method_metadata["resolved_derivative_method"] == (
+        "unsupported_hybrid_jvp"
+    )
+    assert result.method_metadata["requested_backend_operator"] == "jvp"
+    assert "backend_operator" not in result.method_metadata
+    assert result.method_metadata["grid_vol_coordinate_policy"]["metadata"][
+        "lane_family"
+    ] == "early_exercise_control"
