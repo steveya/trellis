@@ -64,7 +64,7 @@ lane-local VJP outputs while preserving unsupported-lane diagnostics.
 | `QUA-1090` | Done | Added executable multi-product verification plus docs, limitations, and plan closeout. |
 | `QUA-1091` | In Progress | Plan grid-vol path-summary and early-exercise state/control derivative policy epic. |
 | `QUA-1092` | Done | Add semantic Hybrid AD admission for grid-vol path-summary and early-exercise state/control requests. |
-| `QUA-1093` | Todo | Define graph-owned grid-vol coordinate policy payloads for state/control derivative lanes. |
+| `QUA-1093` | Done | Define graph-owned grid-vol coordinate policy payloads for state/control derivative lanes. |
 | `QUA-1094` | Todo | Add the checked grid-vol path-summary runtime lane or explicit fail-closed runtime result. |
 | `QUA-1095` | Todo | Harden grid-vol early-exercise fail-closed runtime and admission diagnostics. |
 | `QUA-1096` | Todo | Close the grid-vol state/control epic with verification, docs, limitations, and plan updates. |
@@ -783,7 +783,7 @@ explicitly proves otherwise.
 |---|---|---|
 | `QUA-1091` | In Progress | Parent epic for grid-vol state/control derivative policy. |
 | `QUA-1092` | Done | Semantic admission for grid-vol path-summary, grid-vol early-exercise, event-monitor, boundary-kink, HVP, and JVP cases. |
-| `QUA-1093` | Todo | Graph-owned grid-vol coordinate policy payloads, selected-factor behavior, and unsupported dependency reasons. |
+| `QUA-1093` | Done | Graph-owned grid-vol coordinate policy payloads, selected-factor behavior, and unsupported dependency reasons. |
 | `QUA-1094` | Todo | Checked grid-vol path-summary runtime result surface: executable sparse node VJP if defensible, otherwise first-class fail-closed result. |
 | `QUA-1095` | Todo | Grid-vol early-exercise fail-closed diagnostics with state/control policy and boundary-kink distinctions. |
 | `QUA-1096` | Todo | Verification, docs, limitations, final validation, and plan mirror closeout. |

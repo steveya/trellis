@@ -97,6 +97,12 @@ and grid-vol early-exercise state/control requests receive deterministic
 ``grid_node_vols`` factor requirements, planned state-policy payloads, and no
 runtime helper, so the metadata is a support-boundary record rather than an
 execution claim.
+The matching coordinate contract is
+``MarketObjectCoordinateChart.grid_vol_state_control_policy(...)``. It records
+the active grid-vol node ``RiskFactorId`` keys, interpolation basis, locality
+policy, selected-factor policy, and fail-closed reasons for missing surfaces,
+unsupported interpolation, unsupported selected factors, event monitors, and
+exercise-boundary kinks.
 These are bounded state-summary/control lanes, not broad pathwise or dynamic
 hybrid AD execution.
 
@@ -624,7 +630,10 @@ hard exercise-projection smooth-interior policy. When
 summaries or vanilla early-exercise controls, admission records a planned
 ``grid_node_vols`` volatility requirement and a fail-closed state/control
 policy; it deliberately omits a runtime helper until an executable lane is
-validated. ``jvp`` requests, correlation surfaces, composite underliers,
+validated. The corresponding grid-vol state/control coordinate chart is
+discovery-only: it preserves node identity and selected-factor behavior for
+runtime diagnostics, but does not authorize VJP execution by itself. ``jvp``
+requests, correlation surfaces, composite underliers,
 grid-vol path summaries, discontinuous event monitors, non-arithmetic path
 summaries, path-summary HVP, grid-vol early-exercise, early-exercise HVP, and
 boundary-kink

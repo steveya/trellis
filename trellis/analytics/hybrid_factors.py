@@ -36,6 +36,18 @@ _DERIVATIVE_METHODS = frozenset(
     }
 )
 _SUPPORT_STATUSES = frozenset({"supported", "held_fixed", "unsupported", "discovery_only"})
+_GRID_VOL_STATE_CONTROL_LANE_FAMILIES = frozenset(
+    {"path_summary", "early_exercise_control"}
+)
+_GRID_VOL_STATE_CONTROL_UNSUPPORTED_REASONS = frozenset(
+    {
+        "missing_grid_vol_surface",
+        "unsupported_grid_vol_interpolation",
+        "unsupported_selected_grid_vol_factors",
+        "unsupported_discontinuous_event_monitor",
+        "early_exercise_boundary_kink",
+    }
+)
 
 
 def _clean_required(value: object, field_name: str) -> str:
@@ -73,6 +85,32 @@ def _normalize_coordinates(
     )
 
 
+def _normalize_grid_vol_coordinates(
+    coordinates: Iterable[RiskFactorCoordinate],
+    *,
+    object_name: str,
+) -> tuple[RiskFactorCoordinate, ...]:
+    normalized = _normalize_coordinates(coordinates)
+    if not normalized:
+        raise ValueError("grid-vol state/control policy requires at least one coordinate")
+    for coordinate in normalized:
+        factor_id = coordinate.factor_id
+        if (
+            factor_id.object_type != "vol_surface"
+            or factor_id.coordinate_type != "black_vol"
+            or factor_id.object_name != object_name
+        ):
+            raise ValueError(
+                "grid-vol state/control policy requires grid-vol black-vol coordinates"
+            )
+        axes = dict(factor_id.axes)
+        if "expiry_years" not in axes or "strike" not in axes:
+            raise ValueError(
+                "grid-vol state/control policy requires expiry_years and strike axes"
+            )
+    return normalized
+
+
 def _normalize_node_ids(node_ids: Iterable[object]) -> tuple[str, ...]:
     return tuple(sorted({_clean_required(node_id, "node id") for node_id in node_ids}))
 
@@ -101,6 +139,30 @@ def _normalize_factor_labels(factor_labels: Iterable[object]) -> tuple[str, ...]
     if len(set(labels)) != len(labels):
         raise ValueError("factor_labels must be unique")
     return labels
+
+
+def _normalize_grid_vol_lane_family(value: object) -> str:
+    return _validate_member(
+        str(value).strip(),
+        _GRID_VOL_STATE_CONTROL_LANE_FAMILIES,
+        "lane_family",
+    )
+
+
+def _normalize_grid_vol_unsupported_reason(value: object) -> str:
+    return _validate_member(
+        str(value).strip(),
+        _GRID_VOL_STATE_CONTROL_UNSUPPORTED_REASONS,
+        "reason",
+    )
+
+
+def _grid_vol_differentiability_class(reason: str) -> str:
+    if reason == "unsupported_discontinuous_event_monitor":
+        return "discontinuous"
+    if reason == "early_exercise_boundary_kink":
+        return "projected"
+    return "unsupported"
 
 
 def _normalize_correlation_matrix(
@@ -212,6 +274,18 @@ def _restore_correlation_matrix_constraints(
     if bounds is not None and not isinstance(bounds, tuple):
         if isinstance(bounds, (list, tuple)):
             result["bounds"] = tuple(bounds)
+    return result
+
+
+def _restore_grid_vol_coordinate_values(raw: Mapping[str, object]) -> dict[str, object]:
+    """Restore tuple types in grid_vol_state_control_policy coordinate_values."""
+    result = dict(raw)
+    node_keys = result.get("active_node_keys")
+    if node_keys is not None and not isinstance(node_keys, tuple):
+        if isinstance(node_keys, (list, tuple)):
+            result["active_node_keys"] = tuple(node_keys)
+        else:
+            result["active_node_keys"] = (node_keys,)
     return result
 
 
@@ -394,6 +468,71 @@ class MarketObjectCoordinateChart:
             },
         )
 
+    @classmethod
+    def grid_vol_state_control_policy(
+        cls,
+        *,
+        object_name: str,
+        lane_family: str,
+        coordinates: Iterable[RiskFactorCoordinate],
+        chart_id: str | None = None,
+        interpolation_basis: str = "bilinear_black_vol",
+        locality_policy: str = "full_grid_node_vector",
+        selected_factor_policy: str = "filter_known_fail_closed_unknown",
+        metadata: Mapping[str, object] | None = None,
+    ) -> MarketObjectCoordinateChart:
+        """Build the grid-vol node policy chart for state/control hybrid lanes."""
+        clean_object_name = _clean_required(object_name, "object_name")
+        lane = _normalize_grid_vol_lane_family(lane_family)
+        interpolation = _clean_required(interpolation_basis, "interpolation_basis")
+        locality = _clean_required(locality_policy, "locality_policy")
+        selected_policy = _clean_required(
+            selected_factor_policy,
+            "selected_factor_policy",
+        )
+        normalized_coordinates = _normalize_grid_vol_coordinates(
+            coordinates,
+            object_name=clean_object_name,
+        )
+        active_node_keys = tuple(
+            coordinate.factor_id.key for coordinate in normalized_coordinates
+        )
+        return cls(
+            chart_id=chart_id or f"chart:grid_vol_state_control:{clean_object_name}:{lane}",
+            object_type="vol_surface",
+            object_name=clean_object_name,
+            coordinates=normalized_coordinates,
+            chart_type="grid_vol_state_control_policy",
+            coordinate_space="grid_nodes",
+            coordinate_values={
+                "parameterization": "grid_node_vols",
+                "active_node_keys": active_node_keys,
+                "active_node_count": len(active_node_keys),
+                "lane_family": lane,
+            },
+            constraints={
+                "interpolation_basis": interpolation,
+                "locality_policy": locality,
+                "selected_factor_policy": selected_policy,
+                "unsupported_selected_factor_reason": (
+                    "unsupported_selected_grid_vol_factors"
+                ),
+                "event_monitor_policy": "unsupported_fail_closed",
+                "boundary_kink_policy": "unsupported_fail_closed",
+            },
+            differentiability_class="piecewise",
+            support_status="discovery_only",
+            metadata={
+                "coordinate_type": "black_vol",
+                "chart_family": "grid_vol_state_control",
+                "lane_family": lane,
+                "market_parameterization": "grid_vol",
+                "parameterization": "grid_node_vols",
+                "active_node_count": len(active_node_keys),
+                **dict(metadata or {}),
+            },
+        )
+
     @property
     def coordinate_keys(self) -> tuple[str, ...]:
         """Return coordinate factor keys in deterministic order."""
@@ -465,6 +604,8 @@ class MarketObjectCoordinateChart:
         if chart_type == "correlation_matrix_psd_policy":
             coordinate_values = _restore_correlation_matrix_coordinate_values(coordinate_values)
             constraints = _restore_correlation_matrix_constraints(constraints)
+        elif chart_type == "grid_vol_state_control_policy":
+            coordinate_values = _restore_grid_vol_coordinate_values(coordinate_values)
         return cls(
             chart_id=str(payload["chart_id"]),
             object_type=str(payload["object_type"]),
@@ -525,6 +666,45 @@ class HybridUnsupportedDependency:
             _validate_member(self.derivative_method, _DERIVATIVE_METHODS, "derivative_method"),
         )
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
+
+    @classmethod
+    def grid_vol_state_control_policy(
+        cls,
+        *,
+        object_name: str,
+        lane_family: str,
+        reason: str,
+        dependency_id: str | None = None,
+        metadata: Mapping[str, object] | None = None,
+    ) -> HybridUnsupportedDependency:
+        """Build a typed unsupported dependency for grid-vol state/control policy."""
+        clean_object_name = _clean_required(object_name, "object_name")
+        lane = _normalize_grid_vol_lane_family(lane_family)
+        normalized_reason = _normalize_grid_vol_unsupported_reason(reason)
+        return cls(
+            dependency_id=(
+                dependency_id
+                or (
+                    "unsupported:grid_vol_state_control:"
+                    f"{clean_object_name}:{normalized_reason}"
+                )
+            ),
+            node_type="vol_surface",
+            object_name=clean_object_name,
+            reason=normalized_reason,
+            support_status="unsupported",
+            differentiability_class=_grid_vol_differentiability_class(
+                normalized_reason
+            ),
+            derivative_method="unsupported",
+            metadata={
+                "chart_family": "grid_vol_state_control",
+                "lane_family": lane,
+                "market_parameterization": "grid_vol",
+                "parameterization": "grid_node_vols",
+                **dict(metadata or {}),
+            },
+        )
 
     def to_payload(self) -> dict[str, Any]:
         """Return a deterministic JSON-friendly unsupported-dependency payload."""

@@ -730,7 +730,10 @@ non-arithmetic summaries, discontinuous event monitors, dynamic state, HVP, and
 JVP fail closed. The admission layer can still identify a grid-vol
 path-summary request: it records a planned ``grid_node_vols`` volatility
 requirement and a planned smooth path-summary state policy, but no runtime
-helper is attached until the coordinate policy and verification exist.
+helper is attached until the coordinate policy and verification exist. The
+coordinate policy is a discovery-only
+``grid_vol_state_control_policy`` chart carrying the active node keys,
+interpolation basis, locality policy, and selected-factor behavior.
 
 The early-exercise hybrid lane is also intentionally narrow. Vanilla
 American/Bermudan call/put contracts over one ``FlatVol`` coordinate can be
@@ -739,7 +742,9 @@ early exercise, boundary ties, HVP, and JVP fail closed. Grid-vol
 early-exercise admission records the requested node-vol parameterization and a
 planned hard-exercise-projection control policy so downstream runtime code can
 fail closed with the same state/control contract instead of silently widening
-support.
+support. The same chart family records typed unsupported-dependency reasons
+for missing surfaces, unsupported interpolation, unsupported selected factors,
+event monitors, and exercise-boundary kinks.
 
 These lanes exist because they are mathematically defensible and testable
 within a bounded smooth region. They are not broad pathwise AD for arbitrary
