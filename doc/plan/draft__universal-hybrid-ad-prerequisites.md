@@ -62,6 +62,12 @@ lane-local VJP outputs while preserving unsupported-lane diagnostics.
 | `QUA-1088` | Done | Added bounded sparse VJP aggregation across lane-local Hybrid AD results. |
 | `QUA-1089` | Done | Added structured mixed unsupported-shape diagnostics and strict fail-closed policy behavior. |
 | `QUA-1090` | Done | Added executable multi-product verification plus docs, limitations, and plan closeout. |
+| `QUA-1091` | Todo | Plan grid-vol path-summary and early-exercise state/control derivative policy epic. |
+| `QUA-1092` | Todo | Add semantic Hybrid AD admission for grid-vol path-summary and early-exercise state/control requests. |
+| `QUA-1093` | Todo | Define graph-owned grid-vol coordinate policy payloads for state/control derivative lanes. |
+| `QUA-1094` | Todo | Add the checked grid-vol path-summary runtime lane or explicit fail-closed runtime result. |
+| `QUA-1095` | Todo | Harden grid-vol early-exercise fail-closed runtime and admission diagnostics. |
+| `QUA-1096` | Todo | Close the grid-vol state/control epic with verification, docs, limitations, and plan updates. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -759,6 +765,25 @@ Acceptance criteria:
 
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: grid-vol path-summary or early-exercise derivative policy`
 - `Hybrid AD: dynamic-state executable derivative lane`
 - `Hybrid AD: correlation-surface chart policy and fail-closed diagnostics`
+
+## Next Planned Epic: Grid-Vol State/Control Derivative Policy
+
+`QUA-1091` is the next planned Hybrid AD epic. It should resolve the closest
+remaining support-boundary gap: grid-vol path-summary and grid-vol
+early-exercise state/control derivative requests. The work must stay bounded:
+it may add a narrow executable grid-vol path-summary VJP lane only if the
+coordinate policy and finite-difference verification make that mathematically
+defensible. Grid-vol early-exercise, exercise-boundary kinks, event monitors,
+JVP, HVP, and broad dynamic state remain fail-closed unless a child ticket
+explicitly proves otherwise.
+
+| Ticket | Status | Scope |
+|---|---|---|
+| `QUA-1091` | Todo | Parent epic for grid-vol state/control derivative policy. |
+| `QUA-1092` | Todo | Semantic admission for grid-vol path-summary, grid-vol early-exercise, event-monitor, boundary-kink, HVP, and JVP cases. |
+| `QUA-1093` | Todo | Graph-owned grid-vol coordinate policy payloads, selected-factor behavior, and unsupported dependency reasons. |
+| `QUA-1094` | Todo | Checked grid-vol path-summary runtime result surface: executable sparse node VJP if defensible, otherwise first-class fail-closed result. |
+| `QUA-1095` | Todo | Grid-vol early-exercise fail-closed diagnostics with state/control policy and boundary-kink distinctions. |
+| `QUA-1096` | Todo | Verification, docs, limitations, final validation, and plan mirror closeout. |
