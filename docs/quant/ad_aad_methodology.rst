@@ -749,7 +749,11 @@ planned hard-exercise-projection control policy so downstream runtime code can
 fail closed with the same state/control contract instead of silently widening
 support. The same chart family records typed unsupported-dependency reasons
 for missing surfaces, unsupported interpolation, unsupported selected factors,
-event monitors, and exercise-boundary kinks.
+event monitors, and exercise-boundary kinks. Runtime grid-vol early-exercise
+results preserve this chart and the
+``grid_vol_hard_exercise_projection_pending`` policy while returning no value
+or risk. Flat-vol boundary-kink failures continue to use the distinct
+``early_exercise_boundary_kink`` reason.
 
 These lanes exist because they are mathematically defensible and testable
 within a bounded smooth region. They are not broad pathwise AD for arbitrary

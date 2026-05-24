@@ -645,13 +645,80 @@ def _early_exercise_graph(
     exercise_style: str,
 ) -> HybridFactorGraph:
     from trellis.analytics.portfolio_aad import VanillaEquityOptionVolAADMarketContext
-    from trellis.models.vol_surface import FlatVol
+    from trellis.models.vol_surface import FlatVol, GridVolSurface
 
     if not isinstance(context, VanillaEquityOptionVolAADMarketContext):
         raise TypeError(
             "early-exercise helper requires VanillaEquityOptionVolAADMarketContext"
         )
     vol_surface = getattr(context.market_state, "vol_surface", None)
+    if isinstance(vol_surface, GridVolSurface):
+        coordinates = tuple(
+            replace(coordinate, support_status="discovery_only")
+            for coordinate in context.coordinates()
+        )
+        chart = MarketObjectCoordinateChart.grid_vol_state_control_policy(
+            object_name=context.vol_surface_name,
+            lane_family="early_exercise_control",
+            coordinates=coordinates,
+            metadata={
+                "exercise_style": exercise_style,
+                "early_exercise_policy": (
+                    "grid_vol_hard_exercise_projection_pending"
+                ),
+            },
+        )
+        dependency = HybridUnsupportedDependency.grid_vol_state_control_policy(
+            object_name=context.vol_surface_name,
+            lane_family="early_exercise_control",
+            reason="unsupported_grid_vol_interpolation",
+            metadata={
+                "position_name": str(position_name),
+                "exercise_style": exercise_style,
+                "early_exercise_policy": (
+                    "grid_vol_hard_exercise_projection_pending"
+                ),
+                "policy_reason": "early_exercise_grid_vol_vjp_pending",
+            },
+        )
+        node = HybridDependencyNode(
+            node_id=f"node:early_exercise_grid_vol:{context.vol_surface_name}",
+            node_type="vol_surface",
+            object_name=context.vol_surface_name,
+            coordinate_chart=chart,
+            derivative_method="unsupported",
+            differentiability_class=chart.differentiability_class,
+            support_status=chart.support_status,
+            metadata={
+                "resolved_inputs": ("underlier_vol",),
+                "position_name": str(position_name),
+                "exercise_style": exercise_style,
+                "early_exercise_policy": (
+                    "grid_vol_hard_exercise_projection_pending"
+                ),
+                "grid_vol_support_status": "planned",
+            },
+        )
+        graph = HybridFactorGraph(
+            graph_id=f"hybrid:early_exercise:{context.vol_surface_name}:{position_name}",
+            nodes=(node,),
+            unsupported_dependencies=(dependency,),
+            metadata={
+                "route_family": "bounded_vanilla_early_exercise",
+                "graph_source": "vanilla_early_exercise_grid_vol_control_policy",
+                "exercise_style": exercise_style,
+                "early_exercise_policy": (
+                    "grid_vol_hard_exercise_projection_pending"
+                ),
+                "vol_surface_name": context.vol_surface_name,
+                "position_name": str(position_name),
+                "market_parameterization": "grid_vol",
+                "grid_vol_support_status": "planned",
+                "grid_vol_coordinate_policy": chart.to_payload(),
+            },
+        )
+        graph.validate()
+        return graph
     if not isinstance(vol_surface, FlatVol):
         raise ValueError("early-exercise hybrid AD requires FlatVol")
     coordinates = context.coordinates()
@@ -891,7 +958,7 @@ def _grid_vol_state_control_chart(
     return None
 
 
-def _grid_vol_path_summary_policy_metadata(
+def _grid_vol_state_control_policy_metadata(
     graph: HybridFactorGraph,
 ) -> dict[str, object]:
     chart = _grid_vol_state_control_chart(graph)
@@ -901,6 +968,12 @@ def _grid_vol_path_summary_policy_metadata(
         "grid_vol_coordinate_policy": chart.to_payload(),
         "grid_vol_unsupported_dependency_reasons": list(graph.unsupported_reasons),
     }
+
+
+def _grid_vol_path_summary_policy_metadata(
+    graph: HybridFactorGraph,
+) -> dict[str, object]:
+    return _grid_vol_state_control_policy_metadata(graph)
 
 
 def _grid_vol_selected_factor_diagnostics(
@@ -964,6 +1037,51 @@ def _unsupported_grid_vol_path_summary_result(
         method_id="hybrid_path_summary_vjp",
         diagnostic_extra={
             "path_summary_type": "arithmetic_mean",
+            "market_parameterization": "grid_vol",
+            "unsupported_dependency_reasons": unsupported_reasons,
+            **dict(diagnostic_extra or {}),
+        },
+        fallback_reason=fallback_payload,
+        method_metadata_extra={
+            **policy_metadata,
+            **dict(method_metadata_extra or {}),
+        },
+    )
+    selected_diagnostics = _grid_vol_selected_factor_diagnostics(request, graph)
+    if selected_diagnostics:
+        return replace(result, diagnostics=result.diagnostics + selected_diagnostics)
+    return result
+
+
+def _unsupported_grid_vol_early_exercise_result(
+    *,
+    value: float | None,
+    graph: HybridFactorGraph,
+    request: HybridDerivativeRequest,
+    code: str,
+    message: str,
+    exercise_style: str,
+    diagnostic_extra: Mapping[str, object] | None = None,
+    fallback_reason: dict[str, object] | None = None,
+    method_metadata_extra: Mapping[str, object] | None = None,
+) -> HybridDerivativeResult:
+    policy_metadata = _grid_vol_state_control_policy_metadata(graph)
+    unsupported_reasons = list(graph.unsupported_reasons)
+    fallback_payload = {
+        "code": code,
+        "unsupported_dependency_reasons": unsupported_reasons,
+        **dict(fallback_reason or {}),
+    }
+    result = _unsupported_result(
+        value=value,
+        graph=graph,
+        request=request,
+        code=code,
+        message=message,
+        method_id="hybrid_early_exercise_vjp",
+        diagnostic_extra={
+            "exercise_style": exercise_style,
+            "early_exercise_policy": "grid_vol_hard_exercise_projection_pending",
             "market_parameterization": "grid_vol",
             "unsupported_dependency_reasons": unsupported_reasons,
             **dict(diagnostic_extra or {}),
@@ -1955,20 +2073,53 @@ def differentiate_vanilla_early_exercise(
             vol_surface_name=vol_surface_name,
             exercise_style=exercise_style,
         )
+    grid_vol_policy_metadata = _grid_vol_state_control_policy_metadata(graph)
 
     value: float | None = None
     if decision.supported:
         value = float(adapter.value(instrument, context, portfolio_request))
 
     if resolved_request.semantic_admission is not None:
-        admission_result = _unsupported_semantic_admission_result(
-            value=value,
-            graph=graph,
-            request=resolved_request,
-            admission=resolved_request.semantic_admission,
-            method_id=method_id,
-            allowed_lane_prefixes=("early_exercise_smooth_interior_",),
-        )
+        admission = resolved_request.semantic_admission
+        if grid_vol_policy_metadata and not admission.supported:
+            state_metadata = _semantic_state_policy_metadata(admission)
+            admission_metadata = _semantic_admission_metadata(admission)
+            admission_result = _unsupported_grid_vol_early_exercise_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                code=admission.reason,
+                message=(
+                    "Semantic hybrid AD admission did not allow grid-vol "
+                    f"early-exercise execution: {admission.reason}."
+                ),
+                exercise_style=exercise_style,
+                diagnostic_extra={
+                    "semantic_admission_status": admission.support_status,
+                    "semantic_admission_lane_id": admission.lane_id,
+                    **state_metadata,
+                },
+                fallback_reason={
+                    "code": admission.reason,
+                    "semantic_admission_status": admission.support_status,
+                    "semantic_admission_reason": admission.reason,
+                    "semantic_admission_lane_id": admission.lane_id,
+                    **state_metadata,
+                },
+                method_metadata_extra={
+                    **grid_vol_policy_metadata,
+                    **admission_metadata,
+                },
+            )
+        else:
+            admission_result = _unsupported_semantic_admission_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                admission=admission,
+                method_id=method_id,
+                allowed_lane_prefixes=("early_exercise_smooth_interior_",),
+            )
         if admission_result is not None:
             return admission_result
 
@@ -2021,6 +2172,36 @@ def differentiate_vanilla_early_exercise(
         )
 
     if not decision.supported:
+        if grid_vol_policy_metadata:
+            return _unsupported_grid_vol_early_exercise_result(
+                value=value,
+                graph=graph,
+                request=resolved_request,
+                code=decision.reason,
+                message=(
+                    "Vanilla early-exercise VJP is unavailable for this "
+                    "grid-vol market context under the current coordinate "
+                    f"policy: {decision.reason}."
+                ),
+                exercise_style=exercise_style,
+                diagnostic_extra={
+                    "position_name": str(position_name),
+                    "support_decision": decision.to_payload(),
+                },
+                fallback_reason={
+                    "code": decision.reason,
+                    "position_name": str(position_name),
+                    "exercise_style": exercise_style,
+                    "early_exercise_policy": (
+                        "grid_vol_hard_exercise_projection_pending"
+                    ),
+                    "support_decision": decision.to_payload(),
+                },
+                method_metadata_extra={
+                    **grid_vol_policy_metadata,
+                    **admission_metadata,
+                },
+            )
         return _unsupported_result(
             value=value,
             graph=graph,

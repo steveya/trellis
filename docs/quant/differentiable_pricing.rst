@@ -108,7 +108,10 @@ returns a first-class unsupported ``HybridDerivativeResult`` with that policy
 chart and an ``unsupported_grid_vol_interpolation`` dependency instead of
 falling back to a flat-vol-like graph. Known selected grid-vol nodes and
 missing selected nodes are reported deterministically, but no node VJP is
-executed.
+executed. Grid-vol early-exercise runtime requests use the same chart family
+with ``lane_family="early_exercise_control"`` and fail closed through the
+planned hard-exercise-projection control policy; this remains distinct from
+flat-vol exercise-boundary kink diagnostics.
 These are bounded state-summary/control lanes, not broad pathwise or dynamic
 hybrid AD execution.
 
@@ -641,8 +644,11 @@ discovery-only: it preserves node identity and selected-factor behavior for
 runtime diagnostics, but does not authorize VJP execution by itself. The
 arithmetic path-summary runtime uses that chart to fail closed with
 ``unsupported_grid_vol_interpolation`` until a true node-local path-summary
-surface derivative is mathematically defined and verified. ``jvp``
-requests, correlation surfaces, composite underliers,
+surface derivative is mathematically defined and verified. The vanilla
+early-exercise runtime also uses that chart for grid-vol inputs, but reports
+the state/control policy as ``grid_vol_hard_exercise_projection_pending`` and
+does not evaluate value or risk. ``jvp`` requests, correlation surfaces,
+composite underliers,
 grid-vol path summaries, discontinuous event monitors, non-arithmetic path
 summaries, path-summary HVP, grid-vol early-exercise, early-exercise HVP, and
 boundary-kink

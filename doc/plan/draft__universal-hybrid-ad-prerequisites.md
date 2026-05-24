@@ -66,7 +66,7 @@ lane-local VJP outputs while preserving unsupported-lane diagnostics.
 | `QUA-1092` | Done | Add semantic Hybrid AD admission for grid-vol path-summary and early-exercise state/control requests. |
 | `QUA-1093` | Done | Define graph-owned grid-vol coordinate policy payloads for state/control derivative lanes. |
 | `QUA-1094` | Done | Add the checked grid-vol path-summary runtime lane or explicit fail-closed runtime result. |
-| `QUA-1095` | Todo | Harden grid-vol early-exercise fail-closed runtime and admission diagnostics. |
+| `QUA-1095` | Done | Harden grid-vol early-exercise fail-closed runtime and admission diagnostics. |
 | `QUA-1096` | Todo | Close the grid-vol state/control epic with verification, docs, limitations, and plan updates. |
 
 This document describes the missing mathematical and computational contracts
@@ -785,5 +785,5 @@ explicitly proves otherwise.
 | `QUA-1092` | Done | Semantic admission for grid-vol path-summary, grid-vol early-exercise, event-monitor, boundary-kink, HVP, and JVP cases. |
 | `QUA-1093` | Done | Graph-owned grid-vol coordinate policy payloads, selected-factor behavior, and unsupported dependency reasons. |
 | `QUA-1094` | Done | Checked grid-vol path-summary runtime result surface: executable sparse node VJP if defensible, otherwise first-class fail-closed result. |
-| `QUA-1095` | Todo | Grid-vol early-exercise fail-closed diagnostics with state/control policy and boundary-kink distinctions. |
+| `QUA-1095` | Done | Grid-vol early-exercise fail-closed diagnostics with state/control policy and boundary-kink distinctions. |
 | `QUA-1096` | Todo | Verification, docs, limitations, final validation, and plan mirror closeout. |

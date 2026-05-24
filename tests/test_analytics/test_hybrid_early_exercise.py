@@ -299,6 +299,55 @@ def test_early_exercise_runtime_rejects_grid_vol_without_value():
     assert result.diagnostics[0]["code"] == (
         "unsupported_early_exercise_vol_surface_parameterization"
     )
+    assert result.graph.nodes[0].coordinate_chart is not None
+    assert result.graph.nodes[0].coordinate_chart.chart_type == (
+        "grid_vol_state_control_policy"
+    )
+    assert result.graph.unsupported_reasons == ("unsupported_grid_vol_interpolation",)
+    assert result.method_metadata["grid_vol_coordinate_policy"]["metadata"][
+        "lane_family"
+    ] == "early_exercise_control"
+
+
+def test_grid_vol_early_exercise_semantic_admission_returns_policy_fail_closed():
+    admission = admit_hybrid_ad_lane(
+        _american_put_ir(),
+        product_family="american_vanilla_option",
+        derivative_method="vjp",
+        market_parameterization="grid_vol",
+    )
+
+    result = differentiate_vanilla_early_exercise(
+        _american_put_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(semantic_admission=admission),
+        position_name="american_put",
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+
+    chart = result.graph.nodes[0].coordinate_chart
+
+    assert result.support_status == "unsupported"
+    assert result.value is None
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "early_exercise_grid_vol_vjp_pending"
+    assert result.diagnostics[0]["semantic_state_control_policy"] == (
+        "grid_vol_hard_exercise_projection_pending"
+    )
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "early_exercise_grid_vol_vjp_pending"
+    )
+    assert chart is not None
+    assert chart.chart_type == "grid_vol_state_control_policy"
+    assert chart.metadata["lane_family"] == "early_exercise_control"
+    assert len(chart.coordinates) == 4
+    assert result.unsupported_dependencies[0].reason == (
+        "unsupported_grid_vol_interpolation"
+    )
+    assert result.method_metadata["grid_vol_coordinate_policy"]["chart_type"] == (
+        "grid_vol_state_control_policy"
+    )
 
 
 def test_early_exercise_runtime_rejects_boundary_kink_without_value():
@@ -329,6 +378,7 @@ def test_early_exercise_runtime_rejects_boundary_kink_without_value():
     assert result.method_metadata["fallback_reason"]["code"] == (
         "early_exercise_boundary_kink"
     )
+    assert "grid_vol_coordinate_policy" not in result.method_metadata
 
 
 def test_early_exercise_runtime_rejects_hvp_with_state_policy_metadata():
