@@ -727,12 +727,36 @@ options are admitted only through the bounded smooth path-summary policy. The
 current executable lane differentiates one graph-owned ``FlatVol`` coordinate
 and reports ``hybrid_path_summary_vjp`` metadata. Grid-vol path summaries,
 non-arithmetic summaries, discontinuous event monitors, dynamic state, HVP, and
-JVP fail closed.
+JVP fail closed. The admission layer can still identify a grid-vol
+path-summary request: it records a planned ``grid_node_vols`` volatility
+requirement and a planned smooth path-summary state policy, but no runtime
+helper is attached until the coordinate policy and verification exist. The
+coordinate policy is a discovery-only
+``grid_vol_state_control_policy`` chart carrying the active node keys,
+interpolation basis, locality policy, and selected-factor behavior. The
+runtime currently consumes this chart only to return a first-class fail-closed
+result with an ``unsupported_grid_vol_interpolation`` dependency. That is
+intentional: differentiating the existing single-effective-volatility
+moment-matched formula through one surface interpolation point would not define
+a robust path-summary node-risk contract. Grid-vol path-summary HVP and JVP
+requests preserve the same chart while failing closed, rather than dropping the
+node-coordinate policy from their diagnostics.
 
 The early-exercise hybrid lane is also intentionally narrow. Vanilla
 American/Bermudan call/put contracts over one ``FlatVol`` coordinate can be
 admitted under the hard exercise-projection smooth-interior policy. Grid-vol
-early exercise, boundary ties, HVP, and JVP fail closed.
+early exercise, boundary ties, HVP, and JVP fail closed. Grid-vol
+early-exercise admission records the requested node-vol parameterization and a
+planned hard-exercise-projection control policy so downstream runtime code can
+fail closed with the same state/control contract instead of silently widening
+support. The same chart family records typed unsupported-dependency reasons
+for missing surfaces, unsupported interpolation, unsupported selected factors,
+event monitors, and exercise-boundary kinks. Runtime grid-vol early-exercise
+results preserve this chart and the
+``grid_vol_hard_exercise_projection_pending`` policy while returning no value
+or risk. Grid-vol early-exercise HVP and JVP requests preserve that same
+state/control policy while failing closed. Flat-vol boundary-kink failures
+continue to use the distinct ``early_exercise_boundary_kink`` reason.
 
 These lanes exist because they are mathematically defensible and testable
 within a bounded smooth region. They are not broad pathwise AD for arbitrary

@@ -248,6 +248,168 @@ def test_path_summary_selected_factor_fail_closed_policy():
     assert result.diagnostics[0]["missing_factor_keys"] == [missing_factor.key]
 
 
+def test_grid_vol_path_summary_semantic_admission_returns_policy_fail_closed():
+    admission = admit_hybrid_ad_lane(
+        _path_summary_contract_ir(),
+        product_family="arithmetic_asian_option",
+        derivative_method="vjp",
+        market_parameterization="grid_vol",
+    )
+
+    result = differentiate_arithmetic_asian_path_summary(
+        _asian_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(semantic_admission=admission),
+        position_name="asian_call",
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+
+    chart = result.graph.nodes[0].coordinate_chart
+
+    assert result.support_status == "unsupported"
+    assert result.value is None
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "path_summary_grid_vol_vjp_pending"
+    assert result.method_metadata["resolved_derivative_method"] == (
+        "hybrid_path_summary_vjp"
+    )
+    assert result.method_metadata["derivative_method_support"] == "unsupported"
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "path_summary_grid_vol_vjp_pending"
+    )
+    assert chart is not None
+    assert chart.chart_type == "grid_vol_state_control_policy"
+    assert chart.coordinate_values["parameterization"] == "grid_node_vols"
+    assert len(chart.coordinates) == 4
+    assert result.graph.unsupported_reasons == ("unsupported_grid_vol_interpolation",)
+    assert result.unsupported_dependencies[0].reason == (
+        "unsupported_grid_vol_interpolation"
+    )
+    assert result.method_metadata["grid_vol_coordinate_policy"]["chart_type"] == (
+        "grid_vol_state_control_policy"
+    )
+    assert result.method_metadata["grid_vol_coordinate_policy"]["coordinate_keys"] == (
+        list(result.graph.coordinate_keys)
+    )
+
+
+def test_grid_vol_path_summary_selected_grid_node_is_reported_unsupported():
+    admission = admit_hybrid_ad_lane(
+        _path_summary_contract_ir(),
+        product_family="arithmetic_asian_option",
+        derivative_method="vjp",
+        market_parameterization="grid_vol",
+    )
+    probe = differentiate_arithmetic_asian_path_summary(
+        _asian_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(semantic_admission=admission),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+    selected_factor = probe.graph.coordinates[0].factor_id
+
+    result = differentiate_arithmetic_asian_path_summary(
+        _asian_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(
+            selected_factors=(selected_factor,),
+            semantic_admission=admission,
+        ),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+
+    diagnostic_codes = tuple(diagnostic["code"] for diagnostic in result.diagnostics)
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert "unsupported_selected_grid_vol_factors" in diagnostic_codes
+    assert result.diagnostics[-1]["selected_factor_keys"] == [selected_factor.key]
+
+
+def test_grid_vol_path_summary_missing_selected_factor_is_reported():
+    admission = admit_hybrid_ad_lane(
+        _path_summary_contract_ir(),
+        product_family="arithmetic_asian_option",
+        derivative_method="vjp",
+        market_parameterization="grid_vol",
+    )
+    missing_factor = RiskFactorId(
+        object_type="vol_surface",
+        object_name="missing_grid",
+        coordinate_type="black_vol",
+        axes={"expiry_years": 0.5, "strike": 100.0},
+        provenance_namespace="hybrid_ad",
+    )
+
+    result = differentiate_arithmetic_asian_path_summary(
+        _asian_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(
+            selected_factors=(missing_factor,),
+            unsupported_selected_factor_policy="fail_closed",
+            semantic_admission=admission,
+        ),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+
+    diagnostic_codes = tuple(diagnostic["code"] for diagnostic in result.diagnostics)
+
+    assert result.support_status == "unsupported"
+    assert len(result.risk_vector) == 0
+    assert "selected_factors_unavailable" in diagnostic_codes
+    assert result.diagnostics[-1]["missing_factor_keys"] == [missing_factor.key]
+
+
+def test_grid_vol_path_summary_hvp_preserves_policy_fail_closed():
+    result = differentiate_arithmetic_asian_path_summary(
+        _asian_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(derivative_method="hvp"),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.value is None
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "path_summary_grid_vol_hvp_pending"
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "path_summary_grid_vol_hvp_pending"
+    )
+    assert result.method_metadata["backend_operator"] == "hvp"
+    assert result.graph.unsupported_reasons == ("unsupported_grid_vol_interpolation",)
+    assert result.method_metadata["grid_vol_coordinate_policy"]["chart_type"] == (
+        "grid_vol_state_control_policy"
+    )
+
+
+def test_grid_vol_path_summary_jvp_preserves_policy_fail_closed():
+    result = differentiate_arithmetic_asian_path_summary(
+        _asian_spec(),
+        _grid_market_state(),
+        HybridDerivativeRequest(derivative_method="jvp"),
+        vol_surface_name="spx_grid",
+        currency="USD",
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.value is None
+    assert len(result.risk_vector) == 0
+    assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert result.method_metadata["resolved_derivative_method"] == (
+        "unsupported_hybrid_jvp"
+    )
+    assert result.method_metadata["requested_backend_operator"] == "jvp"
+    assert "backend_operator" not in result.method_metadata
+    assert result.method_metadata["grid_vol_coordinate_policy"]["chart_type"] == (
+        "grid_vol_state_control_policy"
+    )
+
+
 @pytest.mark.parametrize(
     ("spec", "market_state", "expected_code"),
     (

@@ -62,6 +62,12 @@ lane-local VJP outputs while preserving unsupported-lane diagnostics.
 | `QUA-1088` | Done | Added bounded sparse VJP aggregation across lane-local Hybrid AD results. |
 | `QUA-1089` | Done | Added structured mixed unsupported-shape diagnostics and strict fail-closed policy behavior. |
 | `QUA-1090` | Done | Added executable multi-product verification plus docs, limitations, and plan closeout. |
+| `QUA-1091` | Done | Closed grid-vol path-summary and early-exercise state/control derivative policy epic. |
+| `QUA-1092` | Done | Add semantic Hybrid AD admission for grid-vol path-summary and early-exercise state/control requests. |
+| `QUA-1093` | Done | Define graph-owned grid-vol coordinate policy payloads for state/control derivative lanes. |
+| `QUA-1094` | Done | Add the checked grid-vol path-summary runtime lane or explicit fail-closed runtime result. |
+| `QUA-1095` | Done | Harden grid-vol early-exercise fail-closed runtime and admission diagnostics. |
+| `QUA-1096` | Done | Closed the grid-vol state/control epic with verification, docs, limitations, and plan updates. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -759,6 +765,28 @@ Acceptance criteria:
 
 ## Follow-On Ticket Candidates
 
-- `Hybrid AD: grid-vol path-summary or early-exercise derivative policy`
-- `Hybrid AD: dynamic-state executable derivative lane`
-- `Hybrid AD: correlation-surface chart policy and fail-closed diagnostics`
+- `QUA-1097` — `Hybrid AD: dynamic-state executable derivative lane`
+- `QUA-1098` — `Hybrid AD: correlation-surface chart policy`
+
+## Completed Epic: Grid-Vol State/Control Derivative Policy
+
+`QUA-1091` closed the closest remaining support-boundary gap after the flat-vol
+path-summary, flat-vol early-exercise, and multi-product Hybrid AD epics:
+grid-vol path-summary and grid-vol early-exercise state/control derivative
+requests. The final outcome is deliberately fail-closed rather than
+executable. The epic added semantic admission for grid-vol node-vol
+requirements, graph-owned discovery-only coordinate charts, selected-factor
+diagnostics, and runtime unsupported results that preserve the same
+state/control policy for VJP, HVP, and JVP requests. It did not add a grid-vol
+node VJP because the current arithmetic path-summary implementation collapses
+the surface to one effective volatility, and differentiating that interpolation
+point would not define a robust node-risk contract.
+
+| Ticket | Status | Scope |
+|---|---|---|
+| `QUA-1091` | Done | Parent epic for grid-vol state/control derivative policy. |
+| `QUA-1092` | Done | Semantic admission for grid-vol path-summary, grid-vol early-exercise, event-monitor, boundary-kink, HVP, and JVP cases. |
+| `QUA-1093` | Done | Graph-owned grid-vol coordinate policy payloads, selected-factor behavior, and unsupported dependency reasons. |
+| `QUA-1094` | Done | Checked grid-vol path-summary runtime result surface: executable sparse node VJP if defensible, otherwise first-class fail-closed result. |
+| `QUA-1095` | Done | Grid-vol early-exercise fail-closed diagnostics with state/control policy and boundary-kink distinctions. |
+| `QUA-1096` | Done | Verification, docs, limitations, final validation, and plan mirror closeout. |

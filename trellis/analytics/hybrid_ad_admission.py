@@ -363,6 +363,7 @@ def admit_hybrid_ad_lane(
     *,
     derivative_method: str = "vjp",
     correlation_structure: str = "scalar",
+    market_parameterization: str = "flat_vol",
     product_family: str | None = None,
 ) -> HybridADLaneAdmission:
     """Return the bounded graph-owned hybrid AD admission decision.
@@ -373,6 +374,7 @@ def admit_hybrid_ad_lane(
     """
     requested_method = _normalize(derivative_method) or "vjp"
     structure = _normalize(correlation_structure) or "scalar"
+    parameterization = _normalize_market_parameterization(market_parameterization)
     if requested_method not in _DERIVATIVE_METHODS:
         return _admission(
             admitted=False,
@@ -384,7 +386,10 @@ def admit_hybrid_ad_lane(
             contract_shape="unknown",
             derivative_methods=("vjp", "hvp"),
             factor_requirements=(),
-            metadata={"requested_derivative_method": requested_method},
+            metadata={
+                "requested_derivative_method": requested_method,
+                "market_parameterization": parameterization,
+            },
             diagnostics=(
                 {
                     "code": "hybrid_derivative_method_unsupported",
@@ -397,6 +402,7 @@ def admit_hybrid_ad_lane(
         return _dynamic_contract_admission(
             semantic_contract,
             derivative_method=requested_method,
+            market_parameterization=parameterization,
             product_family=product_family,
         )
     if not isinstance(semantic_contract, ContractIR):
@@ -421,6 +427,7 @@ def admit_hybrid_ad_lane(
         semantic_contract,
         derivative_method=requested_method,
         correlation_structure=structure,
+        market_parameterization=parameterization,
         product_family=product_family,
     )
 
@@ -429,10 +436,78 @@ def _dynamic_contract_admission(
     contract: DynamicContractIR,
     *,
     derivative_method: str,
+    market_parameterization: str,
     product_family: str | None,
 ) -> HybridADLaneAdmission:
     family = product_family or contract.semantic_family or "dynamic_hybrid_contract"
-    state_policy = _dynamic_state_policy(contract)
+    if (
+        _is_grid_vol_parameterization(market_parameterization)
+        and isinstance(contract.base_contract, ContractIR)
+        and _is_early_exercise_family(product_family or contract.semantic_family)
+        and _is_bounded_vanilla_early_exercise(contract.base_contract)
+    ):
+        if derivative_method == "jvp":
+            return _grid_vol_early_exercise_jvp_admission(
+                contract.base_contract,
+                product_family=family,
+                semantic_contract_type="DynamicContractIR",
+                lane_id="dynamic_early_exercise_grid_vol_control_jvp",
+                contract_shape="dynamic_early_exercise_grid_vol_control",
+                metadata_extra={
+                    "base_track": contract.base_track,
+                    "semantic_family": contract.semantic_family,
+                },
+            )
+        reason = f"early_exercise_grid_vol_{derivative_method}_pending"
+        state_policy = _early_exercise_state_policy(
+            contract.base_contract,
+            support_status="planned",
+            reason=reason,
+            control_policy="grid_vol_hard_exercise_projection_pending",
+            fail_closed=True,
+            metadata={
+                "market_parameterization": "grid_vol",
+                "grid_vol_support_status": "planned",
+            },
+        )
+        return _admission(
+            admitted=False,
+            lane_id=f"dynamic_early_exercise_grid_vol_control_{derivative_method}",
+            support_status="planned",
+            reason=reason,
+            semantic_contract_type="DynamicContractIR",
+            product_family=family,
+            contract_shape="dynamic_early_exercise_grid_vol_control",
+            derivative_methods=("vjp",),
+            factor_requirements=_grid_vol_requirements(),
+            metadata={
+                "requested_derivative_method": derivative_method,
+                "market_parameterization": "grid_vol",
+                "grid_vol_support_status": "planned",
+                "grid_vol_derivative_policy": (
+                    "grid_node_early_exercise_control_policy_pending"
+                ),
+                "base_track": contract.base_track,
+                "semantic_family": contract.semantic_family,
+                "fail_closed": True,
+                "fail_closed_at_boundary_kinks": True,
+                **_state_policy_metadata(state_policy),
+            },
+            diagnostics=(
+                {
+                    "code": reason,
+                    "severity": "warning",
+                    "state_kind": state_policy.state_kind,
+                    "control_policy": state_policy.control_policy,
+                    "market_parameterization": "grid_vol",
+                },
+            ),
+        )
+
+    state_policy = _dynamic_state_policy(
+        contract,
+        market_parameterization=market_parameterization,
+    )
     if derivative_method == "jvp":
         backend_metadata = _backend_operator_support_metadata("jvp")
         return _admission(
@@ -447,6 +522,7 @@ def _dynamic_contract_admission(
             factor_requirements=(_scalar_correlation_requirement(),),
             metadata={
                 "requested_derivative_method": derivative_method,
+                "market_parameterization": market_parameterization,
                 **backend_metadata,
                 "base_track": contract.base_track,
                 "fail_closed": True,
@@ -475,6 +551,7 @@ def _dynamic_contract_admission(
         factor_requirements=(_scalar_correlation_requirement(),),
         metadata={
             "requested_derivative_method": derivative_method,
+            "market_parameterization": market_parameterization,
             "base_track": contract.base_track,
             "fail_closed": True,
             **_state_policy_metadata(state_policy),
@@ -495,8 +572,28 @@ def _contract_ir_admission(
     *,
     derivative_method: str,
     correlation_structure: str,
+    market_parameterization: str,
     product_family: str | None,
 ) -> HybridADLaneAdmission:
+    if derivative_method == "jvp" and _is_grid_vol_parameterization(
+        market_parameterization
+    ):
+        if _is_arithmetic_asian_family(
+            product_family
+        ) and _is_bounded_arithmetic_path_summary(contract):
+            return _grid_vol_path_summary_jvp_admission(
+                contract,
+                product_family=product_family,
+            )
+        if (
+            contract.exercise.style in {"american", "bermudan"}
+            and _is_early_exercise_family(product_family)
+            and _is_bounded_vanilla_early_exercise(contract)
+        ):
+            return _grid_vol_early_exercise_jvp_admission(
+                contract,
+                product_family=product_family or "early_exercise_option",
+            )
     if derivative_method == "jvp":
         backend_metadata = _backend_operator_support_metadata("jvp")
         return _admission(
@@ -511,6 +608,7 @@ def _contract_ir_admission(
             factor_requirements=_quanto_scalar_requirements(),
             metadata={
                 "requested_derivative_method": derivative_method,
+                "market_parameterization": market_parameterization,
                 **backend_metadata,
                 "fail_closed": True,
             },
@@ -541,6 +639,7 @@ def _contract_ir_admission(
             metadata={
                 "requested_derivative_method": derivative_method,
                 "correlation_structure": correlation_structure,
+                "market_parameterization": market_parameterization,
                 "fail_closed": True,
             },
             diagnostics=(
@@ -565,6 +664,7 @@ def _contract_ir_admission(
             factor_requirements=(_scalar_correlation_requirement(),),
             metadata={
                 "requested_derivative_method": derivative_method,
+                "market_parameterization": market_parameterization,
                 "fail_closed": True,
                 **_state_policy_metadata(state_policy),
             },
@@ -590,6 +690,7 @@ def _contract_ir_admission(
             factor_requirements=(_scalar_correlation_requirement(),),
             metadata={
                 "requested_derivative_method": derivative_method,
+                "market_parameterization": market_parameterization,
                 "composite_underlying_count": len(contract.underlying.spec.parts),
                 "fail_closed": True,
             },
@@ -605,6 +706,80 @@ def _contract_ir_admission(
             contract
         ):
             if derivative_method == "vjp":
+                if _is_grid_vol_parameterization(market_parameterization):
+                    state_policy = _smooth_path_summary_state_policy(
+                        contract,
+                        support_status="planned",
+                        reason="path_summary_grid_vol_vjp_pending",
+                        fail_closed=True,
+                        metadata={
+                            "market_parameterization": "grid_vol",
+                            "grid_vol_support_status": "planned",
+                        },
+                    )
+                    return _admission(
+                        admitted=False,
+                        lane_id="arithmetic_asian_path_summary_grid_vol_vjp",
+                        support_status="planned",
+                        reason="path_summary_grid_vol_vjp_pending",
+                        semantic_contract_type="ContractIR",
+                        product_family=product_family or "arithmetic_asian_option",
+                        contract_shape="arithmetic_asian_grid_vol_path_summary",
+                        derivative_methods=("vjp",),
+                        factor_requirements=_path_summary_vol_requirements(
+                            market_parameterization
+                        ),
+                        metadata={
+                            "requested_derivative_method": derivative_method,
+                            "market_parameterization": "grid_vol",
+                            "observation_kind": contract.observation.kind,
+                            "path_derivative_policy": (
+                                "lognormal_moment_matching_smooth_path_summary"
+                            ),
+                            "grid_vol_support_status": "planned",
+                            "grid_vol_derivative_policy": (
+                                "grid_node_path_summary_policy_pending"
+                            ),
+                            "fail_closed": True,
+                            **_state_policy_metadata(state_policy),
+                        },
+                        diagnostics=(
+                            {
+                                "code": "path_summary_grid_vol_vjp_pending",
+                                "severity": "warning",
+                                "state_kind": state_policy.state_kind,
+                                "event_policy": state_policy.event_policy,
+                                "market_parameterization": "grid_vol",
+                            },
+                        ),
+                    )
+                if not _is_flat_vol_parameterization(market_parameterization):
+                    return _admission(
+                        admitted=False,
+                        lane_id="arithmetic_asian_path_summary_unsupported_vol",
+                        support_status="unsupported",
+                        reason="unsupported_path_summary_vol_parameterization",
+                        semantic_contract_type="ContractIR",
+                        product_family=product_family or "arithmetic_asian_option",
+                        contract_shape="arithmetic_asian_smooth_path_summary",
+                        derivative_methods=("vjp",),
+                        factor_requirements=_path_summary_vol_requirements(
+                            market_parameterization
+                        ),
+                        metadata={
+                            "requested_derivative_method": derivative_method,
+                            "market_parameterization": market_parameterization,
+                            "observation_kind": contract.observation.kind,
+                            "fail_closed": True,
+                        },
+                        diagnostics=(
+                            {
+                                "code": "unsupported_path_summary_vol_parameterization",
+                                "severity": "warning",
+                                "market_parameterization": market_parameterization,
+                            },
+                        ),
+                    )
                 state_policy = _smooth_path_summary_state_policy(
                     contract,
                     support_status="supported",
@@ -620,9 +795,12 @@ def _contract_ir_admission(
                     product_family=product_family or "arithmetic_asian_option",
                     contract_shape="arithmetic_asian_smooth_path_summary",
                     derivative_methods=("vjp",),
-                    factor_requirements=_path_summary_vol_requirements(),
+                    factor_requirements=_path_summary_vol_requirements(
+                        market_parameterization
+                    ),
                     metadata={
                         "requested_derivative_method": derivative_method,
+                        "market_parameterization": "flat_vol",
                         "observation_kind": contract.observation.kind,
                         "path_derivative_policy": (
                             "lognormal_moment_matching_smooth_path_summary"
@@ -635,6 +813,54 @@ def _contract_ir_admission(
                         "fail_closed": False,
                         **_state_policy_metadata(state_policy),
                     },
+                )
+            if _is_grid_vol_parameterization(market_parameterization):
+                reason = f"path_summary_grid_vol_{derivative_method}_pending"
+                state_policy = _smooth_path_summary_state_policy(
+                    contract,
+                    support_status="planned",
+                    reason=reason,
+                    fail_closed=True,
+                    metadata={
+                        "market_parameterization": "grid_vol",
+                        "grid_vol_support_status": "planned",
+                    },
+                )
+                return _admission(
+                    admitted=False,
+                    lane_id=f"arithmetic_asian_path_summary_grid_vol_{derivative_method}",
+                    support_status="planned",
+                    reason=reason,
+                    semantic_contract_type="ContractIR",
+                    product_family=product_family or "arithmetic_asian_option",
+                    contract_shape="arithmetic_asian_grid_vol_path_summary",
+                    derivative_methods=("vjp",),
+                    factor_requirements=_path_summary_vol_requirements(
+                        market_parameterization
+                    ),
+                    metadata={
+                        "requested_derivative_method": derivative_method,
+                        "market_parameterization": "grid_vol",
+                        "observation_kind": contract.observation.kind,
+                        "path_derivative_policy": (
+                            "lognormal_moment_matching_smooth_path_summary"
+                        ),
+                        "grid_vol_support_status": "planned",
+                        "grid_vol_derivative_policy": (
+                            "grid_node_path_summary_policy_pending"
+                        ),
+                        "fail_closed": True,
+                        **_state_policy_metadata(state_policy),
+                    },
+                    diagnostics=(
+                        {
+                            "code": reason,
+                            "severity": "warning",
+                            "state_kind": state_policy.state_kind,
+                            "event_policy": state_policy.event_policy,
+                            "market_parameterization": "grid_vol",
+                        },
+                    ),
                 )
             state_policy = _smooth_path_summary_state_policy(
                 contract,
@@ -651,9 +877,12 @@ def _contract_ir_admission(
                 product_family=product_family or "arithmetic_asian_option",
                 contract_shape="arithmetic_asian_smooth_path_summary",
                 derivative_methods=("vjp",),
-                factor_requirements=_path_summary_vol_requirements(),
+                factor_requirements=_path_summary_vol_requirements(
+                    market_parameterization
+                ),
                 metadata={
                     "requested_derivative_method": derivative_method,
+                    "market_parameterization": market_parameterization,
                     "observation_kind": contract.observation.kind,
                     "path_derivative_policy": (
                         "lognormal_moment_matching_smooth_path_summary"
@@ -683,6 +912,7 @@ def _contract_ir_admission(
             factor_requirements=_quanto_scalar_requirements(),
             metadata={
                 "requested_derivative_method": derivative_method,
+                "market_parameterization": market_parameterization,
                 "observation_kind": contract.observation.kind,
                 "fail_closed": True,
                 **_state_policy_metadata(state_policy),
@@ -701,6 +931,78 @@ def _contract_ir_admission(
             contract
         ):
             if derivative_method == "vjp":
+                if _is_grid_vol_parameterization(market_parameterization):
+                    state_policy = _early_exercise_state_policy(
+                        contract,
+                        support_status="planned",
+                        reason="early_exercise_grid_vol_vjp_pending",
+                        control_policy="grid_vol_hard_exercise_projection_pending",
+                        fail_closed=True,
+                        metadata={
+                            "market_parameterization": "grid_vol",
+                            "grid_vol_support_status": "planned",
+                        },
+                    )
+                    return _admission(
+                        admitted=False,
+                        lane_id="early_exercise_grid_vol_control_vjp",
+                        support_status="planned",
+                        reason="early_exercise_grid_vol_vjp_pending",
+                        semantic_contract_type="ContractIR",
+                        product_family=product_family or "early_exercise_option",
+                        contract_shape="early_exercise_grid_vol_control",
+                        derivative_methods=("vjp",),
+                        factor_requirements=_grid_vol_requirements(),
+                        metadata={
+                            "requested_derivative_method": derivative_method,
+                            "market_parameterization": "grid_vol",
+                            "exercise_style": contract.exercise.style,
+                            "early_exercise_policy": (
+                                "grid_vol_hard_exercise_projection_pending"
+                            ),
+                            "grid_vol_support_status": "planned",
+                            "grid_vol_derivative_policy": (
+                                "grid_node_early_exercise_control_policy_pending"
+                            ),
+                            "fail_closed": True,
+                            "fail_closed_at_boundary_kinks": True,
+                            **_state_policy_metadata(state_policy),
+                        },
+                        diagnostics=(
+                            {
+                                "code": "early_exercise_grid_vol_vjp_pending",
+                                "severity": "warning",
+                                "state_kind": state_policy.state_kind,
+                                "control_policy": state_policy.control_policy,
+                                "market_parameterization": "grid_vol",
+                            },
+                        ),
+                    )
+                if not _is_flat_vol_parameterization(market_parameterization):
+                    return _admission(
+                        admitted=False,
+                        lane_id="early_exercise_unsupported_vol",
+                        support_status="unsupported",
+                        reason="unsupported_early_exercise_vol_parameterization",
+                        semantic_contract_type="ContractIR",
+                        product_family=product_family or "early_exercise_option",
+                        contract_shape="early_exercise_smooth_interior",
+                        derivative_methods=("vjp",),
+                        factor_requirements=_vol_requirements(market_parameterization),
+                        metadata={
+                            "requested_derivative_method": derivative_method,
+                            "market_parameterization": market_parameterization,
+                            "exercise_style": contract.exercise.style,
+                            "fail_closed": True,
+                        },
+                        diagnostics=(
+                            {
+                                "code": "unsupported_early_exercise_vol_parameterization",
+                                "severity": "warning",
+                                "market_parameterization": market_parameterization,
+                            },
+                        ),
+                    )
                 state_policy = _early_exercise_state_policy(
                     contract,
                     support_status="supported",
@@ -720,6 +1022,7 @@ def _contract_ir_admission(
                     factor_requirements=_flat_vol_requirements(),
                     metadata={
                         "requested_derivative_method": derivative_method,
+                        "market_parameterization": "flat_vol",
                         "exercise_style": contract.exercise.style,
                         "early_exercise_policy": (
                             "hard_exercise_projection_smooth_interior"
@@ -730,8 +1033,57 @@ def _contract_ir_admission(
                         ),
                         "grid_vol_support_status": "planned",
                         "fail_closed": False,
+                        "fail_closed_at_boundary_kinks": True,
                         **_state_policy_metadata(state_policy),
                     },
+                )
+            if _is_grid_vol_parameterization(market_parameterization):
+                reason = f"early_exercise_grid_vol_{derivative_method}_pending"
+                state_policy = _early_exercise_state_policy(
+                    contract,
+                    support_status="planned",
+                    reason=reason,
+                    control_policy="grid_vol_hard_exercise_projection_pending",
+                    fail_closed=True,
+                    metadata={
+                        "market_parameterization": "grid_vol",
+                        "grid_vol_support_status": "planned",
+                    },
+                )
+                return _admission(
+                    admitted=False,
+                    lane_id=f"early_exercise_grid_vol_control_{derivative_method}",
+                    support_status="planned",
+                    reason=reason,
+                    semantic_contract_type="ContractIR",
+                    product_family=product_family or "early_exercise_option",
+                    contract_shape="early_exercise_grid_vol_control",
+                    derivative_methods=("vjp",),
+                    factor_requirements=_grid_vol_requirements(),
+                    metadata={
+                        "requested_derivative_method": derivative_method,
+                        "market_parameterization": "grid_vol",
+                        "exercise_style": contract.exercise.style,
+                        "early_exercise_policy": (
+                            "grid_vol_hard_exercise_projection_pending"
+                        ),
+                        "grid_vol_support_status": "planned",
+                        "grid_vol_derivative_policy": (
+                            "grid_node_early_exercise_control_policy_pending"
+                        ),
+                        "fail_closed": True,
+                        "fail_closed_at_boundary_kinks": True,
+                        **_state_policy_metadata(state_policy),
+                    },
+                    diagnostics=(
+                        {
+                            "code": reason,
+                            "severity": "warning",
+                            "state_kind": state_policy.state_kind,
+                            "control_policy": state_policy.control_policy,
+                            "market_parameterization": "grid_vol",
+                        },
+                    ),
                 )
             state_policy = _early_exercise_state_policy(
                 contract,
@@ -752,6 +1104,7 @@ def _contract_ir_admission(
                 factor_requirements=_flat_vol_requirements(),
                 metadata={
                     "requested_derivative_method": derivative_method,
+                    "market_parameterization": market_parameterization,
                     "exercise_style": contract.exercise.style,
                     "early_exercise_policy": (
                         "hard_exercise_projection_smooth_interior"
@@ -781,6 +1134,7 @@ def _contract_ir_admission(
             factor_requirements=_quanto_scalar_requirements(),
             metadata={
                 "requested_derivative_method": derivative_method,
+                "market_parameterization": market_parameterization,
                 "exercise_style": contract.exercise.style,
                 "fail_closed": True,
                 **_state_policy_metadata(state_policy),
@@ -929,6 +1283,121 @@ def _state_policy_metadata(policy: HybridADStatePolicy) -> dict[str, Any]:
     }
 
 
+def _grid_vol_path_summary_jvp_admission(
+    contract: ContractIR,
+    *,
+    product_family: str | None,
+) -> HybridADLaneAdmission:
+    reason = "hybrid_jvp_backend_unsupported"
+    backend_metadata = _backend_operator_support_metadata("jvp")
+    state_policy = _smooth_path_summary_state_policy(
+        contract,
+        support_status="planned",
+        reason=reason,
+        fail_closed=True,
+        metadata={
+            "market_parameterization": "grid_vol",
+            "grid_vol_support_status": "planned",
+        },
+    )
+    return _admission(
+        admitted=False,
+        lane_id="arithmetic_asian_path_summary_grid_vol_jvp",
+        support_status="unsupported",
+        reason=reason,
+        semantic_contract_type="ContractIR",
+        product_family=product_family or "arithmetic_asian_option",
+        contract_shape="arithmetic_asian_grid_vol_path_summary",
+        derivative_methods=("vjp",),
+        factor_requirements=_path_summary_vol_requirements("grid_vol"),
+        metadata={
+            "requested_derivative_method": "jvp",
+            "market_parameterization": "grid_vol",
+            "observation_kind": contract.observation.kind,
+            "path_derivative_policy": (
+                "lognormal_moment_matching_smooth_path_summary"
+            ),
+            "grid_vol_support_status": "planned",
+            "grid_vol_derivative_policy": "grid_node_path_summary_policy_pending",
+            **backend_metadata,
+            "fail_closed": True,
+            **_state_policy_metadata(state_policy),
+        },
+        diagnostics=(
+            {
+                "code": reason,
+                "severity": "warning",
+                "requested_backend_operator": "jvp",
+                "backend_support": backend_metadata["backend_support"],
+                "state_kind": state_policy.state_kind,
+                "event_policy": state_policy.event_policy,
+                "market_parameterization": "grid_vol",
+            },
+        ),
+    )
+
+
+def _grid_vol_early_exercise_jvp_admission(
+    contract: ContractIR,
+    *,
+    product_family: str,
+    semantic_contract_type: str = "ContractIR",
+    lane_id: str = "early_exercise_grid_vol_control_jvp",
+    contract_shape: str = "early_exercise_grid_vol_control",
+    metadata_extra: Mapping[str, Any] | None = None,
+) -> HybridADLaneAdmission:
+    reason = "hybrid_jvp_backend_unsupported"
+    backend_metadata = _backend_operator_support_metadata("jvp")
+    state_policy = _early_exercise_state_policy(
+        contract,
+        support_status="planned",
+        reason=reason,
+        control_policy="grid_vol_hard_exercise_projection_pending",
+        fail_closed=True,
+        metadata={
+            "market_parameterization": "grid_vol",
+            "grid_vol_support_status": "planned",
+        },
+    )
+    return _admission(
+        admitted=False,
+        lane_id=lane_id,
+        support_status="unsupported",
+        reason=reason,
+        semantic_contract_type=semantic_contract_type,
+        product_family=product_family,
+        contract_shape=contract_shape,
+        derivative_methods=("vjp",),
+        factor_requirements=_grid_vol_requirements(),
+        metadata={
+            "requested_derivative_method": "jvp",
+            "market_parameterization": "grid_vol",
+            "exercise_style": contract.exercise.style,
+            "early_exercise_policy": "grid_vol_hard_exercise_projection_pending",
+            "grid_vol_support_status": "planned",
+            "grid_vol_derivative_policy": (
+                "grid_node_early_exercise_control_policy_pending"
+            ),
+            **backend_metadata,
+            "fail_closed": True,
+            "fail_closed_at_boundary_kinks": True,
+            **dict(metadata_extra or {}),
+            **_state_policy_metadata(state_policy),
+        },
+        diagnostics=(
+            {
+                "code": reason,
+                "severity": "warning",
+                "requested_backend_operator": "jvp",
+                "backend_support": backend_metadata["backend_support"],
+                "state_kind": state_policy.state_kind,
+                "control_policy": state_policy.control_policy,
+                "market_parameterization": "grid_vol",
+            },
+        ),
+    )
+
+
 def _discontinuous_event_state_policy(contract: ContractIR) -> HybridADStatePolicy:
     return HybridADStatePolicy(
         state_kind="discontinuous_event_monitor",
@@ -959,6 +1428,7 @@ def _smooth_path_summary_state_policy(
     support_status: str = "planned",
     reason: str = "path_dependent_hybrid_state_pending",
     fail_closed: bool = True,
+    metadata: Mapping[str, Any] | None = None,
 ) -> HybridADStatePolicy:
     path_summary_type = (
         "arithmetic_mean" if _contains_arithmetic_mean(contract.payoff) else "path"
@@ -968,6 +1438,12 @@ def _smooth_path_summary_state_policy(
         if path_summary_type == "arithmetic_mean"
         else ("underlier_path",)
     )
+    policy_metadata = {
+        "observation_kind": contract.observation.kind,
+        "path_summary_type": path_summary_type,
+        "event_monitor_type": "none",
+    }
+    policy_metadata.update(metadata or {})
     return HybridADStatePolicy(
         state_kind="smooth_path_summary",
         support_status=support_status,
@@ -977,11 +1453,7 @@ def _smooth_path_summary_state_policy(
         control_policy="none",
         state_variable_roles=state_roles,
         fail_closed=fail_closed,
-        metadata={
-            "observation_kind": contract.observation.kind,
-            "path_summary_type": path_summary_type,
-            "event_monitor_type": "none",
-        },
+        metadata=policy_metadata,
         diagnostics=(
             {
                 "code": reason,
@@ -998,7 +1470,15 @@ def _early_exercise_state_policy(
     reason: str = "early_exercise_hybrid_state_pending",
     control_policy: str = "smooth_interior_control_pending",
     fail_closed: bool = True,
+    metadata: Mapping[str, Any] | None = None,
 ) -> HybridADStatePolicy:
+    policy_metadata = {
+        "exercise_style": contract.exercise.style,
+        "observation_kind": contract.observation.kind,
+        "early_exercise_policy": control_policy,
+        "path_summary_type": "none",
+    }
+    policy_metadata.update(metadata or {})
     return HybridADStatePolicy(
         state_kind="early_exercise_control",
         support_status=support_status,
@@ -1008,12 +1488,7 @@ def _early_exercise_state_policy(
         control_policy=control_policy,
         state_variable_roles=("continuation_value", "exercise_decision"),
         fail_closed=fail_closed,
-        metadata={
-            "exercise_style": contract.exercise.style,
-            "observation_kind": contract.observation.kind,
-            "early_exercise_policy": control_policy,
-            "path_summary_type": "none",
-        },
+        metadata=policy_metadata,
         diagnostics=(
             {
                 "code": reason,
@@ -1023,7 +1498,11 @@ def _early_exercise_state_policy(
     )
 
 
-def _dynamic_state_policy(contract: DynamicContractIR) -> HybridADStatePolicy:
+def _dynamic_state_policy(
+    contract: DynamicContractIR,
+    *,
+    market_parameterization: str = "flat_vol",
+) -> HybridADStatePolicy:
     return HybridADStatePolicy(
         state_kind="dynamic_state",
         support_status="planned",
@@ -1036,6 +1515,7 @@ def _dynamic_state_policy(contract: DynamicContractIR) -> HybridADStatePolicy:
         metadata={
             "base_track": contract.base_track,
             "semantic_family": contract.semantic_family,
+            "market_parameterization": market_parameterization,
         },
         diagnostics=(
             {
@@ -1280,8 +1760,29 @@ def _quanto_matrix_requirements() -> tuple[HybridADFactorRequirement, ...]:
     return _quanto_scalar_requirements()[:-1] + (_correlation_matrix_requirement(),)
 
 
-def _path_summary_vol_requirements() -> tuple[HybridADFactorRequirement, ...]:
-    return _flat_vol_requirements()
+def _path_summary_vol_requirements(
+    market_parameterization: str = "flat_vol",
+) -> tuple[HybridADFactorRequirement, ...]:
+    return _vol_requirements(market_parameterization)
+
+
+def _vol_requirements(
+    market_parameterization: str,
+) -> tuple[HybridADFactorRequirement, ...]:
+    if _is_grid_vol_parameterization(market_parameterization):
+        return _grid_vol_requirements()
+    if _is_flat_vol_parameterization(market_parameterization):
+        return _flat_vol_requirements()
+    return (
+        HybridADFactorRequirement(
+            object_type="vol_surface",
+            coordinate_type="black_vol",
+            risk_class="volatility",
+            parameterization=market_parameterization,
+            semantic_role="underlier_vol",
+            graph_role="underlier_vol",
+        ),
+    )
 
 
 def _flat_vol_requirements() -> tuple[HybridADFactorRequirement, ...]:
@@ -1291,6 +1792,19 @@ def _flat_vol_requirements() -> tuple[HybridADFactorRequirement, ...]:
             coordinate_type="flat_vol",
             risk_class="volatility",
             parameterization="flat_vol",
+            semantic_role="underlier_vol",
+            graph_role="underlier_vol",
+        ),
+    )
+
+
+def _grid_vol_requirements() -> tuple[HybridADFactorRequirement, ...]:
+    return (
+        HybridADFactorRequirement(
+            object_type="vol_surface",
+            coordinate_type="black_vol",
+            risk_class="volatility",
+            parameterization="grid_node_vols",
             semantic_role="underlier_vol",
             graph_role="underlier_vol",
         ),
@@ -1339,6 +1853,29 @@ def _clean(value: object, field_name: str) -> str:
 
 def _normalize(value: object) -> str:
     return str(value or "").strip().lower().replace("-", "_")
+
+
+def _normalize_market_parameterization(value: object) -> str:
+    parameterization = _normalize(value) or "flat_vol"
+    if parameterization in {"flat", "scalar_vol", "scalar_flat_vol"}:
+        return "flat_vol"
+    if parameterization in {
+        "grid",
+        "grid_vol",
+        "grid_node_vol",
+        "grid_node_vols",
+        "grid_vol_surface",
+    }:
+        return "grid_vol"
+    return parameterization
+
+
+def _is_flat_vol_parameterization(parameterization: str) -> bool:
+    return _normalize_market_parameterization(parameterization) == "flat_vol"
+
+
+def _is_grid_vol_parameterization(parameterization: str) -> bool:
+    return _normalize_market_parameterization(parameterization) == "grid_vol"
 
 
 def _is_quanto_family(product_family: str | None) -> bool:

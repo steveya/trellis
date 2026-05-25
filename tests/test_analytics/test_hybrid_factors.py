@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import math
 
 import pytest
@@ -10,7 +11,12 @@ from trellis.analytics.hybrid_factors import (
     HybridUnsupportedDependency,
     MarketObjectCoordinateChart,
 )
-from trellis.analytics.risk_factors import RiskFactorCoordinate, RiskFactorId
+from trellis.analytics.risk_factors import (
+    RiskFactorCoordinate,
+    RiskFactorId,
+    RiskFactorRegistry,
+)
+from trellis.models.vol_surface import GridVolSurface
 
 
 def _spot_coordinate() -> RiskFactorCoordinate:
@@ -57,6 +63,21 @@ def _correlation_coordinate() -> RiskFactorCoordinate:
             "factor_a": "SX5E",
             "factor_b": "EURUSD",
         },
+    )
+
+
+def _grid_vol_coordinates() -> tuple[RiskFactorCoordinate, ...]:
+    surface = GridVolSurface(
+        expiries=(0.5, 1.0),
+        strikes=(90.0, 110.0),
+        vols=((0.21, 0.22), (0.23, 0.24)),
+    )
+    return RiskFactorRegistry().discover_grid_vol_surface(
+        surface,
+        object_name="spx_grid",
+        currency="USD",
+        provenance_namespace="hybrid_ad",
+        support_status="discovery_only",
     )
 
 
@@ -191,6 +212,92 @@ def test_correlation_matrix_policy_chart_rejects_invalid_matrices(matrix, match)
             factor_labels=labels,
             correlation_matrix=matrix,
         )
+
+
+def test_grid_vol_state_control_policy_round_trips_and_orders_nodes():
+    coordinates = _grid_vol_coordinates()
+    chart = MarketObjectCoordinateChart.grid_vol_state_control_policy(
+        object_name="spx_grid",
+        lane_family="path_summary",
+        coordinates=reversed(coordinates),
+        interpolation_basis="bilinear_black_vol",
+        locality_policy="full_grid_node_vector",
+        selected_factor_policy="filter_known_fail_closed_unknown",
+        metadata={"semantic_state_kind": "smooth_path_summary"},
+    )
+
+    payload = chart.to_payload()
+    rebuilt = MarketObjectCoordinateChart.from_payload(json.loads(json.dumps(payload)))
+
+    assert rebuilt == chart
+    assert chart.chart_type == "grid_vol_state_control_policy"
+    assert chart.coordinate_space == "grid_nodes"
+    assert chart.differentiability_class == "piecewise"
+    assert chart.support_status == "discovery_only"
+    assert chart.coordinate_keys == tuple(
+        sorted(coordinate.factor_id.key for coordinate in coordinates)
+    )
+    assert chart.coordinate_values["parameterization"] == "grid_node_vols"
+    assert chart.coordinate_values["active_node_keys"] == chart.coordinate_keys
+    assert chart.constraints["interpolation_basis"] == "bilinear_black_vol"
+    assert chart.constraints["locality_policy"] == "full_grid_node_vector"
+    assert chart.constraints["selected_factor_policy"] == (
+        "filter_known_fail_closed_unknown"
+    )
+    assert chart.constraints["unsupported_selected_factor_reason"] == (
+        "unsupported_selected_grid_vol_factors"
+    )
+    assert chart.metadata["lane_family"] == "path_summary"
+    assert chart.metadata["active_node_count"] == 4
+    assert payload["coordinate_keys"] == list(chart.coordinate_keys)
+
+
+def test_grid_vol_state_control_policy_rejects_non_grid_vol_coordinates():
+    with pytest.raises(ValueError, match="grid-vol black-vol coordinates"):
+        MarketObjectCoordinateChart.grid_vol_state_control_policy(
+            object_name="spx_grid",
+            lane_family="path_summary",
+            coordinates=(_spot_coordinate(),),
+        )
+
+
+def test_grid_vol_state_control_unsupported_dependency_reasons_are_typed():
+    dependencies = tuple(
+        HybridUnsupportedDependency.grid_vol_state_control_policy(
+            object_name="spx_grid",
+            lane_family="early_exercise_control",
+            reason=reason,
+        )
+        for reason in (
+            "missing_grid_vol_surface",
+            "unsupported_grid_vol_interpolation",
+            "unsupported_selected_grid_vol_factors",
+            "unsupported_discontinuous_event_monitor",
+            "early_exercise_boundary_kink",
+        )
+    )
+
+    graph = HybridFactorGraph(
+        graph_id="grid-vol-policy",
+        unsupported_dependencies=reversed(dependencies),
+    )
+    payload = graph.to_payload()
+
+    assert graph.unsupported_reasons == (
+        "early_exercise_boundary_kink",
+        "missing_grid_vol_surface",
+        "unsupported_discontinuous_event_monitor",
+        "unsupported_grid_vol_interpolation",
+        "unsupported_selected_grid_vol_factors",
+    )
+    assert payload["unsupported_dependencies"][0]["dependency_id"] == (
+        "unsupported:grid_vol_state_control:spx_grid:"
+        "early_exercise_boundary_kink"
+    )
+    assert payload["unsupported_dependencies"][0]["metadata"]["lane_family"] == (
+        "early_exercise_control"
+    )
+    assert payload["unsupported_dependencies"][0]["node_type"] == "vol_surface"
 
 
 def test_hybrid_factor_graph_collects_coordinates_and_dependencies():

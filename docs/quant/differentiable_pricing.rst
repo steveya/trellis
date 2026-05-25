@@ -92,6 +92,30 @@ shapes. Supported arithmetic-average VJP admissions carry that payload as a
 supported state policy, and supported vanilla early-exercise VJP admissions
 carry it as a supported hard-exercise-projection policy. Blocked shapes copy
 the payload into runtime fail-closed metadata as ``semantic_state_policy``.
+Admission also accepts a market-parameterization label. Grid-vol path-summary
+and grid-vol early-exercise state/control requests receive deterministic
+``grid_node_vols`` factor requirements, planned state-policy payloads, and no
+runtime helper, so the metadata is a support-boundary record rather than an
+execution claim.
+The matching coordinate contract is
+``MarketObjectCoordinateChart.grid_vol_state_control_policy(...)``. It records
+the active grid-vol node ``RiskFactorId`` keys, interpolation basis, locality
+policy, selected-factor policy, and fail-closed reasons for missing surfaces,
+unsupported interpolation, unsupported selected factors, event monitors, and
+exercise-boundary kinks.
+When the arithmetic path-summary runtime sees a grid-vol surface, it now
+returns a first-class unsupported ``HybridDerivativeResult`` with that policy
+chart and an ``unsupported_grid_vol_interpolation`` dependency instead of
+falling back to a flat-vol-like graph. Known selected grid-vol nodes and
+missing selected nodes are reported deterministically, but no node VJP is
+executed. Grid-vol path-summary HVP and JVP requests use the same fail-closed
+policy surface, so unsupported second-order or forward-mode requests still
+carry the grid node coordinate chart instead of degrading to a generic flat-vol
+diagnostic. Grid-vol early-exercise runtime requests use the same chart family
+with ``lane_family="early_exercise_control"`` and fail closed through the
+planned hard-exercise-projection control policy; HVP and JVP requests preserve
+that policy metadata as well. This remains distinct from flat-vol
+exercise-boundary kink diagnostics.
 These are bounded state-summary/control lanes, not broad pathwise or dynamic
 hybrid AD execution.
 
@@ -614,10 +638,26 @@ matrix payload replaces the scalar-correlation requirement with a
 ``correlation_matrix_psd_policy`` parameterization. The path-summary payload
 records one graph-owned ``FlatVol`` requirement, and the early-exercise
 payload records the same one graph-owned ``FlatVol`` requirement under the
-hard exercise-projection smooth-interior policy. ``jvp`` requests,
-correlation surfaces, composite underliers, grid-vol path summaries,
-discontinuous event monitors, non-arithmetic path summaries, path-summary HVP,
-grid-vol early-exercise, early-exercise HVP, and boundary-kink
+hard exercise-projection smooth-interior policy. When
+``market_parameterization="grid_vol"`` is requested for arithmetic path
+summaries or vanilla early-exercise controls, admission records a planned
+``grid_node_vols`` volatility requirement and a fail-closed state/control
+policy; it deliberately omits a runtime helper until an executable lane is
+validated. The corresponding grid-vol state/control coordinate chart is
+discovery-only: it preserves node identity and selected-factor behavior for
+runtime diagnostics, but does not authorize VJP execution by itself. The
+arithmetic path-summary runtime uses that chart to fail closed with
+``unsupported_grid_vol_interpolation`` until a true node-local path-summary
+surface derivative is mathematically defined and verified. The vanilla
+early-exercise runtime also uses that chart for grid-vol inputs, but reports
+the state/control policy as ``grid_vol_hard_exercise_projection_pending`` and
+does not evaluate value or risk. Grid-vol HVP and JVP runtime requests also
+preserve the chart payload while failing closed; JVP remains a backend-level
+unsupported operator and HVP remains planned for these state/control lanes.
+Correlation surfaces, composite underliers,
+grid-vol path summaries, discontinuous event monitors, non-arithmetic path
+summaries, path-summary HVP, grid-vol early-exercise, early-exercise HVP, JVP,
+and boundary-kink
 early-exercise shapes are classified as unsupported or planned before runtime
 AD is invoked. ``HybridDerivativeRequest`` can carry that admission object, or
 its payload, as ``semantic_admission``. Supported
