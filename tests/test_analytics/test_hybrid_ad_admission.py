@@ -571,6 +571,40 @@ def test_early_exercise_grid_vol_vjp_is_planned_not_runtime_supported():
     assert admission.diagnostics[0]["code"] == "early_exercise_grid_vol_vjp_pending"
 
 
+def test_early_exercise_grid_vol_jvp_preserves_grid_vol_policy():
+    admission = admit_hybrid_ad_lane(
+        _american_call_ir(),
+        product_family="american_vanilla_option",
+        derivative_method="jvp",
+        market_parameterization="grid_vol",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+    requirements = {
+        requirement.semantic_role: requirement
+        for requirement in admission.factor_requirements
+    }
+
+    assert admission.admitted is False
+    assert admission.support_status == "unsupported"
+    assert admission.lane_id == "early_exercise_grid_vol_control_jvp"
+    assert admission.reason == "hybrid_jvp_backend_unsupported"
+    assert admission.contract_shape == "early_exercise_grid_vol_control"
+    assert state_policy["state_kind"] == "early_exercise_control"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["control_policy"] == (
+        "grid_vol_hard_exercise_projection_pending"
+    )
+    assert state_policy["metadata"]["market_parameterization"] == "grid_vol"
+    assert requirements["underlier_vol"].parameterization == "grid_node_vols"
+    assert admission.metadata["requested_backend_operator"] == "jvp"
+    assert admission.metadata["backend_support"]["supported"] is False
+    assert admission.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert admission.diagnostics[0]["control_policy"] == (
+        "grid_vol_hard_exercise_projection_pending"
+    )
+
+
 def test_dynamic_early_exercise_grid_vol_vjp_is_classified_with_state_policy():
     admission = admit_hybrid_ad_lane(
         _dynamic_early_exercise_ir(),
@@ -596,6 +630,38 @@ def test_dynamic_early_exercise_grid_vol_vjp_is_classified_with_state_policy():
     assert admission.metadata["base_track"] == "payoff_expression"
     assert admission.metadata["semantic_family"] == "american_vanilla_option"
     assert admission.diagnostics[0]["code"] == "early_exercise_grid_vol_vjp_pending"
+
+
+def test_dynamic_early_exercise_grid_vol_jvp_preserves_state_policy():
+    admission = admit_hybrid_ad_lane(
+        _dynamic_early_exercise_ir(),
+        product_family="american_vanilla_option",
+        derivative_method="jvp",
+        market_parameterization="grid_vol",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+    requirements = {
+        requirement.semantic_role: requirement
+        for requirement in admission.factor_requirements
+    }
+
+    assert admission.admitted is False
+    assert admission.support_status == "unsupported"
+    assert admission.semantic_contract_type == "DynamicContractIR"
+    assert admission.lane_id == "dynamic_early_exercise_grid_vol_control_jvp"
+    assert admission.reason == "hybrid_jvp_backend_unsupported"
+    assert admission.contract_shape == "dynamic_early_exercise_grid_vol_control"
+    assert state_policy["state_kind"] == "early_exercise_control"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["control_policy"] == (
+        "grid_vol_hard_exercise_projection_pending"
+    )
+    assert state_policy["metadata"]["market_parameterization"] == "grid_vol"
+    assert requirements["underlier_vol"].parameterization == "grid_node_vols"
+    assert admission.metadata["requested_backend_operator"] == "jvp"
+    assert admission.metadata["backend_support"]["supported"] is False
+    assert admission.metadata["base_track"] == "payoff_expression"
 
 
 def test_path_dependent_contract_shape_is_classified_as_planned():
@@ -692,6 +758,35 @@ def test_arithmetic_path_summary_grid_vol_vjp_is_planned_not_runtime_supported()
     assert admission.metadata["grid_vol_support_status"] == "planned"
     assert "runtime_helper" not in admission.metadata
     assert admission.diagnostics[0]["code"] == "path_summary_grid_vol_vjp_pending"
+
+
+def test_arithmetic_path_summary_grid_vol_jvp_preserves_grid_vol_policy():
+    admission = admit_hybrid_ad_lane(
+        _path_dependent_ir(),
+        product_family="arithmetic_asian_option",
+        derivative_method="jvp",
+        market_parameterization="grid_vol",
+    )
+
+    state_policy = admission.metadata["state_policy"]
+    requirements = {
+        requirement.semantic_role: requirement
+        for requirement in admission.factor_requirements
+    }
+
+    assert admission.admitted is False
+    assert admission.support_status == "unsupported"
+    assert admission.lane_id == "arithmetic_asian_path_summary_grid_vol_jvp"
+    assert admission.reason == "hybrid_jvp_backend_unsupported"
+    assert admission.contract_shape == "arithmetic_asian_grid_vol_path_summary"
+    assert state_policy["state_kind"] == "smooth_path_summary"
+    assert state_policy["support_status"] == "planned"
+    assert state_policy["metadata"]["market_parameterization"] == "grid_vol"
+    assert requirements["underlier_vol"].parameterization == "grid_node_vols"
+    assert admission.metadata["requested_backend_operator"] == "jvp"
+    assert admission.metadata["backend_support"]["supported"] is False
+    assert admission.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
+    assert admission.diagnostics[0]["event_policy"] == "sampled_path_summary"
 
 
 def test_arithmetic_path_summary_hvp_remains_planned_until_runtime_exists():

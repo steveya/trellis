@@ -445,8 +445,19 @@ def _dynamic_contract_admission(
         and isinstance(contract.base_contract, ContractIR)
         and _is_early_exercise_family(product_family or contract.semantic_family)
         and _is_bounded_vanilla_early_exercise(contract.base_contract)
-        and derivative_method != "jvp"
     ):
+        if derivative_method == "jvp":
+            return _grid_vol_early_exercise_jvp_admission(
+                contract.base_contract,
+                product_family=family,
+                semantic_contract_type="DynamicContractIR",
+                lane_id="dynamic_early_exercise_grid_vol_control_jvp",
+                contract_shape="dynamic_early_exercise_grid_vol_control",
+                metadata_extra={
+                    "base_track": contract.base_track,
+                    "semantic_family": contract.semantic_family,
+                },
+            )
         reason = f"early_exercise_grid_vol_{derivative_method}_pending"
         state_policy = _early_exercise_state_policy(
             contract.base_contract,
@@ -564,6 +575,25 @@ def _contract_ir_admission(
     market_parameterization: str,
     product_family: str | None,
 ) -> HybridADLaneAdmission:
+    if derivative_method == "jvp" and _is_grid_vol_parameterization(
+        market_parameterization
+    ):
+        if _is_arithmetic_asian_family(
+            product_family
+        ) and _is_bounded_arithmetic_path_summary(contract):
+            return _grid_vol_path_summary_jvp_admission(
+                contract,
+                product_family=product_family,
+            )
+        if (
+            contract.exercise.style in {"american", "bermudan"}
+            and _is_early_exercise_family(product_family)
+            and _is_bounded_vanilla_early_exercise(contract)
+        ):
+            return _grid_vol_early_exercise_jvp_admission(
+                contract,
+                product_family=product_family or "early_exercise_option",
+            )
     if derivative_method == "jvp":
         backend_metadata = _backend_operator_support_metadata("jvp")
         return _admission(
@@ -1251,6 +1281,121 @@ def _state_policy_metadata(policy: HybridADStatePolicy) -> dict[str, Any]:
         "state_control_policy": policy.control_policy,
         "state_fail_closed": policy.fail_closed,
     }
+
+
+def _grid_vol_path_summary_jvp_admission(
+    contract: ContractIR,
+    *,
+    product_family: str | None,
+) -> HybridADLaneAdmission:
+    reason = "hybrid_jvp_backend_unsupported"
+    backend_metadata = _backend_operator_support_metadata("jvp")
+    state_policy = _smooth_path_summary_state_policy(
+        contract,
+        support_status="planned",
+        reason=reason,
+        fail_closed=True,
+        metadata={
+            "market_parameterization": "grid_vol",
+            "grid_vol_support_status": "planned",
+        },
+    )
+    return _admission(
+        admitted=False,
+        lane_id="arithmetic_asian_path_summary_grid_vol_jvp",
+        support_status="unsupported",
+        reason=reason,
+        semantic_contract_type="ContractIR",
+        product_family=product_family or "arithmetic_asian_option",
+        contract_shape="arithmetic_asian_grid_vol_path_summary",
+        derivative_methods=("vjp",),
+        factor_requirements=_path_summary_vol_requirements("grid_vol"),
+        metadata={
+            "requested_derivative_method": "jvp",
+            "market_parameterization": "grid_vol",
+            "observation_kind": contract.observation.kind,
+            "path_derivative_policy": (
+                "lognormal_moment_matching_smooth_path_summary"
+            ),
+            "grid_vol_support_status": "planned",
+            "grid_vol_derivative_policy": "grid_node_path_summary_policy_pending",
+            **backend_metadata,
+            "fail_closed": True,
+            **_state_policy_metadata(state_policy),
+        },
+        diagnostics=(
+            {
+                "code": reason,
+                "severity": "warning",
+                "requested_backend_operator": "jvp",
+                "backend_support": backend_metadata["backend_support"],
+                "state_kind": state_policy.state_kind,
+                "event_policy": state_policy.event_policy,
+                "market_parameterization": "grid_vol",
+            },
+        ),
+    )
+
+
+def _grid_vol_early_exercise_jvp_admission(
+    contract: ContractIR,
+    *,
+    product_family: str,
+    semantic_contract_type: str = "ContractIR",
+    lane_id: str = "early_exercise_grid_vol_control_jvp",
+    contract_shape: str = "early_exercise_grid_vol_control",
+    metadata_extra: Mapping[str, Any] | None = None,
+) -> HybridADLaneAdmission:
+    reason = "hybrid_jvp_backend_unsupported"
+    backend_metadata = _backend_operator_support_metadata("jvp")
+    state_policy = _early_exercise_state_policy(
+        contract,
+        support_status="planned",
+        reason=reason,
+        control_policy="grid_vol_hard_exercise_projection_pending",
+        fail_closed=True,
+        metadata={
+            "market_parameterization": "grid_vol",
+            "grid_vol_support_status": "planned",
+        },
+    )
+    return _admission(
+        admitted=False,
+        lane_id=lane_id,
+        support_status="unsupported",
+        reason=reason,
+        semantic_contract_type=semantic_contract_type,
+        product_family=product_family,
+        contract_shape=contract_shape,
+        derivative_methods=("vjp",),
+        factor_requirements=_grid_vol_requirements(),
+        metadata={
+            "requested_derivative_method": "jvp",
+            "market_parameterization": "grid_vol",
+            "exercise_style": contract.exercise.style,
+            "early_exercise_policy": "grid_vol_hard_exercise_projection_pending",
+            "grid_vol_support_status": "planned",
+            "grid_vol_derivative_policy": (
+                "grid_node_early_exercise_control_policy_pending"
+            ),
+            **backend_metadata,
+            "fail_closed": True,
+            "fail_closed_at_boundary_kinks": True,
+            **dict(metadata_extra or {}),
+            **_state_policy_metadata(state_policy),
+        },
+        diagnostics=(
+            {
+                "code": reason,
+                "severity": "warning",
+                "requested_backend_operator": "jvp",
+                "backend_support": backend_metadata["backend_support"],
+                "state_kind": state_policy.state_kind,
+                "control_policy": state_policy.control_policy,
+                "market_parameterization": "grid_vol",
+            },
+        ),
+    )
 
 
 def _discontinuous_event_state_policy(contract: ContractIR) -> HybridADStatePolicy:
