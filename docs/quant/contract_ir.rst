@@ -17,6 +17,12 @@ Why It Exists
 ``ProductIR`` is intentionally coarse. It is good for broad routing and
 knowledge retrieval, but it collapses structurally different contracts onto
 shared string families such as ``vanilla_option`` or ``swaption``.
+For option requests, the coarse family is now paired with explicit semantic
+axes: ``derivative_family``, ``underlying_asset_class``,
+``underlying_identifiers``, ``exercise_style``, and ``option_type``. Those axes
+let the routing layer keep a broad payoff family like ``vanilla_option`` while
+still distinguishing American equity, FX vanilla, rate, futures, and quanto
+requests before helper or validation-bundle selection.
 
 ``ContractIR`` keeps the structural information that a kernel matcher needs.
 For example, these two products are no longer separated only by instrument

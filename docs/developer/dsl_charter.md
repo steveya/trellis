@@ -49,8 +49,12 @@ wants."
 | Noun | Type | Description |
 |---|---|---|
 | `instrument` | str | Natural-language product label (request-only, not a routing key) |
-| `payoff_family` | enum | `vanilla`, `barrier`, `asian`, `lookback`, `basket`, `credit`, `rate`, `structured` |
+| `payoff_family` | enum | Payoff shape such as `vanilla_option`, `barrier_option`, `asian_option`, `swaption`, `credit_basket`, `rate_cap_floor_strip`, or `structured` |
+| `derivative_family` | enum | Broad derivative axis such as `option` or `swap`; this is semantic identity, not a route key |
+| `underlying_asset_class` | enum | Underlier asset-class axis such as `equity`, `fx`, `rate`, `future`, `credit`, or `commodity` |
+| `underlying_identifiers` | tuple | Canonical underlier names carried from the semantic contract underlier axes |
 | `exercise_style` | enum | `european`, `american`, `bermudan`, `issuer_call`, `holder_put` |
+| `option_type` | enum | `call` or `put` when the payoff side is part of the contract |
 | `path_dependence` | enum | `none`, `barrier`, `asian`, `lookback`, `cliquet`, `autocall` |
 | `schedule_dependence` | enum | `none`, `observation`, `fixing`, `accrual` |
 | `state_dependence` | enum | `terminal_markov`, `path_dependent`, `schedule_dependent` |
@@ -69,6 +73,13 @@ wants."
 static inference sets `unresolved_primitives`.
 
 **Output contract:** `ProductIR` (frozen dataclass in `knowledge/schema.py`).
+
+Option products are represented by axes rather than by forcing every
+combination into a new product family. For example, an American equity put can
+remain `payoff_family="vanilla_option"` while carrying
+`derivative_family="option"`, `underlying_asset_class="equity"`,
+`exercise_style="american"`, and `option_type="put"`. FX vanilla options,
+rate options, futures options, and equity options differ through the same axes.
 
 ### Layer 2 — Deterministic Validation
 

@@ -151,6 +151,18 @@ def compile_semantic_contract(
         supported=not bool(contract.blueprint.blocked_by),
         preferred_method=preferred_method,
         event_machine=getattr(contract.product, "event_machine", None),
+        derivative_family=getattr(contract.product, "derivative_family", ""),
+        underlying_asset_class=getattr(
+            getattr(contract.product, "underlying", None),
+            "asset_class",
+            "",
+        ),
+        underlying_identifiers=getattr(
+            getattr(contract.product, "underlying", None),
+            "identifiers",
+            (),
+        ),
+        option_type=getattr(contract.product, "option_type", ""),
     )
     product_ir = _augment_product_ir_with_contract_route_hints(product_ir, contract)
     contract_ir = None

@@ -75,6 +75,10 @@ _ALLOWED_STATE_TAGS = frozenset(
         "locked_cashflow_state",
     }
 )
+_ALLOWED_OPTION_TYPES = frozenset({"call", "put"})
+_ALLOWED_OPTION_UNDERLYING_ASSET_CLASSES = frozenset(
+    {"equity", "fx", "rate", "future", "credit", "commodity"}
+)
 _AUTOMATIC_ACTION_HINTS = (
     "settle",
     "lock",
@@ -1739,12 +1743,67 @@ def _validate_ranked_observation_basket_shape(
         )
 
 
+def _validate_option_axes(
+    contract: SemanticContract,
+    errors: list[str],
+    *,
+    allowed_underlying_asset_classes: frozenset[str],
+    require_option_type: bool = False,
+) -> None:
+    """Validate canonical option axes carried beside legacy semantic IDs."""
+    product = contract.product
+    derivative_family = str(getattr(product, "derivative_family", "") or "").strip().lower()
+    if derivative_family != "option":
+        errors.append(
+            "Option semantics require derivative_family `option`, "
+            f"got `{product.derivative_family}`."
+        )
+    if product.payoff_family == "vanilla_option":
+        option_type = str(getattr(product, "option_type", "") or "").strip().lower()
+        if option_type and option_type not in _ALLOWED_OPTION_TYPES:
+            errors.append(
+                "Vanilla option semantics only support option_type `call` or `put`, "
+                f"got `{product.option_type}`."
+            )
+        elif require_option_type and not option_type:
+            errors.append(
+                "Vanilla option semantics require option_type `call` or `put`, "
+                f"got `{product.option_type}`."
+            )
+    underlying = getattr(product, "underlying", None)
+    asset_class = str(getattr(underlying, "asset_class", "") or "").strip().lower()
+    if not asset_class:
+        errors.append("Option semantics require underlying.asset_class.")
+    elif asset_class not in _ALLOWED_OPTION_UNDERLYING_ASSET_CLASSES:
+        errors.append(
+            "Option semantics received unsupported underlying.asset_class "
+            f"`{asset_class}`."
+        )
+    elif asset_class not in allowed_underlying_asset_classes:
+        allowed = ", ".join(sorted(allowed_underlying_asset_classes))
+        errors.append(
+            "Option semantic shape does not support underlying.asset_class "
+            f"`{asset_class}`; expected one of: {allowed}."
+        )
+    identifiers = tuple(getattr(underlying, "identifiers", ()) or ())
+    constituents = tuple(getattr(product, "constituents", ()) or ())
+    if constituents and identifiers and identifiers != constituents:
+        errors.append(
+            "Option semantics require underlying.identifiers to match product constituents."
+        )
+
+
 def _validate_vanilla_option_shape(
     contract: SemanticContract,
     errors: list[str],
     warnings: list[str],
 ) -> None:
     """Validate a single-underlier vanilla option semantic shape."""
+    _validate_option_axes(
+        contract,
+        errors,
+        allowed_underlying_asset_classes=_ALLOWED_OPTION_UNDERLYING_ASSET_CLASSES,
+    )
     required_capabilities = _validate_market_capabilities(
         contract,
         errors,
@@ -1780,6 +1839,11 @@ def _validate_american_option_shape(
     warnings: list[str],
 ) -> None:
     """Validate a single-underlier holder-controlled vanilla option shape."""
+    _validate_option_axes(
+        contract,
+        errors,
+        allowed_underlying_asset_classes=frozenset({"equity"}),
+    )
     required_capabilities = _validate_market_capabilities(
         contract,
         errors,
@@ -1821,6 +1885,12 @@ def _validate_quanto_option_shape(
     warnings: list[str],
 ) -> None:
     """Validate a cross-currency quanto option semantic shape."""
+    _validate_option_axes(
+        contract,
+        errors,
+        allowed_underlying_asset_classes=frozenset({"equity", "commodity"}),
+        require_option_type=False,
+    )
     required_capabilities = _validate_market_capabilities(
         contract,
         errors,
@@ -1979,6 +2049,11 @@ def _validate_period_rate_option_strip_shape(
     warnings: list[str],
 ) -> None:
     """Validate a schedule-driven period rate-option strip semantic shape."""
+    _validate_option_axes(
+        contract,
+        errors,
+        allowed_underlying_asset_classes=frozenset({"rate"}),
+    )
     required_capabilities = _validate_market_capabilities(
         contract,
         errors,
@@ -2030,6 +2105,12 @@ def _validate_period_rate_option_strip_shape(
     if option_type != expected_option_type:
         errors.append(
             f"Rate cap/floor strip semantics require option_type `{expected_option_type}`, got `{option_type}`."
+        )
+    product_option_type = str(getattr(product, "option_type", "") or "").strip().lower()
+    if product_option_type != expected_option_type:
+        errors.append(
+            "Rate cap/floor strip semantics require product option_type "
+            f"`{expected_option_type}`, got `{product_option_type}`."
         )
     if product.controller_protocol.controller_style != "identity":
         errors.append("Rate cap/floor strip semantics cannot declare a strategic controller.")

@@ -102,6 +102,10 @@ class ProductIR:
     unresolved_primitives: tuple[str, ...] = ()
     supported: bool = True
     event_machine: object | None = None  # EventMachine when typed, None for legacy
+    derivative_family: str = ""
+    underlying_asset_class: str = ""
+    underlying_identifiers: tuple[str, ...] = ()
+    option_type: str = ""
 
 
 @dataclass(frozen=True)

@@ -945,6 +945,9 @@ def test_validate_build_uses_quanto_family_validation_bundle(monkeypatch):
         "Quanto option on SAP settled in USD",
         instrument_type="quanto_option",
     )
+    assert compiled.product_ir.derivative_family == "option"
+    assert compiled.product_ir.underlying_asset_class == "equity"
+    assert compiled.product_ir.underlying_identifiers == ("underlier",)
 
     spec_schema = SimpleNamespace(
         class_name="QuantoOptionAnalyticalPayoff",

@@ -740,6 +740,107 @@ def test_representative_derivative_contracts_validate_and_compile(
     assert all("himalaya" not in module.lower() for module in compiled.route_modules)
 
 
+def test_option_axes_survive_american_equity_contract_compilation():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = _draft_contract(
+        "American put option on AAPL with strike 100 and expiry 2025-11-15",
+        "american_option",
+    )
+
+    assert contract is not None
+    assert contract.product.semantic_id == "american_option"
+    assert contract.product.derivative_family == "option"
+    assert contract.product.payoff_family == "vanilla_option"
+    assert contract.product.underlying.asset_class == "equity"
+    assert contract.product.underlying.identifiers == ("AAPL",)
+    assert contract.product.exercise_style == "american"
+    assert contract.product.option_type == "put"
+
+    summary = semantic_contract_summary(contract)
+    assert summary["product"]["derivative_family"] == "option"
+    assert summary["product"]["underlying"] == {
+        "asset_class": "equity",
+        "identifiers": ["AAPL"],
+    }
+    assert summary["product"]["option_type"] == "put"
+
+    report = validate_semantic_contract(contract)
+    assert report.ok
+
+    compiled = compile_semantic_contract(contract)
+    assert compiled.product_ir.derivative_family == "option"
+    assert compiled.product_ir.payoff_family == "vanilla_option"
+    assert compiled.product_ir.underlying_asset_class == "equity"
+    assert compiled.product_ir.underlying_identifiers == ("AAPL",)
+    assert compiled.product_ir.exercise_style == "american"
+    assert compiled.product_ir.option_type == "put"
+
+
+def test_option_axes_distinguish_fx_vanilla_without_new_product_family():
+    from trellis.agent.knowledge.decompose import build_product_ir
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    contract = make_vanilla_option_contract(
+        description="European call FX vanilla option on EURUSD with expiry 2025-11-15",
+        underliers=("EURUSD",),
+        observation_schedule=("2025-11-15",),
+        underlying_asset_class="fx",
+        option_type="call",
+    )
+
+    assert contract.product.derivative_family == "option"
+    assert contract.product.payoff_family == "vanilla_option"
+    assert contract.product.underlying.asset_class == "fx"
+    assert contract.product.option_type == "call"
+    assert contract.product.instrument_class == "european_option"
+
+    product_ir = build_product_ir(
+        description="Legacy FX vanilla option task with EURUSD call",
+        instrument="fx_vanilla",
+        payoff_family="vanilla_option",
+        exercise_style="european",
+        model_family="fx",
+        option_type="call",
+    )
+
+    assert product_ir.derivative_family == "option"
+    assert product_ir.payoff_family == "vanilla_option"
+    assert product_ir.underlying_asset_class == "fx"
+    assert product_ir.option_type == "call"
+
+
+def test_option_axis_validation_rejects_contradictory_underlying_asset_class():
+    from dataclasses import replace
+
+    from trellis.agent.semantic_contracts import SemanticUnderlyingAxes, make_american_option_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    contract = make_american_option_contract(
+        description="American put option on AAPL with strike 100 and expiry 2025-11-15",
+        underliers=("AAPL",),
+        observation_schedule=("2025-11-15",),
+        option_type="put",
+    )
+    bad = replace(
+        contract,
+        product=replace(
+            contract.product,
+            underlying=SemanticUnderlyingAxes(
+                asset_class="rate",
+                identifiers=contract.product.underlying.identifiers,
+            ),
+        ),
+    )
+
+    report = validate_semantic_contract(bad)
+
+    assert not report.ok
+    assert any("underlying.asset_class" in error for error in report.errors)
+
+
 def test_rate_cap_floor_strip_draft_uses_structural_schedule_placeholder_when_dates_are_absent():
     contract = _draft_contract(
         "Build a pricer for: Cap/floor: Black caplet stack vs MC rate simulation",
@@ -750,9 +851,48 @@ def test_rate_cap_floor_strip_draft_uses_structural_schedule_placeholder_when_da
     assert contract.semantic_id == "period_rate_option_strip"
     assert contract.product.instrument_class == "cap"
     assert contract.product.payoff_family == "period_rate_option_strip"
+    assert contract.product.derivative_family == "option"
+    assert contract.product.underlying.asset_class == "rate"
+    assert contract.product.option_type == "call"
     assert contract.product.observation_schedule
     assert contract.product.term_fields["schedule_authority"] == "structural_placeholder"
     assert contract.product.term_fields["option_type"] == "call"
+
+
+def test_rate_cap_floor_strips_carry_rate_option_axes_without_option_prose():
+    from trellis.agent.knowledge.decompose import build_product_ir
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_period_rate_option_strip_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+
+    cap_contract = make_period_rate_option_strip_contract(
+        description="SOFR cap strip with annual fixings through 2029-11-15",
+        instrument_class="cap",
+        observation_schedule=("2026-11-15", "2027-11-15", "2028-11-15", "2029-11-15"),
+    )
+    floor_ir = build_product_ir(
+        description="USD SOFR floor strip under Black caplet stack pricing",
+        instrument="floor",
+        payoff_family="period_rate_option_strip",
+        model_family="interest_rate",
+    )
+
+    assert cap_contract.product.derivative_family == "option"
+    assert cap_contract.product.payoff_family == "period_rate_option_strip"
+    assert cap_contract.product.underlying.asset_class == "rate"
+    assert cap_contract.product.option_type == "call"
+    assert validate_semantic_contract(cap_contract).ok
+
+    compiled = compile_semantic_contract(cap_contract)
+    assert compiled.product_ir.derivative_family == "option"
+    assert compiled.product_ir.payoff_family == "period_rate_option_strip"
+    assert compiled.product_ir.underlying_asset_class == "rate"
+    assert compiled.product_ir.option_type == "call"
+
+    assert floor_ir.derivative_family == "option"
+    assert floor_ir.payoff_family == "period_rate_option_strip"
+    assert floor_ir.underlying_asset_class == "rate"
+    assert floor_ir.option_type == "put"
 
 
 def test_rate_cap_floor_strip_contract_uses_registered_surface_schema_hints():

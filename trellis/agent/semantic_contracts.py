@@ -52,6 +52,14 @@ def _string_list(values) -> list[str]:
 
 def _yaml_safe_value(value):
     """Project MappingProxyType-heavy values onto YAML-safe primitives."""
+    if not isinstance(value, type) and dataclasses.is_dataclass(value):
+        result = {}
+        for field in dataclasses.fields(value):
+            item = getattr(value, field.name)
+            if item is None or item == "" or item == ():
+                continue
+            result[field.name] = _yaml_safe_value(item)
+        return result
     if isinstance(value, MappingProxyType):
         value = dict(value)
     if isinstance(value, Mapping):
@@ -712,6 +720,14 @@ class SemanticMarketInputSpec:
 
 
 @dataclass(frozen=True)
+class SemanticUnderlyingAxes:
+    """Canonical underlier axes carried independently from route identity."""
+
+    asset_class: str = ""
+    identifiers: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class SemanticDraftRule:
     """One ordered semantic-contract drafting rule."""
 
@@ -790,6 +806,9 @@ class SemanticProductSemantics:
     instrument_class: str
     instrument_aliases: tuple[str, ...]
     payoff_family: str
+    derivative_family: str = ""
+    underlying: SemanticUnderlyingAxes = field(default_factory=SemanticUnderlyingAxes)
+    option_type: str = ""
 
     # --- Underlier & Payoff ---
     conventions: ConventionEnv = field(default_factory=ConventionEnv)
@@ -953,8 +972,11 @@ def semantic_contract_summary(contract: SemanticContract | dict[str, Any] | str)
         "semantic_concept": semantic_concept_summary(concept),
         "product": {
             "instrument_class": parsed.product.instrument_class,
+            "derivative_family": parsed.product.derivative_family,
             "underlier_structure": parsed.product.underlier_structure,
+            "underlying": _yaml_safe_value(parsed.product.underlying),
             "payoff_family": parsed.product.payoff_family,
+            "option_type": parsed.product.option_type,
             "payoff_rule": parsed.product.payoff_rule,
             "settlement_rule": parsed.product.settlement_rule,
             "observation_schedule": list(parsed.product.observation_schedule),
@@ -1483,6 +1505,86 @@ def _extract_primary_underlier(text: str, term_sheet) -> tuple[str, ...]:
     return ()
 
 
+_CURRENCY_CODES = frozenset(
+    {
+        "AUD",
+        "BRL",
+        "CAD",
+        "CHF",
+        "CNY",
+        "EUR",
+        "GBP",
+        "HKD",
+        "JPY",
+        "MXN",
+        "NOK",
+        "NZD",
+        "SEK",
+        "SGD",
+        "USD",
+        "ZAR",
+    }
+)
+
+
+def _normalize_axis_token(value: object) -> str:
+    """Normalize one semantic-axis token without inventing aliases."""
+    return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _infer_option_type(text: str, explicit: str | None = None) -> str:
+    """Infer the canonical call/put side when a vanilla option request states it."""
+    normalized_explicit = _normalize_axis_token(explicit)
+    if normalized_explicit in {"call", "put"}:
+        return normalized_explicit
+    lower = f" {str(text or '').lower()} "
+    if re.search(r"\bput\b", lower):
+        return "put"
+    if re.search(r"\bcall\b", lower):
+        return "call"
+    return normalized_explicit
+
+
+def _looks_like_currency_pair(value: str) -> bool:
+    """Return whether a compact identifier looks like a currency pair."""
+    token = str(value or "").strip().upper().replace("/", "").replace("-", "")
+    return (
+        len(token) == 6
+        and token[:3] in _CURRENCY_CODES
+        and token[3:] in _CURRENCY_CODES
+    )
+
+
+def _infer_underlying_asset_class(
+    text: str,
+    *,
+    underliers: tuple[str, ...] | list[str] = (),
+    explicit: str | None = None,
+    default: str = "",
+) -> str:
+    """Infer the canonical underlier asset-class axis from explicit hints or request text."""
+    normalized_explicit = _normalize_axis_token(explicit)
+    if normalized_explicit:
+        return normalized_explicit
+    normalized_default = _normalize_axis_token(default)
+    lower = f" {str(text or '').lower()} "
+    if " fx " in lower or "foreign exchange" in lower or "currency pair" in lower:
+        return "fx"
+    if any(_looks_like_currency_pair(item) for item in _tuple(underliers)):
+        return "fx"
+    if " rate " in lower or " swaption " in lower or " caplet " in lower or " floorlet " in lower:
+        return "rate"
+    if " future " in lower or " futures " in lower:
+        return "future"
+    if " credit " in lower or " cds " in lower:
+        return "credit"
+    if " commodity " in lower:
+        return "commodity"
+    if " equity " in lower or " stock " in lower or " share " in lower:
+        return "equity"
+    return normalized_default
+
+
 def _extract_rate_cap_floor_schedule(
     text: str,
     term_sheet,
@@ -1523,6 +1625,8 @@ def make_vanilla_option_contract(
     underliers: tuple[str, ...] | list[str],
     observation_schedule: tuple[str, ...] | list[str],
     preferred_method: str = "analytical",
+    underlying_asset_class: str | None = None,
+    option_type: str | None = None,
 ) -> SemanticContract:
     """Construct a generic vanilla option semantic contract."""
     underlier_names = _tuple(underliers)
@@ -1535,6 +1639,13 @@ def make_vanilla_option_contract(
         raise ValueError("Vanilla option contract requires at least one underlier.")
     if not schedule:
         raise ValueError("Vanilla option contract requires an expiry or exercise schedule.")
+    resolved_underlying_asset_class = _infer_underlying_asset_class(
+        description,
+        underliers=underlier_names,
+        explicit=underlying_asset_class,
+        default="equity",
+    )
+    resolved_option_type = _infer_option_type(description, option_type)
 
     product = SemanticProductSemantics(
         semantic_id="vanilla_option",
@@ -1542,6 +1653,12 @@ def make_vanilla_option_contract(
         instrument_class="european_option",
         instrument_aliases=("vanilla_option", "european_option", "option"),
         payoff_family="vanilla_option",
+        derivative_family="option",
+        underlying=SemanticUnderlyingAxes(
+            asset_class=resolved_underlying_asset_class,
+            identifiers=underlier_names,
+        ),
+        option_type=resolved_option_type,
         timeline=_default_semantic_timeline(
             schedule,
             includes_decision=True,
@@ -1679,6 +1796,8 @@ def make_american_option_contract(
     observation_schedule: tuple[str, ...] | list[str],
     preferred_method: str = "rate_tree",
     exercise_style: str = "american",
+    underlying_asset_class: str | None = None,
+    option_type: str | None = None,
 ) -> SemanticContract:
     """Construct a bounded early-exercise single-underlier option contract."""
     underlier_names = _tuple(underliers)
@@ -1695,6 +1814,13 @@ def make_american_option_contract(
     normalized_exercise = str(exercise_style).strip().lower()
     if normalized_exercise not in {"american", "bermudan"}:
         raise ValueError("American option contract only supports american or bermudan exercise.")
+    resolved_underlying_asset_class = _infer_underlying_asset_class(
+        description,
+        underliers=underlier_names,
+        explicit=underlying_asset_class,
+        default="equity",
+    )
+    resolved_option_type = _infer_option_type(description, option_type)
 
     product = SemanticProductSemantics(
         semantic_id="american_option",
@@ -1702,6 +1828,12 @@ def make_american_option_contract(
         instrument_class="american_option",
         instrument_aliases=("american_option", "bermudan_option", "option"),
         payoff_family="vanilla_option",
+        derivative_family="option",
+        underlying=SemanticUnderlyingAxes(
+            asset_class=resolved_underlying_asset_class,
+            identifiers=underlier_names,
+        ),
+        option_type=resolved_option_type,
         timeline=_default_semantic_timeline(
             schedule,
             includes_decision=True,
@@ -1838,6 +1970,8 @@ def make_quanto_option_contract(
     underliers: tuple[str, ...] | list[str],
     observation_schedule: tuple[str, ...] | list[str],
     preferred_method: str = "analytical",
+    underlying_asset_class: str | None = None,
+    option_type: str | None = None,
 ) -> SemanticContract:
     """Construct a generic quanto-style semantic contract."""
     underlier_names = _tuple(underliers)
@@ -1850,6 +1984,13 @@ def make_quanto_option_contract(
         raise ValueError("Quanto option contract requires at least one underlier.")
     if not schedule:
         raise ValueError("Quanto option contract requires an expiry or exercise schedule.")
+    resolved_underlying_asset_class = _infer_underlying_asset_class(
+        description,
+        underliers=underlier_names,
+        explicit=underlying_asset_class,
+        default="equity",
+    )
+    resolved_option_type = _infer_option_type(description, option_type)
 
     product = SemanticProductSemantics(
         semantic_id="quanto_option",
@@ -1857,6 +1998,12 @@ def make_quanto_option_contract(
         instrument_class="quanto_option",
         instrument_aliases=("quanto_option", "quanto", "fx_option"),
         payoff_family="vanilla_option",
+        derivative_family="option",
+        underlying=SemanticUnderlyingAxes(
+            asset_class=resolved_underlying_asset_class,
+            identifiers=underlier_names,
+        ),
+        option_type=resolved_option_type,
         timeline=_default_semantic_timeline(
             schedule,
             includes_decision=True,
@@ -2675,6 +2822,9 @@ def make_period_rate_option_strip_contract(
             normalized_instrument,
         ),
         payoff_family="period_rate_option_strip",
+        derivative_family="option",
+        underlying=SemanticUnderlyingAxes(asset_class="rate"),
+        option_type=option_type,
         timeline=_default_semantic_timeline(
             schedule,
             settlement_dates=schedule,
@@ -3418,6 +3568,8 @@ def _rebuild_vanilla_option_contract(
         underliers=tuple(getattr(product, "constituents", ()) or ()),
         observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
         preferred_method=normalized_method,
+        underlying_asset_class=getattr(getattr(product, "underlying", None), "asset_class", ""),
+        option_type=str(getattr(product, "option_type", "") or ""),
     )
 
 
@@ -3433,6 +3585,8 @@ def _rebuild_american_option_contract(
         observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
         preferred_method=normalized_method,
         exercise_style=str(getattr(product, "exercise_style", "american") or "american"),
+        underlying_asset_class=getattr(getattr(product, "underlying", None), "asset_class", ""),
+        option_type=str(getattr(product, "option_type", "") or ""),
     )
 
 
@@ -3447,6 +3601,8 @@ def _rebuild_quanto_option_contract(
         underliers=tuple(getattr(product, "constituents", ()) or ()),
         observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
         preferred_method=normalized_method,
+        underlying_asset_class=getattr(getattr(product, "underlying", None), "asset_class", ""),
+        option_type=str(getattr(product, "option_type", "") or ""),
     )
 
 
@@ -3692,6 +3848,20 @@ def _parse_market_input_spec(payload: SemanticMarketInputSpec | dict[str, Any]) 
     )
 
 
+def _parse_underlying_axes(
+    payload: SemanticUnderlyingAxes | dict[str, Any] | None,
+) -> SemanticUnderlyingAxes:
+    """Normalize canonical underlier-axis metadata."""
+    if isinstance(payload, SemanticUnderlyingAxes):
+        return payload
+    if not payload:
+        return SemanticUnderlyingAxes()
+    return SemanticUnderlyingAxes(
+        asset_class=str(payload.get("asset_class", "")).strip().lower(),
+        identifiers=_tuple(payload.get("identifiers", ())),
+    )
+
+
 def _parse_product_semantics(
     payload: SemanticProductSemantics | dict[str, Any],
 ) -> SemanticProductSemantics:
@@ -3709,6 +3879,9 @@ def _parse_product_semantics(
         instrument_class=instrument_class,
         instrument_aliases=_tuple(payload.get("instrument_aliases", ())),
         payoff_family=str(payload["payoff_family"]).strip(),
+        derivative_family=str(payload.get("derivative_family", "")).strip().lower(),
+        underlying=_parse_underlying_axes(payload.get("underlying")),
+        option_type=str(payload.get("option_type", "")).strip().lower(),
         conventions=_parse_convention_env(payload.get("conventions", {})),
         timeline=_parse_semantic_timeline(
             payload.get("timeline", {}),
