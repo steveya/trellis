@@ -859,6 +859,16 @@ class TradeService:
             "callable_range_note",
             "callable_range_accrual",
         }:
+            settlement_profile = structured_trade.get("settlement_profile")
+            if structured_trade.get("principal_redemption") not in {None, ""}:
+                settlement_profile = (
+                    dict(settlement_profile)
+                    if isinstance(settlement_profile, Mapping)
+                    else {}
+                )
+                settlement_profile["principal_redemption"] = structured_trade[
+                    "principal_redemption"
+                ]
             try:
                 contract = make_range_accrual_contract(
                     description=payload_description,
@@ -871,7 +881,7 @@ class TradeService:
                     observation_schedule=schedule,
                     coupon_definition=self._structured_coupon_definition(structured_trade),
                     range_condition=self._structured_range_condition(structured_trade),
-                    settlement_profile=structured_trade.get("settlement_profile"),
+                    settlement_profile=settlement_profile,
                     callability=self._structured_callability(structured_trade),
                     preferred_method=str(structured_trade.get("preferred_method", "analytical")).strip() or "analytical",
                 )

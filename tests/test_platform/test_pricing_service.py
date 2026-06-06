@@ -64,6 +64,7 @@ def test_build_callable_bond_spec_preserves_explicit_zero_call_price():
 
 
 def test_build_range_accrual_spec_preserves_explicit_zero_principal_redemption():
+    from trellis.agent.static_leg_contract import KnownCashflowLeg
     from trellis.platform.services.pricing_service import PricingService
     from trellis.platform.services.trade_service import TradeService
 
@@ -102,6 +103,12 @@ def test_build_range_accrual_spec_preserves_explicit_zero_principal_redemption()
     )
 
     assert spec.principal_redemption == 0.0
+    static_ir = parsed_trade.semantic_blueprint.static_leg_contract_ir
+    assert static_ir.metadata["range_accrual_spec_fields"]["principal_redemption"] == 0.0
+    assert not any(
+        isinstance(signed_leg.leg, KnownCashflowLeg)
+        for signed_leg in static_ir.legs
+    )
 
 
 def test_desk_review_projects_agent_cycle_surface_for_approved_model_runs():

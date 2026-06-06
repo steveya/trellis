@@ -544,6 +544,17 @@ def test_compile_build_request_preserves_missing_route_state_for_range_accrual_s
 
     assert compiled.semantic_contract is not None
     assert compiled.semantic_blueprint is not None
+    assert compiled.semantic_blueprint.static_leg_contract_ir is not None
+    assert (
+        compiled.semantic_blueprint.static_leg_contract_ir.metadata["semantic_family"]
+        == "range_accrual"
+    )
+    assert (
+        compiled.request.metadata["semantic_blueprint"]["static_leg_contract_ir"]["metadata"][
+            "range_accrual_spec_fields"
+        ]["reference_index"]
+        == "SOFR"
+    )
     assert compiled.semantic_blueprint.primitive_routes == ()
     assert compiled.semantic_blueprint.dsl_lowering.route_id is None
     assert compiled.generation_plan is not None
