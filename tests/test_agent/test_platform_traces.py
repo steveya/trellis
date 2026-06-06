@@ -797,7 +797,7 @@ def test_platform_trace_summary_reads_legacy_top_level_route_binding_fields():
     assert construction_identity["backend_engine_family"] == "analytical"
 
 
-def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
+def test_platform_trace_records_checked_range_accrual_static_leg_binding(tmp_path):
     from trellis.agent.platform_requests import compile_build_request
     from trellis.agent.platform_traces import (
         load_platform_trace_boundary,
@@ -828,11 +828,35 @@ def test_platform_trace_keeps_route_less_semantic_requests_truthful(tmp_path):
     assert trace.generation_boundary["method"] == "analytical"
     assert trace.generation_boundary["lowering"]["route_id"] is None
     assert boundary["generation_boundary"]["lowering"]["route_id"] is None
-    assert trace.generation_boundary["lowering"]["route_family"] is None
-    assert trace.generation_boundary["construction_identity"]["primary_kind"] == "lane_family"
-    assert trace.generation_boundary["construction_identity"]["primary_label"] == "analytical"
+    assert trace.generation_boundary["lowering"]["route_family"] == "analytical"
+    assert trace.generation_boundary["lowering"]["route_modules"] == [
+        "trellis.models.range_accrual",
+        "trellis.models.contingent_cashflows",
+    ]
+    assert (
+        "trellis.models.range_accrual.price_range_accrual"
+        in trace.generation_boundary["lowering"]["helper_refs"]
+    )
+    construction_identity = trace.generation_boundary["construction_identity"]
+    assert construction_identity["primary_kind"] == "backend_binding"
+    assert construction_identity["backend_exact_fit"] is True
+    assert (
+        construction_identity["backend_binding_id"]
+        == "trellis.models.range_accrual.price_range_accrual"
+    )
     assert trace.generation_boundary["primitive_plan"] == {}
-    assert trace.generation_boundary["route_binding_authority"] == {}
+    route_binding_authority = trace.generation_boundary["route_binding_authority"]
+    assert route_binding_authority["route_id"] is None
+    assert route_binding_authority["route_family"] == "analytical"
+    assert route_binding_authority["authority_kind"] == "exact_backend_fit"
+    assert (
+        route_binding_authority["backend_binding"]["binding_id"]
+        == "trellis.models.range_accrual.price_range_accrual"
+    )
+    assert (
+        boundary["generation_boundary"]["route_binding_authority"]["backend_binding"]["binding_id"]
+        == "trellis.models.range_accrual.price_range_accrual"
+    )
     assert trace.validation_contract["route_id"] is None
 
 
