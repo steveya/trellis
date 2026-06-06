@@ -4873,18 +4873,20 @@ def _default_range_accrual_settlement_profile() -> Mapping[str, object]:
 def _normalize_settlement_profile(payload: Mapping[str, object] | None) -> MappingProxyType:
     """Normalize the settlement profile for the range-accrual contract."""
     payload = dict(_default_range_accrual_settlement_profile() if payload is None else payload)
-    return _freeze_mapping(
-        {
-            "coupon_settlement": str(
-                payload.get("coupon_settlement", "coupon_period_cash_settlement")
-            ).strip()
-            or "coupon_period_cash_settlement",
-            "principal_settlement": str(
-                payload.get("principal_settlement", "principal_at_maturity")
-            ).strip()
-            or "principal_at_maturity",
-        }
-    )
+    normalized: dict[str, object] = {
+        "coupon_settlement": str(
+            payload.get("coupon_settlement", "coupon_period_cash_settlement")
+        ).strip()
+        or "coupon_period_cash_settlement",
+        "principal_settlement": str(
+            payload.get("principal_settlement", "principal_at_maturity")
+        ).strip()
+        or "principal_at_maturity",
+    }
+    principal_redemption = payload.get("principal_redemption")
+    if principal_redemption not in {None, ""}:
+        normalized["principal_redemption"] = float(principal_redemption)
+    return _freeze_mapping(normalized)
 
 
 def _normalize_callability(payload: Mapping[str, object] | None) -> MappingProxyType:

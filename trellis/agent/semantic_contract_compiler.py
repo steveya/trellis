@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import date
 import logging
+import re
 from types import MappingProxyType
 from typing import Mapping
 
@@ -183,14 +185,18 @@ def compile_semantic_contract(
         )
     static_leg_contract_ir = None
     try:
-        static_leg_contract_ir = decompose_to_static_leg_contract_ir(
-            contract.description or contract.semantic_id,
-            instrument_type=(
-                getattr(getattr(contract, "product", None), "instrument_class", None)
-                or getattr(product_ir, "instrument", None)
-            ),
-            product_ir=product_ir,
+        static_leg_contract_ir = _lower_static_leg_contract_ir_from_semantic_contract(
+            contract
         )
+        if static_leg_contract_ir is None:
+            static_leg_contract_ir = decompose_to_static_leg_contract_ir(
+                contract.description or contract.semantic_id,
+                instrument_type=(
+                    getattr(getattr(contract, "product", None), "instrument_class", None)
+                    or getattr(product_ir, "instrument", None)
+                ),
+                product_ir=product_ir,
+            )
     except Exception:
         _LOG.warning(
             "Static-leg Contract IR decomposition failed for semantic contract %s",
@@ -399,6 +405,238 @@ def _specialize_contract_for_preferred_method(contract, preferred_method: str):
         contract,
         preferred_method=preferred_method,
     )
+
+
+def _lower_static_leg_contract_ir_from_semantic_contract(contract):
+    """Lower semantic contracts whose normalized fields define static-leg IR."""
+
+    semantic_id = str(getattr(contract, "semantic_id", "") or "").strip().lower()
+    product = getattr(contract, "product", None)
+    product_semantic_id = str(getattr(product, "semantic_id", "") or "").strip().lower()
+    if semantic_id != "range_accrual" and product_semantic_id != "range_accrual":
+        return None
+    return _lower_range_accrual_to_static_leg_contract_ir(contract)
+
+
+def _lower_range_accrual_to_static_leg_contract_ir(contract):
+    """Lower the bounded single-index range-accrual semantic contract to static legs."""
+
+    from trellis.agent.semantic_observables import (
+        BetweenPredicate,
+        ObservationMetadata,
+        RateIndexObservable,
+    )
+    from trellis.agent.static_leg_contract import (
+        ConditionalAccrualLeg,
+        ConditionalAccrualPeriod,
+        FixedCouponFormula,
+        KnownCashflow,
+        KnownCashflowLeg,
+        NotionalSchedule,
+        NotionalStep,
+        SettlementRule,
+        SignedLeg,
+        StaticLegContractIR,
+    )
+
+    product = getattr(contract, "product", None)
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    reference_index = str(term_fields.get("reference_index") or "").strip().upper()
+    schedule = tuple(str(item).strip() for item in getattr(product, "observation_schedule", ()) or ())
+    if not reference_index or len(schedule) < 2:
+        return None
+    try:
+        observation_dates = tuple(date.fromisoformat(item) for item in schedule)
+    except ValueError:
+        return None
+    if any(left >= right for left, right in zip(observation_dates, observation_dates[1:])):
+        return None
+
+    coupon_definition = dict(term_fields.get("coupon_definition") or {})
+    range_condition = dict(term_fields.get("range_condition") or {})
+    settlement_profile = dict(term_fields.get("settlement_profile") or {})
+    callability = dict(term_fields.get("callability") or {})
+    if (
+        coupon_definition.get("coupon_rate") is None
+        or range_condition.get("lower_bound") is None
+        or range_condition.get("upper_bound") is None
+    ):
+        return None
+
+    first_gap = observation_dates[1] - observation_dates[0]
+    accrual_start_dates = (observation_dates[0] - first_gap, *observation_dates[:-1])
+    payment_dates = observation_dates
+    currency = _range_accrual_currency(contract, reference_index)
+    index_name, tenor = _split_range_accrual_reference_index(reference_index)
+    principal_redemption = _range_accrual_principal_redemption(
+        term_fields,
+        settlement_profile,
+    )
+    day_count = (
+        str(getattr(getattr(product, "conventions", None), "day_count_convention", "") or "").strip()
+        or "ACT/365"
+    )
+
+    spec_fields = {
+        "reference_index": reference_index,
+        "coupon_rate": float(coupon_definition["coupon_rate"]),
+        "lower_bound": float(range_condition["lower_bound"]),
+        "upper_bound": float(range_condition["upper_bound"]),
+        "observation_dates": schedule,
+        "accrual_start_dates": tuple(item.isoformat() for item in accrual_start_dates),
+        "payment_dates": tuple(item.isoformat() for item in payment_dates),
+        "principal_redemption": principal_redemption,
+        "inclusive_lower": bool(range_condition.get("inclusive_lower", True)),
+        "inclusive_upper": bool(range_condition.get("inclusive_upper", True)),
+        "day_count": day_count,
+    }
+    notional_schedule = NotionalSchedule(
+        (
+            NotionalStep(
+                start_date=accrual_start_dates[0],
+                end_date=observation_dates[-1],
+                amount=1.0,
+            ),
+        )
+    )
+    condition = BetweenPredicate(
+        observable=RateIndexObservable(
+            observable_id="reference_rate_fixing",
+            index_name=index_name,
+            tenor=tenor,
+            observation=ObservationMetadata(
+                schedule_role="observation_dates",
+                fixing_date_role="fixing_dates",
+                missing_fixing_policy="project_forward_for_future_only",
+            ),
+        ),
+        lower_bound=float(range_condition["lower_bound"]),
+        upper_bound=float(range_condition["upper_bound"]),
+        inclusive_lower=bool(range_condition.get("inclusive_lower", True)),
+        inclusive_upper=bool(range_condition.get("inclusive_upper", True)),
+    )
+    periods = tuple(
+        ConditionalAccrualPeriod(
+            accrual_start=start,
+            accrual_end=observation,
+            observation_date=observation,
+            payment_date=payment,
+            fixing_date=observation,
+        )
+        for start, observation, payment in zip(
+            accrual_start_dates,
+            observation_dates,
+            payment_dates,
+        )
+    )
+    conditional_leg = ConditionalAccrualLeg(
+        currency=currency,
+        notional_schedule=notional_schedule,
+        accrual_periods=periods,
+        coupon_formula=FixedCouponFormula(float(coupon_definition["coupon_rate"])),
+        day_count=day_count,
+        payment_frequency=_infer_range_accrual_frequency(observation_dates),
+        accrual_condition_ref="reference_rate_fixing_in_range",
+        accrual_counter_ref="in_range_coupon_count",
+        settlement_rule=str(
+            settlement_profile.get("coupon_settlement", "coupon_period_cash_settlement")
+        ).strip()
+        or "coupon_period_cash_settlement",
+        label="range_accrual_coupon",
+        metadata={
+            "semantic_family": "range_accrual",
+            "lowering_source": "semantic_contract.term_fields",
+            "reference_index": reference_index,
+            "coupon_definition": coupon_definition,
+            "range_condition": range_condition,
+            "settlement_profile": settlement_profile,
+            "callability": callability,
+            "range_accrual_spec_fields": spec_fields,
+        },
+        accrual_condition=condition,
+    )
+    legs = [SignedLeg(direction="receive", leg=conditional_leg)]
+    if principal_redemption != 0.0:
+        principal_leg = KnownCashflowLeg(
+            currency=currency,
+            cashflows=(
+                KnownCashflow(
+                    payment_date=payment_dates[-1],
+                    amount=principal_redemption,
+                    currency=currency,
+                    label="principal_redemption",
+                ),
+            ),
+            label="range_accrual_principal",
+        )
+        legs.append(SignedLeg(direction="receive", leg=principal_leg))
+    return StaticLegContractIR(
+        legs=tuple(legs),
+        settlement=SettlementRule(
+            payout_currency=currency,
+            settlement_kind="cash",
+            settlement_lag_days=0,
+        ),
+        metadata={
+            "semantic_id": "range_accrual",
+            "semantic_family": "range_accrual",
+            "lowering_source": "semantic_contract.term_fields",
+            "callability": callability,
+            "range_accrual_spec_fields": spec_fields,
+        },
+    )
+
+
+def _range_accrual_currency(contract, reference_index: str) -> str:
+    product = getattr(contract, "product", None)
+    conventions = getattr(product, "conventions", None)
+    for value in (
+        getattr(conventions, "payment_currency", ""),
+        getattr(conventions, "reporting_currency", ""),
+    ):
+        currency = str(value or "").strip().upper()
+        if currency:
+            return currency
+    parts = [part for part in re.split(r"[-_/ ]+", reference_index.upper()) if part]
+    if parts and len(parts[0]) == 3:
+        return parts[0]
+    if reference_index.upper() in {"SOFR", "FF", "FEDFUNDS"}:
+        return "USD"
+    return "USD"
+
+
+def _split_range_accrual_reference_index(reference_index: str) -> tuple[str, str]:
+    normalized = str(reference_index or "").strip().upper()
+    parts = [part for part in re.split(r"[-_/ ]+", normalized) if part]
+    if len(parts) >= 2 and re.fullmatch(r"\d+[DWMY]", parts[-1]):
+        return "-".join(parts[:-1]), parts[-1]
+    return normalized, ""
+
+
+def _range_accrual_principal_redemption(
+    term_fields: Mapping[str, object],
+    settlement_profile: Mapping[str, object],
+) -> float:
+    value = term_fields.get("principal_redemption")
+    if value in {None, ""}:
+        value = settlement_profile.get("principal_redemption", 1.0)
+    return float(value)
+
+
+def _infer_range_accrual_frequency(observation_dates: tuple[date, ...]) -> str:
+    if len(observation_dates) < 2:
+        return "scheduled"
+    average_days = sum(
+        (right - left).days
+        for left, right in zip(observation_dates, observation_dates[1:])
+    ) / float(len(observation_dates) - 1)
+    if average_days <= 40:
+        return "monthly"
+    if average_days <= 100:
+        return "quarterly"
+    if average_days <= 200:
+        return "semiannual"
+    return "annual"
 
 
 def _connector_binding_hints(market_binding_spec) -> dict[str, object]:

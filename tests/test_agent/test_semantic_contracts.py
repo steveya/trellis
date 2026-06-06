@@ -281,6 +281,94 @@ def test_range_accrual_trade_entry_contract_validates_and_surfaces_term_fields()
     assert "trellis.models.range_accrual" in compiled.target_modules
 
 
+def test_range_accrual_semantic_compile_lowers_to_conditional_accrual_leg_ir():
+    from datetime import date
+
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_range_accrual_contract
+    from trellis.agent.semantic_observables import BetweenPredicate, RateIndexObservable
+    from trellis.agent.static_leg_contract import (
+        ConditionalAccrualLeg,
+        FixedCouponFormula,
+        KnownCashflowLeg,
+        StaticLegContractIR,
+    )
+
+    contract = make_range_accrual_contract(
+        description=(
+            "Range accrual note on SOFR paying 5.25% when SOFR stays between "
+            "1.50% and 3.25% on quarterly 2026 observations."
+        ),
+        reference_index="SOFR",
+        observation_schedule=(
+            "2026-01-15",
+            "2026-04-15",
+            "2026-07-15",
+            "2026-10-15",
+        ),
+        coupon_definition={
+            "coupon_rate": 0.0525,
+            "coupon_style": "fixed_rate_if_in_range",
+        },
+        range_condition={
+            "lower_bound": 0.015,
+            "upper_bound": 0.0325,
+            "inclusive_lower": True,
+            "inclusive_upper": True,
+        },
+        callability={
+            "call_schedule": ("2026-07-15",),
+            "call_style": "issuer_callable",
+        },
+    )
+
+    compiled = compile_semantic_contract(contract)
+
+    assert isinstance(compiled.static_leg_contract_ir, StaticLegContractIR)
+    assert compiled.static_leg_lowering_selection is None
+    assert compiled.primitive_routes == ()
+    coupon_leg = compiled.static_leg_contract_ir.legs[0].leg
+    redemption_leg = compiled.static_leg_contract_ir.legs[1].leg
+    assert isinstance(coupon_leg, ConditionalAccrualLeg)
+    assert isinstance(coupon_leg.coupon_formula, FixedCouponFormula)
+    assert coupon_leg.coupon_formula.rate == pytest.approx(0.0525)
+    assert coupon_leg.accrual_condition_ref == "reference_rate_fixing_in_range"
+    assert coupon_leg.accrual_counter_ref == "in_range_coupon_count"
+    assert tuple(period.observation_date for period in coupon_leg.accrual_periods) == (
+        date(2026, 1, 15),
+        date(2026, 4, 15),
+        date(2026, 7, 15),
+        date(2026, 10, 15),
+    )
+    assert all(
+        period.accrual_start < period.observation_date <= period.accrual_end
+        for period in coupon_leg.accrual_periods
+    )
+    assert isinstance(coupon_leg.accrual_condition, BetweenPredicate)
+    assert coupon_leg.accrual_condition.lower_bound == pytest.approx(0.015)
+    assert coupon_leg.accrual_condition.upper_bound == pytest.approx(0.0325)
+    assert isinstance(coupon_leg.accrual_condition.observable, RateIndexObservable)
+    assert coupon_leg.accrual_condition.observable.index_name == "SOFR"
+    assert coupon_leg.metadata["semantic_family"] == "range_accrual"
+    assert coupon_leg.metadata["callability"] == {
+        "call_schedule": ("2026-07-15",),
+        "call_style": "issuer_callable",
+    }
+    assert coupon_leg.metadata["range_accrual_spec_fields"]["reference_index"] == "SOFR"
+    assert coupon_leg.metadata["range_accrual_spec_fields"]["observation_dates"] == (
+        "2026-01-15",
+        "2026-04-15",
+        "2026-07-15",
+        "2026-10-15",
+    )
+    assert isinstance(redemption_leg, KnownCashflowLeg)
+    assert redemption_leg.cashflows[0].payment_date == date(2026, 10, 15)
+    assert compiled.static_leg_contract_ir.metadata["callability"] == {
+        "call_schedule": ("2026-07-15",),
+        "call_style": "issuer_callable",
+    }
+
+
 @pytest.mark.parametrize(
     "contract_factory",
     [
