@@ -16,6 +16,7 @@ from trellis.agent.static_leg_contract import (
     StaticLegIRWellFormednessError,
 )
 from trellis.execution import compile_static_leg_execution_ir
+from trellis.execution.compiler import UnsupportedExecutionSemantics
 
 
 def _notional() -> NotionalSchedule:
@@ -147,3 +148,9 @@ def test_conditional_accrual_leg_represents_single_index_range_accrual_terms():
     execution_ir = compile_static_leg_execution_ir(contract)
     assert execution_ir.obligations == ()
     assert execution_ir.execution_metadata.unsupported_reasons
+    assert execution_ir.execution_metadata.unsupported_reasons == (
+        "static-leg execution lowering not admitted: No admissible static-leg lowering declaration was found.",
+    )
+
+    with pytest.raises(UnsupportedExecutionSemantics, match="No admissible static-leg lowering declaration was found"):
+        compile_static_leg_execution_ir(contract, fail_on_unsupported=True)
