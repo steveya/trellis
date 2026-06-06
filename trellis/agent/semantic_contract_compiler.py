@@ -88,6 +88,7 @@ class SemanticImplementationBlueprint:
     contract_ir_solver_shadow: object | None = None
     static_leg_contract_ir: object | None = None
     static_leg_lowering_selection: object | None = None
+    static_leg_admission_blockers: tuple[object, ...] = ()
 
     def __post_init__(self):
         """Freeze mapping metadata for stable traces and tests."""
@@ -259,6 +260,9 @@ def compile_semantic_contract(
         static_leg_contract_ir=static_leg_contract_ir,
         preferred_method=preferred_method,
     )
+    static_leg_admission_blockers = _compile_static_leg_admission_blockers(
+        static_leg_contract_ir
+    )
     if contract_ir_solver_selection is not None:
         primitive_routes = ()
         dsl_lowering = _route_free_lowering_from_structural_selection(
@@ -359,6 +363,7 @@ def compile_semantic_contract(
         contract_ir_solver_shadow=contract_ir_solver_shadow,
         static_leg_contract_ir=static_leg_contract_ir,
         static_leg_lowering_selection=static_leg_lowering_selection,
+        static_leg_admission_blockers=static_leg_admission_blockers,
     )
 
 
@@ -458,6 +463,7 @@ def _lower_range_accrual_to_static_leg_contract_ir(contract):
     range_condition = dict(term_fields.get("range_condition") or {})
     settlement_profile = dict(term_fields.get("settlement_profile") or {})
     callability = dict(term_fields.get("callability") or {})
+    dynamic_features = dict(term_fields.get("dynamic_features") or {})
     if (
         coupon_definition.get("coupon_rate") is None
         or range_condition.get("lower_bound") is None
@@ -553,6 +559,7 @@ def _lower_range_accrual_to_static_leg_contract_ir(contract):
             "range_condition": range_condition,
             "settlement_profile": settlement_profile,
             "callability": callability,
+            "dynamic_features": dynamic_features,
             "range_accrual_spec_fields": spec_fields,
         },
         accrual_condition=condition,
@@ -584,6 +591,7 @@ def _lower_range_accrual_to_static_leg_contract_ir(contract):
             "semantic_family": "range_accrual",
             "lowering_source": "semantic_contract.term_fields",
             "callability": callability,
+            "dynamic_features": dynamic_features,
             "range_accrual_spec_fields": spec_fields,
         },
     )
@@ -922,6 +930,42 @@ def _compile_static_leg_lowering_selection(
             exc_info=True,
         )
         return None
+
+
+def _compile_static_leg_admission_blockers(static_leg_contract_ir):
+    """Return bounded static-leg admission blockers for recognized semantic routes."""
+
+    if static_leg_contract_ir is None:
+        return ()
+    if not _is_range_accrual_static_leg_contract_ir(static_leg_contract_ir):
+        return ()
+
+    from trellis.agent.static_leg_admission import (
+        conditional_range_accrual_admission_blockers,
+    )
+
+    return conditional_range_accrual_admission_blockers(static_leg_contract_ir)
+
+
+def _is_range_accrual_static_leg_contract_ir(static_leg_contract_ir) -> bool:
+    metadata = dict(getattr(static_leg_contract_ir, "metadata", {}) or {})
+    if (
+        str(metadata.get("semantic_family") or metadata.get("semantic_id") or "")
+        .strip()
+        .lower()
+        == "range_accrual"
+    ):
+        return True
+    for signed_leg in getattr(static_leg_contract_ir, "legs", ()) or ():
+        leg_metadata = dict(getattr(getattr(signed_leg, "leg", None), "metadata", {}) or {})
+        if (
+            str(leg_metadata.get("semantic_family") or "")
+            .strip()
+            .lower()
+            == "range_accrual"
+        ):
+            return True
+    return False
 
 
 def _compile_contract_ir_solver_shadow(

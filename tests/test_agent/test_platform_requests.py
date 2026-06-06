@@ -556,6 +556,7 @@ def test_compile_build_request_routes_range_accrual_through_conditional_leg_auth
         == "SOFR"
     )
     assert compiled.semantic_blueprint.static_leg_lowering_selection is not None
+    assert compiled.semantic_blueprint.static_leg_admission_blockers == ()
     assert (
         compiled.semantic_blueprint.static_leg_lowering_selection.declaration_id
         == "static_leg_range_accrual_discounted"
@@ -571,6 +572,7 @@ def test_compile_build_request_routes_range_accrual_through_conditional_leg_auth
     assert compiled.request.metadata["semantic_blueprint"]["static_leg_lowering_selection"][
         "declaration_id"
     ] == "static_leg_range_accrual_discounted"
+    assert compiled.request.metadata["semantic_blueprint"]["static_leg_admission_blockers"] == []
     assert compiled.request.metadata["route_binding_authority"]["authority_kind"] == (
         "exact_backend_fit"
     )
@@ -579,6 +581,47 @@ def test_compile_build_request_routes_range_accrual_through_conditional_leg_auth
     ] == (
         "range_accrual"
     )
+
+
+def test_semantic_blueprint_summary_preserves_range_accrual_callability_blockers():
+    from trellis.agent.platform_requests import _semantic_blueprint_summary
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_range_accrual_contract
+
+    contract = make_range_accrual_contract(
+        description="Callable range accrual on SOFR.",
+        reference_index="SOFR",
+        coupon_definition={"coupon_rate": 0.0525},
+        range_condition={"lower_bound": 0.015, "upper_bound": 0.0325},
+        observation_schedule=(
+            "2026-01-15",
+            "2026-04-15",
+            "2026-07-15",
+            "2026-10-15",
+        ),
+        callability={
+            "call_schedule": ("2026-07-15",),
+            "call_style": "issuer_callable",
+        },
+    )
+
+    blueprint = compile_semantic_contract(contract)
+    summary = _semantic_blueprint_summary(blueprint)
+
+    assert blueprint.static_leg_lowering_selection is None
+    assert tuple(
+        blocker.blocker_id for blocker in blueprint.static_leg_admission_blockers
+    ) == ("conditional_range_accrual_callability_pending",)
+    assert summary["static_leg_admission_blockers"] == [
+        {
+            "blocker_id": "conditional_range_accrual_callability_pending",
+            "reason": (
+                "Callable range accrual requires a dynamic exercise wrapper "
+                "before the checked static-leg route may be used."
+            ),
+            "required_ticket": "QUA-1115",
+        }
+    ]
 
 
 @pytest.mark.parametrize(

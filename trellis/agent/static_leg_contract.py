@@ -17,7 +17,7 @@ from trellis.agent.contract_ir import CurveQuote, SurfaceQuote
 from trellis.agent.semantic_observables import (
     PredicateExpr,
     PredicateGrammarValidationError,
-    validate_conditional_accrual_predicate,
+    predicate_support_blockers,
 )
 
 
@@ -418,7 +418,7 @@ class ConditionalAccrualLeg:
         )
         if self.accrual_condition is not None:
             try:
-                validate_conditional_accrual_predicate(self.accrual_condition)
+                predicate_support_blockers(self.accrual_condition)
             except PredicateGrammarValidationError as exc:
                 raise StaticLegIRWellFormednessError(str(exc)) from exc
         object.__setattr__(self, "label", str(self.label or "").strip())

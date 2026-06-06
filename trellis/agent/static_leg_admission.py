@@ -26,6 +26,7 @@ from trellis.agent.static_leg_contract import (
 from trellis.agent.semantic_observables import (
     BetweenPredicate,
     RateIndexObservable,
+    predicate_support_blockers,
 )
 
 
@@ -219,6 +220,14 @@ def _metadata_mapping(value: object) -> dict[str, object]:
     return dict(value or {}) if isinstance(value, Mapping) else {}
 
 
+def _merged_metadata_mapping(*values: object) -> dict[str, object]:
+    merged: dict[str, object] = {}
+    for value in values:
+        if isinstance(value, Mapping):
+            merged.update(value)
+    return merged
+
+
 def _admission_blocker(
     blocker_id: str,
     reason: str,
@@ -229,6 +238,19 @@ def _admission_blocker(
         blocker_id=blocker_id,
         reason=reason,
         required_ticket=required_ticket,
+    )
+
+
+def _observable_support_admission_blockers(
+    predicate,
+) -> tuple[StaticLegAdmissionBlocker, ...]:
+    return tuple(
+        _admission_blocker(
+            blocker.blocker_id,
+            blocker.reason,
+            required_ticket=blocker.required_ticket,
+        )
+        for blocker in predicate_support_blockers(predicate)
     )
 
 
@@ -279,12 +301,58 @@ def conditional_range_accrual_admission_blockers(
                 "Conditional accrual route admission is restricted to range_accrual legs.",
             )
         )
-    callability = leg_metadata.get("callability") or contract_metadata.get("callability") or {}
+    callability = _merged_metadata_mapping(
+        contract_metadata.get("callability"),
+        leg_metadata.get("callability"),
+    )
     if callability:
         blockers.append(
             _admission_blocker(
                 "conditional_range_accrual_callability_pending",
-                "Callable range-accrual wrappers require dynamic control admission.",
+                (
+                    "Callable range accrual requires a dynamic exercise wrapper "
+                    "before the checked static-leg route may be used."
+                ),
+                required_ticket="QUA-1115",
+            )
+        )
+    dynamic_features = _merged_metadata_mapping(
+        contract_metadata.get("dynamic_features"),
+        leg_metadata.get("dynamic_features"),
+    )
+    interruption_events = (
+        dynamic_features.get("interruption_events")
+        or dynamic_features.get("interruptions")
+        or dynamic_features.get("accrual_interruptions")
+        or ()
+    )
+    if interruption_events:
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_interruption_state_pending",
+                (
+                    "Interrupted range accrual requires dynamic event-state "
+                    "admission before the checked static-leg route may be used."
+                ),
+                required_ticket="QUA-1115",
+            )
+        )
+    barrier_state = (
+        dynamic_features.get("barrier_state")
+        or dynamic_features.get("barrier_events")
+        or dynamic_features.get("knockout_condition")
+        or dynamic_features.get("knock_out")
+        or dynamic_features.get("knock_in")
+        or {}
+    )
+    if barrier_state:
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_barrier_state_pending",
+                (
+                    "Barrier-style range accrual requires dynamic event-state "
+                    "admission before the checked static-leg route may be used."
+                ),
                 required_ticket="QUA-1115",
             )
         )
@@ -390,6 +458,11 @@ def conditional_range_accrual_admission_blockers(
             )
         )
     condition = leg.accrual_condition
+    support_blockers = (
+        _observable_support_admission_blockers(condition)
+        if condition is not None
+        else ()
+    )
     if not isinstance(condition, BetweenPredicate):
         blockers.append(
             _admission_blocker(
@@ -397,6 +470,9 @@ def conditional_range_accrual_admission_blockers(
                 "The checked range-accrual route admits a single between predicate.",
             )
         )
+        blockers.extend(support_blockers)
+    elif support_blockers:
+        blockers.extend(support_blockers)
     elif not isinstance(condition.observable, RateIndexObservable):
         blockers.append(
             _admission_blocker(

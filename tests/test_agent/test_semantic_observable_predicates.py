@@ -24,7 +24,6 @@ from trellis.agent.static_leg_contract import (
     FixedCouponFormula,
     NotionalSchedule,
     NotionalStep,
-    StaticLegIRWellFormednessError,
 )
 
 
@@ -144,18 +143,19 @@ def test_multi_index_rate_predicate_fails_closed():
     with pytest.raises(PredicateGrammarValidationError, match="multi_index"):
         validate_conditional_accrual_predicate(predicate)
 
-    with pytest.raises(StaticLegIRWellFormednessError, match="multi_index"):
-        ConditionalAccrualLeg(
-            currency="USD",
-            notional_schedule=_notional(),
-            accrual_periods=_periods(),
-            coupon_formula=FixedCouponFormula(0.0525),
-            day_count="ACT/365",
-            payment_frequency="quarterly",
-            accrual_condition_ref="mixed_rate_index_in_range",
-            accrual_counter_ref="in_range_coupon_count",
-            accrual_condition=predicate,
-        )
+    leg = ConditionalAccrualLeg(
+        currency="USD",
+        notional_schedule=_notional(),
+        accrual_periods=_periods(),
+        coupon_formula=FixedCouponFormula(0.0525),
+        day_count="ACT/365",
+        payment_frequency="quarterly",
+        accrual_condition_ref="mixed_rate_index_in_range",
+        accrual_counter_ref="in_range_coupon_count",
+        accrual_condition=predicate,
+    )
+
+    assert leg.accrual_condition is predicate
 
 
 def test_conditional_accrual_leg_preserves_positional_defaults():
@@ -210,18 +210,16 @@ def test_cms_spread_predicate_emits_blockers_and_fails_closed_for_leg():
     ):
         validate_conditional_accrual_predicate(predicate)
 
-    with pytest.raises(
-        StaticLegIRWellFormednessError,
-        match="unsupported observable family",
-    ):
-        ConditionalAccrualLeg(
-            currency="USD",
-            notional_schedule=_notional(),
-            accrual_periods=_periods(),
-            coupon_formula=FixedCouponFormula(0.0525),
-            day_count="ACT/365",
-            payment_frequency="quarterly",
-            accrual_condition_ref="cms_spread_in_range",
-            accrual_counter_ref="in_range_coupon_count",
-            accrual_condition=predicate,
-        )
+    leg = ConditionalAccrualLeg(
+        currency="USD",
+        notional_schedule=_notional(),
+        accrual_periods=_periods(),
+        coupon_formula=FixedCouponFormula(0.0525),
+        day_count="ACT/365",
+        payment_frequency="quarterly",
+        accrual_condition_ref="cms_spread_in_range",
+        accrual_counter_ref="in_range_coupon_count",
+        accrual_condition=predicate,
+    )
+
+    assert leg.accrual_condition is predicate

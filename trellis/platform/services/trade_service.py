@@ -611,6 +611,30 @@ class TradeService:
         return callability
 
     @staticmethod
+    def _structured_range_accrual_dynamic_features(
+        structured_trade: Mapping[str, object],
+    ) -> Mapping[str, object]:
+        """Return unsupported dynamic range-accrual hooks for fail-closed admission."""
+        dynamic_features = dict(structured_trade.get("dynamic_features") or {})
+        for source_key, target_key in (
+            ("interruption_events", "interruption_events"),
+            ("interruptions", "interruption_events"),
+            ("accrual_interruptions", "interruption_events"),
+            ("barrier_state", "barrier_state"),
+            ("barrier_events", "barrier_state"),
+            ("knockout_condition", "barrier_state"),
+            ("knock_out", "barrier_state"),
+            ("knock_in", "barrier_state"),
+        ):
+            if source_key not in structured_trade or target_key in dynamic_features:
+                continue
+            value = structured_trade.get(source_key)
+            if value is None or value == "":
+                continue
+            dynamic_features[target_key] = value
+        return dynamic_features
+
+    @staticmethod
     def _callable_bond_missing_fields(structured_trade: Mapping[str, object]) -> tuple[str, ...]:
         missing: list[str] = []
         if structured_trade.get("notional") in {None, ""}:
@@ -883,6 +907,9 @@ class TradeService:
                     range_condition=self._structured_range_condition(structured_trade),
                     settlement_profile=settlement_profile,
                     callability=self._structured_callability(structured_trade),
+                    dynamic_features=self._structured_range_accrual_dynamic_features(
+                        structured_trade
+                    ),
                     preferred_method=str(structured_trade.get("preferred_method", "analytical")).strip() or "analytical",
                 )
             except ValueError:

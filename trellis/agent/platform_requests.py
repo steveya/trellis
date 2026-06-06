@@ -606,6 +606,9 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
         "static_leg_lowering_selection": _yaml_safe_value(
             getattr(semantic_blueprint, "static_leg_lowering_selection", None)
         ),
+        "static_leg_admission_blockers": _yaml_safe_value(
+            getattr(semantic_blueprint, "static_leg_admission_blockers", ()) or ()
+        ),
         "requested_outputs": list(getattr(semantic_blueprint, "requested_outputs", ()) or ()),
         "valuation_context": valuation_context_summary(semantic_blueprint.valuation_context)
         if getattr(semantic_blueprint, "valuation_context", None) is not None

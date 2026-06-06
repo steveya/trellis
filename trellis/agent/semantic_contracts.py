@@ -2359,6 +2359,7 @@ def make_range_accrual_contract(
     range_condition: Mapping[str, object] | None = None,
     settlement_profile: Mapping[str, object] | None = None,
     callability: Mapping[str, object] | None = None,
+    dynamic_features: Mapping[str, object] | None = None,
     preferred_method: str = "analytical",
 ) -> SemanticContract:
     """Construct the first checked semantic trade-entry contract for range accruals."""
@@ -2372,6 +2373,9 @@ def make_range_accrual_contract(
     normalized_range = _normalize_range_condition(range_condition)
     normalized_settlement = _normalize_settlement_profile(settlement_profile)
     normalized_callability = _normalize_callability(callability)
+    normalized_dynamic_features = _normalize_range_accrual_dynamic_features(
+        dynamic_features
+    )
 
     if not normalized_index:
         raise ValueError("Range accrual contract requires a reference index.")
@@ -2480,6 +2484,7 @@ def make_range_accrual_contract(
                 "range_condition": dict(normalized_range),
                 "settlement_profile": dict(normalized_settlement),
                 "callability": dict(normalized_callability),
+                "dynamic_features": dict(normalized_dynamic_features),
             }
         ),
         exercise_style="none",
@@ -3634,6 +3639,7 @@ def _rebuild_range_accrual_contract(
         range_condition=term_fields.get("range_condition"),
         settlement_profile=term_fields.get("settlement_profile"),
         callability=term_fields.get("callability"),
+        dynamic_features=term_fields.get("dynamic_features"),
         preferred_method=normalized_method,
     )
 
@@ -4907,6 +4913,54 @@ def _normalize_callability(payload: Mapping[str, object] | None) -> MappingProxy
             or "issuer_callable",
         }
     )
+
+
+def _normalize_range_accrual_dynamic_features(
+    payload: Mapping[str, object] | None,
+) -> MappingProxyType:
+    """Normalize unsupported dynamic range-accrual hooks for fail-closed admission."""
+    payload = dict(payload or {})
+    normalized: dict[str, object] = {}
+
+    interruption_events = (
+        payload.get("interruption_events")
+        or payload.get("interruptions")
+        or payload.get("accrual_interruptions")
+        or ()
+    )
+    if isinstance(interruption_events, str):
+        interruption_events = _parse_name_list(interruption_events)
+    elif isinstance(interruption_events, (tuple, list, set, frozenset)):
+        interruption_events = tuple(
+            str(item).strip()
+            for item in interruption_events
+            if str(item).strip()
+        )
+    else:
+        interruption_events = (str(interruption_events).strip(),)
+    if interruption_events:
+        normalized["interruption_events"] = interruption_events
+
+    barrier_state = payload.get("barrier_state")
+    if not barrier_state:
+        barrier_state = {
+            key: payload[key]
+            for key in (
+                "barrier_events",
+                "knockout_condition",
+                "knock_out",
+                "knock_in",
+            )
+            if key in payload and payload[key] is not None and payload[key] != ""
+        }
+    if barrier_state:
+        normalized["barrier_state"] = (
+            dict(barrier_state)
+            if isinstance(barrier_state, Mapping)
+            else {"condition": barrier_state}
+        )
+
+    return _freeze_mapping(normalized)
 
 
 def _normalize_instrument_alias(instrument_type: str | None) -> str:

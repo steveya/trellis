@@ -556,6 +556,9 @@ def _generation_boundary_summary(
         ),
         "target_bindings": list(semantic_blueprint.get("dsl_target_bindings") or ()),
         "lowering_errors": list(semantic_blueprint.get("dsl_lowering_errors") or ()),
+        "static_leg_admission_blockers": list(
+            semantic_blueprint.get("static_leg_admission_blockers") or ()
+        ),
     }
     lane_summary = (
         {
