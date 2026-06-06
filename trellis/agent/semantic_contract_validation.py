@@ -2016,6 +2016,7 @@ def _validate_range_accrual_shape(
     callability = dict(term_fields.get("callability") or {})
     if callability and not callability.get("call_schedule"):
         errors.append("Range-accrual callability hooks must include call_schedule when present.")
+    dynamic_features = dict(term_fields.get("dynamic_features") or {})
 
     observable_types = {
         str(getattr(item, "observable_type", "")).strip().lower()
@@ -2036,6 +2037,10 @@ def _validate_range_accrual_shape(
     if callability:
         warnings.append(
             "Range-accrual callability hooks are captured as trade-entry metadata; callable execution remains a later slice."
+        )
+    if dynamic_features:
+        warnings.append(
+            "Range-accrual dynamic feature hooks are captured as trade-entry metadata; dynamic execution remains a later slice."
         )
     if not contract.blueprint.primitive_families:
         warnings.append(

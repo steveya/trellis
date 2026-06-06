@@ -98,6 +98,12 @@ def test_trade_parse_supports_structured_range_accrual_input():
         "call_schedule": ["2026-07-15"],
         "call_style": "issuer_callable",
     }
+    assert result.semantic_blueprint is not None
+    assert result.semantic_blueprint.static_leg_lowering_selection is None
+    assert tuple(
+        blocker.blocker_id
+        for blocker in result.semantic_blueprint.static_leg_admission_blockers
+    ) == ("conditional_range_accrual_callability_pending",)
     assert result.required_market_data == (
         "discount_curve",
         "fixing_history",
@@ -121,6 +127,39 @@ def test_trade_parse_range_accrual_still_requires_observation_schedule():
 
     assert result.parse_status == "incomplete"
     assert result.missing_fields == ("observation_schedule",)
+
+
+def test_trade_parse_blocks_interrupted_range_accrual_from_plain_static_route():
+    from trellis.platform.services.trade_service import TradeService
+
+    result = TradeService().parse_trade(
+        structured_trade={
+            "instrument_type": "range_accrual",
+            "reference_index": "SOFR",
+            "coupon_rate": 0.0525,
+            "lower_bound": 0.015,
+            "upper_bound": 0.0325,
+            "observation_schedule": (
+                "2026-01-15",
+                "2026-04-15",
+                "2026-07-15",
+                "2026-10-15",
+            ),
+            "interruption_events": ("issuer_suspend_accrual",),
+            "barrier_state": {"barrier_type": "knock_out"},
+        }
+    )
+
+    assert result.parse_status == "parsed"
+    assert result.semantic_blueprint is not None
+    assert result.semantic_blueprint.static_leg_lowering_selection is None
+    assert tuple(
+        blocker.blocker_id
+        for blocker in result.semantic_blueprint.static_leg_admission_blockers
+    ) == (
+        "conditional_range_accrual_interruption_state_pending",
+        "conditional_range_accrual_barrier_state_pending",
+    )
 
 
 def test_trade_parse_supports_structured_callable_bond_input_with_term_fields():

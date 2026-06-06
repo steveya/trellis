@@ -26,6 +26,7 @@ from trellis.agent.static_leg_contract import (
 from trellis.agent.semantic_observables import (
     BetweenPredicate,
     RateIndexObservable,
+    predicate_support_blockers,
 )
 
 
@@ -232,6 +233,19 @@ def _admission_blocker(
     )
 
 
+def _observable_support_admission_blockers(
+    predicate,
+) -> tuple[StaticLegAdmissionBlocker, ...]:
+    return tuple(
+        _admission_blocker(
+            blocker.blocker_id,
+            blocker.reason,
+            required_ticket=blocker.required_ticket,
+        )
+        for blocker in predicate_support_blockers(predicate)
+    )
+
+
 def _conditional_range_accrual_signed_leg(
     contract: StaticLegContractIR,
 ) -> SignedLeg | None:
@@ -284,10 +298,55 @@ def conditional_range_accrual_admission_blockers(
         blockers.append(
             _admission_blocker(
                 "conditional_range_accrual_callability_pending",
-                "Callable range-accrual wrappers require dynamic control admission.",
+                (
+                    "Callable range accrual requires a dynamic exercise wrapper "
+                    "before the checked static-leg route may be used."
+                ),
                 required_ticket="QUA-1115",
             )
         )
+    dynamic_features = (
+        leg_metadata.get("dynamic_features")
+        or contract_metadata.get("dynamic_features")
+        or {}
+    )
+    if isinstance(dynamic_features, Mapping):
+        interruption_events = (
+            dynamic_features.get("interruption_events")
+            or dynamic_features.get("interruptions")
+            or dynamic_features.get("accrual_interruptions")
+            or ()
+        )
+        if interruption_events:
+            blockers.append(
+                _admission_blocker(
+                    "conditional_range_accrual_interruption_state_pending",
+                    (
+                        "Interrupted range accrual requires dynamic event-state "
+                        "admission before the checked static-leg route may be used."
+                    ),
+                    required_ticket="QUA-1115",
+                )
+            )
+        barrier_state = (
+            dynamic_features.get("barrier_state")
+            or dynamic_features.get("barrier_events")
+            or dynamic_features.get("knockout_condition")
+            or dynamic_features.get("knock_out")
+            or dynamic_features.get("knock_in")
+            or {}
+        )
+        if barrier_state:
+            blockers.append(
+                _admission_blocker(
+                    "conditional_range_accrual_barrier_state_pending",
+                    (
+                        "Barrier-style range accrual requires dynamic event-state "
+                        "admission before the checked static-leg route may be used."
+                    ),
+                    required_ticket="QUA-1115",
+                )
+            )
     if signed_leg.direction != "receive":
         blockers.append(
             _admission_blocker(
@@ -390,6 +449,11 @@ def conditional_range_accrual_admission_blockers(
             )
         )
     condition = leg.accrual_condition
+    support_blockers = (
+        _observable_support_admission_blockers(condition)
+        if condition is not None
+        else ()
+    )
     if not isinstance(condition, BetweenPredicate):
         blockers.append(
             _admission_blocker(
@@ -397,6 +461,9 @@ def conditional_range_accrual_admission_blockers(
                 "The checked range-accrual route admits a single between predicate.",
             )
         )
+        blockers.extend(support_blockers)
+    elif support_blockers:
+        blockers.extend(support_blockers)
     elif not isinstance(condition.observable, RateIndexObservable):
         blockers.append(
             _admission_blocker(

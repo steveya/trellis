@@ -797,6 +797,30 @@ def test_platform_trace_summary_reads_legacy_top_level_route_binding_fields():
     assert construction_identity["backend_engine_family"] == "analytical"
 
 
+def test_platform_trace_lowering_summary_preserves_static_leg_admission_blockers():
+    from trellis.agent.platform_traces import _generation_boundary_summary
+
+    blocker = {
+        "blocker_id": "conditional_range_accrual_callability_pending",
+        "reason": (
+            "Callable range accrual requires a dynamic exercise wrapper before "
+            "the checked static-leg route may be used."
+        ),
+        "required_ticket": "QUA-1115",
+    }
+
+    lowering = _generation_boundary_summary(
+        SimpleNamespace(request_metadata={"semantic_blueprint": {}}),
+        request_metadata={
+            "semantic_blueprint": {
+                "static_leg_admission_blockers": [blocker],
+            }
+        },
+    )["lowering"]
+
+    assert lowering["static_leg_admission_blockers"] == [blocker]
+
+
 def test_platform_trace_records_checked_range_accrual_static_leg_binding(tmp_path):
     from trellis.agent.platform_requests import compile_build_request
     from trellis.agent.platform_traces import (

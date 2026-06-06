@@ -12,9 +12,11 @@ from trellis.agent.static_leg_admission import (
 )
 from trellis.agent.semantic_observables import (
     BetweenPredicate,
+    CmsRateObservable,
     GreaterThanPredicate,
     ObservationMetadata,
     RateIndexObservable,
+    SpreadObservable,
 )
 from trellis.agent.static_leg_contract import (
     ConditionalAccrualLeg,
@@ -221,6 +223,7 @@ def _period_rate_option_strip() -> StaticLegContractIR:
 def _conditional_range_accrual_contract(
     *,
     callability: dict[str, object] | None = None,
+    dynamic_features: dict[str, object] | None = None,
     condition=None,
     fixing_dates: tuple[date | None, ...] | None = None,
     principal_payment_date: date | None = None,
@@ -274,6 +277,7 @@ def _conditional_range_accrual_contract(
         metadata={
             "semantic_family": "range_accrual",
             "callability": callability or {},
+            "dynamic_features": dynamic_features or {},
         },
         accrual_condition=condition,
     )
@@ -300,6 +304,7 @@ def _conditional_range_accrual_contract(
         metadata={
             "semantic_family": "range_accrual",
             "callability": callability or {},
+            "dynamic_features": dynamic_features or {},
         },
     )
 
@@ -520,6 +525,61 @@ class TestStaticLegAdmission:
 
         assert tuple(blocker.blocker_id for blocker in blockers) == (
             "conditional_range_accrual_between_predicate_required",
+        )
+        with pytest.raises(StaticLegLoweringNoMatchError):
+            select_static_leg_lowering(contract, requested_method="analytical")
+
+    def test_cms_spread_conditional_range_accrual_fails_closed_with_observable_blockers(self):
+        contract = _conditional_range_accrual_contract(
+            condition=BetweenPredicate(
+                observable=SpreadObservable(
+                    left=CmsRateObservable(
+                        observable_id="usd_cms_10y",
+                        curve_id="USD_SWAP",
+                        tenor="10Y",
+                    ),
+                    right=RateIndexObservable(
+                        observable_id="sofr_3m",
+                        index_name="SOFR",
+                        tenor="3M",
+                    ),
+                    spread_id="cms_minus_sofr",
+                ),
+                lower_bound=0.0,
+                upper_bound=0.025,
+            )
+        )
+
+        blockers = conditional_range_accrual_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "conditional_accrual_spread_observable_pending",
+            "conditional_accrual_cms_rate_observable_pending",
+        )
+        assert tuple(blocker.required_ticket for blocker in blockers) == (
+            "QUA-1115",
+            "follow_on",
+        )
+        with pytest.raises(StaticLegLoweringNoMatchError):
+            select_static_leg_lowering(contract, requested_method="analytical")
+
+    def test_interrupted_conditional_range_accrual_fails_closed_with_dynamic_blockers(self):
+        contract = _conditional_range_accrual_contract(
+            dynamic_features={
+                "interruption_events": ("issuer_suspend_accrual",),
+                "barrier_state": {"barrier_type": "knock_out"},
+            }
+        )
+
+        blockers = conditional_range_accrual_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "conditional_range_accrual_interruption_state_pending",
+            "conditional_range_accrual_barrier_state_pending",
+        )
+        assert tuple(blocker.required_ticket for blocker in blockers) == (
+            "QUA-1115",
+            "QUA-1115",
         )
         with pytest.raises(StaticLegLoweringNoMatchError):
             select_static_leg_lowering(contract, requested_method="analytical")
