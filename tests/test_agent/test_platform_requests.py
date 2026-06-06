@@ -531,7 +531,7 @@ def test_compile_comparison_request_does_not_treat_llm_model_name_as_pricing_mod
         assert blueprint.valuation_context.engine_model_spec.model_name == "hull_white_1f"
 
 
-def test_compile_build_request_preserves_missing_route_state_for_range_accrual_semantics():
+def test_compile_build_request_routes_range_accrual_through_conditional_leg_authority():
     from trellis.agent.platform_requests import compile_build_request
 
     compiled = compile_build_request(
@@ -555,15 +555,30 @@ def test_compile_build_request_preserves_missing_route_state_for_range_accrual_s
         ]["reference_index"]
         == "SOFR"
     )
+    assert compiled.semantic_blueprint.static_leg_lowering_selection is not None
+    assert (
+        compiled.semantic_blueprint.static_leg_lowering_selection.declaration_id
+        == "static_leg_range_accrual_discounted"
+    )
     assert compiled.semantic_blueprint.primitive_routes == ()
     assert compiled.semantic_blueprint.dsl_lowering.route_id is None
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.primitive_plan is None
-    assert "primitive_plan_not_available" in compiled.generation_plan.uncertainty_flags
-    assert compiled.request.metadata["semantic_blueprint"]["dsl_lowering_errors"][0]["code"] == (
-        "missing_primitive_routes"
+    assert "primitive_plan_not_available" not in compiled.generation_plan.uncertainty_flags
+    assert compiled.generation_plan.backend_binding_id == (
+        "trellis.models.range_accrual.price_range_accrual"
     )
-    assert "route_binding_authority" not in compiled.request.metadata
+    assert compiled.request.metadata["semantic_blueprint"]["static_leg_lowering_selection"][
+        "declaration_id"
+    ] == "static_leg_range_accrual_discounted"
+    assert compiled.request.metadata["route_binding_authority"]["authority_kind"] == (
+        "exact_backend_fit"
+    )
+    assert compiled.request.metadata["route_binding_authority"]["provenance"][
+        "semantic_contract_id"
+    ] == (
+        "range_accrual"
+    )
 
 
 @pytest.mark.parametrize(

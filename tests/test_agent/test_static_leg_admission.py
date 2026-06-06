@@ -5,11 +5,20 @@ from datetime import date
 import pytest
 
 from trellis.agent.static_leg_admission import (
+    conditional_range_accrual_admission_blockers,
     StaticLegLoweringNoMatchError,
     materialize_static_leg_lowering,
     select_static_leg_lowering,
 )
+from trellis.agent.semantic_observables import (
+    BetweenPredicate,
+    GreaterThanPredicate,
+    ObservationMetadata,
+    RateIndexObservable,
+)
 from trellis.agent.static_leg_contract import (
+    ConditionalAccrualLeg,
+    ConditionalAccrualPeriod,
     CouponLeg,
     CouponPeriod,
     FixedCouponFormula,
@@ -26,6 +35,7 @@ from trellis.agent.static_leg_contract import (
     TermRateIndex,
 )
 from trellis.instruments.swap import SwapSpec
+from trellis.models.range_accrual import RangeAccrualSpec
 from trellis.models.rate_basis_swap import RateBasisSwapSpec
 from trellis.models.rate_cap_floor import CapFloorPeriod
 from trellis.core.types import Frequency
@@ -208,6 +218,103 @@ def _period_rate_option_strip() -> StaticLegContractIR:
     )
 
 
+def _conditional_range_accrual_contract(
+    *,
+    callability: dict[str, object] | None = None,
+    condition=None,
+    principal_redemption: float = 1.0,
+) -> StaticLegContractIR:
+    observation_dates = (
+        date(2026, 1, 15),
+        date(2026, 4, 15),
+        date(2026, 7, 15),
+        date(2026, 10, 15),
+    )
+    accrual_starts = (
+        date(2025, 10, 15),
+        date(2026, 1, 15),
+        date(2026, 4, 15),
+        date(2026, 7, 15),
+    )
+    observable = RateIndexObservable(
+        observable_id="reference_rate_fixing",
+        index_name="SOFR",
+        tenor="",
+        observation=ObservationMetadata(
+            schedule_role="observation_dates",
+            fixing_date_role="fixing_dates",
+            missing_fixing_policy="project_forward_for_future_only",
+        ),
+    )
+    condition = condition or BetweenPredicate(
+        observable=observable,
+        lower_bound=0.015,
+        upper_bound=0.0325,
+    )
+    coupon_leg = ConditionalAccrualLeg(
+        currency="USD",
+        notional_schedule=_notional("2025-10-15", "2026-10-15", 1_000_000.0),
+        accrual_periods=tuple(
+            ConditionalAccrualPeriod(
+                accrual_start=start,
+                accrual_end=observation,
+                observation_date=observation,
+                payment_date=observation,
+                fixing_date=observation,
+            )
+            for start, observation in zip(accrual_starts, observation_dates)
+        ),
+        coupon_formula=FixedCouponFormula(0.0525),
+        day_count="ACT/365",
+        payment_frequency="quarterly",
+        accrual_condition_ref="reference_rate_fixing_in_range",
+        accrual_counter_ref="in_range_coupon_count",
+        metadata={
+            "semantic_family": "range_accrual",
+            "callability": callability or {},
+        },
+        accrual_condition=condition,
+    )
+    legs = [SignedLeg(direction="receive", leg=coupon_leg)]
+    if principal_redemption:
+        legs.append(
+            SignedLeg(
+                direction="receive",
+                leg=KnownCashflowLeg(
+                    currency="USD",
+                    cashflows=(
+                        KnownCashflow(
+                            payment_date=observation_dates[-1],
+                            amount=1_000_000.0 * principal_redemption,
+                            currency="USD",
+                        ),
+                    ),
+                    label="range_accrual_principal",
+                ),
+            )
+        )
+    return StaticLegContractIR(
+        legs=tuple(legs),
+        metadata={
+            "semantic_family": "range_accrual",
+            "callability": callability or {},
+        },
+    )
+
+
+def _range_accrual_observable() -> RateIndexObservable:
+    return RateIndexObservable(
+        observable_id="reference_rate_fixing",
+        index_name="SOFR",
+        tenor="",
+        observation=ObservationMetadata(
+            schedule_role="observation_dates",
+            fixing_date_role="fixing_dates",
+            missing_fixing_policy="project_forward_for_future_only",
+        ),
+    )
+
+
 class TestStaticLegAdmission:
     def test_fixed_float_swap_selection_materializes_checked_swap_payoff(self):
         contract = _fixed_float_swap()
@@ -356,6 +463,64 @@ class TestStaticLegAdmission:
         assert "model" not in materialized["call_kwargs"]
         assert "shift" not in materialized["call_kwargs"]
         assert "sabr" not in materialized["call_kwargs"]
+
+    def test_conditional_range_accrual_selects_checked_discounted_route(self):
+        contract = _conditional_range_accrual_contract()
+
+        selection = select_static_leg_lowering(contract, requested_method="analytical")
+        materialized = materialize_static_leg_lowering(contract, selection=selection)
+
+        assert selection.declaration_id == "static_leg_range_accrual_discounted"
+        assert selection.callable_ref == "trellis.models.range_accrual.price_range_accrual"
+        assert selection.validation_bundle_id == "range_accrual_discounted_cashflow_v1"
+        assert materialized["callable_ref"] == "trellis.models.range_accrual.price_range_accrual"
+        assert isinstance(materialized["call_kwargs"]["spec"], RangeAccrualSpec)
+        assert materialized["call_kwargs"]["spec"].reference_index == "SOFR"
+        assert materialized["call_kwargs"]["spec"].notional == pytest.approx(1_000_000.0)
+        assert materialized["call_kwargs"]["spec"].coupon_rate == pytest.approx(0.0525)
+        assert materialized["call_kwargs"]["spec"].lower_bound == pytest.approx(0.015)
+        assert materialized["call_kwargs"]["spec"].upper_bound == pytest.approx(0.0325)
+        assert materialized["call_kwargs"]["spec"].principal_redemption == pytest.approx(1.0)
+
+    def test_conditional_range_accrual_zero_redemption_materializes_coupon_only_spec(self):
+        contract = _conditional_range_accrual_contract(principal_redemption=0.0)
+
+        selection = select_static_leg_lowering(contract, requested_method="analytical")
+        materialized = materialize_static_leg_lowering(contract, selection=selection)
+
+        assert materialized["call_kwargs"]["spec"].principal_redemption == pytest.approx(0.0)
+
+    def test_callable_conditional_range_accrual_fails_closed_with_blocker(self):
+        contract = _conditional_range_accrual_contract(
+            callability={
+                "call_schedule": ("2026-07-15",),
+                "call_style": "issuer_callable",
+            }
+        )
+
+        blockers = conditional_range_accrual_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "conditional_range_accrual_callability_pending",
+        )
+        with pytest.raises(StaticLegLoweringNoMatchError):
+            select_static_leg_lowering(contract, requested_method="analytical")
+
+    def test_non_between_conditional_range_accrual_fails_closed_with_blocker(self):
+        contract = _conditional_range_accrual_contract(
+            condition=GreaterThanPredicate(
+                observable=_range_accrual_observable(),
+                threshold=0.015,
+            )
+        )
+
+        blockers = conditional_range_accrual_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "conditional_range_accrual_between_predicate_required",
+        )
+        with pytest.raises(StaticLegLoweringNoMatchError):
+            select_static_leg_lowering(contract, requested_method="analytical")
 
     def test_period_rate_option_strip_with_step_notional_fails_closed(self):
         contract = StaticLegContractIR(

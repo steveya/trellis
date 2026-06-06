@@ -12,6 +12,7 @@ from trellis.core.types import Frequency
 from trellis.instruments.swap import SwapSpec
 from trellis.agent.static_leg_contract import (
     CmsRateIndex,
+    ConditionalAccrualLeg,
     CouponLeg,
     FixedCouponFormula,
     FloatingCouponFormula,
@@ -21,6 +22,10 @@ from trellis.agent.static_leg_contract import (
     SignedLeg,
     StaticLegContractIR,
     TermRateIndex,
+)
+from trellis.agent.semantic_observables import (
+    BetweenPredicate,
+    RateIndexObservable,
 )
 
 
@@ -56,6 +61,13 @@ class StaticLegLoweringSelection:
     cashflow_engine_refs: tuple[str, ...]
     helper_refs: tuple[str, ...]
     method: str | None = None
+
+
+@dataclass(frozen=True)
+class StaticLegAdmissionBlocker:
+    blocker_id: str
+    reason: str
+    required_ticket: str = ""
 
 
 def _is_fixed_float_swap(contract: StaticLegContractIR) -> bool:
@@ -118,6 +130,10 @@ def _is_period_rate_option_strip(contract: StaticLegContractIR) -> bool:
     )
 
 
+def _is_conditional_range_accrual(contract: StaticLegContractIR) -> bool:
+    return not conditional_range_accrual_admission_blockers(contract)
+
+
 def _unimplemented_static_leg_lowering(**kwargs):
     raise NotImplementedError(
         "Static-leg lowering is selection-only in the first closure slice."
@@ -169,7 +185,9 @@ def _day_count_enum(token: str) -> DayCountConvention:
         ) from exc
 
 
-def _constant_notional_amount(leg: CouponLeg | PeriodRateOptionStripLeg) -> float:
+def _constant_notional_amount(
+    leg: CouponLeg | ConditionalAccrualLeg | PeriodRateOptionStripLeg,
+) -> float:
     if len(leg.notional_schedule.steps) != 1:
         raise NotImplementedError(
             "Static-leg materialization only supports constant-notional legs in the first slice."
@@ -195,6 +213,177 @@ def _rate_index_identifier(index: object) -> str | None:
     if isinstance(index, CmsRateIndex):
         return f"{index.curve_id}-{index.tenor}"
     return None
+
+
+def _metadata_mapping(value: object) -> dict[str, object]:
+    return dict(value or {}) if isinstance(value, Mapping) else {}
+
+
+def _admission_blocker(
+    blocker_id: str,
+    reason: str,
+    *,
+    required_ticket: str = "",
+) -> StaticLegAdmissionBlocker:
+    return StaticLegAdmissionBlocker(
+        blocker_id=blocker_id,
+        reason=reason,
+        required_ticket=required_ticket,
+    )
+
+
+def _conditional_range_accrual_signed_leg(
+    contract: StaticLegContractIR,
+) -> SignedLeg | None:
+    matches = [
+        signed_leg
+        for signed_leg in contract.legs
+        if isinstance(signed_leg.leg, ConditionalAccrualLeg)
+    ]
+    return matches[0] if len(matches) == 1 else None
+
+
+def conditional_range_accrual_admission_blockers(
+    contract: StaticLegContractIR,
+) -> tuple[StaticLegAdmissionBlocker, ...]:
+    """Return blockers for the checked single-index range-accrual route."""
+
+    blockers: list[StaticLegAdmissionBlocker] = []
+    contract_metadata = _metadata_mapping(contract.metadata)
+    conditional_signed_legs = [
+        signed_leg
+        for signed_leg in contract.legs
+        if isinstance(signed_leg.leg, ConditionalAccrualLeg)
+    ]
+    if len(conditional_signed_legs) != 1:
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_single_coupon_leg_required",
+                "Range-accrual admission requires exactly one conditional accrual coupon leg.",
+            )
+        )
+        return tuple(blockers)
+
+    signed_leg = conditional_signed_legs[0]
+    leg = signed_leg.leg
+    leg_metadata = _metadata_mapping(leg.metadata)
+    semantic_family = str(
+        leg_metadata.get("semantic_family")
+        or contract_metadata.get("semantic_family")
+        or ""
+    ).strip()
+    if semantic_family != "range_accrual":
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_semantic_family_required",
+                "Conditional accrual route admission is restricted to range_accrual legs.",
+            )
+        )
+    callability = leg_metadata.get("callability") or contract_metadata.get("callability") or {}
+    if callability:
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_callability_pending",
+                "Callable range-accrual wrappers require dynamic control admission.",
+                required_ticket="QUA-1115",
+            )
+        )
+    if signed_leg.direction != "receive":
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_receive_leg_required",
+                "The checked range-accrual route admits receive-side coupon legs only.",
+            )
+        )
+    unsupported_legs = [
+        item.leg
+        for item in contract.legs
+        if not isinstance(item.leg, (ConditionalAccrualLeg, KnownCashflowLeg))
+    ]
+    if unsupported_legs:
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_extra_leg_unsupported",
+                "The checked route admits only the conditional coupon leg and optional principal redemption.",
+            )
+        )
+    principal_legs = [
+        item
+        for item in contract.legs
+        if isinstance(item.leg, KnownCashflowLeg)
+    ]
+    if len(principal_legs) > 1:
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_single_principal_leg_required",
+                "The checked route admits at most one principal redemption leg.",
+            )
+        )
+    if any(len(item.leg.cashflows) != 1 for item in principal_legs):
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_single_principal_cashflow_required",
+                "The checked route admits exactly one principal redemption cashflow when a principal leg is present.",
+            )
+        )
+    if any(item.direction != "receive" for item in principal_legs):
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_receive_principal_required",
+                "Principal redemption must be receive-side for the checked route.",
+            )
+        )
+    if not isinstance(leg.coupon_formula, FixedCouponFormula):
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_fixed_coupon_required",
+                "The checked range-accrual route admits fixed coupon-if-in-range formulas only.",
+            )
+        )
+    if len(leg.notional_schedule.steps) != 1:
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_constant_notional_required",
+                "The checked range-accrual route admits one constant notional schedule.",
+            )
+        )
+    elif float(leg.notional_schedule.steps[0].amount) <= 0.0:
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_positive_notional_required",
+                "The checked range-accrual route requires positive notional.",
+            )
+        )
+    if leg.settlement_rule != "coupon_period_cash_settlement":
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_coupon_settlement_required",
+                "The checked range-accrual route admits coupon_period_cash_settlement only.",
+            )
+        )
+    if leg.accrual_counter_ref != "in_range_coupon_count":
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_counter_ref_unsupported",
+                "The checked range-accrual route admits the in_range_coupon_count counter only.",
+            )
+        )
+    condition = leg.accrual_condition
+    if not isinstance(condition, BetweenPredicate):
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_between_predicate_required",
+                "The checked range-accrual route admits a single between predicate.",
+            )
+        )
+    elif not isinstance(condition.observable, RateIndexObservable):
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_rate_index_required",
+                "The checked range-accrual route admits one rate-index observable.",
+            )
+        )
+    return tuple(blockers)
 
 
 def _fixed_float_swap_adapter(
@@ -406,6 +595,85 @@ def _period_rate_option_strip_monte_carlo_adapter(
     return {"call_kwargs": call_kwargs}
 
 
+def _range_accrual_reference_index(observable: RateIndexObservable) -> str:
+    if observable.tenor:
+        return f"{observable.index_name}-{observable.tenor}"
+    return observable.index_name
+
+
+def _range_accrual_principal_redemption(
+    contract: StaticLegContractIR,
+    *,
+    notional: float,
+) -> float:
+    principal_legs = [
+        signed_leg.leg
+        for signed_leg in contract.legs
+        if isinstance(signed_leg.leg, KnownCashflowLeg)
+    ]
+    if not principal_legs:
+        return 0.0
+    cashflows = principal_legs[0].cashflows
+    if not cashflows:
+        return 0.0
+    if len(cashflows) != 1:
+        raise NotImplementedError(
+            "Static-leg range-accrual materialization admits one principal cashflow."
+        )
+    return float(cashflows[-1].amount) / notional
+
+
+def _range_accrual_adapter(
+    contract: StaticLegContractIR,
+    *,
+    normalized_terms: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    del normalized_terms
+    signed_leg = _conditional_range_accrual_signed_leg(contract)
+    if signed_leg is None or conditional_range_accrual_admission_blockers(contract):
+        raise NotImplementedError(
+            "Static-leg range-accrual materialization requires an admitted conditional accrual leg."
+        )
+    leg = signed_leg.leg
+    if not isinstance(leg, ConditionalAccrualLeg):
+        raise TypeError("Expected ConditionalAccrualLeg for range-accrual materialization")
+    condition = leg.accrual_condition
+    if not isinstance(condition, BetweenPredicate) or not isinstance(
+        condition.observable,
+        RateIndexObservable,
+    ):
+        raise TypeError("Expected rate-index between predicate for range-accrual materialization")
+    notional = _constant_notional_amount(leg)
+    range_accrual_spec_cls = _resolve_ref("trellis.models.range_accrual.RangeAccrualSpec")
+    return {
+        "call_kwargs": {
+            "spec": range_accrual_spec_cls(
+                reference_index=_range_accrual_reference_index(condition.observable),
+                notional=notional,
+                coupon_rate=leg.coupon_formula.rate,
+                lower_bound=condition.lower_bound,
+                upper_bound=condition.upper_bound,
+                observation_dates=tuple(
+                    period.observation_date for period in leg.accrual_periods
+                ),
+                accrual_start_dates=tuple(
+                    period.accrual_start for period in leg.accrual_periods
+                ),
+                payment_dates=tuple(
+                    period.payment_date for period in leg.accrual_periods
+                ),
+                principal_redemption=_range_accrual_principal_redemption(
+                    contract,
+                    notional=notional,
+                ),
+                inclusive_lower=condition.inclusive_lower,
+                inclusive_upper=condition.inclusive_upper,
+                day_count=_day_count_enum(leg.day_count),
+            )
+        }
+    }
+
+
 def _unimplemented_static_leg_materialization(
     contract: StaticLegContractIR,
     *,
@@ -418,6 +686,21 @@ def _unimplemented_static_leg_materialization(
 
 
 _DECLARATIONS = (
+    StaticLegLoweringDeclaration(
+        declaration_id="static_leg_range_accrual_discounted",
+        matcher=_is_conditional_range_accrual,
+        callable_ref="trellis.models.range_accrual.price_range_accrual",
+        adapter_ref="trellis.agent.static_leg_admission._range_accrual_adapter",
+        validation_bundle_id="range_accrual_discounted_cashflow_v1",
+        required_capabilities=("discount_curve", "forward_curve", "fixing_history"),
+        cashflow_engine_refs=(
+            "trellis.models.contingent_cashflows.coupon_cashflow_pv",
+            "trellis.models.contingent_cashflows.principal_payment_pv",
+        ),
+        helper_refs=("trellis.models.range_accrual.RangeAccrualSpec",),
+        supported_methods=("analytical",),
+        precedence=35,
+    ),
     StaticLegLoweringDeclaration(
         declaration_id="static_leg_fixed_float_swap",
         matcher=_is_fixed_float_swap,
@@ -546,9 +829,11 @@ def materialize_static_leg_lowering(
 
 __all__ = [
     "StaticLegLoweringAmbiguityError",
+    "StaticLegAdmissionBlocker",
     "StaticLegLoweringDeclaration",
     "StaticLegLoweringNoMatchError",
     "StaticLegLoweringSelection",
+    "conditional_range_accrual_admission_blockers",
     "default_static_leg_lowering_declarations",
     "materialize_static_leg_lowering",
     "select_static_leg_lowering",
