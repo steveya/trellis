@@ -198,6 +198,53 @@ class CouponPeriod:
 
 
 @dataclass(frozen=True)
+class ConditionalAccrualPeriod:
+    accrual_start: date
+    accrual_end: date
+    observation_date: date
+    payment_date: date
+    fixing_date: date | None = None
+
+    def __post_init__(self) -> None:
+        if not all(
+            isinstance(item, date)
+            for item in (
+                self.accrual_start,
+                self.accrual_end,
+                self.observation_date,
+                self.payment_date,
+            )
+        ):
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualPeriod requires date boundaries"
+            )
+        if self.accrual_start >= self.accrual_end:
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualPeriod requires accrual_start < accrual_end"
+            )
+        if self.observation_date < self.accrual_start:
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualPeriod observation_date must be on or after accrual_start"
+            )
+        if self.observation_date > self.accrual_end:
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualPeriod observation_date must be on or before accrual_end"
+            )
+        if self.payment_date < self.accrual_end:
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualPeriod payment_date must be on or after accrual_end"
+            )
+        if self.payment_date < self.observation_date:
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualPeriod payment_date must be on or after observation_date"
+            )
+        if self.fixing_date is not None and not isinstance(self.fixing_date, date):
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualPeriod.fixing_date must be a date when present"
+            )
+
+
+@dataclass(frozen=True)
 class PeriodRateOptionPeriod:
     accrual_start: date
     accrual_end: date
@@ -276,6 +323,95 @@ class CouponLeg:
             _require_text(self.payment_frequency, label="CouponLeg.payment_frequency").lower(),
         )
         object.__setattr__(self, "label", str(self.label or "").strip())
+
+
+@dataclass(frozen=True)
+class ConditionalAccrualLeg:
+    currency: str
+    notional_schedule: NotionalSchedule
+    accrual_periods: tuple[ConditionalAccrualPeriod, ...]
+    coupon_formula: CouponFormula
+    day_count: str
+    payment_frequency: str
+    accrual_condition_ref: str
+    accrual_counter_ref: str
+    settlement_rule: str = "coupon_period_cash_settlement"
+    label: str = ""
+    metadata: Mapping[str, object] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "currency",
+            _require_text(self.currency, label="ConditionalAccrualLeg.currency").upper(),
+        )
+        if not isinstance(self.notional_schedule, NotionalSchedule):
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualLeg.notional_schedule must be a NotionalSchedule"
+            )
+        if not isinstance(self.accrual_periods, tuple):
+            object.__setattr__(self, "accrual_periods", tuple(self.accrual_periods))
+        if not self.accrual_periods:
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualLeg.accrual_periods must be non-empty"
+            )
+        previous_end: date | None = None
+        for period in self.accrual_periods:
+            if not isinstance(period, ConditionalAccrualPeriod):
+                raise StaticLegIRWellFormednessError(
+                    "ConditionalAccrualLeg.accrual_periods must contain ConditionalAccrualPeriod values"
+                )
+            if previous_end is not None and period.accrual_start < previous_end:
+                raise StaticLegIRWellFormednessError(
+                    "ConditionalAccrualLeg periods must be ordered and non-overlapping"
+                )
+            previous_end = period.accrual_end
+        if not isinstance(
+            self.coupon_formula,
+            (FixedCouponFormula, FloatingCouponFormula, QuotedCouponFormula),
+        ):
+            raise StaticLegIRWellFormednessError(
+                "ConditionalAccrualLeg.coupon_formula must be a CouponFormula"
+            )
+        object.__setattr__(
+            self,
+            "day_count",
+            _require_text(self.day_count, label="ConditionalAccrualLeg.day_count"),
+        )
+        object.__setattr__(
+            self,
+            "payment_frequency",
+            _require_text(
+                self.payment_frequency,
+                label="ConditionalAccrualLeg.payment_frequency",
+            ).lower(),
+        )
+        object.__setattr__(
+            self,
+            "accrual_condition_ref",
+            _require_text(
+                self.accrual_condition_ref,
+                label="ConditionalAccrualLeg.accrual_condition_ref",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "accrual_counter_ref",
+            _require_text(
+                self.accrual_counter_ref,
+                label="ConditionalAccrualLeg.accrual_counter_ref",
+            ),
+        )
+        object.__setattr__(
+            self,
+            "settlement_rule",
+            _require_text(
+                self.settlement_rule,
+                label="ConditionalAccrualLeg.settlement_rule",
+            ),
+        )
+        object.__setattr__(self, "label", str(self.label or "").strip())
+        object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
 
 @dataclass(frozen=True)
@@ -399,7 +535,7 @@ class KnownCashflowLeg:
         object.__setattr__(self, "label", str(self.label or "").strip())
 
 
-Leg = CouponLeg | PeriodRateOptionStripLeg | KnownCashflowLeg
+Leg = CouponLeg | ConditionalAccrualLeg | PeriodRateOptionStripLeg | KnownCashflowLeg
 
 
 @dataclass(frozen=True)
@@ -414,9 +550,12 @@ class SignedLeg:
                 "SignedLeg.direction must be 'receive' or 'pay'"
             )
         object.__setattr__(self, "direction", normalized)
-        if not isinstance(self.leg, (CouponLeg, PeriodRateOptionStripLeg, KnownCashflowLeg)):
+        if not isinstance(
+            self.leg,
+            (CouponLeg, ConditionalAccrualLeg, PeriodRateOptionStripLeg, KnownCashflowLeg),
+        ):
             raise StaticLegIRWellFormednessError(
-                "SignedLeg.leg must be a CouponLeg, PeriodRateOptionStripLeg, or KnownCashflowLeg"
+                "SignedLeg.leg must be a CouponLeg, ConditionalAccrualLeg, PeriodRateOptionStripLeg, or KnownCashflowLeg"
             )
 
 
@@ -479,6 +618,8 @@ __all__ = [
     "CouponFormula",
     "CouponLeg",
     "CouponPeriod",
+    "ConditionalAccrualLeg",
+    "ConditionalAccrualPeriod",
     "FixedCouponFormula",
     "FloatingCouponFormula",
     "KnownCashflow",
