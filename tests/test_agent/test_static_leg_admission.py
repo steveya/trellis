@@ -222,6 +222,8 @@ def _conditional_range_accrual_contract(
     *,
     callability: dict[str, object] | None = None,
     condition=None,
+    fixing_dates: tuple[date | None, ...] | None = None,
+    principal_payment_date: date | None = None,
     principal_redemption: float = 1.0,
 ) -> StaticLegContractIR:
     observation_dates = (
@@ -260,9 +262,9 @@ def _conditional_range_accrual_contract(
                 accrual_end=observation,
                 observation_date=observation,
                 payment_date=observation,
-                fixing_date=observation,
+                fixing_date=fixing_dates[idx] if fixing_dates is not None else observation,
             )
-            for start, observation in zip(accrual_starts, observation_dates)
+            for idx, (start, observation) in enumerate(zip(accrual_starts, observation_dates))
         ),
         coupon_formula=FixedCouponFormula(0.0525),
         day_count="ACT/365",
@@ -284,7 +286,7 @@ def _conditional_range_accrual_contract(
                     currency="USD",
                     cashflows=(
                         KnownCashflow(
-                            payment_date=observation_dates[-1],
+                            payment_date=principal_payment_date or observation_dates[-1],
                             amount=1_000_000.0 * principal_redemption,
                             currency="USD",
                         ),
@@ -518,6 +520,37 @@ class TestStaticLegAdmission:
 
         assert tuple(blocker.blocker_id for blocker in blockers) == (
             "conditional_range_accrual_between_predicate_required",
+        )
+        with pytest.raises(StaticLegLoweringNoMatchError):
+            select_static_leg_lowering(contract, requested_method="analytical")
+
+    def test_conditional_range_accrual_rejects_non_maturity_principal_payment(self):
+        contract = _conditional_range_accrual_contract(
+            principal_payment_date=date(2026, 7, 15),
+        )
+
+        blockers = conditional_range_accrual_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "conditional_range_accrual_principal_maturity_payment_required",
+        )
+        with pytest.raises(StaticLegLoweringNoMatchError):
+            select_static_leg_lowering(contract, requested_method="analytical")
+
+    def test_conditional_range_accrual_rejects_separate_fixing_dates(self):
+        contract = _conditional_range_accrual_contract(
+            fixing_dates=(
+                date(2026, 1, 14),
+                date(2026, 4, 15),
+                date(2026, 7, 15),
+                date(2026, 10, 15),
+            ),
+        )
+
+        blockers = conditional_range_accrual_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "conditional_range_accrual_observation_fixing_identity_required",
         )
         with pytest.raises(StaticLegLoweringNoMatchError):
             select_static_leg_lowering(contract, requested_method="analytical")

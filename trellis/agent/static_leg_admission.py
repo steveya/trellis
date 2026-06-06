@@ -333,6 +333,16 @@ def conditional_range_accrual_admission_blockers(
                 "Principal redemption must be receive-side for the checked route.",
             )
         )
+    if len(principal_legs) == 1 and len(principal_legs[0].leg.cashflows) == 1:
+        principal_cashflow = principal_legs[0].leg.cashflows[0]
+        final_coupon_payment_date = leg.accrual_periods[-1].payment_date
+        if principal_cashflow.payment_date != final_coupon_payment_date:
+            blockers.append(
+                _admission_blocker(
+                    "conditional_range_accrual_principal_maturity_payment_required",
+                    "Principal redemption must pay on the final coupon payment date for the checked route.",
+                )
+            )
     if not isinstance(leg.coupon_formula, FixedCouponFormula):
         blockers.append(
             _admission_blocker(
@@ -359,6 +369,17 @@ def conditional_range_accrual_admission_blockers(
             _admission_blocker(
                 "conditional_range_accrual_coupon_settlement_required",
                 "The checked range-accrual route admits coupon_period_cash_settlement only.",
+            )
+        )
+    if any(
+        period.fixing_date is not None
+        and period.fixing_date != period.observation_date
+        for period in leg.accrual_periods
+    ):
+        blockers.append(
+            _admission_blocker(
+                "conditional_range_accrual_observation_fixing_identity_required",
+                "The checked route requires each fixing date to match its observation date.",
             )
         )
     if leg.accrual_counter_ref != "in_range_coupon_count":
