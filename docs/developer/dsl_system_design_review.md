@@ -45,9 +45,17 @@ This boundary is shipped code, not just prompt guidance.
 - `ObligationSpec`
 - `ControllerProtocol`
 - `EventMachine`
+- `SemanticUnderlyingAxes`
 
 Automatic triggers live in event/state machinery. Strategic rights live in
 `ControllerProtocol`.
+
+Option semantics use typed axes instead of treating every underlier/exercise
+combination as a separate product family. The semantic contract may retain a
+compatibility `semantic_id` such as `vanilla_option`, `american_option`, or
+`quanto_option`, but route/spec selection must also honor
+`derivative_family="option"`, the underlier asset class and identifiers,
+`exercise_style`, and the call/put `option_type` when it is defined.
 
 ### 2.2 Valuation authority
 
@@ -66,7 +74,11 @@ Automatic triggers live in event/state machinery. Strategic rights live in
 ### 2.3 Routing authority
 
 `ProductIR` is the shared checked summary used for route selection. It is not
-the full semantic contract and not a universal solver IR.
+the full semantic contract and not a universal solver IR. For options it mirrors
+the semantic axes as `derivative_family`, `underlying_asset_class`,
+`underlying_identifiers`, and `option_type` so a broad
+`payoff_family="vanilla_option"` does not erase the difference between American
+equity, FX vanilla, rate, futures, and quanto shapes.
 
 Typed route admissibility is owned by:
 

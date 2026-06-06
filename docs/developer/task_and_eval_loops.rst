@@ -600,9 +600,19 @@ generic ``bond`` and ``swap`` wording no longer produce a family on their own,
 and an explicit family such as ``zcb_option`` no longer gets silently redrafted
 into a generic ``vanilla_option`` semantic contract just because the request
 text contains phrases like ``European call option``. That keeps exact helper
-binding on the intended family-first path for the short-rate comparison cohort.
+binding on the intended family-first path for the short-rate comparison cohort,
 so ingress fallback only fires for phrases that still correspond to defended
 task families rather than widening broad desk summaries into a pricing schema.
+
+Option-family identity follows the same rule without requiring every combination
+to become a new product family. Semantic contracts and ``ProductIR`` now carry
+``derivative_family="option"``, ``payoff_family`` such as ``vanilla_option``,
+the underlier asset class and identifiers, ``exercise_style``, and
+``option_type`` when a call/put side is defined. Route and validation selection
+must consume those axes before accepting an adapter, so an American equity put
+can remain a vanilla-option payoff while still selecting early-exercise
+artifacts, and an FX vanilla adapter cannot satisfy a quanto or equity option
+only because the terminal payoff is numerically vanilla-shaped.
 
 Suggested Validation Order
 --------------------------

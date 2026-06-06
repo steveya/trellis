@@ -20,6 +20,7 @@ from trellis.agent.semantic_contracts import (
     SemanticMarketInputSpec,
     SemanticMethodContract,
     SemanticProductSemantics,
+    SemanticUnderlyingAxes,
     SemanticValidationContract,
 )
 
@@ -244,6 +245,11 @@ def _family_semantic_overrides(family_id: str) -> dict:
             "settlement_rule": "cash_settle_at_expiry_after_fx_conversion",
             "observation_schedule": ("single_expiry",),
             "constituents": ("underlier",),
+            "derivative_family": "option",
+            "underlying": SemanticUnderlyingAxes(
+                asset_class="equity",
+                identifiers=("underlier",),
+            ),
         }
     return {}
 
@@ -274,6 +280,9 @@ def _family_contract_to_semantic(fc: FamilyContract) -> SemanticContract:
         instrument_class=fc.product.instrument,
         instrument_aliases=fc.product.instrument_aliases,
         payoff_family=fc.product.payoff_family,
+        derivative_family=overrides.get("derivative_family", ""),
+        underlying=overrides.get("underlying", SemanticUnderlyingAxes()),
+        option_type=overrides.get("option_type", ""),
         underlier_structure=overrides.get("underlier_structure", ""),
         payoff_rule=overrides.get("payoff_rule", ""),
         settlement_rule=overrides.get("settlement_rule", ""),

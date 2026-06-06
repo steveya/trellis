@@ -1663,6 +1663,10 @@ def build_product_ir(
     preferred_method: str | None = None,
     store: KnowledgeStore | None = None,
     event_machine: object | None = None,
+    derivative_family: str | None = None,
+    underlying_asset_class: str | None = None,
+    underlying_identifiers: tuple[str, ...] | list[str] = (),
+    option_type: str | None = None,
 ) -> ProductIR:
     """Build a ``ProductIR`` from explicit structured fields.
 
@@ -1734,6 +1738,28 @@ def build_product_ir(
             resolved_model_family,
         )
     )
+    resolved_derivative_family = (
+        _normalize_axis_token(derivative_family)
+        or _derivative_family_for(
+            normalized_instrument,
+            resolved_payoff_family,
+            description,
+        )
+    )
+    resolved_underlying_asset_class = (
+        _normalize_axis_token(underlying_asset_class)
+        or _underlying_asset_class_for(
+            normalized_instrument,
+            resolved_payoff_family,
+            resolved_model_family,
+            description,
+        )
+    )
+    resolved_option_type = _option_type_for(
+        description,
+        instrument=normalized_instrument,
+        explicit=option_type,
+    )
 
     return _augment_ir_with_promoted_route_support(_augment_ir_with_contextual_support(ProductIR(
         instrument=normalized_instrument,
@@ -1754,6 +1780,10 @@ def build_product_ir(
         unresolved_primitives=resolved_unresolved_primitives,
         supported=len(resolved_unresolved_primitives) == 0 if supported is None else supported,
         event_machine=event_machine,
+        derivative_family=resolved_derivative_family,
+        underlying_asset_class=resolved_underlying_asset_class,
+        underlying_identifiers=_string_tuple(underlying_identifiers),
+        option_type=resolved_option_type,
     ), description))
 
 
@@ -2403,13 +2433,14 @@ def _product_ir_from_decomposition(
 ) -> ProductIR:
     """Convert a canonical product decomposition into ``ProductIR``."""
     payoff_traits = tuple(sorted(set(decomposition.features)))
+    payoff_family = _payoff_family_for(instrument, payoff_traits, description)
     exercise_style = _exercise_style_for(instrument, payoff_traits, description)
     schedule_dependence = _schedule_dependence_for(instrument, payoff_traits)
     state_dependence = _state_dependence_for(instrument, payoff_traits, schedule_dependence)
     model_family = _model_family_for(instrument, payoff_traits, decomposition.method, description)
     route_families = _route_families_for(
         instrument,
-        _payoff_family_for(instrument, payoff_traits, description),
+        payoff_family,
         exercise_style,
         model_family,
     )
@@ -2428,7 +2459,7 @@ def _product_ir_from_decomposition(
         candidate_engine_families = tuple(dict.fromkeys((*candidate_engine_families, "analytical")))
     return _augment_ir_with_promoted_route_support(_augment_ir_with_contextual_support(ProductIR(
         instrument=instrument,
-        payoff_family=_payoff_family_for(instrument, payoff_traits, description),
+        payoff_family=payoff_family,
         payoff_traits=payoff_traits,
         exercise_style=exercise_style,
         state_dependence=state_dependence,
@@ -2442,6 +2473,14 @@ def _product_ir_from_decomposition(
         reusable_primitives=decomposition.method_modules,
         unresolved_primitives=(),
         supported=True,
+        derivative_family=_derivative_family_for(instrument, payoff_family, description),
+        underlying_asset_class=_underlying_asset_class_for(
+            instrument,
+            payoff_family,
+            model_family,
+            description,
+        ),
+        option_type=_option_type_for(description, instrument=instrument),
     ), description))
 
 
@@ -2453,13 +2492,14 @@ def _infer_composite_ir(
     """Rule-based IR for unsupported or composite products."""
     desc = _normalise(description)
     payoff_traits = _traits_from_text(desc)
+    payoff_family = _payoff_family_for(instrument or "", payoff_traits, description)
     schedule_dependence = _schedule_dependence_for(instrument or "", payoff_traits)
     state_dependence = _state_dependence_for(instrument or "", payoff_traits, schedule_dependence)
     model_family = _model_family_for(instrument or "", payoff_traits, "", description)
     exercise_style = _exercise_style_for(instrument or "", payoff_traits, description)
     route_families = _route_families_for(
         instrument or "",
-        _payoff_family_for(instrument or "", payoff_traits, description),
+        payoff_family,
         exercise_style,
         model_family,
     )
@@ -2479,7 +2519,7 @@ def _infer_composite_ir(
     )
     return _augment_ir_with_promoted_route_support(_augment_ir_with_contextual_support(ProductIR(
         instrument=instrument or _normalise(description),
-        payoff_family=_payoff_family_for(instrument or "", payoff_traits, description),
+        payoff_family=payoff_family,
         payoff_traits=payoff_traits,
         exercise_style=exercise_style,
         state_dependence=state_dependence,
@@ -2491,6 +2531,14 @@ def _infer_composite_ir(
         reusable_primitives=_reusable_primitives_for(payoff_traits, model_family),
         unresolved_primitives=unresolved_primitives,
         supported=len(unresolved_primitives) == 0,
+        derivative_family=_derivative_family_for(instrument or "", payoff_family, description),
+        underlying_asset_class=_underlying_asset_class_for(
+            instrument or "",
+            payoff_family,
+            model_family,
+            description,
+        ),
+        option_type=_option_type_for(description, instrument=instrument or ""),
     ), description))
 
 
@@ -2684,6 +2732,195 @@ def _payoff_family_for(
     if "option" in _normalise(description):
         return "composite_option"
     return instrument or "generic_product"
+
+
+_CURRENCY_CODES = frozenset(
+    {
+        "AUD",
+        "BRL",
+        "CAD",
+        "CHF",
+        "CNY",
+        "EUR",
+        "GBP",
+        "HKD",
+        "JPY",
+        "MXN",
+        "NOK",
+        "NZD",
+        "SEK",
+        "SGD",
+        "USD",
+        "ZAR",
+    }
+)
+
+
+def _normalize_axis_token(value: object) -> str:
+    """Normalize one ProductIR semantic-axis token."""
+    return str(value or "").strip().lower().replace(" ", "_").replace("-", "_")
+
+
+def _axis_tokens(value: object) -> frozenset[str]:
+    """Split normalized prose into stable semantic hint tokens."""
+    return frozenset(
+        part for part in re.split(r"[^a-z0-9]+", str(value or "").lower()) if part
+    )
+
+
+def _string_tuple(values: tuple[str, ...] | list[str] | None) -> tuple[str, ...]:
+    """Return a compact tuple of non-empty strings."""
+    if not values:
+        return ()
+    return tuple(str(value).strip() for value in values if str(value).strip())
+
+
+def _looks_like_currency_pair(value: str) -> bool:
+    """Return whether a compact identifier looks like a six-letter currency pair."""
+    token = str(value or "").strip().upper().replace("/", "").replace("-", "")
+    return (
+        len(token) == 6
+        and token[:3] in _CURRENCY_CODES
+        and token[3:] in _CURRENCY_CODES
+    )
+
+
+def _derivative_family_for(instrument: str, payoff_family: str, description: str) -> str:
+    """Infer the broad derivative-family axis without changing route identity."""
+    normalized_instrument = _normalise(instrument)
+    normalized_payoff = _normalise(payoff_family)
+    description_tokens = _axis_tokens(description)
+    option_instruments = {
+        "american_option",
+        "american_put",
+        "asian_option",
+        "barrier_option",
+        "basket_option",
+        "bermudan_swaption",
+        "cap",
+        "chooser_option",
+        "cliquet_option",
+        "compound_option",
+        "digital_option",
+        "equity_vanilla",
+        "european_option",
+        "floor",
+        "fx_option",
+        "fx_vanilla",
+        "fx_vanilla_option",
+        "heston_option",
+        "lookback_option",
+        "period_rate_option_strip",
+        "quanto_option",
+        "swaption",
+        "zcb_option",
+    }
+    option_payoffs = {
+        "asian_option",
+        "barrier_option",
+        "basket_option",
+        "basket_path_payoff",
+        "digital_option",
+        "period_rate_option_strip",
+        "quanto_option",
+        "rate_cap_floor_strip",
+        "swaption",
+        "vanilla_option",
+        "zcb_option",
+    }
+    if (
+        normalized_instrument in option_instruments
+        or normalized_payoff in option_payoffs
+        or "option" in description_tokens
+        or "options" in description_tokens
+        or "swaption" in description_tokens
+    ):
+        return "option"
+    if "swap" in normalized_instrument or "swap" in normalized_payoff:
+        return "swap"
+    return ""
+
+
+def _underlying_asset_class_for(
+    instrument: str,
+    payoff_family: str,
+    model_family: str,
+    description: str,
+) -> str:
+    """Infer the underlier asset-class axis from stable deterministic hints."""
+    normalized_instrument = _normalise(instrument)
+    normalized_payoff = _normalise(payoff_family)
+    normalized_model = _normalise(model_family)
+    normalized_description = _normalise(description)
+    description_tokens = _axis_tokens(description)
+    if (
+        normalized_instrument in {"fx_option", "fx_vanilla", "fx_vanilla_option"}
+        or normalized_model == "fx"
+        or "fx" in description_tokens
+        or {"foreign", "exchange"}.issubset(description_tokens)
+        or any(_looks_like_currency_pair(part) for part in normalized_description.split("_"))
+    ):
+        return "fx"
+    if (
+        normalized_instrument in {"swaption", "bermudan_swaption", "cap", "floor", "period_rate_option_strip"}
+        or normalized_payoff in {"swaption", "period_rate_option_strip", "rate_cap_floor_strip"}
+        or normalized_model in {"rate", "rates", "rate_style", "hull_white"}
+        or "swaption" in description_tokens
+        or "rate" in description_tokens
+    ):
+        return "rate"
+    if "future" in description_tokens or "futures" in description_tokens:
+        return "future"
+    if normalized_instrument in {"cds", "credit_default_swap", "nth_to_default", "cdo"}:
+        return "credit"
+    if "commodity" in description_tokens:
+        return "commodity"
+    if (
+        normalized_instrument in {
+            "american_option",
+            "american_put",
+            "asian_option",
+            "barrier_option",
+            "basket_option",
+            "digital_option",
+            "equity_vanilla",
+            "european_option",
+            "heston_option",
+            "quanto_option",
+        }
+        or normalized_model in {"equity_diffusion", "heston"}
+        or "equity" in description_tokens
+        or "stock" in description_tokens
+    ):
+        return "equity"
+    return ""
+
+
+def _option_type_for(
+    description: str,
+    *,
+    instrument: str,
+    explicit: str | None = None,
+) -> str:
+    """Infer the call/put side axis when the request or manifest provides one."""
+    normalized_explicit = _normalize_axis_token(explicit)
+    if normalized_explicit in {"call", "put"}:
+        return normalized_explicit
+    normalized_description = f" {_normalise(description).replace('_', ' ')} "
+    if " put " in normalized_description:
+        return "put"
+    if " call " in normalized_description:
+        return "call"
+    normalized_instrument = _normalise(instrument)
+    if normalized_instrument == "cap":
+        return "call"
+    if normalized_instrument == "floor":
+        return "put"
+    if "put" in normalized_instrument:
+        return "put"
+    if "call" in normalized_instrument:
+        return "call"
+    return normalized_explicit
 
 
 def _exercise_style_for(
