@@ -14,6 +14,11 @@ from types import MappingProxyType
 from typing import Mapping
 
 from trellis.agent.contract_ir import CurveQuote, SurfaceQuote
+from trellis.agent.semantic_observables import (
+    PredicateExpr,
+    PredicateGrammarValidationError,
+    validate_conditional_accrual_predicate,
+)
 
 
 class StaticLegIRWellFormednessError(ValueError):
@@ -338,6 +343,7 @@ class ConditionalAccrualLeg:
     settlement_rule: str = "coupon_period_cash_settlement"
     label: str = ""
     metadata: Mapping[str, object] = field(default_factory=dict)
+    accrual_condition: PredicateExpr | None = None
 
     def __post_init__(self) -> None:
         object.__setattr__(
@@ -410,6 +416,11 @@ class ConditionalAccrualLeg:
                 label="ConditionalAccrualLeg.settlement_rule",
             ),
         )
+        if self.accrual_condition is not None:
+            try:
+                validate_conditional_accrual_predicate(self.accrual_condition)
+            except PredicateGrammarValidationError as exc:
+                raise StaticLegIRWellFormednessError(str(exc)) from exc
         object.__setattr__(self, "label", str(self.label or "").strip())
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
