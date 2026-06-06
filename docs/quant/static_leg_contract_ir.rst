@@ -30,12 +30,14 @@ frozen dataclasses:
 - ``StaticLegContractIR(legs, settlement, metadata)``
 - ``SignedLeg(direction, leg)``
 - ``CouponLeg(currency, notional_schedule, coupon_periods, coupon_formula, ...)``
+- ``ConditionalAccrualLeg(currency, notional_schedule, accrual_periods, coupon_formula, accrual_condition, ...)``
 - ``PeriodRateOptionStripLeg(currency, notional_schedule, option_periods, rate_index, strike, option_side, ...)``
 - ``KnownCashflowLeg(currency, cashflows, ...)``
 - ``NotionalSchedule`` / ``NotionalStep``
 - schedule nodes:
 
   - ``CouponPeriod``
+  - ``ConditionalAccrualPeriod``
   - ``PeriodRateOptionPeriod``
 
 - coupon formulas:
@@ -56,6 +58,13 @@ The current bounded scope is intentionally static:
 - no running target state
 - no holder or issuer control
 
+``ConditionalAccrualLeg`` does not change that boundary. It represents an
+automatic scheduled coupon whose amount is gated by a predicate over observed
+or projected quantities. A plain single-index range accrual therefore belongs
+to the static-leg algebra as a conditional coupon, not to the option axis. A
+callable range accrual, an interrupted accrual, or a range accrual with barrier
+state still needs the dynamic wrapper track.
+
 The cap/floor-strip representation boundary is now also explicit at the
 leg level:
 
@@ -69,6 +78,30 @@ leg level:
 
 In other words, a schedule-driven cap or floor is represented here as a
 strip of period rate options rather than as a helper-shaped wrapper name.
+
+Conditional Accrual Legs
+------------------------
+
+``ConditionalAccrualLeg`` is the checked leg-level abstraction for conditional
+scheduled cashflows. Its semantic shape is:
+
+- a notional schedule
+- accrual periods with observation, fixing, and payment dates
+- a coupon formula
+- an ``accrual_condition`` predicate
+- an ``accrual_counter_ref`` naming the counter semantics used by the coupon
+
+For the first admitted range-accrual slice, the condition is a
+``BetweenPredicate`` over one ``RateIndexObservable``. Each period emits a
+coupon only when that observed or projected fixing is in range. The principal
+redemption, when present, is a separate ``KnownCashflowLeg`` that must pay on
+the final coupon payment date.
+
+The observable and predicate grammar is broader than the first executable
+route. ``CmsRateObservable``, ``SpreadObservable``, compound predicates, and
+multi-index predicates are representable so the compiler can preserve the
+economic shape, but route admission fails closed until checked pricing support
+exists.
 
 Route-Free Decomposition
 ------------------------
@@ -130,6 +163,7 @@ The current declarations are:
 - ``static_leg_period_rate_option_strip_monte_carlo``
 - ``static_leg_basis_swap``
 - ``static_leg_fixed_coupon_bond``
+- ``static_leg_range_accrual_discounted``
 
 All of those declarations can now materialize checked repository engines:
 
@@ -138,12 +172,34 @@ All of those declarations can now materialize checked repository engines:
 - scheduled rate-option strips -> ``trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo``
 - float-float basis swaps -> ``trellis.models.rate_basis_swap.price_rate_basis_swap``
 - fixed coupon bond -> ``trellis.instruments.bond.Bond`` kwargs
+- single-index range accrual -> ``trellis.models.range_accrual.price_range_accrual``
+
+Range-accrual admission is intentionally exact. The checked declaration
+admits only a receive-side ``ConditionalAccrualLeg`` with fixed coupon,
+constant positive notional, period settlement, identity observation/fixing
+dates, an ``in_range_coupon_count`` counter, one rate-index between predicate,
+and at most one receive-side maturity principal cashflow.
+
+Unsupported neighbors produce ``StaticLegAdmissionBlocker`` records rather
+than falling through to the checked route. Current blocker ids include:
+
+- ``conditional_range_accrual_callability_pending``
+- ``conditional_range_accrual_interruption_state_pending``
+- ``conditional_range_accrual_barrier_state_pending``
+- ``conditional_accrual_spread_observable_pending``
+- ``conditional_accrual_cms_rate_observable_pending``
+- ``conditional_accrual_multi_index_predicate_pending``
+
+Those ids are part of the diagnostic contract. They mean the shape was
+represented, but executable admission requires a later dynamic-wrapper,
+composite-observable, or multi-index pricing slice.
 
 Execution IR Runtime
 --------------------
 
 ``trellis.execution.compiler.compile_static_leg_execution_ir(...)`` now lowers
-the same admitted static-leg cohort into a route-free ``ContractExecutionIR``.
+the execution-backed static-leg cohort into a route-free
+``ContractExecutionIR``.
 The lowered artifact records:
 
 - coupon-leg, known-cashflow, or period-rate-option-strip obligations
@@ -179,6 +235,12 @@ This runtime is still a checked static proving lane, but the admitted
 cap/floor ``_agent`` wrappers now use it as thin compatibility shells.
 Richer static-leg wrapper families and generic dynamic-wrapper execution
 remain later work.
+
+The checked single-index range-accrual route is currently a static-leg
+admission and helper-binding path, not a generic static execution-IR repricing
+path. It binds ``ConditionalAccrualLeg`` evidence to
+``trellis.models.range_accrual.price_range_accrual`` and keeps unsupported
+conditional-accrual variants explicit through blockers.
 
 For the scheduled strip family, the lowering boundary is:
 
