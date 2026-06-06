@@ -224,6 +224,7 @@ def _conditional_range_accrual_contract(
     *,
     callability: dict[str, object] | None = None,
     dynamic_features: dict[str, object] | None = None,
+    contract_dynamic_features: dict[str, object] | None = None,
     condition=None,
     fixing_dates: tuple[date | None, ...] | None = None,
     principal_payment_date: date | None = None,
@@ -277,7 +278,11 @@ def _conditional_range_accrual_contract(
         metadata={
             "semantic_family": "range_accrual",
             "callability": callability or {},
-            "dynamic_features": dynamic_features or {},
+            "dynamic_features": (
+                dynamic_features
+                if dynamic_features is not None
+                else {}
+            ),
         },
         accrual_condition=condition,
     )
@@ -304,7 +309,11 @@ def _conditional_range_accrual_contract(
         metadata={
             "semantic_family": "range_accrual",
             "callability": callability or {},
-            "dynamic_features": dynamic_features or {},
+            "dynamic_features": (
+                contract_dynamic_features
+                if contract_dynamic_features is not None
+                else dynamic_features or {}
+            ),
         },
     )
 
@@ -580,6 +589,20 @@ class TestStaticLegAdmission:
         assert tuple(blocker.required_ticket for blocker in blockers) == (
             "QUA-1115",
             "QUA-1115",
+        )
+        with pytest.raises(StaticLegLoweringNoMatchError):
+            select_static_leg_lowering(contract, requested_method="analytical")
+
+    def test_contract_dynamic_range_accrual_blockers_are_not_masked_by_leg_metadata(self):
+        contract = _conditional_range_accrual_contract(
+            dynamic_features={"leg_marker": True},
+            contract_dynamic_features={"barrier_state": {"barrier_type": "knock_out"}},
+        )
+
+        blockers = conditional_range_accrual_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "conditional_range_accrual_barrier_state_pending",
         )
         with pytest.raises(StaticLegLoweringNoMatchError):
             select_static_leg_lowering(contract, requested_method="analytical")
