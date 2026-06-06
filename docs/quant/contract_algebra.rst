@@ -95,6 +95,47 @@ preferred method. Request compilation, semantic compilation, and runtime
 metadata all consume the same family/method surface instead of each carrying
 its own family-local branching.
 
+Conditional Scheduled Cashflows
+-------------------------------
+
+Some scheduled products are neither payoff-expression options nor plain coupon
+legs. A range accrual is the current canonical example: it pays scheduled
+coupon cashflows only when an observed or projected reference quantity
+satisfies a predicate. That makes it a conditional scheduled cashflow, not an
+option product.
+
+The semantic split is:
+
+- option axes describe exercise rights and option payoff shape
+- static legs describe scheduled coupon, option-strip, and cashflow legs
+- conditional accrual legs describe scheduled coupons gated by predicates
+- dynamic wrappers describe callability, interruption, target state, and other
+  event/state/control behavior
+
+The checked leg-level representation is ``ConditionalAccrualLeg`` in
+``trellis.agent.static_leg_contract``. It carries accrual periods, a notional
+schedule, a coupon formula, an ``accrual_condition`` predicate, and an
+``accrual_counter_ref`` such as ``in_range_coupon_count``.
+
+The first executable range-accrual lowering admits only:
+
+- one receive-side conditional accrual leg
+- a fixed coupon formula
+- constant positive notional
+- one ``BetweenPredicate`` over one ``RateIndexObservable``
+- observation dates equal to fixing dates
+- optional receive-side principal redemption on the final coupon payment date
+
+The observable/predicate grammar is intentionally broader than that first
+route. ``CmsRateObservable``, ``SpreadObservable``, compound predicates, and
+multi-index predicates are representable contract evidence, but they do not
+admit the checked single-index range-accrual route until executable support
+lands.
+
+Callable, interrupted, and barrier-style range accruals compose the same
+conditional accrual base with the dynamic wrapper track. They must not be
+flattened into the static single-index route.
+
 Observable Naming Discipline
 ----------------------------
 

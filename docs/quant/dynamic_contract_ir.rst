@@ -58,6 +58,12 @@ The key design rule is compositional:
   ``ContractIR`` or ``StaticLegContractIR``
 - dynamic semantics live in the wrapper, not in product-name leaves
 
+For range accruals, the static base is the conditional scheduled coupon leg.
+The dynamic wrapper owns issuer call rights, interruption events, barrier-style
+accrual state, or target-style stopping behavior. Those variants are
+representable as dynamic shapes, but they are not executable on the checked
+single-index static range-accrual route.
+
 Validation Contract
 -------------------
 

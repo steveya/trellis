@@ -500,6 +500,18 @@ validation bundle. The same note is also grouped into
 the proxy explicit without forcing the user to inspect the raw validation
 payload first.
 
+The supported range-accrual slice is intentionally narrow. It is a conditional
+coupon structure, not an option product. The checked route currently admits a
+single reference rate index, a fixed coupon paid only when the fixing is within
+the stated range, and optional principal redemption at maturity.
+
+Callable range accruals, interrupted accruals, barrier-style accrual state,
+CMS-spread observables, and multi-index range predicates are represented as
+unsupported variants and fail closed with structured blockers. A blocked result
+for one of those variants is expected behavior; it means Trellis preserved the
+contract evidence but did not pretend that the single-index checked adapter can
+price the unsupported dynamic or composite shape.
+
 For callable bonds and Bermudan swaptions, the governed surface now packages
 the checked lattice helpers into the same run/audit contract. Callable bonds
 also have a bounded Hull-White PDE proof route on the event-aware rollback
