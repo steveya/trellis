@@ -240,9 +240,9 @@ class TestQuantoOptionPipeline:
 
 
 class TestRangeAccrualPipeline:
-    """Range accrual: semantic contract without a checked route family."""
+    """Range accrual: semantic contract binds through checked static-leg admission."""
 
-    def test_compiler_keeps_range_accrual_on_semantic_modules_without_guessing_vanilla_route(self):
+    def test_compiler_binds_range_accrual_to_checked_static_leg_route(self):
         from trellis.agent.semantic_contracts import draft_semantic_contract
         from trellis.agent.semantic_contract_validation import validate_semantic_contract
 
@@ -273,10 +273,14 @@ class TestRangeAccrualPipeline:
         assert bp.primitive_routes == ()
         assert bp.dsl_lowering is not None
         assert bp.dsl_lowering.route_id is None
-        assert any(
-            error.code == "missing_primitive_routes"
-            for error in bp.dsl_lowering.errors
+        assert bp.dsl_lowering.errors == ()
+        assert bp.dsl_lowering.binding_id == "trellis.models.range_accrual.price_range_accrual"
+        assert bp.static_leg_lowering_selection is not None
+        assert (
+            bp.static_leg_lowering_selection.declaration_id
+            == "static_leg_range_accrual_discounted"
         )
+        assert "static_leg_selection:static_leg_range_accrual_discounted" in bp.dsl_lowering.notes
 
 
 class TestSwaptionPipeline:

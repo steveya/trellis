@@ -182,7 +182,7 @@ def test_compile_validation_contract_prefers_more_specific_product_family_over_g
     assert contract.instrument_type == "zcb_option"
 
 
-def test_route_less_semantic_request_keeps_validation_contract_truthful():
+def test_checked_range_accrual_binding_keeps_validation_contract_truthful():
     from trellis.agent.platform_requests import compile_build_request
 
     compiled = compile_build_request(
@@ -196,19 +196,21 @@ def test_route_less_semantic_request_keeps_validation_contract_truthful():
     contract = compiled.validation_contract
 
     assert contract is not None
-    assert contract.backend_binding_id is None
-    assert contract.exact_bundle_id is None
+    assert contract.backend_binding_id == "trellis.models.range_accrual.price_range_accrual"
+    assert (
+        contract.exact_bundle_id
+        == "analytical:range_accrual@trellis.models.range_accrual.price_range_accrual"
+    )
     assert contract.route_id is None
-    assert contract.route_family is None
+    assert contract.route_family == "analytical"
     check_ids = {check.check_id for check in contract.deterministic_checks}
     assert "fixing_history_bound_to_past_schedule_points" in check_ids
     assert "principal_redeems_at_maturity" in check_ids
     assert "check_vol_sensitivity" not in check_ids
     assert "check_vol_monotonicity" not in check_ids
-    assert contract.lowering_errors == (
-        "route_selection:missing_primitive_routes:No primitive routes declared for DSL lowering.",
-    )
-    assert contract.review_hints["has_lowering_errors"] is True
+    assert contract.lowering_errors == ()
+    assert contract.review_hints["has_lowering_errors"] is False
+    assert contract.review_hints["has_exact_validation_identity"] is True
 
 
 @pytest.mark.parametrize(

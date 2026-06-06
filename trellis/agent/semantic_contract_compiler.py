@@ -294,8 +294,10 @@ def compile_semantic_contract(
     route_method_modules = tuple(pricing_plan.method_modules)
     if (
         not primitive_routes
-        and contract_ir_solver_selection is None
-        and static_leg_lowering_selection is None
+        and (
+            static_leg_lowering_selection is not None
+            or contract_ir_solver_selection is None
+        )
     ):
         route_method_modules = ()
 
