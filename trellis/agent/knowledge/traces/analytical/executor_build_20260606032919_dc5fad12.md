@@ -1,0 +1,489 @@
+# Analytical Trace: `executor_build_20260606032919_dc5fad12`
+- Trace type: `analytical`
+- Route family: `analytical`
+- Route name: `equity_quanto`
+- Model: `analytical`
+- Status: `ok`
+- Created at: `2026-06-06T03:29:22.515201+00:00`
+- Updated at: `2026-06-06T03:29:22.575253+00:00`
+- Task ID: `executor_build_20260606032919_dc5fad12`
+
+## Context
+- `class_name`: 'QuantoOptionAnalyticalPayoff'
+- `generation_plan`: {'method': 'analytical', 'instrument_type': 'quanto_option', 'inspected_modules': ['trellis.models.analytical.quanto', 'trellis.models.black', 'trellis.models.quanto_option', 'trellis.models.resolution.quanto'], 'approved_modules': ['trellis.core.date_utils', 'trellis.core.differentiable', 'trellis.core.market_state', 'trellis.core.payoff', 'trellis.core.types', 'trellis.models.analytical', 'trellis.models.analytical.barrier', 'trellis.models.analytical.equity_exotics', 'trellis.models.analytical.equity_vanilla_bs', 'trellis.models.analytical.fx', 'trellis.models.analytical.fx_vanilla_gk', 'trellis.models.analytical.jamshidian', 'trellis.models.analytical.quanto', 'trellis.models.analytical.support.cross_asset', 'trellis.models.analytical.support.discounting', 'trellis.models.analytical.support.forwards', 'trellis.models.analytical.support.payoffs', 'trellis.models.black', 'trellis.models.monte_carlo.quanto', 'trellis.models.quanto_option', 'trellis.models.resolution.quanto'], 'symbols_to_reuse': ['CashflowSchedule', 'Cashflows', 'ContractTimeline', 'DataProvider', 'DayCountConvention', 'DeterministicCashflowPayoff', 'DifferentiableBackendCapabilities', 'DiscountCurve', 'DslMeasure', 'EventSchedule', 'ExecutionBackedPayoff', 'Frequency', 'Instrument', 'MarketState', 'MissingCapabilityError', 'MonteCarloPathPayoff', 'Payoff', 'PresentValue', 'PricingResult', 'PricingValue', 'QuantoAnalyticalSpecLike', 'QuantoMonteCarloSpecLike', 'QuantoOptionAnalyticalSpecLike', 'QuantoOptionMonteCarloSpecLike', 'QuantoSpecLike', 'ResolvedBarrierInputs', 'ResolvedEquityAnalyticalInputs', 'ResolvedGarmanKohlhagenInputs', 'ResolvedInputPayoff', 'ResolvedJamshidianInputs', 'ResolvedQuantoInputs', 'SchedulePeriod', 'TimelineRole', 'add_months', 'asset_or_nothing_intrinsic', 'barrier_image_raw', 'barrier_option_price', 'barrier_regime_selector_raw', 'black76_asset_or_nothing_call', 'black76_asset_or_nothing_put', 'black76_call', 'black76_cash_or_nothing_call', 'black76_cash_or_nothing_put', 'black76_put', 'build_contract_timeline', 'build_contract_timeline_from_dates', 'build_exercise_timeline_from_dates', 'build_observation_timeline', 'build_payment_timeline', 'build_period_schedule', 'build_quanto_hybrid_factor_graph', 'build_quanto_mc_initial_state', 'build_quanto_mc_process', 'call_put_parity_gap', 'cash_or_nothing_intrinsic', 'coerce_contract_timeline_from_dates', 'continuous_rate_from_simple_rate', 'discount_factor_from_zero_rate', 'discounted_value', 'down_and_in_call', 'down_and_in_call_raw', 'down_and_out_call', 'down_and_out_call_raw', 'effective_covariance_term', 'equity_vanilla_bs_outputs', 'equity_variance_swap_outputs_analytical', 'exchange_option_effective_vol', 'foreign_to_domestic_forward_bridge', 'forward_discount_ratio', 'forward_from_carry_rate', 'forward_from_discount_factors', 'forward_from_dividend_yield', 'fx_vanilla_gk_outputs', 'garman_kohlhagen_call', 'garman_kohlhagen_call_raw', 'garman_kohlhagen_price_raw', 'garman_kohlhagen_put', 'garman_kohlhagen_put_raw', 'generate_schedule', 'get_accrual_fraction', 'get_backend_capabilities', 'get_bracketing_dates', 'get_numpy', 'gradient', 'hessian', 'hessian_vector_product', 'implied_zero_rate', 'jacobian', 'jvp', 'normalize_dsl_measure', 'normalize_explicit_dates', 'normalized_option_type', 'price_equity_chooser_option_analytical', 'price_equity_cliquet_option_analytical', 'price_equity_compound_option_analytical', 'price_equity_digital_option_analytical', 'price_equity_fixed_lookback_option_analytical', 'price_equity_variance_swap_analytical', 'price_quanto_option_analytical', 'price_quanto_option_analytical_from_market_state', 'price_quanto_option_monte_carlo', 'price_quanto_option_monte_carlo_from_market_state', 'price_quanto_option_raw', 'quanto_adjusted_forward', 'rebate_raw', 'recommended_quanto_mc_engine_kwargs', 'require_capability', 'resolve_quanto_correlation', 'resolve_quanto_foreign_curve', 'resolve_quanto_inputs', 'resolve_quanto_option_inputs', 'resolve_quanto_underlier_spot', 'safe_time_fraction', 'simple_rate_from_discount_factor', 'supports_capability', 'terminal_intrinsic', 'terminal_quanto_option_payoff', 'terminal_vanilla_from_basis', 'vanilla_call_raw', 'vjp', 'year_fraction', 'zcb_option_hw', 'zcb_option_hw_raw'], 'proposed_tests': ['tests/test_agent/test_build_loop.py'], 'uncertainty_flags': [], 'repo_revision': 'b9ac059c4b9661ec8f66f9a37e943337e95a8a2d', 'instruction_resolution': {'route': 'equity_quanto', 'effective_instruction_count': 1, 'dropped_instruction_count': 0, 'conflict_count': 0, 'effective_instructions': [{'id': 'equity_quanto:route-helper', 'title': 'Use the selected route helper directly', 'instruction_type': 'hard_constraint', 'status': 'active', 'source_kind': 'route_card', 'source_id': 'equity_quanto:route-helper', 'source_revision': '', 'scope_methods': ('analytical',), 'scope_instruments': ('quanto_option',), 'scope_routes': ('equity_quanto',), 'scope_modules': ('trellis.models.quanto_option',), 'scope_features': (), 'precedence_rank': 100, 'supersedes': (), 'conflict_policy': 'prefer_newer', 'statement': 'Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.', 'rationale': 'The helper already owns the route-specific engine and payoff mapping.', 'created_at': '', 'updated_at': ''}], 'dropped_instructions': [], 'conflicts': []}, 'primitive_plan': {'route': 'equity_quanto', 'engine_family': 'analytical', 'route_family': 'analytical', 'score': 4.5}}
+- `route_card`: "## Structured Lane Card\n- Method family: `analytical`\n- Instrument type: `quanto_option`\n- Semantic contract: `quanto_option`, request=`quanto_option`, bridge=`canonical_semantic`, instrument=`quanto_option`, payoff=`vanilla_option`, structure=`cross_currency_single_underlier`\n- Valuation context: market_source=`unbound_market_snapshot`\n- Lane boundary: family=`analytical`, kind=`exact_target_binding`, exact_bindings=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n- Lowering boundary: expr=`ContractAtom`, helpers=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n- Validation contract: bundle=`analytical:quanto_option`, checks=`check_non_negativity`, `check_price_sanity`, `quanto_adjustment_applied`, `fx_conversion_applied_before_settlement`, residual_risks=`comparison_relations_unspecified`\n- Lane obligations:\n  - Lane family: `analytical`\n  - Plan kind: `exact_target_binding`\n  - Market bindings: `discount_curve`, `forward_curve`, `underlier_spot`, `black_vol_surface`\n  - Construction steps:\n    - Bind resolved market inputs onto a closed-form or quasi-closed-form kernel.\n    - Keep the implementation path-static and reuse analytical support primitives before writing new math.\n  - Exact backend bindings:\n    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n  - Exact binding signatures:\n    - `price_quanto_option_analytical_from_market_state(market_state: 'MarketState', spec: 'QuantoOptionAnalyticalSpecLike') -> 'float'`\n- Route authority:\n  - binding=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`, engine=`analytical`, authority=`exact_backend_fit`\n  - Validation bundle: `analytical:quanto_option`\n  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`\n  - Helper authority: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n  - Exact target bindings: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n- Backend binding:\n  - Route: `equity_quanto`\n  - Engine family: `analytical`\n  - Route family: `analytical`\n  - Selected primitives:\n    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state` (route_helper)\n  - Resolved instructions:\n    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\n- Primary modules to inspect/reuse:\n  - `trellis.models.analytical.quanto`\n  - `trellis.models.black`\n  - `trellis.models.quanto_option`\n  - `trellis.models.resolution.quanto`\n- Post-build test targets:\n  - `tests/test_agent/test_build_loop.py`\n- Instruction precedence: follow the lane obligations in this card first. Treat backend route/helper details as exact-fit bindings, not as permission to invent a different numerical path.\n- Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan.\n- Use approved Trellis imports only. Prefer thin adapters when the compiler found an exact backend; otherwise build the smallest lane-consistent kernel the plan requires."
+- `route_plan`: "## Structured Generation Plan\n- Method family: `analytical`\n- Instrument type: `quanto_option`\n- Semantic contract: `quanto_option`, request=`quanto_option`, bridge=`canonical_semantic`, instrument=`quanto_option`, payoff=`vanilla_option`, structure=`cross_currency_single_underlier`\n- Valuation context: market_source=`unbound_market_snapshot`\n- Lane boundary: family=`analytical`, kind=`exact_target_binding`, exact_bindings=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n- Lowering boundary: expr=`ContractAtom`, helpers=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n- Validation contract: bundle=`analytical:quanto_option`, checks=`check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`, `check_quanto_required_inputs`, `check_quanto_cross_currency_semantics`, residual_risks=`comparison_relations_unspecified`\n- Lane obligations:\n  - Lane family: `analytical`\n  - Plan kind: `exact_target_binding`\n  - Market bindings: `discount_curve`, `forward_curve`, `underlier_spot`, `black_vol_surface`, `fx_rates`, `model_parameters`\n  - Construction steps:\n    - Bind resolved market inputs onto a closed-form or quasi-closed-form kernel.\n    - Keep the implementation path-static and reuse analytical support primitives before writing new math.\n  - Exact backend bindings:\n    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n  - Exact binding signatures:\n    - `price_quanto_option_analytical_from_market_state(market_state: 'MarketState', spec: 'QuantoOptionAnalyticalSpecLike') -> 'float'`\n- Route authority:\n  - binding=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`, engine=`analytical`, authority=`exact_backend_fit`\n  - Validation bundle: `analytical:quanto_option`\n  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`, `check_quanto_required_inputs`, `check_quanto_cross_currency_semantics`\n  - Helper authority: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n  - Exact target bindings: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`\n- Repo revision: `b9ac059c4b9661ec8f66f9a37e943337e95a8a2d`\n- Inspected modules:\n  - `trellis.models.analytical.quanto`\n  - `trellis.models.black`\n  - `trellis.models.quanto_option`\n  - `trellis.models.resolution.quanto`\n- Approved Trellis modules for imports:\n  - `trellis.core.date_utils`\n  - `trellis.core.differentiable`\n  - `trellis.core.market_state`\n  - `trellis.core.payoff`\n  - `trellis.core.types`\n  - `trellis.models.analytical`\n  - `trellis.models.analytical.barrier`\n  - `trellis.models.analytical.equity_exotics`\n  - `trellis.models.analytical.equity_vanilla_bs`\n  - `trellis.models.analytical.fx`\n  - `trellis.models.analytical.fx_vanilla_gk`\n  - `trellis.models.analytical.jamshidian`\n  - `trellis.models.analytical.quanto`\n  - `trellis.models.analytical.support.cross_asset`\n  - `trellis.models.analytical.support.discounting`\n  - `trellis.models.analytical.support.forwards`\n  - `trellis.models.analytical.support.payoffs`\n  - `trellis.models.black`\n  - `trellis.models.monte_carlo.quanto`\n  - `trellis.models.quanto_option`\n  - `trellis.models.resolution.quanto`\n- Public symbols available from the approved modules:\n  - `CashflowSchedule`\n  - `Cashflows`\n  - `ContractTimeline`\n  - `DataProvider`\n  - `DayCountConvention`\n  - `DeterministicCashflowPayoff`\n  - `DifferentiableBackendCapabilities`\n  - `DiscountCurve`\n  - `DslMeasure`\n  - `EventSchedule`\n  - `ExecutionBackedPayoff`\n  - `Frequency`\n  - `Instrument`\n  - `MarketState`\n  - `MissingCapabilityError`\n  - `MonteCarloPathPayoff`\n  - `Payoff`\n  - `PresentValue`\n  - `PricingResult`\n  - `PricingValue`\n  - `QuantoAnalyticalSpecLike`\n  - `QuantoMonteCarloSpecLike`\n  - `QuantoOptionAnalyticalSpecLike`\n  - `QuantoOptionMonteCarloSpecLike`\n- Tests to run after generation:\n  - `tests/test_agent/test_build_loop.py`\n- Likely tests for reused symbols:\n  - `Cashflows` -> tests/test_models/test_contingent_cashflows.py\n- Backend binding:\n  - Route: `equity_quanto`\n  - Engine family: `analytical`\n  - Route family: `analytical`\n  - Route score: `4.50`\n  - Selected primitives:\n    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state` (route_helper)\n  - Resolved instructions:\n    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.\n  - Instruction precedence: follow the compiler-emitted lane obligations first, then satisfy the exact backend binding and approved imports. If older guidance conflicts, treat it as stale and obey this plan.\n- Every `trellis.*` import in the generated code MUST come from the approved module list above.\n- If you need functionality outside the approved list, say so explicitly instead of inventing an import."
+- `selected_curve_names`: {}
+- `spec_name`: 'QuantoOptionSpec'
+
+## Steps
+- **trace** `executor_build_20260606032919_dc5fad12:root`
+  - Label: Analytical build
+  - Status: `ok`
+  - Notes:
+    - The trace mirrors the deterministic GenerationPlan used to assemble the route.
+  - Inputs:
+    - `issue_id`: None
+    - `model`: analytical
+    - `route_family`: analytical
+    - `route_name`: equity_quanto
+    - `task_id`: executor_build_20260606032919_dc5fad12
+  - Outputs:
+    - `route`: {
+  "family": "analytical",
+  "model": "analytical",
+  "name": "equity_quanto"
+}
+    - `status`: ok
+  - **semantic_resolution** `executor_build_20260606032919_dc5fad12:semantic_resolution`
+    - Label: Resolve contract and route
+    - Status: `ok`
+    - Parent: `executor_build_20260606032919_dc5fad12:root`
+    - Notes:
+      - Record the semantic contract that drives route selection, not just the final code path.
+    - Inputs:
+      - `approved_modules`: [
+  "trellis.core.date_utils",
+  "trellis.core.differentiable",
+  "trellis.core.market_state",
+  "trellis.core.payoff",
+  "trellis.core.types",
+  "trellis.models.analytical",
+  "trellis.models.analytical.barrier",
+  "trellis.models.analytical.equity_exotics",
+  "trellis.models.analytical.equity_vanilla_bs",
+  "trellis.models.analytical.fx",
+  "trellis.models.analytical.fx_vanilla_gk",
+  "trellis.models.analytical.jamshidian",
+  "trellis.models.analytical.quanto",
+  "trellis.models.analytical.support.cross_asset",
+  "trellis.models.analytical.support.discounting",
+  "trellis.models.analytical.support.forwards",
+  "trellis.models.analytical.support.payoffs",
+  "trellis.models.black",
+  "trellis.models.monte_carlo.quanto",
+  "trellis.models.quanto_option",
+  "trellis.models.resolution.quanto"
+]
+      - `inspected_modules`: [
+  "trellis.models.analytical.quanto",
+  "trellis.models.black",
+  "trellis.models.quanto_option",
+  "trellis.models.resolution.quanto"
+]
+      - `instrument_type`: quanto_option
+      - `method`: analytical
+      - `repo_revision`: b9ac059c4b9661ec8f66f9a37e943337e95a8a2d
+      - `symbols_to_reuse`: [
+  "CashflowSchedule",
+  "Cashflows",
+  "ContractTimeline",
+  "DataProvider",
+  "DayCountConvention",
+  "DeterministicCashflowPayoff",
+  "DifferentiableBackendCapabilities",
+  "DiscountCurve",
+  "DslMeasure",
+  "EventSchedule",
+  "ExecutionBackedPayoff",
+  "Frequency",
+  "Instrument",
+  "MarketState",
+  "MissingCapabilityError",
+  "MonteCarloPathPayoff",
+  "Payoff",
+  "PresentValue",
+  "PricingResult",
+  "PricingValue",
+  "QuantoAnalyticalSpecLike",
+  "QuantoMonteCarloSpecLike",
+  "QuantoOptionAnalyticalSpecLike",
+  "QuantoOptionMonteCarloSpecLike",
+  "QuantoSpecLike",
+  "ResolvedBarrierInputs",
+  "ResolvedEquityAnalyticalInputs",
+  "ResolvedGarmanKohlhagenInputs",
+  "ResolvedInputPayoff",
+  "ResolvedJamshidianInputs",
+  "ResolvedQuantoInputs",
+  "SchedulePeriod",
+  "TimelineRole",
+  "add_months",
+  "asset_or_nothing_intrinsic",
+  "barrier_image_raw",
+  "barrier_option_price",
+  "barrier_regime_selector_raw",
+  "black76_asset_or_nothing_call",
+  "black76_asset_or_nothing_put"
+]
+      - `uncertainty_flags`: []
+    - Outputs:
+      - `instruction_resolution`: {
+  "conflict_count": 0,
+  "conflicts": [],
+  "dropped_instruction_count": 0,
+  "dropped_instructions": [],
+  "effective_instruction_count": 1,
+  "effective_instructions": [
+    {
+      "conflict_policy": "prefer_newer",
+      "created_at": "",
+      "id": "equity_quanto:route-helper",
+      "instruction_type": "hard_constraint",
+      "precedence_rank": 100,
+      "rationale": "The helper already owns the route-specific engine and payoff mapping.",
+      "scope_features": [],
+      "scope_instruments": [
+        "quanto_option"
+      ],
+      "scope_methods": [
+        "analytical"
+      ],
+      "scope_modules": [
+        "trellis.models.quanto_option"
+      ],
+      "scope_routes": [
+        "equity_quanto"
+      ],
+      "source_id": "equity_quanto:route-helper",
+      "source_kind": "route_card",
+      "source_revision": "",
+      "statement": "Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.",
+      "status": "active",
+      "supersedes": [],
+      "title": "Use the selected route helper directly",
+      "updated_at": ""
+    }
+  ],
+  "route": "equity_quanto"
+}
+      - `model`: analytical
+      - `primitive_plan_score`: 4.5
+      - `route_family`: analytical
+      - `route_name`: equity_quanto
+  - **instruction_lifecycle** `executor_build_20260606032919_dc5fad12:instruction_lifecycle`
+    - Label: Resolve route guidance lifecycle
+    - Status: `ok`
+    - Parent: `executor_build_20260606032919_dc5fad12:root`
+    - Notes:
+      - List the effective, dropped, and conflicting route guidance records so replay consumers can see what actually governed the build.
+    - Inputs:
+      - `conflict_count`: 0
+      - `dropped_instruction_count`: 0
+      - `effective_instruction_count`: 1
+      - `route`: equity_quanto
+    - Outputs:
+      - `instruction_resolution`: {
+  "conflict_count": 0,
+  "conflicts": [],
+  "dropped_instruction_count": 0,
+  "dropped_instructions": [],
+  "effective_instruction_count": 1,
+  "effective_instructions": [
+    {
+      "conflict_policy": "prefer_newer",
+      "created_at": "",
+      "id": "equity_quanto:route-helper",
+      "instruction_type": "hard_constraint",
+      "precedence_rank": 100,
+      "rationale": "The helper already owns the route-specific engine and payoff mapping.",
+      "scope_features": [],
+      "scope_instruments": [
+        "quanto_option"
+      ],
+      "scope_methods": [
+        "analytical"
+      ],
+      "scope_modules": [
+        "trellis.models.quanto_option"
+      ],
+      "scope_routes": [
+        "equity_quanto"
+      ],
+      "source_id": "equity_quanto:route-helper",
+      "source_kind": "route_card",
+      "source_revision": "",
+      "statement": "Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.",
+      "status": "active",
+      "supersedes": [],
+      "title": "Use the selected route helper directly",
+      "updated_at": ""
+    }
+  ],
+  "route": "equity_quanto"
+}
+  - **decomposition** `executor_build_20260606032919_dc5fad12:decomposition`
+    - Label: Select reusable kernels
+    - Status: `ok`
+    - Parent: `executor_build_20260606032919_dc5fad12:root`
+    - Notes:
+      - Capture the reusable valuation components and any exact basis-claim assembly.
+    - Inputs:
+      - `adapters`: []
+      - `blockers`: []
+      - `notes`: []
+      - `primitives`: [
+  {
+    "excluded": false,
+    "module": "trellis.models.quanto_option",
+    "required": true,
+    "role": "route_helper",
+    "symbol": "price_quanto_option_analytical_from_market_state"
+  }
+]
+    - Outputs:
+      - `reuse_decision`: exact_decomposition
+      - `selected_primitives`: [
+  {
+    "excluded": false,
+    "module": "trellis.models.quanto_option",
+    "required": true,
+    "role": "route_helper",
+    "symbol": "price_quanto_option_analytical_from_market_state"
+  }
+]
+  - **assembly** `executor_build_20260606032919_dc5fad12:assembly`
+    - Label: Assemble route from kernels
+    - Status: `ok`
+    - Parent: `executor_build_20260606032919_dc5fad12:root`
+    - Notes:
+      - Prefer thin orchestration around existing analytical kernels and route helpers.
+    - Inputs:
+      - `adapters`: []
+      - `approved_modules`: [
+  "trellis.core.date_utils",
+  "trellis.core.differentiable",
+  "trellis.core.market_state",
+  "trellis.core.payoff",
+  "trellis.core.types",
+  "trellis.models.analytical",
+  "trellis.models.analytical.barrier",
+  "trellis.models.analytical.equity_exotics",
+  "trellis.models.analytical.equity_vanilla_bs",
+  "trellis.models.analytical.fx",
+  "trellis.models.analytical.fx_vanilla_gk",
+  "trellis.models.analytical.jamshidian",
+  "trellis.models.analytical.quanto",
+  "trellis.models.analytical.support.cross_asset",
+  "trellis.models.analytical.support.discounting",
+  "trellis.models.analytical.support.forwards",
+  "trellis.models.analytical.support.payoffs",
+  "trellis.models.black",
+  "trellis.models.monte_carlo.quanto",
+  "trellis.models.quanto_option",
+  "trellis.models.resolution.quanto"
+]
+      - `route_helper`: trellis.models.quanto_option.price_quanto_option_analytical_from_market_state
+    - Outputs:
+      - `assembly_card`: ## Structured Lane Card
+- Method family: `analytical`
+- Instrument type: `quanto_option`
+- Semantic contract: `quanto_option`, request=`quanto_option`, bridge=`canonical_semantic`, instrument=`quanto_option`, payoff=`vanilla_option`, structure=`cross_currency_single_underlier`
+- Valuation context: market_source=`unbound_market_snapshot`
+- Lane boundary: family=`analytical`, kind=`exact_target_binding`, exact_bindings=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+- Lowering boundary: expr=`ContractAtom`, helpers=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+- Validation contract: bundle=`analytical:quanto_option`, checks=`check_non_negativity`, `check_price_sanity`, `quanto_adjustment_applied`, `fx_conversion_applied_before_settlement`, residual_risks=`comparison_relations_unspecified`
+- Lane obligations:
+  - Lane family: `analytical`
+  - Plan kind: `exact_target_binding`
+  - Market bindings: `discount_curve`, `forward_curve`, `underlier_spot`, `black_vol_surface`
+  - Construction steps:
+    - Bind resolved market inputs onto a closed-form or quasi-closed-form kernel.
+    - Keep the implementation path-static and reuse analytical support primitives before writing new math.
+  - Exact backend bindings:
+    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+  - Exact binding signatures:
+    - `price_quanto_option_analytical_from_market_state(market_state: 'MarketState', spec: 'QuantoOptionAnalyticalSpecLike') -> 'float'`
+- Route authority:
+  - binding=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`, engine=`analytical`, authority=`exact_backend_fit`
+  - Validation bundle: `analytical:quanto_option`
+  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`
+  - Helper authority: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+  - Exact target bindings: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+- Backend binding:
+  - Route: `equity_quanto`
+  - Engine family: `analytical`
+  - Route family: `analytical`
+  - Selected primitives:
+    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state` (route_helper)
+  - Resolved instructions:
+    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.
+- Primary modules to inspect/reuse:
+  - `trellis.models.analytical.quanto`
+  - `trellis.models.black`
+  - `trellis.models.quanto_option`
+  - `trellis.models.resolution.quanto`
+- Post-build test targets:
+  - `tests/test_agent/test_build_loop.py`
+- Instruction precedence: follow the lane obligations in this card first. Treat backend route/helper details as exact-fit bindings, not as permission to invent a different numerical path.
+- Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan.
+- Use approved Trellis imports only. Prefer thin adapters when the compiler found an exact backend; otherwise build the smallest lane-consistent kernel the plan requires.
+      - `helper_modules`: [
+  "trellis.models.quanto_option"
+]
+      - `route_helper`: trellis.models.quanto_option.price_quanto_option_analytical_from_market_state
+  - **validation** `executor_build_20260606032919_dc5fad12:validation`
+    - Label: Validate route and fallbacks
+    - Status: `ok`
+    - Parent: `executor_build_20260606032919_dc5fad12:root`
+    - Notes:
+      - Record proposed tests, blocker state, and any fallback or reuse notes.
+    - Inputs:
+      - `blockers`: []
+      - `proposed_tests`: [
+  "tests/test_agent/test_build_loop.py"
+]
+      - `uncertainty_flags`: []
+      - `validation`: None
+    - Outputs:
+      - `blocker_report_present`: False
+      - `new_primitive_workflow_present`: False
+      - `validation_state`: planned
+  - **output** `executor_build_20260606032919_dc5fad12:output`
+    - Label: Final analytical artifact
+    - Status: `ok`
+    - Parent: `executor_build_20260606032919_dc5fad12:root`
+    - Notes:
+      - Persist both the machine-readable trace and the text rendering from the same source of truth.
+    - Inputs:
+      - `model`: analytical
+      - `route`: equity_quanto
+    - Outputs:
+      - `route_card`: ## Structured Lane Card
+- Method family: `analytical`
+- Instrument type: `quanto_option`
+- Semantic contract: `quanto_option`, request=`quanto_option`, bridge=`canonical_semantic`, instrument=`quanto_option`, payoff=`vanilla_option`, structure=`cross_currency_single_underlier`
+- Valuation context: market_source=`unbound_market_snapshot`
+- Lane boundary: family=`analytical`, kind=`exact_target_binding`, exact_bindings=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+- Lowering boundary: expr=`ContractAtom`, helpers=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+- Validation contract: bundle=`analytical:quanto_option`, checks=`check_non_negativity`, `check_price_sanity`, `quanto_adjustment_applied`, `fx_conversion_applied_before_settlement`, residual_risks=`comparison_relations_unspecified`
+- Lane obligations:
+  - Lane family: `analytical`
+  - Plan kind: `exact_target_binding`
+  - Market bindings: `discount_curve`, `forward_curve`, `underlier_spot`, `black_vol_surface`
+  - Construction steps:
+    - Bind resolved market inputs onto a closed-form or quasi-closed-form kernel.
+    - Keep the implementation path-static and reuse analytical support primitives before writing new math.
+  - Exact backend bindings:
+    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+  - Exact binding signatures:
+    - `price_quanto_option_analytical_from_market_state(market_state: 'MarketState', spec: 'QuantoOptionAnalyticalSpecLike') -> 'float'`
+- Route authority:
+  - binding=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`, engine=`analytical`, authority=`exact_backend_fit`
+  - Validation bundle: `analytical:quanto_option`
+  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`
+  - Helper authority: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+  - Exact target bindings: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+- Backend binding:
+  - Route: `equity_quanto`
+  - Engine family: `analytical`
+  - Route family: `analytical`
+  - Selected primitives:
+    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state` (route_helper)
+  - Resolved instructions:
+    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.
+- Primary modules to inspect/reuse:
+  - `trellis.models.analytical.quanto`
+  - `trellis.models.black`
+  - `trellis.models.quanto_option`
+  - `trellis.models.resolution.quanto`
+- Post-build test targets:
+  - `tests/test_agent/test_build_loop.py`
+- Instruction precedence: follow the lane obligations in this card first. Treat backend route/helper details as exact-fit bindings, not as permission to invent a different numerical path.
+- Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan.
+- Use approved Trellis imports only. Prefer thin adapters when the compiler found an exact backend; otherwise build the smallest lane-consistent kernel the plan requires.
+      - `route_plan`: ## Structured Generation Plan
+- Method family: `analytical`
+- Instrument type: `quanto_option`
+- Semantic contract: `quanto_option`, request=`quanto_option`, bridge=`canonical_semantic`, instrument=`quanto_option`, payoff=`vanilla_option`, structure=`cross_currency_single_underlier`
+- Valuation context: market_source=`unbound_market_snapshot`
+- Lane boundary: family=`analytical`, kind=`exact_target_binding`, exact_bindings=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+- Lowering boundary: expr=`ContractAtom`, helpers=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+- Validation contract: bundle=`analytical:quanto_option`, checks=`check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`, `check_quanto_required_inputs`, `check_quanto_cross_currency_semantics`, residual_risks=`comparison_relations_unspecified`
+- Lane obligations:
+  - Lane family: `analytical`
+  - Plan kind: `exact_target_binding`
+  - Market bindings: `discount_curve`, `forward_curve`, `underlier_spot`, `black_vol_surface`, `fx_rates`, `model_parameters`
+  - Construction steps:
+    - Bind resolved market inputs onto a closed-form or quasi-closed-form kernel.
+    - Keep the implementation path-static and reuse analytical support primitives before writing new math.
+  - Exact backend bindings:
+    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+  - Exact binding signatures:
+    - `price_quanto_option_analytical_from_market_state(market_state: 'MarketState', spec: 'QuantoOptionAnalyticalSpecLike') -> 'float'`
+- Route authority:
+  - binding=`trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`, engine=`analytical`, authority=`exact_backend_fit`
+  - Validation bundle: `analytical:quanto_option`
+  - Validation checks: `check_non_negativity`, `check_price_sanity`, `check_vol_sensitivity`, `check_vol_monotonicity`, `check_quanto_required_inputs`, `check_quanto_cross_currency_semantics`
+  - Helper authority: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+  - Exact target bindings: `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state`
+- Repo revision: `b9ac059c4b9661ec8f66f9a37e943337e95a8a2d`
+- Inspected modules:
+  - `trellis.models.analytical.quanto`
+  - `trellis.models.black`
+  - `trellis.models.quanto_option`
+  - `trellis.models.resolution.quanto`
+- Approved Trellis modules for imports:
+  - `trellis.core.date_utils`
+  - `trellis.core.differentiable`
+  - `trellis.core.market_state`
+  - `trellis.core.payoff`
+  - `trellis.core.types`
+  - `trellis.models.analytical`
+  - `trellis.models.analytical.barrier`
+  - `trellis.models.analytical.equity_exotics`
+  - `trellis.models.analytical.equity_vanilla_bs`
+  - `trellis.models.analytical.fx`
+  - `trellis.models.analytical.fx_vanilla_gk`
+  - `trellis.models.analytical.jamshidian`
+  - `trellis.models.analytical.quanto`
+  - `trellis.models.analytical.support.cross_asset`
+  - `trellis.models.analytical.support.discounting`
+  - `trellis.models.analytical.support.forwards`
+  - `trellis.models.analytical.support.payoffs`
+  - `trellis.models.black`
+  - `trellis.models.monte_carlo.quanto`
+  - `trellis.models.quanto_option`
+  - `trellis.models.resolution.quanto`
+- Public symbols available from the approved modules:
+  - `CashflowSchedule`
+  - `Cashflows`
+  - `ContractTimeline`
+  - `DataProvider`
+  - `DayCountConvention`
+  - `DeterministicCashflowPayoff`
+  - `DifferentiableBackendCapabilities`
+  - `DiscountCurve`
+  - `DslMeasure`
+  - `EventSchedule`
+  - `ExecutionBackedPayoff`
+  - `Frequency`
+  - `Instrument`
+  - `MarketState`
+  - `MissingCapabilityError`
+  - `MonteCarloPathPayoff`
+  - `Payoff`
+  - `PresentValue`
+  - `PricingResult`
+  - `PricingValue`
+  - `QuantoAnalyticalSpecLike`
+  - `QuantoMonteCarloSpecLike`
+  - `QuantoOptionAnalyticalSpecLike`
+  - `QuantoOptionMonteCarloSpecLike`
+- Tests to run after generation:
+  - `tests/test_agent/test_build_loop.py`
+- Likely tests for reused symbols:
+  - `Cashflows` -> tests/test_models/test_contingent_cashflows.py
+- Backend binding:
+  - Route: `equity_quanto`
+  - Engine family: `analytical`
+  - Route family: `analytical`
+  - Route score: `4.50`
+  - Selected primitives:
+    - `trellis.models.quanto_option.price_quanto_option_analytical_from_market_state` (route_helper)
+  - Resolved instructions:
+    - [hard_constraint] Use the route helper directly inside `evaluate()`; do not rebuild the process, engine, or discount glue manually.
+  - Instruction precedence: follow the compiler-emitted lane obligations first, then satisfy the exact backend binding and approved imports. If older guidance conflicts, treat it as stale and obey this plan.
+- Every `trellis.*` import in the generated code MUST come from the approved module list above.
+- If you need functionality outside the approved list, say so explicitly instead of inventing an import.
+      - `trace_type`: analytical

@@ -1,0 +1,32 @@
+category: semantic
+title: _semantic_extension_decision_mock_inputs_concept_ranked_observation_
+severity: medium
+status: validated
+confidence: 0.68
+created: '2026-06-06T03:30:38.955999'
+version: ''
+source_trace: /tmp/workspace/steveya/trellis/trellis/agent/knowledge/traces/semantic_extensions/e228f8b733af9996.yaml
+applies_when:
+  method:
+  - mock_inputs
+  features:
+  - underlier_structure
+  - payoff_rule
+  - settlement_rule
+  - discount_curve
+  - credit_curve
+  - semantic_contract_lesson
+  - mock_discount_curve_provider
+  instrument:
+  - basket_option
+  error_signature: null
+symptom: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing market inputs: discount_curve, credit_curve; missing knowledge artifacts:
+  semantic_contract_lesson; mock inputs can likely bridge the gap'
+root_cause: 'missing contract fields: underlier_structure, payoff_rule, settlement_rule;
+  missing market inputs: discount_curve, credit_curve; missing knowledge artifacts:
+  semantic_contract_lesson; mock inputs can likely bridge the gap'
+fix: Keep the canonical concept and surface the compatibility name as a thin wrapper.
+validation: Repeated semantic extension trace `e228f8b733af9996`
+supersedes: []
+id: sem_023
