@@ -806,18 +806,26 @@ def test_platform_trace_lowering_summary_preserves_static_leg_admission_blockers
             "Callable range accrual requires a dynamic exercise wrapper before "
             "the checked static-leg route may be used."
         ),
-        "required_ticket": "QUA-1115",
+        "required_ticket": "QUA-1117",
     }
 
     lowering = _generation_boundary_summary(
         SimpleNamespace(request_metadata={"semantic_blueprint": {}}),
         request_metadata={
             "semantic_blueprint": {
+                "dynamic_contract_ir": {
+                    "semantic_family": "callable_range_accrual",
+                    "base_track": "static_leg",
+                },
                 "static_leg_admission_blockers": [blocker],
             }
         },
     )["lowering"]
 
+    assert lowering["dynamic_contract_ir"] == {
+        "semantic_family": "callable_range_accrual",
+        "base_track": "static_leg",
+    }
     assert lowering["static_leg_admission_blockers"] == [blocker]
 
 

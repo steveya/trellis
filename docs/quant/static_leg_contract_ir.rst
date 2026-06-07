@@ -202,9 +202,10 @@ the execution-backed static-leg cohort into a route-free
 ``ContractExecutionIR``.
 The lowered artifact records:
 
-- coupon-leg, known-cashflow, or period-rate-option-strip obligations
-- fixing and payment events derived from the semantic leg periods
-- discount, forward, and volatility requirement hints
+- coupon-leg, known-cashflow, conditional-accrual, or
+  period-rate-option-strip obligations
+- observation, fixing, and payment events derived from the semantic leg periods
+- discount, forward, fixing-history, and volatility requirement hints
 - a settlement program that sums the execution obligations
 
 The first visitor/runtime set is intentionally small:
@@ -236,11 +237,12 @@ cap/floor ``_agent`` wrappers now use it as thin compatibility shells.
 Richer static-leg wrapper families and generic dynamic-wrapper execution
 remain later work.
 
-The checked single-index range-accrual route is currently a static-leg
-admission and helper-binding path, not a generic static execution-IR repricing
-path. It binds ``ConditionalAccrualLeg`` evidence to
-``trellis.models.range_accrual.price_range_accrual`` and keeps unsupported
-conditional-accrual variants explicit through blockers.
+The checked single-index range-accrual route now has both static-leg admission
+and execution-IR repricing. It binds ``ConditionalAccrualLeg`` evidence to a
+``conditional_accrual_leg`` execution obligation, preserves observation and
+payment events plus fixing-history/forward-curve requirements, and prices
+through ``trellis.models.range_accrual.price_range_accrual``. Unsupported
+conditional-accrual variants still stay explicit through blockers.
 
 For the scheduled strip family, the lowering boundary is:
 

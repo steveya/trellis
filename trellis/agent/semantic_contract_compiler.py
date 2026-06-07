@@ -87,6 +87,7 @@ class SemanticImplementationBlueprint:
     contract_ir_solver_selection: object | None = None
     contract_ir_solver_shadow: object | None = None
     static_leg_contract_ir: object | None = None
+    dynamic_contract_ir: object | None = None
     static_leg_lowering_selection: object | None = None
     static_leg_admission_blockers: tuple[object, ...] = ()
 
@@ -201,6 +202,18 @@ def compile_semantic_contract(
     except Exception:
         _LOG.warning(
             "Static-leg Contract IR decomposition failed for semantic contract %s",
+            getattr(contract, "semantic_id", "<unknown>"),
+            exc_info=True,
+        )
+    dynamic_contract_ir = None
+    try:
+        dynamic_contract_ir = _lower_dynamic_contract_ir_from_semantic_contract(
+            contract,
+            static_leg_contract_ir=static_leg_contract_ir,
+        )
+    except Exception:
+        _LOG.warning(
+            "Dynamic Contract IR decomposition failed for semantic contract %s",
             getattr(contract, "semantic_id", "<unknown>"),
             exc_info=True,
         )
@@ -362,6 +375,7 @@ def compile_semantic_contract(
         contract_ir_solver_selection=contract_ir_solver_selection,
         contract_ir_solver_shadow=contract_ir_solver_shadow,
         static_leg_contract_ir=static_leg_contract_ir,
+        dynamic_contract_ir=dynamic_contract_ir,
         static_leg_lowering_selection=static_leg_lowering_selection,
         static_leg_admission_blockers=static_leg_admission_blockers,
     )
@@ -423,6 +437,101 @@ def _lower_static_leg_contract_ir_from_semantic_contract(contract):
     if semantic_id != "range_accrual" and product_semantic_id != "range_accrual":
         return None
     return _lower_range_accrual_to_static_leg_contract_ir(contract)
+
+
+def _lower_dynamic_contract_ir_from_semantic_contract(
+    contract,
+    *,
+    static_leg_contract_ir,
+):
+    """Lower semantic contracts whose dynamic metadata has an admitted wrapper."""
+
+    semantic_id = str(getattr(contract, "semantic_id", "") or "").strip().lower()
+    product = getattr(contract, "product", None)
+    product_semantic_id = str(getattr(product, "semantic_id", "") or "").strip().lower()
+    if semantic_id != "range_accrual" and product_semantic_id != "range_accrual":
+        return None
+    if static_leg_contract_ir is None:
+        return None
+
+    from trellis.agent.dynamic_contract_ir import (
+        ActionSpec,
+        ControlProgram,
+        DecisionEvent,
+        DynamicContractIR,
+        EventProgram,
+        EventTimeBucket,
+        TerminationRule,
+    )
+
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    callability = dict(term_fields.get("callability") or {})
+    dynamic_features = dict(term_fields.get("dynamic_features") or {})
+    if dynamic_features:
+        return None
+    call_schedule = tuple(
+        str(item).strip()
+        for item in (
+            callability.get("call_schedule")
+            or callability.get("call_dates")
+            or ()
+        )
+        if str(item).strip()
+    )
+    if not call_schedule:
+        return None
+    call_style = str(callability.get("call_style") or "issuer_callable").strip().lower()
+    if call_style not in {"issuer_callable", "issuer_call", "callable"}:
+        return None
+    try:
+        call_dates = tuple(date.fromisoformat(item) for item in call_schedule)
+    except ValueError:
+        return None
+
+    redeem = ActionSpec("redeem", "terminate", "redeem at par")
+    continue_ = ActionSpec("continue", "continue", "continue outstanding")
+    buckets = tuple(
+        EventTimeBucket(
+            event_date=call_date,
+            phase_sequence=("decision", "termination"),
+            events=(
+                DecisionEvent(
+                    label=f"call_{call_date.isoformat()}",
+                    schedule_role="call_date",
+                    action_set=(redeem, continue_),
+                    controller_role="issuer",
+                ),
+            ),
+        )
+        for call_date in call_dates
+    )
+    termination_rules = tuple(
+        TerminationRule(
+            label=f"terminate_{call_date.isoformat()}",
+            trigger="action == redeem",
+            settlement_expression="par_redemption",
+            event_label=f"call_{call_date.isoformat()}",
+        )
+        for call_date in call_dates
+    )
+    return DynamicContractIR(
+        base_contract=static_leg_contract_ir,
+        semantic_family="callable_range_accrual",
+        base_track="static_leg",
+        event_program=EventProgram(
+            buckets=buckets,
+            termination_rules=termination_rules,
+        ),
+        control_program=ControlProgram(
+            controller_role="issuer",
+            decision_style="bermudan",
+            decision_event_labels=tuple(
+                f"call_{call_date.isoformat()}" for call_date in call_dates
+            ),
+            admissible_actions=(redeem, continue_),
+        ),
+        settlement=static_leg_contract_ir.settlement,
+    )
 
 
 def _lower_range_accrual_to_static_leg_contract_ir(contract):

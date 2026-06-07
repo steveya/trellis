@@ -569,6 +569,9 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
         "static_leg_contract_ir": _yaml_safe_value(
             getattr(semantic_blueprint, "static_leg_contract_ir", None)
         ),
+        "dynamic_contract_ir": _yaml_safe_value(
+            getattr(semantic_blueprint, "dynamic_contract_ir", None)
+        ),
         "primitive_routes": list(getattr(semantic_blueprint, "primitive_routes", ()) or ()),
         "route_modules": list(getattr(semantic_blueprint, "route_modules", ()) or ()),
         "dsl_route": getattr(lowering, "route_id", None),

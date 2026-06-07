@@ -18,6 +18,7 @@ from trellis.execution.compiler import (
 )
 from trellis.execution.ir import (
     ContractExecutionIR,
+    ConditionalAccrualLegExecution,
     ContingentSettlement,
     CouponLegExecution,
     CurveQuoteObservableRef,
@@ -79,6 +80,7 @@ __all__ = [
     "BermudanBestOfBasketMCInputs",
     "BermudanBestOfBasketMCResult",
     "ContractExecutionIR",
+    "ConditionalAccrualLegExecution",
     "ContingentSettlement",
     "CouponLegExecution",
     "CurveQuoteObservableRef",

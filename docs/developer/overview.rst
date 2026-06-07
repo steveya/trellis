@@ -440,9 +440,10 @@ diagnostics without silently falling back to another component.
 
 That imported-snapshot path now feeds three checked desk routes as well.
 ``PricingService`` recognizes the approved ``range_accrual_discounted``,
-``callable_bond_tree``, and ``bermudan_swaption_tree`` adapters. It resolves
-the needed snapshot components, delegates pricing to the checked helper-backed
-route modules, and persists route-specific validation bundles plus the
+``callable_range_accrual_deterministic``, ``callable_bond_tree``, and
+``bermudan_swaption_tree`` adapters. It resolves the needed snapshot
+components, delegates pricing to the checked helper-backed route modules or
+execution IR runtime, and persists route-specific validation bundles plus the
 desk-review schedule projection on the canonical run record.
 
 For rates optionality, that runtime boundary now also carries reusable model

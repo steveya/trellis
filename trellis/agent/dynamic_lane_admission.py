@@ -288,6 +288,9 @@ def _automatic_family(contract: DynamicContractIR) -> str:
 
 def _discrete_family(contract: DynamicContractIR) -> str:
     family = str(contract.semantic_family or "").strip().lower()
+    base_family = _base_contract_family(contract)
+    if family in {"callable_range_accrual", "range_accrual"} and base_family == "range_accrual":
+        return "callable_range_accrual"
     if family in {"callable_bond", "callable_note"}:
         return "callable_bond"
     if family in {"swing", "swing_option"}:
@@ -298,6 +301,12 @@ def _discrete_family(contract: DynamicContractIR) -> str:
             "discrete-control family classification requires a ControlProgram; "
             f"semantic_family={contract.semantic_family!r}"
         )
+    if (
+        control_program.controller_role == "issuer"
+        and _normalized_base_track(contract) == "static_leg"
+        and base_family == "range_accrual"
+    ):
+        return "callable_range_accrual"
     if control_program.controller_role == "issuer" and _normalized_base_track(contract) == "static_leg":
         return "callable_bond"
     if control_program.inventory_fields:
@@ -322,6 +331,8 @@ def _continuous_family(contract: DynamicContractIR) -> str:
 def _discrete_candidate_lanes(semantic_family: str) -> tuple[str, ...]:
     if semantic_family == "callable_bond":
         return ("exercise_lattice", "event_aware_pde")
+    if semantic_family == "callable_range_accrual":
+        return ("deterministic_call_decision",)
     if semantic_family == "swing_option":
         return ("control_lsmc",)
     raise DynamicLaneAdmissionError(f"unsupported discrete-control cohort {semantic_family!r}")
@@ -379,6 +390,17 @@ def _discrete_benchmark_plan(semantic_family: str) -> DynamicBenchmarkPlan:
                 "preserve remaining-right semantics and decision timing",
             ),
         )
+    if semantic_family == "callable_range_accrual":
+        return DynamicBenchmarkPlan(
+            cohort_id="callable_range_accrual_deterministic",
+            proving_family="deterministic_call_decision",
+            validation_mode="deterministic_projection",
+            reference_notes=(
+                "issuer-call range-accrual proof cohort",
+                "same-day coupons are paid before issuer call termination",
+                "does not claim stochastic callable range-accrual valuation",
+            ),
+        )
     raise DynamicLaneAdmissionError(f"unsupported discrete-control cohort {semantic_family!r}")
 
 
@@ -403,6 +425,30 @@ def _unique(values: Iterable[str]) -> tuple[str, ...]:
         if text and text not in result:
             result.append(text)
     return tuple(result)
+
+
+def _base_contract_family(contract: DynamicContractIR) -> str:
+    base_contract = contract.base_contract
+    metadata = dict(getattr(base_contract, "metadata", {}) or {})
+    family = str(
+        metadata.get("semantic_family")
+        or metadata.get("semantic_id")
+        or metadata.get("family")
+        or ""
+    ).strip().lower()
+    if family:
+        return family
+    for signed_leg in getattr(base_contract, "legs", ()) or ():
+        leg_metadata = dict(getattr(getattr(signed_leg, "leg", None), "metadata", {}) or {})
+        family = str(
+            leg_metadata.get("semantic_family")
+            or leg_metadata.get("semantic_id")
+            or leg_metadata.get("family")
+            or ""
+        ).strip().lower()
+        if family:
+            return family
+    return ""
 
 
 __all__ = [

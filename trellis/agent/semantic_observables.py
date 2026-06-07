@@ -491,7 +491,7 @@ def observable_support_blockers(observable: ObservableExpr) -> tuple[ObservableS
                 "spread",
                 "conditional_accrual_spread_observable_pending",
                 "Spread observables are representable but not admitted for first-wave conditional accrual lowering.",
-                required_ticket="QUA-1115",
+                required_ticket="QUA-1118",
             ),
             *observable_support_blockers(observable.left),
             *observable_support_blockers(observable.right),
@@ -517,7 +517,7 @@ def observable_support_blockers(observable: ObservableExpr) -> tuple[ObservableS
             family,
             f"conditional_accrual_{family}_observable_pending",
             f"{family} observables are representable but not admitted for first-wave conditional accrual lowering.",
-            required_ticket="follow_on",
+            required_ticket="QUA-1118" if family == "cms_rate" else "follow_on",
         ),
     )
 
@@ -545,7 +545,7 @@ def predicate_support_blockers(predicate: PredicateExpr) -> tuple[ObservableSupp
                 "multi_index",
                 "conditional_accrual_multi_index_predicate_pending",
                 "First-wave conditional accrual lowering admits exactly one rate-index observable identity.",
-                required_ticket="QUA-1115",
+                required_ticket="QUA-1118",
             ),
         )
     return _dedupe_blockers(blockers)

@@ -175,6 +175,60 @@ def _seed_range_accrual_model(registry) -> None:
     )
 
 
+def _seed_callable_range_accrual_model(registry) -> None:
+    from trellis.platform.models import (
+        ModelLifecycleStatus,
+        ModelRecord,
+        ModelVersionRecord,
+    )
+
+    registry.create_model(
+        ModelRecord(
+            model_id="callable_range_accrual_checked",
+            semantic_id="range_accrual",
+            semantic_version="c2.1",
+            product_family="rates_exotic",
+            instrument_class="range_accrual",
+            payoff_family="range_accrual_coupon",
+            exercise_style="issuer_call",
+            underlier_structure="single_curve_rate_style",
+            payout_currency="USD",
+            reporting_currency="USD",
+            required_market_data=("discount_curve", "fixing_history", "forward_curve"),
+            supported_method_families=("analytical",),
+        )
+    )
+    registry.create_version(
+        ModelVersionRecord(
+            model_id="callable_range_accrual_checked",
+            version="v1",
+            contract_summary={"semantic_id": "range_accrual"},
+            methodology_summary={"method_family": "analytical"},
+            engine_binding={
+                "engine_id": "pricing_engine.local",
+                "version": "1",
+                "adapter_id": "callable_range_accrual_deterministic",
+            },
+        ),
+        actor="builder",
+        reason="seed",
+    )
+    registry.transition_version(
+        "callable_range_accrual_checked",
+        "v1",
+        ModelLifecycleStatus.VALIDATED,
+        actor="validator",
+        reason="seed_validation",
+    )
+    registry.transition_version(
+        "callable_range_accrual_checked",
+        "v1",
+        ModelLifecycleStatus.APPROVED,
+        actor="reviewer",
+        reason="seed_approval",
+    )
+
+
 def _seed_callable_bond_model(registry) -> None:
     from trellis.platform.models import (
         ModelLifecycleStatus,
@@ -942,7 +996,6 @@ def test_price_trade_projects_trader_review_bundle_for_range_accrual(tmp_path):
     )
     trade_payload = _range_accrual_trade_payload()
     trade_payload.pop("accrual_start_dates")
-    trade_payload["call_dates"] = ("2026-07-15",)
 
     payload = server.call_tool(
         "trellis.price.trade",
@@ -958,7 +1011,7 @@ def test_price_trade_projects_trader_review_bundle_for_range_accrual(tmp_path):
     assert payload["desk_review"]["route_summary"]["adapter_id"] == "range_accrual_discounted"
     assert payload["desk_review"]["route_summary"]["method_family"] == "analytical"
     assert payload["desk_review"]["schedule_summary"]["observation_count"] == 4
-    assert payload["desk_review"]["schedule_summary"]["call_event_count"] == 1
+    assert payload["desk_review"]["schedule_summary"]["call_event_count"] == 0
     assert payload["desk_review"]["scenario_summary"]["scenario_count"] == 4
     assert payload["desk_review"]["audit_refs"]["audit_uri"] == payload["audit_uri"]
     assert (
@@ -992,6 +1045,55 @@ def test_price_trade_projects_trader_review_bundle_for_range_accrual(tmp_path):
     assert scenario_commentary["linked_route"]["adapter_id"] == "range_accrual_discounted"
     assert scenario_commentary["dominant_scenario"]["shift_bps"] in {-100.0, -50.0, 50.0, 100.0}
     assert payload["audit"]["outputs"]["price"] == payload["result"]["price"]
+
+
+def test_price_trade_prices_callable_range_accrual_from_imported_snapshot(tmp_path):
+    from trellis.mcp.server import bootstrap_mcp_server
+
+    server = bootstrap_mcp_server(
+        state_root=tmp_path / "mcp_state",
+        provider_registry=_provider_registry(),
+    )
+    _seed_callable_range_accrual_model(server.services.model_registry)
+
+    imported = server.call_tool(
+        "trellis.snapshot.import_files",
+        {
+            "session_id": "sess_price_callable_range_accrual",
+            "manifest_path": _range_accrual_manifest(tmp_path),
+            "activate_session": True,
+            "reference_date": "2026-04-04",
+        },
+    )
+    trade_payload = _range_accrual_trade_payload()
+    trade_payload["call_dates"] = ("2026-07-15",)
+
+    payload = server.call_tool(
+        "trellis.price.trade",
+        {
+            "session_id": "sess_price_callable_range_accrual",
+            "structured_trade": trade_payload,
+            "output_mode": "audit",
+            "valuation_date": "2026-04-04",
+        },
+    )
+
+    assert payload["status"] == "succeeded"
+    assert payload["result"]["price"] > 0.0
+    assert payload["result"]["call_dates"] == ["2026-07-15"]
+    assert payload["result"]["validation_bundle"]["route_id"] == (
+        "callable_range_accrual_deterministic_v1"
+    )
+    assert payload["desk_review"]["route_summary"]["adapter_id"] == (
+        "callable_range_accrual_deterministic"
+    )
+    assert payload["desk_review"]["route_summary"]["method_family"] == "analytical"
+    assert payload["desk_review"]["schedule_summary"]["call_event_count"] == 1
+    assert payload["desk_review"]["scenario_commentary"]["availability"] == "unavailable"
+    assert payload["desk_review"]["audit_refs"]["snapshot_uri"] == (
+        f"trellis://market-snapshots/{imported['snapshot']['snapshot_id']}"
+    )
+    assert any("deterministic callable" in warning.lower() for warning in payload["warnings"])
 
 
 def test_price_trade_prices_callable_bond_with_schedule_projection(tmp_path):

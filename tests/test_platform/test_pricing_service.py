@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import date
 from types import SimpleNamespace
 
+import pytest
+
 
 def test_compiled_pricing_request_keeps_selected_model_method_family():
     from trellis.platform.services.pricing_service import PricingService
@@ -109,6 +111,74 @@ def test_build_range_accrual_spec_preserves_explicit_zero_principal_redemption()
         isinstance(signed_leg.leg, KnownCashflowLeg)
         for signed_leg in static_ir.legs
     )
+
+
+def test_build_supported_payoff_rejects_blocked_static_range_accrual_adapter():
+    from trellis.platform.services.pricing_service import PricingService
+    from trellis.platform.services.trade_service import TradeService
+
+    parsed_trade = TradeService().parse_trade(
+        structured_trade={
+            "instrument_type": "range_accrual",
+            "reference_index": "SOFR",
+            "coupon_rate": 0.0525,
+            "lower_bound": 0.015,
+            "upper_bound": 0.0325,
+            "observation_schedule": (
+                "2026-01-15",
+                "2026-04-15",
+                "2026-07-15",
+                "2026-10-15",
+            ),
+            "call_dates": ("2026-07-15",),
+            "notional": 1_000_000.0,
+        }
+    )
+
+    with pytest.raises(ValueError, match="blocked by semantic admission"):
+        PricingService._build_supported_payoff(
+            selected_engine={"adapter_id": "range_accrual_discounted"},
+            parsed_trade=parsed_trade,
+            pricing_input={"notional": 1_000_000.0},
+            market_snapshot=SimpleNamespace(),
+        )
+
+
+def test_build_supported_payoff_compiles_callable_range_accrual_dynamic_ir():
+    from trellis.execution import ContractExecutionIR
+    from trellis.platform.services.pricing_service import PricingService
+    from trellis.platform.services.trade_service import TradeService
+
+    parsed_trade = TradeService().parse_trade(
+        structured_trade={
+            "instrument_type": "range_accrual",
+            "reference_index": "SOFR",
+            "coupon_rate": 0.0525,
+            "lower_bound": 0.015,
+            "upper_bound": 0.0325,
+            "observation_schedule": (
+                "2026-01-15",
+                "2026-04-15",
+                "2026-07-15",
+                "2026-10-15",
+            ),
+            "call_dates": ("2026-07-15",),
+            "notional": 1_000_000.0,
+        }
+    )
+
+    payoff, warnings = PricingService._build_supported_payoff(
+        selected_engine={"adapter_id": "callable_range_accrual_deterministic"},
+        parsed_trade=parsed_trade,
+        pricing_input={"notional": 1_000_000.0},
+        market_snapshot=SimpleNamespace(),
+    )
+
+    assert warnings == ()
+    assert isinstance(payoff, ContractExecutionIR)
+    assert payoff.source_track.product_family == "callable_range_accrual"
+    assert dict(payoff.obligations[0].metadata)["notional"] == 1_000_000.0
+    assert dict(payoff.source_track.source_metadata)["call_price_cash"] == 1_000_000.0
 
 
 def test_desk_review_projects_agent_cycle_surface_for_approved_model_runs():

@@ -2487,7 +2487,7 @@ def make_range_accrual_contract(
                 "dynamic_features": dict(normalized_dynamic_features),
             }
         ),
-        exercise_style="none",
+        exercise_style="issuer_call" if normalized_callability else "none",
         path_dependence="schedule_dependent",
         schedule_dependence=True,
         state_dependence="schedule_dependent",

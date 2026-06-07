@@ -7,6 +7,7 @@ import pytest
 
 from trellis.agent.dynamic_contract_ir import (
     ActionSpec,
+    AutomaticTerminationEvent,
     ControlProgram,
     DecisionEvent,
     DynamicContractIR,
@@ -15,7 +16,14 @@ from trellis.agent.dynamic_contract_ir import (
     TerminationRule,
 )
 from trellis.agent.knowledge.decompose import decompose_to_dynamic_contract_ir
+from trellis.agent.semantic_observables import (
+    BetweenPredicate,
+    ObservationMetadata,
+    RateIndexObservable,
+)
 from trellis.agent.static_leg_contract import (
+    ConditionalAccrualLeg,
+    ConditionalAccrualPeriod,
     CouponLeg,
     CouponPeriod,
     FixedCouponFormula,
@@ -197,6 +205,136 @@ def _callable_bond_contract() -> DynamicContractIR:
     )
 
 
+def _range_accrual_base_contract() -> StaticLegContractIR:
+    observation_dates = (
+        date(2025, 1, 15),
+        date(2025, 4, 15),
+        date(2025, 7, 15),
+        date(2025, 10, 15),
+    )
+    accrual_starts = (
+        date(2024, 10, 15),
+        date(2025, 1, 15),
+        date(2025, 4, 15),
+        date(2025, 7, 15),
+    )
+    condition = BetweenPredicate(
+        observable=RateIndexObservable(
+            observable_id="reference_rate_fixing",
+            index_name="SOFR",
+            observation=ObservationMetadata(
+                schedule_role="observation_dates",
+                fixing_date_role="fixing_dates",
+                missing_fixing_policy="project_forward_for_future_only",
+            ),
+        ),
+        lower_bound=0.01,
+        upper_bound=0.08,
+    )
+    return StaticLegContractIR(
+        legs=(
+            SignedLeg(
+                direction="receive",
+                leg=ConditionalAccrualLeg(
+                    currency="USD",
+                    notional_schedule=NotionalSchedule(
+                        (
+                            NotionalStep(
+                                start_date=accrual_starts[0],
+                                end_date=observation_dates[-1],
+                                amount=1_000_000.0,
+                            ),
+                        )
+                    ),
+                    accrual_periods=tuple(
+                        ConditionalAccrualPeriod(
+                            accrual_start=start,
+                            accrual_end=observation,
+                            observation_date=observation,
+                            fixing_date=observation,
+                            payment_date=observation,
+                        )
+                        for start, observation in zip(accrual_starts, observation_dates)
+                    ),
+                    coupon_formula=FixedCouponFormula(0.0525),
+                    day_count="ACT/365",
+                    payment_frequency="quarterly",
+                    accrual_condition_ref="reference_rate_fixing_in_range",
+                    accrual_counter_ref="in_range_coupon_count",
+                    settlement_rule="coupon_period_cash_settlement",
+                    label="range_accrual_coupon",
+                    metadata={"semantic_family": "range_accrual"},
+                    accrual_condition=condition,
+                ),
+            ),
+            SignedLeg(
+                direction="receive",
+                leg=KnownCashflowLeg(
+                    currency="USD",
+                    cashflows=(
+                        KnownCashflow(
+                            payment_date=observation_dates[-1],
+                            amount=1_000_000.0,
+                            currency="USD",
+                            label="principal_redemption",
+                        ),
+                    ),
+                    label="range_accrual_principal",
+                ),
+            ),
+        ),
+        settlement=SettlementRule(payout_currency="USD"),
+        metadata={"semantic_family": "range_accrual"},
+    )
+
+
+def _callable_range_accrual_contract() -> DynamicContractIR:
+    call_dates = (
+        date(2025, 4, 15),
+        date(2025, 7, 15),
+    )
+    redeem = ActionSpec("redeem", "terminate", "redeem at par")
+    continue_ = ActionSpec("continue", "continue", "continue outstanding")
+    return DynamicContractIR(
+        base_contract=_range_accrual_base_contract(),
+        semantic_family="callable_range_accrual",
+        base_track="static_leg",
+        event_program=EventProgram(
+            buckets=tuple(
+                EventTimeBucket(
+                    event_date=call_date,
+                    phase_sequence=("decision", "termination"),
+                    events=(
+                        DecisionEvent(
+                            label=f"call_{call_date.isoformat()}",
+                            schedule_role="call_date",
+                            action_set=(redeem, continue_),
+                            controller_role="issuer",
+                        ),
+                    ),
+                )
+                for call_date in call_dates
+            ),
+            termination_rules=tuple(
+                TerminationRule(
+                    label=f"terminate_{call_date.isoformat()}",
+                    trigger="action == redeem",
+                    settlement_expression="par_redemption",
+                    event_label=f"call_{call_date.isoformat()}",
+                )
+                for call_date in call_dates
+            ),
+        ),
+        control_program=ControlProgram(
+            controller_role="issuer",
+            decision_style="bermudan",
+            decision_event_labels=tuple(f"call_{call_date.isoformat()}" for call_date in call_dates),
+            admissible_actions=(redeem, continue_),
+        ),
+        settlement=SettlementRule(payout_currency="USD"),
+    )
+
+
 def test_compile_dynamic_execution_ir_lowers_callable_bond_shape():
     ir = compile_dynamic_execution_ir(_callable_bond_contract())
 
@@ -326,3 +464,102 @@ def test_execution_backed_payoff_prices_callable_bond_execution_ir():
         ),
         rel=1e-12,
     )
+
+
+def test_compile_dynamic_execution_ir_lowers_callable_range_accrual_shape():
+    ir = compile_dynamic_execution_ir(_callable_range_accrual_contract())
+
+    assert ir.source_track.source_kind == "dynamic_contract_ir"
+    assert ir.source_track.product_family == "callable_range_accrual"
+    assert ir.source_track.instrument_class == "callable_range_accrual"
+    assert {obligation.obligation_kind for obligation in ir.obligations} == {
+        "conditional_accrual_leg"
+    }
+    summary = contract_execution_summary(ir)
+    assert summary["unsupported_reasons"] == ()
+    assert summary["decision_action_types"] == ("continue", "terminate")
+    assert summary["requirement_markets"] == (
+        "discount_curve:USD",
+        "fixing_history:SOFR",
+        "forward_curve:SOFR",
+    )
+    assert summary["settlement_kinds"] == (
+        "conditional_accrual_present_value",
+        "issuer_call_redemption",
+    )
+    assert dict(ir.source_track.source_metadata)["validation_bundle_id"] == (
+        "callable_range_accrual_deterministic_v1"
+    )
+
+
+def test_compile_dynamic_execution_ir_rejects_pay_side_callable_range_accrual():
+    contract = _callable_range_accrual_contract()
+    base_contract = contract.base_contract
+    bad_base = replace(
+        base_contract,
+        legs=(
+            replace(base_contract.legs[0], direction="pay"),
+            *base_contract.legs[1:],
+        ),
+    )
+
+    with pytest.raises(UnsupportedExecutionSemantics, match="receive-side"):
+        compile_dynamic_execution_ir(
+            replace(contract, base_contract=bad_base),
+            fail_on_unsupported=True,
+        )
+
+
+def test_price_dynamic_execution_ir_prices_callable_range_accrual_deterministically():
+    from trellis.execution import compile_static_leg_execution_ir
+    from trellis.execution.runtime import price_static_leg_execution_ir
+
+    market_state = _market_state()
+    contract = _callable_range_accrual_contract()
+    ir = compile_dynamic_execution_ir(contract)
+    static_ir = compile_static_leg_execution_ir(contract.base_contract)
+
+    dynamic_price = price_dynamic_execution_ir(
+        ir,
+        market_state,
+        method="deterministic",
+    )
+    static_price = price_static_leg_execution_ir(static_ir, market_state)
+
+    assert dynamic_price > 0.0
+    assert dynamic_price < static_price
+
+
+def test_compile_dynamic_execution_ir_keeps_interrupted_range_accrual_blocked():
+    contract = DynamicContractIR(
+        base_contract=_range_accrual_base_contract(),
+        semantic_family="interrupted_range_accrual",
+        base_track="static_leg",
+        event_program=EventProgram(
+            buckets=(
+                EventTimeBucket(
+                    event_date=date(2025, 4, 15),
+                    phase_sequence=("termination",),
+                    events=(
+                        AutomaticTerminationEvent(
+                            label="interrupt_2025-04-15",
+                            trigger="interruption_event",
+                            settlement_expression="suspend_accrual",
+                        ),
+                    ),
+                ),
+            ),
+            termination_rules=(
+                TerminationRule(
+                    label="terminate_interrupt_2025-04-15",
+                    trigger="interruption_event",
+                    settlement_expression="suspend_accrual",
+                    event_label="interrupt_2025-04-15",
+                ),
+            ),
+        ),
+        settlement=SettlementRule(payout_currency="USD"),
+    )
+
+    with pytest.raises(UnsupportedExecutionSemantics, match="interrupted_range_accrual|automatic"):
+        compile_dynamic_execution_ir(contract, fail_on_unsupported=True)

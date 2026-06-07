@@ -133,8 +133,10 @@ admit the checked single-index range-accrual route until executable support
 lands.
 
 Callable, interrupted, and barrier-style range accruals compose the same
-conditional accrual base with the dynamic wrapper track. They must not be
-flattened into the static single-index route.
+conditional accrual base with the dynamic wrapper track. The deterministic
+issuer-callable single-index proof cohort can execute through that wrapper;
+interrupted and barrier-style variants must not be flattened into the static
+single-index route.
 
 Observable Naming Discipline
 ----------------------------

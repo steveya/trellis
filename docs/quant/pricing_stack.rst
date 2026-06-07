@@ -280,6 +280,8 @@ The end-to-end typed boundary is currently proven for:
 - ``bermudan_swaption_tree_v1`` on the first supported Bermudan swaption desk slice
 - ``correlated_basket_monte_carlo`` on ranked-observation baskets
 - ``range_accrual_discounted_cashflow_v1`` on the first single-index range-accrual note slice
+- ``callable_range_accrual_deterministic_v1`` on the bounded issuer-callable
+  single-index range-accrual proof slice
 - ``credit_default_swap`` on single-name CDS across analytical and Monte Carlo
   bindings, routed through the structural
   ``event_triggered_two_legged_contract`` family
@@ -305,6 +307,11 @@ discounted-cashflow adapter that prices coupon periods off explicit range
 checks, imported fixing histories, and a forecast-curve proxy rather than a
 generic exotics engine. The goal of this slice is a reviewable desk workflow,
 not universal structured-note coverage.
+
+The callable range-accrual proof route keeps that same static conditional
+accrual base and adds a deterministic issuer-call wrapper over projected
+cashflows. It does not claim stochastic callable range-accrual valuation or
+interrupted/barrier-state range-accrual execution.
 
 The callable-rates desk slices follow the same philosophy. The callable-bond
 and Bermudan-swaption adapters are thin checked wrappers over the stable

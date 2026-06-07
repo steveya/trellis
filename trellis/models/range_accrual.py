@@ -184,6 +184,34 @@ class RangeAccrualScenario:
 
 
 @dataclass(frozen=True)
+class RangeAccrualCashflow:
+    """One projected range-accrual cashflow before discounting."""
+
+    payment_date: date
+    amount: float
+    cashflow_type: str
+    observation_date: date | None = None
+
+    def __post_init__(self):
+        if not isinstance(self.payment_date, date):
+            raise ValueError("RangeAccrualCashflow.payment_date must be a date.")
+        if self.observation_date is not None and not isinstance(self.observation_date, date):
+            raise ValueError("RangeAccrualCashflow.observation_date must be a date or None.")
+        object.__setattr__(self, "amount", float(self.amount))
+        object.__setattr__(self, "cashflow_type", str(self.cashflow_type or "").strip())
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "payment_date": self.payment_date.isoformat(),
+            "amount": self.amount,
+            "cashflow_type": self.cashflow_type,
+            "observation_date": self.observation_date.isoformat()
+            if self.observation_date is not None
+            else None,
+        }
+
+
+@dataclass(frozen=True)
 class RangeAccrualRisk:
     """First risk summary for the checked route."""
 
@@ -375,6 +403,75 @@ def _base_projection(
     }
 
 
+def project_range_accrual_cashflows(
+    spec: RangeAccrualSpec,
+    *,
+    as_of: date,
+    forecast_curve,
+    fixing_history=None,
+) -> tuple[RangeAccrualCashflow, ...]:
+    """Project deterministic range-accrual cashflows before discounting."""
+
+    normalized_fixings = _normalize_fixing_history(fixing_history)
+    missing_fixings = [
+        observation_date.isoformat()
+        for observation_date in spec.observation_dates
+        if observation_date <= as_of and observation_date not in normalized_fixings
+    ]
+    if missing_fixings:
+        raise ValueError(
+            "Missing fixing history for observed coupon dates: "
+            + ", ".join(missing_fixings)
+        )
+
+    forward_curve = ForwardCurve(forecast_curve)
+    cashflows: list[RangeAccrualCashflow] = []
+    for accrual_start, observation_date, payment_date in zip(
+        spec.accrual_start_dates,
+        spec.observation_dates,
+        spec.payment_dates,
+    ):
+        if observation_date <= as_of:
+            observed_rate = float(normalized_fixings[observation_date])
+        else:
+            observation_time = year_fraction(as_of, observation_date, spec.day_count)
+            observed_rate = forward_curve.forward_rate(
+                0.0,
+                observation_time,
+                compounding="simple",
+            )
+        if payment_date <= as_of:
+            continue
+        accrual = year_fraction(accrual_start, observation_date, spec.day_count)
+        weight = 1.0 if _in_range(
+            observed_rate,
+            lower_bound=spec.lower_bound,
+            upper_bound=spec.upper_bound,
+            inclusive_lower=spec.inclusive_lower,
+            inclusive_upper=spec.inclusive_upper,
+        ) else 0.0
+        cashflows.append(
+            RangeAccrualCashflow(
+                payment_date=payment_date,
+                amount=spec.notional * spec.coupon_rate * accrual * weight,
+                cashflow_type="conditional_coupon",
+                observation_date=observation_date,
+            )
+        )
+
+    maturity_date = spec.payment_dates[-1]
+    principal_amount = spec.notional * spec.principal_redemption
+    if maturity_date > as_of and principal_amount != 0.0:
+        cashflows.append(
+            RangeAccrualCashflow(
+                payment_date=maturity_date,
+                amount=principal_amount,
+                cashflow_type="principal_redemption",
+            )
+        )
+    return tuple(cashflows)
+
+
 def price_range_accrual(
     spec: RangeAccrualSpec,
     *,
@@ -486,10 +583,12 @@ __all__ = [
     "DEFAULT_SCENARIO_SHIFTS_BPS",
     "ROUTE_ID",
     "RangeAccrualResult",
+    "RangeAccrualCashflow",
     "RangeAccrualRisk",
     "RangeAccrualScenario",
     "RangeAccrualSpec",
     "RangeAccrualValidationBundle",
     "RangeAccrualValidationCheck",
     "price_range_accrual",
+    "project_range_accrual_cashflows",
 ]

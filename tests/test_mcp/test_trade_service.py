@@ -100,6 +100,10 @@ def test_trade_parse_supports_structured_range_accrual_input():
     }
     assert result.semantic_blueprint is not None
     assert result.semantic_blueprint.static_leg_lowering_selection is None
+    assert result.semantic_blueprint.dynamic_contract_ir is not None
+    assert result.semantic_blueprint.dynamic_contract_ir.semantic_family == (
+        "callable_range_accrual"
+    )
     assert tuple(
         blocker.blocker_id
         for blocker in result.semantic_blueprint.static_leg_admission_blockers

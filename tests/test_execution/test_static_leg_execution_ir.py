@@ -6,6 +6,8 @@ from datetime import date
 import pytest
 
 from trellis.agent.static_leg_contract import (
+    ConditionalAccrualLeg,
+    ConditionalAccrualPeriod,
     CouponLeg,
     CouponPeriod,
     FixedCouponFormula,
@@ -17,9 +19,15 @@ from trellis.agent.static_leg_contract import (
     OvernightRateIndex,
     PeriodRateOptionPeriod,
     PeriodRateOptionStripLeg,
+    SettlementRule,
     SignedLeg,
     StaticLegContractIR,
     TermRateIndex,
+)
+from trellis.agent.semantic_observables import (
+    BetweenPredicate,
+    ObservationMetadata,
+    RateIndexObservable,
 )
 from trellis.conventions.day_count import DayCountConvention
 from trellis.core.market_state import MarketState
@@ -44,6 +52,7 @@ from trellis.instruments.bond import Bond
 from trellis.instruments.swap import SwapPayoff
 from trellis.models.rate_basis_swap import price_rate_basis_swap
 from trellis.models.rate_cap_floor import price_rate_cap_floor_strip_analytical
+from trellis.models.range_accrual import price_range_accrual
 from trellis.models.vol_surface import FlatVol
 
 
@@ -276,6 +285,81 @@ def _period_rate_option_strip() -> StaticLegContractIR:
     )
 
 
+def _range_accrual_contract() -> StaticLegContractIR:
+    observation_dates = (
+        date(2025, 1, 15),
+        date(2025, 4, 15),
+        date(2025, 7, 15),
+        date(2025, 10, 15),
+    )
+    accrual_starts = (
+        date(2024, 10, 15),
+        date(2025, 1, 15),
+        date(2025, 4, 15),
+        date(2025, 7, 15),
+    )
+    condition = BetweenPredicate(
+        observable=RateIndexObservable(
+            observable_id="reference_rate_fixing",
+            index_name="SOFR",
+            observation=ObservationMetadata(
+                schedule_role="observation_dates",
+                fixing_date_role="fixing_dates",
+                missing_fixing_policy="project_forward_for_future_only",
+            ),
+        ),
+        lower_bound=0.01,
+        upper_bound=0.08,
+    )
+    return StaticLegContractIR(
+        legs=(
+            SignedLeg(
+                direction="receive",
+                leg=ConditionalAccrualLeg(
+                    currency="USD",
+                    notional_schedule=_notional("2024-10-15", "2025-10-15", 1_000_000.0),
+                    accrual_periods=tuple(
+                        ConditionalAccrualPeriod(
+                            accrual_start=start,
+                            accrual_end=observation,
+                            observation_date=observation,
+                            fixing_date=observation,
+                            payment_date=observation,
+                        )
+                        for start, observation in zip(accrual_starts, observation_dates)
+                    ),
+                    coupon_formula=FixedCouponFormula(0.0525),
+                    day_count="ACT/365",
+                    payment_frequency="quarterly",
+                    accrual_condition_ref="reference_rate_fixing_in_range",
+                    accrual_counter_ref="in_range_coupon_count",
+                    settlement_rule="coupon_period_cash_settlement",
+                    label="range_accrual_coupon",
+                    metadata={"semantic_family": "range_accrual"},
+                    accrual_condition=condition,
+                ),
+            ),
+            SignedLeg(
+                direction="receive",
+                leg=KnownCashflowLeg(
+                    currency="USD",
+                    cashflows=(
+                        KnownCashflow(
+                            payment_date=observation_dates[-1],
+                            amount=1_000_000.0,
+                            currency="USD",
+                            label="principal_redemption",
+                        ),
+                    ),
+                    label="range_accrual_principal",
+                ),
+            ),
+        ),
+        settlement=SettlementRule(payout_currency="USD"),
+        metadata={"semantic_family": "range_accrual"},
+    )
+
+
 def test_static_leg_compile_emits_route_free_execution_ir_for_fixed_float_swap():
     ir = compile_static_leg_execution_ir(_fixed_float_swap())
 
@@ -298,6 +382,23 @@ def test_static_leg_compile_emits_route_free_execution_ir_for_fixed_float_swap()
     assert summary["route_ids"] == ()
     assert summary["model_families"] == ()
     assert summary["obligation_kinds"] == ("coupon_leg",)
+
+
+def test_static_leg_compile_emits_conditional_accrual_execution_ir_for_range_accrual():
+    ir = compile_static_leg_execution_ir(_range_accrual_contract())
+
+    assert ir.source_track.product_family == "range_accrual"
+    assert {obligation.obligation_kind for obligation in ir.obligations} == {
+        "conditional_accrual_leg"
+    }
+    assert ir.requirement_hints.market_inputs == frozenset(
+        {"discount_curve:USD", "fixing_history:SOFR", "forward_curve:SOFR"}
+    )
+    summary = contract_execution_summary(ir)
+    assert summary["unsupported_reasons"] == ()
+    assert summary["event_kinds"] == ("observation", "payment")
+    assert summary["obligation_kinds"] == ("conditional_accrual_leg",)
+    assert summary["settlement_kinds"] == ("conditional_accrual_present_value",)
 
 
 def test_static_leg_compile_fails_closed_for_unadmitted_shape():
@@ -412,6 +513,19 @@ def test_static_leg_visitors_are_deterministic_for_schedule_requirements_and_cas
                 market,
                 **materialize_static_leg_lowering(contract)["call_kwargs"],
             ),
+        ),
+        (
+            _range_accrual_contract,
+            lambda contract, market: price_range_accrual(
+                materialize_static_leg_lowering(contract)["call_kwargs"]["spec"],
+                as_of=market.settlement,
+                discount_curve=market.discount,
+                forecast_curve=market.forecast_curves["SOFR"],
+                fixing_history=market.fixing_histories["SOFR"]
+                if market.fixing_histories
+                else {},
+                scenario_shifts_bps=(),
+            ).price,
         ),
     ),
 )
