@@ -415,6 +415,8 @@ class PricingService:
     def _price_trade_handler(compiled_request, execution_context: ExecutionContext, run_id: str):
         from trellis.analytics.measures import CallableScenarioExplain, OASDuration
         from trellis.engine.payoff_pricer import price_payoff
+        from trellis.execution.ir import ContractExecutionIR
+        from trellis.execution.runtime import price_dynamic_execution_ir
         from trellis.instruments.callable_bond import CallableBondPayoff, CallableBondSpec
         from trellis.models.bermudan_swaption_tree import (
             BermudanSwaptionTreeSpec,
@@ -531,6 +533,81 @@ class PricingService:
                 "audit_summary": {
                     "adapter": "bermudan_swaption_tree",
                     "route_id": "bermudan_swaption_tree_v1",
+                },
+            }
+        if (
+            adapter_id == "callable_range_accrual_deterministic"
+            or (
+                isinstance(payoff, ContractExecutionIR)
+                and payoff.source_track.product_family == "callable_range_accrual"
+            )
+        ):
+            if not isinstance(payoff, ContractExecutionIR):
+                raise ValueError(
+                    "Callable range-accrual adapter requires a ContractExecutionIR instrument."
+                )
+            market_state = market_snapshot.to_market_state(
+                settlement=settlement,
+                discount_curve=market_snapshot.default_discount_curve,
+            )
+            price = float(
+                price_dynamic_execution_ir(
+                    payoff,
+                    market_state,
+                    method="deterministic",
+                )
+            )
+            source_metadata = dict(payoff.source_track.source_metadata)
+            call_dates = tuple(source_metadata.get("call_dates") or ())
+            return {
+                "status": "succeeded",
+                "result_payload": {
+                    "price": price,
+                    "call_dates": [
+                        call_date.isoformat() if hasattr(call_date, "isoformat") else str(call_date)
+                        for call_date in call_dates
+                    ],
+                    "schedule_role": "call_date",
+                    "validation_bundle": {
+                        "route_id": "callable_range_accrual_deterministic_v1",
+                        "checks": [
+                            {
+                                "check_id": "dynamic_wrapper_present",
+                                "status": "passed",
+                                "details": {
+                                    "base_validation_bundle_id": source_metadata.get(
+                                        "base_validation_bundle_id"
+                                    ),
+                                },
+                            },
+                            {
+                                "check_id": "issuer_call_value_bound",
+                                "status": "passed",
+                                "details": {
+                                    "pricing_rule": "min(no_call_pv, deterministic_call_paths)",
+                                },
+                            },
+                        ],
+                        "reference_metrics": {
+                            "call_event_count": len(call_dates),
+                        },
+                        "assumptions": [
+                            "Deterministic callable range-accrual proof cohort uses projected cashflows and issuer-minimized call-date termination paths.",
+                            "This route does not claim stochastic callable range-accrual valuation.",
+                        ],
+                    },
+                },
+                "warnings": (
+                    "Deterministic callable range-accrual proof cohort; stochastic callable valuation remains unsupported.",
+                ),
+                "provenance": {
+                    "engine_id": str(
+                        selected_model.get("engine_binding", {}).get("engine_id", "")
+                    ).strip(),
+                },
+                "audit_summary": {
+                    "adapter": "callable_range_accrual_deterministic",
+                    "route_id": "callable_range_accrual_deterministic_v1",
                 },
             }
         if adapter_id == "range_accrual_discounted" or isinstance(payoff, RangeAccrualSpec):
@@ -1470,13 +1547,134 @@ class PricingService:
                 parsed_trade=parsed_trade,
                 pricing_input=pricing_input,
             )
+        if adapter_id == "callable_range_accrual_deterministic":
+            return PricingService._build_callable_range_accrual_execution_ir(
+                parsed_trade=parsed_trade,
+                pricing_input=pricing_input,
+            ), ()
         if adapter_id == "range_accrual_discounted":
+            PricingService._raise_if_static_range_accrual_blocked(
+                parsed_trade=parsed_trade,
+                adapter_id=adapter_id,
+            )
             return PricingService._build_range_accrual_spec(
                 parsed_trade=parsed_trade,
                 pricing_input=pricing_input,
             ), ()
         raise ValueError(
             f"MCP price.trade MVP has no supported execution adapter for {adapter_id or 'this model'}."
+        )
+
+    @staticmethod
+    def _build_callable_range_accrual_execution_ir(
+        *,
+        parsed_trade,
+        pricing_input: Mapping[str, object],
+    ):
+        from trellis.execution import compile_dynamic_execution_ir
+
+        semantic_blueprint = getattr(parsed_trade, "semantic_blueprint", None)
+        dynamic_contract_ir = getattr(semantic_blueprint, "dynamic_contract_ir", None)
+        if dynamic_contract_ir is None:
+            raise ValueError(
+                "Callable range-accrual pricing requires a dynamic contract IR wrapper."
+            )
+        notional = PricingService._range_accrual_input_notional(pricing_input)
+        dynamic_contract_ir = PricingService._scale_range_accrual_dynamic_notional(
+            dynamic_contract_ir,
+            notional=notional,
+        )
+        return compile_dynamic_execution_ir(dynamic_contract_ir, fail_on_unsupported=True)
+
+    @staticmethod
+    def _range_accrual_input_notional(pricing_input: Mapping[str, object]) -> float:
+        notional = (
+            pricing_input.get("notional")
+            or pricing_input.get("principal_amount")
+            or pricing_input.get("face_amount")
+        )
+        if notional in {None, ""}:
+            raise ValueError("Structured trade must provide `notional` for the range accrual adapter.")
+        return float(notional)
+
+    @staticmethod
+    def _scale_range_accrual_dynamic_notional(dynamic_contract_ir, *, notional: float):
+        from trellis.agent.static_leg_contract import (
+            ConditionalAccrualLeg,
+            KnownCashflowLeg,
+            NotionalSchedule,
+            StaticLegContractIR,
+        )
+
+        base_contract = getattr(dynamic_contract_ir, "base_contract", None)
+        if not isinstance(base_contract, StaticLegContractIR):
+            return dynamic_contract_ir
+
+        base_notional = 1.0
+        scaled_legs = []
+        for signed_leg in base_contract.legs:
+            leg = signed_leg.leg
+            if isinstance(leg, ConditionalAccrualLeg):
+                steps = tuple(leg.notional_schedule.steps)
+                if steps:
+                    base_notional = float(steps[0].amount) or 1.0
+                metadata = dict(leg.metadata)
+                spec_fields = dict(metadata.get("range_accrual_spec_fields") or {})
+                if spec_fields:
+                    spec_fields["notional"] = float(notional)
+                    metadata["range_accrual_spec_fields"] = spec_fields
+                leg = replace(
+                    leg,
+                    notional_schedule=NotionalSchedule(
+                        tuple(replace(step, amount=float(notional)) for step in steps)
+                    ),
+                    metadata=metadata,
+                )
+            elif isinstance(leg, KnownCashflowLeg):
+                scale = float(notional) / float(base_notional)
+                leg = replace(
+                    leg,
+                    cashflows=tuple(
+                        replace(cashflow, amount=float(cashflow.amount) * scale)
+                        for cashflow in leg.cashflows
+                    ),
+                )
+            scaled_legs.append(replace(signed_leg, leg=leg))
+
+        metadata = dict(base_contract.metadata)
+        spec_fields = dict(metadata.get("range_accrual_spec_fields") or {})
+        if spec_fields:
+            spec_fields["notional"] = float(notional)
+            metadata["range_accrual_spec_fields"] = spec_fields
+        return replace(
+            dynamic_contract_ir,
+            base_contract=replace(
+                base_contract,
+                legs=tuple(scaled_legs),
+                metadata=metadata,
+            ),
+        )
+
+    @staticmethod
+    def _raise_if_static_range_accrual_blocked(
+        *,
+        parsed_trade,
+        adapter_id: str,
+    ) -> None:
+        semantic_blueprint = getattr(parsed_trade, "semantic_blueprint", None)
+        blockers = tuple(
+            getattr(semantic_blueprint, "static_leg_admission_blockers", ()) or ()
+        )
+        if not blockers:
+            return
+        blocker_ids = tuple(
+            str(getattr(blocker, "blocker_id", "") or "").strip()
+            for blocker in blockers
+            if str(getattr(blocker, "blocker_id", "") or "").strip()
+        )
+        raise ValueError(
+            "Selected static range-accrual adapter is blocked by semantic admission "
+            f"for {adapter_id}: {', '.join(blocker_ids)}"
         )
 
     @staticmethod

@@ -519,6 +519,7 @@ class TestStaticLegAdmission:
         assert tuple(blocker.blocker_id for blocker in blockers) == (
             "conditional_range_accrual_callability_pending",
         )
+        assert tuple(blocker.required_ticket for blocker in blockers) == ("QUA-1117",)
         with pytest.raises(StaticLegLoweringNoMatchError):
             select_static_leg_lowering(contract, requested_method="analytical")
 
@@ -566,8 +567,8 @@ class TestStaticLegAdmission:
             "conditional_accrual_cms_rate_observable_pending",
         )
         assert tuple(blocker.required_ticket for blocker in blockers) == (
-            "QUA-1115",
-            "follow_on",
+            "QUA-1118",
+            "QUA-1118",
         )
         with pytest.raises(StaticLegLoweringNoMatchError):
             select_static_leg_lowering(contract, requested_method="analytical")
@@ -587,8 +588,8 @@ class TestStaticLegAdmission:
             "conditional_range_accrual_barrier_state_pending",
         )
         assert tuple(blocker.required_ticket for blocker in blockers) == (
-            "QUA-1115",
-            "QUA-1115",
+            "QUA-1120",
+            "QUA-1120",
         )
         with pytest.raises(StaticLegLoweringNoMatchError):
             select_static_leg_lowering(contract, requested_method="analytical")

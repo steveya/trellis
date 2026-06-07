@@ -190,16 +190,19 @@ Range-accrual traces now use that split. ``SemanticImplementationBlueprint``
 can carry:
 
 - ``static_leg_contract_ir`` with the lowered ``ConditionalAccrualLeg``
+- ``dynamic_contract_ir`` when callability is represented as an executable
+  dynamic wrapper over that static base
 - ``static_leg_lowering_selection`` when the checked single-index route admits
   the contract
 - ``static_leg_admission_blockers`` when the shape is represented but not
-  admitted
+  admitted on the plain static route
 
 ``trellis.agent.platform_requests._semantic_blueprint_summary(...)`` persists
 those fields in request metadata, and ``trellis.agent.platform_traces`` copies
-``static_leg_admission_blockers`` into the generation-boundary lowering
-summary. Failure triage, remediation packets, and future learning prompts
-should prefer those structured blocker ids over raw error text.
+``dynamic_contract_ir`` and ``static_leg_admission_blockers`` into the
+generation-boundary lowering summary. Failure triage, remediation packets, and
+future learning prompts should prefer those structured ids and wrapper evidence
+over raw error text.
 
 Current conditional-accrual blocker ids include:
 
@@ -210,8 +213,12 @@ Current conditional-accrual blocker ids include:
 - ``conditional_accrual_cms_rate_observable_pending``
 - ``conditional_accrual_multi_index_predicate_pending``
 
-Those ids mean "agent has useful semantic evidence, but executable support is
-not present." They should not be classified as missing parser knowledge, and
+Those ids mean "agent has useful semantic evidence, but the named route is not
+admitted." For ``conditional_range_accrual_callability_pending``, the plain
+static route is still blocked but an issuer-callable deterministic
+``dynamic_contract_ir`` may be present. Interruption, barrier, CMS-spread, and
+multi-index blockers still mean executable support is not present. They should
+not be classified as missing parser knowledge, and
 they should not trigger model-validator review of a non-existent payoff.
 
 Short-Term Learning Benchmark

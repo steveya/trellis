@@ -549,6 +549,7 @@ def _generation_boundary_summary(
             or semantic_blueprint.get("dsl_family_ir_type")
         ),
         "family_ir_summary": _family_ir_trace_summary(family_ir_payload),
+        "dynamic_contract_ir": semantic_blueprint.get("dynamic_contract_ir"),
         "helper_refs": list(
             getattr(generation_plan, "lowering_helper_refs", ())
             or semantic_blueprint.get("dsl_helper_refs")

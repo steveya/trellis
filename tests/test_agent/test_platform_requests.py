@@ -584,6 +584,7 @@ def test_compile_build_request_routes_range_accrual_through_conditional_leg_auth
 
 
 def test_semantic_blueprint_summary_preserves_range_accrual_callability_blockers():
+    from trellis.execution import compile_dynamic_execution_ir
     from trellis.agent.platform_requests import _semantic_blueprint_summary
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_range_accrual_contract
@@ -609,9 +610,13 @@ def test_semantic_blueprint_summary_preserves_range_accrual_callability_blockers
     summary = _semantic_blueprint_summary(blueprint)
 
     assert blueprint.static_leg_lowering_selection is None
+    assert blueprint.dynamic_contract_ir is not None
+    dynamic_ir = compile_dynamic_execution_ir(blueprint.dynamic_contract_ir)
+    assert dynamic_ir.source_track.product_family == "callable_range_accrual"
     assert tuple(
         blocker.blocker_id for blocker in blueprint.static_leg_admission_blockers
     ) == ("conditional_range_accrual_callability_pending",)
+    assert summary["dynamic_contract_ir"]["semantic_family"] == "callable_range_accrual"
     assert summary["static_leg_admission_blockers"] == [
         {
             "blocker_id": "conditional_range_accrual_callability_pending",
@@ -619,7 +624,7 @@ def test_semantic_blueprint_summary_preserves_range_accrual_callability_blockers
                 "Callable range accrual requires a dynamic exercise wrapper "
                 "before the checked static-leg route may be used."
             ),
-            "required_ticket": "QUA-1115",
+            "required_ticket": "QUA-1117",
         }
     ]
 

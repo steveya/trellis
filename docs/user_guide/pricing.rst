@@ -477,6 +477,8 @@ approved pricing path succeeded.
 The first desk-oriented checked structures on this surface are now:
 
 - ``range_accrual_discounted`` for the first single-index range-accrual note slice
+- ``callable_range_accrual_deterministic`` for the bounded issuer-callable
+  single-index range-accrual proof slice
 - ``callable_bond_tree`` for issuer-call fixed-income structures
 - ``bermudan_swaption_tree`` for the first supported Bermudan rates option slice
 
@@ -505,12 +507,18 @@ coupon structure, not an option product. The checked route currently admits a
 single reference rate index, a fixed coupon paid only when the fixing is within
 the stated range, and optional principal redemption at maturity.
 
-Callable range accruals, interrupted accruals, barrier-style accrual state,
-CMS-spread observables, and multi-index range predicates are represented as
-unsupported variants and fail closed with structured blockers. A blocked result
-for one of those variants is expected behavior; it means Trellis preserved the
-contract evidence but did not pretend that the single-index checked adapter can
-price the unsupported dynamic or composite shape.
+Issuer-callable single-index range accruals now have a bounded deterministic
+dynamic proof path. The callable wrapper projects the checked range-accrual
+cashflows, compares no-call value with issuer call-date termination paths, and
+returns the issuer-minimized holder PV. This is not stochastic callable
+range-accrual valuation.
+
+Interrupted accruals, barrier-style accrual state, CMS-spread observables, and
+multi-index range predicates are represented as unsupported variants and fail
+closed with structured blockers. A blocked result for one of those variants is
+expected behavior; it means Trellis preserved the contract evidence but did not
+pretend that the single-index checked adapter can price the unsupported dynamic
+or composite shape.
 
 For callable bonds and Bermudan swaptions, the governed surface now packages
 the checked lattice helpers into the same run/audit contract. Callable bonds
@@ -535,10 +543,12 @@ bounded proving slice. ``trellis.execution.compile_dynamic_execution_ir(...)``
 can lower an admitted callable-bond ``DynamicContractIR`` into a route-free
 execution artifact, and
 ``trellis.execution.runtime.price_dynamic_execution_ir(...)`` can then execute
-that artifact on the checked lattice or PDE callable-bond helpers. This is
-still intentionally narrow: it proves issuer-callable fixed coupon bonds over a
-static-leg base, not generic dynamic-wrapper execution across all dynamic
-families.
+that artifact on the checked lattice or PDE callable-bond helpers. The same
+execution seam also admits the deterministic issuer-callable single-index
+range-accrual proof cohort over a conditional-accrual static base. This is
+still intentionally narrow: it proves callable fixed coupon bonds and one
+deterministic callable range-accrual slice, not generic dynamic-wrapper
+execution across all dynamic families.
 
 Callable-bond trade runs now also expose ``result.oas_duration`` plus
 ``result.callable_scenario_explain``. The scenario explain payload is the

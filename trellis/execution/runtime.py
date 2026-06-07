@@ -11,6 +11,7 @@ from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import Frequency
 from trellis.execution.ir import (
+    ConditionalAccrualLegExecution,
     ContractExecutionIR,
     CouponLegExecution,
     KnownCashflowObligation,
@@ -43,6 +44,12 @@ def price_dynamic_execution_ir(
             method=method,
             terms=terms,
         )
+    if ir.source_track.product_family == "callable_range_accrual":
+        return _price_callable_range_accrual_execution_ir(
+            ir,
+            market_state,
+            method=method,
+        )
     raise ValueError(
         "Unsupported dynamic execution product family "
         f"{ir.source_track.product_family!r}"
@@ -71,6 +78,8 @@ def price_static_leg_execution_ir(
     for obligation in ir.obligations:
         if isinstance(obligation, KnownCashflowObligation):
             total += _price_known_cashflow(obligation, market_state, ir)
+        elif isinstance(obligation, ConditionalAccrualLegExecution):
+            total += _price_conditional_accrual_leg(obligation, market_state)
         elif isinstance(obligation, CouponLegExecution):
             total += _price_coupon_leg(obligation, market_state, ir)
         elif isinstance(obligation, PeriodRateOptionStripExecution):
@@ -85,6 +94,92 @@ def price_static_leg_execution_ir(
                 f"Unsupported static-leg execution obligation {type(obligation).__name__}"
             )
     return float(total)
+
+
+def _price_conditional_accrual_leg(
+    obligation: ConditionalAccrualLegExecution,
+    market_state: MarketState,
+) -> float:
+    from trellis.models.range_accrual import price_range_accrual
+
+    metadata = _metadata_dict(obligation.metadata)
+    reference_index = _conditional_accrual_reference_index(metadata)
+    spec = _range_accrual_spec_from_metadata(metadata)
+    result = price_range_accrual(
+        spec,
+        as_of=market_state.settlement,
+        discount_curve=_required_discount_curve(market_state),
+        forecast_curve=_range_accrual_forecast_curve(
+            market_state,
+            reference_index=reference_index,
+        ),
+        fixing_history=_range_accrual_fixing_history(
+            market_state,
+            reference_index=reference_index,
+        ),
+        scenario_shifts_bps=(),
+    )
+    return _direction_sign(str(metadata.get("direction") or "receive")) * float(result.price)
+
+
+def _price_callable_range_accrual_execution_ir(
+    ir: ContractExecutionIR,
+    market_state: MarketState,
+    *,
+    method: str | None = None,
+) -> float:
+    from trellis.models.range_accrual import project_range_accrual_cashflows
+
+    normalized_method = str(method or "deterministic").strip().lower().replace("-", "_")
+    if normalized_method not in {"deterministic", "deterministic_call", "analytical"}:
+        raise ValueError(
+            "callable range-accrual dynamic execution currently admits only "
+            f"deterministic call-decision pricing; method={method!r}"
+        )
+    obligation = _single_conditional_accrual_obligation(ir)
+    metadata = _metadata_dict(obligation.metadata)
+    reference_index = _conditional_accrual_reference_index(metadata)
+    spec = _range_accrual_spec_from_metadata(metadata)
+    discount_curve = _required_discount_curve(market_state)
+    cashflows = project_range_accrual_cashflows(
+        spec,
+        as_of=market_state.settlement,
+        forecast_curve=_range_accrual_forecast_curve(
+            market_state,
+            reference_index=reference_index,
+        ),
+        fixing_history=_range_accrual_fixing_history(
+            market_state,
+            reference_index=reference_index,
+        ),
+    )
+    no_call_price = _discount_projected_cashflows(
+        cashflows,
+        as_of=market_state.settlement,
+        discount_curve=discount_curve,
+        day_count=spec.day_count,
+    )
+    source_metadata = _source_metadata(ir)
+    call_price_cash = float(source_metadata.get("call_price_cash", spec.notional))
+    call_path_prices = tuple(
+        _discount_projected_cashflows(
+            tuple(cashflow for cashflow in cashflows if cashflow.payment_date <= call_date),
+            as_of=market_state.settlement,
+            discount_curve=discount_curve,
+            day_count=spec.day_count,
+        )
+        + call_price_cash
+        * _discount_factor_from_curve(
+            discount_curve,
+            market_state.settlement,
+            call_date,
+            day_count=spec.day_count,
+        )
+        for call_date in tuple(source_metadata.get("call_dates") or ())
+        if market_state.settlement < call_date < spec.payment_dates[-1]
+    )
+    candidates = (no_call_price, *call_path_prices)
+    return float(min(candidates))
 
 
 def _price_callable_bond_execution_ir(
@@ -311,6 +406,123 @@ def _forward_rate_by_time(
         start_years + 1e-6,
     )
     return float(forward_curve.forward_rate(start_years, end_years))
+
+
+def _single_conditional_accrual_obligation(
+    ir: ContractExecutionIR,
+) -> ConditionalAccrualLegExecution:
+    matches = tuple(
+        obligation
+        for obligation in ir.obligations
+        if isinstance(obligation, ConditionalAccrualLegExecution)
+    )
+    if len(matches) != 1:
+        raise ValueError(
+            "callable range-accrual execution requires one conditional-accrual obligation"
+        )
+    return matches[0]
+
+
+def _range_accrual_spec_from_metadata(metadata: Mapping[str, object]):
+    from trellis.models.range_accrual import RangeAccrualSpec
+
+    periods = tuple(metadata.get("periods") or ())
+    return RangeAccrualSpec(
+        reference_index=_conditional_accrual_reference_index(metadata),
+        notional=float(metadata["notional"]),
+        coupon_rate=float(metadata["coupon_rate"]),
+        lower_bound=float(metadata["lower_bound"]),
+        upper_bound=float(metadata["upper_bound"]),
+        observation_dates=tuple(period[2] for period in periods),
+        accrual_start_dates=tuple(period[0] for period in periods),
+        payment_dates=tuple(period[4] for period in periods),
+        principal_redemption=float(metadata.get("principal_redemption", 0.0)),
+        inclusive_lower=bool(metadata.get("inclusive_lower", True)),
+        inclusive_upper=bool(metadata.get("inclusive_upper", True)),
+        day_count=_day_count(metadata.get("day_count")),
+    )
+
+
+def _conditional_accrual_reference_index(metadata: Mapping[str, object]) -> str:
+    return str(metadata.get("reference_index") or "").strip()
+
+
+def _discount_projected_cashflows(
+    cashflows,
+    *,
+    as_of: date,
+    discount_curve,
+    day_count: DayCountConvention,
+) -> float:
+    return float(
+        sum(
+            cashflow.amount
+            * _discount_factor_from_curve(
+                discount_curve,
+                as_of,
+                cashflow.payment_date,
+                day_count=day_count,
+            )
+            for cashflow in cashflows
+            if cashflow.payment_date > as_of
+        )
+    )
+
+
+def _discount_factor_from_curve(
+    discount_curve,
+    as_of: date,
+    payment_date: date,
+    *,
+    day_count: DayCountConvention,
+) -> float:
+    discount_date = getattr(discount_curve, "discount_date", None)
+    if callable(discount_date):
+        return float(discount_date(payment_date))
+    t = max(year_fraction(as_of, payment_date, day_count), 0.0)
+    return float(discount_curve.discount(t))
+
+
+def _required_discount_curve(market_state: MarketState):
+    if market_state.discount is None:
+        raise ValueError("execution pricing requires market_state.discount")
+    return market_state.discount
+
+
+def _range_accrual_forecast_curve(
+    market_state: MarketState,
+    *,
+    reference_index: str,
+):
+    forecast_curves = market_state.forecast_curves or {}
+    for key in _rate_index_lookup_keys(reference_index):
+        if key in forecast_curves:
+            return forecast_curves[key]
+    if market_state.discount is not None:
+        return market_state.discount
+    raise ValueError("range-accrual execution pricing requires a forecast curve")
+
+
+def _range_accrual_fixing_history(
+    market_state: MarketState,
+    *,
+    reference_index: str,
+):
+    fixing_histories = market_state.fixing_histories or {}
+    for key in _rate_index_lookup_keys(reference_index):
+        if key in fixing_histories:
+            return fixing_histories[key]
+    return {}
+
+
+def _rate_index_lookup_keys(reference_index: str) -> tuple[str, ...]:
+    text = str(reference_index or "").strip().upper()
+    if not text:
+        return ()
+    keys = [text]
+    if "-" in text:
+        keys.append(text.rsplit("-", 1)[0])
+    return tuple(dict.fromkeys(keys))
 
 
 def _discount_factor(

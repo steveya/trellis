@@ -1964,6 +1964,9 @@ def _validate_range_accrual_shape(
         errors,
         frozenset({"discount_curve", "forward_curve"}),
     )
+    product = contract.product
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    callability = dict(term_fields.get("callability") or {})
     _validate_profile_fields(
         contract,
         errors,
@@ -1972,7 +1975,7 @@ def _validate_range_accrual_shape(
         expected_underlier_structure="single_curve_rate_style",
         expected_payoff_rule="range_accrual_coupon_payment",
         expected_settlement_rule="coupon_period_cash_settlement",
-        expected_exercise_style="none",
+        expected_exercise_style="issuer_call" if callability else "none",
         expected_multi_asset=False,
         require_schedule=True,
         require_constituents=1,
@@ -1986,8 +1989,6 @@ def _validate_range_accrual_shape(
     if "fixing_history" not in required_input_ids:
         errors.append("Range-accrual semantics require a fixing_history input.")
 
-    product = contract.product
-    term_fields = dict(getattr(product, "term_fields", {}) or {})
     reference_index = str(term_fields.get("reference_index", "")).strip()
     if not reference_index:
         errors.append("Range-accrual semantics require term_fields.reference_index.")

@@ -189,6 +189,29 @@ class CouponLegExecution:
 
 
 @dataclass(frozen=True)
+class ConditionalAccrualLegExecution:
+    """Execution obligation for a checked conditional scheduled-accrual leg."""
+
+    obligation_id: str
+    leg_id: str = ""
+    currency: str = ""
+    schedule_role: str = ""
+    condition_ref: str = ""
+    formula_ref: str = ""
+    metadata: Mapping[str, object] | MetadataItems | None = None
+    obligation_kind: str = field(default="conditional_accrual_leg", init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "obligation_id", _text(self.obligation_id))
+        object.__setattr__(self, "leg_id", _text(self.leg_id))
+        object.__setattr__(self, "currency", _upper_text(self.currency))
+        object.__setattr__(self, "schedule_role", _lower_text(self.schedule_role))
+        object.__setattr__(self, "condition_ref", _text(self.condition_ref))
+        object.__setattr__(self, "formula_ref", _text(self.formula_ref))
+        object.__setattr__(self, "metadata", _metadata_items(self.metadata))
+
+
+@dataclass(frozen=True)
 class PeriodRateOptionStripExecution:
     """Placeholder for future cap/floor-style period-rate option strips."""
 
@@ -247,6 +270,7 @@ class PrincipalExchange:
 ExecutionObligation: TypeAlias = (
     KnownCashflowObligation
     | CouponLegExecution
+    | ConditionalAccrualLegExecution
     | PeriodRateOptionStripExecution
     | ContingentSettlement
     | PrincipalExchange
@@ -486,6 +510,7 @@ class ContractExecutionIR:
                 (
                     KnownCashflowObligation,
                     CouponLegExecution,
+                    ConditionalAccrualLegExecution,
                     PeriodRateOptionStripExecution,
                     ContingentSettlement,
                     PrincipalExchange,

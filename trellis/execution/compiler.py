@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from trellis.execution.ir import (
     ContractExecutionIR,
+    ConditionalAccrualLegExecution,
     ContingentSettlement,
     CouponLegExecution,
     CurveQuoteObservableRef,
@@ -171,8 +172,14 @@ def lower_static_leg_contract_ir_to_execution_ir(
             static_leg_contract_ir,
             selection.declaration_id,
         )
-        obligations = _static_leg_execution_obligations(static_leg_contract_ir)
-        events = _static_leg_execution_events(static_leg_contract_ir)
+        obligations = _static_leg_execution_obligations(
+            static_leg_contract_ir,
+            selection.declaration_id,
+        )
+        events = _static_leg_execution_events(
+            static_leg_contract_ir,
+            selection.declaration_id,
+        )
         observables = _static_leg_execution_observables(static_leg_contract_ir, currency)
         requirement_hints = _static_leg_requirement_hints(
             static_leg_contract_ir,
@@ -282,17 +289,26 @@ def _validate_static_leg_execution_terms(contract: object, declaration_id: str) 
                 _constant_notional(leg)
 
 
-def _static_leg_execution_obligations(contract: object) -> tuple[object, ...]:
+def _static_leg_execution_obligations(
+    contract: object,
+    declaration_id: str = "",
+) -> tuple[object, ...]:
     from trellis.agent.static_leg_contract import (
+        ConditionalAccrualLeg,
         CouponLeg,
         KnownCashflowLeg,
         PeriodRateOptionStripLeg,
     )
 
+    if declaration_id == "static_leg_range_accrual_discounted":
+        return (_conditional_range_accrual_execution_obligation(contract),)
+
     obligations: list[object] = []
     for index, signed_leg in enumerate(contract.legs):
         leg = signed_leg.leg
         leg_id = _leg_id(leg, index)
+        if isinstance(leg, ConditionalAccrualLeg):
+            continue
         if isinstance(leg, CouponLeg):
             obligations.append(
                 CouponLegExecution(
@@ -348,8 +364,75 @@ def _static_leg_execution_obligations(contract: object) -> tuple[object, ...]:
     return tuple(obligations)
 
 
-def _static_leg_execution_events(contract: object) -> tuple[ExecutionEvent, ...]:
+def _conditional_range_accrual_execution_obligation(contract: object) -> ConditionalAccrualLegExecution:
+    from trellis.agent.semantic_observables import BetweenPredicate, RateIndexObservable
     from trellis.agent.static_leg_contract import (
+        ConditionalAccrualLeg,
+        FixedCouponFormula,
+        KnownCashflowLeg,
+    )
+
+    signed_leg = next(
+        (
+            item
+            for item in getattr(contract, "legs", ()) or ()
+            if isinstance(item.leg, ConditionalAccrualLeg)
+        ),
+        None,
+    )
+    if signed_leg is None:
+        raise UnsupportedExecutionSemantics(
+            "range-accrual execution lowering requires one conditional accrual leg"
+        )
+    leg = signed_leg.leg
+    if not isinstance(leg.coupon_formula, FixedCouponFormula):
+        raise UnsupportedExecutionSemantics(
+            "range-accrual execution lowering requires a fixed coupon formula"
+        )
+    condition = leg.accrual_condition
+    if not isinstance(condition, BetweenPredicate) or not isinstance(
+        condition.observable,
+        RateIndexObservable,
+    ):
+        raise UnsupportedExecutionSemantics(
+            "range-accrual execution lowering requires one rate-index between predicate"
+        )
+
+    notional = _constant_notional(leg)
+    return ConditionalAccrualLegExecution(
+        obligation_id=f"conditional_accrual_leg:{_leg_id(leg, 0)}",
+        leg_id=_leg_id(leg, 0),
+        currency=leg.currency,
+        schedule_role="observation_dates",
+        condition_ref=leg.accrual_condition_ref,
+        formula_ref="range_accrual_fixed_coupon",
+        metadata={
+            "direction": signed_leg.direction,
+            "notional": notional,
+            "coupon_rate": leg.coupon_formula.rate,
+            "day_count": leg.day_count,
+            "payment_frequency": leg.payment_frequency,
+            "reference_index": _range_accrual_observable_identifier(condition.observable),
+            "lower_bound": condition.lower_bound,
+            "upper_bound": condition.upper_bound,
+            "inclusive_lower": condition.inclusive_lower,
+            "inclusive_upper": condition.inclusive_upper,
+            "periods": _conditional_accrual_period_metadata(leg),
+            "principal_redemption": _range_accrual_execution_principal_redemption(
+                contract,
+                notional=notional,
+            ),
+            "validation_bundle_id": "range_accrual_discounted_cashflow_v1",
+        },
+    )
+
+
+def _static_leg_execution_events(
+    contract: object,
+    declaration_id: str = "",
+) -> tuple[ExecutionEvent, ...]:
+    from trellis.agent.static_leg_contract import (
+        ConditionalAccrualLeg,
         CouponLeg,
         KnownCashflowLeg,
         PeriodRateOptionStripLeg,
@@ -367,6 +450,34 @@ def _static_leg_execution_events(contract: object) -> tuple[ExecutionEvent, ...]
     for index, signed_leg in enumerate(contract.legs):
         leg = signed_leg.leg
         leg_id = _leg_id(leg, index)
+        if isinstance(leg, ConditionalAccrualLeg):
+            for period_index, period in enumerate(leg.accrual_periods):
+                _append(
+                    ExecutionEvent(
+                        event_id=f"observation:{leg_id}:{period_index}",
+                        event_kind="observation",
+                        schedule_role="observation_dates",
+                        phase="observation",
+                        event_date=period.observation_date,
+                        metadata={
+                            "leg_id": leg_id,
+                            "period_index": period_index,
+                            "fixing_date": period.fixing_date,
+                        },
+                    )
+                )
+                _append(
+                    ExecutionEvent(
+                        event_id=f"payment:{leg_id}:{period_index}",
+                        event_kind="payment",
+                        schedule_role="payment_dates",
+                        phase="payment",
+                        event_date=period.payment_date,
+                        metadata={"leg_id": leg_id, "period_index": period_index},
+                    )
+                )
+            if declaration_id == "static_leg_range_accrual_discounted":
+                continue
         if isinstance(leg, CouponLeg):
             needs_fixing = _coupon_formula_ref(leg.coupon_formula) == "floating_coupon"
             for period_index, period in enumerate(leg.coupon_periods):
@@ -436,10 +547,12 @@ def _static_leg_execution_observables(
     currency: str,
 ) -> tuple[object, ...]:
     from trellis.agent.static_leg_contract import (
+        ConditionalAccrualLeg,
         CouponLeg,
         FloatingCouponFormula,
         PeriodRateOptionStripLeg,
     )
+    from trellis.agent.semantic_observables import BetweenPredicate, RateIndexObservable
 
     observables: list[object] = [
         CurveQuoteObservableRef(
@@ -484,6 +597,34 @@ def _static_leg_execution_observables(
                         metadata={"rate_index": index_name},
                     )
                 )
+        if isinstance(leg, ConditionalAccrualLeg):
+            condition = leg.accrual_condition
+            if isinstance(condition, BetweenPredicate) and isinstance(
+                condition.observable,
+                RateIndexObservable,
+            ):
+                index_name = _range_accrual_observable_identifier(condition.observable)
+                for observable in (
+                    ForwardRateObservableRef(
+                        observable_id=f"forward_curve:{index_name}",
+                        source_ref=f"market.forward_curve:{index_name}",
+                        currency=leg.currency,
+                        tags=("forward_curve", "conditional_accrual", "range_accrual"),
+                        metadata={"rate_index": index_name},
+                    ),
+                    ObservableBinding(
+                        observable_id=f"fixing_history:{index_name}",
+                        observable_kind="fixing_history",
+                        source_ref=f"market.fixing_history:{index_name}",
+                        currency=leg.currency,
+                        tags=("fixing_history", "conditional_accrual", "range_accrual"),
+                        metadata={"rate_index": index_name},
+                    ),
+                ):
+                    if observable.observable_id in seen:
+                        continue
+                    seen.add(observable.observable_id)
+                    observables.append(observable)
     return tuple(observables)
 
 
@@ -493,10 +634,12 @@ def _static_leg_requirement_hints(
     currency: str,
 ) -> RequirementHints:
     from trellis.agent.static_leg_contract import (
+        ConditionalAccrualLeg,
         CouponLeg,
         FloatingCouponFormula,
         PeriodRateOptionStripLeg,
     )
+    from trellis.agent.semantic_observables import BetweenPredicate, RateIndexObservable
 
     market_inputs = {f"discount_curve:{currency}"}
     state_variables: set[str] = set()
@@ -512,6 +655,18 @@ def _static_leg_requirement_hints(
             market_inputs.add(f"black_vol_surface:{index_name}")
             timeline_roles.add("fixing_dates")
             state_variables.add("period_rate_option_strip")
+        if isinstance(leg, ConditionalAccrualLeg):
+            condition = leg.accrual_condition
+            if isinstance(condition, BetweenPredicate) and isinstance(
+                condition.observable,
+                RateIndexObservable,
+            ):
+                index_name = _range_accrual_observable_identifier(condition.observable)
+                market_inputs.add(f"forward_curve:{index_name}")
+                market_inputs.add(f"fixing_history:{index_name}")
+                timeline_roles.add("observation_dates")
+                timeline_roles.add("fixing_dates")
+                state_variables.add("conditional_accrual_counter")
     return RequirementHints(
         market_inputs=frozenset(market_inputs),
         state_variables=frozenset(state_variables),
@@ -521,6 +676,16 @@ def _static_leg_requirement_hints(
 
 def _static_leg_settlement_steps(contract: object) -> tuple[SettlementStep, ...]:
     currency = _primary_static_leg_currency(contract)
+    if _has_conditional_accrual_leg(contract):
+        return (
+            SettlementStep(
+                step_id="conditional_accrual_present_value",
+                settlement_kind="conditional_accrual_present_value",
+                expression="sum(in_range_coupon_cashflows) + principal_redemption",
+                currency=currency,
+                payment_date_role="payment_dates",
+            ),
+        )
     return (
         SettlementStep(
             step_id="static_leg_present_value",
@@ -591,6 +756,19 @@ def _coupon_period_metadata(leg: object) -> tuple[tuple[object, ...], ...]:
     )
 
 
+def _conditional_accrual_period_metadata(leg: object) -> tuple[tuple[object, ...], ...]:
+    return tuple(
+        (
+            period.accrual_start,
+            period.accrual_end,
+            period.observation_date,
+            period.fixing_date,
+            period.payment_date,
+        )
+        for period in leg.accrual_periods
+    )
+
+
 def _option_period_metadata(leg: object) -> tuple[tuple[object, ...], ...]:
     return tuple(
         (
@@ -613,6 +791,45 @@ def _rate_index_identifier(index: object) -> str:
     if isinstance(index, CmsRateIndex):
         return f"{index.curve_id}-{index.tenor}"
     return str(index or "").strip()
+
+
+def _range_accrual_observable_identifier(observable: object) -> str:
+    index_name = str(getattr(observable, "index_name", "") or "").strip().upper()
+    tenor = str(getattr(observable, "tenor", "") or "").strip().upper()
+    if tenor:
+        return f"{index_name}-{tenor}"
+    return index_name
+
+
+def _range_accrual_execution_principal_redemption(
+    contract: object,
+    *,
+    notional: float,
+) -> float:
+    from trellis.agent.static_leg_contract import KnownCashflowLeg
+
+    principal_cashflows = tuple(
+        cashflow
+        for signed_leg in getattr(contract, "legs", ()) or ()
+        if isinstance(signed_leg.leg, KnownCashflowLeg)
+        for cashflow in signed_leg.leg.cashflows
+    )
+    if not principal_cashflows:
+        return 0.0
+    if len(principal_cashflows) != 1:
+        raise UnsupportedExecutionSemantics(
+            "range-accrual execution lowering admits at most one principal cashflow"
+        )
+    return float(principal_cashflows[0].amount) / float(notional)
+
+
+def _has_conditional_accrual_leg(contract: object) -> bool:
+    from trellis.agent.static_leg_contract import ConditionalAccrualLeg
+
+    return any(
+        isinstance(getattr(signed_leg, "leg", None), ConditionalAccrualLeg)
+        for signed_leg in getattr(contract, "legs", ()) or ()
+    )
 
 
 def compile_dynamic_execution_ir(
@@ -672,10 +889,21 @@ def lower_dynamic_contract_ir_to_execution_ir(
             tags=("dynamic", "unsupported_dynamic_execution"),
         )
 
+    if (
+        isinstance(admission, DiscreteControlLaneAdmission)
+        and admission.semantic_family == "callable_range_accrual"
+    ):
+        return _lower_callable_range_accrual_contract_ir(
+            dynamic_contract_ir,
+            admission=admission,
+            fail_on_unsupported=fail_on_unsupported,
+        )
+
     if not isinstance(admission, DiscreteControlLaneAdmission) or admission.semantic_family != "callable_bond":
         reason = (
             "dynamic execution lowering not admitted: only the bounded "
-            "callable-bond discrete-control cohort is executable today; "
+            "callable-bond and deterministic callable range-accrual "
+            "discrete-control cohorts are executable today; "
             f"semantic_family={admission.semantic_family!r}"
         )
         source_track = infer_source_track(
@@ -886,6 +1114,199 @@ def lower_dynamic_contract_ir_to_execution_ir(
     )
 
 
+def _lower_callable_range_accrual_contract_ir(
+    dynamic_contract_ir: object,
+    *,
+    admission,
+    fail_on_unsupported: bool,
+) -> ContractExecutionIR:
+    from trellis.agent.dynamic_contract_ir import DecisionEvent
+
+    try:
+        terms = _extract_callable_range_accrual_execution_terms(dynamic_contract_ir)
+        base_contract = _range_accrual_base_without_dynamic_metadata(
+            dynamic_contract_ir.base_contract
+        )
+        base_execution_ir = lower_static_leg_contract_ir_to_execution_ir(
+            base_contract,
+            fail_on_unsupported=True,
+        )
+    except (NotImplementedError, UnsupportedExecutionSemantics, ValueError, TypeError) as exc:
+        reason = f"dynamic execution lowering not admitted: {exc}"
+        source_track = infer_source_track(
+            dynamic_contract_ir,
+            default_source_kind="dynamic_contract_ir",
+        )
+        if fail_on_unsupported:
+            raise UnsupportedExecutionSemantics(reason) from exc
+        return ContractExecutionIR.empty(
+            source_track=source_track,
+            unsupported_reasons=(reason,),
+            tags=("dynamic", "unsupported_dynamic_execution"),
+        )
+
+    events = list(base_execution_ir.event_plan.events)
+    decision_events: list[DecisionEvent] = []
+    event_dates: dict[str, object] = {}
+    seen_event_ids = {event.event_id for event in events}
+    for bucket in dynamic_contract_ir.event_program.buckets:
+        for event in bucket.events:
+            event_dates[event.label] = bucket.event_date
+            if not isinstance(event, DecisionEvent):
+                continue
+            decision_events.append(event)
+            execution_event = ExecutionEvent(
+                event_id=f"decision:{event.label}",
+                event_kind="decision",
+                schedule_role=event.schedule_role,
+                phase=event.phase,
+                event_date=bucket.event_date,
+                metadata={
+                    "controller_role": event.controller_role,
+                    "action_names": tuple(action.action_name for action in event.action_set),
+                },
+            )
+            if execution_event.event_id not in seen_event_ids:
+                seen_event_ids.add(execution_event.event_id)
+                events.append(execution_event)
+    for rule in dynamic_contract_ir.event_program.termination_rules:
+        execution_event = ExecutionEvent(
+            event_id=f"termination:{rule.label}",
+            event_kind="termination",
+            schedule_role="call_date",
+            phase="termination",
+            event_date=event_dates.get(rule.event_label),
+            metadata={
+                "trigger": rule.trigger,
+                "settlement_expression": rule.settlement_expression,
+                "event_label": rule.event_label,
+            },
+        )
+        if execution_event.event_id not in seen_event_ids:
+            seen_event_ids.add(execution_event.event_id)
+            events.append(execution_event)
+
+    decision_actions = tuple(
+        DecisionAction(
+            action_id=f"{action.action_name}:{event.label}",
+            action_type=action.action_type,
+            controller_role=event.controller_role,
+            schedule_role=event.schedule_role,
+            state_updates=("contract_alive", "call_decision"),
+        )
+        for event in decision_events
+        for action in event.action_set
+    )
+    market_inputs = set(base_execution_ir.requirement_hints.market_inputs)
+    state_variables = set(base_execution_ir.requirement_hints.state_variables)
+    state_variables.update({"contract_alive", "call_decision"})
+    timeline_roles = set(base_execution_ir.requirement_hints.timeline_roles)
+    timeline_roles.add("call_date")
+
+    semantic_id = (
+        infer_source_track(
+            dynamic_contract_ir,
+            default_source_kind="dynamic_contract_ir",
+        ).semantic_id
+        or "callable_range_accrual"
+    )
+
+    return ContractExecutionIR(
+        source_track=SourceTrack(
+            source_kind="dynamic_contract_ir",
+            semantic_id=semantic_id,
+            product_family="callable_range_accrual",
+            instrument_class="callable_range_accrual",
+            source_ref=f"dynamic_contract_ir:{semantic_id}",
+            source_metadata={
+                "semantic_family": "callable_range_accrual",
+                "base_product_family": "range_accrual",
+                "call_dates": terms["call_dates"],
+                "call_price_cash": terms["call_price_cash"],
+                "currency": terms["currency"],
+                "notional": terms["notional"],
+                "controller_role": admission.controller_role,
+                "decision_style": admission.decision_style,
+                "validation_bundle_id": "callable_range_accrual_deterministic_v1",
+                "base_validation_bundle_id": "range_accrual_discounted_cashflow_v1",
+            },
+        ),
+        obligations=base_execution_ir.obligations,
+        observables=base_execution_ir.observables,
+        event_plan=ExecutionEventPlan(
+            events=tuple(
+                sorted(
+                    events,
+                    key=lambda event: (
+                        event.event_date is None,
+                        event.event_date,
+                        event.phase,
+                        event.event_id,
+                    ),
+                )
+            ),
+            phase_order=("observation", "payment", "decision", "termination"),
+        ),
+        state_schema=ExecutionStateSchema(
+            fields=(
+                ExecutionStateField(
+                    name="contract_alive",
+                    domain="boolean",
+                    initial_value=True,
+                    tags=("dynamic_execution", "decision_state"),
+                ),
+                ExecutionStateField(
+                    name="call_decision",
+                    domain="enum",
+                    initial_value="continue",
+                    tags=("dynamic_execution", "decision_state"),
+                ),
+            ),
+        ),
+        decision_program=DecisionProgram(
+            actions=decision_actions,
+            controller_role=admission.controller_role,
+        ),
+        settlement_program=SettlementProgram(
+            steps=(
+                SettlementStep(
+                    step_id="callable_range_accrual_base_contract",
+                    settlement_kind="conditional_accrual_present_value",
+                    expression="deterministic_range_accrual_cashflow_projection",
+                    currency=terms["currency"],
+                    payment_date_role="payment_dates",
+                ),
+                SettlementStep(
+                    step_id="issuer_call_redemption",
+                    settlement_kind="issuer_call_redemption",
+                    expression=str(terms["call_price_cash"]),
+                    currency=terms["currency"],
+                    payment_date_role="call_date",
+                ),
+            ),
+        ),
+        requirement_hints=RequirementHints(
+            market_inputs=frozenset(market_inputs),
+            state_variables=frozenset(state_variables),
+            timeline_roles=frozenset(timeline_roles),
+        ),
+        execution_metadata=ExecutionMetadata(
+            tags=(
+                "route_free_dynamic_execution",
+                "callable_range_accrual",
+                "deterministic_call_decision",
+            ),
+            metadata={
+                "candidate_numerical_lanes": admission.candidate_numerical_lanes,
+                "benchmark_cohort_id": admission.benchmark_plan.cohort_id,
+                "benchmark_proving_family": admission.benchmark_plan.proving_family,
+                "benchmark_validation_mode": admission.benchmark_plan.validation_mode,
+                "reference_notes": admission.benchmark_plan.reference_notes,
+            },
+        ),
+    )
+
+
 def _extract_callable_bond_execution_terms(dynamic_contract_ir: object) -> dict[str, object]:
     from trellis.agent.dynamic_contract_ir import DecisionEvent, DynamicContractIR
     from trellis.agent.static_leg_contract import (
@@ -981,6 +1402,117 @@ def _extract_callable_bond_execution_terms(dynamic_contract_ir: object) -> dict[
         "currency": coupon_leg.currency,
         "frequency": coupon_leg.payment_frequency,
         "day_count": coupon_leg.day_count,
+    }
+
+
+def _extract_callable_range_accrual_execution_terms(dynamic_contract_ir: object) -> dict[str, object]:
+    from trellis.agent.dynamic_contract_ir import DecisionEvent, DynamicContractIR
+    from trellis.agent.static_leg_contract import ConditionalAccrualLeg, StaticLegContractIR
+
+    if not isinstance(dynamic_contract_ir, DynamicContractIR):
+        raise TypeError("dynamic_contract_ir must be a DynamicContractIR")
+    if not isinstance(dynamic_contract_ir.base_contract, StaticLegContractIR):
+        raise UnsupportedExecutionSemantics(
+            "callable range-accrual execution requires a StaticLegContractIR base contract"
+        )
+    if str(dynamic_contract_ir.base_track or "").strip().lower() != "static_leg":
+        raise UnsupportedExecutionSemantics(
+            "callable range-accrual execution requires a static-leg base track"
+        )
+
+    signed_conditional_legs = [
+        signed_leg
+        for signed_leg in dynamic_contract_ir.base_contract.legs
+        if isinstance(signed_leg.leg, ConditionalAccrualLeg)
+    ]
+    if len(signed_conditional_legs) != 1:
+        raise UnsupportedExecutionSemantics(
+            "callable range-accrual execution requires one conditional accrual leg"
+        )
+    signed_conditional_leg = signed_conditional_legs[0]
+    if signed_conditional_leg.direction != "receive":
+        raise UnsupportedExecutionSemantics(
+            "callable range-accrual execution requires a receive-side conditional accrual leg"
+        )
+    conditional_leg = signed_conditional_leg.leg
+    notional = _constant_notional(conditional_leg)
+
+    decision_events = [
+        event
+        for bucket in dynamic_contract_ir.event_program.buckets
+        for event in bucket.events
+        if isinstance(event, DecisionEvent)
+    ]
+    if not decision_events:
+        raise UnsupportedExecutionSemantics(
+            "callable range-accrual execution requires explicit issuer call decision events"
+        )
+    for event in decision_events:
+        action_names = {action.action_name for action in event.action_set}
+        if event.controller_role != "issuer" or action_names != {"continue", "redeem"}:
+            raise UnsupportedExecutionSemantics(
+                "callable range-accrual execution requires issuer decision events with redeem/continue actions"
+            )
+
+    maturity = conditional_leg.accrual_periods[-1].payment_date
+    call_dates = tuple(
+        bucket.event_date
+        for bucket in dynamic_contract_ir.event_program.buckets
+        if any(isinstance(event, DecisionEvent) for event in bucket.events)
+    )
+    if not call_dates:
+        raise UnsupportedExecutionSemantics(
+            "callable range-accrual execution requires at least one call date"
+        )
+    if any(call_date >= maturity for call_date in call_dates):
+        raise UnsupportedExecutionSemantics(
+            "callable range-accrual execution requires call dates strictly before maturity"
+        )
+
+    return {
+        "notional": notional,
+        "call_dates": call_dates,
+        "call_price_cash": notional,
+        "currency": conditional_leg.currency,
+        "maturity": maturity,
+    }
+
+
+def _range_accrual_base_without_dynamic_metadata(base_contract: object) -> object:
+    from dataclasses import replace
+
+    from trellis.agent.static_leg_contract import ConditionalAccrualLeg, StaticLegContractIR
+
+    if not isinstance(base_contract, StaticLegContractIR):
+        return base_contract
+
+    stripped_legs = []
+    for signed_leg in base_contract.legs:
+        leg = signed_leg.leg
+        if isinstance(leg, ConditionalAccrualLeg):
+            stripped_legs.append(
+                replace(
+                    signed_leg,
+                    leg=replace(
+                        leg,
+                        metadata=_without_dynamic_range_accrual_metadata(leg.metadata),
+                    ),
+                )
+            )
+            continue
+        stripped_legs.append(signed_leg)
+    return replace(
+        base_contract,
+        legs=tuple(stripped_legs),
+        metadata=_without_dynamic_range_accrual_metadata(base_contract.metadata),
+    )
+
+
+def _without_dynamic_range_accrual_metadata(metadata: object) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in dict(metadata or {}).items()
+        if key not in {"callability", "dynamic_features"}
     }
 
 

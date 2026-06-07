@@ -60,9 +60,11 @@ The key design rule is compositional:
 
 For range accruals, the static base is the conditional scheduled coupon leg.
 The dynamic wrapper owns issuer call rights, interruption events, barrier-style
-accrual state, or target-style stopping behavior. Those variants are
-representable as dynamic shapes, but they are not executable on the checked
-single-index static range-accrual route.
+accrual state, or target-style stopping behavior. The first executable wrapper
+is intentionally narrow: issuer-callable single-index range accruals can run a
+deterministic call-decision proof cohort over projected static cashflows.
+Interrupted accruals, barrier-style accrual state, CMS-spread observables, and
+multi-index predicates remain representable but non-executable.
 
 Validation Contract
 -------------------
@@ -196,11 +198,15 @@ support contract is:
   financial control, and insurance overlays remain non-executable at the
   route-free execution layer today
 
-In other words, the dynamic execution slice now has one real executable proving
-lane: issuer-callable fixed coupon bonds over a static-leg base. Separately,
-the portfolio-AAD admission gate now recognizes a bounded early-exercise
-vanilla option control-policy lane over flat vol. That AAD lane is a risk
-adapter contract, not a route-free dynamic execution compiler: it uses a hard
+In other words, the dynamic execution slice now has two real executable proving
+lanes: issuer-callable fixed coupon bonds over a static-leg base, and
+deterministic issuer-callable single-index range accruals over the checked
+conditional-accrual base. The callable range-accrual lane values projected
+cashflows and issuer-minimized call-date termination paths; it does not claim
+stochastic callable range-accrual valuation. Separately, the portfolio-AAD
+admission gate now recognizes a bounded early-exercise vanilla option
+control-policy lane over flat vol. That AAD lane is a risk adapter contract,
+not a route-free dynamic execution compiler: it uses a hard
 exercise-projection, smooth-interior derivative policy and fails closed near
 exercise-boundary ties. The other admitted dynamic families are still
 structural or benchmark-plan-only contracts.

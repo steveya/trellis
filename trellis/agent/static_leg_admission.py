@@ -313,7 +313,7 @@ def conditional_range_accrual_admission_blockers(
                     "Callable range accrual requires a dynamic exercise wrapper "
                     "before the checked static-leg route may be used."
                 ),
-                required_ticket="QUA-1115",
+                required_ticket="QUA-1117",
             )
         )
     dynamic_features = _merged_metadata_mapping(
@@ -334,7 +334,7 @@ def conditional_range_accrual_admission_blockers(
                     "Interrupted range accrual requires dynamic event-state "
                     "admission before the checked static-leg route may be used."
                 ),
-                required_ticket="QUA-1115",
+                required_ticket="QUA-1120",
             )
         )
     barrier_state = (
@@ -353,7 +353,7 @@ def conditional_range_accrual_admission_blockers(
                     "Barrier-style range accrual requires dynamic event-state "
                     "admission before the checked static-leg route may be used."
                 ),
-                required_ticket="QUA-1115",
+                required_ticket="QUA-1120",
             )
         )
     if signed_leg.direction != "receive":
