@@ -90,6 +90,11 @@ computational bucket:
 - ``slv_lsv``
 - ``unsupported_path_dependent_control``
 
+The top-level ``task_bucket`` is an aggregate over those target buckets. When
+one task compares multiple stochastic-volatility methods, the task-level value
+can be ``stochastic_vol_mixed`` even though each target still has one of the
+stable buckets above.
+
 The target entries also record model-parameter semantics. Heston pricing
 targets that already have model parameters treat a Black vol surface as market
 context, not as an implicit recalibration instruction. Calibration targets are

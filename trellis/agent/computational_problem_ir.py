@@ -304,7 +304,7 @@ def _market_bindings(
     process_family: str,
 ) -> MarketBindingSemantics:
     return MarketBindingSemantics(
-        requires_model_parameters=True,
+        requires_model_parameters=bucket != CALIBRATION_TO_SURFACE,
         requires_black_vol_surface=(
             bucket in {CALIBRATION_TO_SURFACE, SLV_LSV}
             or process_family == "slv_lsv"

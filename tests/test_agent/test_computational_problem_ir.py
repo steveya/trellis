@@ -105,6 +105,7 @@ def test_heston_parameter_semantics_distinguish_parameters_from_surface_bumps():
         "calibration_to_market_surface"
     )
     assert calibrated["model_parameter_semantics"]["requires_calibration_bridge"] is True
+    assert calibrated["market_bindings"]["requires_model_parameters"] is False
     assert calibrated["market_bindings"]["requires_black_vol_surface"] is True
 
 
