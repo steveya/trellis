@@ -38,6 +38,11 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
     framework = dict(record.get("framework") or {})
     telemetry = _telemetry_section(record)
     runtime_controls = dict(result.get("runtime_controls") or {})
+    computational_problem = dict(
+        result.get("computational_problem")
+        or record.get("computational_problem")
+        or {}
+    )
     method_runs = dict(record.get("method_runs") or {})
     post_build = dict(record.get("post_build") or {})
     traces = list(record.get("trace_summaries") or [])
@@ -84,7 +89,7 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
     model_audit = _model_audit_section(method_runs, record)
     consolidated_validation = _consolidated_validation_section(method_runs)
 
-    return {
+    packet = {
         "schema_version": DIAGNOSIS_SCHEMA_VERSION,
         "task": {
             "id": record.get("task_id"),
@@ -121,6 +126,9 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
         "consolidated_validation": consolidated_validation,
         "storage": storage,
     }
+    if computational_problem:
+        packet["computational_problem"] = computational_problem
+    return packet
 
 
 def _diagnosis_failure_bucket(

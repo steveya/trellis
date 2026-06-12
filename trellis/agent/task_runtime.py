@@ -34,6 +34,7 @@ from trellis.agent.benchmark_contracts import (
     canonical_benchmark_instrument_type,
 )
 from trellis.agent.benchmark_greek_fallback import compute_bump_and_reprice_greeks
+from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
 from trellis.agent.financepy_parity import align_market_state_for_financepy_parity
 from trellis.agent.instrument_identity import (
     InstrumentIdentityResolution,
@@ -1103,6 +1104,12 @@ def run_task(
     construct_methods = _task_construct_methods(task)
     comparison_targets = _task_comparison_targets(task, construct_methods)
     comparison_task = len(comparison_targets) > 1
+    computational_problem_report = classify_stochastic_vol_task(task)
+    computational_problem_payload = (
+        computational_problem_report.to_payload()
+        if computational_problem_report is not None
+        else None
+    )
     cassette_context = current_llm_cassette_context()
     execution_mode = (
         f"cassette_{cassette_context['mode']}"
@@ -1150,6 +1157,8 @@ def run_task(
         "task_definition_manifest": str(task.get("task_definition_manifest") or ""),
         "market_scenario_id": str(task.get("market_scenario_id") or ""),
     }
+    if computational_problem_payload is not None:
+        result_data["computational_problem"] = computational_problem_payload
     if cassette_context is not None:
         result_data["llm_cassette"] = cassette_context
 
@@ -1164,6 +1173,8 @@ def run_task(
             semantic_contract=semantic_contract,
             market_context=market_context,
         )
+        if computational_problem_payload is not None:
+            runtime_contract["computational_problem"] = computational_problem_payload
         task_benchmark_spec_overrides = benchmark_spec_overrides(task)
         base_request_metadata = {
             "task_id": task_id,
@@ -1181,6 +1192,8 @@ def run_task(
             from trellis.agent.semantic_contracts import semantic_contract_summary
 
             base_request_metadata["semantic_contract"] = semantic_contract_summary(semantic_contract)
+        if computational_problem_payload is not None:
+            base_request_metadata["computational_problem"] = computational_problem_payload
         result_data["market_context"] = market_context
         result_data["runtime_contract"] = runtime_contract
         if comparison_task:
@@ -1204,6 +1217,10 @@ def run_task(
                     "force_rebuild": force_rebuild,
                     "fresh_build": fresh_build,
                 }
+                if computational_problem_report is not None:
+                    target_payload = computational_problem_report.target_payload(target.target_id)
+                    if target_payload is not None:
+                        build_kwargs["request_metadata"]["computational_problem_target"] = target_payload
                 result = build_fn(**build_kwargs)
                 live_results[target.target_id] = result
                 method_results[target.target_id] = _build_result_payload(
@@ -1352,6 +1369,12 @@ def run_task(
                 "force_rebuild": force_rebuild,
                 "fresh_build": fresh_build,
             }
+            if computational_problem_report is not None and comparison_targets:
+                target_payload = computational_problem_report.target_payload(
+                    comparison_targets[0].target_id
+                )
+                if target_payload is not None:
+                    build_kwargs["request_metadata"]["computational_problem_target"] = target_payload
             if preferred_method is not None:
                 build_kwargs["preferred_method"] = preferred_method
             if task.get("cross_validate") and comparison_targets:

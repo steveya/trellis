@@ -326,6 +326,30 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert "/tmp/t999_waits.jsonl" in rendered
 
 
+def test_build_task_diagnosis_packet_preserves_computational_problem(tmp_path):
+    from trellis.agent.task_diagnostics import build_task_diagnosis_packet
+
+    record = _sample_record(tmp_path)
+    record["result"]["computational_problem"] = {
+        "task_id": "T999",
+        "task_bucket": "stochastic_vol_monte_carlo",
+        "targets": [
+            {
+                "target_id": "qe_heston",
+                "bucket": "stochastic_vol_monte_carlo",
+                "repair_packet": {
+                    "missing_primitive": "heston_andersen_qe_scheme",
+                },
+            }
+        ],
+    }
+
+    packet = build_task_diagnosis_packet(record)
+
+    assert packet["computational_problem"]["task_bucket"] == "stochastic_vol_monte_carlo"
+    assert packet["computational_problem"]["targets"][0]["target_id"] == "qe_heston"
+
+
 def test_save_task_diagnosis_artifacts_writes_packet_and_dossier(tmp_path):
     from trellis.agent.task_diagnostics import save_task_diagnosis_artifacts
 

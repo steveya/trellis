@@ -73,6 +73,42 @@ If the dossier is still not enough, open the JSON packet next. The packet is
 the canonical structured record and should contain the same evidence in a
 machine-friendly shape.
 
+Computational problem evidence
+------------------------------
+
+For stochastic-volatility tasks, ``run_task(...)`` now attaches a
+``computational_problem`` block to the task result, runtime contract, and
+diagnosis packet. That block is an internal diagnostic IR, not a public pricing
+API. It classifies each concrete comparison target into one stable
+computational bucket:
+
+- ``stochastic_vol_transform``
+- ``stochastic_vol_monte_carlo``
+- ``stochastic_vol_pde``
+- ``calibration_to_surface``
+- ``affine_jump_stochastic_vol``
+- ``slv_lsv``
+- ``unsupported_path_dependent_control``
+
+The top-level ``task_bucket`` is an aggregate over those target buckets. When
+one task compares multiple stochastic-volatility methods, the task-level value
+can be ``stochastic_vol_mixed`` even though each target still has one of the
+stable buckets above.
+
+The target entries also record model-parameter semantics. Heston pricing
+targets that already have model parameters treat a Black vol surface as market
+context, not as an implicit recalibration instruction. Calibration targets are
+the explicit bridge where a market surface is allowed to produce model
+parameters.
+
+When a task asks for a computational class Trellis does not yet implement, the
+same block carries a machine-readable ``repair_packet`` naming the missing
+primitive or unsupported class. Examples include
+``heston_andersen_qe_scheme``, ``bates_affine_jump_stochastic_vol_kernel``,
+``leverage_function_contract``, and
+``path_dependent_early_exercise_under_stochastic_vol``. Remediation tools
+should group these packets before falling back to raw exception text.
+
 Operational use
 ---------------
 
