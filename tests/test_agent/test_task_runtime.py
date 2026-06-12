@@ -1183,6 +1183,73 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
     assert result["success"] is True
 
 
+def test_run_task_carries_stochastic_vol_problem_metadata_for_comparison_task(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T28"
+    )
+    calls: list[dict] = []
+    price_map = {
+        "euler_heston": 10.00,
+        "qe_heston": 10.01,
+        "heston_fft": 10.00,
+    }
+
+    class FakeResult:
+        def __init__(self, target: str):
+            self.success = True
+            self.attempts = 1
+            self.gap_confidence = 0.9
+            self.knowledge_gaps = []
+            self.payoff_cls = type(f"{target.title()}Payoff", (), {"price": price_map[target]})
+            self.failures = []
+            self.reflection = {}
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FakeResult(kwargs["comparison_target"])
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        payoff_factory=lambda payoff_cls, _spec_schema, _settle: payoff_cls(),
+        price_fn=lambda payoff, _market_state: payoff.price,
+        task_run_storage_root=tmp_path,
+        task_run_storage_layout="standalone",
+    )
+
+    problem = result["computational_problem"]
+    assert problem["task_bucket"] == "stochastic_vol_mixed"
+    assert [target["target_id"] for target in problem["targets"]] == [
+        "euler_heston",
+        "qe_heston",
+        "heston_fft",
+    ]
+    assert result["runtime_contract"]["computational_problem"]["task_bucket"] == (
+        "stochastic_vol_mixed"
+    )
+    assert calls[1]["request_metadata"]["computational_problem_target"]["target_id"] == (
+        "qe_heston"
+    )
+    assert calls[1]["request_metadata"]["computational_problem_target"]["repair_packet"][
+        "missing_primitive"
+    ] == "heston_andersen_qe_scheme"
+
+
 def test_cross_validate_comparison_task_prices_reused_fx_modules():
     from trellis.agent.task_runtime import (
         ComparisonBuildTarget,

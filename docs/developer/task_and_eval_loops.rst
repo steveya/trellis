@@ -357,6 +357,15 @@ you need to understand a failure or confirm a success. The batch runner now
 surfaces those packet paths directly on the task result so you do not have to
 reconstruct them from traces or summary files.
 
+Stochastic-volatility task runs also carry a ``computational_problem`` block
+when the task target is Heston, Bates, SLV/LSV, or a related unsupported
+path-dependent control shape. The block is copied into the task result,
+``runtime_contract``, comparison-target request metadata, and the diagnosis
+packet. It is meant for task triage and remediation: it records the
+computational bucket, model-parameter semantics, validation bundle, and any
+missing primitive or unsupported class before raw build exceptions dominate
+the failure story.
+
 That packet/checkpoint surface also now treats backend binding identity as the
 primary implementation provenance. Compatibility route aliases may still
 appear, but only as secondary metadata so replay, canary drift, and learning
