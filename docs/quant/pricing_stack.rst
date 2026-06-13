@@ -188,6 +188,10 @@ The first migrated vanilla cases now use that boundary directly:
   as Heston smile extraction now lower onto a checked Heston transform helper
   that resolves underlier spot plus explicit model parameters into the FFT/COS
   kernels instead of being forced through the single-state Black-vol helper
+- stochastic-volatility Monte Carlo for European Heston vanilla options lowers
+  onto a checked ``heston`` two-state helper, with explicit ``euler`` versus
+  ``heston_qe`` scheme selection and the ``heston:monte_carlo`` validation
+  bundle, instead of reusing the vanilla-equity GBM helper
 - the local-vol vanilla helper remains a checked route-level wrapper, but it
   now assembles and prices through ``trellis.models.monte_carlo.event_aware``
   instead of maintaining a separate Monte Carlo engine/payoff loop

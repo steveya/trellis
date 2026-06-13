@@ -537,6 +537,8 @@ class MonteCarloEngine:
                     + 0.5 * sig * dsig_dx * (dw ** 2 - 1.0) * dt,
                     dtype=float,
                 )
+            elif self.scheme is not None and method not in {"euler"}:
+                x = raw_np.asarray(self.scheme.step(self.process, x, t, dt, dw), dtype=float)
             else:
                 mu = first_mu if i == 0 and first_mu is not None else drift_eval(x, t)
                 sig = first_sig if i == 0 and first_sig is not None else diffusion_eval(x, t)
@@ -562,6 +564,8 @@ class MonteCarloEngine:
             dw = shocks[:, i]
             if method == "exact":
                 x = raw_np.asarray(self.process.exact_sample(x, t, dt, dw), dtype=float)
+            elif self.scheme is not None and method not in {"euler"}:
+                x = raw_np.asarray(self.scheme.step(self.process, x, t, dt, dw), dtype=float)
             else:
                 mu = raw_np.asarray(self.process.drift(x, t), dtype=float)
                 sig = raw_np.asarray(self.process.diffusion(x, t), dtype=float)

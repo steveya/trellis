@@ -503,6 +503,16 @@ unless a calibration bridge explicitly owns the conversion. Unsupported
 transform methods such as Heston Gauss-Laguerre produce a repair packet instead
 of falling back to a vanilla Black-vol adapter.
 
+The Monte Carlo lane now follows the same model-family separation for European
+Heston vanilla options. ``euler_heston`` and ``heston_mc`` targets bind to
+``trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo``
+with ``scheme="euler"``, while ``qe_heston`` binds to the same helper with
+``scheme="heston_qe"``. The helper consumes explicit Heston model parameters
+and reports the ``heston:monte_carlo`` validation bundle, so the task runtime no
+longer treats Andersen QE as a missing generated-adapter primitive. It still
+does not recalibrate Heston parameters from a bumped Black vol surface unless a
+separate calibration problem owns that conversion.
+
 That route family now also has its own lowered contract boundary. Transform
 tasks compile onto ``TransformPricingIR`` before admissibility, so the canaries
 no longer have to rely on the broader upstream ``vanilla_option`` semantics

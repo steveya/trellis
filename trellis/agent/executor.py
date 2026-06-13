@@ -3398,6 +3398,22 @@ def _vanilla_equity_monte_carlo_helper_kwargs(comparison_target: str | None) -> 
     return ""
 
 
+def _heston_monte_carlo_helper_kwargs(comparison_target: str | None) -> str:
+    """Return deterministic helper kwargs for Heston Monte Carlo comparison targets."""
+    target = str(comparison_target or "").strip().lower().replace("-", "_")
+    if target in {"heston_mc", "euler_heston", "heston_euler"}:
+        return ', scheme="euler"'
+    if target in {
+        "qe",
+        "heston_qe",
+        "qe_heston",
+        "andersen_qe",
+        "quadratic_exponential",
+    }:
+        return ', scheme="heston_qe"'
+    return ""
+
+
 def _vanilla_equity_transform_helper_kwargs(comparison_target: str | None) -> str:
     """Return deterministic helper kwargs for transform comparison targets."""
     target = str(comparison_target or "").strip().lower()
@@ -3471,6 +3487,7 @@ def _deterministic_exact_binding_evaluate_body(
     refs = set(_exact_binding_refs(generation_plan))
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
     vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
+    heston_mc_kwargs = _heston_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
     heston_transform_kwargs = _heston_transform_helper_kwargs(comparison_target)
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
@@ -3746,6 +3763,10 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo": (
             "return price_vanilla_equity_option_monte_carlo("
             f"market_state, spec{vanilla_equity_mc_kwargs})"
+        ),
+        "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo": (
+            "return price_heston_option_monte_carlo("
+            f"market_state, spec{heston_mc_kwargs})"
         ),
         "trellis.models.equity_option_transforms.price_vanilla_equity_option_transform": (
             "return price_vanilla_equity_option_transform("

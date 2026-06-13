@@ -362,9 +362,41 @@ def test_vanilla_option_monte_carlo_compiles_to_terminal_only_event_aware_family
     assert family_ir.path_requirement_spec.requirement_kind == "terminal_only"
 
 
-def test_vanilla_option_transform_compiles_to_bounded_transform_family_ir():
-    from dataclasses import replace
+def test_heston_vanilla_option_monte_carlo_compiles_to_stochastic_vol_family_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
 
+    contract = make_vanilla_option_contract(
+        description="European Heston call on SPX priced by QE Monte Carlo",
+        underliers=("SPX",),
+        observation_schedule=("2026-06-20",),
+        preferred_method="monte_carlo",
+    )
+    heston_contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            model_family="stochastic_volatility",
+        ),
+    )
+    blueprint = compile_semantic_contract(heston_contract, preferred_method="monte_carlo")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, EventAwareMonteCarloIR)
+    assert family_ir.route_id == "monte_carlo_paths"
+    assert family_ir.product_instrument == "european_option"
+    assert family_ir.payoff_family == "vanilla_option"
+    assert family_ir.helper_symbol == "price_heston_option_monte_carlo"
+    assert family_ir.market_mapping == "heston_model_parameters_to_stochastic_vol_mc"
+    assert family_ir.state_spec.state_variable == "spot_variance"
+    assert family_ir.state_spec.dimension == 2
+    assert family_ir.state_spec.state_layout == "vector"
+    assert family_ir.process_spec.process_family == "heston"
+    assert family_ir.process_spec.simulation_scheme == "heston_qe_or_euler"
+    assert family_ir.path_requirement_spec.requirement_kind == "terminal_only"
+
+
+def test_vanilla_option_transform_compiles_to_bounded_transform_family_ir():
     from trellis.agent.family_lowering_ir import build_family_lowering_ir
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import ControllerProtocol, make_vanilla_option_contract
@@ -434,8 +466,6 @@ def test_vanilla_option_transform_compiles_to_bounded_transform_family_ir():
 
 
 def test_heston_transform_lowering_uses_model_parameter_helper_contract():
-    from dataclasses import replace
-
     from trellis.agent.family_lowering_ir import TransformPricingIR
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_vanilla_option_contract

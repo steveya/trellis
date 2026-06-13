@@ -82,6 +82,15 @@
   model_range: 'v0: 0.01 to 0.16'
   warning: NEVER pass Black vol directly as v0. A Black vol of 0.20 is v0=0.04, NOT
     v0=0.20.
+- name: MODEL_PARAMETERS_FOR_HESTON_MC
+  method: monte_carlo
+  source: Heston model parameters (v0, kappa, theta, sigma_v/xi, rho)
+  convention: v0 and theta are variances; xi/sigma_v is volatility of variance.
+  typical_range: 'v0/theta: 0.01 to 0.16; xi: 0.05 to 1.00; rho: -0.95 to 0.50'
+  model_expects: Explicit Heston parameters plus spot and discount curve, not a Black vol surface.
+  conversion: A Black vol surface requires an explicit calibration problem before MC pricing can consume Heston parameters.
+  model_range: 'v0/theta: 0.01 to 0.16'
+  warning: Use scheme="heston_qe" for Andersen QE targets and scheme="euler" for Euler targets; do not silently fall back between them.
 - name: RATE_OPTION_TARGET_PRICE
   method: calibration
   source: quoted cap/floor or swaption price under the selected multi-curve environment

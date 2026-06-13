@@ -322,6 +322,7 @@ monte_carlo:
   - mbs
   - basket_path_payoff
   - ranked_observation_basket
+  - heston_option
   version: canonical
   template: "## Cookbook: Monte Carlo (path simulation)\nUse this pattern for path-dependent\
     \ instruments.\nThe MC engine computes a discounted expected payoff estimate and\
@@ -338,7 +339,17 @@ monte_carlo:
     paths: ndarray of shape (n_paths, n_steps + 1).\"\"\"\n        S_T = paths[:,\
     \ -1]\n        # >>> INSTRUMENT-SPECIFIC: compute payoff from paths <<<\n    \
     \    return np.maximum(S_T - spec.strike, 0.0) * spec.notional\n\nresult = engine.price(spec.spot,\
-    \ T, payoff_fn, discount_rate=r)\nreturn result[\"price\"]\n```\n\n### Credit\
+    \ T, payoff_fn, discount_rate=r)\nreturn result[\"price\"]\n```\n\n### Heston\
+    \ stochastic-volatility MC (solution contract: heston_option)\nFor European Heston\
+    \ vanilla options, keep the adapter thin and delegate to the checked\nstochastic-vol\
+    \ helper. Use `scheme=\"heston_qe\"` for `qe_heston` and\n`scheme=\"euler\"`\
+    \ for `euler_heston` / `heston_mc`. The helper consumes explicit\nHeston `model_parameters`\
+    \ from the market state or spec aliases; do not read a\nBlack vol surface unless\
+    \ an explicit calibration problem produced the parameters.\n\n```python\ndef\
+    \ evaluate(self, market_state):\n    from trellis.models.monte_carlo.stochastic_vol\
+    \ import price_heston_option_monte_carlo\n\n    spec = self._spec\n    return\
+    \ price_heston_option_monte_carlo(market_state, spec, scheme=\"heston_qe\")\n\
+    ```\n\n### Credit\
     \ default swap (single-name) (solution contract: credit_default_swap)\nUse this\
     \ pattern for single-name credit protection legs and premium-leg\naccrual under\
     \ a hazard-rate or survival-probability model. Do not reuse it\nfor nth-to-default\

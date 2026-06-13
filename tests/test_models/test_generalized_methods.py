@@ -379,6 +379,8 @@ class TestMCSchemes:
         prices = {}
         for name, SchemeClass in SCHEME_REGISTRY.items():
             scheme = SchemeClass()
+            if getattr(scheme, "compatible_process_families", ("any",)) != ("any",):
+                continue
             S_T = self._simulate(scheme, n_paths=100000, n_steps=200)
             payoff = raw_np.maximum(S_T - K, 0)
             price = raw_np.exp(-r * T) * raw_np.mean(payoff)

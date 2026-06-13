@@ -332,13 +332,13 @@ def test_build_task_diagnosis_packet_preserves_computational_problem(tmp_path):
     record = _sample_record(tmp_path)
     record["result"]["computational_problem"] = {
         "task_id": "T999",
-        "task_bucket": "stochastic_vol_monte_carlo",
+        "task_bucket": "stochastic_vol_transform",
         "targets": [
             {
-                "target_id": "qe_heston",
-                "bucket": "stochastic_vol_monte_carlo",
+                "target_id": "laguerre_heston",
+                "bucket": "stochastic_vol_transform",
                 "repair_packet": {
-                    "missing_primitive": "heston_andersen_qe_scheme",
+                    "missing_primitive": "heston_gauss_laguerre_transform_kernel",
                 },
             }
         ],
@@ -346,8 +346,8 @@ def test_build_task_diagnosis_packet_preserves_computational_problem(tmp_path):
 
     packet = build_task_diagnosis_packet(record)
 
-    assert packet["computational_problem"]["task_bucket"] == "stochastic_vol_monte_carlo"
-    assert packet["computational_problem"]["targets"][0]["target_id"] == "qe_heston"
+    assert packet["computational_problem"]["task_bucket"] == "stochastic_vol_transform"
+    assert packet["computational_problem"]["targets"][0]["target_id"] == "laguerre_heston"
 
 
 def test_save_task_diagnosis_artifacts_writes_packet_and_dossier(tmp_path):

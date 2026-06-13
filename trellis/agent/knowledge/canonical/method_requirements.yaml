@@ -110,6 +110,7 @@ monte_carlo:
   regression, the basis or estimator choice is explicit; LaguerreBasis is a common
   option, not a mandatory route primitive.'
 - 'CREDIT-SURVIVAL MC: For single-name CDS, sample one default time from the credit_curve hazard rates or survival probabilities on an explicit payment schedule. For nth-to-default, keep multi-name default-order and copula logic explicit instead of reusing the CDS loop. Declare credit_curve and discount_curve requirements and do not route credit-default pricing through Black76 or equity GBM option logic.'
+- 'HESTON MC ROUTE: For European Heston vanilla options, prefer trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo. Use scheme="heston_qe" for qe_heston and scheme="euler" for euler_heston / heston_mc. Bind explicit Heston model_parameters; do not read a Black vol surface unless a calibration problem explicitly maps the surface to Heston parameters.'
 qmc:
 - 'LOW-DISCREPANCY SAMPLING: Use Sobol paths in balanced batches, preferably with
   a power-of-two path count such as 1024, 2048, or 4096. If you deviate, document

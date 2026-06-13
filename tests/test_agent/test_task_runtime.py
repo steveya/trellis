@@ -1242,13 +1242,19 @@ def test_run_task_carries_stochastic_vol_problem_metadata_for_comparison_task(mo
     assert result["runtime_contract"]["computational_problem"]["task_bucket"] == (
         "stochastic_vol_mixed"
     )
-    assert [call["comparison_target"] for call in calls] == ["euler_heston", "heston_fft"]
+    assert [call["comparison_target"] for call in calls] == [
+        "euler_heston",
+        "qe_heston",
+        "heston_fft",
+    ]
     qe_payload = result["method_results"]["qe_heston"]
-    assert qe_payload["success"] is False
-    assert qe_payload["attempts"] == 0
-    assert qe_payload["blocker_details"]["repair_packet"]["missing_primitive"] == (
-        "heston_andersen_qe_scheme"
-    )
+    assert qe_payload["success"] is True
+    assert qe_payload["attempts"] == 1
+    qe_call = next(call for call in calls if call["comparison_target"] == "qe_heston")
+    qe_target = qe_call["request_metadata"]["computational_problem_target"]
+    assert qe_target["repair_packet"] is None
+    assert qe_target["solver_target"] == "monte_carlo_qe"
+    assert qe_target["validation_bundle"] == "heston:monte_carlo"
 
 
 def test_cross_validate_comparison_task_prices_reused_fx_modules():
