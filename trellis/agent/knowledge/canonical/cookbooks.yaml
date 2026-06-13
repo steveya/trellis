@@ -553,7 +553,8 @@ fft_pricing:
     \ from `market_state.model_parameters`, and does not use a Black vol surface as\
     \ live pricing input.\n\n```python\ndef evaluate(self,\
     \ market_state):\n    from trellis.models.transforms.heston import price_heston_option_transform\n\
-    \n    spec = self._spec\n    return price_heston_option_transform(market_state,\
+    \n    spec = self._spec\n    # >>> INSTRUMENT-SPECIFIC: choose \"fft\" or \"cos\"\
+    \ for the target <<<\n    return price_heston_option_transform(market_state,\
     \ spec, method=\"fft\")\n```\n\nFor non-Heston transform routes, bind an array-safe\
     \ characteristic function to the raw FFT/COS kernels. COS expects the characteristic\
     \ function of `log(S_T / S0)` while Carr-Madan FFT expects `log(S_T)`.\n"
