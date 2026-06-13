@@ -293,6 +293,7 @@ def test_family_package_exports_are_canonical():
         build_heston_parameter_payload,
         resolve_heston_runtime_binding,
     )
+    from trellis.models.transforms.heston import price_heston_option_transform
 
     assert hasattr(trees, "BinomialTree")
     assert hasattr(trees, "TrinomialTree")
@@ -312,6 +313,7 @@ def test_family_package_exports_are_canonical():
 
     assert hasattr(transforms, "fft_price")
     assert hasattr(transforms, "cos_price")
+    assert transforms.price_heston_option_transform is price_heston_option_transform
     assert processes.Heston is Heston
     assert processes.HestonRuntimeBinding is HestonRuntimeBinding
     assert processes.build_heston_parameter_payload is build_heston_parameter_payload
@@ -329,6 +331,7 @@ def test_models_docs_use_package_level_entry_points():
     assert "trellis.models.qmc.sobol_normals" in text
     assert "trellis.models.qmc.brownian_bridge" in text
     assert "trellis.models.transforms.fft_price" in text
+    assert "trellis.models.transforms.price_heston_option_transform" in text
 
 
 def test_core_docs_use_package_level_entry_points():

@@ -805,6 +805,11 @@ def _apply_contextual_overrides(
     requested_measures: tuple[str, ...] | list[str] | None = None,
 ) -> PricingPlan:
     """Apply conservative context-derived overrides without changing the core ontology."""
+    plan = _apply_heston_transform_overrides(
+        plan,
+        description,
+        instrument_type=instrument_type,
+    )
     plan = _apply_local_vol_overrides(
         plan,
         description,
@@ -841,6 +846,69 @@ def _apply_contextual_overrides(
         ),
         candidate_methods=candidate_methods,
         requested_measures=requested_measures,
+    )
+
+
+def _apply_heston_transform_overrides(
+    plan: PricingPlan,
+    description: str | None,
+    *,
+    instrument_type: str | None = None,
+) -> PricingPlan:
+    """Narrow Heston transform plans onto explicit model-parameter inputs."""
+    if plan.method not in {"analytical", "fft_pricing"}:
+        return plan
+    if not _looks_like_heston_context(description, instrument_type=instrument_type):
+        return plan
+
+    method = "fft_pricing"
+    method_modules = list(
+        _DEFAULT_METHOD_MODULES.get(method, ())
+        if plan.method == "analytical"
+        else plan.method_modules
+    )
+    for module_path in (
+        "trellis.models.transforms.heston",
+        "trellis.models.transforms.fft_pricer",
+        "trellis.models.transforms.cos_method",
+        "trellis.models.processes.heston",
+    ):
+        if module_path not in method_modules:
+            method_modules.append(module_path)
+
+    required_market_data = normalize_market_data_requirements(
+        (set(plan.required_market_data) - {"black_vol_surface"})
+        | {"discount_curve", "model_parameters", "spot"}
+    )
+    reasoning = plan.reasoning
+    heston_reason = "heston_transform_context_requires_explicit_model_parameters"
+    if heston_reason not in reasoning:
+        reasoning = f"{reasoning}; {heston_reason}" if reasoning else heston_reason
+    selection_reason = _append_selection_reason(plan.selection_reason, "heston_transform_context_override")
+    transform_assumptions = (
+        _METHOD_ASSUMPTION_SUMMARIES.get(method, ())
+        if plan.method != method
+        else plan.assumption_summary
+    )
+    preserved_assumptions = tuple(
+        assumption
+        for assumption in plan.assumption_summary
+        if assumption not in _METHOD_ASSUMPTION_SUMMARIES.get("analytical", ())
+    )
+    assumption_summary = _merge_unique_strings(
+        transform_assumptions,
+        preserved_assumptions,
+        ("stochastic_vol_model_parameter_context",),
+    )
+    return replace(
+        plan,
+        method=method,
+        method_modules=method_modules,
+        required_market_data=required_market_data,
+        reasoning=reasoning,
+        selection_reason=selection_reason,
+        sensitivity_support=support_for_method(method),
+        assumption_summary=assumption_summary,
     )
 
 
@@ -941,6 +1009,20 @@ def _looks_like_fx_option(
     if any(token in lower for token in ("fx option", "fx vanilla", "forex option", "garman-kohlhagen", "gk analytical")):
         return True
     return re.search(r"\b[A-Z]{6}\b", description) is not None
+
+
+def _looks_like_heston_context(
+    description: str | None,
+    *,
+    instrument_type: str | None = None,
+) -> bool:
+    """Detect a bounded Heston stochastic-volatility option context."""
+    if str(instrument_type or "").strip().lower() == "heston_option":
+        return True
+    if not description:
+        return False
+    lower = description.lower()
+    return "heston" in lower or "stochastic vol" in lower or "stochastic_vol" in lower
 
 
 def _looks_like_local_vol_context(

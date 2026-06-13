@@ -86,5 +86,7 @@ def test_static_registry_fallback_covers_route_minimization_modules(monkeypatch)
     assert "price_credit_basket_tranche" in snapshot["trellis.models.credit_basket_copula"]
     assert "trellis.models.transforms.single_state_diffusion" in snapshot
     assert "resolve_single_state_diffusion_inputs" in snapshot["trellis.models.transforms.single_state_diffusion"]
+    assert "trellis.models.transforms.heston" in snapshot
+    assert "price_heston_option_transform" in snapshot["trellis.models.transforms.heston"]
 
     import_registry.reset_registry_cache()

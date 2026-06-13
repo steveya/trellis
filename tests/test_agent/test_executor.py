@@ -591,10 +591,12 @@ def test_make_test_payoff_reconciles_stale_schema_against_payoff_dataclass(monke
     exec(
         """
 from dataclasses import dataclass
+from datetime import date
 
 @dataclass(frozen=True)
 class CallableCapFloorCollarSpec:
     notional: float
+    comparison_targets: tuple[date, ...] | None
 
 class CallableCapFloorCollar:
     def __init__(self, spec: CallableCapFloorCollarSpec):
@@ -619,6 +621,7 @@ class CallableCapFloorCollar:
     )
 
     assert payoff.spec.notional == pytest.approx(100.0)
+    assert payoff.spec.comparison_targets is None
     assert not hasattr(payoff.spec, "discount_curve_name")
 
 
@@ -802,6 +805,235 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_transfor
     assert "price_vanilla_equity_option_transform(market_state, spec" in generated.code
     assert expected_fragment in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
+        ("heston_fft", 'method="fft"'),
+        ("heston_cos", 'method="cos"'),
+        ("laguerre_heston", 'method="gauss_laguerre"'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_heston_transform_helper_wrapper(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.transforms.heston.price_heston_option_transform",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European option Heston transforms",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "price_heston_option_transform(market_state, spec" in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_validate_build_uses_heston_model_payload_for_heston_transform(monkeypatch):
+    from trellis.agent.executor import _validate_build
+    from trellis.agent.planner import FieldDef, SpecSchema
+    from trellis.core.types import DayCountConvention
+    from trellis.models.transforms.heston import price_heston_option_transform
+
+    monkeypatch.setattr("trellis.agent.executor._record_platform_event", lambda *args, **kwargs: None)
+
+    @dataclass(frozen=True)
+    class HestonExactSpecForValidation:
+        notional: float
+        spot: float
+        strike: float
+        expiry_date: date
+        option_type: str = "call"
+        day_count: DayCountConvention = DayCountConvention.ACT_365
+
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "HestonExactSpecForValidation",
+        HestonExactSpecForValidation,
+        raising=False,
+    )
+
+    class HestonExactPayoffForValidation:
+        def __init__(self, spec: HestonExactSpecForValidation):
+            self._spec = spec
+
+        @property
+        def spec(self) -> HestonExactSpecForValidation:
+            return self._spec
+
+        @property
+        def requirements(self) -> set[str]:
+            return {"discount_curve", "model_parameters"}
+
+        def evaluate(self, market_state):
+            return price_heston_option_transform(market_state, self._spec, method="fft")
+
+    spec_schema = SpecSchema(
+        class_name="HestonExactPayoffForValidation",
+        spec_name="HestonExactSpecForValidation",
+        requirements=["discount_curve", "model_parameters"],
+        fields=[
+            FieldDef("notional", "float", "Notional"),
+            FieldDef("spot", "float", "Spot"),
+            FieldDef("strike", "float", "Strike"),
+            FieldDef("expiry_date", "date", "Expiry"),
+            FieldDef("option_type", "str", "Option type", '"call"'),
+            FieldDef("day_count", "DayCountConvention", "Day count", "DayCountConvention.ACT_365"),
+        ],
+    )
+    pricing_plan = SimpleNamespace(
+        method="fft_pricing",
+        required_market_data={"discount_curve", "model_parameters"},
+    )
+    product_ir = SimpleNamespace(
+        instrument="heston_option",
+        model_family="stochastic_volatility",
+    )
+    compiled_request = SimpleNamespace(
+        request=SimpleNamespace(metadata={}),
+        validation_contract=None,
+        semantic_blueprint=None,
+        generation_plan=None,
+        execution_plan=SimpleNamespace(route_method="fft_pricing"),
+    )
+
+    failures = _validate_build(
+        HestonExactPayoffForValidation,
+        code="",
+        description="Heston option transform route",
+        spec_schema=spec_schema,
+        validation="smoke",
+        compiled_request=compiled_request,
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+    )
+
+    assert not failures
+
+
+def test_make_test_payoff_defaults_heston_strike_to_market_spot(monkeypatch):
+    from trellis.agent.executor import _make_test_payoff
+    from trellis.agent.planner import FieldDef, SpecSchema
+    from trellis.core.types import DayCountConvention
+
+    @dataclass(frozen=True)
+    class HestonStrikeOnlySpec:
+        """Heston European option spec with strike but no scalar spot field."""
+
+        strike: float
+        expiry_date: date
+        option_type: str = "call"
+        day_count: DayCountConvention = DayCountConvention.ACT_365
+
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "HestonStrikeOnlySpec",
+        HestonStrikeOnlySpec,
+        raising=False,
+    )
+
+    class HestonStrikeOnlyPayoff:
+        def __init__(self, spec: HestonStrikeOnlySpec):
+            self._spec = spec
+
+        @property
+        def spec(self) -> HestonStrikeOnlySpec:
+            return self._spec
+
+    spec_schema = SpecSchema(
+        class_name="HestonStrikeOnlyPayoff",
+        spec_name="HestonStrikeOnlySpec",
+        requirements=["discount_curve", "model_parameters", "spot"],
+        fields=[
+            FieldDef("strike", "float", "Strike"),
+            FieldDef("expiry_date", "date", "Expiry"),
+            FieldDef("option_type", "str", "Option type", '"call"'),
+            FieldDef("day_count", "DayCountConvention", "Day count", "DayCountConvention.ACT_365"),
+        ],
+    )
+
+    payoff = _make_test_payoff(
+        HestonStrikeOnlyPayoff,
+        spec_schema,
+        date(2024, 11, 15),
+        market_state=SimpleNamespace(spot=5890.0),
+    )
+
+    assert payoff.spec.strike == pytest.approx(5890.0)
+
+
+def test_make_test_payoff_uses_unit_notional_for_heston_transform_specs(monkeypatch):
+    from trellis.agent.executor import _make_test_payoff
+    from trellis.agent.planner import FieldDef, SpecSchema
+
+    @dataclass(frozen=True)
+    class HestonNotionalSpec:
+        """Heston European option spec with an explicit optional notional."""
+
+        strike: float
+        expiry_date: date
+        notional: float = 1.0
+        is_call: bool = True
+
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "HestonNotionalSpec",
+        HestonNotionalSpec,
+        raising=False,
+    )
+
+    class HestonNotionalPayoff:
+        def __init__(self, spec: HestonNotionalSpec):
+            self._spec = spec
+
+        @property
+        def spec(self) -> HestonNotionalSpec:
+            return self._spec
+
+    spec_schema = SpecSchema(
+        class_name="HestonNotionalPayoff",
+        spec_name="HestonNotionalSpec",
+        requirements=["discount_curve", "model_parameters", "spot"],
+        fields=[
+            FieldDef("strike", "float", "Strike"),
+            FieldDef("expiry_date", "date", "Expiry"),
+            FieldDef("notional", "float", "Notional", "1.0"),
+            FieldDef("is_call", "bool", "Is call", "True"),
+        ],
+    )
+
+    payoff = _make_test_payoff(
+        HestonNotionalPayoff,
+        spec_schema,
+        date(2024, 11, 15),
+        market_state=SimpleNamespace(spot=5890.0),
+    )
+
+    assert payoff.spec.strike == pytest.approx(5890.0)
+    assert payoff.spec.notional == pytest.approx(1.0)
 
 
 def test_deterministic_exact_binding_module_materializes_black_scholes_comparator():

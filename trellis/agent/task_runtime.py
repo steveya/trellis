@@ -18,6 +18,7 @@ from importlib import import_module
 from pathlib import Path
 from statistics import mean, median
 from time import perf_counter, time
+from types import SimpleNamespace
 from typing import Any, Callable, Mapping, get_args, get_origin
 
 _log = logging.getLogger(__name__)
@@ -1221,7 +1222,19 @@ def run_task(
                     target_payload = computational_problem_report.target_payload(target.target_id)
                     if target_payload is not None:
                         build_kwargs["request_metadata"]["computational_problem_target"] = target_payload
-                result = build_fn(**build_kwargs)
+                        repair_packet = target_payload.get("repair_packet")
+                    else:
+                        repair_packet = None
+                else:
+                    repair_packet = None
+                if repair_packet:
+                    result = _blocked_result_for_repair_packet(
+                        target.target_id,
+                        repair_packet,
+                        preferred_method=target.preferred_method,
+                    )
+                else:
+                    result = build_fn(**build_kwargs)
                 live_results[target.target_id] = result
                 method_results[target.target_id] = _build_result_payload(
                     result,
@@ -1639,6 +1652,63 @@ def _preferred_method_for_target(target_id: str, construct_methods: list[str]) -
     if len(construct_methods) == 1:
         return construct_methods[0]
     return "analytical"
+
+
+def _blocked_result_for_repair_packet(
+    target_id: str,
+    repair_packet: Mapping[str, Any],
+    *,
+    preferred_method: str | None = None,
+):
+    """Return a BuildResult-like blocked result for unsupported target primitives."""
+    summary = str(repair_packet.get("summary") or "Unsupported comparison target").strip()
+    packet_type = str(repair_packet.get("packet_type") or "repair_packet").strip()
+    failure = f"{packet_type}: {summary}" if packet_type else summary
+    return SimpleNamespace(
+        payoff_cls=None,
+        success=False,
+        attempts=0,
+        failures=[failure],
+        code="",
+        gap_confidence=1.0,
+        knowledge_gaps=[packet_type] if packet_type else [],
+        reflection={
+            "skipped": True,
+            "reason": "repair_packet",
+        },
+        agent_observations=[
+            {
+                "agent": "task_runtime",
+                "kind": "repair_packet_block",
+                "severity": "error",
+                "message": failure,
+                "details": {
+                    "target_id": target_id,
+                    "preferred_method": preferred_method,
+                    "repair_packet": dict(repair_packet),
+                },
+            }
+        ],
+        knowledge_summary={},
+        token_usage_summary={},
+        platform_trace_path=None,
+        platform_request_id=None,
+        analytical_trace_path=None,
+        analytical_trace_text_path=None,
+        audit_record_path=None,
+        generated_artifact=None,
+        blocker_details={
+            "target_id": target_id,
+            "preferred_method": preferred_method,
+            "repair_packet": dict(repair_packet),
+        },
+        post_build_tracking={
+            "active_flags": [],
+            "events": [],
+            "latest_phase": "repair_packet_block",
+            "latest_status": "blocked",
+        },
+    )
 
 
 def _description_for_comparison_target(

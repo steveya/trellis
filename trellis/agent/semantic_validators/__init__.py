@@ -38,6 +38,7 @@ _VALIDATOR_MODES: dict[str, str] = {
 
 _ALWAYS_BLOCKING_CATEGORIES = {
     "fx_rate_scalar_extraction_missing",
+    "heston_black_vol_surface_mismatch",
     "route_helper_not_called",
     "route_helper_signature_mismatch",
 }

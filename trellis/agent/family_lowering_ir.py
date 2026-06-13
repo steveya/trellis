@@ -782,12 +782,14 @@ _TRANSFORM_TERMINAL_PAYOFF_KIND_BY_FAMILY = {
 
 _TRANSFORM_HELPER_BINDINGS = {
     ("vanilla_option", "equity_diffusion"): "price_vanilla_equity_option_transform",
+    ("vanilla_option", "stochastic_volatility"): "price_heston_option_transform",
     ("basket_option", "equity_diffusion"): "price_basket_option_transform_proxy",
 }
 
 
 _TRANSFORM_MARKET_MAPPINGS = {
     ("vanilla_option", "equity_diffusion"): "single_state_diffusion_transform_inputs",
+    ("vanilla_option", "stochastic_volatility"): "heston_model_parameter_transform_inputs",
     ("", "stochastic_volatility"): "stochastic_vol_transform_inputs",
 }
 
@@ -1025,6 +1027,7 @@ def _binding_supports_transform_pricing(
         binding_spec,
         "route_helper",
         "price_vanilla_equity_option_transform",
+        "price_heston_option_transform",
         "price_basket_option_transform_proxy",
     ):
         return True
@@ -1605,7 +1608,7 @@ def _transform_characteristic_spec_for_product(
             model_family="stochastic_volatility",
             characteristic_family="heston_log_spot",
             supported_methods=("fft", "cos"),
-            backend_capability="raw_kernel_only",
+            backend_capability="helper_backed",
         )
     return TransformCharacteristicSpec()
 

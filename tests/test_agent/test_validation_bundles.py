@@ -384,6 +384,59 @@ def test_execute_validation_bundle_runs_quanto_family_checks(monkeypatch):
     assert calls == list(execution.executed_checks)
 
 
+def test_execute_validation_bundle_skips_generic_vol_checks_for_heston_model_route(monkeypatch):
+    from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_non_negativity",
+        lambda payoff, market_state: calls.append("check_non_negativity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_price_sanity",
+        lambda payoff, market_state: calls.append("check_price_sanity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_vol_sensitivity",
+        lambda payoff_factory, market_state_factory: calls.append("check_vol_sensitivity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_vol_monotonicity",
+        lambda payoff_factory, market_state_factory, expected_direction=None: calls.append("check_vol_monotonicity") or [],
+    )
+
+    bundle = ValidationBundle(
+        bundle_id="fft_pricing:heston_option",
+        instrument_type="heston_option",
+        method="fft_pricing",
+        checks=(
+            "check_non_negativity",
+            "check_price_sanity",
+            "check_vol_sensitivity",
+            "check_vol_monotonicity",
+        ),
+        categories={
+            "universal": ("check_non_negativity", "check_price_sanity"),
+            "no_arbitrage": ("check_vol_sensitivity", "check_vol_monotonicity"),
+        },
+    )
+
+    execution = execute_validation_bundle(
+        bundle,
+        validation_level="standard",
+        test_payoff=object(),
+        market_state=object(),
+        payoff_factory=lambda: object(),
+        market_state_factory=lambda **kwargs: object(),
+    )
+
+    assert execution.failures == ()
+    assert execution.executed_checks == ("check_non_negativity", "check_price_sanity")
+    assert execution.skipped_checks == ("check_vol_sensitivity", "check_vol_monotonicity")
+    assert calls == ["check_non_negativity", "check_price_sanity"]
+
+
 def test_execute_validation_bundle_returns_structured_failure_details(monkeypatch):
     from trellis.agent.invariants import InvariantFailure
     from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle

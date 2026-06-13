@@ -374,6 +374,17 @@ def _repair_packet(bucket: str, *, target_id: str, text: str) -> RepairPacket | 
             ),
             evidence=evidence,
         )
+    if bucket == STOCHASTIC_VOL_TRANSFORM and "laguerre" in text:
+        return RepairPacket(
+            packet_type="missing_heston_gauss_laguerre_transform_kernel",
+            missing_primitive="heston_gauss_laguerre_transform_kernel",
+            unsupported_class="heston_gauss_laguerre_transform",
+            summary=(
+                "Heston Gauss-Laguerre transform targets need a checked "
+                "quadrature kernel before route binding can admit the target."
+            ),
+            evidence=evidence,
+        )
     return None
 
 

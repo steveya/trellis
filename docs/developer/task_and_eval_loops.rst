@@ -495,10 +495,13 @@ exercise code for the comparison target.
 
 Transform proving now also distinguishes model families explicitly. The thin
 vanilla transform helper surface is only used for ``equity_diffusion`` claims;
-stochastic-volatility tasks such as the Heston smile canary stay on the raw
-FFT/COS kernel path under the same route family. That keeps helper reuse
-honest without widening a GBM-oriented helper into unsupported Heston
-authority.
+stochastic-volatility tasks such as the Heston smile canary stay on a checked
+Heston transform helper under the same route family. That helper resolves
+underlier spot plus ``market_state.model_parameters`` into the existing
+FFT/COS kernels and keeps Black volatility surfaces out of live Heston pricing
+unless a calibration bridge explicitly owns the conversion. Unsupported
+transform methods such as Heston Gauss-Laguerre produce a repair packet instead
+of falling back to a vanilla Black-vol adapter.
 
 That route family now also has its own lowered contract boundary. Transform
 tasks compile onto ``TransformPricingIR`` before admissibility, so the canaries

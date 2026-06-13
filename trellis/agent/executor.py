@@ -1983,7 +1983,24 @@ def _validate_build(
 
             payload["credit_curve"] = CreditCurve.flat(0.02)
         if "model_parameters" in effective_requirements:
-            payload["model_parameters"] = {"quanto_correlation": corr}
+            product_model_family = str(getattr(product_ir, "model_family", "") or "").lower()
+            if "heston" in itype or product_model_family == "stochastic_volatility":
+                from trellis.models.processes.heston import build_heston_parameter_payload
+
+                heston_payload = build_heston_parameter_payload(
+                    kappa=2.0,
+                    theta=0.04,
+                    xi=vol,
+                    rho=-0.7,
+                    v0=0.04,
+                    mu=rate,
+                    parameter_set_name="heston_validation",
+                    source_kind="validation_fixture",
+                )
+                payload["model_parameters"] = heston_payload
+                payload["model_parameter_sets"] = {"heston_validation": heston_payload}
+            else:
+                payload["model_parameters"] = {"quanto_correlation": corr}
         return MarketState(**payload)
 
     # Build the initial market state from the plan's required_market_data.
@@ -2577,13 +2594,22 @@ def _make_test_payoff(
         raise RuntimeError(f"Cannot find {spec_schema.spec_name} in loaded modules")
 
     if is_dataclass(spec_cls):
-        actual_field_names = {field.name for field in fields(spec_cls)}
+        actual_fields = tuple(fields(spec_cls))
+        actual_field_names = {field.name for field in actual_fields}
         schema_field_names = {
             str(getattr(field, "name", "") or "")
             for field in getattr(spec_schema, "fields", ())
             if str(getattr(field, "name", "") or "")
         }
-        if schema_field_names and not schema_field_names.issubset(actual_field_names):
+        required_actual_field_names = {
+            field.name
+            for field in actual_fields
+            if field.default is MISSING and field.default_factory is MISSING
+        }
+        if schema_field_names and (
+            not schema_field_names.issubset(actual_field_names)
+            or not required_actual_field_names.issubset(schema_field_names)
+        ):
             spec_schema = SimpleNamespace(
                 spec_name=spec_cls.__name__,
                 fields=[
@@ -2596,7 +2622,7 @@ def _make_test_payoff(
                             else repr(field.default if field.default is not MISSING else None)
                         ),
                     )
-                    for field in fields(spec_cls)
+                    for field in actual_fields
                 ],
             )
 
@@ -2680,6 +2706,10 @@ def _make_test_payoff(
     basket_context = " ".join(
         part.strip()
         for part in (
+            getattr(payoff_cls, "__name__", "") or "",
+            getattr(spec_schema, "class_name", "") or "",
+            getattr(spec_schema, "spec_name", "") or "",
+            getattr(spec_cls, "__doc__", "") or "",
             getattr(payoff_cls, "__doc__", "") or "",
             getattr(module, "__doc__", "") or "",
         )
@@ -2689,6 +2719,17 @@ def _make_test_payoff(
         field.name in {"spot", "s0", "underlier_spot"} for field in spec_schema.fields
     )
     has_strike_field = any(field.name == "strike" for field in spec_schema.fields)
+    spot_option_context = any(
+        token in basket_context
+        for token in (
+            "heston",
+            "equity option",
+            "european option",
+            "vanilla option",
+            "underlier spot",
+        )
+    )
+    heston_option_context = "heston" in basket_context
     if spec_schema.spec_name == "FXVanillaOptionSpec":
         name_defaults["notional"] = 10.0
         name_defaults["strike"] = 1.08
@@ -2719,12 +2760,20 @@ def _make_test_payoff(
         name_defaults.pop("vols", None)
         name_defaults["dividend_yields"] = "0.0,0.0"
         name_defaults["correlation"] = "1.0,0.35;0.35,1.0"
-    elif has_spot_field and has_strike_field:
+    elif has_strike_field and (has_spot_field or spot_option_context):
         # Spot-based option specs should be instantiated near-the-money so the
         # smoke tests exercise a representative valuation instead of a deeply
         # in-the-money payoff created by the generic rate-like strike default.
-        name_defaults["notional"] = 10.0
-        name_defaults["strike"] = name_defaults["spot"]
+        spot_default = name_defaults["spot"]
+        market_spot = getattr(market_state, "spot", None)
+        if market_spot is not None:
+            try:
+                spot_default = float(market_spot)
+            except (TypeError, ValueError):
+                spot_default = name_defaults["spot"]
+        name_defaults["notional"] = 1.0 if heston_option_context else 10.0
+        name_defaults["spot"] = spot_default
+        name_defaults["strike"] = spot_default
 
     description = getattr(payoff_cls, "__doc__", "") or getattr(module, "__doc__", "") or ""
     description_defaults = _description_spec_defaults(
@@ -3359,6 +3408,33 @@ def _vanilla_equity_transform_helper_kwargs(comparison_target: str | None) -> st
     return ""
 
 
+def _heston_transform_helper_kwargs(comparison_target: str | None) -> str:
+    """Return deterministic helper kwargs for Heston transform comparison targets."""
+    target = str(comparison_target or "").strip().lower().replace("-", "_")
+    if target in {
+        "fft",
+        "heston_fft",
+        "fft_heston",
+        "carr_madan",
+        "heston_analytical",
+        "analytical_heston",
+        "semi_analytical_heston",
+    }:
+        return ', method="fft"'
+    if target in {"cos", "heston_cos", "cos_heston", "fang_oosterlee"}:
+        return ', method="cos"'
+    if target in {
+        "laguerre",
+        "gauss_laguerre",
+        "laguerre_heston",
+        "heston_laguerre",
+        "gauss_laguerre_heston",
+        "heston_gauss_laguerre",
+    }:
+        return ', method="gauss_laguerre"'
+    return ""
+
+
 def _zcb_option_tree_helper_kwargs(comparison_target: str | None) -> str:
     """Return deterministic helper kwargs for ZCB-option tree comparison targets."""
     target = str(comparison_target or "").strip().lower()
@@ -3396,6 +3472,7 @@ def _deterministic_exact_binding_evaluate_body(
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
     vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
+    heston_transform_kwargs = _heston_transform_helper_kwargs(comparison_target)
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
     basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
@@ -3673,6 +3750,10 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.equity_option_transforms.price_vanilla_equity_option_transform": (
             "return price_vanilla_equity_option_transform("
             f"market_state, spec{vanilla_equity_transform_kwargs})"
+        ),
+        "trellis.models.transforms.heston.price_heston_option_transform": (
+            "return price_heston_option_transform("
+            f"market_state, spec{heston_transform_kwargs})"
         ),
         "trellis.models.zcb_option_tree.price_zcb_option_tree": (
             "return price_zcb_option_tree("
@@ -4665,6 +4746,7 @@ def _reference_modules(
             modules.append(("trellis.models.transforms.fft_pricer", "FFT transform pricer"))
             modules.append(("trellis.models.transforms.cos_method", "COS transform pricer"))
             modules.append(("trellis.models.transforms.single_state_diffusion", "Transform diffusion contracts"))
+            modules.append(("trellis.models.transforms.heston", "Heston transform helper"))
             if normalized_instrument == "european_option":
                 modules.append(("trellis.models.equity_option_transforms", "Vanilla equity transform helper"))
             modules.append(("trellis.models.processes.heston", "Heston process reference"))

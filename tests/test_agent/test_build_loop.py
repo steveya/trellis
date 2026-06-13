@@ -348,6 +348,7 @@ def test_reference_modules_use_concrete_transform_surfaces_for_fft_pricing():
     assert ("trellis.models.transforms", "Transform package exports") not in modules
     assert ("trellis.models.transforms.fft_pricer", "FFT transform pricer") in modules
     assert ("trellis.models.transforms.cos_method", "COS transform pricer") in modules
+    assert ("trellis.models.transforms.heston", "Heston transform helper") in modules
     assert ("trellis.models.equity_option_transforms", "Vanilla equity transform helper") in modules
 
 

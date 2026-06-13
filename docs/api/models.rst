@@ -59,6 +59,8 @@ Transforms
 
 .. autofunction:: trellis.models.transforms.fft_price
 .. autofunction:: trellis.models.transforms.cos_price
+.. autofunction:: trellis.models.transforms.price_heston_option_transform
+.. autofunction:: trellis.models.transforms.price_heston_option_transform_result
 
 Stochastic Processes
 --------------------

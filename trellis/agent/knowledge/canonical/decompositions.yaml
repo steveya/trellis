@@ -345,11 +345,19 @@
   features: [stochastic_vol, discounting]
   method: fft_pricing
   method_modules:
+    - trellis.models.transforms.heston
     - trellis.models.transforms.cos_method
     - trellis.models.transforms.fft_pricer
     - trellis.models.processes.heston
-  required_market_data: [discount_curve, black_vol_surface]
+  required_market_data: [discount_curve, spot, model_parameters]
   modeling_requirements:
+    - >-
+      ROUTE HELPER: Use trellis.models.transforms.heston.price_heston_option_transform
+      for checked FFT/COS Heston vanilla pricing.
+    - >-
+      MARKET INPUTS: Read the underlier spot from the spec or market_state.spot
+      and Heston kappa, theta, xi, rho, and v0 from market_state.model_parameters;
+      do not read market_state.vol_surface as the live model input.
     - >-
       CHARACTERISTIC FUNCTION: Heston CF uses log(S_T/S0) for COS, log(S_T) for FFT.
       Do not mix conventions.

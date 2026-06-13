@@ -433,6 +433,38 @@ def test_vanilla_option_transform_compiles_to_bounded_transform_family_ir():
     assert unsupported_family_ir is None
 
 
+def test_heston_transform_lowering_uses_model_parameter_helper_contract():
+    from dataclasses import replace
+
+    from trellis.agent.family_lowering_ir import TransformPricingIR
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    contract = make_vanilla_option_contract(
+        description="European Heston call on SPX priced by FFT",
+        underliers=("SPX",),
+        observation_schedule=("2026-06-20",),
+        preferred_method="fft_pricing",
+    )
+    heston_contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            model_family="stochastic_volatility",
+        ),
+    )
+    blueprint = compile_semantic_contract(heston_contract, preferred_method="fft_pricing")
+
+    family_ir = blueprint.dsl_lowering.family_ir
+    assert isinstance(family_ir, TransformPricingIR)
+    assert family_ir.characteristic_spec.model_family == "stochastic_volatility"
+    assert family_ir.characteristic_spec.characteristic_family == "heston_log_spot"
+    assert family_ir.characteristic_spec.backend_capability == "helper_backed"
+    assert family_ir.quote_semantics == "stochastic_vol_model_parameters"
+    assert family_ir.helper_symbol == "price_heston_option_transform"
+    assert family_ir.market_mapping == "heston_model_parameter_transform_inputs"
+
+
 def test_transform_lane_accepts_exact_basket_transform_helper():
     from trellis.agent.family_lowering_ir import (
         _binding_supports_transform_pricing,

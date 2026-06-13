@@ -222,6 +222,32 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
     )
 
 
+def test_resolve_backend_binding_spec_uses_heston_transform_helper():
+    catalog = load_backend_binding_catalog()
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+
+    assert transform is not None
+
+    resolved = resolve_backend_binding_spec(
+        transform,
+        product_ir=ProductIR(
+            instrument="heston_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="stochastic_volatility",
+        ),
+    )
+
+    assert resolved.helper_refs == (
+        "trellis.models.transforms.heston.price_heston_option_transform",
+    )
+    assert (
+        resolved.binding_id
+        == "trellis.models.transforms.heston.price_heston_option_transform"
+    )
+
+
 @pytest.mark.parametrize(
     "product_ir,expected_route_family,expected_helper_refs,expected_kernel_refs",
     [

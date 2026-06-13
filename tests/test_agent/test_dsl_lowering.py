@@ -423,6 +423,36 @@ def test_vanilla_option_transform_lowers_to_checked_in_transform_helper():
     )
 
 
+def test_heston_option_transform_lowers_to_checked_in_heston_helper():
+    from dataclasses import replace
+
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    contract = make_vanilla_option_contract(
+        description="European Heston call on SPX, K=100, T=1y",
+        underliers=("SPX",),
+        observation_schedule=("2026-06-20",),
+        preferred_method="fft_pricing",
+    )
+    heston_contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            model_family="stochastic_volatility",
+        ),
+    )
+    blueprint = compile_semantic_contract(heston_contract, preferred_method="fft_pricing")
+
+    lowering = blueprint.dsl_lowering
+    assert lowering is not None
+    assert lowering.route_id == "transform_fft"
+    assert lowering.binding_id == "trellis.models.transforms.heston.price_heston_option_transform"
+    assert lowering.family_ir.characteristic_spec.characteristic_family == "heston_log_spot"
+    assert lowering.family_ir.characteristic_spec.backend_capability == "helper_backed"
+    assert lowering.family_ir.market_mapping == "heston_model_parameter_transform_inputs"
+
+
 def test_vanilla_put_analytical_lowers_to_put_kernel():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_vanilla_option_contract

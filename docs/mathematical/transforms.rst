@@ -34,11 +34,29 @@ Characteristic Functions
 **Heston**: closed-form via :math:`C, D` functions (see :doc:`processes`).
 Pass ``log_spot=np.log(S0)`` when using with FFT/COS.
 
+Heston Route Binding
+--------------------
+
+``trellis.models.transforms.heston`` provides the checked helper surface used
+by task routes for Heston FFT and COS pricing. It resolves the runtime
+``Heston`` process from ``market_state.model_parameters``, the underlier spot
+from the spec or ``market_state.spot``, and the discount curve, then binds the
+characteristic function to the existing FFT/COS kernels.
+The helper does not read ``market_state.vol_surface``; Black volatility
+surfaces are calibration targets or comparison evidence, not live substitutes
+for Heston model parameters.
+
+Gauss-Laguerre Heston transform targets remain fail-closed until a checked
+quadrature kernel is added. The helper raises a typed repair packet instead of
+falling back to a vanilla Black-vol adapter.
+
 Implementation
 --------------
 
 .. autofunction:: trellis.models.transforms.fft_pricer.fft_price
 .. autofunction:: trellis.models.transforms.cos_method.cos_price
+.. autofunction:: trellis.models.transforms.heston.price_heston_option_transform
+.. autofunction:: trellis.models.transforms.heston.price_heston_option_transform_result
 
 References
 ----------
