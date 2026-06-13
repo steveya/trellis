@@ -595,6 +595,14 @@ bindings:
     route_family: fft_pricing
     conditional_primitives:
       - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [stochastic_volatility]
+        primitives:
+          - module: trellis.models.transforms.heston
+            symbol: price_heston_option_transform
+            role: route_helper
+      - when:
           payoff_family: credit_loss_distribution
           model_family: [credit_copula]
         primitives:

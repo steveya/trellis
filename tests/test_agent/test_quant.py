@@ -115,6 +115,7 @@ class TestMethodFromDescription:
     def test_static_plans_loaded_from_canonical_decompositions(self):
         assert "heston_option" in STATIC_PLANS
         assert STATIC_PLANS["heston_option"].method == "fft_pricing"
+        assert "spot" in STATIC_PLANS["heston_option"].required_market_data
 
 
 class TestDataAvailability:
@@ -319,6 +320,30 @@ class TestPricingPlan:
         assert plan.method == "fft_pricing"
         assert plan.sensitivity_support is not None
         assert plan.sensitivity_support.level == "bump_only"
+        assert "discount_curve" in plan.required_market_data
+        assert "model_parameters" in plan.required_market_data
+        assert "spot" in plan.required_market_data
+        assert "black_vol_surface" not in plan.required_market_data
+
+    def test_product_ir_analytical_preference_uses_heston_transform_route(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Build a pricer for: Heston European semi-analytical characteristic-function option",
+            instrument_type="heston_option",
+        )
+        plan = select_pricing_method_for_product_ir(
+            ir,
+            preferred_method="analytical",
+        )
+
+        assert plan.method == "fft_pricing"
+        assert "trellis.models.transforms.heston" in plan.method_modules
+        assert "discount_curve" in plan.required_market_data
+        assert "model_parameters" in plan.required_market_data
+        assert "spot" in plan.required_market_data
+        assert "black_vol_surface" not in plan.required_market_data
+        assert "characteristic_function_route_available" in plan.assumption_summary
 
     def test_explicit_preferred_method_still_wins_over_sensitivity_bias(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir

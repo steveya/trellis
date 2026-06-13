@@ -1815,7 +1815,7 @@ class TestFallbackRoutes:
         assert resolve_route_notes(spec, ir) == ()
         assert resolve_route_adapters(spec, ir) == ()
 
-    def test_stochastic_vol_transform_primitives_fall_back_to_raw_kernels(self, registry):
+    def test_stochastic_vol_transform_primitives_use_heston_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "transform_fft"][0]
         ir = ProductIR(
             instrument="european_option",
@@ -1825,8 +1825,11 @@ class TestFallbackRoutes:
         )
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
-            ("trellis.models.transforms.fft_pricer", "fft_price", "transform_pricer"),
-            ("trellis.models.transforms.cos_method", "cos_price", "transform_pricer"),
+            (
+                "trellis.models.transforms.heston",
+                "price_heston_option_transform",
+                "route_helper",
+            ),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -2231,6 +2234,13 @@ class TestMarketDataAccess:
         required = spec.market_data_access.required
         assert "discount_curve" in required
         assert "local_vol_surface" in required
+        assert "spot" in required
+
+    def test_transform_fft_access(self, registry):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        required = spec.market_data_access.required
+        assert "discount_curve" in required
+        assert "black_vol_surface" in required
         assert "spot" in required
 
 

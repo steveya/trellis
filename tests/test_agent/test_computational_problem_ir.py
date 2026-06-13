@@ -130,6 +130,14 @@ def test_repair_packets_name_missing_primitives_not_generated_text():
     ]
     assert slv_packet["missing_primitive"] == "leverage_function_contract"
 
+    laguerre_packet = _target_payload(
+        classify_stochastic_vol_task(tasks["T114"]),
+        "laguerre_heston",
+    )["repair_packet"]
+    assert laguerre_packet["missing_primitive"] == (
+        "heston_gauss_laguerre_transform_kernel"
+    )
+
     e27_packet = _target_payload(
         classify_stochastic_vol_task(tasks["E27"]),
         "american_pathdep_mc",

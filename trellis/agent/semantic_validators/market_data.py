@@ -43,6 +43,7 @@ class MarketDataValidator:
         # 2. Check for hard-coded market data (always)
         findings.extend(self._check_hardcoded_market_data(source))
         findings.extend(self._check_fx_rate_scalar_extraction(source))
+        findings.extend(self._check_heston_black_vol_surface_mismatch(source, plan, route_spec))
 
         return tuple(findings)
 
@@ -116,6 +117,40 @@ class MarketDataValidator:
             evidence=evidence,
         )]
 
+    def _check_heston_black_vol_surface_mismatch(
+        self,
+        source: str,
+        plan: GenerationPlan,
+        route_spec: RouteSpec | None,
+    ) -> list[SemanticFinding]:
+        """Reject Heston stochastic-volatility code that binds Black vol surfaces."""
+        if not _is_heston_model_parameter_context(plan, route_spec):
+            return []
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return []
+
+        detector = _MarketStateVolSurfaceDetector(source)
+        detector.visit(tree)
+        if detector.first_node is None:
+            return []
+
+        evidence = detector.first_evidence or "market_state.vol_surface"
+        return [SemanticFinding(
+            validator="market_data",
+            severity="error",
+            category="heston_black_vol_surface_mismatch",
+            message=(
+                "Heston stochastic-volatility routes must bind explicit "
+                "model_parameters and must not price from market_state.vol_surface "
+                "or a Black-vol adapter. Use the Heston model-parameter route, "
+                "or fail closed if that route is unavailable."
+            ),
+            line=getattr(detector.first_node, "lineno", None),
+            evidence=evidence,
+        )]
+
 
 class _FXRateArithmeticDetector(ast.NodeVisitor):
     """Detect arithmetic performed on raw FXRate wrappers."""
@@ -159,3 +194,67 @@ def _is_raw_fx_quote(node: ast.AST) -> bool:
         and isinstance(value.value, ast.Name)
         and value.value.id == "market_state"
     )
+
+
+class _MarketStateVolSurfaceDetector(ast.NodeVisitor):
+    """Detect executable access to market_state.vol_surface."""
+
+    def __init__(self, source: str) -> None:
+        self.source = source
+        self.first_node: ast.AST | None = None
+        self.first_evidence: str | None = None
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        if self.first_node is None and _is_market_state_vol_surface(node):
+            self.first_node = node
+            self.first_evidence = ast.get_source_segment(self.source, node)
+        self.generic_visit(node)
+
+
+def _is_market_state_vol_surface(node: ast.AST) -> bool:
+    """Whether ``node`` is direct access to ``market_state.vol_surface``."""
+    return (
+        isinstance(node, ast.Attribute)
+        and node.attr == "vol_surface"
+        and isinstance(node.value, ast.Name)
+        and node.value.id == "market_state"
+    )
+
+
+def _is_heston_model_parameter_context(
+    plan: GenerationPlan,
+    route_spec: RouteSpec | None,
+) -> bool:
+    """Return whether generated code is for a Heston explicit-parameter route."""
+    plan_tokens = {
+        str(getattr(plan, attr, "") or "").strip().lower()
+        for attr in (
+            "instrument_type",
+            "semantic_requested_instrument_type",
+            "semantic_instrument_class",
+            "semantic_compatibility_bridge_status",
+            "backend_binding_id",
+            "validation_bundle_id",
+        )
+    }
+    primitive_plan = getattr(plan, "primitive_plan", None)
+    if primitive_plan is not None:
+        plan_tokens.update(
+            str(getattr(primitive_plan, attr, "") or "").strip().lower()
+            for attr in ("route", "route_family", "engine_family")
+        )
+        for primitive in getattr(primitive_plan, "primitives", ()) or ():
+            plan_tokens.add(str(getattr(primitive, "module", "") or "").strip().lower())
+            plan_tokens.add(str(getattr(primitive, "symbol", "") or "").strip().lower())
+    if route_spec is not None:
+        plan_tokens.update(
+            str(getattr(route_spec, attr, "") or "").strip().lower()
+            for attr in ("id", "route_family", "engine_family")
+        )
+        for primitive in getattr(route_spec, "primitives", ()) or ():
+            plan_tokens.add(str(getattr(primitive, "module", "") or "").strip().lower())
+            plan_tokens.add(str(getattr(primitive, "symbol", "") or "").strip().lower())
+
+    heston_context = any("heston" in token or "stochastic_vol" in token for token in plan_tokens)
+    calibration_context = any("calibration" in token or "calibrate" in token for token in plan_tokens)
+    return heston_context and not calibration_context

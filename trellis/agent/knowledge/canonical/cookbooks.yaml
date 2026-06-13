@@ -547,19 +547,17 @@ fft_pricing:
   - european_option
   version: canonical
   template: "## Cookbook: FFT/COS Transform Pricing\nUse this pattern for models with\
-    \ a stable characteristic function.\n\n```python\ndef evaluate(self, market_state):\n\
-    \    from trellis.core.date_utils import year_fraction\n    from trellis.models.transforms\
-    \ import cos_price\n    from trellis.models.processes.heston import Heston\n\n\
-    \    spec = self._spec\n    T = year_fraction(market_state.settlement, spec.expiry_date,\
-    \ spec.day_count)\n    r = float(market_state.discount.zero_rate(T))\n\n    #\
-    \ >>> INSTRUMENT-SPECIFIC: set model parameters honestly and explicitly <<<\n\
-    \    process = Heston(\n        mu=r,\n        kappa=spec.kappa,\n        theta=spec.theta,\n\
-    \        xi=spec.xi,\n        rho=spec.rho,\n        v0=spec.v0,\n    )\n\n  \
-    \  # COS expects the characteristic function of log(S_T / S0).\n    def char_fn(u):\n\
-    \        return process.characteristic_function(u, T)\n\n    price = cos_price(\n\
-    \        char_fn=char_fn,\n        S0=spec.spot,\n        K=spec.strike,\n   \
-    \     T=T,\n        r=r,\n        option_type=\"call\",  # >>> INSTRUMENT-SPECIFIC:\
-    \ choose call or put <<<\n    )\n    return price * spec.notional\n```\n"
+    \ a stable characteristic function.\n\nFor European Heston vanilla options, keep\
+    \ the adapter thin and delegate to the checked helper. The helper reads underlier\
+    \ spot from the spec or `market_state.spot`, reads explicit Heston model parameters\
+    \ from `market_state.model_parameters`, and does not use a Black vol surface as\
+    \ live pricing input.\n\n```python\ndef evaluate(self,\
+    \ market_state):\n    from trellis.models.transforms.heston import price_heston_option_transform\n\
+    \n    spec = self._spec\n    # >>> INSTRUMENT-SPECIFIC: choose \"fft\" or \"cos\"\
+    \ for the target <<<\n    return price_heston_option_transform(market_state,\
+    \ spec, method=\"fft\")\n```\n\nFor non-Heston transform routes, bind an array-safe\
+    \ characteristic function to the raw FFT/COS kernels. COS expects the characteristic\
+    \ function of `log(S_T / S0)` while Carr-Madan FFT expects `log(S_T)`.\n"
 credit:
   template: "class CDSPricer:\n    def __init__(self, spec):\n        self._spec =\
     \ spec\n\n    @property\n    def requirements(self) -> set[str]:\n        return\

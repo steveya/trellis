@@ -25,6 +25,7 @@ def _make_plan(
     route: str,
     engine_family: str = "analytical",
     *,
+    instrument_type: str | None = None,
     primitives: tuple[PrimitiveRef, ...] = (),
     adapters: tuple[str, ...] = (),
     notes: tuple[str, ...] = (),
@@ -32,7 +33,7 @@ def _make_plan(
 ) -> GenerationPlan:
     return GenerationPlan(
         method=engine_family,
-        instrument_type=None,
+        instrument_type=instrument_type,
         inspected_modules=(),
         approved_modules=(),
         symbols_to_reuse=(),
@@ -99,6 +100,42 @@ def evaluate(self, market_state):
         validator = MarketDataValidator()
         findings = validator.validate(source, _make_plan("test"), None)
         assert any(f.category == "fx_rate_scalar_extraction_missing" for f in findings)
+
+    def test_heston_model_parameter_route_rejects_black_vol_surface_access(self, registry):
+        source = '''
+def evaluate(self, market_state):
+    sigma = market_state.vol_surface.black_vol(1.0, spec.strike)
+    return sigma * spec.strike
+'''
+        spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
+        plan = _make_plan(
+            "vanilla_equity_theta_pde",
+            "pde_solver",
+            instrument_type="heston_option",
+        )
+
+        validator = MarketDataValidator()
+        findings = validator.validate(source, plan, spec)
+
+        assert any(f.category == "heston_black_vol_surface_mismatch" for f in findings)
+
+    def test_heston_black_vol_surface_mismatch_is_blocking_in_aggregate(self, registry):
+        source = '''
+def evaluate(self, market_state):
+    sigma = market_state.vol_surface.black_vol(1.0, spec.strike)
+    return sigma * spec.strike
+'''
+        spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
+        plan = _make_plan(
+            "vanilla_equity_theta_pde",
+            "pde_solver",
+            instrument_type="heston_option",
+        )
+
+        report = validate_generated_semantics(source, plan, spec)
+
+        assert not report.ok
+        assert any(f.category == "heston_black_vol_surface_mismatch" for f in report.errors)
 
 
 # ---------------------------------------------------------------------------

@@ -289,9 +289,10 @@ replay metadata still retain the route id for compatibility.
 That family-first rule now also applies inside transform pricing. The thin
 vanilla transform helper is only selected for ``equity_diffusion`` claims. If
 the same European payoff is being priced under a different model family, such
-as Heston stochastic volatility, Trellis keeps the request on the raw FFT/COS
-kernel surface instead of pretending the vanilla helper is a universal
-transform authority.
+as Heston stochastic volatility, Trellis keeps the request on a Heston
+transform helper that resolves underlier spot plus explicit model parameters
+into the FFT/COS kernels instead of pretending the vanilla Black-vol helper is
+a universal transform authority.
 
 Under the hood, that route family now lowers onto a native
 ``TransformPricingIR`` contract before admissibility. Operators will therefore

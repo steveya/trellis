@@ -1242,12 +1242,13 @@ def test_run_task_carries_stochastic_vol_problem_metadata_for_comparison_task(mo
     assert result["runtime_contract"]["computational_problem"]["task_bucket"] == (
         "stochastic_vol_mixed"
     )
-    assert calls[1]["request_metadata"]["computational_problem_target"]["target_id"] == (
-        "qe_heston"
+    assert [call["comparison_target"] for call in calls] == ["euler_heston", "heston_fft"]
+    qe_payload = result["method_results"]["qe_heston"]
+    assert qe_payload["success"] is False
+    assert qe_payload["attempts"] == 0
+    assert qe_payload["blocker_details"]["repair_packet"]["missing_primitive"] == (
+        "heston_andersen_qe_scheme"
     )
-    assert calls[1]["request_metadata"]["computational_problem_target"]["repair_packet"][
-        "missing_primitive"
-    ] == "heston_andersen_qe_scheme"
 
 
 def test_cross_validate_comparison_task_prices_reused_fx_modules():
@@ -1985,10 +1986,18 @@ def test_run_task_aggregates_method_blockers_for_comparison_failures():
         build_fn=fake_build,
     )
 
-    assert result["blocker_details"]["method_targets"] == ["american_pathdep_mc"]
-    assert result["blocker_details"]["blocker_report"]["blockers"][0]["category"] == (
-        "unsupported_composite"
-    )
+    assert result["blocker_details"]["method_targets"] == [
+        "american_pathdep_fft",
+        "american_pathdep_mc",
+        "american_pathdep_pde",
+    ]
+    for target in result["blocker_details"]["method_targets"]:
+        details = result["method_results"][target]["blocker_details"]
+        assert result["method_results"][target]["attempts"] == 0
+        assert details["repair_packet"]["packet_type"] == "unsupported_path_dependent_control"
+        assert details["repair_packet"]["unsupported_class"] == (
+            "path_dependent_early_exercise_under_stochastic_vol"
+        )
     assert classify_task_result(result) == "blocked"
 
 

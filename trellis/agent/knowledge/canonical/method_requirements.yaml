@@ -138,6 +138,9 @@ pde_solver:
 fft_pricing:
 - 'CHARACTERISTIC FUNCTION CONVENTION: COS method expects CF of log-return log(S_T/S0).
   FFT (Carr-Madan) expects CF of log(S_T). Do NOT mix them.'
+- 'HESTON TRANSFORM ROUTE: For European Heston vanilla options, prefer trellis.models.transforms.heston.price_heston_option_transform
+  so route adapters bind underlier spot plus explicit model_parameters to FFT/COS
+  instead of reading a Black vol surface.'
 - 'HESTON v0 IS VARIANCE: v0=0.04 means vol=20%. Do NOT pass vol directly as v0.'
 - 'COS TRUNCATION: Center on first cumulant c1, width L*sqrt(c2) where c2 is second
   cumulant. Default symmetric [-L, L] can overflow for high drift or long maturity.'

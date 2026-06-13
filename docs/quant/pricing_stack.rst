@@ -185,8 +185,9 @@ The first migrated vanilla cases now use that boundary directly:
   discount, vol, and characteristic-function binding
 - the transform route uses that thin vanilla helper only for true
   ``equity_diffusion`` contracts; stochastic-volatility transform tasks such
-  as Heston smile extraction still lower onto the raw FFT/COS kernel surface
-  instead of being forced through the single-state helper
+  as Heston smile extraction now lower onto a checked Heston transform helper
+  that resolves underlier spot plus explicit model parameters into the FFT/COS
+  kernels instead of being forced through the single-state Black-vol helper
 - the local-vol vanilla helper remains a checked route-level wrapper, but it
   now assembles and prices through ``trellis.models.monte_carlo.event_aware``
   instead of maintaining a separate Monte Carlo engine/payoff loop

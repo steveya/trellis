@@ -65,6 +65,7 @@ routes:
       required:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
+        spot: [market_state.spot, market_state.underlier_spots]
         fx_rates: [market_state.fx_rates]
 
   # -----------------------------------------------------------------------
@@ -1084,6 +1085,16 @@ routes:
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]
+          model_family: [stochastic_volatility]
+        primitives:
+          - module: trellis.models.transforms.heston
+            symbol: price_heston_option_transform
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
           model_family: [equity_diffusion]
         primitives:
           - module: trellis.models.equity_option_transforms
@@ -1118,6 +1129,7 @@ routes:
       required:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
+        spot: [market_state.spot, market_state.underlier_spots]
 
   # -----------------------------------------------------------------------
   # PDE routes
