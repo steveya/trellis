@@ -255,6 +255,73 @@ def test_slv_lsv_targets_expose_leverage_function_contracts():
         assert contract["supported_now"] is False
 
 
+def test_path_dependent_heston_targets_expose_composite_control_contract():
+    from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
+
+    report = classify_stochastic_vol_task(_legacy_tasks()["E27"])
+    expectations = {
+        "american_pathdep_pde": (
+            "path_dependent_control_pde",
+            "path_dependent_heston_pde_solver",
+        ),
+        "american_pathdep_mc": (
+            "path_dependent_control_monte_carlo",
+            "path_dependent_heston_monte_carlo_solver",
+        ),
+        "american_pathdep_fft": (
+            "path_dependent_control_transform",
+            "path_dependent_heston_transform_blocker",
+        ),
+    }
+
+    for target_id, (solver_target, missing_solver) in expectations.items():
+        target = _target_payload(report, target_id)
+        contract = target["path_dependent_control_contract"]
+
+        assert target["bucket"] == "unsupported_path_dependent_control"
+        assert target["process_family"] == "heston"
+        assert target["solver_target"] == solver_target
+        assert target["payoff_class"] == "path_dependent_early_exercise"
+        assert target["validation_bundle"] == "heston:path_dependent_control"
+        assert target["market_bindings"]["requires_model_parameters"] is True
+        assert target["market_bindings"]["requires_black_vol_surface"] is False
+        assert target["unsupported_features"] == [
+            "path_dependent_early_exercise_under_stochastic_vol",
+        ]
+        assert contract["composite_class"] == (
+            "american_asian_barrier_under_stochastic_vol"
+        )
+        assert contract["state_requirements"] == [
+            "spot_state",
+            "variance_state",
+            "path_summary_state",
+            "exercise_state",
+        ]
+        assert contract["path_state_requirements"] == [
+            "running_average_state",
+            "barrier_status_state",
+            "monitoring_grid_state",
+        ]
+        assert contract["event_monitor_requirements"] == [
+            "barrier_monitor",
+            "exercise_schedule",
+            "monitoring_grid",
+        ]
+        assert contract["payoff_summary_requirements"] == [
+            "asian_average_summary",
+            "barrier_survival_indicator",
+            "exercise_intrinsic_value",
+        ]
+        assert "early_exercise_policy" in contract["control_requirements"]
+        assert "heston_path_state_coupling" in contract[
+            "stochastic_vol_coupling_requirements"
+        ]
+        assert missing_solver in contract["missing_components"]
+        assert contract["supported_now"] is False
+        assert contract["expected_honest_block"] is True
+        assert contract["model_validator_policy"] == "skip_expected_honest_block"
+
+
 def test_stochastic_vol_problem_payload_is_json_stable():
     from trellis.agent.computational_problem_ir import stochastic_vol_problem_payload
 

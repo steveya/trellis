@@ -208,6 +208,12 @@ The first migrated vanilla cases now use that boundary directly:
   provenance, diagnostics, and target-specific PDE or Monte Carlo solver
   requirements. Route binding remains fail-closed until those contracts and
   solvers exist.
+- Path-dependent early-exercise Heston composites now lower to an explicit
+  control blocker contract instead of a generic implementation gap. The
+  contract names the missing path-state simulation, event monitor, payoff
+  summary, early-exercise control policy, Heston path-state coupling, and the
+  target-specific PDE/Monte Carlo/transform blocker. These tasks remain
+  expected honest blocks until those abstractions and solvers exist.
 - the local-vol vanilla helper remains a checked route-level wrapper, but it
   now assembles and prices through ``trellis.models.monte_carlo.event_aware``
   instead of maintaining a separate Monte Carlo engine/payoff loop

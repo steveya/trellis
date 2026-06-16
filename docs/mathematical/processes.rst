@@ -53,6 +53,17 @@ Heston
 
 Closed-form characteristic function enables FFT/COS pricing.
 
+Path-Dependent Heston Control Boundary
+--------------------------------------
+
+American Asian barrier-style claims under Heston combine spot/variance state,
+a path summary, a barrier event monitor, and an early-exercise control policy.
+Current task diagnostics recognize this as a composite control problem and
+emit a ``path_dependent_control_contract`` with the missing path-state
+simulation, event-monitor, payoff-summary, control-policy, stochastic-vol
+coupling, and target-specific solver components. Trellis does not yet admit a
+checked PDE, Monte Carlo LSM, or transform route for this composite class.
+
 Bates Boundary
 --------------
 

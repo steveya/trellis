@@ -175,6 +175,48 @@ class LeverageFunctionSemantics:
 
 
 @dataclass(frozen=True)
+class PathDependentControlSemantics:
+    """Required path-state and early-exercise control contracts under Heston."""
+
+    process_family: str
+    composite_class: str
+    state_requirements: tuple[str, ...]
+    path_state_requirements: tuple[str, ...]
+    event_monitor_requirements: tuple[str, ...]
+    payoff_summary_requirements: tuple[str, ...]
+    control_requirements: tuple[str, ...]
+    stochastic_vol_coupling_requirements: tuple[str, ...]
+    solver_requirements: tuple[str, ...]
+    validation_requirements: tuple[str, ...]
+    supported_now: bool
+    expected_honest_block: bool
+    model_validator_policy: str
+    missing_components: tuple[str, ...] = ()
+    evidence: tuple[str, ...] = ()
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "process_family": self.process_family,
+            "composite_class": self.composite_class,
+            "state_requirements": list(self.state_requirements),
+            "path_state_requirements": list(self.path_state_requirements),
+            "event_monitor_requirements": list(self.event_monitor_requirements),
+            "payoff_summary_requirements": list(self.payoff_summary_requirements),
+            "control_requirements": list(self.control_requirements),
+            "stochastic_vol_coupling_requirements": list(
+                self.stochastic_vol_coupling_requirements
+            ),
+            "solver_requirements": list(self.solver_requirements),
+            "validation_requirements": list(self.validation_requirements),
+            "supported_now": self.supported_now,
+            "expected_honest_block": self.expected_honest_block,
+            "model_validator_policy": self.model_validator_policy,
+            "missing_components": list(self.missing_components),
+            "evidence": list(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
 class StochasticVolTargetProblem:
     """Computational class for one concrete comparison/build target."""
 
@@ -191,6 +233,7 @@ class StochasticVolTargetProblem:
     calibration_problem: CalibrationProblemSemantics | None = None
     affine_jump_process: AffineJumpStochasticVolSemantics | None = None
     leverage_function_contract: LeverageFunctionSemantics | None = None
+    path_dependent_control_contract: PathDependentControlSemantics | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -221,6 +264,11 @@ class StochasticVolTargetProblem:
             "leverage_function_contract": (
                 self.leverage_function_contract.to_payload()
                 if self.leverage_function_contract is not None
+                else None
+            ),
+            "path_dependent_control_contract": (
+                self.path_dependent_control_contract.to_payload()
+                if self.path_dependent_control_contract is not None
                 else None
             ),
         }
@@ -333,6 +381,13 @@ def _classify_target(
         process_family=process_family,
         solver_target=solver_target,
     )
+    path_dependent_control_contract = _path_dependent_control_semantics(
+        bucket,
+        target_id=target_id,
+        text=target_text,
+        process_family=process_family,
+        solver_target=solver_target,
+    )
     return StochasticVolTargetProblem(
         target_id=target_id,
         bucket=bucket,
@@ -347,6 +402,7 @@ def _classify_target(
         calibration_problem=calibration_problem,
         affine_jump_process=affine_jump_process,
         leverage_function_contract=leverage_function_contract,
+        path_dependent_control_contract=path_dependent_control_contract,
     )
 
 
@@ -495,12 +551,13 @@ def _repair_packet(bucket: str, *, target_id: str, text: str) -> RepairPacket | 
     if bucket == UNSUPPORTED_PATH_DEPENDENT_CONTROL:
         return RepairPacket(
             packet_type="unsupported_path_dependent_control",
-            missing_primitive="path_dependent_heston_control_kernel",
+            missing_primitive="path_dependent_heston_control_contract",
             unsupported_class="path_dependent_early_exercise_under_stochastic_vol",
             summary=(
                 "Path-dependent early-exercise under stochastic volatility is a "
                 "composite control problem and should block honestly until a "
-                "dedicated kernel exists."
+                "path-state, event-monitor, payoff-summary, control-policy, "
+                "and stochastic-vol coupling contract exists."
             ),
             evidence=evidence,
         )
@@ -668,6 +725,107 @@ def _slv_lsv_solver_requirements(solver_target: str) -> tuple[tuple[str, ...], s
     )
 
 
+def _path_dependent_control_semantics(
+    bucket: str,
+    *,
+    target_id: str,
+    text: str,
+    process_family: str,
+    solver_target: str,
+) -> PathDependentControlSemantics | None:
+    if bucket != UNSUPPORTED_PATH_DEPENDENT_CONTROL:
+        return None
+    solver_requirements, missing_solver = _path_dependent_control_solver_requirements(
+        solver_target
+    )
+    return PathDependentControlSemantics(
+        process_family=process_family,
+        composite_class="american_asian_barrier_under_stochastic_vol",
+        state_requirements=(
+            "spot_state",
+            "variance_state",
+            "path_summary_state",
+            "exercise_state",
+        ),
+        path_state_requirements=(
+            "running_average_state",
+            "barrier_status_state",
+            "monitoring_grid_state",
+        ),
+        event_monitor_requirements=(
+            "barrier_monitor",
+            "exercise_schedule",
+            "monitoring_grid",
+        ),
+        payoff_summary_requirements=(
+            "asian_average_summary",
+            "barrier_survival_indicator",
+            "exercise_intrinsic_value",
+        ),
+        control_requirements=(
+            "early_exercise_policy",
+            "continuation_value_estimator",
+            "exercise_projection_policy",
+        ),
+        stochastic_vol_coupling_requirements=(
+            "heston_path_state_coupling",
+            "correlated_spot_variance_shocks",
+            "variance_scheme_binding",
+        ),
+        solver_requirements=solver_requirements,
+        validation_requirements=(
+            "consume_heston_model_parameters",
+            "consume_path_state_contract",
+            "consume_event_monitor_contract",
+            "consume_payoff_summary_contract",
+            "consume_early_exercise_control_contract",
+            "reject_terminal_transform_route",
+        ),
+        supported_now=False,
+        expected_honest_block=True,
+        model_validator_policy="skip_expected_honest_block",
+        missing_components=(
+            "path_state_simulation_contract",
+            "event_monitor_contract",
+            "path_payoff_summary_contract",
+            "early_exercise_control_contract",
+            "stochastic_vol_control_coupling_contract",
+            missing_solver,
+        ),
+        evidence=tuple(item for item in (target_id, _short_text_evidence(text)) if item),
+    )
+
+
+def _path_dependent_control_solver_requirements(
+    solver_target: str,
+) -> tuple[tuple[str, ...], str]:
+    if solver_target == "path_dependent_control_pde":
+        return (
+            (
+                "augmented_state_pde_operator",
+                "path_state_grid",
+                "free_boundary_control",
+            ),
+            "path_dependent_heston_pde_solver",
+        )
+    if solver_target == "path_dependent_control_monte_carlo":
+        return (
+            (
+                "heston_path_state_simulator",
+                "pathwise_event_monitor",
+                "lsm_under_stochastic_vol_path_state",
+            ),
+            "path_dependent_heston_monte_carlo_solver",
+        )
+    return (
+        (
+            "transform_route_exclusion",
+            "terminal_only_characteristic_function_limit",
+        ),
+        "path_dependent_heston_transform_blocker",
+    )
+
+
 def _unsupported_features(
     bucket: str,
     repair_packet: RepairPacket | None,
@@ -804,6 +962,7 @@ __all__ = [
     "LeverageFunctionSemantics",
     "MarketBindingSemantics",
     "ModelParameterSemantics",
+    "PathDependentControlSemantics",
     "RepairPacket",
     "SLV_LSV",
     "STOCHASTIC_VOL_MIXED",
