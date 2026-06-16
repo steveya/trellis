@@ -157,6 +157,7 @@ def test_models_package_exports():
         UnsupportedSolveCapabilityError,
         UnsupportedCalibrationProblemIRError,
         WarmStart,
+        build_heston_smile_calibration_problem_ir,
         build_heston_smile_surface,
         build_supported_calibration_benchmark_report,
         build_sabr_smile_surface,
@@ -172,6 +173,7 @@ def test_models_package_exports():
         calibrate_swaption_black_vol,
         dupire_local_vol_result,
         execute_solve_request,
+        fit_heston_smile_problem_ir,
         fit_heston_smile_surface,
         fit_sabr_smile_surface,
         save_calibration_benchmark_report,
@@ -220,6 +222,10 @@ def test_models_package_exports():
     assert models.calibration.build_supported_calibration_benchmark_report is build_supported_calibration_benchmark_report
     assert models.calibration.build_solve_provenance is build_solve_provenance
     assert models.calibration.build_solve_replay_artifact is build_solve_replay_artifact
+    assert (
+        models.calibration.build_heston_smile_calibration_problem_ir
+        is build_heston_smile_calibration_problem_ir
+    )
     assert models.calibration.build_heston_smile_surface is build_heston_smile_surface
     assert models.calibration.build_sabr_smile_surface is build_sabr_smile_surface
     assert models.calibration.calibrate_heston_smile_workflow is calibrate_heston_smile_workflow
@@ -235,6 +241,7 @@ def test_models_package_exports():
     assert models.calibration.calibrate_swaption_black_vol is calibrate_swaption_black_vol
     assert models.calibration.dupire_local_vol_result is dupire_local_vol_result
     assert models.calibration.execute_solve_request is execute_solve_request
+    assert models.calibration.fit_heston_smile_problem_ir is fit_heston_smile_problem_ir
     assert models.calibration.fit_heston_smile_surface is fit_heston_smile_surface
     assert models.calibration.fit_sabr_smile_surface is fit_sabr_smile_surface
     assert models.calibration.save_calibration_benchmark_report is save_calibration_benchmark_report

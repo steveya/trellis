@@ -157,14 +157,17 @@ build a ``CalibrationProblemIR`` through
 workflow through ``fit_sabr_smile_problem_ir(...)``. Single-name credit curve
 calibration can do the same through
 ``build_single_name_credit_calibration_problem_ir(...)`` and
-``fit_single_name_credit_problem_ir(...)``. These paths prove the common problem
-shape against existing workflows without changing their objectives, solver
-choices, solved parameters, diagnostics, or replay payloads.
+``fit_single_name_credit_problem_ir(...)``. Heston smile calibration can record
+the Black implied-vol smile to Heston model-parameter bridge with
+``build_heston_smile_calibration_problem_ir(...)`` and execute it through
+``fit_heston_smile_problem_ir(...)``. These paths prove the common problem shape
+against existing workflows without changing their objectives, solver choices,
+solved parameters, diagnostics, or replay payloads.
 
 This is not yet a public universal calibration orchestrator. The IR-backed SABR
-and single-name credit paths report themselves as adapter-only, and unsupported
-workflows remain on their current direct functions until they have parity
-adapters and replay coverage.
+single-name credit, and Heston smile paths report themselves as adapter-only,
+and unsupported workflows remain on their current direct functions until they
+have parity adapters and replay coverage.
 
 Problem-IR Dependency Graphs
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -455,6 +458,11 @@ Trellis packages that calibration as explicit smile or surface targets first:
   ordered strike/vol points, optional weights, and warning flags
 - ``fit_heston_smile_surface(...)`` lowers that smile onto the typed
   ``SolveRequest`` substrate and runs a least-squares fit in implied-vol space
+- ``build_heston_smile_calibration_problem_ir(...)`` records the same smile fit
+  as a calibration problem IR whose materialized output is a Heston
+  ``model_parameter_set``
+- ``fit_heston_smile_problem_ir(...)`` executes that bounded problem-IR adapter
+  and stamps the result with calibration-problem provenance
 - ``calibrate_heston_smile_workflow(...)`` is the supported raw-input wrapper
   that returns the full ``HestonSmileCalibrationResult`` in one step
 - ``build_heston_surface_input(...)`` stores the full ordered expiry/strike
@@ -487,6 +495,12 @@ The Heston workflow keeps the same audit contract as the rates and SABR paths:
   errors, and ATM error
 - a reusable ``model_parameters`` payload and ``runtime_binding`` that can be
   projected back onto ``MarketState`` for later pricing or simulation
+
+This calibration problem boundary is the only checked way to turn a Black
+implied-vol surface into Heston model parameters. Heston pricing routes consume
+explicit model parameters from task inputs, market state, synthetic fixtures, or
+recorded calibration results. They do not silently recalibrate when a Black vol
+surface is bumped.
 
 Trellis now also exposes
 ``compare_heston_to_equity_vol_surface_workflow(...)`` for one bounded staged
@@ -1031,7 +1045,9 @@ Implementation
 .. autofunction:: trellis.models.calibration.equity_vol_surface.compare_heston_surface_to_equity_vol_surface_workflow
 .. autofunction:: trellis.models.calibration.heston_fit.calibrate_heston_smile_workflow
 .. autofunction:: trellis.models.calibration.heston_fit.build_heston_smile_surface
+.. autofunction:: trellis.models.calibration.heston_fit.build_heston_smile_calibration_problem_ir
 .. autofunction:: trellis.models.calibration.heston_fit.fit_heston_smile_surface
+.. autofunction:: trellis.models.calibration.heston_fit.fit_heston_smile_problem_ir
 .. autofunction:: trellis.models.calibration.heston_fit.calibrate_heston_surface_workflow
 .. autofunction:: trellis.models.calibration.heston_fit.calibrate_heston_surface_from_equity_vol_surface_workflow
 .. autofunction:: trellis.models.calibration.heston_fit.build_heston_surface_input

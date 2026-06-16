@@ -101,6 +101,16 @@ context, not as an implicit recalibration instruction. Calibration targets are
 the explicit bridge where a market surface is allowed to produce model
 parameters.
 
+For calibration targets, each target entry may also carry a
+``calibration_problem`` block. That block records whether the target is
+``calibration_supported``, ``calibration_needed``, or ``calibration_blocked``,
+the calibration ``workflow_id``, the quote family and convention being fitted,
+and the output parameter source. For example, a Heston surface target can point
+to the bounded ``heston_smile`` problem-IR adapter and report
+``calibrated_model_parameter_set`` as the only valid source of model
+parameters. Raw ``market_prices`` evidence remains market evidence until a
+recorded calibration problem consumes it.
+
 When a task asks for a computational class Trellis does not yet implement, the
 same block carries a machine-readable ``repair_packet`` naming the missing
 primitive or unsupported class. Examples include

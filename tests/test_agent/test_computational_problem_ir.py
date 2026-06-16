@@ -107,6 +107,15 @@ def test_heston_parameter_semantics_distinguish_parameters_from_surface_bumps():
     assert calibrated["model_parameter_semantics"]["requires_calibration_bridge"] is True
     assert calibrated["market_bindings"]["requires_model_parameters"] is False
     assert calibrated["market_bindings"]["requires_black_vol_surface"] is True
+    assert calibrated["calibration_problem"]["status"] == "calibration_supported"
+    assert calibrated["calibration_problem"]["workflow_id"] == "heston_smile"
+    assert calibrated["calibration_problem"]["output_parameter_source"] == (
+        "calibrated_model_parameter_set"
+    )
+
+    market_prices = _target_payload(t67, "market_prices")
+    assert market_prices["calibration_problem"]["status"] == "calibration_needed"
+    assert market_prices["calibration_problem"]["input_quote_family"] == "option_price"
 
 
 def test_repair_packets_name_missing_primitives_not_generated_text():
