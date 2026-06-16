@@ -372,7 +372,10 @@ path-dependent control shape. The block is copied into the task result,
 packet. It is meant for task triage and remediation: it records the
 computational bucket, model-parameter semantics, validation bundle, and any
 missing primitive or unsupported class before raw build exceptions dominate
-the failure story.
+the failure story. Path-dependent Heston control targets also preserve a
+``path_dependent_control_contract`` so expected honest blocks identify the
+missing path-state, event-monitor, payoff-summary, control-policy, and
+stochastic-vol coupling abstractions directly.
 
 That packet/checkpoint surface also now treats backend binding identity as the
 primary implementation provenance. Compatibility route aliases may still

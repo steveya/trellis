@@ -135,6 +135,15 @@ target-specific PDE or Monte Carlo solver requirements. These tasks remain
 fail-closed until the leverage calibration, stochastic/local-vol coupling, and
 selected solver contract exist.
 
+For path-dependent early-exercise targets under Heston, each target may carry
+a ``path_dependent_control_contract`` block. That block decomposes the honest
+block into the missing path-state simulation contract, event monitor, payoff
+summary, early-exercise control policy, stochastic-vol coupling, and
+target-specific PDE/Monte Carlo/transform blocker. Expected honest blocks keep
+``model_validator_policy`` set to ``skip_expected_honest_block`` so the
+validator is not asked to judge a route with no executable payoff/solver
+evidence.
+
 Operational use
 ---------------
 
