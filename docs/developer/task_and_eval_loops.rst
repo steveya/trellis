@@ -172,6 +172,14 @@ the real ``run_task(...)`` surface. That means the replay still exercises the
 runtime contract, comparison harness, task-run persistence, and diagnosis
 packet/dossier writes, but it does not spend live model tokens.
 
+Full-task canary replay remains strict about prompt hashes, call ordering, and
+unexpected additional LLM calls. The canary runner does tolerate skipped or
+unconsumed ``critic`` and ``unscoped`` calls, because those are optional
+post-build review or learning stages that can be skipped between deterministic
+method targets or after the runtime path has completed. Skipped or unconsumed
+planning, binding, or generation calls still make the replay stale and fail the
+run.
+
 Full-task cassette sessions also keep the knowledge store read-only during
 record and replay. The build still performs its normal LLM reflection calls,
 but it does not write new lessons, traces, cookbook candidates, or promotion
@@ -502,6 +510,16 @@ FFT/COS kernels and keeps Black volatility surfaces out of live Heston pricing
 unless a calibration bridge explicitly owns the conversion. Unsupported
 transform methods such as Heston Gauss-Laguerre produce a repair packet instead
 of falling back to a vanilla Black-vol adapter.
+
+The Monte Carlo lane now follows the same model-family separation for European
+Heston vanilla options. ``euler_heston`` and ``heston_mc`` targets bind to
+``trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo``
+with ``scheme="euler"``, while ``qe_heston`` binds to the same helper with
+``scheme="heston_qe"``. The helper consumes explicit Heston model parameters
+and reports the ``heston:monte_carlo`` validation bundle, so the task runtime no
+longer treats Andersen QE as a missing generated-adapter primitive. It still
+does not recalibrate Heston parameters from a bumped Black vol surface unless a
+separate calibration problem owns that conversion.
 
 That route family now also has its own lowered contract boundary. Transform
 tasks compile onto ``TransformPricingIR`` before admissibility, so the canaries

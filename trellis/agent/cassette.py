@@ -29,7 +29,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 import yaml
 
@@ -264,9 +264,11 @@ class CassetteReplayer:
         path: Path,
         *,
         stale_policy: str = STALE_POLICY_WARN,
+        optional_stages: Iterable[str] | None = None,
     ) -> None:
         self.path = Path(path)
         self.stale_policy = stale_policy
+        self._optional_stages = set(optional_stages or ())
         if not self.path.exists():
             raise CassetteNotFoundError(f"Cassette file not found: {self.path}")
         raw = yaml.safe_load(self.path.read_text(encoding="utf-8"))
@@ -278,11 +280,30 @@ class CassetteReplayer:
 
     def _next_call(self, prompt: str, expected_function: str) -> CassetteCall:
         """Advance cursor, validate, and return the next recorded call."""
+        current_hash = _prompt_hash(prompt)
+        skipped_stages: list[str] = []
+        while self._cursor < len(self._calls):
+            call = self._calls[self._cursor]
+            if call.stage not in self._optional_stages:
+                break
+            if call.function == expected_function and call.prompt_hash == current_hash:
+                break
+            skipped_stages.append(call.stage)
+            self._cursor += 1
+
+        if skipped_stages:
+            msg = (
+                f"Cassette skipped {len(skipped_stages)} optional recorded call(s) "
+                f"(stages: {skipped_stages})."
+            )
+            warnings.warn(msg, stacklevel=3)
+            _log.warning(msg)
+
         if self._cursor >= len(self._calls):
             raise CassetteMissingError(
                 f"Cassette exhausted after {len(self._calls)} calls; "
                 f"the code made an additional '{expected_function}' call "
-                f"(prompt hash {_prompt_hash(prompt)[:12]}...)."
+                f"(prompt hash {current_hash[:12]}...)."
             )
         call = self._calls[self._cursor]
         self._cursor += 1
@@ -295,7 +316,6 @@ class CassetteReplayer:
             )
 
         # Prompt hash check for staleness
-        current_hash = _prompt_hash(prompt)
         if current_hash != call.prompt_hash:
             msg = (
                 f"Cassette call #{call.seq} ({call.stage}): prompt hash mismatch. "
@@ -323,11 +343,24 @@ class CassetteReplayer:
 
     # -- assertions ---------------------------------------------------------
 
-    def assert_all_consumed(self) -> None:
+    def assert_all_consumed(
+        self,
+        *,
+        allow_unconsumed_stages: Iterable[str] | None = None,
+    ) -> None:
         """Raise if there are unconsumed recorded calls (fewer LLM calls than expected)."""
         remaining = len(self._calls) - self._cursor
         if remaining > 0:
             stages = [c.stage for c in self._calls[self._cursor:]]
+            allowed_stages = set(allow_unconsumed_stages or self._optional_stages)
+            if allowed_stages and all(stage in allowed_stages for stage in stages):
+                msg = (
+                    f"Cassette left {remaining} optional trailing call(s) "
+                    f"unconsumed (stages: {stages})."
+                )
+                warnings.warn(msg, stacklevel=2)
+                _log.warning(msg)
+                return
             raise CassetteStaleError(
                 f"Cassette has {remaining} unconsumed call(s) "
                 f"(stages: {stages}). The code made fewer LLM calls than recorded."
@@ -378,6 +411,7 @@ def llm_cassette_session(
     stale_policy: str = CassetteReplayer.STALE_POLICY_WARN,
     store_prompts: bool = True,
     name: str | None = None,
+    optional_stages: Iterable[str] | None = None,
 ):
     """Run the current LLM call path against a recorder or replayer.
 
@@ -404,7 +438,11 @@ def llm_cassette_session(
         generate = handler.wrap_generate(_llm_generate_live)
         generate_json = handler.wrap_generate_json(_llm_generate_json_live)
     elif mode == "replay":
-        handler = CassetteReplayer(cassette_path, stale_policy=stale_policy)
+        handler = CassetteReplayer(
+            cassette_path,
+            stale_policy=stale_policy,
+            optional_stages=optional_stages,
+        )
         generate = handler.generate
         generate_json = handler.generate_json
     else:
@@ -435,4 +473,6 @@ def llm_cassette_session(
             )
         else:
             assert isinstance(handler, CassetteReplayer)
-            handler.assert_all_consumed()
+            handler.assert_all_consumed(
+                allow_unconsumed_stages=optional_stages,
+            )

@@ -797,6 +797,7 @@ _TRANSFORM_MARKET_MAPPINGS = {
 _MC_MARKET_MAPPINGS = {
     ("hull_white_1f", "swaption"): "discount_curve_forward_curve_black_vol_to_short_rate_mc",
     ("hull_white_1f", "period_rate_option_strip"): "discount_curve_forward_curve_black_vol_to_rate_option_strip_mc",
+    ("heston", "vanilla_option"): "heston_model_parameters_to_stochastic_vol_mc",
     ("local_vol_1d", ""): "equity_spot_discount_local_vol_to_mc",
     ("gbm_1d", ""): "equity_spot_discount_black_vol_to_mc",
 }
@@ -804,6 +805,7 @@ _MC_MARKET_MAPPINGS = {
 
 _MC_HELPER_BINDINGS = {
     ("gbm_1d", "vanilla_option", "european"): "price_vanilla_equity_option_monte_carlo",
+    ("heston", "vanilla_option", "european"): "price_heston_option_monte_carlo",
     ("hull_white_1f", "period_rate_option_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
     ("hull_white_1f", "swaption", ""): "price_swaption_monte_carlo",
 }
@@ -1102,6 +1104,7 @@ def _binding_supports_event_aware_monte_carlo(
         binding_spec,
         "route_helper",
         "price_event_aware_monte_carlo",
+        "price_heston_option_monte_carlo",
         "price_rate_cap_floor_strip_monte_carlo",
         "price_vanilla_equity_option_monte_carlo",
         "price_swaption_monte_carlo",
@@ -1789,6 +1792,13 @@ def _mc_state_spec_for_product(product) -> MCStateSpec:
             state_tags=state_tags,
             state_layout="scalar",
         )
+    if model_family == "stochastic_volatility":
+        return MCStateSpec(
+            state_variable="spot_variance",
+            dimension=2,
+            state_tags=_tuple_unique((*state_tags, "factor_state")),
+            state_layout="vector",
+        )
     return MCStateSpec()
 
 
@@ -1824,6 +1834,11 @@ def _mc_process_spec_for_product(
         return MCProcessSpec(
             process_family="gbm_1d",
             simulation_scheme="exact_lognormal",
+        )
+    if model_family == "stochastic_volatility":
+        return MCProcessSpec(
+            process_family="heston",
+            simulation_scheme="heston_qe_or_euler",
         )
     return MCProcessSpec()
 

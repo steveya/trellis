@@ -32,6 +32,20 @@ SDE Discretization
 
    S_{t+\Delta t} = S_t \exp\!\left[(\mu - \sigma^2/2)\Delta t + \sigma\sqrt{\Delta t}\,Z\right]
 
+**Heston quadratic-exponential** for stochastic volatility:
+
+Trellis exposes a checked two-state Heston Monte Carlo helper for European
+vanilla options through
+``trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo``.
+The helper resolves spot, discounting, and explicit Heston model parameters
+into a ``(S_t, V_t)`` simulation problem, then selects either the vector-state
+Euler scheme or the Andersen-style quadratic-exponential variance scheme.
+
+Use ``scheme="heston_qe"`` for ``qe_heston`` targets and ``scheme="euler"`` for
+``euler_heston`` / ``heston_mc`` targets. The helper treats ``v0`` and
+``theta`` as variances. It does not infer Heston parameters from a Black
+volatility surface; that bridge belongs to an explicit calibration problem.
+
 Brownian Bridge
 ---------------
 
@@ -66,6 +80,13 @@ Implementation
    :members:
 
 .. autofunction:: trellis.models.monte_carlo.lsm.longstaff_schwartz
+   :no-index:
+.. autoclass:: trellis.models.monte_carlo.schemes.HestonQuadraticExponential
+   :members:
+   :no-index:
+.. autofunction:: trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo
+   :no-index:
+.. autofunction:: trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo_result
    :no-index:
 .. autofunction:: trellis.models.qmc.sobol_normals
    :no-index:

@@ -104,8 +104,8 @@ parameters.
 When a task asks for a computational class Trellis does not yet implement, the
 same block carries a machine-readable ``repair_packet`` naming the missing
 primitive or unsupported class. Examples include
-``heston_andersen_qe_scheme``, ``bates_affine_jump_stochastic_vol_kernel``,
-``leverage_function_contract``, and
+``heston_gauss_laguerre_transform_kernel``,
+``bates_affine_jump_stochastic_vol_kernel``, ``leverage_function_contract``, and
 ``path_dependent_early_exercise_under_stochastic_vol``. Remediation tools
 should group these packets before falling back to raw exception text.
 

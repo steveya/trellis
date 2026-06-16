@@ -95,6 +95,15 @@ from trellis.models.monte_carlo.semantic_basket import (
     RankedObservationBasketMonteCarloPayoff,
     RankedObservationBasketSpec,
 )
+from trellis.models.monte_carlo.stochastic_vol import (
+    HestonMonteCarloProblem,
+    HestonMonteCarloResult,
+    ResolvedHestonMonteCarloInputs,
+    build_heston_monte_carlo_problem,
+    price_heston_option_monte_carlo,
+    price_heston_option_monte_carlo_result,
+    resolve_heston_monte_carlo_inputs,
+)
 from trellis.models.monte_carlo.profiling import (
     MonteCarloPathKernelBenchmark,
     benchmark_path_kernel,

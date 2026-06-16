@@ -760,6 +760,12 @@ class TestMonteCarloPathsRoutes:
         payoff_family="vanilla_option",
         exercise_style="european",
     )
+    HESTON_IR = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        exercise_style="european",
+        model_family="stochastic_volatility",
+    )
     GENERIC_IR = ProductIR(
         instrument="path_dependent_note",
         payoff_family="path_dependent_generic",
@@ -790,6 +796,18 @@ class TestMonteCarloPathsRoutes:
             (
                 "trellis.models.equity_option_monte_carlo",
                 "price_vanilla_equity_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_heston_primitives_use_stochastic_vol_monte_carlo_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        new_prims = resolve_route_primitives(spec, self.HESTON_IR)
+        expected_prims = {
+            (
+                "trellis.models.monte_carlo.stochastic_vol",
+                "price_heston_option_monte_carlo",
                 "route_helper",
             ),
         }

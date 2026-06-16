@@ -114,11 +114,10 @@ def test_repair_packets_name_missing_primitives_not_generated_text():
 
     tasks = _legacy_tasks()
 
-    qe_packet = _target_payload(classify_stochastic_vol_task(tasks["T28"]), "qe_heston")[
-        "repair_packet"
-    ]
-    assert qe_packet["missing_primitive"] == "heston_andersen_qe_scheme"
-    assert "NameError" not in json.dumps(qe_packet)
+    qe_target = _target_payload(classify_stochastic_vol_task(tasks["T28"]), "qe_heston")
+    assert qe_target["repair_packet"] is None
+    assert qe_target["solver_target"] == "monte_carlo_qe"
+    assert qe_target["validation_bundle"] == "heston:monte_carlo"
 
     bates_packet = _target_payload(classify_stochastic_vol_task(tasks["T44"]), "bates_fft")[
         "repair_packet"

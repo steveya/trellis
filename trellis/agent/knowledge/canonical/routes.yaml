@@ -350,6 +350,17 @@ routes:
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]
+          model_family: [stochastic_volatility]
+        primitives:
+          - module: trellis.models.monte_carlo.stochastic_vol
+            symbol: price_heston_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [generic, equity, equity_diffusion]
         primitives:
           - module: trellis.models.equity_option_monte_carlo
             symbol: price_vanilla_equity_option_monte_carlo

@@ -364,16 +364,6 @@ def _repair_packet(bucket: str, *, target_id: str, text: str) -> RepairPacket | 
             ),
             evidence=evidence,
         )
-    if bucket == STOCHASTIC_VOL_MONTE_CARLO and "qe" in text:
-        return RepairPacket(
-            packet_type="missing_heston_qe_scheme",
-            missing_primitive="heston_andersen_qe_scheme",
-            summary=(
-                "The target asks for Andersen QE Heston simulation; route binding "
-                "must not silently fall back to Euler semantics."
-            ),
-            evidence=evidence,
-        )
     if bucket == STOCHASTIC_VOL_TRANSFORM and "laguerre" in text:
         return RepairPacket(
             packet_type="missing_heston_gauss_laguerre_transform_kernel",

@@ -14,9 +14,11 @@ Usage:
 
 from __future__ import annotations
 
+import math
 from typing import Protocol
 
 import numpy as raw_np
+from scipy.special import ndtr
 
 
 class DiscretizationScheme(Protocol):
@@ -63,6 +65,7 @@ class Euler:
     """
 
     name = "euler"
+    compatible_process_families = ("any",)
 
     def step(self, process, x, t, dt, dw):
         """Advance one Euler-Maruyama step ``x + mu dt + sigma sqrt(dt) dW``."""
@@ -81,6 +84,7 @@ class Milstein:
     """
 
     name = "milstein"
+    compatible_process_families = ("any",)
 
     def __init__(self, fd_epsilon: float = 1e-6):
         """Configure the finite-difference step used to approximate ``sigma'(x)``."""
@@ -110,6 +114,7 @@ class Exact:
     """
 
     name = "exact"
+    compatible_process_families = ("any",)
 
     def step(self, process, x, t, dt, dw):
         """Use the process exact transition when available, otherwise fall back to Euler."""
@@ -129,6 +134,7 @@ class LogEuler:
     """
 
     name = "log_euler"
+    compatible_process_families = ("any",)
 
     def step(self, process, x, t, dt, dw):
         """Advance one step in log-space to preserve positivity for positive processes."""
@@ -139,6 +145,148 @@ class LogEuler:
         drift_log = (mu / x_safe - 0.5 * (sig / x_safe) ** 2) * dt
         diff_log = (sig / x_safe) * raw_np.sqrt(dt) * dw
         return x_safe * raw_np.exp(drift_log + diff_log)
+
+
+class HestonQuadraticExponential:
+    """Andersen-style QE variance scheme for two-state Heston paths.
+
+    The scheme advances ``(spot, variance)`` states. Variance uses the
+    quadratic-exponential moment match from Andersen's Heston QE method; spot
+    uses the matched integrated variance with the Heston correlation
+    correction and an independent orthogonal shock.
+    """
+
+    name = "heston_qe"
+    compatible_process_families = ("heston",)
+
+    def __init__(self, psi_threshold: float = 1.5, variance_floor: float = 0.0):
+        self.psi_threshold = float(psi_threshold)
+        self.variance_floor = max(float(variance_floor), 0.0)
+
+    def step(self, process, x, t, dt, dw):
+        """Advance one Heston vector-state step."""
+        del t
+        _validate_heston_process(process)
+        state = raw_np.asarray(x, dtype=float)
+        if state.ndim != 2 or state.shape[1] != 2:
+            raise ValueError("Heston QE scheme requires state shape (n_paths, 2)")
+        shocks = raw_np.asarray(dw, dtype=float)
+        if shocks.shape != state.shape:
+            raise ValueError("Heston QE scheme requires two standard-normal shocks per path")
+
+        spot = raw_np.maximum(state[:, 0], 1e-300)
+        variance = raw_np.maximum(state[:, 1], 0.0)
+        z_orthogonal = shocks[:, 0]
+        z_variance = shocks[:, 1]
+
+        variance_next = _heston_qe_variance_step(
+            variance,
+            z_variance,
+            dt=float(dt),
+            kappa=float(process.kappa),
+            theta=float(process.theta),
+            xi=float(process.xi),
+            psi_threshold=self.psi_threshold,
+            variance_floor=self.variance_floor,
+        )
+        integrated_variance = 0.5 * (variance + variance_next) * float(dt)
+        integrated_variance = raw_np.maximum(integrated_variance, 0.0)
+        rho = float(process.rho)
+        rho = min(max(rho, -1.0), 1.0)
+        orthogonal_scale = math.sqrt(max(1.0 - rho * rho, 0.0))
+
+        if abs(float(process.xi)) > 1e-14:
+            variance_correlation_term = (
+                rho
+                / float(process.xi)
+                * (
+                    variance_next
+                    - variance
+                    - float(process.kappa) * float(process.theta) * float(dt)
+                    + float(process.kappa) * integrated_variance
+                )
+            )
+            orthogonal_term = orthogonal_scale * raw_np.sqrt(integrated_variance) * z_orthogonal
+            log_increment = (
+                float(process.mu) * float(dt)
+                - 0.5 * integrated_variance
+                + variance_correlation_term
+                + orthogonal_term
+            )
+        else:
+            z_spot = rho * z_variance + orthogonal_scale * z_orthogonal
+            log_increment = (
+                float(process.mu) * float(dt)
+                - 0.5 * integrated_variance
+                + raw_np.sqrt(integrated_variance) * z_spot
+            )
+
+        spot_next = spot * raw_np.exp(raw_np.clip(log_increment, -700.0, 700.0))
+        return raw_np.column_stack((spot_next, variance_next))
+
+
+def _validate_heston_process(process) -> None:
+    required = ("mu", "kappa", "theta", "xi", "rho", "v0")
+    missing = [name for name in required if not hasattr(process, name)]
+    if missing:
+        raise TypeError(
+            "Heston QE scheme requires a Heston-like process with "
+            f"{', '.join(required)}; missing {', '.join(missing)}"
+        )
+    if int(getattr(process, "state_dim", 0)) != 2:
+        raise TypeError("Heston QE scheme requires a two-state process")
+
+
+def _heston_qe_variance_step(
+    variance,
+    z_variance,
+    *,
+    dt: float,
+    kappa: float,
+    theta: float,
+    xi: float,
+    psi_threshold: float,
+    variance_floor: float,
+):
+    if dt <= 0.0:
+        return raw_np.maximum(variance, variance_floor)
+    if abs(kappa) <= 1e-14:
+        mean = variance
+        variance_of_variance = raw_np.maximum(xi * xi * variance * dt, 0.0)
+    else:
+        exp_kdt = raw_np.exp(-kappa * dt)
+        mean = theta + (variance - theta) * exp_kdt
+        variance_of_variance = (
+            variance * xi * xi * exp_kdt * (1.0 - exp_kdt) / kappa
+            + theta * xi * xi * (1.0 - exp_kdt) ** 2 / (2.0 * kappa)
+        )
+
+    mean = raw_np.maximum(mean, 1e-16)
+    variance_of_variance = raw_np.maximum(variance_of_variance, 0.0)
+    psi = variance_of_variance / raw_np.maximum(mean * mean, 1e-32)
+    z = raw_np.asarray(z_variance, dtype=float)
+
+    low = psi <= psi_threshold
+    safe_psi = raw_np.maximum(psi, 1e-12)
+    inv_psi = 1.0 / safe_psi
+    b2 = (
+        2.0 * inv_psi
+        - 1.0
+        + raw_np.sqrt(2.0 * inv_psi)
+        * raw_np.sqrt(raw_np.maximum(2.0 * inv_psi - 1.0, 0.0))
+    )
+    a = mean / raw_np.maximum(1.0 + b2, 1e-16)
+    low_branch = a * (raw_np.sqrt(raw_np.maximum(b2, 0.0)) + z) ** 2
+
+    p = raw_np.clip((psi - 1.0) / raw_np.maximum(psi + 1.0, 1e-16), 0.0, 1.0 - 1e-12)
+    beta = raw_np.maximum((1.0 - p) / mean, 1e-16)
+    uniform = raw_np.clip(ndtr(z), 1e-12, 1.0 - 1e-12)
+    high_branch = raw_np.where(
+        uniform <= p,
+        0.0,
+        raw_np.log((1.0 - p) / raw_np.maximum(1.0 - uniform, 1e-12)) / beta,
+    )
+    return raw_np.maximum(raw_np.where(low, low_branch, high_branch), variance_floor)
 
 
 # ---------------------------------------------------------------------------
@@ -300,4 +448,5 @@ SCHEME_REGISTRY: dict[str, type] = {
     "milstein": Milstein,
     "exact": Exact,
     "log_euler": LogEuler,
+    "heston_qe": HestonQuadraticExponential,
 }
