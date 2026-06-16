@@ -202,6 +202,12 @@ The first migrated vanilla cases now use that boundary directly:
   the Heston base parameters, compound-Poisson lognormal jump parameters, the
   missing characteristic-function capability, the missing Monte Carlo process
   capability, and the jump-parameter validation requirements.
+- SLV/LSV targets now lower to an explicit leverage-function contract. The
+  contract names the local-vol and Black-vol surface authority, Heston model
+  parameters, leverage-function surface, recorded leverage calibration
+  provenance, diagnostics, and target-specific PDE or Monte Carlo solver
+  requirements. Route binding remains fail-closed until those contracts and
+  solvers exist.
 - the local-vol vanilla helper remains a checked route-level wrapper, but it
   now assembles and prices through ``trellis.models.monte_carlo.event_aware``
   instead of maintaining a separate Monte Carlo engine/payoff loop
