@@ -64,7 +64,12 @@ def _full_task_replay_test(task_id: str):
                 cwd=ROOT,
                 env=env,
             )
-            assert completed.returncode == 0, completed.stdout + completed.stderr
+            result_details = ""
+            if output_path.exists():
+                result_details = "\n\nResult JSON:\n" + output_path.read_text()
+            assert completed.returncode == 0, (
+                completed.stdout + completed.stderr + result_details
+            )
 
             results = json.loads(output_path.read_text())
             assert len(results) == 1
