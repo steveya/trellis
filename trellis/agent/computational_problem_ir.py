@@ -76,6 +76,34 @@ class ModelParameterSemantics:
 
 
 @dataclass(frozen=True)
+class CalibrationProblemSemantics:
+    """How a calibration target bridges market quotes into model parameters."""
+
+    status: str
+    family_id: str
+    workflow_id: str
+    calibration_direction: str
+    input_quote_family: str
+    input_quote_convention: str
+    output_parameter_source: str
+    requires_recorded_calibration_step: bool
+    evidence: tuple[str, ...] = ()
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "status": self.status,
+            "family_id": self.family_id,
+            "workflow_id": self.workflow_id,
+            "calibration_direction": self.calibration_direction,
+            "input_quote_family": self.input_quote_family,
+            "input_quote_convention": self.input_quote_convention,
+            "output_parameter_source": self.output_parameter_source,
+            "requires_recorded_calibration_step": self.requires_recorded_calibration_step,
+            "evidence": list(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
 class StochasticVolTargetProblem:
     """Computational class for one concrete comparison/build target."""
 
@@ -89,6 +117,7 @@ class StochasticVolTargetProblem:
     validation_bundle: str
     unsupported_features: tuple[str, ...] = ()
     repair_packet: RepairPacket | None = None
+    calibration_problem: CalibrationProblemSemantics | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -104,6 +133,11 @@ class StochasticVolTargetProblem:
             "repair_packet": (
                 self.repair_packet.to_payload()
                 if self.repair_packet is not None
+                else None
+            ),
+            "calibration_problem": (
+                self.calibration_problem.to_payload()
+                if self.calibration_problem is not None
                 else None
             ),
         }
@@ -196,6 +230,12 @@ def _classify_target(
     bindings = _market_bindings(bucket, process_family)
     repair_packet = _repair_packet(bucket, target_id=target_id, text=target_text)
     unsupported = _unsupported_features(bucket, repair_packet)
+    calibration_problem = _calibration_problem_semantics(
+        bucket,
+        target_id=target_id,
+        text=target_text,
+        process_family=process_family,
+    )
     return StochasticVolTargetProblem(
         target_id=target_id,
         bucket=bucket,
@@ -207,6 +247,7 @@ def _classify_target(
         validation_bundle=_validation_bundle(bucket, process_family),
         unsupported_features=unsupported,
         repair_packet=repair_packet,
+        calibration_problem=calibration_problem,
     )
 
 
@@ -378,6 +419,37 @@ def _repair_packet(bucket: str, *, target_id: str, text: str) -> RepairPacket | 
     return None
 
 
+def _calibration_problem_semantics(
+    bucket: str,
+    *,
+    target_id: str,
+    text: str,
+    process_family: str,
+) -> CalibrationProblemSemantics | None:
+    if bucket != CALIBRATION_TO_SURFACE:
+        return None
+    status = "calibration_supported"
+    input_quote_family = "implied_vol"
+    input_quote_convention = "black"
+    if process_family != "heston":
+        status = "calibration_blocked"
+    elif _has_any(text, ("market prices", "market price")) or target_id == "market_prices":
+        status = "calibration_needed"
+        input_quote_family = "option_price"
+        input_quote_convention = "model_price"
+    return CalibrationProblemSemantics(
+        status=status,
+        family_id=process_family,
+        workflow_id="heston_smile" if process_family == "heston" else f"{process_family}_calibration",
+        calibration_direction="surface_to_model_parameters",
+        input_quote_family=input_quote_family,
+        input_quote_convention=input_quote_convention,
+        output_parameter_source="calibrated_model_parameter_set",
+        requires_recorded_calibration_step=True,
+        evidence=tuple(item for item in (target_id, _short_text_evidence(text)) if item),
+    )
+
+
 def _unsupported_features(
     bucket: str,
     repair_packet: RepairPacket | None,
@@ -509,6 +581,7 @@ def _flatten_strings(value: Any) -> list[str]:
 __all__ = [
     "AFFINE_JUMP_STOCHASTIC_VOL",
     "CALIBRATION_TO_SURFACE",
+    "CalibrationProblemSemantics",
     "MarketBindingSemantics",
     "ModelParameterSemantics",
     "RepairPacket",

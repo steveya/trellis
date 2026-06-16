@@ -13,6 +13,15 @@ from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.calibration.implied_vol import ImpliedVolError, implied_vol
 from trellis.models.calibration.materialization import materialize_model_parameter_set
+from trellis.models.calibration.problem_ir import (
+    CalibrationDependencySpec,
+    CalibrationDiagnosticSpec,
+    CalibrationMaterializationSpec,
+    CalibrationObjectiveSpec,
+    CalibrationProblemIR,
+    CalibrationTargetSpec,
+    CalibrationVariableSpec,
+)
 from trellis.models.calibration.quote_maps import (
     QuoteAxisSpec,
     QuoteMapSpec,
@@ -689,6 +698,105 @@ def _normalize_warm_start(
     return WarmStart(parameter_values=tuple(float(value) for value in warm_start), source="explicit")
 
 
+def _resolve_heston_smile_starting_point(
+    surface: HestonSmileSurface,
+    *,
+    initial_guess: Sequence[float] | None,
+    warm_start: Sequence[float] | WarmStart | None,
+) -> tuple[tuple[float, ...], WarmStart | None, str]:
+    """Return the starting point, normalized warm start, and provenance label."""
+    normalized_warm_start = _normalize_warm_start(warm_start)
+    starting_point = tuple(float(value) for value in initial_guess) if initial_guess is not None else None
+    warm_start_source = "explicit_initial_guess" if starting_point is not None else ""
+    if starting_point is None and normalized_warm_start is not None:
+        starting_point = normalized_warm_start.parameter_values
+        warm_start_source = normalized_warm_start.source or "explicit_warm_start"
+    if starting_point is None:
+        starting_point = _default_initial_guess(surface)
+        warm_start_source = "heuristic_surface_shape"
+    return starting_point, normalized_warm_start, warm_start_source
+
+
+def _build_heston_smile_solve_request(
+    surface: HestonSmileSurface,
+    *,
+    initial_guess: Sequence[float] | None = None,
+    warm_start: Sequence[float] | WarmStart | None = None,
+    parameter_set_name: str = "heston",
+    fft_points: int = 1024,
+    fft_eta: float = 0.1,
+    fft_alpha: float = 1.5,
+) -> tuple[SolveRequest, str]:
+    """Return the typed solve request for the supported Heston smile workflow."""
+    starting_point, normalized_warm_start, warm_start_source = _resolve_heston_smile_starting_point(
+        surface,
+        initial_guess=initial_guess,
+        warm_start=warm_start,
+    )
+    objective = ObjectiveBundle(
+        objective_kind="least_squares",
+        labels=surface.labels,
+        target_values=surface.market_vols,
+        weights=surface.weights,
+        vector_objective_fn=lambda params: _heston_model_vols(
+            surface,
+            params,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            fft_alpha=fft_alpha,
+        ),
+        jacobian_fn=lambda params: _heston_vol_jacobian(
+            surface,
+            params,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            fft_alpha=fft_alpha,
+        ),
+        metadata={
+            "model_family": "heston",
+            "surface_name": surface.surface_name,
+            "fit_space": "implied_vol",
+            "quote_map": surface.quote_map_spec.to_payload(),
+            "derivative_method": "finite_difference_vector_jacobian",
+        },
+    )
+    request = SolveRequest(
+        request_id="heston_smile_least_squares",
+        problem_kind="least_squares",
+        parameter_names=_HESTON_PARAMETER_NAMES,
+        initial_guess=starting_point,
+        objective=objective,
+        bounds=SolveBounds(
+            lower=tuple(float(value) for value in _HESTON_LOWER_BOUNDS),
+            upper=tuple(float(value) for value in _HESTON_UPPER_BOUNDS),
+        ),
+        solver_hint="trf",
+        warm_start=normalized_warm_start,
+        metadata={
+            "surface": surface.to_payload(),
+            "parameter_set_name": parameter_set_name,
+            "model_family": "heston",
+        },
+        options={"ftol": 1e-8, "xtol": 1e-8, "gtol": 1e-8, "maxiter": 80},
+    )
+    return request, warm_start_source
+
+
+def _heston_warm_start_from_payload(payload: Mapping[str, object]) -> WarmStart | None:
+    """Recreate a warm-start record from a solve-request payload."""
+    raw = payload.get("warm_start")
+    if not isinstance(raw, dict):
+        return None
+    values = raw.get("parameter_values")
+    if not isinstance(values, (list, tuple)):
+        return None
+    return WarmStart(
+        parameter_values=tuple(float(value) for value in values),
+        source=str(raw.get("source") or ""),
+        metadata=dict(raw.get("metadata") or {}),
+    )
+
+
 def _heston_model_vols(
     surface: HestonSmileSurface,
     params: Sequence[float],
@@ -922,58 +1030,14 @@ def fit_heston_smile_surface(
     fft_alpha: float = 1.5,
 ) -> HestonSmileCalibrationResult:
     """Fit a supported Heston smile surface onto the shared solve substrate."""
-    normalized_warm_start = _normalize_warm_start(warm_start)
-    starting_point = tuple(float(value) for value in initial_guess) if initial_guess is not None else None
-    if starting_point is None and normalized_warm_start is not None:
-        starting_point = normalized_warm_start.parameter_values
-    if starting_point is None:
-        starting_point = _default_initial_guess(surface)
-
-    objective = ObjectiveBundle(
-        objective_kind="least_squares",
-        labels=surface.labels,
-        target_values=surface.market_vols,
-        weights=surface.weights,
-        vector_objective_fn=lambda params: _heston_model_vols(
-            surface,
-            params,
-            fft_points=fft_points,
-            fft_eta=fft_eta,
-            fft_alpha=fft_alpha,
-        ),
-        jacobian_fn=lambda params: _heston_vol_jacobian(
-            surface,
-            params,
-            fft_points=fft_points,
-            fft_eta=fft_eta,
-            fft_alpha=fft_alpha,
-        ),
-        metadata={
-            "model_family": "heston",
-            "surface_name": surface.surface_name,
-            "fit_space": "implied_vol",
-            "quote_map": surface.quote_map_spec.to_payload(),
-            "derivative_method": "finite_difference_vector_jacobian",
-        },
-    )
-    request = SolveRequest(
-        request_id="heston_smile_least_squares",
-        problem_kind="least_squares",
-        parameter_names=_HESTON_PARAMETER_NAMES,
-        initial_guess=starting_point,
-        objective=objective,
-        bounds=SolveBounds(
-            lower=tuple(float(value) for value in _HESTON_LOWER_BOUNDS),
-            upper=tuple(float(value) for value in _HESTON_UPPER_BOUNDS),
-        ),
-        solver_hint="trf",
-        warm_start=normalized_warm_start,
-        metadata={
-            "surface": surface.to_payload(),
-            "parameter_set_name": parameter_set_name,
-            "model_family": "heston",
-        },
-        options={"ftol": 1e-8, "xtol": 1e-8, "gtol": 1e-8, "maxiter": 80},
+    request, _ = _build_heston_smile_solve_request(
+        surface,
+        initial_guess=initial_guess,
+        warm_start=warm_start,
+        parameter_set_name=parameter_set_name,
+        fft_points=fft_points,
+        fft_eta=fft_eta,
+        fft_alpha=fft_alpha,
     )
     solve_result = execute_solve_request(request)
     solver_provenance = build_solve_provenance(request, solve_result)
@@ -1270,6 +1334,227 @@ def fit_heston_surface(
     )
 
 
+def build_heston_smile_calibration_problem_ir(
+    surface: HestonSmileSurface,
+    *,
+    initial_guess: Sequence[float] | None = None,
+    warm_start: Sequence[float] | WarmStart | None = None,
+    parameter_set_name: str = "heston",
+    fft_points: int = 1024,
+    fft_eta: float = 0.1,
+    fft_alpha: float = 1.5,
+) -> CalibrationProblemIR:
+    """Represent the supported Heston smile calibration as a problem IR."""
+    solve_request, warm_start_source = _build_heston_smile_solve_request(
+        surface,
+        initial_guess=initial_guess,
+        warm_start=warm_start,
+        parameter_set_name=parameter_set_name,
+        fft_points=fft_points,
+        fft_eta=fft_eta,
+        fft_alpha=fft_alpha,
+    )
+    bounds_payload = solve_request.bounds.to_payload()
+    lower_bounds = tuple(bounds_payload["lower"])
+    upper_bounds = tuple(bounds_payload["upper"])
+    variable_charts = {
+        "kappa": "positive_mean_reversion",
+        "theta": "positive_variance",
+        "xi": "positive_vol_of_vol",
+        "rho": "bounded_correlation",
+        "v0": "positive_variance",
+    }
+    variables = tuple(
+        CalibrationVariableSpec(
+            name=name,
+            coordinate_chart=variable_charts[name],
+            initial_value=solve_request.initial_guess[index],
+            lower_bound=lower_bounds[index],
+            upper_bound=upper_bounds[index],
+            warm_start_source=warm_start_source,
+            metadata={
+                "parameter_role": "heston_parameter",
+                "model_family": "heston",
+            },
+        )
+        for index, name in enumerate(solve_request.parameter_names)
+    )
+    quote_map_payload = surface.quote_map_spec.to_payload()
+    targets = tuple(
+        CalibrationTargetSpec(
+            target_id=label,
+            instrument_id=f"{surface.surface_name or 'heston_smile'}:{label}",
+            quote_family=surface.quote_map_spec.quote_family,
+            quote_convention=surface.quote_map_spec.convention,
+            quote_value=point.market_vol,
+            weight=point.weight,
+            quote_map_payload=quote_map_payload,
+            validation_tags=("implied_vol", "heston_smile", "calibration_target"),
+            metadata={
+                "strike": float(point.strike),
+                "expiry_years": float(surface.expiry_years),
+                "spot": float(surface.spot),
+                "forward": float(surface.forward),
+            },
+        )
+        for label, point in zip(surface.labels, surface.points)
+    )
+    objective = CalibrationObjectiveSpec(
+        objective_kind="least_squares",
+        loss_function="weighted_sum_of_squares",
+        residual_count=len(targets),
+        derivative_method="finite_difference_vector_jacobian",
+        solve_request_id=solve_request.request_id,
+        metadata={
+            "target_transform": "black_implied_vol",
+            "quote_map": quote_map_payload,
+            "model_family": "heston",
+            "calibration_direction": "surface_to_model_parameters",
+        },
+    )
+    materialization = CalibrationMaterializationSpec(
+        object_kind="model_parameter_set",
+        object_name=parameter_set_name,
+        destination_field="model_parameter_sets",
+        source_ref="fit_heston_smile_surface",
+        metadata={
+            "model_family": "heston",
+            "parameter_names": list(_HESTON_PARAMETER_NAMES),
+            "parameter_source": "calibrated_model_parameter_set",
+        },
+    )
+    diagnostics = (
+        CalibrationDiagnosticSpec(
+            diagnostic_id="max_abs_vol_error",
+            metric_name="max_abs_vol_error",
+            tolerance=5e-3,
+            severity="warning",
+        ),
+        CalibrationDiagnosticSpec(
+            diagnostic_id="weighted_rms_vol_error",
+            metric_name="weighted_rms_vol_error",
+            tolerance=5e-3,
+            severity="warning",
+        ),
+        CalibrationDiagnosticSpec(
+            diagnostic_id="quote_convention_mismatch_count",
+            metric_name="quote_convention_mismatch_count",
+            tolerance=0.0,
+            severity="error",
+        ),
+    )
+    dependencies = (
+        CalibrationDependencySpec(
+            dependency_id="underlier_spot",
+            object_kind="spot",
+            object_name="surface.spot",
+            source_ref="HestonSmileSurface.spot",
+            metadata={"spot": float(surface.spot)},
+        ),
+        CalibrationDependencySpec(
+            dependency_id="discount_curve",
+            object_kind="discount_curve",
+            object_name="surface.rate",
+            source_ref="HestonSmileSurface.rate",
+            metadata={"flat_rate": float(surface.rate)},
+        ),
+        CalibrationDependencySpec(
+            dependency_id="quote_surface",
+            object_kind="black_vol_surface",
+            object_name=surface.surface_name or "heston_smile",
+            source_ref=surface.source_ref,
+            metadata={
+                "quote_family": surface.quote_map_spec.quote_family,
+                "quote_convention": surface.quote_map_spec.convention,
+                "point_count": len(surface.points),
+            },
+        ),
+    )
+    return CalibrationProblemIR(
+        problem_id=solve_request.request_id,
+        workflow_id="heston_smile",
+        family_id="heston",
+        variables=variables,
+        targets=targets,
+        objective=objective,
+        dependencies=dependencies,
+        materialization=materialization,
+        diagnostics=diagnostics,
+        solve_request_payload=solve_request.to_payload(),
+        replay_metadata={
+            "surface": surface.to_payload(),
+            "warm_start_source": warm_start_source,
+            "calibration_direction": "surface_to_model_parameters",
+            "parameter_set_name": parameter_set_name,
+            "fft_points": int(fft_points),
+            "fft_eta": float(fft_eta),
+            "fft_alpha": float(fft_alpha),
+        },
+        metadata={
+            "adapter_id": "heston_smile_problem_ir_v1",
+            "engine_backed": False,
+            "support_boundary": "problem_ir_adapter_only",
+            "source_ref": "build_heston_smile_calibration_problem_ir",
+            "output_parameter_source": "calibrated_model_parameter_set",
+        },
+    )
+
+
+def fit_heston_smile_problem_ir(
+    problem: CalibrationProblemIR,
+    surface: HestonSmileSurface,
+    *,
+    fft_points: int = 1024,
+    fft_eta: float = 0.1,
+    fft_alpha: float = 1.5,
+) -> HestonSmileCalibrationResult:
+    """Execute the current Heston smile workflow through its problem-IR adapter."""
+    if problem.workflow_id != "heston_smile" or problem.family_id != "heston":
+        raise ValueError("fit_heston_smile_problem_ir requires a Heston smile calibration problem")
+    if tuple(variable.name for variable in problem.variables) != _HESTON_PARAMETER_NAMES:
+        raise ValueError("fit_heston_smile_problem_ir requires Heston kappa/theta/xi/rho/v0 variables")
+    if len(problem.targets) != len(surface.points):
+        raise ValueError("Heston smile calibration problem target count is stale or inconsistent")
+
+    parameter_set_name = "heston"
+    if problem.materialization is not None and problem.materialization.object_name:
+        parameter_set_name = problem.materialization.object_name
+    initial_guess = tuple(variable.initial_value for variable in problem.variables)
+    warm_start = _heston_warm_start_from_payload(problem.solve_request_payload)
+    solve_request, _ = _build_heston_smile_solve_request(
+        surface,
+        initial_guess=initial_guess,
+        warm_start=warm_start,
+        parameter_set_name=parameter_set_name,
+        fft_points=fft_points,
+        fft_eta=fft_eta,
+        fft_alpha=fft_alpha,
+    )
+    if problem.solve_request_payload and dict(problem.solve_request_payload) != solve_request.to_payload():
+        raise ValueError("Heston smile calibration problem solve_request_payload is stale or inconsistent")
+
+    result = fit_heston_smile_surface(
+        surface,
+        initial_guess=initial_guess,
+        warm_start=warm_start,
+        parameter_set_name=parameter_set_name,
+        fft_points=fft_points,
+        fft_eta=fft_eta,
+        fft_alpha=fft_alpha,
+    )
+    provenance = dict(result.provenance)
+    provenance["calibration_problem_ir"] = {
+        "problem_id": problem.problem_id,
+        "workflow_id": problem.workflow_id,
+        "family_id": problem.family_id,
+        "adapter_id": problem.metadata.get("adapter_id", ""),
+        "engine_backed": bool(problem.metadata.get("engine_backed", False)),
+        "calibration_direction": problem.replay_metadata.get("calibration_direction", ""),
+        "output_parameter_source": problem.metadata.get("output_parameter_source", ""),
+    }
+    return replace(result, provenance=provenance)
+
+
 def calibrate_heston_smile_workflow(
     spot: float,
     expiry_years: float,
@@ -1398,8 +1683,10 @@ __all__ = [
     "HestonSurfaceCalibrationResult",
     "build_heston_smile_surface",
     "build_heston_surface_input",
+    "build_heston_smile_calibration_problem_ir",
     "fit_heston_smile_surface",
     "fit_heston_surface",
+    "fit_heston_smile_problem_ir",
     "calibrate_heston_smile_workflow",
     "calibrate_heston_surface_workflow",
     "calibrate_heston_surface_from_equity_vol_surface_workflow",

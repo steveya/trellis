@@ -192,6 +192,11 @@ The first migrated vanilla cases now use that boundary directly:
   onto a checked ``heston`` two-state helper, with explicit ``euler`` versus
   ``heston_qe`` scheme selection and the ``heston:monte_carlo`` validation
   bundle, instead of reusing the vanilla-equity GBM helper
+- Heston calibration now has a bounded problem-IR adapter for single-expiry
+  implied-vol smiles. Pricing routes consume explicit Heston model parameters
+  from task specs, market state, synthetic fixtures, or recorded calibration
+  results; a Black vol surface bump is not treated as a model-parameter bump
+  unless a calibration problem records that bridge.
 - the local-vol vanilla helper remains a checked route-level wrapper, but it
   now assembles and prices through ``trellis.models.monte_carlo.event_aware``
   instead of maintaining a separate Monte Carlo engine/payoff loop

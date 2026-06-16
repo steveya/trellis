@@ -14,6 +14,12 @@ from trellis.models.calibration.credit import (
     calibrate_single_name_credit_curve_workflow,
     fit_single_name_credit_problem_ir,
 )
+from trellis.models.calibration.heston_fit import (
+    build_heston_smile_calibration_problem_ir,
+    build_heston_smile_surface,
+    fit_heston_smile_problem_ir,
+    fit_heston_smile_surface,
+)
 from trellis.models.calibration.orchestrator import (
     UnsupportedCalibrationProblemIRError,
     calibrate_problem_ir,
@@ -72,6 +78,20 @@ def _credit_quotes():
     return (
         CreditHazardCalibrationQuote(1.0, 120.0, "spread", label="spread_1y"),
         CreditHazardCalibrationQuote(5.0, 180.0, "spread", label="spread_5y"),
+    )
+
+
+def _heston_smile_surface():
+    return build_heston_smile_surface(
+        100.0,
+        1.0,
+        [80.0, 90.0, 100.0, 110.0, 120.0],
+        [0.265, 0.238, 0.218, 0.207, 0.202],
+        rate=0.02,
+        labels=["k80", "k90", "atm", "k110", "k120"],
+        weights=[1.0, 1.0, 2.0, 1.0, 1.0],
+        surface_name="equity_heston_1y",
+        metadata={"fixture": "heston_problem_ir"},
     )
 
 
@@ -260,6 +280,85 @@ def test_single_name_credit_problem_ir_adapter_rejects_wrong_problem_family():
         fit_single_name_credit_problem_ir(wrong_problem, _credit_quotes(), market_state)
 
 
+def test_heston_smile_problem_ir_represents_surface_to_parameter_bridge():
+    surface = _heston_smile_surface()
+
+    problem = build_heston_smile_calibration_problem_ir(
+        surface,
+        initial_guess=(1.2, 0.05, 0.25, -0.3, 0.04),
+        parameter_set_name="heston_equity",
+        fft_points=128,
+    )
+    payload = problem.to_payload()
+
+    assert problem.problem_id == "heston_smile_least_squares"
+    assert problem.workflow_id == "heston_smile"
+    assert problem.family_id == "heston"
+    assert [variable.name for variable in problem.variables] == [
+        "kappa",
+        "theta",
+        "xi",
+        "rho",
+        "v0",
+    ]
+    assert [target.target_id for target in problem.targets] == list(surface.labels)
+    assert problem.objective.derivative_method == "finite_difference_vector_jacobian"
+    assert problem.objective.metadata["calibration_direction"] == "surface_to_model_parameters"
+    assert problem.solve_request_payload["request_id"] == "heston_smile_least_squares"
+    assert payload["materialization"]["object_kind"] == "model_parameter_set"
+    assert payload["materialization"]["object_name"] == "heston_equity"
+    assert payload["metadata"]["source_ref"] == "build_heston_smile_calibration_problem_ir"
+    assert payload["metadata"]["output_parameter_source"] == "calibrated_model_parameter_set"
+    assert payload["replay_metadata"]["surface"]["quote_map"]["quote_family"] == "implied_vol"
+
+
+def test_heston_smile_problem_ir_adapter_matches_direct_workflow():
+    surface = _heston_smile_surface()
+    initial_guess = (1.2, 0.05, 0.25, -0.3, 0.04)
+    problem = build_heston_smile_calibration_problem_ir(
+        surface,
+        initial_guess=initial_guess,
+        parameter_set_name="heston_equity",
+        fft_points=128,
+    )
+
+    direct = fit_heston_smile_surface(
+        surface,
+        initial_guess=initial_guess,
+        parameter_set_name="heston_equity",
+        fft_points=128,
+    )
+    adapted = fit_heston_smile_problem_ir(
+        problem,
+        surface,
+        fft_points=128,
+    )
+
+    assert adapted.solve_request.to_payload() == direct.solve_request.to_payload()
+    assert adapted.solver_replay_artifact.request == direct.solver_replay_artifact.request
+    assert adapted.runtime_binding.to_payload() == direct.runtime_binding.to_payload()
+    assert adapted.diagnostics.to_payload() == direct.diagnostics.to_payload()
+    assert adapted.provenance["calibration_problem_ir"]["problem_id"] == problem.problem_id
+    assert adapted.provenance["calibration_problem_ir"]["adapter_id"] == "heston_smile_problem_ir_v1"
+
+
+def test_heston_smile_problem_ir_adapter_rejects_stale_problem():
+    surface = _heston_smile_surface()
+    problem = build_heston_smile_calibration_problem_ir(surface, fft_points=128)
+    wrong_problem = CalibrationProblemIR(
+        problem_id=problem.problem_id,
+        workflow_id="sabr_smile",
+        family_id="sabr",
+        variables=problem.variables,
+        targets=problem.targets,
+        objective=problem.objective,
+        solve_request_payload=problem.solve_request_payload,
+    )
+
+    with pytest.raises(ValueError, match="Heston smile"):
+        fit_heston_smile_problem_ir(wrong_problem, surface, fft_points=128)
+
+
 def test_problem_ir_orchestrator_lists_bounded_supported_workflows():
     supported = {
         (adapter.family_id, adapter.workflow_id): adapter
@@ -268,10 +367,14 @@ def test_problem_ir_orchestrator_lists_bounded_supported_workflows():
 
     assert ("sabr", "sabr_smile") in supported
     assert ("credit", "single_name_credit_curve") in supported
+    assert ("heston", "heston_smile") in supported
     assert supported[("sabr", "sabr_smile")].required_context == ("surface",)
     assert supported[("credit", "single_name_credit_curve")].required_context == (
         "quotes",
         "market_state",
+    )
+    assert supported[("heston", "heston_smile")].required_context == (
+        "heston_smile_surface",
     )
 
 
@@ -314,12 +417,48 @@ def test_problem_ir_orchestrator_dispatches_credit_adapter_with_provenance():
     )
 
 
+def test_problem_ir_orchestrator_dispatches_heston_smile_adapter_with_provenance():
+    surface = _heston_smile_surface()
+    initial_guess = (1.2, 0.05, 0.25, -0.3, 0.04)
+    problem = build_heston_smile_calibration_problem_ir(
+        surface,
+        initial_guess=initial_guess,
+        parameter_set_name="heston_equity",
+        fft_points=128,
+    )
+    direct = fit_heston_smile_surface(
+        surface,
+        initial_guess=initial_guess,
+        parameter_set_name="heston_equity",
+        fft_points=128,
+    )
+
+    orchestrated = calibrate_problem_ir(
+        problem,
+        heston_smile_surface=surface,
+        fft_points=128,
+    )
+
+    assert orchestrated.solve_request.to_payload() == direct.solve_request.to_payload()
+    assert orchestrated.runtime_binding.to_payload() == direct.runtime_binding.to_payload()
+    assert orchestrated.provenance["calibration_problem_ir_orchestrator"]["adapter_id"] == (
+        "heston_smile_problem_ir_v1"
+    )
+
+
 def test_problem_ir_orchestrator_fails_closed_for_unsupported_or_incomplete_context():
     surface = _sabr_surface()
     problem = build_sabr_smile_calibration_problem_ir(surface)
 
     with pytest.raises(ValueError, match="requires `surface`"):
         calibrate_problem_ir(problem)
+
+    heston_problem = build_heston_smile_calibration_problem_ir(
+        _heston_smile_surface(),
+        fft_points=128,
+    )
+    with pytest.raises(ValueError, match="requires `heston_smile_surface`"):
+        calibrate_problem_ir(heston_problem)
 
     unsupported = CalibrationProblemIR(
         problem_id="unsupported_problem",

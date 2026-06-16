@@ -11,6 +11,10 @@ from trellis.models.calibration.credit import (
     CreditHazardCalibrationQuote,
     fit_single_name_credit_problem_ir,
 )
+from trellis.models.calibration.heston_fit import (
+    HestonSmileSurface,
+    fit_heston_smile_problem_ir,
+)
 from trellis.models.calibration.problem_ir import CalibrationProblemIR
 from trellis.models.calibration.sabr_fit import (
     SABRSmileSurface,
@@ -93,10 +97,20 @@ _CREDIT_ADAPTER = CalibrationProblemIRAdapterSpec(
     metadata={"support_boundary": "bounded_problem_ir_orchestrator"},
 )
 
+_HESTON_SMILE_ADAPTER = CalibrationProblemIRAdapterSpec(
+    adapter_id="heston_smile_problem_ir_v1",
+    family_id="heston",
+    workflow_id="heston_smile",
+    required_context=("heston_smile_surface",),
+    result_type="HestonSmileCalibrationResult",
+    description="Adapter-backed Heston smile calibration through the checked direct workflow.",
+    metadata={"support_boundary": "bounded_problem_ir_orchestrator"},
+)
+
 
 def supported_calibration_problem_ir_adapters() -> tuple[CalibrationProblemIRAdapterSpec, ...]:
     """Return the bounded public problem-IR support matrix."""
-    return (_SABR_ADAPTER, _CREDIT_ADAPTER)
+    return (_SABR_ADAPTER, _CREDIT_ADAPTER, _HESTON_SMILE_ADAPTER)
 
 
 def _resolve_adapter(problem: CalibrationProblemIR) -> CalibrationProblemIRAdapterSpec:
@@ -156,9 +170,13 @@ def calibrate_problem_ir(
     surface: SABRSmileSurface | None = None,
     quotes: Sequence[CreditHazardCalibrationQuote] | None = None,
     market_state: MarketState | None = None,
+    heston_smile_surface: HestonSmileSurface | None = None,
     recovery: float | None = None,
     curve_name: str | None = None,
     max_hazard: float | None = None,
+    fft_points: int = 1024,
+    fft_eta: float = 0.1,
+    fft_alpha: float = 1.5,
 ) -> object:
     """Execute one supported calibration problem IR through a fail-closed adapter."""
     adapter = _resolve_adapter(problem)
@@ -179,6 +197,17 @@ def calibrate_problem_ir(
             recovery=_credit_recovery(problem, recovery),
             curve_name=_credit_curve_name(problem, curve_name),
             max_hazard=_credit_max_hazard(problem, max_hazard),
+        )
+        return _attach_orchestrator_provenance(result, problem, adapter)
+    if adapter is _HESTON_SMILE_ADAPTER:
+        if heston_smile_surface is None:
+            raise ValueError("Heston smile problem-IR orchestration requires `heston_smile_surface` context")
+        result = fit_heston_smile_problem_ir(
+            problem,
+            heston_smile_surface,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            fft_alpha=fft_alpha,
         )
         return _attach_orchestrator_provenance(result, problem, adapter)
     raise UnsupportedCalibrationProblemIRError(problem, supported_calibration_problem_ir_adapters())
