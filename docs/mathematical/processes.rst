@@ -53,6 +53,27 @@ Heston
 
 Closed-form characteristic function enables FFT/COS pricing.
 
+Bates Boundary
+--------------
+
+Bates-style affine jump stochastic volatility extends the Heston variance
+process with compound-Poisson lognormal spot jumps:
+
+.. math::
+
+   \frac{dS}{S_-} = (\mu - \lambda k)\,dt + \sqrt{V}\,dW_1
+      + (e^J - 1)\,dN,
+   \quad
+   dV = \kappa(\theta - V)\,dt + \xi\sqrt{V}\,dW_2.
+
+The computational contract is Heston model parameters
+``kappa``, ``theta``, ``xi``, ``rho``, and ``v0`` plus jump parameters
+``jump_intensity``, ``jump_mean``, and ``jump_variance``. Current diagnostics
+recognize this contract and emit the missing
+``bates_affine_jump_stochastic_vol_kernel`` primitive for Bates transform or
+Monte Carlo targets. Trellis does not yet admit a checked Bates characteristic
+function or simulation route.
+
 SABR
 ----
 

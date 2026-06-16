@@ -104,6 +104,43 @@ class CalibrationProblemSemantics:
 
 
 @dataclass(frozen=True)
+class AffineJumpStochasticVolSemantics:
+    """Required Bates-style affine jump stochastic-volatility capabilities."""
+
+    process_family: str
+    base_process_family: str
+    jump_family: str
+    required_model_parameters: tuple[str, ...]
+    required_jump_parameters: tuple[str, ...]
+    jump_parameter_aliases: tuple[tuple[str, tuple[str, ...]], ...]
+    transform_capability: str
+    monte_carlo_capability: str
+    validation_requirements: tuple[str, ...]
+    supported_now: bool
+    missing_primitives: tuple[str, ...] = ()
+    evidence: tuple[str, ...] = ()
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "process_family": self.process_family,
+            "base_process_family": self.base_process_family,
+            "jump_family": self.jump_family,
+            "required_model_parameters": list(self.required_model_parameters),
+            "required_jump_parameters": list(self.required_jump_parameters),
+            "jump_parameter_aliases": {
+                name: list(aliases)
+                for name, aliases in self.jump_parameter_aliases
+            },
+            "transform_capability": self.transform_capability,
+            "monte_carlo_capability": self.monte_carlo_capability,
+            "validation_requirements": list(self.validation_requirements),
+            "supported_now": self.supported_now,
+            "missing_primitives": list(self.missing_primitives),
+            "evidence": list(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
 class StochasticVolTargetProblem:
     """Computational class for one concrete comparison/build target."""
 
@@ -118,6 +155,7 @@ class StochasticVolTargetProblem:
     unsupported_features: tuple[str, ...] = ()
     repair_packet: RepairPacket | None = None
     calibration_problem: CalibrationProblemSemantics | None = None
+    affine_jump_process: AffineJumpStochasticVolSemantics | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -138,6 +176,11 @@ class StochasticVolTargetProblem:
             "calibration_problem": (
                 self.calibration_problem.to_payload()
                 if self.calibration_problem is not None
+                else None
+            ),
+            "affine_jump_process": (
+                self.affine_jump_process.to_payload()
+                if self.affine_jump_process is not None
                 else None
             ),
         }
@@ -236,6 +279,12 @@ def _classify_target(
         text=target_text,
         process_family=process_family,
     )
+    affine_jump_process = _affine_jump_process_semantics(
+        bucket,
+        target_id=target_id,
+        text=target_text,
+        process_family=process_family,
+    )
     return StochasticVolTargetProblem(
         target_id=target_id,
         bucket=bucket,
@@ -248,6 +297,7 @@ def _classify_target(
         unsupported_features=unsupported,
         repair_packet=repair_packet,
         calibration_problem=calibration_problem,
+        affine_jump_process=affine_jump_process,
     )
 
 
@@ -450,6 +500,44 @@ def _calibration_problem_semantics(
     )
 
 
+def _affine_jump_process_semantics(
+    bucket: str,
+    *,
+    target_id: str,
+    text: str,
+    process_family: str,
+) -> AffineJumpStochasticVolSemantics | None:
+    if bucket != AFFINE_JUMP_STOCHASTIC_VOL:
+        return None
+    missing_primitive = "bates_affine_jump_stochastic_vol_kernel"
+    return AffineJumpStochasticVolSemantics(
+        process_family=process_family,
+        base_process_family="heston",
+        jump_family="compound_poisson_lognormal",
+        required_model_parameters=("kappa", "theta", "xi", "rho", "v0"),
+        required_jump_parameters=(
+            "jump_intensity",
+            "jump_mean",
+            "jump_variance",
+        ),
+        jump_parameter_aliases=(
+            ("jump_intensity", ("lam", "lambda")),
+            ("jump_variance", ("jump_var", "jump_vol^2", "jump_vol")),
+        ),
+        transform_capability="bates_characteristic_function",
+        monte_carlo_capability="bates_jump_stochastic_vol_process",
+        validation_requirements=(
+            "consume_heston_model_parameters",
+            "consume_jump_parameters",
+            "reject_black_vol_surface_as_model_parameters",
+            "cross_validate_transform_and_monte_carlo_when_admitted",
+        ),
+        supported_now=False,
+        missing_primitives=(missing_primitive,),
+        evidence=tuple(item for item in (target_id, _short_text_evidence(text)) if item),
+    )
+
+
 def _unsupported_features(
     bucket: str,
     repair_packet: RepairPacket | None,
@@ -580,6 +668,7 @@ def _flatten_strings(value: Any) -> list[str]:
 
 __all__ = [
     "AFFINE_JUMP_STOCHASTIC_VOL",
+    "AffineJumpStochasticVolSemantics",
     "CALIBRATION_TO_SURFACE",
     "CalibrationProblemSemantics",
     "MarketBindingSemantics",

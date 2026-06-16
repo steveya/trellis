@@ -155,6 +155,55 @@ def test_repair_packets_name_missing_primitives_not_generated_text():
     )
 
 
+def test_bates_targets_expose_affine_jump_process_contract():
+    from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
+
+    report = classify_stochastic_vol_task(_legacy_tasks()["T44"])
+
+    for target_id, solver_target in {
+        "bates_fft": "affine_jump_transform",
+        "bates_mc": "affine_jump_monte_carlo",
+    }.items():
+        target = _target_payload(report, target_id)
+        contract = target["affine_jump_process"]
+
+        assert target["process_family"] == "bates"
+        assert target["solver_target"] == solver_target
+        assert target["market_bindings"]["requires_model_parameters"] is True
+        assert target["market_bindings"]["requires_jump_parameters"] is True
+        assert target["validation_bundle"] == "bates:affine_jump_stochastic_vol"
+        assert contract["base_process_family"] == "heston"
+        assert contract["jump_family"] == "compound_poisson_lognormal"
+        assert contract["required_model_parameters"] == [
+            "kappa",
+            "theta",
+            "xi",
+            "rho",
+            "v0",
+        ]
+        assert contract["required_jump_parameters"] == [
+            "jump_intensity",
+            "jump_mean",
+            "jump_variance",
+        ]
+        assert contract["jump_parameter_aliases"]["jump_intensity"] == [
+            "lam",
+            "lambda",
+        ]
+        assert contract["jump_parameter_aliases"]["jump_variance"] == [
+            "jump_var",
+            "jump_vol^2",
+            "jump_vol",
+        ]
+        assert contract["transform_capability"] == "bates_characteristic_function"
+        assert contract["monte_carlo_capability"] == "bates_jump_stochastic_vol_process"
+        assert contract["supported_now"] is False
+        assert contract["missing_primitives"] == [
+            "bates_affine_jump_stochastic_vol_kernel",
+        ]
+        assert "consume_jump_parameters" in contract["validation_requirements"]
+
+
 def test_stochastic_vol_problem_payload_is_json_stable():
     from trellis.agent.computational_problem_ir import stochastic_vol_problem_payload
 

@@ -119,6 +119,14 @@ primitive or unsupported class. Examples include
 ``path_dependent_early_exercise_under_stochastic_vol``. Remediation tools
 should group these packets before falling back to raw exception text.
 
+For Bates-style affine jump stochastic-volatility targets, each target also
+carries an ``affine_jump_process`` block. That block records the required
+Heston model parameters, the compound-Poisson lognormal jump parameters
+(``jump_intensity``, ``jump_mean``, and ``jump_variance``), accepted legacy
+aliases such as ``lam`` and ``jump_vol``, and the missing transform/Monte Carlo
+capabilities. The block is evidence for an honest implementation gap; it does
+not admit a Bates pricing route until the named primitive exists.
+
 Operational use
 ---------------
 

@@ -197,6 +197,11 @@ The first migrated vanilla cases now use that boundary directly:
   from task specs, market state, synthetic fixtures, or recorded calibration
   results; a Black vol surface bump is not treated as a model-parameter bump
   unless a calibration problem records that bridge.
+- Bates-style affine jump stochastic-volatility tasks now lower to an explicit
+  blocker contract rather than a generic unsupported route. The contract names
+  the Heston base parameters, compound-Poisson lognormal jump parameters, the
+  missing characteristic-function capability, the missing Monte Carlo process
+  capability, and the jump-parameter validation requirements.
 - the local-vol vanilla helper remains a checked route-level wrapper, but it
   now assembles and prices through ``trellis.models.monte_carlo.event_aware``
   instead of maintaining a separate Monte Carlo engine/payoff loop
