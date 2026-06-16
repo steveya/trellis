@@ -141,6 +141,40 @@ class AffineJumpStochasticVolSemantics:
 
 
 @dataclass(frozen=True)
+class LeverageFunctionSemantics:
+    """Required SLV/LSV leverage-function calibration and solver contracts."""
+
+    process_family: str
+    leverage_function_kind: str
+    required_market_inputs: tuple[str, ...]
+    required_model_inputs: tuple[str, ...]
+    calibration_requirements: tuple[str, ...]
+    interpolation_domain: tuple[str, ...]
+    diagnostics: tuple[str, ...]
+    solver_requirements: tuple[str, ...]
+    validation_requirements: tuple[str, ...]
+    supported_now: bool
+    missing_components: tuple[str, ...] = ()
+    evidence: tuple[str, ...] = ()
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "process_family": self.process_family,
+            "leverage_function_kind": self.leverage_function_kind,
+            "required_market_inputs": list(self.required_market_inputs),
+            "required_model_inputs": list(self.required_model_inputs),
+            "calibration_requirements": list(self.calibration_requirements),
+            "interpolation_domain": list(self.interpolation_domain),
+            "diagnostics": list(self.diagnostics),
+            "solver_requirements": list(self.solver_requirements),
+            "validation_requirements": list(self.validation_requirements),
+            "supported_now": self.supported_now,
+            "missing_components": list(self.missing_components),
+            "evidence": list(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
 class StochasticVolTargetProblem:
     """Computational class for one concrete comparison/build target."""
 
@@ -156,6 +190,7 @@ class StochasticVolTargetProblem:
     repair_packet: RepairPacket | None = None
     calibration_problem: CalibrationProblemSemantics | None = None
     affine_jump_process: AffineJumpStochasticVolSemantics | None = None
+    leverage_function_contract: LeverageFunctionSemantics | None = None
 
     def to_payload(self) -> dict[str, Any]:
         return {
@@ -181,6 +216,11 @@ class StochasticVolTargetProblem:
             "affine_jump_process": (
                 self.affine_jump_process.to_payload()
                 if self.affine_jump_process is not None
+                else None
+            ),
+            "leverage_function_contract": (
+                self.leverage_function_contract.to_payload()
+                if self.leverage_function_contract is not None
                 else None
             ),
         }
@@ -268,6 +308,7 @@ def _classify_target(
     target_text = _target_route_text(task, target_id)
     context_text = _text_blob(task, target_id)
     bucket = _target_bucket(target_text)
+    solver_target = _solver_target(target_text, bucket)
     process_family = _process_family(context_text, bucket)
     semantics = _model_parameter_semantics(bucket, process_family)
     bindings = _market_bindings(bucket, process_family)
@@ -285,10 +326,17 @@ def _classify_target(
         text=target_text,
         process_family=process_family,
     )
+    leverage_function_contract = _leverage_function_semantics(
+        bucket,
+        target_id=target_id,
+        text=target_text,
+        process_family=process_family,
+        solver_target=solver_target,
+    )
     return StochasticVolTargetProblem(
         target_id=target_id,
         bucket=bucket,
-        solver_target=_solver_target(target_text, bucket),
+        solver_target=solver_target,
         process_family=process_family,
         payoff_class=_payoff_class(context_text),
         model_parameter_semantics=semantics,
@@ -298,6 +346,7 @@ def _classify_target(
         repair_packet=repair_packet,
         calibration_problem=calibration_problem,
         affine_jump_process=affine_jump_process,
+        leverage_function_contract=leverage_function_contract,
     )
 
 
@@ -538,6 +587,87 @@ def _affine_jump_process_semantics(
     )
 
 
+def _leverage_function_semantics(
+    bucket: str,
+    *,
+    target_id: str,
+    text: str,
+    process_family: str,
+    solver_target: str,
+) -> LeverageFunctionSemantics | None:
+    if bucket != SLV_LSV:
+        return None
+    solver_requirements, missing_solver = _slv_lsv_solver_requirements(solver_target)
+    return LeverageFunctionSemantics(
+        process_family=process_family,
+        leverage_function_kind="spot_time_surface",
+        required_market_inputs=(
+            "local_vol_surface",
+            "black_vol_surface",
+            "underlier_spot",
+            "discount_curve",
+        ),
+        required_model_inputs=(
+            "heston_model_parameters",
+            "leverage_function_surface",
+        ),
+        calibration_requirements=(
+            "recorded_leverage_calibration_problem",
+            "local_vol_surface_authority",
+            "stochastic_vol_process_coupling",
+        ),
+        interpolation_domain=("time", "spot"),
+        diagnostics=(
+            "surface_coverage",
+            "leverage_bounds",
+            "calibration_residual",
+            "martingale_check",
+        ),
+        solver_requirements=solver_requirements,
+        validation_requirements=(
+            "consume_local_vol_surface",
+            "consume_heston_model_parameters",
+            "consume_leverage_function_surface",
+            "reject_black_vol_surface_as_model_parameters",
+        ),
+        supported_now=False,
+        missing_components=(
+            "leverage_function_calibration_contract",
+            "stochastic_local_vol_coupling_contract",
+            missing_solver,
+        ),
+        evidence=tuple(item for item in (target_id, _short_text_evidence(text)) if item),
+    )
+
+
+def _slv_lsv_solver_requirements(solver_target: str) -> tuple[tuple[str, ...], str]:
+    if solver_target == "leverage_function_pde":
+        return (
+            (
+                "two_factor_spot_variance_pde_operator",
+                "leverage_function_grid_projection",
+                "pde_boundary_conditions",
+            ),
+            "slv_lsv_pde_solver",
+        )
+    if solver_target == "leverage_function_monte_carlo":
+        return (
+            (
+                "coupled_heston_local_vol_path_simulator",
+                "leverage_function_interpolator",
+                "variance_scheme_binding",
+            ),
+            "slv_lsv_monte_carlo_solver",
+        )
+    return (
+        (
+            "leverage_function_calibration_problem",
+            "surface_projection_diagnostics",
+        ),
+        "leverage_function_calibration_contract",
+    )
+
+
 def _unsupported_features(
     bucket: str,
     repair_packet: RepairPacket | None,
@@ -671,6 +801,7 @@ __all__ = [
     "AffineJumpStochasticVolSemantics",
     "CALIBRATION_TO_SURFACE",
     "CalibrationProblemSemantics",
+    "LeverageFunctionSemantics",
     "MarketBindingSemantics",
     "ModelParameterSemantics",
     "RepairPacket",

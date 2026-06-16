@@ -91,6 +91,24 @@ Local Volatility
 :math:`dS/S = \mu\,dt + \sigma_{\text{loc}}(S,t)\,dW`. Dupire's formula extracts
 :math:`\sigma_{\text{loc}}` from the implied vol surface.
 
+SLV/LSV Boundary
+----------------
+
+Stochastic-local-volatility and local-stochastic-volatility models couple a
+local-vol surface with a stochastic-vol process through a leverage function
+:math:`L(t,S)`:
+
+.. math::
+
+   \frac{dS}{S} = \mu\,dt + L(t,S)\sqrt{V}\,dW_1.
+
+The diagnostic contract requires local-vol and Black-vol surface authority,
+Heston model parameters, a recorded leverage-function calibration problem,
+the leverage-function surface, interpolation on the ``(time, spot)`` domain,
+and solver-specific PDE or Monte Carlo requirements. Trellis currently records
+this contract and blocks honestly; it does not yet admit checked SLV/LSV PDE or
+Monte Carlo pricing routes.
+
 Merton Jump-Diffusion
 ---------------------
 

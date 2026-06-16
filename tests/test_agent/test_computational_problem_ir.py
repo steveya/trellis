@@ -204,6 +204,57 @@ def test_bates_targets_expose_affine_jump_process_contract():
         assert "consume_jump_parameters" in contract["validation_requirements"]
 
 
+def test_slv_lsv_targets_expose_leverage_function_contracts():
+    from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
+
+    tasks = _legacy_tasks()
+    expectations = {
+        ("T60", "slv_mc"): (
+            "leverage_function_monte_carlo",
+            "slv_lsv_monte_carlo_solver",
+        ),
+        ("T117", "lsv_pde"): (
+            "leverage_function_pde",
+            "slv_lsv_pde_solver",
+        ),
+        ("T117", "lsv_mc"): (
+            "leverage_function_monte_carlo",
+            "slv_lsv_monte_carlo_solver",
+        ),
+    }
+
+    for (task_id, target_id), (solver_target, missing_solver) in expectations.items():
+        target = _target_payload(classify_stochastic_vol_task(tasks[task_id]), target_id)
+        contract = target["leverage_function_contract"]
+
+        assert target["process_family"] == "slv_lsv"
+        assert target["solver_target"] == solver_target
+        assert target["market_bindings"]["requires_model_parameters"] is True
+        assert target["market_bindings"]["requires_black_vol_surface"] is True
+        assert target["market_bindings"]["requires_local_vol_surface"] is True
+        assert target["validation_bundle"] == "slv_lsv:leverage_function"
+        assert contract["leverage_function_kind"] == "spot_time_surface"
+        assert contract["required_market_inputs"] == [
+            "local_vol_surface",
+            "black_vol_surface",
+            "underlier_spot",
+            "discount_curve",
+        ]
+        assert contract["required_model_inputs"] == [
+            "heston_model_parameters",
+            "leverage_function_surface",
+        ]
+        assert contract["calibration_requirements"] == [
+            "recorded_leverage_calibration_problem",
+            "local_vol_surface_authority",
+            "stochastic_vol_process_coupling",
+        ]
+        assert contract["interpolation_domain"] == ["time", "spot"]
+        assert "leverage_bounds" in contract["diagnostics"]
+        assert missing_solver in contract["missing_components"]
+        assert contract["supported_now"] is False
+
+
 def test_stochastic_vol_problem_payload_is_json_stable():
     from trellis.agent.computational_problem_ir import stochastic_vol_problem_payload
 

@@ -127,6 +127,14 @@ aliases such as ``lam`` and ``jump_vol``, and the missing transform/Monte Carlo
 capabilities. The block is evidence for an honest implementation gap; it does
 not admit a Bates pricing route until the named primitive exists.
 
+For SLV/LSV targets, each target may carry a ``leverage_function_contract``
+block. That block records the required local-vol and Black-vol market
+surfaces, Heston model parameters, leverage-function surface, recorded
+leverage calibration provenance, interpolation domain, diagnostics, and
+target-specific PDE or Monte Carlo solver requirements. These tasks remain
+fail-closed until the leverage calibration, stochastic/local-vol coupling, and
+selected solver contract exist.
+
 Operational use
 ---------------
 
