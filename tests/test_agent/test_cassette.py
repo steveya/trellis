@@ -393,6 +393,47 @@ class TestCassetteReplayer:
             )
         assert replayer.remaining == 2
 
+    def test_replay_skips_optional_interleaved_stages(self, tmp_path):
+        path = self._write_cassette(tmp_path, [
+            {
+                "seq": 0,
+                "function": "llm_generate",
+                "stage": "code_generation",
+                "prompt_hash": _prompt_hash("p1"),
+                "response_text": "first",
+            },
+            {
+                "seq": 1,
+                "function": "llm_generate_json",
+                "stage": "critic",
+                "prompt_hash": _prompt_hash("optional critic"),
+                "response_text": "{}",
+            },
+            {
+                "seq": 2,
+                "function": "llm_generate_json",
+                "stage": "unscoped",
+                "prompt_hash": _prompt_hash("optional learning"),
+                "response_text": "{}",
+            },
+            {
+                "seq": 3,
+                "function": "llm_generate",
+                "stage": "code_generation",
+                "prompt_hash": _prompt_hash("p2"),
+                "response_text": "second",
+            },
+        ])
+        replayer = CassetteReplayer(
+            path,
+            optional_stages={"critic", "unscoped"},
+        )
+
+        assert replayer.generate("p1") == "first"
+        with pytest.warns(match="skipped 2 optional"):
+            assert replayer.generate("p2") == "second"
+        replayer.assert_all_consumed()
+
     def test_assert_all_consumed_rejects_disallowed_tail_stage(self, tmp_path):
         path = self._write_cassette(tmp_path, [
             {

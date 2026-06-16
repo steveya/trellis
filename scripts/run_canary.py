@@ -48,7 +48,7 @@ from trellis.agent.golden_traces import (
 # Engine families considered "core" for the --subset=core option
 CORE_FAMILIES = {"lattice", "monte_carlo", "pde", "credit"}
 CANARY_MAX_RETRIES = 3
-OPTIONAL_REPLAY_TAIL_STAGES = ("critic", "unscoped")
+OPTIONAL_REPLAY_STAGES = ("critic", "unscoped")
 
 
 # ---------------------------------------------------------------------------
@@ -239,7 +239,7 @@ def run_canaries(
                     mode="replay",
                     stale_policy=cassette_stale_policy,
                     name=task_id,
-                    allow_unconsumed_stages=OPTIONAL_REPLAY_TAIL_STAGES,
+                    optional_stages=OPTIONAL_REPLAY_STAGES,
                 ):
                     result = run_task(
                         task,
