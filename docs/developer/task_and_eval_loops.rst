@@ -172,6 +172,13 @@ the real ``run_task(...)`` surface. That means the replay still exercises the
 runtime contract, comparison harness, task-run persistence, and diagnosis
 packet/dossier writes, but it does not spend live model tokens.
 
+Full-task canary replay remains strict about prompt hashes, call ordering, and
+unexpected additional LLM calls. The canary runner does tolerate unconsumed
+trailing ``critic`` and ``unscoped`` calls, because those are optional
+post-build review or learning stages that can be skipped after the deterministic
+runtime path has already completed. Unconsumed planning, binding, or generation
+calls still make the replay stale and fail the run.
+
 Full-task cassette sessions also keep the knowledge store read-only during
 record and replay. The build still performs its normal LLM reflection calls,
 but it does not write new lessons, traces, cookbook candidates, or promotion

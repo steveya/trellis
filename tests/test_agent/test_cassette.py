@@ -360,6 +360,62 @@ class TestCassetteReplayer:
         with pytest.raises(CassetteStaleError, match="1 unconsumed"):
             replayer.assert_all_consumed()
 
+    def test_assert_all_consumed_allows_optional_tail_stages(self, tmp_path):
+        path = self._write_cassette(tmp_path, [
+            {
+                "seq": 0,
+                "function": "llm_generate",
+                "stage": "code_generation",
+                "prompt_hash": _prompt_hash("p1"),
+                "response_text": "ok",
+            },
+            {
+                "seq": 1,
+                "function": "llm_generate_json",
+                "stage": "critic",
+                "prompt_hash": _prompt_hash("p2"),
+                "response_text": "{}",
+            },
+            {
+                "seq": 2,
+                "function": "llm_generate_json",
+                "stage": "unscoped",
+                "prompt_hash": _prompt_hash("p3"),
+                "response_text": "{}",
+            },
+        ])
+        replayer = CassetteReplayer(path)
+        replayer.generate("p1")
+
+        with pytest.warns(match="optional trailing"):
+            replayer.assert_all_consumed(
+                allow_unconsumed_stages={"critic", "unscoped"},
+            )
+        assert replayer.remaining == 2
+
+    def test_assert_all_consumed_rejects_disallowed_tail_stage(self, tmp_path):
+        path = self._write_cassette(tmp_path, [
+            {
+                "seq": 0,
+                "function": "llm_generate",
+                "stage": "planner",
+                "prompt_hash": _prompt_hash("p1"),
+                "response_text": "ok",
+            },
+            {
+                "seq": 1,
+                "function": "llm_generate",
+                "stage": "code_generation",
+                "prompt_hash": _prompt_hash("p2"),
+                "response_text": "ok2",
+            },
+        ])
+        replayer = CassetteReplayer(path)
+        replayer.generate("p1")
+
+        with pytest.raises(CassetteStaleError, match="1 unconsumed"):
+            replayer.assert_all_consumed(allow_unconsumed_stages={"critic"})
+
     def test_not_found_raises(self, tmp_path):
         with pytest.raises(CassetteNotFoundError, match="not found"):
             CassetteReplayer(tmp_path / "nonexistent.yaml")

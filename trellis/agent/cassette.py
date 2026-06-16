@@ -29,7 +29,7 @@ from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Iterable
 
 import yaml
 
@@ -323,11 +323,24 @@ class CassetteReplayer:
 
     # -- assertions ---------------------------------------------------------
 
-    def assert_all_consumed(self) -> None:
+    def assert_all_consumed(
+        self,
+        *,
+        allow_unconsumed_stages: Iterable[str] | None = None,
+    ) -> None:
         """Raise if there are unconsumed recorded calls (fewer LLM calls than expected)."""
         remaining = len(self._calls) - self._cursor
         if remaining > 0:
             stages = [c.stage for c in self._calls[self._cursor:]]
+            allowed_stages = set(allow_unconsumed_stages or ())
+            if allowed_stages and all(stage in allowed_stages for stage in stages):
+                msg = (
+                    f"Cassette left {remaining} optional trailing call(s) "
+                    f"unconsumed (stages: {stages})."
+                )
+                warnings.warn(msg, stacklevel=2)
+                _log.warning(msg)
+                return
             raise CassetteStaleError(
                 f"Cassette has {remaining} unconsumed call(s) "
                 f"(stages: {stages}). The code made fewer LLM calls than recorded."
@@ -378,6 +391,7 @@ def llm_cassette_session(
     stale_policy: str = CassetteReplayer.STALE_POLICY_WARN,
     store_prompts: bool = True,
     name: str | None = None,
+    allow_unconsumed_stages: Iterable[str] | None = None,
 ):
     """Run the current LLM call path against a recorder or replayer.
 
@@ -435,4 +449,6 @@ def llm_cassette_session(
             )
         else:
             assert isinstance(handler, CassetteReplayer)
-            handler.assert_all_consumed()
+            handler.assert_all_consumed(
+                allow_unconsumed_stages=allow_unconsumed_stages,
+            )
