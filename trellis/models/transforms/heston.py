@@ -276,6 +276,43 @@ def heston_transform_capability_packet(method: object = "gauss_laguerre") -> dic
         "unsupported_class": "heston_gauss_laguerre_transform",
         "suggested_action": "open_remediation_packet",
         "evidence": [f"method={normalized}"],
+        "quadrature_contract": heston_gauss_laguerre_quadrature_contract(method),
+    }
+
+
+def heston_gauss_laguerre_quadrature_contract(
+    method: object = "gauss_laguerre",
+) -> dict[str, Any]:
+    """Return the bounded contract for the unsupported Heston quadrature lane."""
+    normalized = str(method or "").strip().lower().replace("-", "_") or "unknown"
+    return {
+        "process_family": "heston",
+        "quadrature_family": "gauss_laguerre",
+        "characteristic_function": "heston_log_spot_characteristic_function",
+        "required_model_parameters": ["kappa", "theta", "xi", "rho", "v0"],
+        "integration_requirements": [
+            "gauss_laguerre_nodes_weights",
+            "heston_characteristic_function_binding",
+            "damping_or_contour_policy",
+            "oscillatory_integrand_stabilization",
+        ],
+        "diagnostics": [
+            "quadrature_order",
+            "tail_error_estimate",
+            "fft_cos_reference_comparison",
+        ],
+        "validation_requirements": [
+            "consume_heston_model_parameters",
+            "reject_black_vol_surface_as_model_parameters",
+            "cross_validate_against_fft_cos_when_admitted",
+            "record_quadrature_order_and_error",
+        ],
+        "supported_now": False,
+        "missing_components": [
+            "heston_gauss_laguerre_transform_kernel",
+            "gauss_laguerre_heston_validation_bundle",
+        ],
+        "evidence": [f"method={normalized}"],
     }
 
 
@@ -506,6 +543,7 @@ __all__ = [
     "HestonTransformResult",
     "ResolvedHestonTransformInputs",
     "UnsupportedHestonTransformMethod",
+    "heston_gauss_laguerre_quadrature_contract",
     "heston_transform_capability_packet",
     "price_heston_option_transform",
     "price_heston_option_transform_result",

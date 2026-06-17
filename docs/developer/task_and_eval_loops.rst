@@ -512,7 +512,10 @@ underlier spot plus ``market_state.model_parameters`` into the existing
 FFT/COS kernels and keeps Black volatility surfaces out of live Heston pricing
 unless a calibration bridge explicitly owns the conversion. Unsupported
 transform methods such as Heston Gauss-Laguerre produce a repair packet instead
-of falling back to a vanilla Black-vol adapter.
+of falling back to a vanilla Black-vol adapter. T114-style targets also carry a
+``quadrature_transform_contract`` so the repair packet names the missing
+Heston characteristic-function quadrature kernel, integration requirements,
+diagnostics, and validation bundle explicitly.
 
 The Monte Carlo lane now follows the same model-family separation for European
 Heston vanilla options. ``euler_heston`` and ``heston_mc`` targets bind to

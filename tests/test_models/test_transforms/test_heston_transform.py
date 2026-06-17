@@ -262,3 +262,20 @@ def test_heston_transform_reports_unsupported_laguerre_kernel():
     assert packet["packet_type"] == "missing_heston_gauss_laguerre_transform_kernel"
     assert packet["missing_primitive"] == "heston_gauss_laguerre_transform_kernel"
     assert packet["unsupported_class"] == "heston_gauss_laguerre_transform"
+    contract = packet["quadrature_contract"]
+    assert contract["quadrature_family"] == "gauss_laguerre"
+    assert contract["characteristic_function"] == (
+        "heston_log_spot_characteristic_function"
+    )
+    assert contract["required_model_parameters"] == [
+        "kappa",
+        "theta",
+        "xi",
+        "rho",
+        "v0",
+    ]
+    assert contract["missing_components"] == [
+        "heston_gauss_laguerre_transform_kernel",
+        "gauss_laguerre_heston_validation_bundle",
+    ]
+    assert contract["supported_now"] is False

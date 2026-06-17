@@ -48,7 +48,11 @@ for Heston model parameters.
 
 Gauss-Laguerre Heston transform targets remain fail-closed until a checked
 quadrature kernel is added. The helper raises a typed repair packet instead of
-falling back to a vanilla Black-vol adapter.
+falling back to a vanilla Black-vol adapter. The packet includes a
+``quadrature_contract`` naming the Heston characteristic-function binding,
+required model parameters, Gauss-Laguerre nodes/weights, damping or contour
+policy, oscillatory-integrand stabilization, diagnostics, and the missing
+``heston_gauss_laguerre_transform_kernel`` plus validation bundle.
 
 Implementation
 --------------
