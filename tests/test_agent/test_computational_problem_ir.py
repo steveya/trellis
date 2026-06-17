@@ -155,6 +155,51 @@ def test_repair_packets_name_missing_primitives_not_generated_text():
     )
 
 
+def test_heston_laguerre_target_exposes_quadrature_transform_contract():
+    from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
+
+    target = _target_payload(
+        classify_stochastic_vol_task(_legacy_tasks()["T114"]),
+        "laguerre_heston",
+    )
+    contract = target["quadrature_transform_contract"]
+
+    assert target["bucket"] == "stochastic_vol_transform"
+    assert target["process_family"] == "heston"
+    assert target["solver_target"] == "gauss_laguerre_quadrature"
+    assert target["validation_bundle"] == "heston:transform"
+    assert target["market_bindings"]["requires_model_parameters"] is True
+    assert target["market_bindings"]["requires_black_vol_surface"] is False
+    assert target["repair_packet"]["missing_primitive"] == (
+        "heston_gauss_laguerre_transform_kernel"
+    )
+    assert contract["quadrature_family"] == "gauss_laguerre"
+    assert contract["characteristic_function"] == (
+        "heston_log_spot_characteristic_function"
+    )
+    assert contract["required_model_parameters"] == [
+        "kappa",
+        "theta",
+        "xi",
+        "rho",
+        "v0",
+    ]
+    assert contract["integration_requirements"] == [
+        "gauss_laguerre_nodes_weights",
+        "heston_characteristic_function_binding",
+        "damping_or_contour_policy",
+        "oscillatory_integrand_stabilization",
+    ]
+    assert "cross_validate_against_fft_cos_when_admitted" in contract[
+        "validation_requirements"
+    ]
+    assert contract["missing_components"] == [
+        "heston_gauss_laguerre_transform_kernel",
+        "gauss_laguerre_heston_validation_bundle",
+    ]
+    assert contract["supported_now"] is False
+
+
 def test_bates_targets_expose_affine_jump_process_contract():
     from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
 

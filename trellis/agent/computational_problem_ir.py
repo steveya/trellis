@@ -104,6 +104,36 @@ class CalibrationProblemSemantics:
 
 
 @dataclass(frozen=True)
+class QuadratureTransformSemantics:
+    """Required quadrature-transform capabilities for unsupported transform lanes."""
+
+    process_family: str
+    quadrature_family: str
+    characteristic_function: str
+    required_model_parameters: tuple[str, ...]
+    integration_requirements: tuple[str, ...]
+    diagnostics: tuple[str, ...]
+    validation_requirements: tuple[str, ...]
+    supported_now: bool
+    missing_components: tuple[str, ...] = ()
+    evidence: tuple[str, ...] = ()
+
+    def to_payload(self) -> dict[str, Any]:
+        return {
+            "process_family": self.process_family,
+            "quadrature_family": self.quadrature_family,
+            "characteristic_function": self.characteristic_function,
+            "required_model_parameters": list(self.required_model_parameters),
+            "integration_requirements": list(self.integration_requirements),
+            "diagnostics": list(self.diagnostics),
+            "validation_requirements": list(self.validation_requirements),
+            "supported_now": self.supported_now,
+            "missing_components": list(self.missing_components),
+            "evidence": list(self.evidence),
+        }
+
+
+@dataclass(frozen=True)
 class AffineJumpStochasticVolSemantics:
     """Required Bates-style affine jump stochastic-volatility capabilities."""
 
@@ -231,6 +261,7 @@ class StochasticVolTargetProblem:
     unsupported_features: tuple[str, ...] = ()
     repair_packet: RepairPacket | None = None
     calibration_problem: CalibrationProblemSemantics | None = None
+    quadrature_transform_contract: QuadratureTransformSemantics | None = None
     affine_jump_process: AffineJumpStochasticVolSemantics | None = None
     leverage_function_contract: LeverageFunctionSemantics | None = None
     path_dependent_control_contract: PathDependentControlSemantics | None = None
@@ -254,6 +285,11 @@ class StochasticVolTargetProblem:
             "calibration_problem": (
                 self.calibration_problem.to_payload()
                 if self.calibration_problem is not None
+                else None
+            ),
+            "quadrature_transform_contract": (
+                self.quadrature_transform_contract.to_payload()
+                if self.quadrature_transform_contract is not None
                 else None
             ),
             "affine_jump_process": (
@@ -368,6 +404,12 @@ def _classify_target(
         text=target_text,
         process_family=process_family,
     )
+    quadrature_transform_contract = _quadrature_transform_semantics(
+        bucket,
+        target_id=target_id,
+        text=target_text,
+        process_family=process_family,
+    )
     affine_jump_process = _affine_jump_process_semantics(
         bucket,
         target_id=target_id,
@@ -400,6 +442,7 @@ def _classify_target(
         unsupported_features=unsupported,
         repair_packet=repair_packet,
         calibration_problem=calibration_problem,
+        quadrature_transform_contract=quadrature_transform_contract,
         affine_jump_process=affine_jump_process,
         leverage_function_contract=leverage_function_contract,
         path_dependent_control_contract=path_dependent_control_contract,
@@ -640,6 +683,46 @@ def _affine_jump_process_semantics(
         ),
         supported_now=False,
         missing_primitives=(missing_primitive,),
+        evidence=tuple(item for item in (target_id, _short_text_evidence(text)) if item),
+    )
+
+
+def _quadrature_transform_semantics(
+    bucket: str,
+    *,
+    target_id: str,
+    text: str,
+    process_family: str,
+) -> QuadratureTransformSemantics | None:
+    if bucket != STOCHASTIC_VOL_TRANSFORM or "laguerre" not in text:
+        return None
+    return QuadratureTransformSemantics(
+        process_family=process_family,
+        quadrature_family="gauss_laguerre",
+        characteristic_function="heston_log_spot_characteristic_function",
+        required_model_parameters=("kappa", "theta", "xi", "rho", "v0"),
+        integration_requirements=(
+            "gauss_laguerre_nodes_weights",
+            "heston_characteristic_function_binding",
+            "damping_or_contour_policy",
+            "oscillatory_integrand_stabilization",
+        ),
+        diagnostics=(
+            "quadrature_order",
+            "tail_error_estimate",
+            "fft_cos_reference_comparison",
+        ),
+        validation_requirements=(
+            "consume_heston_model_parameters",
+            "reject_black_vol_surface_as_model_parameters",
+            "cross_validate_against_fft_cos_when_admitted",
+            "record_quadrature_order_and_error",
+        ),
+        supported_now=False,
+        missing_components=(
+            "heston_gauss_laguerre_transform_kernel",
+            "gauss_laguerre_heston_validation_bundle",
+        ),
         evidence=tuple(item for item in (target_id, _short_text_evidence(text)) if item),
     )
 
@@ -963,6 +1046,7 @@ __all__ = [
     "MarketBindingSemantics",
     "ModelParameterSemantics",
     "PathDependentControlSemantics",
+    "QuadratureTransformSemantics",
     "RepairPacket",
     "SLV_LSV",
     "STOCHASTIC_VOL_MIXED",

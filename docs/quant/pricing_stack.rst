@@ -197,6 +197,11 @@ The first migrated vanilla cases now use that boundary directly:
   from task specs, market state, synthetic fixtures, or recorded calibration
   results; a Black vol surface bump is not treated as a model-parameter bump
   unless a calibration problem records that bridge.
+- Unsupported Heston Gauss-Laguerre transform targets now lower to a typed
+  quadrature-transform blocker contract. The contract names the Heston
+  characteristic-function binding, required model parameters, nodes/weights,
+  damping or contour policy, stabilization requirements, diagnostics, and the
+  missing quadrature kernel plus validation bundle.
 - Bates-style affine jump stochastic-volatility tasks now lower to an explicit
   blocker contract rather than a generic unsupported route. The contract names
   the Heston base parameters, compound-Poisson lognormal jump parameters, the

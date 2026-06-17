@@ -119,6 +119,13 @@ primitive or unsupported class. Examples include
 ``path_dependent_early_exercise_under_stochastic_vol``. Remediation tools
 should group these packets before falling back to raw exception text.
 
+For unsupported Heston Gauss-Laguerre transform targets, each target may carry
+a ``quadrature_transform_contract`` block. That block records the quadrature
+family, the Heston characteristic-function binding, required model parameters,
+nodes/weights and damping/stabilization requirements, diagnostics, and the
+missing kernel plus validation bundle. The runtime Heston transform repair
+packet carries the same ``quadrature_contract`` shape.
+
 For Bates-style affine jump stochastic-volatility targets, each target also
 carries an ``affine_jump_process`` block. That block records the required
 Heston model parameters, the compound-Poisson lognormal jump parameters
