@@ -95,6 +95,9 @@ one task compares multiple stochastic-volatility methods, the task-level value
 can be ``stochastic_vol_mixed`` even though each target still has one of the
 stable buckets above.
 
+For the full lifecycle, notation, and route responsibilities for this block,
+see :doc:`stochastic_vol_computational_ir`.
+
 The target entries also record model-parameter semantics. Heston pricing
 targets that already have model parameters treat a Black vol surface as market
 context, not as an implicit recalibration instruction. Calibration targets are

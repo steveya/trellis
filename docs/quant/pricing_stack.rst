@@ -234,6 +234,11 @@ The first migrated vanilla cases now use that boundary directly:
   dependence-family controls without exposing the raw scalar copula kernels as
   the public route helper
 
+The developer-facing notation and task-triage lifecycle for these
+stochastic-volatility buckets is maintained in
+:doc:`../developer/stochastic_vol_computational_ir`. Use that guide when
+writing new task fixtures, repair packets, or generated-adapter instructions.
+
 Route selection now follows that same minimization rule. The deterministic
 scorer no longer emits route-id or route-family one-hot authority; it ranks
 routes from family capability, blocker state, and backend-binding facts such as

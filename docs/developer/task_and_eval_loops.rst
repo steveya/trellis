@@ -376,6 +376,8 @@ the failure story. Path-dependent Heston control targets also preserve a
 ``path_dependent_control_contract`` so expected honest blocks identify the
 missing path-state, event-monitor, payoff-summary, control-policy, and
 stochastic-vol coupling abstractions directly.
+The developer-facing contract for those terms lives in
+:doc:`stochastic_vol_computational_ir`.
 
 That packet/checkpoint surface also now treats backend binding identity as the
 primary implementation provenance. Compatibility route aliases may still
