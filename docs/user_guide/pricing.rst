@@ -90,6 +90,24 @@ execution slice, so an admitted callable-bond ``DynamicContractIR`` can execute
 through the shared payoff surface once it has been lowered into
 ``ContractExecutionIR``.
 
+Task Diagnostics And Honest Blocks
+----------------------------------
+
+Task and eval runs persist diagnosis packets and Markdown dossiers under
+``task_runs/diagnostics/``. For stochastic-volatility tasks, those packets may
+include a ``computational_problem`` block that records the target bucket,
+model-parameter semantics, selected validation bundle, and any repair packet.
+
+The key user-facing rule is that a blocked stochastic-vol task can be the
+correct result. Heston pricing consumes explicit Heston model parameters; a
+Black implied-vol surface is market evidence or a calibration target unless a
+recorded calibration problem produces model parameters from it. Unsupported
+Gauss-Laguerre Heston, Bates, SLV/LSV, or path-dependent Heston control shapes
+therefore fail closed with structured blockers instead of falling back to a
+nearby vanilla adapter. See
+:doc:`../developer/stochastic_vol_computational_ir` for the developer-facing
+notation and triage lifecycle.
+
 FX Vanilla Options
 ------------------
 
@@ -537,7 +555,7 @@ now owns coupon schedule compilation, embedded exercise/control semantics,
 straight-bond reference PV, and generic lattice/PDE event assembly. That keeps
 the callable-bond user surface stable while letting later short-rate claim
 families reuse the same helper substrate instead of copying callable-bond-local
- glue code.
+glue code.
 
 The execution layer now also exposes that callable structure directly for the
 bounded proving slice. ``trellis.execution.compile_dynamic_execution_ir(...)``
