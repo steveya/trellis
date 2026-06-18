@@ -304,6 +304,12 @@ carries ``semantic_state_policy`` metadata. It tells you whether the blocked
 shape was a smooth path summary, a discontinuous event monitor, an
 early-exercise control, or dynamic state; it does not mean those shapes have
 executable pathwise hybrid AD.
+For ``DynamicContractIR`` state/control diagnostics, the explicit helper
+``fail_closed_dynamic_state_derivative(...)`` returns an unsupported
+``HybridDerivativeResult`` with a discovery-only ``dynamic_state_policy``
+coordinate chart, selected-factor diagnostics, and empty risk. It is the
+runtime evidence packet for the blocked dynamic-state lane, not a state/control
+replay derivative.
 The one executable path-summary exception is the bounded arithmetic-average
 Asian flat-vol VJP lane exposed as
 ``differentiate_arithmetic_asian_path_summary(...)``. Use
@@ -311,7 +317,8 @@ Asian flat-vol VJP lane exposed as
 derivative_method="vjp")`` and pass that admission through
 ``HybridDerivativeRequest.semantic_admission`` to preserve the supported
 ``semantic_state_policy`` metadata. Grid-vol path summaries, event monitors,
-dynamic state, HVP, and JVP still fail closed.
+dynamic state beyond the typed fail-closed evidence packet, HVP, and JVP still
+fail closed.
 The executable early-exercise exception is the bounded vanilla American or
 Bermudan flat-vol VJP lane exposed as
 ``differentiate_vanilla_early_exercise(...)``. Use

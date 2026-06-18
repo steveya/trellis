@@ -44,6 +44,7 @@ from trellis.analytics.hybrid_ad import (
     differentiate_quanto_scalar_correlation,
     differentiate_quanto_scalar_inputs,
     fail_closed_correlation_structure_derivative,
+    fail_closed_dynamic_state_derivative,
 )
 from trellis.analytics.hybrid_ad_multi_product import (
     HybridADMultiProductLaneResult,
@@ -106,4 +107,5 @@ __all__ = [
     "differentiate_quanto_scalar_correlation",
     "differentiate_quanto_scalar_inputs",
     "fail_closed_correlation_structure_derivative",
+    "fail_closed_dynamic_state_derivative",
 ]

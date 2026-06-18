@@ -8,8 +8,12 @@ from dataclasses import dataclass, field, is_dataclass, replace
 from types import MappingProxyType
 from typing import Any
 
+from trellis.agent.dynamic_contract_ir import DynamicContractIR
 from trellis.analytics.derivative_methods import derivative_method_payload
-from trellis.analytics.hybrid_ad_admission import HybridADLaneAdmission
+from trellis.analytics.hybrid_ad_admission import (
+    HybridADLaneAdmission,
+    admit_hybrid_ad_lane,
+)
 from trellis.analytics.hybrid_factors import (
     HybridDependencyNode,
     HybridFactorGraph,
@@ -1000,6 +1004,42 @@ def _grid_vol_selected_factor_diagnostics(
         return (
             {
                 "code": "unsupported_selected_grid_vol_factors",
+                "severity": "warning",
+                "selected_factor_keys": selected_factor_keys,
+                "unsupported_selected_factor_policy": (
+                    request.unsupported_selected_factor_policy
+                ),
+            },
+        )
+    return ()
+
+
+def _unsupported_selected_factor_diagnostics(
+    request: HybridDerivativeRequest,
+    graph: HybridFactorGraph,
+    *,
+    code: str,
+) -> tuple[dict[str, object], ...]:
+    if request.selects_all_factors:
+        return ()
+    available_factors = tuple(coordinate.factor_id for coordinate in graph.coordinates)
+    missing_factors = request.missing_selected_factors(available_factors)
+    if missing_factors:
+        return (
+            {
+                "code": "selected_factors_unavailable",
+                "severity": "warning",
+                "missing_factor_keys": [factor.key for factor in missing_factors],
+                "unsupported_selected_factor_policy": (
+                    request.unsupported_selected_factor_policy
+                ),
+            },
+        )
+    selected_factor_keys = [factor.key for factor in request.selected_factors]
+    if selected_factor_keys:
+        return (
+            {
+                "code": code,
                 "severity": "warning",
                 "selected_factor_keys": selected_factor_keys,
                 "unsupported_selected_factor_policy": (
@@ -2786,6 +2826,404 @@ def fail_closed_correlation_structure_derivative(
     )
 
 
+def _dynamic_state_policy_payload(
+    admission: HybridADLaneAdmission,
+) -> dict[str, object]:
+    state_policy = admission.metadata.get("state_policy")
+    return dict(state_policy) if isinstance(state_policy, Mapping) else {}
+
+
+def _graph_support_status_from_admission(admission: HybridADLaneAdmission) -> str:
+    if admission.support_status == "supported":
+        return "supported"
+    if admission.support_status == "planned":
+        return "discovery_only"
+    return "unsupported"
+
+
+def _is_dynamic_state_admission(admission: HybridADLaneAdmission) -> bool:
+    return (
+        admission.semantic_contract_type == "DynamicContractIR"
+        and admission.contract_shape == "dynamic_hybrid_state"
+    )
+
+
+def _dynamic_state_factor_coordinate(
+    *,
+    position_name: str,
+    semantic_family: str,
+    base_track: str,
+    admission: HybridADLaneAdmission,
+    graph_support_status: str,
+) -> RiskFactorCoordinate:
+    factor = RiskFactorId(
+        object_type="dynamic_contract",
+        object_name=position_name,
+        coordinate_type="dynamic_state_policy",
+        axes={
+            "semantic_family": semantic_family or admission.product_family,
+            "base_track": base_track or "unspecified",
+            "lane_id": admission.lane_id,
+        },
+        provenance_namespace="hybrid_ad",
+    )
+    return RiskFactorCoordinate(
+        factor_id=factor,
+        object_path=f"dynamic_contract:{position_name}",
+        display_name=f"{position_name} dynamic state policy",
+        unit="policy",
+        support_status=graph_support_status,
+        reporting_buckets={
+            "risk_class": "hybrid",
+            "state_kind": "dynamic_state",
+        },
+        metadata={
+            "semantic_contract_type": admission.semantic_contract_type,
+            "contract_shape": admission.contract_shape,
+            "lane_id": admission.lane_id,
+            "support_status": admission.support_status,
+        },
+    )
+
+
+def _dynamic_state_graph(
+    *,
+    semantic_contract: DynamicContractIR,
+    admission: HybridADLaneAdmission,
+    position_name: str,
+    market_parameterization: str,
+) -> HybridFactorGraph:
+    semantic_family = semantic_contract.semantic_family or admission.product_family
+    base_track = semantic_contract.base_track or ""
+    state_policy = _dynamic_state_policy_payload(admission)
+    graph_support_status = _graph_support_status_from_admission(admission)
+    coordinate = _dynamic_state_factor_coordinate(
+        position_name=position_name,
+        semantic_family=semantic_family,
+        base_track=base_track,
+        admission=admission,
+        graph_support_status=graph_support_status,
+    )
+    chart = MarketObjectCoordinateChart(
+        chart_id=f"chart:dynamic_state:{position_name}",
+        object_type="dynamic_contract",
+        object_name=position_name,
+        coordinates=(coordinate,),
+        chart_type="dynamic_state_policy",
+        coordinate_space="state_policy",
+        coordinate_values={
+            "state_kind": state_policy.get("state_kind", "dynamic_state"),
+            "state_variable_roles": tuple(
+                state_policy.get("state_variable_roles", ())
+            ),
+            "event_policy": state_policy.get("event_policy", "not_applicable"),
+            "control_policy": state_policy.get("control_policy", "not_applicable"),
+            "fail_closed": bool(state_policy.get("fail_closed", True)),
+        },
+        differentiability_class=str(
+            state_policy.get("differentiability_class", "piecewise")
+        ),
+        support_status=graph_support_status,
+        metadata={
+            "chart_family": "dynamic_state_policy",
+            "state_kind": state_policy.get("state_kind", "dynamic_state"),
+            "semantic_family": semantic_family,
+            "base_track": base_track,
+            "lane_id": admission.lane_id,
+            "admission_reason": admission.reason,
+            "market_parameterization": market_parameterization,
+        },
+    )
+    node = HybridDependencyNode(
+        node_id=f"node:dynamic_state:{position_name}",
+        node_type="dynamic_contract",
+        object_name=position_name,
+        coordinate_chart=chart,
+        differentiability_class=chart.differentiability_class,
+        derivative_method="unsupported",
+        support_status=chart.support_status,
+        provenance={
+            "semantic_contract_type": admission.semantic_contract_type,
+            "semantic_family": semantic_family,
+            "base_track": base_track,
+        },
+        metadata={
+            "policy": "fail_closed_dynamic_state",
+            "lane_id": admission.lane_id,
+            "state_kind": state_policy.get("state_kind", "dynamic_state"),
+            "event_policy": state_policy.get("event_policy", "not_applicable"),
+            "control_policy": state_policy.get("control_policy", "not_applicable"),
+        },
+    )
+    dependency = HybridUnsupportedDependency(
+        dependency_id=f"unsupported:dynamic_state:{position_name}:{admission.reason}",
+        node_type="dynamic_contract",
+        object_name=position_name,
+        reason=admission.reason,
+        differentiability_class=chart.differentiability_class,
+        derivative_method="unsupported",
+        metadata={
+            "policy": "fail_closed_dynamic_state",
+            "semantic_contract_type": admission.semantic_contract_type,
+            "semantic_family": semantic_family,
+            "product_family": admission.product_family,
+            "contract_shape": admission.contract_shape,
+            "lane_id": admission.lane_id,
+            "state_policy": state_policy,
+            "market_parameterization": market_parameterization,
+        },
+    )
+    return HybridFactorGraph(
+        graph_id=f"hybrid:dynamic_state:{position_name}",
+        nodes=(node,),
+        unsupported_dependencies=(dependency,),
+        metadata={
+            "route_family": "bounded_dynamic_state",
+            "graph_source": "dynamic_contract_ir_admission",
+            "semantic_contract_type": admission.semantic_contract_type,
+            "semantic_family": semantic_family,
+            "product_family": admission.product_family,
+            "contract_shape": admission.contract_shape,
+            "base_track": base_track,
+            "market_parameterization": market_parameterization,
+            "state_policy": state_policy,
+        },
+    )
+
+
+def _dynamic_state_unavailable_graph(
+    *,
+    semantic_contract: DynamicContractIR,
+    admission: HybridADLaneAdmission,
+    position_name: str,
+    market_parameterization: str,
+) -> HybridFactorGraph:
+    semantic_family = semantic_contract.semantic_family or admission.product_family
+    actual_admission = admission.metadata.get("actual_semantic_admission")
+    actual_contract_shape = admission.contract_shape
+    if isinstance(actual_admission, Mapping):
+        actual_contract_shape = str(
+            actual_admission.get("contract_shape", actual_contract_shape)
+        )
+    dependency = HybridUnsupportedDependency(
+        dependency_id=f"unsupported:dynamic_state_unavailable:{position_name}",
+        node_type="dynamic_contract",
+        object_name=position_name,
+        reason=admission.reason,
+        differentiability_class="unsupported",
+        derivative_method="unsupported",
+        metadata={
+            "policy": "fail_closed_dynamic_state_wrong_lane",
+            "semantic_contract_type": admission.semantic_contract_type,
+            "semantic_family": semantic_family,
+            "product_family": admission.product_family,
+            "contract_shape": admission.contract_shape,
+            "actual_contract_shape": actual_contract_shape,
+            "expected_contract_shape": "dynamic_hybrid_state",
+            "lane_id": admission.lane_id,
+            "market_parameterization": market_parameterization,
+        },
+    )
+    return HybridFactorGraph(
+        graph_id=f"hybrid:dynamic_state_unavailable:{position_name}",
+        unsupported_dependencies=(dependency,),
+        metadata={
+            "route_family": "bounded_dynamic_state",
+            "graph_source": "dynamic_contract_ir_admission",
+            "semantic_contract_type": admission.semantic_contract_type,
+            "semantic_family": semantic_family,
+            "product_family": admission.product_family,
+            "contract_shape": admission.contract_shape,
+            "actual_contract_shape": actual_contract_shape,
+            "expected_contract_shape": "dynamic_hybrid_state",
+            "base_track": semantic_contract.base_track or "",
+            "market_parameterization": market_parameterization,
+        },
+    )
+
+
+def _resolve_dynamic_state_admission(
+    semantic_contract: DynamicContractIR,
+    request: HybridDerivativeRequest,
+    *,
+    product_family: str | None,
+    market_parameterization: str,
+) -> HybridADLaneAdmission:
+    base_admission = admit_hybrid_ad_lane(
+        semantic_contract,
+        derivative_method=request.derivative_method,
+        market_parameterization=market_parameterization,
+        product_family=product_family or semantic_contract.semantic_family or None,
+    )
+    supplied = request.semantic_admission
+    if supplied is None:
+        if _is_dynamic_state_admission(base_admission):
+            return base_admission
+        return replace(
+            base_admission,
+            support_status="unsupported",
+            reason="semantic_admission_lane_unavailable",
+            metadata={
+                **dict(base_admission.metadata),
+                "actual_semantic_admission": base_admission.to_payload(),
+                "fail_closed": True,
+            },
+            diagnostics=(
+                {
+                    "code": "semantic_admission_lane_unavailable",
+                    "severity": "warning",
+                    "actual_lane_id": base_admission.lane_id,
+                    "actual_contract_shape": base_admission.contract_shape,
+                    "expected_contract_shape": "dynamic_hybrid_state",
+                },
+            ),
+        )
+    if _is_dynamic_state_admission(supplied):
+        return supplied
+    if _is_dynamic_state_admission(base_admission):
+        return replace(
+            base_admission,
+            support_status="unsupported",
+            reason="semantic_admission_lane_unavailable",
+            metadata={
+                **dict(base_admission.metadata),
+                "supplied_semantic_admission": supplied.to_payload(),
+                "fail_closed": True,
+            },
+            diagnostics=(
+                {
+                    "code": "semantic_admission_lane_unavailable",
+                    "severity": "warning",
+                    "supplied_lane_id": supplied.lane_id,
+                    "supplied_contract_shape": supplied.contract_shape,
+                    "expected_contract_shape": "dynamic_hybrid_state",
+                },
+            ),
+        )
+    return replace(
+        base_admission,
+        support_status="unsupported",
+        reason="semantic_admission_lane_unavailable",
+        metadata={
+            **dict(base_admission.metadata),
+            "supplied_semantic_admission": supplied.to_payload(),
+            "actual_semantic_admission": base_admission.to_payload(),
+            "fail_closed": True,
+        },
+        diagnostics=(
+            {
+                "code": "semantic_admission_lane_unavailable",
+                "severity": "warning",
+                "supplied_lane_id": supplied.lane_id,
+                "supplied_contract_shape": supplied.contract_shape,
+                "actual_lane_id": base_admission.lane_id,
+                "actual_contract_shape": base_admission.contract_shape,
+                "expected_contract_shape": "dynamic_hybrid_state",
+            },
+        ),
+    )
+
+
+def fail_closed_dynamic_state_derivative(
+    semantic_contract: DynamicContractIR,
+    *,
+    request: HybridDerivativeRequest | None = None,
+    value: float | None = None,
+    position_name: str = "dynamic_contract",
+    product_family: str | None = None,
+    market_parameterization: str = "flat_vol",
+) -> HybridDerivativeResult:
+    """Return a typed fail-closed result for unsupported dynamic-state hybrid AD."""
+    if not isinstance(semantic_contract, DynamicContractIR):
+        raise TypeError("semantic_contract must be a DynamicContractIR")
+    position = str(position_name or "dynamic_contract").strip() or "dynamic_contract"
+    resolved_request = request or HybridDerivativeRequest()
+    admission = _resolve_dynamic_state_admission(
+        semantic_contract,
+        resolved_request,
+        product_family=product_family,
+        market_parameterization=market_parameterization,
+    )
+    resolved_request = replace(resolved_request, semantic_admission=admission)
+    if _is_dynamic_state_admission(admission):
+        graph = _dynamic_state_graph(
+            semantic_contract=semantic_contract,
+            admission=admission,
+            position_name=position,
+            market_parameterization=market_parameterization,
+        )
+    else:
+        graph = _dynamic_state_unavailable_graph(
+            semantic_contract=semantic_contract,
+            admission=admission,
+            position_name=position,
+            market_parameterization=market_parameterization,
+        )
+    admission_metadata = _semantic_admission_metadata(admission)
+    selected_diagnostics = _unsupported_selected_factor_diagnostics(
+        resolved_request,
+        graph,
+        code="unsupported_selected_dynamic_state_factors",
+    )
+    state_policy = graph.metadata.get("state_policy")
+    if not isinstance(state_policy, Mapping):
+        state_policy = admission.metadata.get("state_policy")
+    diagnostic_extra_state = (
+        {"state_kind": state_policy.get("state_kind", "dynamic_state")}
+        if isinstance(state_policy, Mapping)
+        else {}
+    )
+    admission_diagnostic_extra = dict(admission.diagnostics[0]) if admission.diagnostics else {}
+    admission_diagnostic_extra.pop("code", None)
+    admission_diagnostic_extra.pop("severity", None)
+    diagnostic_extra = {
+        "semantic_admission_status": admission.support_status,
+        "semantic_admission_reason": admission.reason,
+        "semantic_contract_type": admission.semantic_contract_type,
+        "product_family": admission.product_family,
+        "contract_shape": admission.contract_shape,
+        "lane_id": admission.lane_id,
+        **admission_diagnostic_extra,
+        **diagnostic_extra_state,
+    }
+    if resolved_request.derivative_method == "jvp":
+        result = _unsupported_jvp_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            message=(
+                "DynamicContractIR dynamic-state JVP is fail-closed because the "
+                "active backend has no checked forward-mode primitive lane."
+            ),
+            diagnostic_extra=diagnostic_extra,
+            method_metadata_extra=admission_metadata,
+        )
+    else:
+        result = _unsupported_result(
+            value=value,
+            graph=graph,
+            request=resolved_request,
+            code=admission.reason,
+            message=(
+                "DynamicContractIR dynamic-state derivatives are fail-closed "
+                "until an executable state/control replay lane is admitted."
+            ),
+            method_id="unsupported_hybrid_structure",
+            fallback_reason={
+                "code": admission.reason,
+                **diagnostic_extra,
+            },
+            diagnostic_extra=diagnostic_extra,
+            method_metadata_extra=admission_metadata,
+        )
+    if selected_diagnostics:
+        return replace(
+            result,
+            diagnostics=tuple(result.diagnostics) + selected_diagnostics,
+        )
+    return result
+
+
 def _semantic_admission_metadata(
     admission: HybridADLaneAdmission | None,
 ) -> dict[str, object]:
@@ -3300,4 +3738,5 @@ __all__ = [
     "differentiate_quanto_scalar_inputs",
     "differentiate_quanto_scalar_correlation",
     "fail_closed_correlation_structure_derivative",
+    "fail_closed_dynamic_state_derivative",
 ]

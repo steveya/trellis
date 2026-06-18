@@ -86,6 +86,13 @@ smooth-interior early-exercise lane for vanilla American/Bermudan options over
 one graph-owned ``FlatVol`` coordinate; it reports
 ``hybrid_early_exercise_vjp`` metadata and fails closed for grid-vol
 early-exercise, exercise-boundary ties, HVP, and JVP.
+``fail_closed_dynamic_state_derivative(...)`` materializes the corresponding
+``DynamicContractIR`` dynamic-state boundary as a first-class unsupported
+``HybridDerivativeResult``. It builds a graph-owned discovery-only
+``dynamic_state_policy`` chart, preserves ``semantic_state_policy`` metadata,
+keeps selected-factor diagnostics deterministic, and still reports empty risk
+through ``unsupported_hybrid_structure`` or ``unsupported_hybrid_jvp`` rather
+than attempting state/control replay AD.
 The semantic admission layer now carries a ``HybridADStatePolicy`` for
 path-dependent, discontinuous-event, early-exercise, and dynamic-state hybrid
 shapes. Supported arithmetic-average VJP admissions carry that payload as a
@@ -186,6 +193,8 @@ The checked support contract is intentionally explicit:
        ``trellis.analytics.differentiate_arithmetic_asian_path_summary(...)``;
        bounded vanilla early-exercise VJP through
        ``trellis.analytics.differentiate_vanilla_early_exercise(...)``; bounded
+       dynamic-state fail-closed diagnostics through
+       ``trellis.analytics.fail_closed_dynamic_state_derivative(...)``; bounded
        multi-product composition through
        ``trellis.analytics.aggregate_hybrid_ad_lane_results(...)``
      - bounded to the single-name quanto graph-owned scalar/matrix coordinates
@@ -195,7 +204,8 @@ The checked support contract is intentionally explicit:
        keeps unsupported lanes explicit. Broad hybrid product graphs,
        correlation surfaces, matrix projection/repair, PSD-boundary behavior,
        grid-vol path summaries, discontinuous event monitors, dynamic state
-       execution, grid-vol or boundary-kink early-exercise derivatives,
+       execution beyond the typed fail-closed policy result, grid-vol or
+       boundary-kink early-exercise derivatives,
        path-summary/early-exercise HVP or JVP, and hybrid ``jvp`` remain
        fail-closed unless a future lane explicitly supports them.
    * - Flat volatility risk
@@ -674,6 +684,19 @@ supported only in the flat-vol VJP lane under the smooth-interior hard
 projection policy. Dynamic controls remain planned, while discontinuous event
 monitors remain unsupported. None of these state-policy payloads imply broad
 pathwise hybrid AD.
+
+``fail_closed_dynamic_state_derivative(...)`` is the runtime surface for
+``DynamicContractIR`` state/control requests that reach Hybrid AD diagnostics.
+It does not price or differentiate the dynamic program. Instead it returns an
+unsupported ``HybridDerivativeResult`` whose ``HybridFactorGraph`` owns a
+single ``dynamic_state_policy`` coordinate, maps admission-level
+``planned`` status to a graph-level ``discovery_only`` chart, and carries the
+dynamic state/event/control policy into both graph metadata and
+``method_metadata["semantic_state_policy"]``. Selected ``RiskFactorId`` probes
+are checked against that graph-owned policy coordinate; unavailable selections
+produce ``selected_factors_unavailable`` diagnostics and keep risk empty. JVP
+requests use the backend-level ``unsupported_hybrid_jvp`` payload and do not
+advertise an executable ``backend_operator``.
 
 Forward mode remains executable-truth governed. A ``derivative_method="jvp"``
 request returns an unsupported result with
