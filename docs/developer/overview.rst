@@ -319,6 +319,11 @@ bounded vanilla American/Bermudan early-exercise lane over one graph-owned
 ``FlatVol`` coordinate; it reports
 ``hybrid_early_exercise_vjp`` metadata and fails closed for grid-vol
 early-exercise, exercise-boundary ties, HVP, and JVP.
+``trellis.analytics.fail_closed_dynamic_state_derivative(...)`` provides the
+corresponding typed runtime evidence packet for ``DynamicContractIR``
+state/control requests: a discovery-only ``dynamic_state_policy`` graph
+coordinate, preserved ``semantic_state_policy`` metadata, selected-factor
+diagnostics, and empty risk.
 ``trellis.analytics.admit_hybrid_ad_lane(...)`` is the semantic ContractIR
 admission guard for this helper family; supported terminal quanto scalar or
 matrix VJP/HVP admissions can be passed through
@@ -336,8 +341,8 @@ path summaries, discontinuous event monitors, grid-vol or boundary-kink
 early-exercise controls, and DynamicContractIR state/control requests are
 classified before runtime AD executes, and blocked runtime helpers surface
 that payload as ``semantic_state_policy`` metadata. These remain bounded
-summary/control lanes and fail-closed policy boundaries, not broad pathwise or
-dynamic hybrid AD execution.
+summary/control lanes and fail-closed policy boundaries, not broad pathwise,
+dynamic-state, or state/control replay AD execution.
 
 The same benchmarking module now also exposes
 ``supported_counterparty_exposure_benchmark_scenarios()`` and

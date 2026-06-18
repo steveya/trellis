@@ -712,11 +712,14 @@ Current bounded hybrid derivative entrypoints include:
 - ``differentiate_quanto_correlation_matrix(...)``
 - ``differentiate_arithmetic_asian_path_summary(...)``
 - ``differentiate_vanilla_early_exercise(...)``
+- ``fail_closed_dynamic_state_derivative(...)`` for typed
+  ``DynamicContractIR`` state/control diagnostics without executable AD
 
 Those entrypoints report lane-specific derivative metadata such as
 ``hybrid_scalar_vector_vjp``, ``hybrid_scalar_vector_hvp``,
 ``hybrid_matrix_vector_vjp``, ``hybrid_matrix_vector_hvp``,
-``hybrid_path_summary_vjp``, and ``hybrid_early_exercise_vjp``. They do not
+``hybrid_path_summary_vjp``, ``hybrid_early_exercise_vjp``,
+``unsupported_hybrid_structure``, and ``unsupported_hybrid_jvp``. They do not
 change the global backend capability flag to "universal hybrid AD".
 
 Path Summary And Early Exercise Hybrid Lanes
@@ -761,6 +764,16 @@ continue to use the distinct ``early_exercise_boundary_kink`` reason.
 These lanes exist because they are mathematically defensible and testable
 within a bounded smooth region. They are not broad pathwise AD for arbitrary
 stateful contracts.
+
+Dynamic-state ``DynamicContractIR`` requests currently stop at a typed
+fail-closed runtime result. ``fail_closed_dynamic_state_derivative(...)``
+materializes a discovery-only ``dynamic_state_policy`` coordinate chart whose
+single graph-owned ``RiskFactorId`` anchors the state/control policy. The
+result preserves the semantic admission payload, ``semantic_state_policy``,
+event policy, control policy, selected-factor diagnostics, and unsupported
+dependency reason while returning empty risk. This is useful evidence for
+agent and validator workflows, but it is intentionally not an executable
+dynamic-state VJP, HVP, or JVP lane.
 
 Multi-Product Hybrid Fixtures
 -----------------------------

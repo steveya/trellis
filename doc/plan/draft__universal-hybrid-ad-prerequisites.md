@@ -13,7 +13,8 @@ path-summary lane, the first executable early-exercise smooth-interior lane, and
 the Phase 5 backend decision that enforces a VJP/HVP-only hybrid derivative
 contract while JVP remains fail-closed. It also records the bounded
 multi-product fixture surface that linearly aggregates already-computed
-lane-local VJP outputs while preserving unsupported-lane diagnostics.
+lane-local VJP outputs while preserving unsupported-lane diagnostics, plus the
+typed fail-closed DynamicContractIR dynamic-state runtime evidence packet.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -68,6 +69,7 @@ lane-local VJP outputs while preserving unsupported-lane diagnostics.
 | `QUA-1094` | Done | Add the checked grid-vol path-summary runtime lane or explicit fail-closed runtime result. |
 | `QUA-1095` | Done | Harden grid-vol early-exercise fail-closed runtime and admission diagnostics. |
 | `QUA-1096` | Done | Closed the grid-vol state/control epic with verification, docs, limitations, and plan updates. |
+| `QUA-1097` | Done | Added the bounded DynamicContractIR dynamic-state fail-closed runtime result with graph-owned policy coordinates. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -150,6 +152,11 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   early-exercise controls can be supported by the bounded VJP lane, and
   DynamicContractIR state/control requests remain planned except for
   backend-unsupported JVP
+- `fail_closed_dynamic_state_derivative(...)` materializes planned or
+  unsupported DynamicContractIR state/control admissions as first-class
+  unsupported `HybridDerivativeResult` payloads with a discovery-only
+  `dynamic_state_policy` coordinate, state/control policy metadata,
+  selected-factor diagnostics, and empty risk
 - `HybridDerivativeRequest.semantic_admission` carries that decision into the
   scalar and matrix quanto derivative helpers; supported admissions are
   preserved in result metadata while wrong-lane, planned, or unsupported
@@ -765,7 +772,6 @@ Acceptance criteria:
 
 ## Follow-On Ticket Candidates
 
-- `QUA-1097` — `Hybrid AD: dynamic-state executable derivative lane`
 - `QUA-1098` — `Hybrid AD: correlation-surface chart policy`
 
 ## Completed Epic: Grid-Vol State/Control Derivative Policy
