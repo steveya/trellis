@@ -4,7 +4,8 @@
 
 First prototypes delivered under the `QUA-1034`, `QUA-1040`, `QUA-1045`,
 `QUA-1049`, `QUA-1054`, `QUA-1059`, `QUA-1065`, `QUA-1071`,
-`QUA-1076`, `QUA-1081`, and `QUA-1086` epics. Universal hybrid
+`QUA-1076`, `QUA-1081`, and `QUA-1086` epics plus the `QUA-1098`
+correlation-surface chart-policy slice. Universal hybrid
 AD is still not claimed; this document now records the shipped bounded quanto
 scalar-coordinate prototypes, the checked correlation matrix policy surface,
 the executable matrix-coordinate lane, the ContractIR admission boundary, the
@@ -14,7 +15,8 @@ the Phase 5 backend decision that enforces a VJP/HVP-only hybrid derivative
 contract while JVP remains fail-closed. It also records the bounded
 multi-product fixture surface that linearly aggregates already-computed
 lane-local VJP outputs while preserving unsupported-lane diagnostics, plus the
-typed fail-closed DynamicContractIR dynamic-state runtime evidence packet.
+typed fail-closed DynamicContractIR dynamic-state runtime evidence packet and
+the first-class discovery-only correlation-surface chart policy.
 
 | Ticket | Status | Outcome |
 |---|---|---|
@@ -70,6 +72,7 @@ typed fail-closed DynamicContractIR dynamic-state runtime evidence packet.
 | `QUA-1095` | Done | Harden grid-vol early-exercise fail-closed runtime and admission diagnostics. |
 | `QUA-1096` | Done | Closed the grid-vol state/control epic with verification, docs, limitations, and plan updates. |
 | `QUA-1097` | Done | Added the bounded DynamicContractIR dynamic-state fail-closed runtime result with graph-owned policy coordinates. |
+| `QUA-1098` | Done | Added discovery-only correlation-surface chart policy, selected-factor policy metadata, and fail-closed runtime diagnostics. |
 
 This document describes the missing mathematical and computational contracts
 required before Trellis can honestly claim universal hybrid automatic
@@ -126,6 +129,11 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   correlation matrix policy payload, derive deterministic off-diagonal
   `RiskFactorId` coordinates, record the minimum eigenvalue, and enforce the
   no-projection policy
+- `MarketObjectCoordinateChart.correlation_surface_policy(...)` defines a
+  discovery-only surface-node policy chart for correlation-surface requests,
+  with deterministic factor-pair and surface-axis `RiskFactorId` coordinates,
+  interpolation/locality policy, selected-factor behavior, and
+  no-projection/no-smoothing/no-repair constraints
 - `build_correlation_matrix_coordinate_context(...)` promotes valid,
   well-conditioned matrix payloads into executable off-diagonal coordinate
   context while failing closed near the PSD boundary
@@ -134,9 +142,9 @@ Trellis now also has a bounded graph-backed quanto hybrid-AD prototype:
   matrix coordinate, with sparse direction validation and finite-difference
   verification away from singularities
 - `fail_closed_correlation_structure_derivative(...)` distinguishes valid but
-  non-executable matrix-policy calls, invalid matrix charts, and unsupported
-  surface charts through typed diagnostics and `unsupported_hybrid_structure`
-  metadata
+  non-executable matrix-policy calls, invalid matrix charts, valid
+  non-executable correlation-surface charts, and invalid surface-axis payloads
+  through typed diagnostics and `unsupported_hybrid_structure` metadata
 - `jvp` requests, correlation surfaces, matrix requests at the PSD boundary,
   and matrix requests that require projection or smoothing fail closed through
   explicit unsupported derivative-method metadata
@@ -772,7 +780,9 @@ Acceptance criteria:
 
 ## Follow-On Ticket Candidates
 
-- `QUA-1098` — `Hybrid AD: correlation-surface chart policy`
+No open follow-on ticket is queued in this plan mirror from the current Hybrid
+AD closeout. Executable correlation-surface AD remains a future epic only if
+the discovery-only chart policy proves useful enough to widen.
 
 ## Completed Epic: Grid-Vol State/Control Derivative Policy
 

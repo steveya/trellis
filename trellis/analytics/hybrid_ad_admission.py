@@ -106,7 +106,9 @@ class HybridADStatePolicy:
     state_variable_roles: tuple[str, ...] = field(default_factory=tuple)
     fail_closed: bool = True
     metadata: Mapping[str, Any] = field(default_factory=dict, hash=False)
-    diagnostics: tuple[Mapping[str, Any], ...] = field(default_factory=tuple, hash=False)
+    diagnostics: tuple[Mapping[str, Any], ...] = field(
+        default_factory=tuple, hash=False
+    )
 
     def __post_init__(self) -> None:
         state_kind = _normalize(self.state_kind)
@@ -143,8 +145,7 @@ class HybridADStatePolicy:
             tuple(
                 role
                 for role in (
-                    str(raw_role).strip()
-                    for raw_role in self.state_variable_roles
+                    str(raw_role).strip() for raw_role in self.state_variable_roles
                 )
                 if role
             ),
@@ -265,20 +266,28 @@ class HybridADLaneAdmission:
     )
     derivative_method_category: str = "hybrid_ad"
     metadata: Mapping[str, Any] = field(default_factory=dict, hash=False)
-    diagnostics: tuple[Mapping[str, Any], ...] = field(default_factory=tuple, hash=False)
+    diagnostics: tuple[Mapping[str, Any], ...] = field(
+        default_factory=tuple, hash=False
+    )
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "admitted", bool(self.admitted))
         object.__setattr__(self, "lane_id", _clean(self.lane_id, "lane_id"))
-        object.__setattr__(self, "support_status", _clean(self.support_status, "support_status"))
+        object.__setattr__(
+            self, "support_status", _clean(self.support_status, "support_status")
+        )
         object.__setattr__(self, "reason", _clean(self.reason, "reason"))
         object.__setattr__(
             self,
             "semantic_contract_type",
             _clean(self.semantic_contract_type, "semantic_contract_type"),
         )
-        object.__setattr__(self, "product_family", _clean(self.product_family, "product_family"))
-        object.__setattr__(self, "contract_shape", _clean(self.contract_shape, "contract_shape"))
+        object.__setattr__(
+            self, "product_family", _clean(self.product_family, "product_family")
+        )
+        object.__setattr__(
+            self, "contract_shape", _clean(self.contract_shape, "contract_shape")
+        )
         methods = tuple(_normalize(method) for method in self.derivative_methods)
         if not methods:
             raise ValueError("derivative_methods must be non-empty")
@@ -319,8 +328,7 @@ class HybridADLaneAdmission:
             "contract_shape": self.contract_shape,
             "derivative_methods": list(self.derivative_methods),
             "factor_requirements": [
-                requirement.to_payload()
-                for requirement in self.factor_requirements
+                requirement.to_payload() for requirement in self.factor_requirements
             ],
             "derivative_method_category": self.derivative_method_category,
             "derivative_method_support": self.support_status,
@@ -702,9 +710,9 @@ def _contract_ir_admission(
             ),
         )
     if _is_path_dependent(contract):
-        if _is_arithmetic_asian_family(product_family) and _is_bounded_arithmetic_path_summary(
-            contract
-        ):
+        if _is_arithmetic_asian_family(
+            product_family
+        ) and _is_bounded_arithmetic_path_summary(contract):
             if derivative_method == "vjp":
                 if _is_grid_vol_parameterization(market_parameterization):
                     state_policy = _smooth_path_summary_state_policy(
@@ -927,9 +935,9 @@ def _contract_ir_admission(
             ),
         )
     if contract.exercise.style in {"american", "bermudan"}:
-        if _is_early_exercise_family(product_family) and _is_bounded_vanilla_early_exercise(
-            contract
-        ):
+        if _is_early_exercise_family(
+            product_family
+        ) and _is_bounded_vanilla_early_exercise(contract):
             if derivative_method == "vjp":
                 if _is_grid_vol_parameterization(market_parameterization):
                     state_policy = _early_exercise_state_policy(
@@ -1193,7 +1201,10 @@ def _contract_ir_admission(
         contract_shape=_contract_shape(contract),
         derivative_methods=("vjp", "hvp"),
         factor_requirements=(),
-        metadata={"requested_derivative_method": derivative_method, "fail_closed": True},
+        metadata={
+            "requested_derivative_method": derivative_method,
+            "fail_closed": True,
+        },
         diagnostics=(
             {
                 "code": "unsupported_contract_ir_hybrid_ad_shape",
@@ -1241,9 +1252,9 @@ def _correlation_structure_admission(
         requirement = _correlation_matrix_requirement()
         chart_policy_status = "validated_fail_closed"
     else:
-        reason = "correlation_surface_chart_not_implemented"
+        reason = "correlation_surface_derivative_not_implemented"
         requirement = _correlation_surface_requirement()
-        chart_policy_status = "surface_chart_not_implemented"
+        chart_policy_status = "validated_fail_closed"
     return _admission(
         admitted=False,
         lane_id=f"{structure_type}_hybrid_ad_policy",
@@ -1314,9 +1325,7 @@ def _grid_vol_path_summary_jvp_admission(
             "requested_derivative_method": "jvp",
             "market_parameterization": "grid_vol",
             "observation_kind": contract.observation.kind,
-            "path_derivative_policy": (
-                "lognormal_moment_matching_smooth_path_summary"
-            ),
+            "path_derivative_policy": ("lognormal_moment_matching_smooth_path_summary"),
             "grid_vol_support_status": "planned",
             "grid_vol_derivative_policy": "grid_node_path_summary_policy_pending",
             **backend_metadata,
@@ -1624,11 +1633,19 @@ def _vanilla_intrinsic_body(expr: object) -> object | None:
 
 
 def _is_spot_strike_sub(expr: object) -> bool:
-    return isinstance(expr, Sub) and isinstance(expr.lhs, Spot) and isinstance(expr.rhs, Strike)
+    return (
+        isinstance(expr, Sub)
+        and isinstance(expr.lhs, Spot)
+        and isinstance(expr.rhs, Strike)
+    )
 
 
 def _is_strike_spot_sub(expr: object) -> bool:
-    return isinstance(expr, Sub) and isinstance(expr.lhs, Strike) and isinstance(expr.rhs, Spot)
+    return (
+        isinstance(expr, Sub)
+        and isinstance(expr.lhs, Strike)
+        and isinstance(expr.rhs, Spot)
+    )
 
 
 def _is_arithmetic_mean_strike_sub(expr: object) -> bool:

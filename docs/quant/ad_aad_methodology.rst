@@ -676,7 +676,14 @@ For a factor pair :math:`(a,b)`, the active off-diagonal coordinate is:
 The current executable lane differentiates the terminal quanto route with
 respect to direct off-diagonal matrix coordinates away from the PSD boundary.
 It does not project, repair, or smooth invalid matrices. Requests near the PSD
-boundary, projected/repaired charts, and correlation surfaces fail closed.
+boundary and projected/repaired charts fail closed.
+
+Correlation surfaces are represented as a separate fail-closed chart policy,
+not as matrix coordinates. ``correlation_surface_policy`` uses deterministic
+surface-node ``RiskFactorId`` coordinates keyed by factor pair and surface
+axes, records interpolation/locality and selected-factor policy, and reports
+``correlation_surface_derivative_not_implemented`` until an executable
+surface-coordinate lane exists.
 
 Bounded Hybrid VJP And HVP
 --------------------------

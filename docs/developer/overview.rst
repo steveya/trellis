@@ -300,11 +300,15 @@ chart when the request supplies an explicit sparse ``hvp_direction``.
 bounded terminal-quanto matrix-coordinate lane: valid, well-conditioned direct
 correlation-matrix payloads produce off-diagonal ``RiskFactorId`` coordinates
 and can return VJP or directional HVP risk for the active underlier/FX matrix
-entry. The developer contract is deliberately narrow: correlation surfaces,
-matrix projection or repair, PSD-boundary behavior, broader product graphs,
-and hybrid ``jvp`` are rejected fail-closed until explicit graph-owned
-derivative lanes exist. The backend capability payload exposes the same
-decision through ``support_matrix`` / ``operator_support(...)`` records, and
+entry. Correlation-surface requests have their own discovery-only
+``correlation_surface_policy`` chart with deterministic surface-node
+coordinates, interpolation/locality policy, selected-factor policy, and typed
+unsupported dependencies, but no executable surface-coordinate AD. The
+developer contract is deliberately narrow: surface execution, matrix
+projection or repair, PSD-boundary behavior, broader product graphs, and
+hybrid ``jvp`` are rejected fail-closed until explicit graph-owned derivative
+lanes exist. The backend capability payload exposes the same decision through
+``support_matrix`` / ``operator_support(...)`` records, and
 hybrid JVP runtime payloads report ``unsupported_hybrid_jvp`` with
 ``requested_backend_operator="jvp"`` plus ``backend_support`` rather than an
 executable ``backend_operator``. The first executable path-state lane is also

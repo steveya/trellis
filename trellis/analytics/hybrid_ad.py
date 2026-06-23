@@ -86,7 +86,9 @@ def _freeze_optional_matrix(
 def _freeze_diagnostics(
     diagnostics: Iterable[Mapping[str, object]] | None,
 ) -> tuple[Mapping[str, object], ...]:
-    return tuple(MappingProxyType(dict(diagnostic)) for diagnostic in (diagnostics or ()))
+    return tuple(
+        MappingProxyType(dict(diagnostic)) for diagnostic in (diagnostics or ())
+    )
 
 
 def _sorted_unique_factors(factors: Iterable[RiskFactorId]) -> tuple[RiskFactorId, ...]:
@@ -95,7 +97,9 @@ def _sorted_unique_factors(factors: Iterable[RiskFactorId]) -> tuple[RiskFactorI
         if not isinstance(factor, RiskFactorId):
             raise TypeError("selected_factors must contain RiskFactorId instances")
         factor_map[factor] = factor
-    return tuple(factor for _, factor in sorted(factor_map.items(), key=lambda item: item[0].key))
+    return tuple(
+        factor for _, factor in sorted(factor_map.items(), key=lambda item: item[0].key)
+    )
 
 
 def _normalize_sparse_vector(value: object, field_name: str) -> SparseRiskVector:
@@ -107,7 +111,9 @@ def _normalize_sparse_vector(value: object, field_name: str) -> SparseRiskVector
     try:
         return SparseRiskVector.from_items(items)  # type: ignore[arg-type]
     except TypeError as exc:
-        raise TypeError(f"{field_name} must contain RiskFactorId keyed numeric entries") from exc
+        raise TypeError(
+            f"{field_name} must contain RiskFactorId keyed numeric entries"
+        ) from exc
 
 
 def _normalize_semantic_admission(value: object) -> HybridADLaneAdmission | None:
@@ -137,12 +143,16 @@ class HybridDerivativeRequest:
         object.__setattr__(
             self,
             "derivative_method",
-            _clean_member(self.derivative_method, _DERIVATIVE_METHODS, "derivative_method"),
+            _clean_member(
+                self.derivative_method, _DERIVATIVE_METHODS, "derivative_method"
+            ),
         )
         object.__setattr__(
             self,
             "coordinate_space",
-            _clean_member(self.coordinate_space, _COORDINATE_SPACES, "coordinate_space"),
+            _clean_member(
+                self.coordinate_space, _COORDINATE_SPACES, "coordinate_space"
+            ),
         )
         object.__setattr__(
             self,
@@ -188,7 +198,9 @@ class HybridDerivativeRequest:
         if self.selects_all_factors:
             return ()
         available_set = set(available)
-        return tuple(factor for factor in self.selected_factors if factor not in available_set)
+        return tuple(
+            factor for factor in self.selected_factors if factor not in available_set
+        )
 
 
 @dataclass(frozen=True)
@@ -219,7 +231,9 @@ class HybridCorrelationStructureRequest:
                 "structure_type",
             ),
         )
-        factors = tuple(str(factor).strip() for factor in self.factors if str(factor).strip())
+        factors = tuple(
+            str(factor).strip() for factor in self.factors if str(factor).strip()
+        )
         object.__setattr__(self, "factors", factors)
         object.__setattr__(
             self,
@@ -233,14 +247,18 @@ class HybridCorrelationStructureRequest:
         object.__setattr__(
             self,
             "coordinate_space",
-            _clean_member(self.coordinate_space, _COORDINATE_SPACES, "coordinate_space"),
+            _clean_member(
+                self.coordinate_space, _COORDINATE_SPACES, "coordinate_space"
+            ),
         )
         object.__setattr__(
             self,
             "correlation_matrix",
             _freeze_optional_matrix(self.correlation_matrix),
         )
-        object.__setattr__(self, "surface_axes", _freeze_surface_axes(self.surface_axes))
+        object.__setattr__(
+            self, "surface_axes", _freeze_surface_axes(self.surface_axes)
+        )
         chart_tolerance = float(self.chart_tolerance)
         if chart_tolerance < 0.0:
             raise ValueError("chart_tolerance must be non-negative")
@@ -276,7 +294,9 @@ class HybridMatrixCoordinateContext:
             raise ValueError("matrix-coordinate context requires a supported chart")
         status = str(self.support_status).strip()
         if status != "supported":
-            raise ValueError("matrix-coordinate context support_status must be supported")
+            raise ValueError(
+                "matrix-coordinate context support_status must be supported"
+            )
         object.__setattr__(self, "support_status", status)
         active = self.active_factor_id
         if isinstance(active, Mapping):
@@ -289,7 +309,9 @@ class HybridMatrixCoordinateContext:
     @property
     def factor_labels(self) -> tuple[str, ...]:
         """Return matrix factor labels in chart order."""
-        return tuple(str(label) for label in self.chart.coordinate_values["factor_labels"])
+        return tuple(
+            str(label) for label in self.chart.coordinate_values["factor_labels"]
+        )
 
     @property
     def correlation_matrix(self) -> tuple[tuple[float, ...], ...]:
@@ -325,9 +347,13 @@ class HybridMatrixCoordinateContext:
                 return index
         raise KeyError(f"matrix coordinate pair {sorted(target)!r} is not chart-owned")
 
-    def coordinate_for_pair(self, factor_a: object, factor_b: object) -> RiskFactorCoordinate:
+    def coordinate_for_pair(
+        self, factor_a: object, factor_b: object
+    ) -> RiskFactorCoordinate:
         """Return the chart coordinate for an unordered factor pair."""
-        return self.chart.coordinates[self.coordinate_index_for_pair(factor_a, factor_b)]
+        return self.chart.coordinates[
+            self.coordinate_index_for_pair(factor_a, factor_b)
+        ]
 
     @property
     def active_coordinate_index(self) -> int | None:
@@ -355,7 +381,9 @@ class HybridMatrixCoordinateContext:
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> "HybridMatrixCoordinateContext":
+    def from_payload(
+        cls, payload: Mapping[str, object]
+    ) -> "HybridMatrixCoordinateContext":
         """Rebuild a context from :meth:`to_payload` output."""
         return cls(
             chart=MarketObjectCoordinateChart.from_payload(payload["chart"]),
@@ -388,7 +416,9 @@ class HybridDerivativeResult:
         if not isinstance(self.graph, HybridFactorGraph):
             raise TypeError("graph must be a HybridFactorGraph")
         object.__setattr__(self, "support_status", str(self.support_status))
-        object.__setattr__(self, "method_metadata", _freeze_mapping(self.method_metadata))
+        object.__setattr__(
+            self, "method_metadata", _freeze_mapping(self.method_metadata)
+        )
         unsupported = tuple(self.unsupported_dependencies)
         for dependency in unsupported:
             if not isinstance(dependency, HybridUnsupportedDependency):
@@ -407,8 +437,7 @@ class HybridDerivativeResult:
             "support_status": self.support_status,
             "method_metadata": dict(self.method_metadata),
             "unsupported_dependencies": [
-                dependency.to_payload()
-                for dependency in self.unsupported_dependencies
+                dependency.to_payload() for dependency in self.unsupported_dependencies
             ],
             "diagnostics": [dict(diagnostic) for diagnostic in self.diagnostics],
         }
@@ -475,7 +504,9 @@ def _correlation_factor(graph: HybridFactorGraph) -> RiskFactorId | None:
 
 def _fallback_graph(spec: object, resolved_inputs: object) -> HybridFactorGraph:
     corr = float(getattr(resolved_inputs, "corr"))
-    object_name = str(getattr(spec, "quanto_correlation_key", None) or "quanto_correlation")
+    object_name = str(
+        getattr(spec, "quanto_correlation_key", None) or "quanto_correlation"
+    )
     factor_a = str(getattr(spec, "underlier_currency", "underlier"))
     factor_b = str(getattr(spec, "fx_pair", "fx"))
     currency = str(getattr(spec, "underlier_currency", ""))
@@ -667,9 +698,7 @@ def _early_exercise_graph(
             coordinates=coordinates,
             metadata={
                 "exercise_style": exercise_style,
-                "early_exercise_policy": (
-                    "grid_vol_hard_exercise_projection_pending"
-                ),
+                "early_exercise_policy": ("grid_vol_hard_exercise_projection_pending"),
             },
         )
         dependency = HybridUnsupportedDependency.grid_vol_state_control_policy(
@@ -679,9 +708,7 @@ def _early_exercise_graph(
             metadata={
                 "position_name": str(position_name),
                 "exercise_style": exercise_style,
-                "early_exercise_policy": (
-                    "grid_vol_hard_exercise_projection_pending"
-                ),
+                "early_exercise_policy": ("grid_vol_hard_exercise_projection_pending"),
                 "policy_reason": "early_exercise_grid_vol_vjp_pending",
             },
         )
@@ -697,9 +724,7 @@ def _early_exercise_graph(
                 "resolved_inputs": ("underlier_vol",),
                 "position_name": str(position_name),
                 "exercise_style": exercise_style,
-                "early_exercise_policy": (
-                    "grid_vol_hard_exercise_projection_pending"
-                ),
+                "early_exercise_policy": ("grid_vol_hard_exercise_projection_pending"),
                 "grid_vol_support_status": "planned",
             },
         )
@@ -711,9 +736,7 @@ def _early_exercise_graph(
                 "route_family": "bounded_vanilla_early_exercise",
                 "graph_source": "vanilla_early_exercise_grid_vol_control_policy",
                 "exercise_style": exercise_style,
-                "early_exercise_policy": (
-                    "grid_vol_hard_exercise_projection_pending"
-                ),
+                "early_exercise_policy": ("grid_vol_hard_exercise_projection_pending"),
                 "vol_surface_name": context.vol_surface_name,
                 "position_name": str(position_name),
                 "market_parameterization": "grid_vol",
@@ -780,7 +803,9 @@ def _path_summary_graph(
     from trellis.models.vol_surface import FlatVol, GridVolSurface
 
     if not isinstance(context, VanillaEquityOptionVolAADMarketContext):
-        raise TypeError("path-summary helper requires VanillaEquityOptionVolAADMarketContext")
+        raise TypeError(
+            "path-summary helper requires VanillaEquityOptionVolAADMarketContext"
+        )
     coordinates = context.coordinates()
     vol_surface = getattr(context.market_state, "vol_surface", None)
     if isinstance(vol_surface, GridVolSurface):
@@ -1189,7 +1214,9 @@ def _float_key(value: object) -> str:
     return format(float(value), ".12g")
 
 
-def _chart_float_tuple(chart: MarketObjectCoordinateChart, key: str) -> tuple[float, ...]:
+def _chart_float_tuple(
+    chart: MarketObjectCoordinateChart, key: str
+) -> tuple[float, ...]:
     return tuple(float(value) for value in chart.coordinate_values[key])
 
 
@@ -1197,10 +1224,14 @@ def _chart_float_matrix(
     chart: MarketObjectCoordinateChart,
     key: str,
 ) -> tuple[tuple[float, ...], ...]:
-    return tuple(tuple(float(value) for value in row) for row in chart.coordinate_values[key])
+    return tuple(
+        tuple(float(value) for value in row) for row in chart.coordinate_values[key]
+    )
 
 
-def _linear_interp_from_values(value: float, grid: tuple[float, ...], node_values: tuple[object, ...]):
+def _linear_interp_from_values(
+    value: float, grid: tuple[float, ...], node_values: tuple[object, ...]
+):
     lower, upper, weight = _bracket_and_weight(value, grid)
     return (1.0 - weight) * node_values[lower] + weight * node_values[upper]
 
@@ -1292,7 +1323,9 @@ def _entries_for_node(
                 node_id=node.node_id,
                 role=role,
                 factor_id=coordinate.factor_id,
-                base_value=rate_by_tenor[_axis_key(coordinate.factor_id, "tenor_years")],
+                base_value=rate_by_tenor[
+                    _axis_key(coordinate.factor_id, "tenor_years")
+                ],
             )
             for coordinate in chart.coordinates
             if coordinate.factor_id.coordinate_type == "zero_rate"
@@ -1376,19 +1409,31 @@ def _extract_entries_for_node(
     coordinate_space: str,
 ) -> _GraphScalarExtraction:
     role = _node_role(node)
-    if role is None or node.coordinate_chart is None or node.support_status != "supported":
+    if (
+        role is None
+        or node.coordinate_chart is None
+        or node.support_status != "supported"
+    ):
         return _GraphScalarExtraction(())
     try:
         entries = _entries_for_node(node, coordinate_space=coordinate_space)
     except (KeyError, TypeError, ValueError, IndexError) as exc:
         return _GraphScalarExtraction(
             (),
-            (_scalar_chart_diagnostic(node, role, "executable_chart_context_invalid", exc),),
+            (
+                _scalar_chart_diagnostic(
+                    node, role, "executable_chart_context_invalid", exc
+                ),
+            ),
         )
     if not entries:
         return _GraphScalarExtraction(
             (),
-            (_scalar_chart_diagnostic(node, role, "executable_chart_coordinates_unavailable"),),
+            (
+                _scalar_chart_diagnostic(
+                    node, role, "executable_chart_coordinates_unavailable"
+                ),
+            ),
         )
     return _GraphScalarExtraction(entries)
 
@@ -1427,8 +1472,7 @@ def _hvp_direction_for_entries(
             "message": "Hybrid scalar-coordinate HVP requires a non-empty direction vector.",
         }
     entry_index_by_factor = {
-        entry.factor_id: index
-        for index, entry in enumerate(entries)
+        entry.factor_id: index for index, entry in enumerate(entries)
     }
     missing_factors = tuple(
         factor
@@ -1502,7 +1546,22 @@ def _correlation_matrix_validation_code(message: str) -> str:
     return "invalid_correlation_matrix_chart"
 
 
-def _surface_axes_payload(request: HybridCorrelationStructureRequest) -> dict[str, object]:
+def _correlation_surface_validation_code(message: str) -> str:
+    normalized = message.lower()
+    if "surface_axes" in normalized or "surface axis" in normalized:
+        return "invalid_correlation_surface_axes"
+    if (
+        "factor_labels" in normalized
+        or "factor label" in normalized
+        or "unique" in normalized
+    ):
+        return "invalid_correlation_surface_labels"
+    return "invalid_correlation_surface_chart"
+
+
+def _surface_axes_payload(
+    request: HybridCorrelationStructureRequest,
+) -> dict[str, object]:
     surface_axes = {key: tuple(values) for key, values in request.surface_axes.items()}
     axis_names = tuple(sorted(surface_axes))
     return {
@@ -1516,18 +1575,60 @@ def _correlation_structure_policy_payload(
     request: HybridCorrelationStructureRequest,
 ) -> tuple[str, str, dict[str, object], MarketObjectCoordinateChart | None]:
     if request.structure_type == "correlation_surface":
+        try:
+            chart = MarketObjectCoordinateChart.correlation_surface_policy(
+                object_name=request.object_name,
+                factor_labels=request.factors,
+                surface_axes=request.surface_axes,
+            )
+        except ValueError as exc:
+            validation_message = str(exc)
+            code = _correlation_surface_validation_code(validation_message)
+            return (
+                code,
+                (
+                    "Hybrid correlation surface request failed chart validation: "
+                    f"{validation_message}."
+                ),
+                {
+                    "chart_policy_status": "invalid_fail_closed",
+                    "validation_code": code,
+                    "validation_message": validation_message,
+                    **_surface_axes_payload(request),
+                },
+                None,
+            )
         extra = {
-            "chart_policy_status": "surface_chart_not_implemented",
-            **_surface_axes_payload(request),
+            "chart_policy_status": "validated_fail_closed",
+            "chart_id": chart.chart_id,
+            "chart_type": chart.chart_type,
+            "coordinate_space": chart.coordinate_space,
+            "coordinate_count": chart.metadata["coordinate_count"],
+            "coordinate_keys": chart.coordinate_keys,
+            "factor_labels": chart.coordinate_values["factor_labels"],
+            "factor_pair_count": chart.coordinate_values["factor_pair_count"],
+            "surface_axes": chart.coordinate_values["surface_axes"],
+            "surface_axis_names": chart.coordinate_values["surface_axis_names"],
+            "surface_axis_count": chart.coordinate_values["surface_axis_count"],
+            "active_node_count": chart.coordinate_values["active_node_count"],
+            "interpolation_basis": chart.constraints["interpolation_basis"],
+            "locality_policy": chart.constraints["locality_policy"],
+            "selected_factor_policy": chart.constraints["selected_factor_policy"],
+            "unsupported_selected_factor_reason": (
+                chart.constraints["unsupported_selected_factor_reason"]
+            ),
+            "projection_policy": chart.constraints["projection_policy"],
+            "smoothing_policy": chart.constraints["smoothing_policy"],
+            "repair_policy": chart.constraints["repair_policy"],
         }
         return (
-            request.unsupported_reason,
+            "correlation_surface_derivative_not_implemented",
             (
-                "Hybrid correlation surface derivatives require a checked "
-                "surface chart and are fail-closed until one exists."
+                "Hybrid correlation surface derivatives remain fail-closed because "
+                "the checked surface chart policy is not yet an executable AD lane."
             ),
             extra,
-            None,
+            chart,
         )
     if request.correlation_matrix is None:
         return (
@@ -1714,9 +1815,7 @@ def _matrix_context_graph(
     derivative_method: str,
 ) -> HybridFactorGraph:
     active_factor_key = (
-        context.active_factor_id.key
-        if context.active_factor_id is not None
-        else None
+        context.active_factor_id.key if context.active_factor_id is not None else None
     )
     node = HybridDependencyNode(
         node_id=f"node:{request.structure_type}:{request.object_name}",
@@ -2172,7 +2271,9 @@ def differentiate_vanilla_early_exercise(
         context,
         portfolio_request,
     )
-    exercise_style = str(getattr(instrument, "exercise_style", "european")).strip().lower()
+    exercise_style = (
+        str(getattr(instrument, "exercise_style", "european")).strip().lower()
+    )
     if exercise_style not in {"american", "bermudan"}:
         decision = AADSupportDecision(
             False,
@@ -2355,17 +2456,13 @@ def differentiate_vanilla_early_exercise(
             diagnostic_extra={
                 "requested_derivative_method": resolved_request.derivative_method,
                 "exercise_style": exercise_style,
-                "early_exercise_policy": (
-                    "hard_exercise_projection_smooth_interior"
-                ),
+                "early_exercise_policy": ("hard_exercise_projection_smooth_interior"),
             },
             fallback_reason={
                 "code": "early_exercise_hvp_pending",
                 "requested_derivative_method": resolved_request.derivative_method,
                 "exercise_style": exercise_style,
-                "early_exercise_policy": (
-                    "hard_exercise_projection_smooth_interior"
-                ),
+                "early_exercise_policy": ("hard_exercise_projection_smooth_interior"),
             },
             method_metadata_extra=admission_metadata,
         )
@@ -2414,18 +2511,14 @@ def differentiate_vanilla_early_exercise(
             diagnostic_extra={
                 "position_name": str(position_name),
                 "exercise_style": exercise_style,
-                "early_exercise_policy": (
-                    "hard_exercise_projection_smooth_interior"
-                ),
+                "early_exercise_policy": ("hard_exercise_projection_smooth_interior"),
                 "support_decision": decision.to_payload(),
             },
             fallback_reason={
                 "code": decision.reason,
                 "position_name": str(position_name),
                 "exercise_style": exercise_style,
-                "early_exercise_policy": (
-                    "hard_exercise_projection_smooth_interior"
-                ),
+                "early_exercise_policy": ("hard_exercise_projection_smooth_interior"),
             },
             method_metadata_extra=admission_metadata,
         )
@@ -2516,7 +2609,9 @@ def differentiate_quanto_correlation_matrix(
     from trellis.models.analytical.quanto import price_quanto_option_raw
 
     if not isinstance(correlation_request, HybridCorrelationStructureRequest):
-        raise TypeError("correlation_request must be a HybridCorrelationStructureRequest")
+        raise TypeError(
+            "correlation_request must be a HybridCorrelationStructureRequest"
+        )
     resolved_request = request or HybridDerivativeRequest()
     method_id = (
         "hybrid_matrix_vector_hvp"
@@ -2525,7 +2620,9 @@ def differentiate_quanto_correlation_matrix(
     )
     active_pair = active_factor_pair or _quanto_matrix_active_factor_pair(spec)
     base_value = float(price_quanto_option_raw(spec, resolved_inputs))
-    admission_metadata = _semantic_admission_metadata(resolved_request.semantic_admission)
+    admission_metadata = _semantic_admission_metadata(
+        resolved_request.semantic_admission
+    )
     try:
         context = build_correlation_matrix_coordinate_context(
             correlation_request,
@@ -2540,7 +2637,9 @@ def differentiate_quanto_correlation_matrix(
             derivative_request=resolved_request,
             code=code,
             message=message,
-            diagnostic_extra={"active_factor_pair": tuple(str(factor) for factor in active_pair)},
+            diagnostic_extra={
+                "active_factor_pair": tuple(str(factor) for factor in active_pair)
+            },
             method_metadata_extra=admission_metadata,
         )
 
@@ -2681,7 +2780,9 @@ def differentiate_quanto_correlation_matrix(
             "hvp_direction_coordinate_count": sum(
                 1 for value in direction_values if value != 0.0
             ),
-            "hvp_direction_norm": float(np.sqrt(np.sum(direction_vector * direction_vector))),
+            "hvp_direction_norm": float(
+                np.sqrt(np.sum(direction_vector * direction_vector))
+            ),
         }
         backend_operator = "hessian_vector_product"
     else:
@@ -2770,20 +2871,29 @@ def fail_closed_correlation_structure_derivative(
                 "chart_policy_status": policy_extra["chart_policy_status"],
             },
         )
-    dependency = HybridUnsupportedDependency(
-        dependency_id=f"node:{request.structure_type}:{request.object_name}",
-        node_type=request.structure_type,
-        object_name=request.object_name,
-        reason=code,
-        metadata={
-            "factors": request.factors,
-            "requested_derivative_method": request.requested_derivative_method,
-            "coordinate_space": request.coordinate_space,
-            "policy": "fail_closed_no_projection",
-            **policy_extra,
-            **dict(request.provenance),
-        },
-    )
+    dependency_metadata = {
+        "factors": request.factors,
+        "requested_derivative_method": request.requested_derivative_method,
+        "coordinate_space": request.coordinate_space,
+        "policy": "fail_closed_no_projection",
+        **policy_extra,
+        **dict(request.provenance),
+    }
+    if request.structure_type == "correlation_surface":
+        dependency = HybridUnsupportedDependency.correlation_surface_policy(
+            object_name=request.object_name,
+            reason=code,
+            dependency_id=f"node:{request.structure_type}:{request.object_name}",
+            metadata=dependency_metadata,
+        )
+    else:
+        dependency = HybridUnsupportedDependency(
+            dependency_id=f"node:{request.structure_type}:{request.object_name}",
+            node_type=request.structure_type,
+            object_name=request.object_name,
+            reason=code,
+            metadata=dependency_metadata,
+        )
     graph = HybridFactorGraph(
         graph_id=f"hybrid:{request.structure_type}:{request.object_name}",
         nodes=(node,) if node is not None else (),
@@ -2913,9 +3023,7 @@ def _dynamic_state_graph(
         coordinate_space="state_policy",
         coordinate_values={
             "state_kind": state_policy.get("state_kind", "dynamic_state"),
-            "state_variable_roles": tuple(
-                state_policy.get("state_variable_roles", ())
-            ),
+            "state_variable_roles": tuple(state_policy.get("state_variable_roles", ())),
             "event_policy": state_policy.get("event_policy", "not_applicable"),
             "control_policy": state_policy.get("control_policy", "not_applicable"),
             "fail_closed": bool(state_policy.get("fail_closed", True)),
@@ -3173,7 +3281,9 @@ def fail_closed_dynamic_state_derivative(
         if isinstance(state_policy, Mapping)
         else {}
     )
-    admission_diagnostic_extra = dict(admission.diagnostics[0]) if admission.diagnostics else {}
+    admission_diagnostic_extra = (
+        dict(admission.diagnostics[0]) if admission.diagnostics else {}
+    )
     admission_diagnostic_extra.pop("code", None)
     admission_diagnostic_extra.pop("severity", None)
     diagnostic_extra = {
@@ -3321,7 +3431,9 @@ def _unsupported_semantic_admission_result(
             fallback_reason=fallback_reason,
             method_metadata_extra=admission_metadata,
         )
-    if not any(admission.lane_id.startswith(prefix) for prefix in allowed_lane_prefixes):
+    if not any(
+        admission.lane_id.startswith(prefix) for prefix in allowed_lane_prefixes
+    ):
         fallback_reason = {
             "code": "semantic_admission_lane_unavailable",
             "semantic_admission_status": admission.support_status,
@@ -3373,11 +3485,15 @@ def differentiate_quanto_scalar_inputs(
     if graph is None:
         graph = _fallback_graph(spec, resolved_inputs)
     if not isinstance(graph, HybridFactorGraph):
-        raise TypeError("resolved_inputs.hybrid_factor_graph must be a HybridFactorGraph")
+        raise TypeError(
+            "resolved_inputs.hybrid_factor_graph must be a HybridFactorGraph"
+        )
     graph.validate()
     value = float(price_quanto_option_raw(spec, resolved_inputs))
     capabilities = get_backend_capabilities()
-    admission_metadata = _semantic_admission_metadata(resolved_request.semantic_admission)
+    admission_metadata = _semantic_admission_metadata(
+        resolved_request.semantic_admission
+    )
     if resolved_request.semantic_admission is not None:
         admission_result = _unsupported_semantic_admission_result(
             value=value,
@@ -3517,7 +3633,9 @@ def differentiate_quanto_scalar_inputs(
             "hvp_direction_coordinate_count": sum(
                 1 for v in direction_values if v != 0.0
             ),
-            "hvp_direction_norm": float(np.sqrt(np.sum(direction_vector * direction_vector))),
+            "hvp_direction_norm": float(
+                np.sqrt(np.sum(direction_vector * direction_vector))
+            ),
         }
         backend_operator = "hessian_vector_product"
     else:
@@ -3544,7 +3662,8 @@ def differentiate_quanto_scalar_inputs(
                 "code": "unsupported_graph_dependencies",
                 "severity": "warning",
                 "unsupported_dependency_ids": [
-                    dependency.dependency_id for dependency in graph.unsupported_dependencies
+                    dependency.dependency_id
+                    for dependency in graph.unsupported_dependencies
                 ],
                 "unsupported_dependency_reasons": list(graph.unsupported_reasons),
             }
@@ -3608,7 +3727,9 @@ def differentiate_quanto_scalar_correlation(
     if graph is None:
         graph = _fallback_graph(spec, resolved_inputs)
     if not isinstance(graph, HybridFactorGraph):
-        raise TypeError("resolved_inputs.hybrid_factor_graph must be a HybridFactorGraph")
+        raise TypeError(
+            "resolved_inputs.hybrid_factor_graph must be a HybridFactorGraph"
+        )
     graph.validate()
     value = float(price_quanto_option_raw(spec, resolved_inputs))
 

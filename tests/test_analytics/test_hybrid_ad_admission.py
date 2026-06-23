@@ -365,7 +365,10 @@ def test_matrix_correlation_structure_is_supported_for_terminal_quanto_hvp():
     assert admission.lane_id == "quanto_matrix_graph_hvp"
     assert admission.reason == "supported_quanto_matrix_graph_hvp"
     assert admission.metadata["coordinate_space"] == "matrix"
-    assert admission.metadata["projection_policy"] == "unsupported_no_smoothing_or_projection"
+    assert (
+        admission.metadata["projection_policy"]
+        == "unsupported_no_smoothing_or_projection"
+    )
 
 
 def test_unknown_correlation_structure_fails_closed():
@@ -393,9 +396,15 @@ def test_surface_correlation_structure_stays_planned_and_fail_closed():
 
     assert admission.admitted is False
     assert admission.support_status == "planned"
-    assert admission.reason == "correlation_surface_chart_not_implemented"
-    assert admission.factor_requirements[0].parameterization == "correlation_surface_policy"
-    assert admission.diagnostics[0]["code"] == "correlation_surface_chart_not_implemented"
+    assert admission.reason == "correlation_surface_derivative_not_implemented"
+    assert (
+        admission.factor_requirements[0].parameterization
+        == "correlation_surface_policy"
+    )
+    assert admission.metadata["chart_policy_status"] == "validated_fail_closed"
+    assert admission.diagnostics[0]["code"] == (
+        "correlation_surface_derivative_not_implemented"
+    )
 
 
 def test_discontinuous_event_monitor_is_unsupported():
@@ -819,4 +828,6 @@ def test_factor_requirement_payload_round_trips_directly():
         graph_role="correlation",
     )
 
-    assert HybridADFactorRequirement.from_payload(requirement.to_payload()) == requirement
+    assert (
+        HybridADFactorRequirement.from_payload(requirement.to_payload()) == requirement
+    )

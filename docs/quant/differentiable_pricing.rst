@@ -202,7 +202,8 @@ The checked support contract is intentionally explicit:
        vanilla American/Bermudan flat-vol early-exercise coordinate; the
        multi-product helper aggregates only completed lane-local results and
        keeps unsupported lanes explicit. Broad hybrid product graphs,
-       correlation surfaces, matrix projection/repair, PSD-boundary behavior,
+       executable correlation surfaces, matrix projection/repair,
+       PSD-boundary behavior,
        grid-vol path summaries, discontinuous event monitors, dynamic state
        execution beyond the typed fail-closed policy result, grid-vol or
        boundary-kink early-exercise derivatives,
@@ -715,9 +716,16 @@ attach chart metadata while still returning
 ``correlation_matrix_derivative_not_implemented`` for callers using that
 explicit fail-closed helper. Executable matrix sensitivities are exposed only
 through ``differentiate_quanto_correlation_matrix(...)`` under the bounded
-terminal quanto contract described above. Invalid matrix payloads and surface
-requests return typed diagnostics and an empty sparse vector; no projection,
-smoothing, surface AD, or universal matrix AD execution is implied.
+terminal quanto contract described above. For surface requests,
+``MarketObjectCoordinateChart.correlation_surface_policy(...)`` now defines a
+discovery-only ``correlation_surface_policy`` chart over deterministic
+surface-node ``RiskFactorId`` coordinates, including factor pairs, surface
+axes, interpolation/locality policy, selected-factor policy, and
+no-projection/no-smoothing/no-repair constraints. Valid surface requests still
+return ``correlation_surface_derivative_not_implemented`` with an empty sparse
+vector, while invalid surface-axis payloads return
+``invalid_correlation_surface_axes``. No projection, smoothing, surface AD, or
+universal matrix AD execution is implied.
 
 Runtime Derivative-Method Taxonomy
 ----------------------------------

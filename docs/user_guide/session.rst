@@ -290,8 +290,12 @@ also return bounded matrix-coordinate VJP/HVP through
 strictly direct-entry and smooth-interior: the matrix must be finite,
 symmetric, unit diagonal, bounded, positive semidefinite, and above the
 minimum-eigenvalue floor. Trellis does not project or repair matrices, and it
-does not support correlation surfaces through this lane. Hybrid ``jvp``
-requests, surface requests, near-boundary matrices, and broader hybrid product
+does not support correlation surfaces through this executable lane.
+Correlation-surface requests instead fail closed with a discovery-only
+``correlation_surface_policy`` chart that preserves surface-node coordinates,
+interpolation/locality policy, selected-factor policy, and the reason
+``correlation_surface_derivative_not_implemented``. Hybrid ``jvp`` requests,
+surface execution requests, near-boundary matrices, and broader hybrid product
 graphs fail closed.
 When a ContractIR semantic contract is available, ``admit_hybrid_ad_lane(...)``
 is the admission guard for the scalar-input and matrix-coordinate helpers:

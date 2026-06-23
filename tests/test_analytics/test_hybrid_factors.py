@@ -92,13 +92,15 @@ def test_scalar_correlation_chart_round_trips_tanh_coordinate():
     assert chart.differentiability_class == "smooth"
     assert chart.constrained_value == pytest.approx(0.25)
     assert chart.unconstrained_value == pytest.approx(math.atanh(0.25))
-    assert chart.constrained_from_unconstrained(chart.unconstrained_value) == pytest.approx(
-        0.25
-    )
+    assert chart.constrained_from_unconstrained(
+        chart.unconstrained_value
+    ) == pytest.approx(0.25)
     assert chart.unconstrained_from_constrained(0.25) == pytest.approx(
         chart.unconstrained_value
     )
-    assert chart.derivative_constrained_wrt_unconstrained == pytest.approx(1.0 - 0.25**2)
+    assert chart.derivative_constrained_wrt_unconstrained == pytest.approx(
+        1.0 - 0.25**2
+    )
 
     payload = chart.to_payload()
     rebuilt = MarketObjectCoordinateChart.from_payload(payload)
@@ -141,14 +143,32 @@ def test_correlation_matrix_policy_chart_payload_round_trips():
         (-0.10, 0.35, 1.0),
     )
     assert chart.constraints["psd"] is True
-    assert chart.constraints["projection_policy"] == "unsupported_no_smoothing_or_projection"
+    assert (
+        chart.constraints["projection_policy"]
+        == "unsupported_no_smoothing_or_projection"
+    )
     assert chart.metadata["chart_family"] == "correlation_matrix"
     assert chart.metadata["coordinate_count"] == 3
     assert chart.metadata["min_eigenvalue"] > 0.0
     assert [coordinate.factor_id.axes for coordinate in chart.coordinates] == [
-        (("column", "EURUSD"), ("column_index", "1"), ("row", "SX5E"), ("row_index", "0")),
-        (("column", "USD-OIS"), ("column_index", "2"), ("row", "EURUSD"), ("row_index", "1")),
-        (("column", "USD-OIS"), ("column_index", "2"), ("row", "SX5E"), ("row_index", "0")),
+        (
+            ("column", "EURUSD"),
+            ("column_index", "1"),
+            ("row", "SX5E"),
+            ("row_index", "0"),
+        ),
+        (
+            ("column", "USD-OIS"),
+            ("column_index", "2"),
+            ("row", "EURUSD"),
+            ("row_index", "1"),
+        ),
+        (
+            ("column", "USD-OIS"),
+            ("column_index", "2"),
+            ("row", "SX5E"),
+            ("row_index", "0"),
+        ),
     ]
 
     payload = chart.to_payload()
@@ -174,7 +194,9 @@ def test_correlation_matrix_policy_chart_json_round_trips():
         chart_id="chart:correlation_matrix:cross_asset",
     )
 
-    rebuilt = MarketObjectCoordinateChart.from_payload(json.loads(json.dumps(chart.to_payload())))
+    rebuilt = MarketObjectCoordinateChart.from_payload(
+        json.loads(json.dumps(chart.to_payload()))
+    )
     assert rebuilt == chart
     assert rebuilt.coordinate_values["factor_labels"] == ("SX5E", "EURUSD", "USD-OIS")
     assert rebuilt.coordinate_values["correlation_matrix"] == (
@@ -201,7 +223,10 @@ def test_correlation_matrix_policy_chart_rejects_duplicate_labels():
         (((1.0, 0.25), (0.25, 0.99)), "unit diagonal"),
         (((1.0, 0.25), (0.30, 1.0)), "symmetric"),
         (((1.0, 1.20), (1.20, 1.0)), "inside \\[-1, 1\\]"),
-        (((1.0, 0.95, 0.95), (0.95, 1.0, -0.95), (0.95, -0.95, 1.0)), "positive semidefinite"),
+        (
+            ((1.0, 0.95, 0.95), (0.95, 1.0, -0.95), (0.95, -0.95, 1.0)),
+            "positive semidefinite",
+        ),
     ),
 )
 def test_correlation_matrix_policy_chart_rejects_invalid_matrices(matrix, match):
@@ -212,6 +237,116 @@ def test_correlation_matrix_policy_chart_rejects_invalid_matrices(matrix, match)
             factor_labels=labels,
             correlation_matrix=matrix,
         )
+
+
+def test_correlation_surface_policy_chart_payload_round_trips():
+    chart = MarketObjectCoordinateChart.correlation_surface_policy(
+        object_name="base_correlation_surface",
+        factor_labels=("HY-IG", "HY-XO", "IG9"),
+        surface_axes={
+            "expiry": ("1Y", "3Y"),
+            "detachment": ("3%", "7%"),
+        },
+        interpolation_basis="exact_node_surface",
+        locality_policy="full_surface_node_vector",
+        selected_factor_policy="filter_known_fail_closed_unknown",
+        metadata={"source": "unit-test"},
+    )
+
+    payload = chart.to_payload()
+    rebuilt = MarketObjectCoordinateChart.from_payload(json.loads(json.dumps(payload)))
+
+    assert rebuilt == chart
+    assert chart.chart_type == "correlation_surface_policy"
+    assert chart.coordinate_space == "surface_nodes"
+    assert chart.differentiability_class == "piecewise"
+    assert chart.support_status == "discovery_only"
+    assert chart.coordinate_values["parameterization"] == "surface_node_correlations"
+    assert chart.coordinate_values["factor_labels"] == ("HY-IG", "HY-XO", "IG9")
+    assert chart.coordinate_values["surface_axes"] == {
+        "detachment": ("3%", "7%"),
+        "expiry": ("1Y", "3Y"),
+    }
+    assert chart.coordinate_values["surface_axis_names"] == ("detachment", "expiry")
+    assert chart.coordinate_values["factor_pair_count"] == 3
+    assert chart.coordinate_values["active_node_count"] == 12
+    assert chart.coordinate_values["active_node_keys"] == chart.coordinate_keys
+    assert chart.constraints["interpolation_basis"] == "exact_node_surface"
+    assert chart.constraints["locality_policy"] == "full_surface_node_vector"
+    assert chart.constraints["selected_factor_policy"] == (
+        "filter_known_fail_closed_unknown"
+    )
+    assert chart.constraints["unsupported_selected_factor_reason"] == (
+        "unsupported_selected_correlation_surface_factors"
+    )
+    assert chart.constraints["projection_policy"] == (
+        "unsupported_no_smoothing_or_projection"
+    )
+    assert chart.metadata["chart_family"] == "correlation_surface"
+    assert chart.metadata["coordinate_count"] == 12
+    assert chart.metadata["source"] == "unit-test"
+    assert payload["coordinate_keys"] == list(chart.coordinate_keys)
+
+
+def test_correlation_surface_policy_chart_coordinates_are_stable():
+    chart = MarketObjectCoordinateChart.correlation_surface_policy(
+        object_name="base_correlation_surface",
+        factor_labels=("underlier", "fx"),
+        surface_axes={"expiry": ("1Y", "3Y"), "strike": (90.0, 110.0)},
+    )
+
+    assert len(chart.coordinates) == 4
+    assert chart.coordinate_keys == tuple(sorted(chart.coordinate_keys))
+    coordinate = chart.coordinates[0]
+
+    assert coordinate.factor_id.object_type == "correlation_surface"
+    assert coordinate.factor_id.object_name == "base_correlation_surface"
+    assert coordinate.factor_id.coordinate_type == "correlation"
+    assert coordinate.support_status == "discovery_only"
+    assert coordinate.unit == "correlation"
+    assert coordinate.transform == "identity"
+    assert dict(coordinate.factor_id.axes) == {
+        "expiry": "1Y",
+        "expiry_index": "0",
+        "factor_a": "underlier",
+        "factor_a_index": "0",
+        "factor_b": "fx",
+        "factor_b_index": "1",
+        "strike": "110",
+        "strike_index": "1",
+    }
+    assert dict(coordinate.reporting_buckets)["risk_class"] == "hybrid"
+    assert dict(coordinate.metadata)["surface_axis_names"] == "expiry,strike"
+
+
+def test_correlation_surface_policy_rejects_missing_axes():
+    with pytest.raises(ValueError, match="surface_axes must contain at least one axis"):
+        MarketObjectCoordinateChart.correlation_surface_policy(
+            object_name="base_correlation_surface",
+            factor_labels=("underlier", "fx"),
+            surface_axes={},
+        )
+
+
+def test_correlation_surface_policy_unsupported_dependency_is_typed():
+    dependency = HybridUnsupportedDependency.correlation_surface_policy(
+        object_name="base_correlation_surface",
+        reason="correlation_surface_derivative_not_implemented",
+        metadata={"chart_id": "chart:correlation_surface:base_correlation_surface"},
+    )
+
+    assert dependency.dependency_id == (
+        "unsupported:correlation_surface:base_correlation_surface:"
+        "correlation_surface_derivative_not_implemented"
+    )
+    assert dependency.node_type == "correlation_surface"
+    assert dependency.reason == "correlation_surface_derivative_not_implemented"
+    assert dependency.differentiability_class == "piecewise"
+    assert dependency.metadata["chart_family"] == "correlation_surface"
+    assert dependency.metadata["parameterization"] == "surface_node_correlations"
+    assert dependency.metadata["chart_id"] == (
+        "chart:correlation_surface:base_correlation_surface"
+    )
 
 
 def test_grid_vol_state_control_policy_round_trips_and_orders_nodes():
@@ -291,8 +426,7 @@ def test_grid_vol_state_control_unsupported_dependency_reasons_are_typed():
         "unsupported_selected_grid_vol_factors",
     )
     assert payload["unsupported_dependencies"][0]["dependency_id"] == (
-        "unsupported:grid_vol_state_control:spx_grid:"
-        "early_exercise_boundary_kink"
+        "unsupported:grid_vol_state_control:spx_grid:" "early_exercise_boundary_kink"
     )
     assert payload["unsupported_dependencies"][0]["metadata"]["lane_family"] == (
         "early_exercise_control"
