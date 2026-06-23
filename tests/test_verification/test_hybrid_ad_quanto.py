@@ -120,7 +120,10 @@ def _market_state(corr: float = 0.25) -> MarketState:
         underlier_spots={"EUR": 100.0},
         vol_surface=FlatVol(0.20),
         model_parameters={"sx5e_eurusd": {"kind": "explicit", "value": corr}},
-        selected_curve_names={"discount_curve": "USD-OIS", "forecast_curve": "EUR-DISC"},
+        selected_curve_names={
+            "discount_curve": "USD-OIS",
+            "forecast_curve": "EUR-DISC",
+        },
     )
 
 
@@ -175,7 +178,9 @@ def _factor_by(
         if currency is not None and factor.currency != currency:
             continue
         axes = dict(factor.axes)
-        if tenor_years is not None and axes.get("tenor_years") != format(tenor_years, ".12g"):
+        if tenor_years is not None and axes.get("tenor_years") != format(
+            tenor_years, ".12g"
+        ):
             continue
         return factor
     raise AssertionError(
@@ -199,12 +204,16 @@ def _graph_factor_by(
         if object_name is not None and factor.object_name != object_name:
             continue
         return factor
-    raise AssertionError(f"missing graph factor {object_type=} {coordinate_type=} {object_name=}")
+    raise AssertionError(
+        f"missing graph factor {object_type=} {coordinate_type=} {object_name=}"
+    )
 
 
 def _graph_node_by_resolved_input(graph, resolved_input: str):
     for node in graph.nodes:
-        resolved_inputs = tuple(str(value) for value in node.metadata.get("resolved_inputs", ()))
+        resolved_inputs = tuple(
+            str(value) for value in node.metadata.get("resolved_inputs", ())
+        )
         if resolved_input in resolved_inputs:
             return node
     raise AssertionError(f"missing graph node for {resolved_input=}")
@@ -220,7 +229,9 @@ def _replace_graph_node(graph, replacement):
     )
 
 
-def _bump_scalar_chart_value(resolved, resolved_input: str, key: str, bump: float, **updates):
+def _bump_scalar_chart_value(
+    resolved, resolved_input: str, key: str, bump: float, **updates
+):
     node = _graph_node_by_resolved_input(resolved.hybrid_factor_graph, resolved_input)
     chart = node.coordinate_chart
     chart_values = dict(chart.coordinate_values)
@@ -239,10 +250,15 @@ def test_quanto_scalar_inputs_vjp_matches_finite_differences_for_graph_factors()
     bump = 1.0e-5
 
     assert result.support_status == "supported"
-    assert result.method_metadata["resolved_derivative_method"] == "hybrid_scalar_vector_vjp"
+    assert (
+        result.method_metadata["resolved_derivative_method"]
+        == "hybrid_scalar_vector_vjp"
+    )
     assert result.method_metadata["factor_count"] >= 6
 
-    spot_factor = _factor_by(result, object_type="spot", coordinate_type="spot", object_name="EUR")
+    spot_factor = _factor_by(
+        result, object_type="spot", coordinate_type="spot", object_name="EUR"
+    )
     spot_fd = (
         price_quanto_option_raw(spec, replace(resolved, spot=resolved.spot + bump))
         - price_quanto_option_raw(spec, replace(resolved, spot=resolved.spot - bump))
@@ -430,7 +446,9 @@ def test_quanto_scalar_inputs_fail_closed_metadata_includes_path_state_policy():
     assert result.method_metadata["semantic_state_policy"]["state_kind"] == (
         "smooth_path_summary"
     )
-    assert result.method_metadata["semantic_state_event_policy"] == "sampled_path_summary"
+    assert (
+        result.method_metadata["semantic_state_event_policy"] == "sampled_path_summary"
+    )
     assert result.method_metadata["fallback_reason"]["semantic_state_kind"] == (
         "smooth_path_summary"
     )
@@ -557,7 +575,9 @@ def test_quanto_scalar_inputs_selected_subset_keeps_full_factor_metadata():
     spec = _QuantoSpec()
     resolved = _resolved(0.25)
     full = differentiate_quanto_scalar_inputs(spec, resolved)
-    spot_factor = _factor_by(full, object_type="spot", coordinate_type="spot", object_name="EUR")
+    spot_factor = _factor_by(
+        full, object_type="spot", coordinate_type="spot", object_name="EUR"
+    )
     corr_factor = _factor_by(
         full,
         object_type="model_parameter",
@@ -583,7 +603,9 @@ def test_quanto_scalar_inputs_unknown_selected_factor_policy_controls_result():
     spec = _QuantoSpec()
     resolved = _resolved(0.25)
     full = differentiate_quanto_scalar_inputs(spec, resolved)
-    spot_factor = _factor_by(full, object_type="spot", coordinate_type="spot", object_name="EUR")
+    spot_factor = _factor_by(
+        full, object_type="spot", coordinate_type="spot", object_name="EUR"
+    )
     missing_factor = RiskFactorId(
         object_type="model_parameter",
         object_name="missing",
@@ -727,14 +749,21 @@ def test_quanto_scalar_inputs_hvp_matches_finite_difference_of_vjp():
     assert selected_result.method_metadata["resolved_derivative_method"] == (
         "hybrid_scalar_vector_hvp"
     )
-    assert selected_result.method_metadata["backend_operator"] == "hessian_vector_product"
+    assert (
+        selected_result.method_metadata["backend_operator"] == "hessian_vector_product"
+    )
     assert selected_result.method_metadata["hvp_direction_factor_count"] == 1
-    assert selected_result.method_metadata["factor_count"] == full_result.method_metadata[
-        "factor_count"
-    ]
+    assert (
+        selected_result.method_metadata["factor_count"]
+        == full_result.method_metadata["factor_count"]
+    )
     assert set(selected_result.risk_vector) == {spot_factor, corr_factor}
-    assert selected_result.risk_vector[spot_factor] == full_result.risk_vector[spot_factor]
-    assert selected_result.risk_vector[corr_factor] == full_result.risk_vector[corr_factor]
+    assert (
+        selected_result.risk_vector[spot_factor] == full_result.risk_vector[spot_factor]
+    )
+    assert (
+        selected_result.risk_vector[corr_factor] == full_result.risk_vector[corr_factor]
+    )
     assert selected_result.risk_vector[spot_factor] == pytest.approx(
         spot_fd,
         rel=5.0e-5,
@@ -774,7 +803,10 @@ def test_quanto_scalar_inputs_hvp_missing_direction_fails_closed():
     assert len(missing.risk_vector) == 0
     assert missing.diagnostics[0]["code"] == "hvp_direction_factors_unavailable"
     assert missing.diagnostics[0]["missing_factor_keys"] == [missing_factor.key]
-    assert missing.method_metadata["resolved_derivative_method"] == "hybrid_scalar_vector_hvp"
+    assert (
+        missing.method_metadata["resolved_derivative_method"]
+        == "hybrid_scalar_vector_hvp"
+    )
 
     assert empty.support_status == "unsupported"
     assert empty.diagnostics[0]["code"] == "hvp_direction_required"
@@ -818,7 +850,10 @@ def test_quanto_scalar_inputs_hvp_backend_unsupported_fails_closed(monkeypatch):
     assert result.diagnostics[0]["code"] == "hybrid_hvp_backend_unsupported"
     assert result.diagnostics[0]["backend_id"] == "test_no_hvp"
     assert result.diagnostics[0]["unsupported_operator"] == "hessian_vector_product"
-    assert result.method_metadata["resolved_derivative_method"] == "hybrid_scalar_vector_hvp"
+    assert (
+        result.method_metadata["resolved_derivative_method"]
+        == "hybrid_scalar_vector_hvp"
+    )
     assert result.method_metadata["backend_operator"] == "hessian_vector_product"
     assert result.method_metadata["fallback_reason"]["code"] == (
         "hybrid_hvp_backend_unsupported"
@@ -838,7 +873,9 @@ def test_quanto_scalar_inputs_jvp_fails_closed_with_backend_reason():
     assert len(result.risk_vector) == 0
     assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
     assert result.diagnostics[0]["backend_id"] == "autograd"
-    assert result.method_metadata["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    assert (
+        result.method_metadata["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    )
     assert result.method_metadata["requested_backend_operator"] == "jvp"
     assert result.method_metadata["backend_support"]["supported"] is False
     assert "backend_operator" not in result.method_metadata
@@ -891,7 +928,9 @@ def test_quanto_unconstrained_tanh_coordinate_obeys_chain_rule():
     bump = 1.0e-5
     finite_difference_x = (
         price_quanto_option_raw(spec, replace(resolved, corr=math.tanh(x_value + bump)))
-        - price_quanto_option_raw(spec, replace(resolved, corr=math.tanh(x_value - bump)))
+        - price_quanto_option_raw(
+            spec, replace(resolved, corr=math.tanh(x_value - bump))
+        )
     ) / (2.0 * bump)
 
     assert unconstrained.method_metadata["coordinate_space"] == "unconstrained"
@@ -939,7 +978,9 @@ def test_quanto_scalar_correlation_jvp_fails_closed_with_backend_reason():
     assert len(result.risk_vector) == 0
     assert result.diagnostics[0]["code"] == "hybrid_jvp_backend_unsupported"
     assert result.diagnostics[0]["backend_id"] == "autograd"
-    assert result.method_metadata["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    assert (
+        result.method_metadata["resolved_derivative_method"] == "unsupported_hybrid_jvp"
+    )
     assert result.method_metadata["requested_backend_operator"] == "jvp"
     assert result.method_metadata["backend_support"]["supported"] is False
     assert "backend_operator" not in result.method_metadata
@@ -984,7 +1025,9 @@ def test_valid_correlation_matrix_request_fails_closed_with_chart_metadata():
 
     assert result.support_status == "unsupported"
     assert len(result.risk_vector) == 0
-    assert result.diagnostics[0]["code"] == "correlation_matrix_derivative_not_implemented"
+    assert (
+        result.diagnostics[0]["code"] == "correlation_matrix_derivative_not_implemented"
+    )
     assert result.diagnostics[0]["chart_policy_status"] == "validated_fail_closed"
     assert result.diagnostics[0]["matrix_dimension"] == 3
     assert result.diagnostics[0]["coordinate_count"] == 3
@@ -1085,14 +1128,16 @@ def test_invalid_correlation_matrix_requests_report_specific_codes(
     assert result.diagnostics[0]["chart_policy_status"] == "invalid_fail_closed"
     assert result.diagnostics[0]["validation_code"] == expected_code
     assert result.unsupported_dependencies[0].reason == expected_code
-    assert result.unsupported_dependencies[0].metadata["validation_code"] == expected_code
+    assert (
+        result.unsupported_dependencies[0].metadata["validation_code"] == expected_code
+    )
     assert result.method_metadata["resolved_derivative_method"] == (
         "unsupported_hybrid_structure"
     )
     assert result.method_metadata["fallback_reason"]["code"] == expected_code
 
 
-def test_correlation_surface_request_fails_closed_with_axis_metadata():
+def test_correlation_surface_request_fails_closed_with_chart_payload():
     result = fail_closed_correlation_structure_derivative(
         HybridCorrelationStructureRequest(
             object_name="base_correlation_surface",
@@ -1107,13 +1152,78 @@ def test_correlation_surface_request_fails_closed_with_axis_metadata():
     )
 
     assert result.support_status == "unsupported"
-    assert result.diagnostics[0]["code"] == "correlation_surface_chart_not_implemented"
-    assert result.diagnostics[0]["chart_policy_status"] == "surface_chart_not_implemented"
+    assert result.diagnostics[0]["code"] == (
+        "correlation_surface_derivative_not_implemented"
+    )
+    assert result.diagnostics[0]["chart_policy_status"] == "validated_fail_closed"
+    assert result.diagnostics[0]["chart_type"] == "correlation_surface_policy"
+    assert result.diagnostics[0]["coordinate_count"] == 4
+    assert result.diagnostics[0]["selected_factor_policy"] == (
+        "filter_known_fail_closed_unknown"
+    )
     assert result.diagnostics[0]["surface_axes"] == {
         "attachment_detachment": ("0-3", "3-7"),
         "expiry": ("1Y", "3Y"),
     }
+    assert result.graph.nodes[0].coordinate_chart.chart_type == (
+        "correlation_surface_policy"
+    )
+    assert result.graph.nodes[0].coordinate_chart.support_status == "discovery_only"
+    assert (
+        result.graph.nodes[0].coordinate_chart.coordinate_values["active_node_count"]
+        == 4
+    )
+    assert result.unsupported_dependencies[0].reason == (
+        "correlation_surface_derivative_not_implemented"
+    )
+    assert result.unsupported_dependencies[0].metadata["chart_id"] == (
+        "chart:correlation_surface:base_correlation_surface"
+    )
+    assert result.unsupported_dependencies[0].metadata["coordinate_count"] == 4
     assert result.unsupported_dependencies[0].metadata["surface_axis_names"] == (
         "attachment_detachment",
         "expiry",
+    )
+    assert result.method_metadata["fallback_reason"]["chart_type"] == (
+        "correlation_surface_policy"
+    )
+
+
+def test_correlation_surface_request_reports_invalid_axis_payload():
+    result = fail_closed_correlation_structure_derivative(
+        HybridCorrelationStructureRequest(
+            object_name="base_correlation_surface",
+            structure_type="correlation_surface",
+            factors=("0-3", "3-7"),
+            surface_axes={},
+        )
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.graph.nodes == ()
+    assert result.diagnostics[0]["code"] == "invalid_correlation_surface_axes"
+    assert result.diagnostics[0]["chart_policy_status"] == "invalid_fail_closed"
+    assert (
+        result.unsupported_dependencies[0].reason == "invalid_correlation_surface_axes"
+    )
+    assert result.method_metadata["fallback_reason"]["code"] == (
+        "invalid_correlation_surface_axes"
+    )
+
+
+def test_correlation_surface_request_reports_invalid_factor_labels():
+    result = fail_closed_correlation_structure_derivative(
+        HybridCorrelationStructureRequest(
+            object_name="base_correlation_surface",
+            structure_type="correlation_surface",
+            factors=("underlier", "underlier"),
+            surface_axes={"expiry": ("1Y", "3Y")},
+        )
+    )
+
+    assert result.support_status == "unsupported"
+    assert result.graph.nodes == ()
+    assert result.diagnostics[0]["code"] == "invalid_correlation_surface_labels"
+    assert result.unsupported_dependencies[0].reason == (
+        "invalid_correlation_surface_labels"
     )

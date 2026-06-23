@@ -5,6 +5,7 @@ from __future__ import annotations
 import math
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from itertools import product
 from types import MappingProxyType
 from typing import Any
 
@@ -35,7 +36,9 @@ _DERIVATIVE_METHODS = frozenset(
         "unsupported",
     }
 )
-_SUPPORT_STATUSES = frozenset({"supported", "held_fixed", "unsupported", "discovery_only"})
+_SUPPORT_STATUSES = frozenset(
+    {"supported", "held_fixed", "unsupported", "discovery_only"}
+)
 _GRID_VOL_STATE_CONTROL_LANE_FAMILIES = frozenset(
     {"path_summary", "early_exercise_control"}
 )
@@ -46,6 +49,17 @@ _GRID_VOL_STATE_CONTROL_UNSUPPORTED_REASONS = frozenset(
         "unsupported_selected_grid_vol_factors",
         "unsupported_discontinuous_event_monitor",
         "early_exercise_boundary_kink",
+    }
+)
+_CORRELATION_SURFACE_UNSUPPORTED_REASONS = frozenset(
+    {
+        "correlation_surface_derivative_not_implemented",
+        "invalid_correlation_surface_axes",
+        "invalid_correlation_surface_chart",
+        "invalid_correlation_surface_labels",
+        "unsupported_selected_correlation_surface_factors",
+        "correlation_surface_projection_not_supported",
+        "correlation_surface_psd_boundary_not_supported",
     }
 )
 
@@ -77,11 +91,15 @@ def _normalize_coordinates(
             raise TypeError("coordinates must contain RiskFactorCoordinate instances")
         existing = coordinate_map.get(coordinate.factor_id)
         if existing is not None and existing != coordinate:
-            raise ValueError(f"conflicting coordinate for factor {coordinate.factor_id.key!r}")
+            raise ValueError(
+                f"conflicting coordinate for factor {coordinate.factor_id.key!r}"
+            )
         coordinate_map[coordinate.factor_id] = coordinate
     return tuple(
         coordinate
-        for _, coordinate in sorted(coordinate_map.items(), key=lambda item: item[0].key)
+        for _, coordinate in sorted(
+            coordinate_map.items(), key=lambda item: item[0].key
+        )
     )
 
 
@@ -92,7 +110,9 @@ def _normalize_grid_vol_coordinates(
 ) -> tuple[RiskFactorCoordinate, ...]:
     normalized = _normalize_coordinates(coordinates)
     if not normalized:
-        raise ValueError("grid-vol state/control policy requires at least one coordinate")
+        raise ValueError(
+            "grid-vol state/control policy requires at least one coordinate"
+        )
     for coordinate in normalized:
         factor_id = coordinate.factor_id
         if (
@@ -141,6 +161,45 @@ def _normalize_factor_labels(factor_labels: Iterable[object]) -> tuple[str, ...]
     return labels
 
 
+def _normalize_surface_axis_value(value: object) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, float):
+        return format(value, ".12g")
+    isoformat = getattr(value, "isoformat", None)
+    if callable(isoformat):
+        return str(isoformat())
+    return _clean_required(value, "surface axis value")
+
+
+def _normalize_correlation_surface_axes(
+    surface_axes: Mapping[str, object] | None,
+) -> dict[str, tuple[str, ...]]:
+    if not surface_axes:
+        raise ValueError("surface_axes must contain at least one axis")
+    normalized: dict[str, tuple[str, ...]] = {}
+    for axis_name, raw_values in sorted(surface_axes.items()):
+        clean_axis = _clean_required(axis_name, "surface axis name")
+        if isinstance(raw_values, str):
+            values = (raw_values,)
+        else:
+            try:
+                values = tuple(raw_values)  # type: ignore[arg-type]
+            except TypeError:
+                values = (raw_values,)
+        if not values:
+            raise ValueError("surface_axes values must be non-empty")
+        clean_values = tuple(_normalize_surface_axis_value(value) for value in values)
+        if any(not value for value in clean_values):
+            raise ValueError(f"surface axis {clean_axis} values must be non-empty")
+        if len(set(clean_values)) != len(clean_values):
+            raise ValueError("surface_axes values must be unique per axis")
+        normalized[clean_axis] = clean_values
+    return normalized
+
+
 def _normalize_grid_vol_lane_family(value: object) -> str:
     return _validate_member(
         str(value).strip(),
@@ -165,6 +224,22 @@ def _grid_vol_differentiability_class(reason: str) -> str:
     return "unsupported"
 
 
+def _normalize_correlation_surface_unsupported_reason(value: object) -> str:
+    return _validate_member(
+        str(value).strip(),
+        _CORRELATION_SURFACE_UNSUPPORTED_REASONS,
+        "reason",
+    )
+
+
+def _correlation_surface_differentiability_class(reason: str) -> str:
+    if reason == "correlation_surface_projection_not_supported":
+        return "projected"
+    if reason == "correlation_surface_derivative_not_implemented":
+        return "piecewise"
+    return "unsupported"
+
+
 def _normalize_correlation_matrix(
     matrix: Iterable[Iterable[object]],
     *,
@@ -176,7 +251,9 @@ def _normalize_correlation_matrix(
         for row in matrix
     )
     if len(rows) != dimension or any(len(row) != dimension for row in rows):
-        raise ValueError("correlation_matrix must be a square matrix matching factor_labels")
+        raise ValueError(
+            "correlation_matrix must be a square matrix matching factor_labels"
+        )
     for index, row in enumerate(rows):
         if abs(row[index] - 1.0) > tolerance:
             raise ValueError("correlation_matrix must have unit diagonal")
@@ -186,7 +263,10 @@ def _normalize_correlation_matrix(
                 raise ValueError("correlation_matrix entries must be inside [-1, 1]")
     for row_index in range(dimension):
         for column_index in range(row_index + 1, dimension):
-            if abs(rows[row_index][column_index] - rows[column_index][row_index]) > tolerance:
+            if (
+                abs(rows[row_index][column_index] - rows[column_index][row_index])
+                > tolerance
+            ):
                 raise ValueError("correlation_matrix must be symmetric")
     return rows
 
@@ -246,6 +326,79 @@ def _correlation_matrix_coordinates(
     return tuple(coordinates)
 
 
+def _correlation_surface_coordinates(
+    *,
+    object_name: str,
+    factor_labels: tuple[str, ...],
+    surface_axes: Mapping[str, tuple[str, ...]],
+) -> tuple[RiskFactorCoordinate, ...]:
+    coordinates: list[RiskFactorCoordinate] = []
+    axis_names = tuple(surface_axes)
+    axis_value_sets = tuple(surface_axes[axis_name] for axis_name in axis_names)
+    axis_index_sets = tuple(tuple(range(len(values))) for values in axis_value_sets)
+    for row_index, row_label in enumerate(factor_labels):
+        for column_index in range(row_index + 1, len(factor_labels)):
+            column_label = factor_labels[column_index]
+            for axis_values, axis_indices in zip(
+                product(*axis_value_sets),
+                product(*axis_index_sets),
+            ):
+                axes: dict[str, object] = {
+                    "factor_a": row_label,
+                    "factor_a_index": row_index,
+                    "factor_b": column_label,
+                    "factor_b_index": column_index,
+                }
+                reporting_buckets: dict[str, object] = {
+                    "risk_class": "hybrid",
+                    "object_name": object_name,
+                    "factor_a": row_label,
+                    "factor_b": column_label,
+                }
+                axis_label_parts: list[str] = []
+                for axis_name, axis_value, axis_index in zip(
+                    axis_names,
+                    axis_values,
+                    axis_indices,
+                ):
+                    axes[axis_name] = axis_value
+                    axes[f"{axis_name}_index"] = axis_index
+                    reporting_buckets[axis_name] = axis_value
+                    axis_label_parts.append(f"{axis_name}={axis_value}")
+                axis_label = ", ".join(axis_label_parts)
+                factor_id = RiskFactorId(
+                    object_type="correlation_surface",
+                    object_name=object_name,
+                    coordinate_type="correlation",
+                    axes=axes,
+                    provenance_namespace="hybrid_ad",
+                )
+                coordinates.append(
+                    RiskFactorCoordinate(
+                        factor_id=factor_id,
+                        object_path=(
+                            f"correlation_surface.{object_name}"
+                            f"[{row_label},{column_label};{axis_label}]"
+                        ),
+                        display_name=(
+                            f"{row_label}/{column_label} correlation surface "
+                            f"node ({axis_label})"
+                        ),
+                        unit="correlation",
+                        transform="identity",
+                        support_status="discovery_only",
+                        reporting_buckets=reporting_buckets,
+                        metadata={
+                            "factor_a_index": row_index,
+                            "factor_b_index": column_index,
+                            "surface_axis_count": len(axis_names),
+                            "surface_axis_names": ",".join(axis_names),
+                        },
+                    )
+                )
+    return tuple(coordinates)
+
+
 def _restore_correlation_matrix_coordinate_values(
     raw: Mapping[str, object],
 ) -> dict[str, object]:
@@ -254,7 +407,9 @@ def _restore_correlation_matrix_coordinate_values(
     if "factor_labels" in result:
         labels = result["factor_labels"]
         if not isinstance(labels, tuple):
-            result["factor_labels"] = tuple(labels) if isinstance(labels, (list, tuple)) else (labels,)
+            result["factor_labels"] = (
+                tuple(labels) if isinstance(labels, (list, tuple)) else (labels,)
+            )
     if "correlation_matrix" in result:
         matrix = result["correlation_matrix"]
         if isinstance(matrix, (list, tuple)):
@@ -265,10 +420,59 @@ def _restore_correlation_matrix_coordinate_values(
     return result
 
 
+def _restore_correlation_surface_coordinate_values(
+    raw: Mapping[str, object],
+) -> dict[str, object]:
+    """Restore tuple types in correlation_surface_policy coordinate_values."""
+    result = dict(raw)
+    if "factor_labels" in result:
+        labels = result["factor_labels"]
+        if not isinstance(labels, tuple):
+            result["factor_labels"] = (
+                tuple(labels) if isinstance(labels, (list, tuple)) else (labels,)
+            )
+    if "surface_axis_names" in result:
+        axis_names = result["surface_axis_names"]
+        if not isinstance(axis_names, tuple):
+            result["surface_axis_names"] = (
+                tuple(axis_names)
+                if isinstance(axis_names, (list, tuple))
+                else (axis_names,)
+            )
+    if "active_node_keys" in result:
+        node_keys = result["active_node_keys"]
+        if not isinstance(node_keys, tuple):
+            result["active_node_keys"] = (
+                tuple(node_keys)
+                if isinstance(node_keys, (list, tuple))
+                else (node_keys,)
+            )
+    if "surface_axes" in result and isinstance(result["surface_axes"], Mapping):
+        result["surface_axes"] = {
+            str(axis_name): (
+                tuple(values) if isinstance(values, (list, tuple)) else (values,)
+            )
+            for axis_name, values in result["surface_axes"].items()
+        }
+    return result
+
+
 def _restore_correlation_matrix_constraints(
     raw: Mapping[str, object],
 ) -> dict[str, object]:
     """Restore tuple types in correlation_matrix_psd_policy constraints."""
+    result = dict(raw)
+    bounds = result.get("bounds")
+    if bounds is not None and not isinstance(bounds, tuple):
+        if isinstance(bounds, (list, tuple)):
+            result["bounds"] = tuple(bounds)
+    return result
+
+
+def _restore_correlation_surface_constraints(
+    raw: Mapping[str, object],
+) -> dict[str, object]:
+    """Restore tuple types in correlation_surface_policy constraints."""
     result = dict(raw)
     bounds = result.get("bounds")
     if bounds is not None and not isinstance(bounds, tuple):
@@ -307,16 +511,24 @@ class MarketObjectCoordinateChart:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "chart_id", _clean_required(self.chart_id, "chart_id"))
-        object.__setattr__(self, "object_type", _clean_required(self.object_type, "object_type"))
+        object.__setattr__(
+            self, "object_type", _clean_required(self.object_type, "object_type")
+        )
         object.__setattr__(self, "object_name", str(self.object_name).strip())
-        object.__setattr__(self, "coordinates", _normalize_coordinates(self.coordinates))
-        object.__setattr__(self, "chart_type", _clean_required(self.chart_type, "chart_type"))
+        object.__setattr__(
+            self, "coordinates", _normalize_coordinates(self.coordinates)
+        )
+        object.__setattr__(
+            self, "chart_type", _clean_required(self.chart_type, "chart_type")
+        )
         object.__setattr__(
             self,
             "coordinate_space",
             _clean_required(self.coordinate_space, "coordinate_space"),
         )
-        object.__setattr__(self, "coordinate_values", _freeze_mapping(self.coordinate_values))
+        object.__setattr__(
+            self, "coordinate_values", _freeze_mapping(self.coordinate_values)
+        )
         object.__setattr__(self, "constraints", _freeze_mapping(self.constraints))
         object.__setattr__(
             self,
@@ -431,7 +643,9 @@ class MarketObjectCoordinateChart:
             factor_labels=labels,
         )
         off_diagonal_values = {
-            f"{labels[row_index]}|{labels[column_index]}": matrix[row_index][column_index]
+            f"{labels[row_index]}|{labels[column_index]}": matrix[row_index][
+                column_index
+            ]
             for row_index in range(len(labels))
             for column_index in range(row_index + 1, len(labels))
         }
@@ -469,6 +683,85 @@ class MarketObjectCoordinateChart:
         )
 
     @classmethod
+    def correlation_surface_policy(
+        cls,
+        *,
+        object_name: str,
+        factor_labels: Iterable[object],
+        surface_axes: Mapping[str, object],
+        chart_id: str | None = None,
+        interpolation_basis: str = "exact_node_surface",
+        locality_policy: str = "full_surface_node_vector",
+        selected_factor_policy: str = "filter_known_fail_closed_unknown",
+        metadata: Mapping[str, object] | None = None,
+    ) -> MarketObjectCoordinateChart:
+        """Build the checked fail-closed policy chart for a correlation surface."""
+        clean_object_name = _clean_required(object_name, "object_name")
+        labels = _normalize_factor_labels(factor_labels)
+        axes = _normalize_correlation_surface_axes(surface_axes)
+        interpolation = _clean_required(interpolation_basis, "interpolation_basis")
+        locality = _clean_required(locality_policy, "locality_policy")
+        selected_policy = _clean_required(
+            selected_factor_policy,
+            "selected_factor_policy",
+        )
+        coordinates = _normalize_coordinates(
+            _correlation_surface_coordinates(
+                object_name=clean_object_name,
+                factor_labels=labels,
+                surface_axes=axes,
+            )
+        )
+        active_node_keys = tuple(coordinate.factor_id.key for coordinate in coordinates)
+        axis_names = tuple(axes)
+        axis_node_count = 1
+        for axis_values in axes.values():
+            axis_node_count *= len(axis_values)
+        factor_pair_count = len(labels) * (len(labels) - 1) // 2
+        return cls(
+            chart_id=chart_id or f"chart:correlation_surface:{clean_object_name}",
+            object_type="correlation_surface",
+            object_name=clean_object_name,
+            coordinates=coordinates,
+            chart_type="correlation_surface_policy",
+            coordinate_space="surface_nodes",
+            coordinate_values={
+                "parameterization": "surface_node_correlations",
+                "factor_labels": labels,
+                "factor_pair_count": factor_pair_count,
+                "surface_axes": dict(axes),
+                "surface_axis_names": axis_names,
+                "surface_axis_count": len(axis_names),
+                "surface_node_count_per_pair": axis_node_count,
+                "active_node_keys": active_node_keys,
+                "active_node_count": len(active_node_keys),
+            },
+            constraints={
+                "bounds": (-1.0, 1.0),
+                "interpolation_basis": interpolation,
+                "locality_policy": locality,
+                "selected_factor_policy": selected_policy,
+                "unsupported_selected_factor_reason": (
+                    "unsupported_selected_correlation_surface_factors"
+                ),
+                "projection_policy": "unsupported_no_smoothing_or_projection",
+                "smoothing_policy": "unsupported_fail_closed",
+                "repair_policy": "unsupported_fail_closed",
+            },
+            differentiability_class="piecewise",
+            support_status="discovery_only",
+            metadata={
+                "coordinate_type": "correlation",
+                "chart_family": "correlation_surface",
+                "parameterization": "surface_node_correlations",
+                "factor_pair_count": factor_pair_count,
+                "surface_axis_count": len(axis_names),
+                "coordinate_count": len(active_node_keys),
+                **dict(metadata or {}),
+            },
+        )
+
+    @classmethod
     def grid_vol_state_control_policy(
         cls,
         *,
@@ -498,7 +791,8 @@ class MarketObjectCoordinateChart:
             coordinate.factor_id.key for coordinate in normalized_coordinates
         )
         return cls(
-            chart_id=chart_id or f"chart:grid_vol_state_control:{clean_object_name}:{lane}",
+            chart_id=chart_id
+            or f"chart:grid_vol_state_control:{clean_object_name}:{lane}",
             object_type="vol_surface",
             object_name=clean_object_name,
             coordinates=normalized_coordinates,
@@ -545,7 +839,9 @@ class MarketObjectCoordinateChart:
             return _validate_correlation(self.coordinate_values["rho"])
         if "value" in self.coordinate_values:
             return _as_float(self.coordinate_values["value"], "coordinate_values.value")
-        raise ValueError(f"chart {self.chart_id!r} does not carry one constrained scalar")
+        raise ValueError(
+            f"chart {self.chart_id!r} does not carry one constrained scalar"
+        )
 
     @property
     def unconstrained_value(self) -> float:
@@ -596,14 +892,23 @@ class MarketObjectCoordinateChart:
         }
 
     @classmethod
-    def from_payload(cls, payload: Mapping[str, object]) -> "MarketObjectCoordinateChart":
+    def from_payload(
+        cls, payload: Mapping[str, object]
+    ) -> "MarketObjectCoordinateChart":
         """Rebuild a chart from :meth:`to_payload` output."""
         chart_type = str(payload.get("chart_type", "identity"))
         coordinate_values: Mapping[str, object] = payload.get("coordinate_values") or {}
         constraints: Mapping[str, object] = payload.get("constraints") or {}
         if chart_type == "correlation_matrix_psd_policy":
-            coordinate_values = _restore_correlation_matrix_coordinate_values(coordinate_values)
+            coordinate_values = _restore_correlation_matrix_coordinate_values(
+                coordinate_values
+            )
             constraints = _restore_correlation_matrix_constraints(constraints)
+        elif chart_type == "correlation_surface_policy":
+            coordinate_values = _restore_correlation_surface_coordinate_values(
+                coordinate_values
+            )
+            constraints = _restore_correlation_surface_constraints(constraints)
         elif chart_type == "grid_vol_state_control_policy":
             coordinate_values = _restore_grid_vol_coordinate_values(coordinate_values)
         return cls(
@@ -618,7 +923,9 @@ class MarketObjectCoordinateChart:
             coordinate_space=str(payload.get("coordinate_space", "constrained")),
             coordinate_values=coordinate_values,
             constraints=constraints,
-            differentiability_class=str(payload.get("differentiability_class", "smooth")),
+            differentiability_class=str(
+                payload.get("differentiability_class", "smooth")
+            ),
             support_status=str(payload.get("support_status", "supported")),
             metadata=payload.get("metadata") or {},
         )
@@ -643,7 +950,9 @@ class HybridUnsupportedDependency:
             "dependency_id",
             _clean_required(self.dependency_id, "dependency_id"),
         )
-        object.__setattr__(self, "node_type", _clean_required(self.node_type, "node_type"))
+        object.__setattr__(
+            self, "node_type", _clean_required(self.node_type, "node_type")
+        )
         object.__setattr__(self, "object_name", str(self.object_name).strip())
         object.__setattr__(self, "reason", _clean_required(self.reason, "reason"))
         object.__setattr__(
@@ -663,7 +972,9 @@ class HybridUnsupportedDependency:
         object.__setattr__(
             self,
             "derivative_method",
-            _validate_member(self.derivative_method, _DERIVATIVE_METHODS, "derivative_method"),
+            _validate_member(
+                self.derivative_method, _DERIVATIVE_METHODS, "derivative_method"
+            ),
         )
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
@@ -706,6 +1017,41 @@ class HybridUnsupportedDependency:
             },
         )
 
+    @classmethod
+    def correlation_surface_policy(
+        cls,
+        *,
+        object_name: str,
+        reason: str,
+        dependency_id: str | None = None,
+        metadata: Mapping[str, object] | None = None,
+    ) -> HybridUnsupportedDependency:
+        """Build a typed unsupported dependency for correlation-surface policy."""
+        clean_object_name = _clean_required(object_name, "object_name")
+        normalized_reason = _normalize_correlation_surface_unsupported_reason(reason)
+        return cls(
+            dependency_id=(
+                dependency_id
+                or (
+                    "unsupported:correlation_surface:"
+                    f"{clean_object_name}:{normalized_reason}"
+                )
+            ),
+            node_type="correlation_surface",
+            object_name=clean_object_name,
+            reason=normalized_reason,
+            support_status="unsupported",
+            differentiability_class=_correlation_surface_differentiability_class(
+                normalized_reason
+            ),
+            derivative_method="unsupported",
+            metadata={
+                "chart_family": "correlation_surface",
+                "parameterization": "surface_node_correlations",
+                **dict(metadata or {}),
+            },
+        )
+
     def to_payload(self) -> dict[str, Any]:
         """Return a deterministic JSON-friendly unsupported-dependency payload."""
         return {
@@ -728,7 +1074,9 @@ class HybridUnsupportedDependency:
             object_name=str(payload.get("object_name", "")),
             reason=str(payload["reason"]),
             support_status=str(payload.get("support_status", "unsupported")),
-            differentiability_class=str(payload.get("differentiability_class", "unsupported")),
+            differentiability_class=str(
+                payload.get("differentiability_class", "unsupported")
+            ),
             derivative_method=str(payload.get("derivative_method", "unsupported")),
             metadata=payload.get("metadata") or {},
         )
@@ -752,7 +1100,9 @@ class HybridDependencyNode:
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "node_id", _clean_required(self.node_id, "node_id"))
-        object.__setattr__(self, "node_type", _clean_required(self.node_type, "node_type"))
+        object.__setattr__(
+            self, "node_type", _clean_required(self.node_type, "node_type")
+        )
         object.__setattr__(self, "object_name", str(self.object_name).strip())
         if self.coordinate_chart is not None and not isinstance(
             self.coordinate_chart,
@@ -763,7 +1113,9 @@ class HybridDependencyNode:
         if self.coordinate_chart is not None and not coordinates:
             coordinates = self.coordinate_chart.coordinates
         object.__setattr__(self, "coordinates", _normalize_coordinates(coordinates))
-        object.__setattr__(self, "upstream_node_ids", _normalize_node_ids(self.upstream_node_ids))
+        object.__setattr__(
+            self, "upstream_node_ids", _normalize_node_ids(self.upstream_node_ids)
+        )
         object.__setattr__(
             self,
             "differentiability_class",
@@ -776,7 +1128,9 @@ class HybridDependencyNode:
         object.__setattr__(
             self,
             "derivative_method",
-            _validate_member(self.derivative_method, _DERIVATIVE_METHODS, "derivative_method"),
+            _validate_member(
+                self.derivative_method, _DERIVATIVE_METHODS, "derivative_method"
+            ),
         )
         object.__setattr__(
             self,
@@ -830,7 +1184,9 @@ class HybridDependencyNode:
                 for entry in payload.get("coordinates", ())
             ),
             upstream_node_ids=tuple(payload.get("upstream_node_ids", ())),
-            differentiability_class=str(payload.get("differentiability_class", "smooth")),
+            differentiability_class=str(
+                payload.get("differentiability_class", "smooth")
+            ),
             derivative_method=str(payload.get("derivative_method", "unsupported")),
             support_status=str(payload.get("support_status", "supported")),
             provenance=payload.get("provenance") or {},
@@ -838,7 +1194,9 @@ class HybridDependencyNode:
         )
 
 
-def _normalize_nodes(nodes: Iterable[HybridDependencyNode]) -> tuple[HybridDependencyNode, ...]:
+def _normalize_nodes(
+    nodes: Iterable[HybridDependencyNode],
+) -> tuple[HybridDependencyNode, ...]:
     node_map: dict[str, HybridDependencyNode] = {}
     for node in nodes:
         if not isinstance(node, HybridDependencyNode):
@@ -895,9 +1253,7 @@ class HybridFactorGraph:
     def coordinates(self) -> tuple[RiskFactorCoordinate, ...]:
         """Return all node-owned coordinates in deterministic factor-key order."""
         return _normalize_coordinates(
-            coordinate
-            for node in self.nodes
-            for coordinate in node.coordinates
+            coordinate for node in self.nodes for coordinate in node.coordinates
         )
 
     @property
@@ -938,8 +1294,7 @@ class HybridFactorGraph:
             "coordinates": [coordinate.to_payload() for coordinate in self.coordinates],
             "coordinate_keys": list(self.coordinate_keys),
             "unsupported_dependencies": [
-                dependency.to_payload()
-                for dependency in self.unsupported_dependencies
+                dependency.to_payload() for dependency in self.unsupported_dependencies
             ],
             "unsupported_reasons": list(self.unsupported_reasons),
             "metadata": dict(self.metadata),
