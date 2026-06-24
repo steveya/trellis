@@ -1187,9 +1187,61 @@ def classify_task_result(result: Mapping[str, Any]) -> str:
     return "build_failure"
 
 
+def task_result_outcome_class(result: Mapping[str, Any]) -> str:
+    """Return the expectation class for a task result.
+
+    This is intentionally separate from ``success``.  Pricing remains
+    fail-closed: an expected honest block does not produce a price and should
+    not be reported as a pricing success, but it can still satisfy the task's
+    declared expectation.
+    """
+    explicit = str(result.get("outcome_class") or "").strip()
+    if explicit:
+        return explicit
+    if _result_expected_honest_block(result):
+        return "honest_block"
+    return "compare_ready"
+
+
+def task_result_passed_expectation(result: Mapping[str, Any]) -> bool:
+    """Return whether a task result satisfied its declared expectation."""
+    explicit = result.get("passed_expectation")
+    if explicit is not None:
+        return bool(explicit)
+
+    outcome_class = task_result_outcome_class(result)
+    if outcome_class == "honest_block":
+        bucket = classify_task_result(result)
+        return (not bool(result.get("success"))) and bucket == "blocked"
+    return bool(result.get("success"))
+
+
+def _result_expected_honest_block(result: Mapping[str, Any]) -> bool:
+    """Detect expected honest-block contracts in current and historical results."""
+    if bool(result.get("expected_honest_block")):
+        return True
+    computational_problem = result.get("computational_problem")
+    if _payload_contains_expected_honest_block(computational_problem):
+        return True
+    title = str(result.get("title") or "").lower()
+    return "should block honestly" in title
+
+
+def _payload_contains_expected_honest_block(payload: Any) -> bool:
+    if isinstance(payload, Mapping):
+        if payload.get("expected_honest_block") is True:
+            return True
+        return any(_payload_contains_expected_honest_block(value) for value in payload.values())
+    if isinstance(payload, (list, tuple)):
+        return any(_payload_contains_expected_honest_block(item) for item in payload)
+    return False
+
+
 def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
     """Summarize one task-result tranche with shared-memory-focused metrics."""
     failure_buckets: dict[str, int] = {}
+    actionable_failure_buckets: dict[str, int] = {}
+    outcome_classes: dict[str, int] = {}
     attempts: list[int] = []
     attempts_to_success: list[int] = []
     token_usage = _empty_token_usage_summary()
@@ -1204,12 +1256,23 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
     unattributed_recoveries = 0
 
     successes = 0
+    expectation_passes = 0
+    honest_blocks = 0
     successful_after_retry = 0
     first_attempt_successes = 0
 
     for result in results:
         bucket = classify_task_result(result)
         failure_buckets[bucket] = failure_buckets.get(bucket, 0) + 1
+        outcome_class = task_result_outcome_class(result)
+        outcome_classes[outcome_class] = outcome_classes.get(outcome_class, 0) + 1
+        passed_expectation = task_result_passed_expectation(result)
+        if passed_expectation:
+            expectation_passes += 1
+        if outcome_class == "honest_block":
+            honest_blocks += 1
+        if not result.get("success") and not passed_expectation:
+            actionable_failure_buckets[bucket] = actionable_failure_buckets.get(bucket, 0) + 1
 
         if result.get("success"):
             successes += 1
@@ -1269,9 +1332,15 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
             "tasks": len(results),
             "successes": successes,
             "failures": len(results) - successes,
+            "expectation_passes": expectation_passes,
+            "failed_expectations": len(results) - expectation_passes,
+            "actionable_failures": sum(actionable_failure_buckets.values()),
+            "honest_blocks": honest_blocks,
             "avg_attempts": round(sum(attempts) / len(attempts), 2) if attempts else 0.0,
         },
         "failure_buckets": failure_buckets,
+        "actionable_failure_buckets": actionable_failure_buckets,
+        "outcome_classes": outcome_classes,
         "retry_recovery": {
             "successful_after_retry": successful_after_retry,
             "first_attempt_successes": first_attempt_successes,

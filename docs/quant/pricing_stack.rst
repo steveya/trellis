@@ -192,6 +192,14 @@ The first migrated vanilla cases now use that boundary directly:
   onto a checked ``heston`` two-state helper, with explicit ``euler`` versus
   ``heston_qe`` scheme selection and the ``heston:monte_carlo`` validation
   bundle, instead of reusing the vanilla-equity GBM helper
+- stochastic-volatility PDE for European Heston vanilla options now has
+  bounded ADI binding and diagnostic scaffolding under
+  ``trellis.models.pde.heston_adi``. The scaffold consumes canonical
+  ``kappa`` / ``theta`` / ``xi`` / ``rho`` / ``v0`` model parameters through
+  the Heston runtime binding and keeps Black vol surfaces as
+  market/calibration evidence rather than live Heston inputs. Optional
+  transform references are recorded as diagnostics and do not replace the PDE
+  scalar.
 - Heston calibration now has a bounded problem-IR adapter for single-expiry
   implied-vol smiles. Pricing routes consume explicit Heston model parameters
   from task specs, market state, synthetic fixtures, or recorded calibration
@@ -219,6 +227,15 @@ The first migrated vanilla cases now use that boundary directly:
   summary, early-exercise control policy, Heston path-state coupling, and the
   target-specific PDE/Monte Carlo/transform blocker. These tasks remain
   expected honest blocks until those abstractions and solvers exist.
+- Double-barrier proof routes share
+  ``trellis.models.analytical.support.barriers`` for lower/upper barrier specs,
+  terminal payoff semantics, hit masks, and reduced-storage state payoffs.
+  Generated PDE or Monte Carlo adapters still own the numerical route
+  assembly, grid/simulation controls, parity assembly, and discounting.
+- Single-underlier autocallable proof routes use the existing Monte Carlo,
+  GBM, event/schedule, and Sobol/QMC primitives. Generated adapters own the
+  observation schedule, first-trigger redemption, coupon accrual, terminal
+  protection, and deterministic discounting.
 - the local-vol vanilla helper remains a checked route-level wrapper, but it
   now assembles and prices through ``trellis.models.monte_carlo.event_aware``
   instead of maintaining a separate Monte Carlo engine/payoff loop
@@ -366,14 +383,14 @@ lattice helper. The route card still carries no lattice-construction or
 short-rate-input assembly instructions because the checked helper surface
 already owns that work.
 
-The analytical / PDE / FFT helper cohort now follows the same rule. The
-helper-backed Black76 swaption routes, the vanilla-equity PDE helper, the
-bounded event-aware PDE helper branches, and the vanilla-equity transform
-helper keep backend binding, admissibility, and validation ownership while
-dropping route-card adapter prose and backend notes once the checked helper
-surface already owns that assembly. Exact-helper validation now enforces the
-thin ``(market_state, spec, ...)`` call surface for those helpers instead of
-letting comparator or repair scaffolds rebuild raw market-input bundles inline.
+The analytical / PDE / FFT support cohort now follows the same rule. The
+helper-backed Black76 swaption routes, the vanilla-equity PDE helper, bounded
+event-aware PDE helper branches, Heston ADI diagnostic scaffold,
+double-barrier payoff primitives, and vanilla-equity transform helper keep
+backend binding, admissibility, and validation ownership explicit. Exact-helper
+validation enforces the thin ``(market_state, spec, ...)`` call surface only
+for true checked route helpers; primitive-only supports remain available for
+agent-written route assembly rather than bypassing it.
 
 For schedule-driven cap/floor strips lowered onto ``analytical_black76``, the
 typed schedule state now carries admissibility directly. Structural

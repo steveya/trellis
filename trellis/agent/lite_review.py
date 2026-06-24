@@ -29,6 +29,9 @@ _SUSPICIOUS_LITERAL_NAMES = {
     "spot": {"spot", "s0", "underlier_spot", "underlying_spot"},
     "local_vol_surface": {"local_vol", "sigma_local", "local_vol_surface", "local_sigma"},
 }
+_CHECKED_ROUTE_HELPER_SYMBOLS = frozenset({
+    "price_heston_option_monte_carlo",
+})
 
 # Legacy _ROUTE_REQUIRED_ACCESSES and _ROUTE_ACCESS_ERROR_CODES removed.
 # Market-data access requirements are now sourced from the route registry
@@ -307,6 +310,8 @@ def _route_specific_issues(
 
     if route == "analytical_black76" and "map_spot_discount_and_vol_to_forward_black76" not in adapters:
         return tuple(issues)
+    if _has_checked_route_helper_call(signals):
+        return tuple(issues)
     if primitive_plan is not None:
         required_helper_bindings = tuple(
             (primitive.symbol, primitive.module)
@@ -344,6 +349,14 @@ def _route_specific_issues(
         )
 
     return tuple(issues)
+
+
+def _has_checked_route_helper_call(signals: LiteReviewSignals) -> bool:
+    return any(
+        call_name in _CHECKED_ROUTE_HELPER_SYMBOLS
+        or call_name.rsplit(".", 1)[-1] in _CHECKED_ROUTE_HELPER_SYMBOLS
+        for call_name in signals.call_names
+    )
 
 
 def _call_names_include_symbol(call_names: tuple[str, ...], symbol: str, *, module: str | None = None) -> bool:

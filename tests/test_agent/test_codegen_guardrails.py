@@ -247,6 +247,60 @@ def test_validate_generated_imports_accepts_control_timeline_facade_exports():
     assert report.ok
 
 
+def test_barrier_family_support_approves_shared_barrier_primitives():
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="barrier_option",
+            reasoning="test",
+        ),
+        instrument_type="barrier_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "trellis.models.analytical.support.barriers" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff, double_barrier_state_payoff\n",
+        plan,
+    )
+    assert report.ok
+
+
+def test_heston_family_support_approves_adi_diagnostics():
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=[],
+            required_market_data={"discount_curve", "model_parameters"},
+            model_to_build="heston_option",
+            reasoning="test",
+        ),
+        instrument_type="heston_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="heston_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="stochastic_volatility",
+        ),
+    )
+
+    assert "trellis.models.pde.heston_adi" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.pde.heston_adi import HestonAdiPDEConfig, price_heston_option_adi_pde_result\n",
+        plan,
+    )
+    assert report.ok
+
+
 def test_qmc_generation_plan_approves_qmc_family_modules():
     pricing_plan = PricingPlan(
         method="qmc",

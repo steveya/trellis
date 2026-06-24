@@ -110,6 +110,19 @@ FAMILY_SUPPORT_MODULES = {
     "bermudan_swaption": (
         "trellis.models.bermudan_swaption_tree",
     ),
+    "heston_option": (
+        "trellis.models.pde.heston_adi",
+        "trellis.models.monte_carlo.stochastic_vol",
+    ),
+    "barrier_option": (
+        "trellis.models.analytical.support.barriers",
+    ),
+    "autocallable": (
+        "trellis.models.monte_carlo.engine",
+        "trellis.models.monte_carlo.event_aware",
+        "trellis.models.monte_carlo.variance_reduction",
+        "trellis.models.processes.gbm",
+    ),
     "quanto_option": (
         "trellis.models.resolution.quanto",
         "trellis.models.analytical.quanto",

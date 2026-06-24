@@ -9,6 +9,19 @@ import sys
 import pytest
 
 
+def test_comparison_target_prefers_per_build_metadata():
+    from trellis.agent.executor import _comparison_target_from_build_metadata
+
+    compiled_request = SimpleNamespace(
+        request=SimpleNamespace(metadata={"comparison_target": "compiled_target"})
+    )
+
+    assert _comparison_target_from_build_metadata(
+        compiled_request,
+        {"comparison_target": "task_target"},
+    ) == "task_target"
+
+
 def test_build_payoff_reuse_branch_attaches_analytical_trace(monkeypatch, tmp_path):
     from trellis.agent.executor import build_payoff
 
@@ -768,7 +781,7 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_mc_helpe
 @pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
-        ("heston_mc", 'scheme="euler"'),
+        ("heston_mc", 'scheme="heston_qe"'),
         ("euler_heston", 'scheme="euler"'),
         ("qe_heston", 'scheme="heston_qe"'),
     ],
@@ -808,6 +821,44 @@ def test_deterministic_exact_binding_module_materializes_heston_mc_helper_wrappe
     assert "price_heston_option_monte_carlo(market_state, spec" in generated.code
     assert expected_fragment in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    "comparison_target",
+    [
+        "heston_adi_pde",
+        "pde_double_barrier",
+        "mc_double_barrier",
+        "mc_autocall",
+        "mc_autocall_qmc",
+    ],
+)
+def test_deterministic_exact_binding_module_does_not_materialize_learning_targets(comparison_target):
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(route="target_helper"),
+        method="pde_solver" if comparison_target in {"heston_adi_pde", "pde_double_barrier"} else "monte_carlo",
+        instrument_type="barrier_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["barrier_option"],
+        "Failed pack helper target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is None
 
 
 @pytest.mark.parametrize(

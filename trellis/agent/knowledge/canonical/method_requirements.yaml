@@ -111,6 +111,8 @@ monte_carlo:
   option, not a mandatory route primitive.'
 - 'CREDIT-SURVIVAL MC: For single-name CDS, sample one default time from the credit_curve hazard rates or survival probabilities on an explicit payment schedule. For nth-to-default, keep multi-name default-order and copula logic explicit instead of reusing the CDS loop. Declare credit_curve and discount_curve requirements and do not route credit-default pricing through Black76 or equity GBM option logic.'
 - 'HESTON MC ROUTE: For European Heston vanilla options, prefer trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo. Use scheme="heston_qe" for qe_heston and scheme="euler" for euler_heston / heston_mc. Bind explicit Heston model_parameters; do not read a Black vol surface unless a calibration problem explicitly maps the surface to Heston parameters.'
+- 'AUTOCALLABLE MC ROUTE: For single-underlier autocallable proof tasks, compose GBM path simulation, observation-step mapping, first-trigger redemption, coupon accrual, terminal protection, and discounting in generated code. Use Sobol normals for QMC targets; do not instantiate GBM with spot=... because spot belongs at simulation time.'
+- 'DOUBLE-BARRIER MC ROUTE: For double-barrier proof tasks, use trellis.models.analytical.support.barriers double-barrier payoff/state primitives or explicit lower/upper BarrierMonitor objects. The generated adapter still owns process simulation, path count, discounting, and comparison-target sampling.'
 qmc:
 - 'LOW-DISCREPANCY SAMPLING: Use Sobol paths in balanced batches, preferably with
   a power-of-two path count such as 1024, 2048, or 4096. If you deviate, document
@@ -136,6 +138,8 @@ pde_solver:
   For American puts, pass exercise_values and exercise_fn=max. Keep lower_bc_fn / upper_bc_fn
   callables explicit for barrier and digital payoffs, and do not invent log_grid_pde,
   uniform_grid_pde, absorbing, or dirichlet helper tokens.'
+- 'HESTON ADI PDE ROUTE: For European Heston vanilla ADI targets, bind canonical kappa/theta/xi/rho/v0 parameters through the Heston runtime binding boundary; do not read market_state.vol_surface as Heston parameters or imply recalibration without a recorded calibration problem.'
+- 'DOUBLE-BARRIER PDE ROUTE: For lower/upper barrier options, build the bounded Black-Scholes grid on [lower_barrier, upper_barrier] with absorbing boundary functions and use the shared terminal payoff primitive. Generated code owns the PDE solve and any knock-in parity assembly.'
 fft_pricing:
 - 'CHARACTERISTIC FUNCTION CONVENTION: COS method expects CF of log-return log(S_T/S0).
   FFT (Carr-Madan) expects CF of log(S_T). Do NOT mix them.'

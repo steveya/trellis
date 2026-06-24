@@ -179,6 +179,12 @@ Use the existing helper surface before generating adapters:
 - ``trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo(...)``
   owns bounded European Heston Monte Carlo with ``scheme="euler"`` or
   ``scheme="heston_qe"``.
+- ``trellis.models.pde.heston_adi.price_heston_option_adi_pde_result(...)``
+  exposes bounded Heston ADI binding and grid diagnostics for T20-style
+  targets. It resolves the same canonical Heston runtime binding as the
+  transform and Monte Carlo helpers and does not use the Black vol surface as a
+  model-parameter source. Optional transform references are diagnostics only;
+  they do not replace the PDE scalar price.
 - ``trellis.models.calibration.heston_fit`` owns the bounded Heston smile and
   surface compression workflows that can produce reusable model parameters.
 - Heston Gauss-Laguerre, Bates, SLV/LSV, and path-dependent Heston control
@@ -256,7 +262,10 @@ Use the recent task pack as regression examples:
    * - ``T20``
      - ``stochastic_vol_pde`` and ``stochastic_vol_monte_carlo``
      - Explicit Heston parameters are not Black-vol surface bumps. Recalibration
-       requires a recorded calibration problem.
+      requires a recorded calibration problem. The ADI lane should bind
+      canonical model parameters explicitly and preserve raw-grid/reference
+      diagnostics; the MC lane should delegate to
+      ``price_heston_option_monte_carlo(...)``.
    * - ``T28``
      - ``stochastic_vol_monte_carlo`` and ``stochastic_vol_transform``
      - Euler/QE Heston MC and Heston FFT target binding belong on checked helper

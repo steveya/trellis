@@ -144,6 +144,23 @@ def _llm_stage_metadata(
     }
 
 
+def _comparison_target_from_build_metadata(
+    compiled_request,
+    request_metadata: Mapping[str, object] | None,
+) -> object | None:
+    """Return the active comparison target for one task-build attempt.
+
+    Task runtime passes comparison target metadata alongside the compiled
+    request. Some compiled requests are reused across targets, so the explicit
+    build metadata must win over the request's original metadata.
+    """
+    metadata: dict[str, object] = {}
+    request = getattr(compiled_request, "request", None)
+    metadata.update(dict(getattr(request, "metadata", None) or {}))
+    metadata.update(dict(request_metadata or {}))
+    return metadata.get("comparison_target")
+
+
 def _render_spec_default_value(field_type: str, default: str) -> str:
     """Render a spec default using valid Python syntax for the declared field type."""
     normalized_type = field_type.replace(" ", "").lower()
@@ -1387,13 +1404,9 @@ def build_payoff(
         stage_model = get_model_for_stage("code_generation", model)
         generated_module: GeneratedModuleResult | None = None
         generation_token_usage: dict[str, object] = {}
-        comparison_target = (
-            (
-                getattr(getattr(compiled_request, "request", None), "metadata", None)
-                or {}
-            ).get("comparison_target")
-            if compiled_request is not None
-            else None
+        comparison_target = _comparison_target_from_build_metadata(
+            compiled_request,
+            request_metadata,
         )
         try:
             generated_module = _materialize_semantic_execution_shim_module(
@@ -3401,9 +3414,10 @@ def _vanilla_equity_monte_carlo_helper_kwargs(comparison_target: str | None) -> 
 def _heston_monte_carlo_helper_kwargs(comparison_target: str | None) -> str:
     """Return deterministic helper kwargs for Heston Monte Carlo comparison targets."""
     target = str(comparison_target or "").strip().lower().replace("-", "_")
-    if target in {"heston_mc", "euler_heston", "heston_euler"}:
+    if target in {"euler_heston", "heston_euler"}:
         return ', scheme="euler"'
     if target in {
+        "heston_mc",
         "qe",
         "heston_qe",
         "qe_heston",
@@ -3495,6 +3509,17 @@ def _deterministic_exact_binding_evaluate_body(
     basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
     instrument_type = str(getattr(generation_plan, "instrument_type", "") or "").strip().lower()
     route_free_exact_binding = getattr(generation_plan, "primitive_plan", None) is None
+    normalized_target = str(comparison_target or "").strip().lower().replace("-", "_")
+
+    target_helper_bodies = {
+        "heston_mc": (
+            "return price_heston_option_monte_carlo("
+            f"market_state, spec{heston_mc_kwargs})"
+        ),
+    }
+    if normalized_target in target_helper_bodies:
+        return target_helper_bodies[normalized_target]
+
     if (
         comparison_target == "analytical"
         and instrument_type in {"cap", "floor", "period_rate_option_strip"}
@@ -4034,6 +4059,10 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     imports: list[str] = []
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
+    if "price_heston_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo"
+        )
     return tuple(imports)
 
 
@@ -5776,6 +5805,26 @@ def _route_specific_retry_lines(
         getattr(getattr(request.compiled_request, "request", None), "metadata", None) or {}
     )
     comparison_target = str(request_metadata.get("comparison_target") or "").strip().lower()
+
+    if comparison_target == "heston_adi_pde":
+        return (
+            "For `heston_adi_pde`, bind canonical Heston parameters through the runtime binding boundary before assembling the PDE calculation.",
+            "Use explicit `kappa`, `theta`, `xi`, `rho`, and `v0`; do not read Black vol surface nodes as live Heston parameters.",
+            "Legacy aliases such as `theta_var`, `sigma_v`, and `initial_variance` are normalized only at the binding boundary.",
+        )
+    if comparison_target in {"pde_double_barrier", "mc_double_barrier"}:
+        return (
+            "For double-barrier targets, use lower and upper barrier primitives from `trellis.models.analytical.support.barriers`.",
+            "PDE adapters should build the bounded grid and absorbing boundary conditions explicitly; MC adapters should use two barrier monitors or the shared state payoff primitive.",
+            "Do not adapt the single-barrier Reiner-Rubinstein formula to lower/upper barriers by hand.",
+        )
+    if comparison_target in {"mc_autocall", "mc_autocall_qmc"}:
+        sampling = "sobol" if comparison_target.endswith("_qmc") else "pseudo"
+        return (
+            "For autocallable targets, compose GBM path simulation, observation-step mapping, first-trigger redemption, coupon accrual, and terminal protection in the adapter.",
+            f"Use `{sampling}` sampling semantics for this comparison target; Sobol/QMC targets should source shocks from the QMC/Sobol primitive rather than a separate payoff route.",
+            "Do not instantiate `GBM(spot=...)`; pass spot to the simulation engine and keep event branching tied to the task observation schedule.",
+        )
 
     if (
         instrument in {"credit_default_swap", "cds"}

@@ -204,6 +204,48 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("equity_quanto"), spec)
         assert any(f.category == "route_helper_not_called" for f in findings)
 
+    def test_rejects_autocallable_shortcut_for_monte_carlo_paths(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        source = '''
+from trellis.models.monte_carlo.variance_reduction import sobol_normals
+
+def evaluate(self, market_state):
+    return 0.0
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            source,
+            _make_plan(
+                "monte_carlo_paths",
+                "monte_carlo",
+                primitives=(
+                    PrimitiveRef(
+                        "trellis.models.monte_carlo.event_aware",
+                        "price_event_aware_monte_carlo",
+                        "route_helper",
+                    ),
+                ),
+            ),
+            spec,
+        )
+        assert any(f.category == "route_helper_not_called" for f in findings)
+
+    def test_rejects_double_barrier_terminal_payoff_without_pde_engine(self, registry):
+        spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
+        source = '''
+from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff
+
+def evaluate(self, market_state):
+    return terminal_double_barrier_payoff([self._spec.spot], self._spec)[0]
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            source,
+            _make_plan("pde_theta_1d", "pde_solver"),
+            spec,
+        )
+        assert any(f.category == "engine_family_mismatch" for f in findings)
+
     def test_flags_missing_callable_bond_route_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         callable_ir = ProductIR(

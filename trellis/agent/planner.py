@@ -168,6 +168,19 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
         ],
     ),
+    "heston_option": SpecSchema(
+        class_name="HestonOptionPayoff",
+        spec_name="HestonOptionSpec",
+        requirements=["discount_curve", "model_parameters", "spot"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of shares", "1.0"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("strike", "float", "Option strike price"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
     "digital_option": SpecSchema(
         class_name="DigitalOptionPayoff",
         spec_name="DigitalOptionSpec",

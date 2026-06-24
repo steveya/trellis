@@ -1090,6 +1090,10 @@ def run_task(
 ) -> dict:
     """Execute one task through the knowledge-aware build pipeline."""
     from trellis.agent.cassette import current_llm_cassette_context
+    from trellis.agent.evals import (
+        task_result_outcome_class,
+        task_result_passed_expectation,
+    )
     from trellis.agent.task_run_store import persist_task_run_record, summarize_task_learning
 
     if build_fn is None:
@@ -1455,6 +1459,8 @@ def run_task(
         print(f"  [ERROR] {elapsed:.1f}s: {type(exc).__name__}: {str(exc)[:100]}")
 
     result_data["run_completed_at"] = now_fn().isoformat()
+    result_data["outcome_class"] = task_result_outcome_class(result_data)
+    result_data["passed_expectation"] = task_result_passed_expectation(result_data)
 
     try:
         persist_root = task_run_storage_root or ROOT

@@ -15,6 +15,11 @@ from trellis.models.pde.event_aware import (
     interpolate_pde_values,
     solve_event_aware_pde,
 )
+from trellis.models.pde.heston_adi import (
+    HestonAdiPDEConfig,
+    HestonAdiPDEResult,
+    price_heston_option_adi_pde_result,
+)
 from trellis.models.pde.theta_method import theta_method_1d
 from trellis.models.pde.psor import psor_1d
 from trellis.models.pde.grid import Grid

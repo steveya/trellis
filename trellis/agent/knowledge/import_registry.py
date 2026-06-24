@@ -522,6 +522,7 @@ from trellis.models.black import black76_call, black76_put, black76_asset_or_not
 from trellis.models.analytical import terminal_vanilla_from_basis
 from trellis.models.analytical.jamshidian import zcb_option_hw
 from trellis.models.analytical.barrier import barrier_option_price, down_and_out_call, down_and_in_call
+from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_hit_mask, double_barrier_path_payoff, double_barrier_state_payoff, resolve_double_barrier_inputs, terminal_double_barrier_payoff
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
@@ -556,6 +557,7 @@ from trellis.models.pde.rate_operator import HullWhitePDEOperator
 from trellis.models.pde.psor import psor_1d
 from trellis.models.pde.grid import Grid
 from trellis.models.pde.thomas import thomas_solve
+from trellis.models.pde.heston_adi import HestonAdiPDEConfig, HestonAdiPDEResult, price_heston_option_adi_pde_result
 from trellis.models.equity_option_pde import build_event_aware_equity_pde_problem, build_event_aware_pde_problem, build_vanilla_equity_pde_problem, interpolate_pde_values, price_event_aware_equity_option_pde, price_vanilla_equity_option_pde, resolve_vanilla_equity_pde_inputs, solve_event_aware_equity_option_pde_surface, solve_event_aware_pde, solve_vanilla_equity_option_pde_surface
 
 ### Models — Transforms (FFT/COS)

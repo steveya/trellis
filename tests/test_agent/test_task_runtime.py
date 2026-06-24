@@ -2005,6 +2005,9 @@ def test_run_task_aggregates_method_blockers_for_comparison_failures():
             "path_dependent_early_exercise_under_stochastic_vol"
         )
     assert classify_task_result(result) == "blocked"
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert result["attempts"] == 0
 
 
 def test_build_result_payload_includes_blocker_details(tmp_path):

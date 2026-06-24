@@ -24,6 +24,16 @@ class TestSpecSchema:
         spec = STATIC_SPECS["cap"]
         assert spec.class_name == "AgentCapPayoff"
 
+    def test_heston_static_spec_avoids_llm_spec_design(self):
+        spec = STATIC_SPECS["heston_option"]
+        assert spec.class_name == "HestonOptionPayoff"
+        assert spec.spec_name == "HestonOptionSpec"
+        assert set(spec.requirements) == {"discount_curve", "model_parameters", "spot"}
+        field_names = [f.name for f in spec.fields]
+        assert "spot" in field_names
+        assert "strike" in field_names
+        assert "expiry_date" in field_names
+
     def test_schedule_dependent_static_specs_use_typed_date_tuples(self):
         callable_spec = STATIC_SPECS["callable_bond"]
         puttable_spec = STATIC_SPECS["puttable_bond"]

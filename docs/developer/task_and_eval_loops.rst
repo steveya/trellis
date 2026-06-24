@@ -65,7 +65,7 @@ The repo ships a small task-operations toolchain:
 - ``scripts/run_financepy_benchmark.py``: run the FinancePy parity corpus with timestamped run-history persistence
 - ``scripts/run_negative_benchmark.py``: run the clarification / honest-block corpus with timestamped run-history persistence
 - ``scripts/run_benchmark_history_scorecard.py``: build a repeated-run scorecard from append-only FinancePy or negative benchmark history
-- ``scripts/remediate.py``: analyze failures from the latest canonical task-run surface by default, or inspect root-level ``task_results_*.json`` tranches with ``--source tranches``
+- ``scripts/remediate.py``: analyze actionable failures from the latest canonical task-run surface by default, inspect root-level ``task_results_*.json`` tranches with ``--source tranches``, or bound the scan to explicit result files with ``--results`` / ``--task-id`` / ``--skip-platform-traces``
 - ``scripts/evaluate_shared_memory.py``: compare two task-result tranches and render a shared-memory improvement report
 - ``scripts/should_run_canary.py``: decide whether current local changes justify the focused core canary gate
 - ``scripts/test_hygiene.py``: report stale skip/xfail/quarantine markers for local test-hygiene triage
@@ -379,6 +379,14 @@ stochastic-vol coupling abstractions directly.
 The developer-facing contract for those terms lives in
 :doc:`stochastic_vol_computational_ir`.
 
+Task results now distinguish fail-closed pricing success from expectation
+success. ``outcome_class="honest_block"`` plus ``passed_expectation=true``
+means the route did not produce a price, but it satisfied a negative or
+honest-block task by stopping with a concrete blocker. Batch summaries and
+``scripts/remediate.py --analyze-only`` exclude those rows from actionable
+failure counts while preserving the underlying ``success=false`` pricing
+semantics.
+
 That packet/checkpoint surface also now treats backend binding identity as the
 primary implementation provenance. Compatibility route aliases may still
 appear, but only as secondary metadata so replay, canary drift, and learning
@@ -669,6 +677,7 @@ Useful commands:
    /Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py T13 T24
    /Users/steveyang/miniforge3/bin/python3 scripts/rerun_ids.py T54 T62
    /Users/steveyang/miniforge3/bin/python3 scripts/remediate.py --analyze-only
+   /Users/steveyang/miniforge3/bin/python3 scripts/remediate.py --analyze-only --results task_results_rerun_failed_pack_20260623.json --skip-platform-traces
    /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "crossval and not integration"
    /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "verification and not integration"
    /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "task_challenge and not integration"

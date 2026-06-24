@@ -11,6 +11,18 @@ from trellis.models.processes.base import StochasticProcess
 
 np = get_numpy()
 
+_HESTON_PARAMETER_ALIASES: dict[str, str] = {
+    "theta_var": "theta",
+    "long_run_variance": "theta",
+    "long_variance": "theta",
+    "sigma_v": "xi",
+    "vol_of_vol": "xi",
+    "variance_vol": "xi",
+    "initial_variance": "v0",
+    "initial_var": "v0",
+    "variance0": "v0",
+}
+
 
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
     """Return an immutable mapping proxy."""
@@ -47,6 +59,40 @@ def build_heston_parameter_payload(
     return payload
 
 
+def normalize_heston_parameter_payload(payload: Mapping[str, object]) -> dict[str, object]:
+    """Return a canonical Heston parameter payload with legacy aliases folded in."""
+    normalized: dict[str, object] = {}
+    alias_sources: dict[str, str] = {}
+
+    for raw_name, raw_value in dict(payload).items():
+        name = str(raw_name)
+        canonical = _HESTON_PARAMETER_ALIASES.get(name, name)
+        if canonical in normalized and canonical in {"kappa", "theta", "xi", "rho", "v0", "mu"}:
+            if not _same_parameter_value(normalized[canonical], raw_value):
+                alias_sources[canonical] = name
+                raise ValueError(
+                    "Conflicting Heston parameter aliases for "
+                    f"{canonical!r}: {normalized[canonical]!r} vs {raw_value!r}"
+                )
+            continue
+        if name in _HESTON_PARAMETER_ALIASES:
+            alias_sources[canonical] = name
+        normalized[canonical] = raw_value
+
+    if alias_sources:
+        metadata = dict(normalized.get("metadata") or {})
+        metadata["normalized_aliases"] = dict(sorted(alias_sources.items()))
+        normalized["metadata"] = metadata
+    return normalized
+
+
+def _same_parameter_value(left: object, right: object) -> bool:
+    try:
+        return abs(float(left) - float(right)) <= 1e-14
+    except (TypeError, ValueError):
+        return left == right
+
+
 def extract_heston_parameter_payload(market_state) -> dict[str, object] | None:
     """Return the first Heston parameter payload attached to ``market_state``."""
     candidates = []
@@ -59,11 +105,12 @@ def extract_heston_parameter_payload(market_state) -> dict[str, object] | None:
 
     required = {"kappa", "theta", "xi", "rho", "v0"}
     for payload in candidates:
-        model_family = str(payload.get("model_family", "")).strip().lower()
+        normalized = normalize_heston_parameter_payload(payload)
+        model_family = str(normalized.get("model_family", "")).strip().lower()
         if model_family not in {"", "heston"}:
             continue
-        if required.issubset(payload):
-            return dict(payload)
+        if required.issubset(normalized):
+            return dict(normalized)
     return None
 
 
@@ -259,5 +306,6 @@ __all__ = [
     "HestonRuntimeBinding",
     "build_heston_parameter_payload",
     "extract_heston_parameter_payload",
+    "normalize_heston_parameter_payload",
     "resolve_heston_runtime_binding",
 ]
