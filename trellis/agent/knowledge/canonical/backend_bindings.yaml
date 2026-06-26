@@ -182,8 +182,17 @@ bindings:
             role: variance_reduction
       - when:
           payoff_family: barrier_option
-          barrier_count: [2]
+          payoff_traits: [double_barrier]
         primitives:
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
           - module: trellis.models.analytical.support.barriers
             symbol: double_barrier_state_payoff
             role: payoff_primitive
@@ -672,6 +681,22 @@ bindings:
         symbol: price_vanilla_equity_option_pde
         role: route_helper
 
+  - route_id: heston_adi_2d
+    engine_family: pde_solver
+    route_family: pde_solver
+    aliases: [heston_adi_pde]
+    primitives:
+      - module: trellis.models.transforms.heston
+        symbol: resolve_heston_transform_inputs
+        role: market_binding
+      - module: trellis.models.pde.heston_adi
+        symbol: HestonAdiPDEConfig
+        role: solver_config
+        required: false
+      - module: trellis.models.pde.heston_adi
+        symbol: price_heston_option_adi_pde_result
+        role: numerical_evidence
+
   - route_id: pde_theta_1d
     engine_family: pde_solver
     route_family: pde_solver
@@ -712,8 +737,20 @@ bindings:
             role: numerical_evidence
       - when:
           payoff_family: barrier_option
-          barrier_count: [2]
+          payoff_traits: [double_barrier]
         primitives:
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.pde.grid
+            symbol: Grid
+            role: grid
+          - module: trellis.models.pde.operator
+            symbol: BlackScholesOperator
+            role: spatial_operator
+          - module: trellis.models.pde.theta_method
+            symbol: theta_method_1d
+            role: time_stepping
           - module: trellis.models.analytical.support.barriers
             symbol: terminal_double_barrier_payoff
             role: terminal_payoff

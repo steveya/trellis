@@ -30,6 +30,10 @@ _ENGINE_SIGNATURES = {
     "waterfall": ("Waterfall", "Tranche"),
 }
 
+_ROUTE_SIGNATURES = {
+    "heston_adi_2d": ("price_heston_option_adi_pde_result", "HestonAdiPDEConfig"),
+}
+
 # Discount patterns
 _DISCOUNT_PATTERNS = (
     "market_state.discount",
@@ -556,7 +560,7 @@ class AlgorithmContractValidator:
     ) -> list[SemanticFinding]:
         """Verify code uses the expected engine family signatures."""
         engine = route_spec.engine_family
-        signatures = _ENGINE_SIGNATURES.get(engine, ())
+        signatures = _ROUTE_SIGNATURES.get(route_spec.id, _ENGINE_SIGNATURES.get(engine, ()))
         if not signatures:
             return []
 

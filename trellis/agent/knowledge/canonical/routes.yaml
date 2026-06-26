@@ -374,8 +374,17 @@ routes:
           - "Compose the autocallable payoff in the generated adapter: fixed observation schedule, first-trigger redemption, coupon accrual, terminal protection, and deterministic discounting."
       - when:
           payoff_family: barrier_option
-          barrier_count: [2]
+          payoff_traits: [double_barrier]
         primitives:
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
           - module: trellis.models.analytical.support.barriers
             symbol: double_barrier_state_payoff
             role: payoff_primitive
@@ -1212,6 +1221,50 @@ routes:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
 
+  - id: heston_adi_2d
+    engine_family: pde_solver
+    route_family: pde_solver
+    status: promoted
+    confidence: 1.0
+    aliases: [heston_adi_pde]
+    score_hints:
+      payoff_family_bonus:
+        vanilla_option: 1.0
+    match:
+      methods: [pde_solver]
+      payoff_traits: [stochastic_vol]
+      model_family: [stochastic_volatility]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: false
+      supported_state_tags: [terminal_markov]
+      supported_operator_families: [heston_2d_adi]
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.transforms.heston
+        symbol: resolve_heston_transform_inputs
+        role: market_binding
+      - module: trellis.models.pde.heston_adi
+        symbol: HestonAdiPDEConfig
+        role: solver_config
+        required: false
+      - module: trellis.models.pde.heston_adi
+        symbol: price_heston_option_adi_pde_result
+        role: numerical_evidence
+    adapters: []
+    notes:
+      - "Bind canonical Heston model parameters at the runtime boundary; do not consume Black vol as a live Heston parameter source."
+      - "Use the ADI result surface for structured PDE evidence; generated code still owns task-level adapter shape and output extraction."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        spot: [market_state.spot, market_state.underlier_spots]
+        model_parameters: [market_state.model_parameters, market_state.model_parameter_sets]
+
   - id: pde_theta_1d
     engine_family: pde_solver
     route_family: pde_solver
@@ -1264,8 +1317,20 @@ routes:
           - "Bind canonical Heston model parameters at the runtime boundary; do not consume Black vol as a live Heston parameter source."
       - when:
           payoff_family: barrier_option
-          barrier_count: [2]
+          payoff_traits: [double_barrier]
         primitives:
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.pde.grid
+            symbol: Grid
+            role: grid
+          - module: trellis.models.pde.operator
+            symbol: BlackScholesOperator
+            role: spatial_operator
+          - module: trellis.models.pde.theta_method
+            symbol: theta_method_1d
+            role: time_stepping
           - module: trellis.models.analytical.support.barriers
             symbol: terminal_double_barrier_payoff
             role: terminal_payoff

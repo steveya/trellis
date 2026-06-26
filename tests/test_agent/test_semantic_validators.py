@@ -246,6 +246,22 @@ def evaluate(self, market_state):
         )
         assert any(f.category == "engine_family_mismatch" for f in findings)
 
+    def test_heston_adi_result_surface_satisfies_engine_signature(self, registry):
+        spec = [r for r in registry.routes if r.id == "heston_adi_2d"][0]
+        source = '''
+from trellis.models.pde.heston_adi import price_heston_option_adi_pde_result
+
+def evaluate(self, market_state):
+    return price_heston_option_adi_pde_result(market_state, self._spec).price
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            source,
+            _make_plan("heston_adi_2d", "pde_solver"),
+            spec,
+        )
+        assert not any(f.category == "engine_family_mismatch" for f in findings)
+
     def test_flags_missing_callable_bond_route_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         callable_ir = ProductIR(

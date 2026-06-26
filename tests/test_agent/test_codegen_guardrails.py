@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from trellis.agent.codegen_guardrails import (
+    GenerationPlan,
     PrimitiveRef,
     build_generation_plan,
     rank_primitive_routes,
@@ -211,6 +212,23 @@ def test_validate_generated_imports_rejects_invalid_symbol():
     report = validate_generated_imports(INVALID_SYMBOL_SOURCE, _analytical_plan())
     assert not report.ok
     assert any("not exported" in error for error in report.errors)
+
+
+def test_validate_generated_imports_guides_invalid_sobol_class_alias():
+    source = "from trellis.models.monte_carlo.schemes import SobolNormals\n"
+    plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="autocallable",
+        inspected_modules=("trellis.models.monte_carlo.schemes",),
+        approved_modules=("trellis.models.monte_carlo.schemes",),
+        symbols_to_reuse=(),
+        proposed_tests=(),
+    )
+
+    report = validate_generated_imports(source, plan)
+
+    assert not report.ok
+    assert any("sobol_normals" in error for error in report.errors)
 
 
 def test_validate_generated_imports_rejects_admitted_agent_from_import():

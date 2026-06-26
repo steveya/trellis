@@ -722,6 +722,17 @@ def test_task_to_instrument_type_uses_shared_lower_layer_mapping():
     ) == "cdo"
 
 
+def test_task_to_instrument_type_prefers_autocallable_over_barrier_trait_text():
+    from trellis.agent.task_runtime import task_to_instrument_type
+
+    assert task_to_instrument_type(
+        {
+            "id": "T107",
+            "title": "Autocallable note: MC with barrier + coupon + early redemption",
+        }
+    ) == "autocallable"
+
+
 def test_task_to_instrument_identity_records_text_fallback_source():
     from trellis.agent.task_runtime import task_to_instrument_identity
 

@@ -27,6 +27,42 @@ The runtime helpers cover:
 - benchmarking cached task payoffs
 - normalizing task descriptions into request/build inputs
 
+Agent Composition Guardrails
+----------------------------
+
+Task generation is intentionally assembly-first. Route and backend-binding
+catalogs should expose reusable primitives and binding surfaces; generated
+adapters still own product-specific payoff assembly unless a checked helper is
+explicitly selected as the exact backend binding.
+
+Current composition rules:
+
+- identity inference treats product names such as ``autocallable``,
+  ``autocall``, ``phoenix``, and ``snowball`` as stronger than barrier-trait
+  words. A terminal protection or autocall barrier is a trait of an
+  autocallable, not evidence that the product should be narrowed to
+  ``barrier_option``.
+- double-barrier requests add the ``double_barrier`` payoff trait. The PDE lane
+  receives ``resolve_double_barrier_inputs``, ``Grid``,
+  ``BlackScholesOperator``, ``theta_method_1d``, and
+  ``terminal_double_barrier_payoff``; the Monte Carlo lane receives
+  ``resolve_double_barrier_inputs``, ``GBM``, ``MonteCarloEngine``, and
+  ``double_barrier_state_payoff``. Neither lane should depend on a final
+  double-barrier scalar pricing helper.
+- stochastic-volatility PDE requests with ``stochastic_vol`` traits can select
+  the ``heston_adi_2d`` route. That route is still a ``pde_solver`` family
+  route; the route id only supplies the Heston-specific ADI evidence signature
+  and model-parameter binding contract.
+- resolver primitives with role ``market_binding`` may satisfy deterministic
+  market-access review checks. Generated code can call the resolver instead of
+  duplicating every ``market_state`` lookup inline, as long as it uses the
+  selected primitive surface.
+- deterministic API guardrails reject known near-misses before runtime, such
+  as ``GBM(spot=...)`` and importing ``SobolNormals``. Use ``GBM(mu=...,
+  sigma=...)`` and pass the initial spot to simulation/path construction; use
+  the function ``sobol_normals`` from ``trellis.models.monte_carlo`` or
+  ``trellis.models.qmc``.
+
 The non-integration pytest surface is also grouped into explicit reviewable
 strata:
 

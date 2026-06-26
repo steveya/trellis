@@ -1420,14 +1420,30 @@ def validate_generated_imports(source: str, plan: GenerationPlan) -> ImportValid
         if ref.symbol is None:
             continue
         if not is_valid_import(ref.module, ref.symbol):
+            hint = _invalid_import_guidance(ref)
             errors.append(
                 f"Line {ref.lineno}: `{ref.symbol}` is not exported by `{ref.module}`."
+                + (f" {hint}" if hint else "")
             )
 
     return ImportValidationReport(
         imports=imports,
         errors=tuple(errors),
     )
+
+
+def _invalid_import_guidance(ref: ImportReference) -> str:
+    """Return deterministic guidance for common near-miss import aliases."""
+    if (
+        ref.module == "trellis.models.monte_carlo.schemes"
+        and ref.symbol == "SobolNormals"
+    ):
+        return (
+            "Use the function `sobol_normals` from "
+            "`trellis.models.monte_carlo.variance_reduction` or `trellis.models.qmc`; "
+            "`SobolNormals` is not a Trellis class."
+        )
+    return ""
 
 
 def sanitize_generated_source(source: str) -> GeneratedSourceSanitizationReport:
@@ -1811,7 +1827,12 @@ def _route_score(
             resolve_route_primitives(spec, product_ir, method=scoring_method)
         )
         resolved_roles = {primitive.role for primitive in resolved_primitives}
-        exact_surface_roles = {"route_helper", "pricing_kernel", "cashflow_engine"}
+        exact_surface_roles = {
+            "route_helper",
+            "pricing_kernel",
+            "cashflow_engine",
+            "numerical_evidence",
+        }
         if engine_family in product_ir.candidate_engine_families:
             score += 1.5
         if resolved_roles.intersection(exact_surface_roles):

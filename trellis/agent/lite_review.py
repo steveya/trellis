@@ -19,6 +19,7 @@ _CAPABILITY_ATTR_PREFIXES = {
     "fx_rates": ("market_state.fx_rates",),
     "spot": ("market_state.spot", "market_state.underlier_spots"),
     "local_vol_surface": ("market_state.local_vol_surface", "market_state.local_vol_surfaces"),
+    "model_parameters": ("market_state.model_parameters", "market_state.model_parameter_sets"),
 }
 
 _SUSPICIOUS_LITERAL_NAMES = {
@@ -54,6 +55,7 @@ class LiteReviewSignals:
     call_names: tuple[str, ...]
     literal_assignments: tuple[str, ...]
     wall_clock_calls: tuple[str, ...]
+    api_misuses: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -80,6 +82,7 @@ class _LiteReviewVisitor(ast.NodeVisitor):
         self.call_names: set[str] = set()
         self.literal_assignments: list[str] = []
         self.wall_clock_calls: set[str] = set()
+        self.api_misuses: set[str] = set()
 
     def visit_Attribute(self, node: ast.Attribute) -> None:
         chain = _resolve_attribute_chain(node)
@@ -107,6 +110,10 @@ class _LiteReviewVisitor(ast.NodeVisitor):
             self.call_names.add(call_name)
         if call_name in {"date.today", "datetime.today", "datetime.now"}:
             self.wall_clock_calls.add(call_name)
+        if call_name and call_name.rsplit(".", 1)[-1] == "GBM":
+            bad_spot_keywords = {"spot", "s0", "initial_spot", "initial_value"}
+            if any(keyword.arg in bad_spot_keywords for keyword in node.keywords if keyword.arg):
+                self.api_misuses.add("gbm_spot_constructor_keyword")
         for keyword in node.keywords:
             if keyword.arg is None:
                 continue
@@ -138,6 +145,7 @@ def review_generated_code(
                 call_names=(),
                 literal_assignments=(),
                 wall_clock_calls=(),
+                api_misuses=(),
             ),
         )
 
@@ -148,6 +156,7 @@ def review_generated_code(
         call_names=tuple(sorted(visitor.call_names)),
         literal_assignments=tuple(visitor.literal_assignments),
         wall_clock_calls=tuple(sorted(visitor.wall_clock_calls)),
+        api_misuses=tuple(sorted(visitor.api_misuses)),
     )
 
     required_market_data = set()
@@ -181,6 +190,17 @@ def review_generated_code(
                     "Generated code uses wall-clock time via "
                     + ", ".join(f"`{call}`" for call in signals.wall_clock_calls)
                     + ". Derive valuation time from `market_state` or shared resolver outputs instead."
+                ),
+            )
+        )
+    if "gbm_spot_constructor_keyword" in signals.api_misuses:
+        issues.append(
+            LiteReviewIssue(
+                code="lite.gbm_spot_constructor_keyword",
+                message=(
+                    "`GBM(...)` accepts only `mu` and `sigma`; pass the spot level "
+                    "to the simulation call or path initializer instead of using "
+                    "`spot=...`, `s0=...`, or another initial-state constructor keyword."
                 ),
             )
         )
@@ -336,10 +356,16 @@ def _route_specific_issues(
             )
 
     required_accesses = _route_required_accesses_for(route)
+    resolver_call_satisfies_market_data = _has_market_binding_primitive_call(
+        signals,
+        primitive_plan,
+    )
     for capability, prefixes in required_accesses.items():
         if capability not in required_market_data:
             continue
         if any(_has_market_state_access(signals, prefix) for prefix in prefixes):
+            continue
+        if resolver_call_satisfies_market_data:
             continue
         issues.append(
             LiteReviewIssue(
@@ -349,6 +375,25 @@ def _route_specific_issues(
         )
 
     return tuple(issues)
+
+
+def _has_market_binding_primitive_call(signals: LiteReviewSignals, primitive_plan) -> bool:
+    """Return whether a selected resolver/evidence primitive owns market binding."""
+    if primitive_plan is None:
+        return False
+    binding_roles = {"market_binding", "numerical_evidence"}
+    for primitive in getattr(primitive_plan, "primitives", ()) or ():
+        if not getattr(primitive, "required", True):
+            continue
+        if str(getattr(primitive, "role", "") or "").strip() not in binding_roles:
+            continue
+        if _call_names_include_symbol(
+            signals.call_names,
+            str(getattr(primitive, "symbol", "") or ""),
+            module=str(getattr(primitive, "module", "") or "") or None,
+        ):
+            return True
+    return False
 
 
 def _has_checked_route_helper_call(signals: LiteReviewSignals) -> bool:

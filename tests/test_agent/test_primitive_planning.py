@@ -112,6 +112,122 @@ def test_builds_pde_plan_for_barrier_option_uses_grid_and_operator():
     assert any("rannacher_timesteps" in note for note in plan.primitive_plan.notes)
 
 
+def test_double_barrier_text_emits_trait_for_route_conditions():
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    ir = decompose_to_ir("Double barrier option via PDE", instrument_type="barrier_option")
+
+    assert "double_barrier" in ir.payoff_traits
+
+
+def test_builds_pde_plan_for_double_barrier_uses_absorbing_grid_primitives():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.pde.theta_method"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=(
+            "trellis.models.analytical.support.barriers",
+            "trellis.models.pde.grid",
+            "trellis.models.pde.operator",
+            "trellis.models.pde.theta_method",
+        ),
+        product_ir=decompose_to_ir(
+            "Double barrier option via PDE",
+            instrument_type="barrier_option",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "pde_theta_1d"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "resolve_double_barrier_inputs",
+        "terminal_double_barrier_payoff",
+        "Grid",
+        "BlackScholesOperator",
+        "theta_method_1d",
+    } <= primitive_symbols
+
+
+def test_builds_mc_plan_for_double_barrier_uses_process_engine_and_payoff_primitives():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=(
+            "trellis.models.analytical.support.barriers",
+            "trellis.models.monte_carlo.engine",
+            "trellis.models.processes.gbm",
+        ),
+        product_ir=decompose_to_ir(
+            "Double barrier option via PDE",
+            instrument_type="barrier_option",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "monte_carlo_paths"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "resolve_double_barrier_inputs",
+        "double_barrier_state_payoff",
+        "GBM",
+        "MonteCarloEngine",
+    } <= primitive_symbols
+    assert "price_event_aware_monte_carlo" not in primitive_symbols
+
+
+def test_builds_heston_adi_plan_for_pde_method():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.pde.heston_adi"],
+        required_market_data={"discount_curve", "spot", "model_parameters"},
+        model_to_build="heston_option",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="heston_option",
+        inspected_modules=("trellis.models.pde.heston_adi", "trellis.models.transforms.heston"),
+        product_ir=decompose_to_ir(
+            "2D PDE: Heston (S, V) via ADI splitting",
+            instrument_type="heston_option",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "heston_adi_2d"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "resolve_heston_transform_inputs",
+        "price_heston_option_adi_pde_result",
+    } <= primitive_symbols
+
+
 def test_builds_pde_plan_for_european_option_uses_helper_route():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir
