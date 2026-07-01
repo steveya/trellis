@@ -106,6 +106,19 @@ The repo ships a small task-operations toolchain:
 - ``scripts/should_run_canary.py``: decide whether current local changes justify the focused core canary gate
 - ``scripts/test_hygiene.py``: report stale skip/xfail/quarantine markers for local test-hygiene triage
 
+``run_task(...)`` defaults to ``recovery_mode="strict"`` for production-like
+callers.  Task-operation scripts default to ``assisted`` and expose
+``--recovery-mode strict|assisted|remediation``.  In assisted/remediation mode,
+a failed target may receive one bounded intra-run retry with an ephemeral
+``KnowledgePatchCandidate`` overlay derived from failure/reflection evidence
+and deterministic contract evidence.  The candidate can carry structured
+callable-signature records, required primitive obligations, and comparison
+contract metadata; the prompt overlay is only the rendered form of that bounded
+evidence.  It is not canonical cookbook knowledge and cannot promote itself.
+It is persisted as ``recovery_attempts`` / ``intra_run_learning`` evidence so
+diagnostics can distinguish recovered candidate-knowledge retries from ordinary
+build retries.
+
 The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 
 - ``make gate-pr`` for PR-ready validation

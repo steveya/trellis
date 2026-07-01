@@ -65,6 +65,12 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--validation", default="standard")
     parser.add_argument(
+        "--recovery-mode",
+        choices=("strict", "assisted", "remediation"),
+        default="assisted",
+        help="Bounded automatic recovery mode for task-script runs.",
+    )
+    parser.add_argument(
         "--status",
         choices=("pending", "all"),
         default="pending",
@@ -118,6 +124,7 @@ def run_block(
     fresh_build: bool = False,
     knowledge_light: bool = False,
     validation: str = "standard",
+    recovery_mode: str = "assisted",
 ):
     """Run a block of tasks and save results incrementally."""
     output_path = Path(output_file)
@@ -134,6 +141,7 @@ def run_block(
     print(f"# Fresh build: {fresh_build}")
     print(f"# Knowledge light: {knowledge_light}")
     print(f"# Validation: {validation}")
+    print(f"# Recovery mode: {recovery_mode}")
     print(f"# Started: {datetime.now().isoformat()}")
     print(f"{'#' * 60}")
 
@@ -147,6 +155,7 @@ def run_block(
             fresh_build=fresh_build,
             knowledge_profile="knowledge_light" if knowledge_light else None,
             validation=validation,
+            recovery_mode=recovery_mode,
         )
         results.append(result)
         batch_token_total += int(
@@ -268,4 +277,5 @@ if __name__ == "__main__":
         fresh_build=args.fresh_build,
         knowledge_light=args.knowledge_light,
         validation=args.validation,
+        recovery_mode=args.recovery_mode,
     )

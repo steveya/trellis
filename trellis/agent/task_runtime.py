@@ -8,6 +8,7 @@ correctness and timing.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -42,6 +43,12 @@ from trellis.agent.instrument_identity import (
     normalize_instrument_type,
     resolve_authoritative_instrument_type,
     resolve_instrument_identity,
+)
+from trellis.agent.intra_run_learning import (
+    KnowledgePatchCandidate,
+    RecoveryMode,
+    build_knowledge_patch_candidate,
+    normalize_recovery_mode,
 )
 from trellis.agent.market_scenarios import (
     construct_market_state_for_scenario,
@@ -1087,6 +1094,7 @@ def run_task(
     price_fn: Callable[[Any, Any], float] | None = None,
     task_run_storage_root: Path | None = None,
     task_run_storage_layout: str = "repo",
+    recovery_mode: str | RecoveryMode = RecoveryMode.STRICT,
 ) -> dict:
     """Execute one task through the knowledge-aware build pipeline."""
     from trellis.agent.cassette import current_llm_cassette_context
@@ -1101,6 +1109,7 @@ def run_task(
 
         build_fn = build_with_knowledge
 
+    recovery_mode_value = normalize_recovery_mode(recovery_mode)
     task_id = task["id"]
     description = _effective_task_description(task)
     instrument_identity = task_to_instrument_identity(task)
@@ -1161,6 +1170,8 @@ def run_task(
         "task_definition_version": task.get("task_definition_version"),
         "task_definition_manifest": str(task.get("task_definition_manifest") or ""),
         "market_scenario_id": str(task.get("market_scenario_id") or ""),
+        "recovery_mode": recovery_mode_value.value,
+        "recovery_attempts": [],
     }
     if computational_problem_payload is not None:
         result_data["computational_problem"] = computational_problem_payload
@@ -1239,13 +1250,28 @@ def run_task(
                     )
                 else:
                     result = build_fn(**build_kwargs)
-                live_results[target.target_id] = result
-                method_results[target.target_id] = _build_result_payload(
+                payload = _build_result_payload(
                     result,
                     preferred_method=target.preferred_method,
                     reference_target=target.is_reference,
                     task_kind="pricing",
                 )
+                result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
+                    build_fn=build_fn,
+                    build_kwargs=build_kwargs,
+                    initial_result=result,
+                    initial_payload=payload,
+                    target_id=target.target_id,
+                    preferred_method=target.preferred_method,
+                    reference_target=target.is_reference,
+                    task_kind="pricing",
+                    instrument_type=instrument_type,
+                    recovery_mode=recovery_mode_value,
+                )
+                if recovery_record is not None:
+                    result_data.setdefault("recovery_attempts", []).append(recovery_record)
+                live_results[target.target_id] = result
+                method_results[target.target_id] = payload
 
             elapsed = timer() - t0
             successful_methods = [
@@ -1358,6 +1384,10 @@ def run_task(
                 "reflection": reflection_payload,
                 "cross_validation": cross_validation,
             })
+            if result_data.get("recovery_attempts"):
+                result_data["intra_run_learning"] = _aggregate_intra_run_learning(
+                    method_results
+                )
             aggregated_blockers = _aggregate_blocker_details(method_results)
             if aggregated_blockers is not None:
                 result_data["blocker_details"] = aggregated_blockers
@@ -1397,6 +1427,26 @@ def run_task(
             if task.get("cross_validate") and comparison_targets:
                 build_kwargs["comparison_target"] = comparison_targets[0].target_id
             result = build_fn(**build_kwargs)
+            payload = _build_result_payload(result, preferred_method=preferred_method)
+            target_id = (
+                comparison_targets[0].target_id
+                if comparison_targets
+                else str(task_id)
+            )
+            result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
+                build_fn=build_fn,
+                build_kwargs=build_kwargs,
+                initial_result=result,
+                initial_payload=payload,
+                target_id=target_id,
+                preferred_method=preferred_method,
+                reference_target=False,
+                task_kind="pricing",
+                instrument_type=instrument_type,
+                recovery_mode=recovery_mode_value,
+            )
+            if recovery_record is not None:
+                result_data.setdefault("recovery_attempts", []).append(recovery_record)
             elapsed = timer() - t0
             runtime_contract_result = dict(runtime_contract)
             runtime_contract_result["trace_identifier"] = getattr(result, "platform_request_id", None)
@@ -1404,7 +1454,7 @@ def run_task(
             runtime_contract_result["analytical_trace_path"] = getattr(result, "analytical_trace_path", None)
             runtime_contract_result["analytical_trace_text_path"] = getattr(result, "analytical_trace_text_path", None)
             result_data.update({
-                **_build_result_payload(result, preferred_method=preferred_method),
+                **payload,
                 "elapsed_seconds": round(elapsed, 1),
                 "preferred_method": preferred_method,
                 "runtime_contract": runtime_contract_result,
@@ -1729,6 +1779,157 @@ def _description_for_comparison_target(
     )
 
 
+def _maybe_retry_with_intra_run_learning(
+    *,
+    build_fn: Callable[..., Any],
+    build_kwargs: Mapping[str, Any],
+    initial_result: Any,
+    initial_payload: dict[str, Any],
+    target_id: str,
+    preferred_method: str | None,
+    reference_target: bool,
+    task_kind: str,
+    instrument_type: str | None,
+    recovery_mode: RecoveryMode,
+) -> tuple[Any, dict[str, Any], dict[str, Any] | None]:
+    """Retry one failed target with an ephemeral candidate-knowledge overlay."""
+    candidate = build_knowledge_patch_candidate(
+        target_id=target_id,
+        preferred_method=preferred_method,
+        instrument_type=instrument_type,
+        recovery_mode=recovery_mode,
+        payload=initial_payload,
+    )
+    if candidate is None:
+        return initial_result, initial_payload, None
+    if not _callable_accepts_keyword(build_fn, "knowledge_overlays"):
+        record = _recovery_attempt_record(
+            candidate,
+            source_payload=initial_payload,
+            decision="candidate_overlay_unavailable",
+            recovered=False,
+            error="build function does not accept knowledge_overlays",
+        )
+        initial_payload["recovery_attempts"] = [record]
+        initial_payload["intra_run_learning"] = _payload_intra_run_learning(
+            initial_payload,
+            candidate=candidate,
+            recovered=False,
+        )
+        return initial_result, initial_payload, record
+
+    retry_kwargs = dict(build_kwargs)
+    retry_metadata = dict(retry_kwargs.get("request_metadata") or {})
+    retry_metadata["intra_run_learning_retry"] = {
+        "attempt": 1,
+        "target_id": target_id,
+        "candidate_id": candidate.candidate_id,
+        "patch_type": candidate.patch_type,
+        "recovery_mode": recovery_mode.value,
+    }
+    retry_kwargs["request_metadata"] = retry_metadata
+    retry_kwargs["knowledge_overlays"] = [candidate.to_payload()]
+
+    record = _recovery_attempt_record(
+        candidate,
+        source_payload=initial_payload,
+        decision="retry_with_candidate_knowledge",
+        recovered=False,
+    )
+    try:
+        retry_result = build_fn(**retry_kwargs)
+    except Exception as exc:
+        record["error"] = str(exc)[:300]
+        initial_payload["recovery_attempts"] = [record]
+        initial_payload["intra_run_learning"] = _payload_intra_run_learning(
+            initial_payload,
+            candidate=candidate,
+            recovered=False,
+        )
+        return initial_result, initial_payload, record
+
+    retry_payload = _build_result_payload(
+        retry_result,
+        preferred_method=preferred_method,
+        reference_target=reference_target,
+        task_kind=task_kind,
+    )
+    retry_payload["attempts"] = int(initial_payload.get("attempts") or 0) + int(
+        retry_payload.get("attempts") or 0
+    )
+    recovered = bool(retry_payload.get("success"))
+    record["recovered"] = recovered
+    retry_payload["recovery_attempts"] = [record]
+    retry_payload["failures_before_recovery"] = list(initial_payload.get("failures") or [])
+    retry_payload["reflection_before_recovery"] = dict(initial_payload.get("reflection") or {})
+    retry_payload["intra_run_learning"] = _payload_intra_run_learning(
+        retry_payload,
+        candidate=candidate,
+        recovered=recovered,
+    )
+    return retry_result, retry_payload, record
+
+
+def _callable_accepts_keyword(fn: Callable[..., Any], name: str) -> bool:
+    """Return whether a callable can accept a named keyword argument."""
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return True
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.kind in {
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        } and parameter.name == name:
+            return True
+    return False
+
+
+def _recovery_attempt_record(
+    candidate: KnowledgePatchCandidate,
+    *,
+    source_payload: Mapping[str, Any],
+    decision: str,
+    recovered: bool,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Build one serializable recovery-attempt record."""
+    record = {
+        "decision": decision,
+        "candidate": candidate.to_payload(),
+        "target_id": candidate.target_id,
+        "recovery_mode": candidate.recovery_mode.value,
+        "recovered": recovered,
+        "source_failures": list(source_payload.get("failures") or []),
+        "source_reflection": dict(source_payload.get("reflection") or {}),
+    }
+    if error:
+        record["error"] = error
+    return record
+
+
+def _payload_intra_run_learning(
+    payload: Mapping[str, Any],
+    *,
+    candidate: KnowledgePatchCandidate,
+    recovered: bool,
+) -> dict[str, Any]:
+    """Merge retry candidate metadata into a payload-local learning summary."""
+    existing = dict(payload.get("intra_run_learning") or {})
+    existing.update(
+        {
+            "overlay_retry_count": 1,
+            "candidate_id": candidate.candidate_id,
+            "patch_type": candidate.patch_type,
+            "target_id": candidate.target_id,
+            "recovered": recovered,
+        }
+    )
+    return existing
+
+
 def _build_result_payload(
     result: Any,
     *,
@@ -1755,6 +1956,7 @@ def _build_result_payload(
         "agent_observations": list(getattr(result, "agent_observations", []) or []),
         "knowledge_summary": dict(getattr(result, "knowledge_summary", {}) or {}),
         "token_usage_summary": dict(getattr(result, "token_usage_summary", {}) or {}),
+        "intra_run_learning": dict(getattr(result, "intra_run_learning", {}) or {}),
         "platform_trace_path": getattr(result, "platform_trace_path", None),
         "platform_request_id": getattr(result, "platform_request_id", None),
         "analytical_trace_path": getattr(result, "analytical_trace_path", None),
@@ -1912,6 +2114,41 @@ def _aggregate_artifacts(method_payloads: dict[str, dict[str, Any]]) -> dict[str
             payload.get("artifacts", {}).get("generated_file_paths", ())
             for payload in method_payloads.values()
         ),
+    }
+
+
+def _aggregate_intra_run_learning(
+    method_payloads: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Merge intra-run learning summaries across comparison targets."""
+    retry_targets: list[str] = []
+    candidate_ids: list[str] = []
+    patch_types: list[str] = []
+    recovered_targets: list[str] = []
+    for target_id, payload in method_payloads.items():
+        if not isinstance(payload, Mapping):
+            continue
+        learning = payload.get("intra_run_learning")
+        if not isinstance(learning, Mapping):
+            continue
+        if int(learning.get("overlay_retry_count") or 0) <= 0:
+            continue
+        target = str(learning.get("target_id") or target_id)
+        retry_targets.append(target)
+        candidate_id = str(learning.get("candidate_id") or "").strip()
+        if candidate_id:
+            candidate_ids.append(candidate_id)
+        patch_type = str(learning.get("patch_type") or "").strip()
+        if patch_type:
+            patch_types.append(patch_type)
+        if bool(learning.get("recovered")):
+            recovered_targets.append(target)
+    return {
+        "overlay_retry_count": len(retry_targets),
+        "retry_targets": _unique_strings(retry_targets),
+        "candidate_ids": _unique_strings(candidate_ids),
+        "patch_types": _unique_strings(patch_types),
+        "recovered_targets": _unique_strings(recovered_targets),
     }
 
 

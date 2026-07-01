@@ -89,6 +89,107 @@ def test_run_task_passes_force_rebuild_and_validation():
     monkeypatch.undo()
 
 
+def test_run_task_strict_mode_does_not_retry_failed_target():
+    from trellis.agent.task_runtime import run_task
+
+    calls: list[dict] = []
+
+    class FailedResult:
+        success = False
+        attempts = 2
+        gap_confidence = 0.4
+        knowledge_gaps = ["missing cookbook"]
+        payoff_cls = None
+        failures = ["helper() got an unexpected keyword argument 'resolved'"]
+        reflection = {
+            "lesson_captured": "fd_044",
+            "gaps_identified": ["Missing helper signature contract"],
+        }
+        agent_observations = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FailedResult()
+
+    result = run_task(
+        {"id": "T20", "title": "Heston ADI PDE"},
+        market_state=object(),
+        build_fn=fake_build,
+        recovery_mode="strict",
+        timer=iter([0.0, 1.0]).__next__,
+        now_fn=lambda: datetime(2026, 3, 24, 12, 0, 0),
+    )
+
+    assert len(calls) == 1
+    assert "knowledge_overlays" not in calls[0]
+    assert result["success"] is False
+    assert result["recovery_mode"] == "strict"
+    assert result["recovery_attempts"] == []
+
+
+def test_run_task_assisted_mode_retries_once_with_candidate_overlay():
+    from trellis.agent.task_runtime import run_task
+
+    calls: list[dict] = []
+
+    class FailedResult:
+        success = False
+        attempts = 2
+        gap_confidence = 0.4
+        knowledge_gaps = ["missing cookbook"]
+        payoff_cls = None
+        failures = ["resolve_double_barrier_inputs() got an unexpected keyword argument 'spot'"]
+        reflection = {
+            "lesson_captured": "fd_045",
+            "gaps_identified": [
+                "Missing cookbook guidance for adapting market-state fields "
+                "into barrier helper inputs"
+            ],
+        }
+        agent_observations = [
+            {
+                "agent": "quant",
+                "kind": "decision",
+                "summary": "Selected pricing method `pde_solver`",
+            }
+        ]
+
+    class RecoveredResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.8
+        knowledge_gaps = []
+        payoff_cls = type("RecoveredPayoff", (), {})
+        failures = []
+        reflection = {}
+        agent_observations = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FailedResult() if len(calls) == 1 else RecoveredResult()
+
+    result = run_task(
+        {"id": "T22", "title": "Double barrier PDE"},
+        market_state=object(),
+        build_fn=fake_build,
+        recovery_mode="assisted",
+        timer=iter([0.0, 2.0]).__next__,
+        now_fn=lambda: datetime(2026, 3, 24, 12, 0, 0),
+    )
+
+    assert len(calls) == 2
+    assert calls[1]["request_metadata"]["intra_run_learning_retry"]["target_id"] == "T22"
+    assert calls[1]["request_metadata"]["intra_run_learning_retry"]["attempt"] == 1
+    assert calls[1]["knowledge_overlays"][0]["target_id"] == "T22"
+    assert calls[1]["knowledge_overlays"][0]["patch_type"] == "cookbook_patch"
+    assert result["success"] is True
+    assert result["attempts"] == 3
+    assert result["recovery_mode"] == "assisted"
+    assert result["recovery_attempts"][0]["decision"] == "retry_with_candidate_knowledge"
+    assert result["recovery_attempts"][0]["recovered"] is True
+    assert result["intra_run_learning"]["overlay_retry_count"] == 1
+
+
 def test_run_task_replays_the_same_simulation_identity_for_the_same_request_and_snapshot():
     from trellis.agent.task_runtime import run_task
 

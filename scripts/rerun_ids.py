@@ -1,5 +1,6 @@
 """Re-run specific task IDs."""
 
+import argparse
 import json
 import os
 import sys
@@ -17,7 +18,17 @@ reload()
 
 from trellis.agent.task_runtime import build_market_state, load_tasks, run_task
 
-ids = set(sys.argv[1:])
+parser = argparse.ArgumentParser(description=__doc__)
+parser.add_argument("ids", nargs="+")
+parser.add_argument(
+    "--recovery-mode",
+    choices=("strict", "assisted", "remediation"),
+    default="assisted",
+    help="Bounded automatic recovery mode for reruns.",
+)
+args = parser.parse_args()
+
+ids = set(args.ids)
 all_tasks = load_tasks(status=None)
 tasks = [task for task in all_tasks if task["id"] in ids]
 ms = build_market_state()
@@ -26,7 +37,7 @@ output_file = ROOT / f"task_results_rerun_{datetime.now().strftime('%H%M')}.json
 results = []
 for i, task in enumerate(tasks):
     print(f"[{i+1}/{len(tasks)}] {task['id']}: {task['title'][:50]}", flush=True)
-    result = run_task(task, ms)
+    result = run_task(task, ms, recovery_mode=args.recovery_mode)
     results.append(result)
     diagnosis_headline = result.get("task_diagnosis_headline")
     diagnosis_packet_path = result.get("task_diagnosis_packet_path")
