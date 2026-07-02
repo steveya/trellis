@@ -227,13 +227,14 @@ That lets sparse manifest rows keep their normal task-inventory shape while
 the curated regression surface still carries the fuller descriptions or market
 blocks needed to exercise canonical comparison cases honestly.
 
-The same runner now also has a full-task replay mode for diagnosis-heavy
-canaries:
+The same runner now also has full-task replay modes for diagnosis-heavy
+canaries.  Cassette-backed replay is for canaries that still require recorded
+LLM calls:
 
 - record with
-  ``PYTHONHASHSEED=0 python3 scripts/record_cassettes.py --task T13``
+  ``PYTHONHASHSEED=0 python3 scripts/record_cassettes.py --task <task-id>``
 - replay with
-  ``PYTHONHASHSEED=0 python3 scripts/run_canary.py --task T13 --replay``
+  ``PYTHONHASHSEED=0 python3 scripts/run_canary.py --task <task-id> --replay``
 - full-task canary cassettes live under ``cassettes/full_task/``
 
 The hash seed matters because the replay contract hashes the full prompt text.
@@ -242,6 +243,14 @@ still depend on iteration order stay stable across processes.
 Run these commands with the repo-standard miniforge interpreter; if your shell
 ``python3`` resolves elsewhere, invoke the configured interpreter path from
 ``AGENTS.md`` directly.
+
+Canaries whose manifest entry sets
+``replay_mode: deterministic_exact_binding`` use a different zero-token replay
+lane.  The runner executes the real ``run_task(...)`` surface under the
+offline-local LLM guard and requires the task to complete through deterministic
+exact bindings.  No cassette calls are consumed, so prompt-hash drift in old
+recordings cannot block the replay.  If such a canary attempts a live LLM call,
+the offline guard fails the run.
 
 Unlike the older tier-2 pipeline cassettes, the full-task canary path replays
 the real ``run_task(...)`` surface. That means the replay still exercises the
@@ -494,11 +503,14 @@ primary implementation provenance. Compatibility route aliases may still
 appear, but only as secondary metadata so replay, canary drift, and learning
 artifacts no longer rely on route-primary checkpoint joins.
 
-For cassette-backed canary replays, the task result and persisted task-run
-record now carry explicit execution metadata:
+For canary replays, the task result and persisted task-run record now carry
+explicit execution metadata:
 
 - ``execution_mode`` is ``cassette_replay`` instead of ``live``
-- ``llm_cassette`` records the cassette name, path, and replay policy
+- ``execution_mode`` is ``deterministic_replay`` for exact-binding replay
+  canaries that do not consume cassette calls
+- ``llm_cassette`` records the cassette name, path, replay policy, and
+  ``used=false`` for deterministic replay
 
 That keeps replay runs obvious to humans and downstream tooling without
 changing the packet or task-result schema that remediation and canary summary

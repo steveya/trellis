@@ -5,6 +5,7 @@ All tests use mocked task execution — no LLM calls, no tokens spent.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -460,6 +461,71 @@ class TestRunCanaries:
         assert results[0]["skipped"] is True
         assert results[0]["reason"] == "replay_unsupported"
 
+    def test_run_canaries_deterministic_replay_uses_offline_local_scope_without_cassette(
+        self, monkeypatch, tmp_path
+    ):
+        seen: dict[str, object] = {}
+
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            return [{"id": "T13", "title": "European call: theta-method convergence order"}]
+
+        def fake_run_task(task, market_state, **kwargs):
+            seen["task_id"] = task["id"]
+            seen["force_rebuild"] = kwargs.get("force_rebuild")
+            seen["offline_env"] = os.environ.get("TRELLIS_OFFLINE_LOCAL_AGENTS")
+            return {
+                "task_id": task["id"],
+                "success": True,
+                "token_usage_summary": {"total_tokens": 0},
+            }
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+
+        results = run_canaries(
+            [
+                {
+                    "id": "T13",
+                    "engine_family": "pde",
+                    "complexity": "simple",
+                    "record_cassette": False,
+                    "replay_mode": "deterministic_exact_binding",
+                }
+            ],
+            {"total_budget_usd": 1.0},
+            replay=True,
+            cassette_dir=tmp_path,
+        )
+
+        assert seen == {
+            "task_id": "T13",
+            "force_rebuild": True,
+            "offline_env": "1",
+        }
+        assert results[0]["success"] is True
+        assert results[0]["execution_mode"] == "deterministic_replay"
+        assert results[0]["offline_local_agents"] is True
+        assert results[0]["llm_cassette"] == {
+            "mode": "deterministic_replay",
+            "name": "T13",
+            "path": str(tmp_path / "T13.yaml"),
+            "stale_policy": "error",
+            "used": False,
+        }
+
     def test_run_canaries_replay_mode_uses_full_task_cassette(self, monkeypatch, tmp_path):
         from trellis.agent.cassette import _prompt_hash
 
@@ -669,6 +735,7 @@ class TestCanaryFileValidity:
         assert "extension" in canary_kinds
         assert "negative" in canary_kinds
         assert "legacy_replay" in canary_kinds
+        assert "deterministic_replay" in canary_kinds
 
     def test_real_canary_ids_exist_in_active_task_manifests(self):
         from trellis.agent.task_manifests import load_active_task_lookup
@@ -691,8 +758,9 @@ class TestCanaryFileValidity:
         expected_ids = {"T13", "T38", "F001", "F002", "P003", "N001"}
         assert expected_ids <= set(canary_lookup)
 
-        assert canary_lookup["T13"]["canary_kind"] == "legacy_replay"
-        assert canary_lookup["T13"].get("record_cassette", True) is True
+        assert canary_lookup["T13"]["canary_kind"] == "deterministic_replay"
+        assert canary_lookup["T13"].get("record_cassette", True) is False
+        assert canary_lookup["T13"]["replay_mode"] == "deterministic_exact_binding"
         assert canary_lookup["T38"].get("record_cassette", True) is False
         assert canary_lookup["F001"]["canary_kind"] == "parity"
         assert canary_lookup["P003"]["canary_kind"] == "extension"
