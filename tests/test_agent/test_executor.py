@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from contextlib import contextmanager
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 import sys
 
@@ -2585,6 +2586,30 @@ def test_resolve_output_target_uses_benchmark_generated_root_for_financepy_tasks
     ).replace("\\", "/")
     assert output_module_path == "task_runs/financepy_benchmarks/generated/f009/analytical/barrieroption.py"
     assert module_name == "trellis_benchmarks._fresh.f009.analytical.barrieroption"
+
+
+def test_resolve_output_target_sanitizes_agent_prompt_filename():
+    from trellis.agent.executor import _resolve_output_target
+
+    bad_module_path = (
+        "instruments/_agent/buildapricerfor:cranknicolsonrannachersmoothingfordiscontinuouss\n\n"
+        "constructmethods:pdesolver\n"
+        "comparisontargets:cnrannacher(pdesolver),cnstandard(pdesolver).py"
+    )
+
+    _, output_module_path, module_name = _resolve_output_target(
+        bad_module_path,
+        fresh_build=False,
+        request_metadata={"task_id": "T23", "comparison_target": "cn_rannacher"},
+    )
+
+    assert output_module_path.startswith("instruments/_agent/")
+    assert output_module_path.endswith(".py")
+    assert "\n" not in output_module_path
+    assert ":" not in output_module_path
+    assert "buildapricerfor" not in output_module_path
+    assert len(Path(output_module_path).name) <= 75
+    assert module_name.startswith("trellis.instruments._agent.")
 
 
 def test_knowledge_retrieval_stage_maps_builder_retry_reasons():

@@ -697,9 +697,11 @@ def _plan_static(
                 break
 
     if class_name is None:
-        words = description.split()[:2]
-        class_name = "".join(w.capitalize() for w in words) + "Payoff"
-        module = f"instruments/_agent/{class_name.lower()}.py"
+        fallback_tokens = _fallback_description_tokens(description)
+        class_tokens = fallback_tokens[:2] or ["agent", "payoff"]
+        class_name = "".join(token.capitalize() for token in class_tokens) + "Payoff"
+        module_slug = _fallback_module_slug(fallback_tokens)
+        module = f"instruments/_agent/{module_slug}.py"
 
     step = BuildStep(
         module_path=module,
@@ -719,6 +721,25 @@ def _plan_static(
         missing=frozenset(missing),
         spec_schema=spec_schema,
     )
+
+
+def _fallback_description_tokens(description: str) -> list[str]:
+    """Extract stable fallback tokens from a free-form build request."""
+    lines = [line.strip() for line in str(description or "").splitlines() if line.strip()]
+    candidate = lines[0] if lines else str(description or "")
+    candidate = re.sub(r"^\s*build\s+a\s+pricer\s+for\s*:\s*", "", candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r"^\s*buildapricerfor\s*:?\s*", "", candidate, flags=re.IGNORECASE)
+    tokens = re.findall(r"[A-Za-z0-9]+", candidate)
+    if not tokens:
+        tokens = re.findall(r"[A-Za-z0-9]+", str(description or ""))
+    return [token.lower() for token in tokens]
+
+
+def _fallback_module_slug(tokens: list[str], *, max_length: int = 72) -> str:
+    slug = "_".join(tokens[:8]).strip("_") or "agent_payoff"
+    if len(slug) > max_length:
+        slug = slug[:max_length].rstrip("_")
+    return slug or "agent_payoff"
 
 
 def _select_specialized_spec(

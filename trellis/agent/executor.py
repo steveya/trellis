@@ -1028,6 +1028,7 @@ def build_payoff(
         preferred_method=pricing_plan.method,
         spec_schema_hint=_spec_hint,
     )
+    plan = _sanitize_build_plan_module_paths(plan, request_metadata=request_metadata)
     hydrated_spec_schema = _hydrate_spec_schema_defaults_from_semantics(
         getattr(plan, "spec_schema", None),
         semantic_contract=(
@@ -4546,7 +4547,11 @@ def _try_import_existing(plan) -> type | None:
 
     for step in plan.steps:
         file_path = TRELLIS_ROOT / step.module_path
-        if not file_path.exists():
+        try:
+            exists = file_path.exists()
+        except OSError:
+            return None
+        if not exists:
             return None
 
     last_step = plan.steps[-1]
@@ -4558,6 +4563,30 @@ def _try_import_existing(plan) -> type | None:
         return getattr(mod, plan.payoff_class_name, None)
     except Exception:
         return None
+
+
+def _sanitize_build_plan_module_paths(plan, *, request_metadata: Mapping[str, object] | None):
+    """Sanitize generated `_agent` module paths before reuse or write resolution."""
+    steps = list(getattr(plan, "steps", ()) or ())
+    if not steps:
+        return plan
+
+    sanitized_steps = []
+    changed = False
+    for step in steps:
+        module_path = str(getattr(step, "module_path", "") or "")
+        sanitized = _sanitize_agent_output_module_path(
+            module_path,
+            request_metadata=request_metadata,
+        )
+        if sanitized != module_path:
+            step = replace_dataclass(step, module_path=sanitized)
+            changed = True
+        sanitized_steps.append(step)
+
+    if not changed:
+        return plan
+    return replace_dataclass(plan, steps=sanitized_steps)
 
 
 def _deterministic_reuse_module_paths() -> frozenset[str]:
@@ -4618,6 +4647,10 @@ def _resolve_output_target(
     and catching the leak post-build (QUA-872, layered under QUA-866).
     """
     normalized_module_path = str(module_path or "").replace("\\", "/").strip()
+    normalized_module_path = _sanitize_agent_output_module_path(
+        normalized_module_path,
+        request_metadata=request_metadata,
+    )
     if fresh_build and _is_agent_module_path(normalized_module_path):
         benchmark_root = _benchmark_fresh_build_root(request_metadata)
         if benchmark_root is not None:
@@ -4648,6 +4681,37 @@ def _resolve_output_target(
     output_file_path = TRELLIS_PACKAGE_ROOT / normalized_module_path
     module_name = f"trellis.{normalized_module_path.replace('/', '.').replace('.py', '')}"
     return output_file_path, normalized_module_path, module_name
+
+
+def _sanitize_agent_output_module_path(
+    module_path: str,
+    *,
+    request_metadata: Mapping[str, object] | None,
+    max_stem_length: int = 72,
+) -> str:
+    """Bound unsafe `_agent` module filenames derived from free-form prompts."""
+    normalized = str(module_path or "").replace("\\", "/").strip()
+    if not normalized or not _is_agent_module_path(normalized):
+        return normalized
+
+    parent, separator, filename = normalized.rpartition("/")
+    raw_stem = filename[:-3] if filename.endswith(".py") else filename
+    safe_stem = _normalize_fresh_build_token(raw_stem)
+    safe_stem = re.sub(r"^buildapricerfor_?", "", safe_stem).strip("_")
+    if not safe_stem:
+        metadata = dict(request_metadata or {})
+        safe_stem = (
+            _normalize_fresh_build_token(metadata.get("comparison_target"))
+            or _normalize_fresh_build_token(metadata.get("preferred_method"))
+            or _normalize_fresh_build_token(metadata.get("task_id"))
+            or "agent_payoff"
+        )
+    if len(safe_stem) > max_stem_length:
+        safe_stem = safe_stem[:max_stem_length].rstrip("_")
+    safe_filename = f"{safe_stem or 'agent_payoff'}.py"
+    if filename == safe_filename:
+        return normalized
+    return f"{parent}{separator}{safe_filename}" if separator else safe_filename
 
 
 _FRESH_ISOLATION_SEGMENT = "/_fresh/"

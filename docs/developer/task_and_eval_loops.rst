@@ -424,6 +424,16 @@ you need to understand a failure or confirm a success. The batch runner now
 surfaces those packet paths directly on the task result so you do not have to
 reconstruct them from traces or summary files.
 
+Task-result rows also mirror the diagnosis packet's compact outcome fields:
+``failure_bucket``, ``diagnosis_headline``, ``diagnosis_decision_stage``, and
+``diagnosis_next_action``. The older ``task_diagnosis_*`` path/status fields
+remain for compatibility, but remediation and batch summaries should prefer
+the canonical aliases when they are present. ``scripts/remediate.py
+--analyze-only`` uses those structured buckets before raw text heuristics, so
+proof-task failures stay grouped as ``blocked``,
+``comparator_build_failure``, or ``comparison_insufficient_results`` instead
+of collapsing into a generic validation-failure bucket.
+
 Stochastic-volatility task runs also carry a ``computational_problem`` block
 when the task target is Heston, Bates, SLV/LSV, or a related unsupported
 path-dependent control shape. The block is copied into the task result,

@@ -1025,6 +1025,10 @@ def test_run_task_persists_latest_record(monkeypatch):
     assert result["task_diagnosis_latest_packet_path"] == "/tmp/task_runs/diagnostics/latest/T13.json"
     assert result["task_diagnosis_latest_dossier_path"] == "/tmp/task_runs/diagnostics/latest/T13.md"
     assert result["task_diagnosis_headline"] == "Demo task completed successfully."
+    assert result["failure_bucket"] == "success"
+    assert result["diagnosis_headline"] == "Demo task completed successfully."
+    assert result["diagnosis_decision_stage"] == "completed"
+    assert result["diagnosis_next_action"] == "No action required."
     assert result["task_diagnosis_persist_error"] == ""
     assert result["task_diagnosis_persist_skipped"] == ""
 

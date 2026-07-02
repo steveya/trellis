@@ -213,6 +213,9 @@ def analyze_failures(results: list[dict]) -> dict:
     ]
 
     categories = {
+        "blocked": [],                 # Deterministic blocker / honest implementation gap
+        "comparator_build_failure": [],  # One or more comparison lanes failed to build
+        "comparison_insufficient_results": [],  # Not enough method results to compare
         "import_hallucination": [],    # Wrong import paths
         "missing_market_data": [],      # Missing task or market-data capability
         "missing_cookbook": [],         # No cookbook for method
@@ -227,6 +230,11 @@ def analyze_failures(results: list[dict]) -> dict:
     }
 
     for r in failures:
+        structured_bucket = _structured_failure_bucket(r)
+        if structured_bucket:
+            categories.setdefault(structured_bucket, []).append(r)
+            continue
+
         err = _failure_text(r)
         gaps = r.get("knowledge_gaps", [])
         conf = r.get("gap_confidence", 1.0)
@@ -295,6 +303,19 @@ def analyze_failures(results: list[dict]) -> dict:
             categories["other"].append(r)
 
     return categories
+
+
+def _structured_failure_bucket(result: dict) -> str:
+    """Return a trusted task-diagnosis bucket when one is present."""
+    bucket = str(
+        result.get("failure_bucket")
+        or result.get("task_diagnosis_failure_bucket")
+        or result.get("diagnosis_failure_bucket")
+        or ""
+    ).strip()
+    if not bucket or bucket in {"success", "unknown"}:
+        return ""
+    return bucket
 
 
 def _result_trace_paths(results: list[dict]) -> list[Path]:

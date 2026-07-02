@@ -1545,6 +1545,14 @@ def run_task(
         result_data["task_diagnosis_next_action"] = persisted.get("diagnosis_next_action")
         result_data["task_diagnosis_persist_error"] = persisted.get("diagnosis_persist_error")
         result_data["task_diagnosis_persist_skipped"] = persisted.get("diagnosis_persist_skipped")
+        if persisted.get("diagnosis_failure_bucket"):
+            result_data["failure_bucket"] = persisted.get("diagnosis_failure_bucket")
+        if persisted.get("diagnosis_headline"):
+            result_data["diagnosis_headline"] = persisted.get("diagnosis_headline")
+        if persisted.get("diagnosis_decision_stage"):
+            result_data["diagnosis_decision_stage"] = persisted.get("diagnosis_decision_stage")
+        if persisted.get("diagnosis_next_action"):
+            result_data["diagnosis_next_action"] = persisted.get("diagnosis_next_action")
     except Exception as exc:
         result_data["task_run_persist_error"] = str(exc)[:200]
 

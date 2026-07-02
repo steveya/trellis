@@ -130,6 +130,21 @@ def test_analyze_failures_excludes_expected_honest_blocks():
     assert all(not tasks for tasks in categories.values())
 
 
+def test_analyze_failures_prefers_structured_task_diagnosis_bucket():
+    result = {
+        "task_id": "T13",
+        "success": False,
+        "task_diagnosis_failure_bucket": "comparator_build_failure",
+        "failures": ["theta_0.5 failed to build"],
+    }
+
+    categories = remediate.analyze_failures([result])
+
+    assert [r["task_id"] for r in categories["comparator_build_failure"]] == ["T13"]
+    assert not categories["validation_failure"]
+    assert not categories["other"]
+
+
 def test_analyze_failures_buckets_missing_capabilities_as_market_data():
     result = {
         "task_id": "T901",
