@@ -647,6 +647,17 @@ The Heston ADI PDE target uses the same model-parameter boundary. The
 FFT/COS transform calls are optional diagnostics, not the ADI market-binding
 contract.
 
+Double-barrier PDE and Monte Carlo targets use the same helper-owned contract
+style. When the compiled primitive plan selects
+``price_double_barrier_option_pde_result`` or
+``price_double_barrier_option_monte_carlo_result`` as the required route
+helper, a generated adapter should stay thin and call that helper with
+``market_state`` plus the original spec-like object. Semantic validation treats
+the checked helper as owning its internal grid, operator, barrier monitor,
+terminal payoff, and discounting obligations, but it still rejects adapters
+that skip the helper or invent alternate raw inputs such as ``spot`` or barrier
+keywords.
+
 The ADI helper also owns its variance-grid domain. The grid upper bound is
 based on the CIR variance-process dispersion, not a raw ``xi * sqrt(T)`` move;
 otherwise high vol-of-vol fixtures place the initial variance too close to the

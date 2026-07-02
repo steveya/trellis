@@ -190,6 +190,16 @@ comparison, and market-binding obligations are recorded as structured compiler
 inputs; the compiler does not overwrite an existing checked backend binding
 from an overlay.
 
+For checked helper-backed routes, semantic validation now separates the helper
+surface from the helper internals.  A thin adapter that calls the admitted
+route helper with the exact ``(market_state, spec, *, config=...)`` style
+surface can satisfy lower-level primitive obligations owned inside that helper,
+such as grid assembly, barrier monitors, terminal payoff construction, and
+discounting.  The closure is deliberately narrow: if the adapter skips the
+required helper or invents unsupported helper keywords, validation still emits
+a blocking route-helper finding and the retry cannot be promoted as reusable
+learning.
+
 What Future Builds Actually Reuse
 ---------------------------------
 
