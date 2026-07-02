@@ -3,10 +3,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from contextlib import contextmanager
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 import sys
 
 import pytest
+
+
+def test_comparison_target_prefers_per_build_metadata():
+    from trellis.agent.executor import _comparison_target_from_build_metadata
+
+    compiled_request = SimpleNamespace(
+        request=SimpleNamespace(metadata={"comparison_target": "compiled_target"})
+    )
+
+    assert _comparison_target_from_build_metadata(
+        compiled_request,
+        {"comparison_target": "task_target"},
+    ) == "task_target"
 
 
 def test_build_payoff_reuse_branch_attaches_analytical_trace(monkeypatch, tmp_path):
@@ -768,7 +782,51 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_mc_helpe
 @pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
-        ("heston_mc", 'scheme="euler"'),
+        ("theta_0.5", "price_vanilla_equity_option_pde(market_state, spec, theta=0.5)"),
+        ("theta_1.0", "price_vanilla_equity_option_pde(market_state, spec, theta=1.0)"),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_helper_wrapper(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.equity_option_pde.price_vanilla_equity_option_pde",
+        ),
+        primitive_plan=SimpleNamespace(route="vanilla_equity_theta_pde"),
+        method="pde_solver",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European call: theta-method convergence order measurement",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde" in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
+        ("heston_mc", 'scheme="heston_qe"'),
         ("euler_heston", 'scheme="euler"'),
         ("qe_heston", 'scheme="heston_qe"'),
     ],
@@ -807,6 +865,144 @@ def test_deterministic_exact_binding_module_materializes_heston_mc_helper_wrappe
     assert generated is not None
     assert "price_heston_option_monte_carlo(market_state, spec" in generated.code
     assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_heston_adi_helper():
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(
+            route="heston_adi_2d",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.pde.heston_adi",
+                    "price_heston_option_adi_pde_result",
+                    "route_helper",
+                ),
+            ),
+        ),
+        method="pde_solver",
+        instrument_type="heston_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["heston_option"],
+        "Heston ADI checked helper",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="heston_adi_pde",
+    )
+
+    assert generated is not None
+    assert (
+        "from trellis.models.pde.heston_adi import price_heston_option_adi_pde_result"
+        in generated.code
+    )
+    assert "price_heston_option_adi_pde_result(market_state, spec).price" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    "comparison_target",
+    [
+        "heston_adi_pde",
+        "pde_double_barrier",
+        "mc_double_barrier",
+        "mc_autocall",
+        "mc_autocall_qmc",
+    ],
+)
+def test_deterministic_exact_binding_module_does_not_materialize_learning_targets(comparison_target):
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(route="target_helper"),
+        method="pde_solver" if comparison_target in {"heston_adi_pde", "pde_double_barrier"} else "monte_carlo",
+        instrument_type="barrier_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["barrier_option"],
+        "Failed pack helper target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is None
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_sampling"),
+    [
+        ("mc_autocall", "pseudo"),
+        ("mc_autocall_qmc", "sobol"),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_autocallable_helper(
+    comparison_target,
+    expected_sampling,
+):
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(
+            route="monte_carlo_paths",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.autocallable",
+                    "price_autocallable_monte_carlo_result",
+                    "route_helper",
+                ),
+            ),
+        ),
+        method="monte_carlo",
+        instrument_type="autocallable",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["autocallable"],
+        "Autocallable helper target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.autocallable import price_autocallable_monte_carlo_result" in generated.code
+    assert (
+        f'price_autocallable_monte_carlo_result(market_state, spec, sampling="{expected_sampling}").price'
+        in generated.code
+    )
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -1444,6 +1640,52 @@ def test_deterministic_exact_binding_module_materializes_barrier_helper_with_tim
     assert "from trellis.core.date_utils import year_fraction" in generated.code
     assert "barrier_option_price(" in generated.code
     assert "year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("helper_ref", "expected_call"),
+    [
+        (
+            "trellis.models.double_barrier_option.price_double_barrier_option_pde_result",
+            "price_double_barrier_option_pde_result(market_state, spec).price",
+        ),
+        (
+            "trellis.models.double_barrier_option.price_double_barrier_option_monte_carlo_result",
+            "price_double_barrier_option_monte_carlo_result(market_state, spec).price",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_double_barrier_helpers(
+    helper_ref,
+    expected_call,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper_ref,),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type="barrier_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["barrier_option"],
+        "Double barrier checked helper",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -2388,6 +2630,30 @@ def test_resolve_output_target_uses_benchmark_generated_root_for_financepy_tasks
     ).replace("\\", "/")
     assert output_module_path == "task_runs/financepy_benchmarks/generated/f009/analytical/barrieroption.py"
     assert module_name == "trellis_benchmarks._fresh.f009.analytical.barrieroption"
+
+
+def test_resolve_output_target_sanitizes_agent_prompt_filename():
+    from trellis.agent.executor import _resolve_output_target
+
+    bad_module_path = (
+        "instruments/_agent/buildapricerfor:cranknicolsonrannachersmoothingfordiscontinuouss\n\n"
+        "constructmethods:pdesolver\n"
+        "comparisontargets:cnrannacher(pdesolver),cnstandard(pdesolver).py"
+    )
+
+    _, output_module_path, module_name = _resolve_output_target(
+        bad_module_path,
+        fresh_build=False,
+        request_metadata={"task_id": "T23", "comparison_target": "cn_rannacher"},
+    )
+
+    assert output_module_path.startswith("instruments/_agent/")
+    assert output_module_path.endswith(".py")
+    assert "\n" not in output_module_path
+    assert ":" not in output_module_path
+    assert "buildapricerfor" not in output_module_path
+    assert len(Path(output_module_path).name) <= 75
+    assert module_name.startswith("trellis.instruments._agent.")
 
 
 def test_knowledge_retrieval_stage_maps_builder_retry_reasons():

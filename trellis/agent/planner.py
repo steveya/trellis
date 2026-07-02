@@ -168,6 +168,19 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
         ],
     ),
+    "heston_option": SpecSchema(
+        class_name="HestonOptionPayoff",
+        spec_name="HestonOptionSpec",
+        requirements=["discount_curve", "model_parameters", "spot"],
+        fields=[
+            FieldDef("notional", "float", "Notional / number of shares", "1.0"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("strike", "float", "Option strike price"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
     "digital_option": SpecSchema(
         class_name="DigitalOptionPayoff",
         spec_name="DigitalOptionSpec",
@@ -269,6 +282,24 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("averaging_type", "str", "Averaging: 'arithmetic' or 'geometric'", "'arithmetic'"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
             FieldDef("n_observations", "int", "Number of averaging observations", "12"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "autocallable": SpecSchema(
+        class_name="AutocallablePayoff",
+        spec_name="AutocallableSpec",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Autocallable notional", "100.0"),
+            FieldDef("spot", "float", "Current underlier spot", "100.0"),
+            FieldDef("initial_spot", "float", "Initial underlier fixing used for barrier ratios", "100.0"),
+            FieldDef("expiry_date", "date", "Final maturity date"),
+            FieldDef("observation_times", "tuple[float, ...]", "Observation times in years", "(0.25, 0.5, 0.75, 1.0)"),
+            FieldDef("autocall_barrier", "float", "Autocall barrier as absolute level or ratio", "1.0"),
+            FieldDef("protection_barrier", "float", "Terminal protection barrier as absolute level or ratio", "0.7"),
+            FieldDef("coupon_rate", "float", "Annual coupon rate", "0.08"),
+            FieldDef("n_paths", "int", "Number of Monte Carlo paths", "50000"),
+            FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
         ],
     ),
@@ -666,9 +697,11 @@ def _plan_static(
                 break
 
     if class_name is None:
-        words = description.split()[:2]
-        class_name = "".join(w.capitalize() for w in words) + "Payoff"
-        module = f"instruments/_agent/{class_name.lower()}.py"
+        fallback_tokens = _fallback_description_tokens(description)
+        class_tokens = fallback_tokens[:2] or ["agent", "payoff"]
+        class_name = "".join(token.capitalize() for token in class_tokens) + "Payoff"
+        module_slug = _fallback_module_slug(fallback_tokens)
+        module = f"instruments/_agent/{module_slug}.py"
 
     step = BuildStep(
         module_path=module,
@@ -688,6 +721,25 @@ def _plan_static(
         missing=frozenset(missing),
         spec_schema=spec_schema,
     )
+
+
+def _fallback_description_tokens(description: str) -> list[str]:
+    """Extract stable fallback tokens from a free-form build request."""
+    lines = [line.strip() for line in str(description or "").splitlines() if line.strip()]
+    candidate = lines[0] if lines else str(description or "")
+    candidate = re.sub(r"^\s*build\s+a\s+pricer\s+for\s*:\s*", "", candidate, flags=re.IGNORECASE)
+    candidate = re.sub(r"^\s*buildapricerfor\s*:?\s*", "", candidate, flags=re.IGNORECASE)
+    tokens = re.findall(r"[A-Za-z0-9]+", candidate)
+    if not tokens:
+        tokens = re.findall(r"[A-Za-z0-9]+", str(description or ""))
+    return [token.lower() for token in tokens]
+
+
+def _fallback_module_slug(tokens: list[str], *, max_length: int = 72) -> str:
+    slug = "_".join(tokens[:8]).strip("_") or "agent_payoff"
+    if len(slug) > max_length:
+        slug = slug[:max_length].rstrip("_")
+    return slug or "agent_payoff"
 
 
 def _select_specialized_spec(

@@ -30,6 +30,10 @@ _ENGINE_SIGNATURES = {
     "waterfall": ("Waterfall", "Tranche"),
 }
 
+_ROUTE_SIGNATURES = {
+    "heston_adi_2d": ("price_heston_option_adi_pde_result", "HestonAdiPDEConfig"),
+}
+
 # Discount patterns
 _DISCOUNT_PATTERNS = (
     "market_state.discount",
@@ -38,6 +42,9 @@ _DISCOUNT_PATTERNS = (
     "df(",
     ".discount(",
 )
+_CHECKED_ROUTE_HELPER_SYMBOLS = frozenset({
+    "price_heston_option_monte_carlo",
+})
 
 _EXACT_HELPER_SIGNATURES = {
     "price_cds_analytical": {
@@ -488,6 +495,11 @@ def _calls_symbol(source: str, symbol: str) -> bool:
     return re.search(rf"\b{re.escape(symbol)}\s*\(", source) is not None
 
 
+def _calls_checked_route_helper(source: str) -> bool:
+    """Return whether source delegates to a checked helper-owned route."""
+    return any(_calls_symbol(source, symbol) for symbol in _CHECKED_ROUTE_HELPER_SYMBOLS)
+
+
 def _call_matches_symbol(node: ast.Call, symbol: str) -> bool:
     """Whether one AST call targets the requested symbol."""
     func = node.func
@@ -522,6 +534,8 @@ class AlgorithmContractValidator:
             return ()
 
         exact_surface_primitives = _exact_surface_primitives(plan, route_spec)
+        if _calls_checked_route_helper(source):
+            return ()
 
         # 1. Engine family consistency
         findings.extend(self._check_engine_family(source, route_spec, exact_surface_primitives))
@@ -546,7 +560,7 @@ class AlgorithmContractValidator:
     ) -> list[SemanticFinding]:
         """Verify code uses the expected engine family signatures."""
         engine = route_spec.engine_family
-        signatures = _ENGINE_SIGNATURES.get(engine, ())
+        signatures = _ROUTE_SIGNATURES.get(route_spec.id, _ENGINE_SIGNATURES.get(engine, ()))
         if not signatures:
             return []
 

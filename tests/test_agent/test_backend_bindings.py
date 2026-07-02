@@ -248,6 +248,35 @@ def test_resolve_backend_binding_spec_uses_heston_transform_helper():
     )
 
 
+def test_resolve_backend_binding_spec_uses_heston_adi_result_identity():
+    catalog = load_backend_binding_catalog()
+    heston_adi = find_backend_binding_by_route_id("heston_adi_2d", catalog)
+
+    assert heston_adi is not None
+
+    resolved = resolve_backend_binding_spec(
+        heston_adi,
+        product_ir=ProductIR(
+            instrument="heston_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("stochastic_vol",),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="stochastic_volatility",
+        ),
+    )
+
+    assert resolved.binding_id == (
+        "trellis.models.pde.heston_adi.price_heston_option_adi_pde_result"
+    )
+    assert resolved.exact_target_refs == (
+        "trellis.models.pde.heston_adi.price_heston_option_adi_pde_result",
+    )
+    assert resolved.market_binding_refs == (
+        "trellis.models.pde.heston_adi.resolve_heston_adi_pde_inputs",
+    )
+
+
 @pytest.mark.parametrize(
     "product_ir,expected_route_family,expected_helper_refs,expected_kernel_refs",
     [

@@ -2547,6 +2547,7 @@ def _traits_from_text(desc: str) -> tuple[str, ...]:
     trait_aliases = {
         "asian": ("asian",),
         "barrier": ("barrier",),
+        "double_barrier": ("double barrier", "double_barrier", "lower and upper barriers"),
         "digital": (
             "digital",
             "cash_or_nothing",
@@ -3070,6 +3071,18 @@ def _candidate_engine_families_for(
 
 def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> ProductIR:
     """Augment ProductIR with high-signal request context missing from static decompositions."""
+    desc = _normalise(description)
+    if ir.instrument == "barrier_option" and (
+        "double_barrier" in desc
+        or "lower_and_upper_barriers" in desc
+        or "lower_upper_barriers" in desc
+    ):
+        payoff_traits = list(ir.payoff_traits)
+        for trait in ("barrier", "double_barrier"):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+        ir = replace(ir, payoff_traits=tuple(payoff_traits))
+
     if ir.instrument == "quanto_option":
         candidate_engine_families = list(ir.candidate_engine_families)
         for family in ("analytical", "monte_carlo"):
@@ -3306,6 +3319,8 @@ def _route_families_for(
         families.append("exercise")
         families.append("equity_tree")
     if instrument == "barrier_option" and model_family == "equity_diffusion":
+        families.append("pde_solver")
+    if instrument == "heston_option" and model_family == "stochastic_volatility":
         families.append("pde_solver")
     if (
         instrument in {"callable_bond", "puttable_bond", "bermudan_swaption"}

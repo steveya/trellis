@@ -2202,6 +2202,7 @@ class TestEngineFamilyCoverage:
         "analytical_garman_kohlhagen": "analytical",
         "transform_fft": "fft_pricing",
         "vanilla_equity_theta_pde": "pde_solver",
+        "heston_adi_2d": "pde_solver",
         "pde_theta_1d": "pde_solver",
         "copula_loss_distribution": "copula",
         "waterfall_cashflows": "waterfall",

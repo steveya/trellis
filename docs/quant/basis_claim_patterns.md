@@ -31,9 +31,12 @@ probability and rebate term:
 - `rebate_value` is the discounted rebate paid on breach (zero for
   many contracts).
 
-Currently route-local in `trellis.models.analytical.barrier`.  See
-`trellis/models/analytical/support/barriers.py` for the placeholder
-awaiting a second consumer before promotion to shared support.
+Single-barrier analytical formulas remain route-local in
+`trellis.models.analytical.barrier`.  Double-barrier PDE and Monte Carlo
+adapters can now share `trellis.models.analytical.support.barriers`, where the
+second consumer has promoted lower/upper barrier payoff and monitoring
+semantics into shared support.  The adapter still owns the numerical route,
+parity assembly, and discounting.
 
 ## Path-Dependent (Future)
 

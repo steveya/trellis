@@ -86,11 +86,17 @@ monte_carlo:
     - "from trellis.models.monte_carlo.early_exercise import EarlyExercisePolicyResult, LeastSquaresContinuationEstimator"
     - "from trellis.models.monte_carlo.schemes import HestonQuadraticExponential, LaguerreBasis"
     - "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo, price_heston_option_monte_carlo_result"
+    - "from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff"
+    - "from trellis.models.autocallable import AutocallableMonteCarloConfig, price_autocallable_monte_carlo_result, resolve_autocallable_inputs"
+    - "from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_state_payoff, resolve_double_barrier_inputs"
+    - "from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, price_double_barrier_option_monte_carlo_result"
     - "from trellis.models.monte_carlo import euler_maruyama, milstein, brownian_bridge"
-    - "from trellis.models.monte_carlo import antithetic, control_variate"
+    - "from trellis.models.monte_carlo import antithetic, control_variate, sobol_normals"
     - "from trellis.models.processes.gbm import GBM"
   notes:
     - "For American/Bermudan Monte Carlo, simulate paths then call an approved early-exercise control primitive; Trellis currently implements longstaff_schwartz"
+    - "Autocallable MC routes should prefer `price_autocallable_monte_carlo_result(...)`; use `sampling='sobol'` only for QMC comparison targets"
+    - "Double-barrier MC routes should use two barrier monitors or `double_barrier_state_payoff(...)` instead of adapting a one-barrier analytical formula"
     - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"
     - "Do not invent method='lsm' on MonteCarloEngine"
 
@@ -110,6 +116,9 @@ pde:
   module: trellis.models.pde
   key_imports:
     - "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde"
+    - "from trellis.models.pde.heston_adi import HestonAdiPDEConfig, resolve_heston_adi_pde_inputs, price_heston_option_adi_pde_result"
+    - "from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff, resolve_double_barrier_inputs"
+    - "from trellis.models.double_barrier_option import DoubleBarrierPDEConfig, price_double_barrier_option_pde_result"
     - "from trellis.models.pde.grid import Grid"
     - "from trellis.models.pde.theta_method import theta_method_1d"
     - "from trellis.models.pde.operator import BlackScholesOperator"
@@ -117,6 +126,8 @@ pde:
     - "from trellis.models.pde import HullWhitePDEOperator"
   notes:
     - "Vanilla European equity PDE routes should prefer the checked-in helper `price_vanilla_equity_option_pde(...)`"
+    - "European Heston PDE routes should bind explicit Heston parameters and may use the Heston ADI result object as numerical evidence; a Black vol surface is not a live Heston parameter source"
+    - "Double-barrier PDE routes should build a bounded `[lower_barrier, upper_barrier]` grid with absorbing boundary functions and a terminal payoff from `terminal_double_barrier_payoff(...)`"
     - "Use theta_method_1d, NOT legacy crank_nicolson_1d or implicit_fd_1d"
     - "theta=0.5 for Crank-Nicolson, theta=1.0 for fully implicit"
     - "Grid constructor: Grid(x_min, x_max, n_x, T, n_t, log_spacing=False); never omit x_min or n_t"

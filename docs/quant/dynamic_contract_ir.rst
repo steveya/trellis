@@ -118,6 +118,13 @@ The automatic and financial-control fixtures stay intentionally bounded:
 - the GMWB cohort carries explicit account-value and guarantee-base state plus
   a continuous withdrawal action
 
+Single-underlier autocallable proof pricing has a checked helper in
+``trellis.models.autocallable`` for the bounded MC/QMC event contract, but that
+helper is not the route-free dynamic-contract compiler. It exists so task
+adapters can reuse stable observation, trigger, coupon, terminal protection,
+and sampling semantics while the broader dynamic wrapper track remains
+fail-closed outside admitted executable cohorts.
+
 These decompositions are still fixture-grade and deterministic. They exist to
 prove that Trellis can emit one dynamic semantic authority packet per lane
 without route-local product authority, not to claim broad free-form product

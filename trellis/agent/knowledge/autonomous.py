@@ -23,7 +23,7 @@ from datetime import datetime, timezone
 from dataclasses import replace
 from dataclasses import dataclass, field
 import os
-from typing import Any, Mapping
+from typing import Any, Mapping, Sequence
 
 
 class BuildTrackingFailure(RuntimeError):
@@ -63,6 +63,7 @@ class BuildResult:
     admission_target_file_path: str | None = None
     blocker_details: dict[str, Any] | None = None
     token_usage_summary: dict[str, Any] = field(default_factory=dict)
+    intra_run_learning: dict[str, Any] = field(default_factory=dict)
     gate_decision: object | None = None  # BuildGateDecision when gate evaluated
     post_build_tracking: dict[str, Any] = field(default_factory=dict)
 
@@ -158,6 +159,8 @@ def build_with_knowledge(
     preferred_method: str | None = None,
     comparison_target: str | None = None,
     request_metadata: Mapping[str, object] | None = None,
+    semantic_contract=None,
+    knowledge_overlays: Sequence[Mapping[str, object]] | None = None,
 ) -> BuildResult:
     """Build a payoff class while autonomously managing the knowledge lifecycle.
 
@@ -270,6 +273,8 @@ def build_with_knowledge(
                 fresh_build=fresh_build,
                 preferred_method=preferred_method,
                 request_metadata=request_metadata,
+                semantic_contract=semantic_contract,
+                knowledge_overlays=knowledge_overlays,
             )
             result.payoff_cls = payoff_cls
             result.success = payoff_cls is not None
@@ -290,6 +295,7 @@ def build_with_knowledge(
             result.admission_target_module_path = build_meta.get("admission_target_module_path")
             result.admission_target_file_path = build_meta.get("admission_target_file_path")
             result.blocker_details = build_meta.get("blocker_details")
+            result.intra_run_learning = dict(build_meta.get("intra_run_learning") or {})
         except BuildTrackingFailure as exc:
             result.failures = [str(exc.cause)]
             result.attempts = exc.meta.get("attempts", 0)
@@ -308,6 +314,7 @@ def build_with_knowledge(
             result.admission_target_module_path = exc.meta.get("admission_target_module_path")
             result.admission_target_file_path = exc.meta.get("admission_target_file_path")
             result.blocker_details = exc.meta.get("blocker_details")
+            result.intra_run_learning = dict(exc.meta.get("intra_run_learning") or {})
         except Exception as e:
             result.failures = [str(e)]
         _record_post_build_phase(
@@ -500,6 +507,8 @@ def _build_with_tracking(
     build_description: str | None = None,
     preferred_method: str | None = None,
     request_metadata: Mapping[str, object] | None = None,
+    semantic_contract=None,
+    knowledge_overlays: Sequence[Mapping[str, object]] | None = None,
 ) -> tuple[type | None, dict]:
     """Run ``build_payoff()`` while capturing metadata needed by the reflect phase.
 
@@ -536,6 +545,33 @@ def _build_with_tracking(
     meta: dict = {
         "knowledge_summary": dict(knowledge_payload.get("summary") or {}),
     }
+    overlay_text = ""
+    overlay_payloads = [
+        dict(item) for item in (knowledge_overlays or ()) if isinstance(item, Mapping)
+    ]
+    if overlay_payloads:
+        try:
+            from trellis.agent.intra_run_learning import render_knowledge_overlay
+
+            overlay_text = render_knowledge_overlay(overlay_payloads)
+        except Exception:
+            overlay_text = ""
+        meta["intra_run_learning"] = {
+            "overlay_count": len(overlay_payloads),
+            "overlay_candidate_ids": [
+                str(item.get("candidate_id") or "")
+                for item in overlay_payloads
+                if str(item.get("candidate_id") or "").strip()
+            ],
+            "overlay_targets": [
+                str(item.get("target_id") or "")
+                for item in overlay_payloads
+                if str(item.get("target_id") or "").strip()
+            ],
+        }
+        meta.setdefault("knowledge_summary", {})["intra_run_learning_overlay_count"] = len(
+            overlay_payloads
+        )
 
     def _retrieve_live_payload() -> dict[str, Any]:
         """Render a fresh shared-knowledge payload for each retry attempt."""
@@ -579,6 +615,8 @@ def _build_with_tracking(
         gap_warnings = format_gap_warnings(gap_report)
         if gap_warnings:
             text += "\n\n" + gap_warnings
+        if overlay_text:
+            text += "\n\n" + overlay_text
         return text
 
     meta.setdefault("attempts", 0)
@@ -625,6 +663,7 @@ def _build_with_tracking(
             max_retries=max_retries,
             preferred_method=preferred_method,
             request_metadata=request_metadata,
+            semantic_contract=semantic_contract,
             build_meta=meta,
             gap_report=gap_report,
             knowledge_retriever=_stage_aware_knowledge_retriever,

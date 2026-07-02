@@ -169,6 +169,42 @@ bindings:
             symbol: price_heston_option_monte_carlo
             role: route_helper
       - when:
+          payoff_family: autocallable
+        primitives:
+          - module: trellis.models.autocallable
+            symbol: price_autocallable_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.autocallable
+            symbol: AutocallableMonteCarloConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.autocallable
+            symbol: resolve_autocallable_inputs
+            role: market_binding
+      - when:
+          payoff_family: barrier_option
+          payoff_traits: [double_barrier]
+        primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierMonteCarloConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+          - module: trellis.models.analytical.support.barriers
+            symbol: double_barrier_state_payoff
+            role: payoff_primitive
+      - when:
           payoff_family: vanilla_option
           exercise_style: [european]
           model_family: [generic, equity, equity_diffusion]
@@ -653,6 +689,22 @@ bindings:
         symbol: price_vanilla_equity_option_pde
         role: route_helper
 
+  - route_id: heston_adi_2d
+    engine_family: pde_solver
+    route_family: pde_solver
+    aliases: [heston_adi_pde]
+    primitives:
+      - module: trellis.models.pde.heston_adi
+        symbol: resolve_heston_adi_pde_inputs
+        role: market_binding
+      - module: trellis.models.pde.heston_adi
+        symbol: HestonAdiPDEConfig
+        role: solver_config
+        required: false
+      - module: trellis.models.pde.heston_adi
+        symbol: price_heston_option_adi_pde_result
+        role: route_helper
+
   - route_id: pde_theta_1d
     engine_family: pde_solver
     route_family: pde_solver
@@ -683,6 +735,40 @@ bindings:
           - module: trellis.models.callable_bond_pde
             symbol: price_callable_bond_pde
             role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [stochastic_volatility]
+        primitives:
+          - module: trellis.models.pde.heston_adi
+            symbol: price_heston_option_adi_pde_result
+            role: route_helper
+      - when:
+          payoff_family: barrier_option
+          payoff_traits: [double_barrier]
+        primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_pde_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierPDEConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.pde.grid
+            symbol: Grid
+            role: grid
+          - module: trellis.models.pde.operator
+            symbol: BlackScholesOperator
+            role: spatial_operator
+          - module: trellis.models.pde.theta_method
+            symbol: theta_method_1d
+            role: time_stepping
+          - module: trellis.models.analytical.support.barriers
+            symbol: terminal_double_barrier_payoff
+            role: terminal_payoff
       - when: default
         primitives:
           - module: trellis.models.pde.grid

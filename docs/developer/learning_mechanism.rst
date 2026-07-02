@@ -119,6 +119,66 @@ assigns confidence by discovery mode:
 That path captures the lesson, runs the contract check, and can auto-validate
 or auto-promote immediately when the confidence threshold is met.
 
+Bounded Intra-Run Learning
+--------------------------
+
+Task runs can also use a bounded, ephemeral learning loop between a failed
+target build and final task classification.  The contract lives in
+``trellis.agent.intra_run_learning`` and uses
+``KnowledgePatchCandidate`` records.  These records are not canonical lessons
+or cookbooks.  They are one-shot prompt overlays derived from already-recorded
+failure evidence, deterministic contract evidence, reflection gaps, candidate
+lesson ids, and quant/model-validator observations when those observations
+exist.
+
+The mode boundary is explicit:
+
+- ``strict``: never builds or applies an intra-run knowledge overlay
+- ``assisted``: may retry one failed target once with a candidate overlay
+- ``remediation``: may produce the same retry overlay while preserving richer
+  repair evidence for branch/PR work
+
+The overlay is appended by the existing stage-aware knowledge retriever in
+``build_with_knowledge(...)``.  It is rendered with an explicit warning that
+the guidance is ephemeral and not canonical.  It does not mutate
+``canonical/cookbooks.yaml`` and it does not promote lessons.  If the retry
+succeeds and later cross-validation passes, the normal promotion-candidate
+pipeline may persist the successful generated route for deterministic review.
+
+Candidate construction is deliberately conservative.  It skips provider/noise
+failures, expected honest blocks, and repair-packet blockers.  For retryable
+failures it records structured evidence where possible:
+
+- callable signatures from the import registry and ``inspect.signature(...)``
+  when a helper or constructor rejects an argument
+- required primitive obligations, including import availability and signature
+  when a semantic validator reports ``assembly.required_primitive_missing``
+- comparison-contract evidence such as method prices, reference target,
+  tolerance, selected route or binding, validation bundle, and payoff identity
+
+Those records are persisted on the candidate as ``structured_evidence`` and
+``repair_obligations``.  Candidate construction also assigns a
+``contract_completeness`` score and ``retryable`` flag.  Assisted mode retries
+only when the candidate has concrete structured obligations above the retry
+threshold.  Prose-only candidates are retained as evidence with skip reasons
+such as ``missing_structured_repair_obligation`` but do not call the builder
+again.
+
+The plain-text overlay remains only the rendered form of that evidence.  Each
+task result records ``recovery_mode``, ``recovery_attempts``, and an
+``intra_run_learning`` summary so downstream diagnostics can distinguish an
+attempted candidate-knowledge retry from a skipped candidate.
+
+Retry attribution is part of that contract.  Every recorded recovery attempt
+now carries ``retry_attribution`` with the candidate id, patch type, structured
+evidence count, repair-obligation count, changed build-input fields, and a
+compact ``attribution_kind``.  ``contract_evidence_consumed`` is true only when
+the candidate had structured contract evidence and the retry actually changed
+deterministic build inputs such as ``knowledge_overlays`` or
+``request_metadata.intra_run_learning_retry``.  Skipped candidates are still
+recorded, but their attribution kind remains ``candidate_not_retryable`` or
+``candidate_not_applied`` and ``deterministic_input_changed`` stays false.
+
 What Future Builds Actually Reuse
 ---------------------------------
 
@@ -265,6 +325,9 @@ still limits:
 - the executor retry path captures candidate lessons but does not auto-promote them
 - task reruns and human review are still needed to confirm whether a captured
   lesson should become stable guidance
+- intra-run overlays are bounded repair inputs, not canonical cookbook
+  updates; they become durable only through the existing validation and
+  promotion gates
 - the repeated-pass benchmark measures knowledge reuse only; it does not prove
   autonomous code authoring or autonomous primitive implementation
 

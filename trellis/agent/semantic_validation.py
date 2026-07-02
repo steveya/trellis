@@ -34,11 +34,23 @@ _RAW_STRING_SCHEDULE_ANNOTATIONS = frozenset({
 _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES = frozenset({
     "array_backend",
     "event_probability",
+    "grid",
     "loss_distribution",
     "market_binding",
+    "numerical_evidence",
     "path_simulation",
+    "payoff_primitive",
     "pricing_kernel",
+    "route_helper",
+    "solver_config",
+    "spatial_operator",
+    "state_process",
+    "terminal_payoff",
     "time_measure",
+    "time_stepping",
+})
+_CHECKED_ROUTE_HELPER_CALLS = frozenset({
+    "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo",
 })
 
 
@@ -325,6 +337,10 @@ def validate_semantics(
     required_route_helpers: tuple[str, ...] = ()
     helper_only_required_route = False
     helper_route_calls_present = False
+    checked_route_helper_calls_present = any(
+        helper_name in signals.resolved_calls
+        for helper_name in _CHECKED_ROUTE_HELPER_CALLS
+    )
     if primitive_plan is not None:
         required_route_helpers = tuple(
             f"{primitive.module}.{primitive.symbol}"
@@ -361,8 +377,8 @@ def validate_semantics(
     )
     helper_backed_thin_adapter = thin_adapter_calls or (
         helper_only_required_route and helper_route_calls_present
-    )
-    if primitive_plan is not None and not primitive_plan.blockers and not thin_adapter_calls:
+    ) or checked_route_helper_calls_present
+    if primitive_plan is not None and not primitive_plan.blockers and not helper_backed_thin_adapter:
         required_primitives = tuple(
             primitive
             for primitive in primitive_plan.primitives

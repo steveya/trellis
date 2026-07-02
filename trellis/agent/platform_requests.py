@@ -1467,6 +1467,7 @@ def compile_build_request(
     measures: list | None = None,
     knowledge_profile: str | None = None,
     metadata: Mapping[str, object] | None = None,
+    semantic_contract=None,
 ) -> CompiledPlatformRequest:
     """Compile a free-form build request through the canonical path."""
     request = PlatformRequest(
@@ -1488,6 +1489,13 @@ def compile_build_request(
             ),
         },
     )
+    if semantic_contract is not None:
+        return _compile_semantic_request(
+            request=request,
+            semantic_contract=semantic_contract,
+            reason="semantic_contract_request",
+            preferred_method=preferred_method,
+        )
     semantic_contract = _draft_semantic_contract(
         description,
         instrument_type=instrument_type,

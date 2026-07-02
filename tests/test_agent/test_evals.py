@@ -478,13 +478,34 @@ def test_summarize_task_results_reports_retry_recovery_and_reviewer_signals():
             "comparison_task": True,
             "task_diagnosis_failure_bucket": "comparator_build_failure",
         },
+        {
+            "task_id": "E27",
+            "success": False,
+            "title": "American Asian barrier under Heston should block honestly",
+            "task_diagnosis_failure_bucket": "blocked",
+            "blocker_details": {"blocker_codes": ["unsupported_path_dependent_control"]},
+            "computational_problem": {
+                "targets": [
+                    {
+                        "repair_packet": {
+                            "expected_honest_block": True,
+                        }
+                    }
+                ]
+            },
+        },
     ]
 
     summary = summarize_task_results(results)
 
-    assert summary["totals"]["tasks"] == 4
+    assert summary["totals"]["tasks"] == 5
     assert summary["totals"]["successes"] == 1
-    assert summary["failure_buckets"]["blocked"] == 1
+    assert summary["totals"]["expectation_passes"] == 2
+    assert summary["totals"]["actionable_failures"] == 3
+    assert summary["totals"]["honest_blocks"] == 1
+    assert summary["outcome_classes"]["honest_block"] == 1
+    assert summary["failure_buckets"]["blocked"] == 2
+    assert summary["actionable_failure_buckets"]["blocked"] == 1
     assert summary["failure_buckets"]["missing_market_data"] == 1
     assert summary["failure_buckets"]["comparator_build_failure"] == 1
     assert summary["retry_recovery"]["successful_after_retry"] == 1

@@ -945,8 +945,10 @@ Where Trellis Still Stays Forward-Only
   path-state accumulation
 - Numba-accelerated tree, Monte Carlo, and PDE kernels
 - discontinuous payoffs that would need smoothing or a custom adjoint
-- broader European barrier families beyond the T09 route, which remain
-  forward-only until a second consumer justifies shared barrier support
+- broader European barrier families beyond the T09 route. Double-barrier PDE
+  and Monte Carlo routes now have checked pricing-facing helpers, but
+  discontinuous barrier pathwise derivatives still fail closed under the Monte
+  Carlo derivative policy.
 - scalar vega on unsupported smile surfaces, which now reports an explicit
   representative-flat-vol fallback instead of silently pretending to be a
   surface-native Greek

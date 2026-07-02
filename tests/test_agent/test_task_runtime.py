@@ -89,6 +89,180 @@ def test_run_task_passes_force_rebuild_and_validation():
     monkeypatch.undo()
 
 
+def test_run_task_strict_mode_does_not_retry_failed_target():
+    from trellis.agent.task_runtime import run_task
+
+    calls: list[dict] = []
+
+    class FailedResult:
+        success = False
+        attempts = 2
+        gap_confidence = 0.4
+        knowledge_gaps = ["missing cookbook"]
+        payoff_cls = None
+        failures = ["helper() got an unexpected keyword argument 'resolved'"]
+        reflection = {
+            "lesson_captured": "fd_044",
+            "gaps_identified": ["Missing helper signature contract"],
+        }
+        agent_observations = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FailedResult()
+
+    result = run_task(
+        {"id": "T20", "title": "Heston ADI PDE"},
+        market_state=object(),
+        build_fn=fake_build,
+        recovery_mode="strict",
+        timer=iter([0.0, 1.0]).__next__,
+        now_fn=lambda: datetime(2026, 3, 24, 12, 0, 0),
+    )
+
+    assert len(calls) == 1
+    assert "knowledge_overlays" not in calls[0]
+    assert result["success"] is False
+    assert result["recovery_mode"] == "strict"
+    assert result["recovery_attempts"] == []
+
+
+def test_run_task_assisted_mode_retries_once_with_candidate_overlay():
+    from trellis.agent.task_runtime import run_task
+
+    calls: list[dict] = []
+
+    class FailedResult:
+        success = False
+        attempts = 2
+        gap_confidence = 0.4
+        knowledge_gaps = ["missing cookbook"]
+        payoff_cls = None
+        failures = ["resolve_double_barrier_inputs() got an unexpected keyword argument 'spot'"]
+        reflection = {
+            "lesson_captured": "fd_045",
+            "gaps_identified": [
+                "Missing cookbook guidance for adapting market-state fields "
+                "into barrier helper inputs"
+            ],
+        }
+        agent_observations = [
+            {
+                "agent": "quant",
+                "kind": "decision",
+                "summary": "Selected pricing method `pde_solver`",
+            }
+        ]
+
+    class RecoveredResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.8
+        knowledge_gaps = []
+        payoff_cls = type("RecoveredPayoff", (), {})
+        failures = []
+        reflection = {}
+        agent_observations = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FailedResult() if len(calls) == 1 else RecoveredResult()
+
+    result = run_task(
+        {"id": "T22", "title": "Double barrier PDE"},
+        market_state=object(),
+        build_fn=fake_build,
+        recovery_mode="assisted",
+        timer=iter([0.0, 2.0]).__next__,
+        now_fn=lambda: datetime(2026, 3, 24, 12, 0, 0),
+    )
+
+    assert len(calls) == 2
+    assert calls[1]["request_metadata"]["intra_run_learning_retry"]["target_id"] == "T22"
+    assert calls[1]["request_metadata"]["intra_run_learning_retry"]["attempt"] == 1
+    assert calls[1]["knowledge_overlays"][0]["target_id"] == "T22"
+    assert calls[1]["knowledge_overlays"][0]["patch_type"] == "cookbook_patch"
+    assert result["success"] is True
+    assert result["attempts"] == 3
+    assert result["recovery_mode"] == "assisted"
+    assert result["recovery_attempts"][0]["decision"] == "retry_with_candidate_knowledge"
+    assert result["recovery_attempts"][0]["recovered"] is True
+    retry_attribution = result["recovery_attempts"][0]["retry_attribution"]
+    assert retry_attribution["attribution_kind"] == "contract_evidence_consumed"
+    assert retry_attribution["contract_evidence_consumed"] is True
+    assert retry_attribution["deterministic_input_changed"] is True
+    assert retry_attribution["changed_input_fields"] == [
+        "knowledge_overlays",
+        "request_metadata.intra_run_learning_retry",
+    ]
+    assert retry_attribution["repair_obligation_count"] == 1
+    assert retry_attribution["outcome_change"]["success_changed"] is True
+    assert result["intra_run_learning"]["overlay_retry_count"] == 1
+    assert result["intra_run_learning"]["contract_evidence_consumed"] is True
+    assert result["intra_run_learning"]["deterministic_input_changed"] is True
+    assert result["intra_run_learning"]["retry_attribution_kind"] == (
+        "contract_evidence_consumed"
+    )
+    assert result["learning"]["intra_run_learning"]["contract_evidence_consumed"] is True
+    assert result["learning"]["intra_run_learning"]["deterministic_input_changed"] is True
+
+
+def test_run_task_assisted_mode_skips_prose_only_candidate_overlay():
+    from trellis.agent.task_runtime import run_task
+
+    calls: list[dict] = []
+
+    class FailedResult:
+        success = False
+        attempts = 2
+        gap_confidence = 0.4
+        knowledge_gaps = ["missing cookbook"]
+        payoff_cls = None
+        failures = ["generated adapter failed post-build validation"]
+        reflection = {
+            "gaps_identified": [
+                "Missing cookbook guidance for autocallable event branching"
+            ],
+        }
+        agent_observations = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FailedResult()
+
+    result = run_task(
+        {"id": "T107", "title": "Autocallable MC"},
+        market_state=object(),
+        build_fn=fake_build,
+        recovery_mode="assisted",
+        timer=iter([0.0, 2.0]).__next__,
+        now_fn=lambda: datetime(2026, 3, 24, 12, 0, 0),
+    )
+
+    assert len(calls) == 1
+    assert "knowledge_overlays" not in calls[0]
+    assert result["success"] is False
+    assert result["recovery_attempts"][0]["decision"] == (
+        "candidate_overlay_insufficient_contract"
+    )
+    assert result["recovery_attempts"][0]["retryable"] is False
+    assert result["recovery_attempts"][0]["contract_completeness"] == 0.0
+    assert "missing_structured_repair_obligation" in (
+        result["recovery_attempts"][0]["skip_reasons"]
+    )
+    assert result["intra_run_learning"]["overlay_retry_count"] == 0
+    assert result["intra_run_learning"]["overlay_candidate_count"] == 1
+    assert result["intra_run_learning"]["retryable"] is False
+    retry_attribution = result["recovery_attempts"][0]["retry_attribution"]
+    assert retry_attribution["attribution_kind"] == "candidate_not_retryable"
+    assert retry_attribution["contract_evidence_consumed"] is False
+    assert retry_attribution["deterministic_input_changed"] is False
+    assert result["intra_run_learning"]["contract_evidence_consumed"] is False
+    assert result["intra_run_learning"]["deterministic_input_changed"] is False
+    assert result["learning"]["intra_run_learning"]["contract_evidence_consumed"] is False
+    assert result["learning"]["intra_run_learning"]["deterministic_input_changed"] is False
+
+
 def test_run_task_replays_the_same_simulation_identity_for_the_same_request_and_snapshot():
     from trellis.agent.task_runtime import run_task
 
@@ -722,6 +896,17 @@ def test_task_to_instrument_type_uses_shared_lower_layer_mapping():
     ) == "cdo"
 
 
+def test_task_to_instrument_type_prefers_autocallable_over_barrier_trait_text():
+    from trellis.agent.task_runtime import task_to_instrument_type
+
+    assert task_to_instrument_type(
+        {
+            "id": "T107",
+            "title": "Autocallable note: MC with barrier + coupon + early redemption",
+        }
+    ) == "autocallable"
+
+
 def test_task_to_instrument_identity_records_text_fallback_source():
     from trellis.agent.task_runtime import task_to_instrument_identity
 
@@ -865,6 +1050,10 @@ def test_run_task_persists_latest_record(monkeypatch):
     assert result["task_diagnosis_latest_packet_path"] == "/tmp/task_runs/diagnostics/latest/T13.json"
     assert result["task_diagnosis_latest_dossier_path"] == "/tmp/task_runs/diagnostics/latest/T13.md"
     assert result["task_diagnosis_headline"] == "Demo task completed successfully."
+    assert result["failure_bucket"] == "success"
+    assert result["diagnosis_headline"] == "Demo task completed successfully."
+    assert result["diagnosis_decision_stage"] == "completed"
+    assert result["diagnosis_next_action"] == "No action required."
     assert result["task_diagnosis_persist_error"] == ""
     assert result["task_diagnosis_persist_skipped"] == ""
 
@@ -1255,6 +1444,175 @@ def test_run_task_carries_stochastic_vol_problem_metadata_for_comparison_task(mo
     assert qe_target["repair_packet"] is None
     assert qe_target["solver_target"] == "monte_carlo_qe"
     assert qe_target["validation_bundle"] == "heston:monte_carlo"
+
+
+def test_task_runtime_bridges_sparse_proof_mc_rows_to_vanilla_option_contract():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] in {"T25", "T26", "T31", "T32"}
+    }
+
+    assert set(tasks) == {"T25", "T26", "T31", "T32"}
+    for task in tasks.values():
+        contract = task_to_semantic_contract(task)
+        assert contract is not None
+        summary = semantic_contract_summary(contract)
+        assert summary["semantic_id"] == "vanilla_option"
+        assert summary["product"]["underlying"] == {
+            "asset_class": "equity",
+            "identifiers": ["SPX"],
+        }
+        assert summary["product"]["option_type"] == "call"
+        assert summary["product"]["exercise_style"] == "european"
+        assert summary["product"]["observation_schedule"] == ["2025-11-15"]
+        assert summary["methods"]["preferred_method"] == "monte_carlo"
+
+
+def test_task_runtime_bridges_sparse_lsm_basis_row_to_american_contract():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T27"
+    )
+
+    contract = task_to_semantic_contract(task)
+
+    assert contract is not None
+    summary = semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "american_option"
+    assert summary["product"]["underlying"] == {
+        "asset_class": "equity",
+        "identifiers": ["SPX"],
+    }
+    assert summary["product"]["option_type"] == "put"
+    assert summary["product"]["exercise_style"] == "american"
+    assert summary["methods"]["preferred_method"] == "monte_carlo"
+
+
+def test_sparse_rate_pde_proof_row_blocks_honestly_without_build(monkeypatch, tmp_path, capsys):
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T18"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T18 honest block should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "blocked",
+            "diagnosis_headline": "Sparse proof row blocked honestly.",
+            "diagnosis_decision_stage": "blocked",
+            "diagnosis_next_action": "Specify the rate payoff and schedule before pricing.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["expected_honest_block"] is True
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert classify_task_result(result) == "blocked"
+    assert result["failure_bucket"] == "blocked"
+    assert result["attempts"] == 0
+    assert result["blocker_details"]["reason"] == "proof_legacy_under_specified_rate_pde"
+    assert "semantic_product_shape" not in "\n".join(result["failures"])
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
+
+
+def test_sparse_lsm_basis_proof_row_uses_deterministic_local_targets(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T27"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T27 basis proof targets should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_headline": "T27 deterministic basis proof passed.",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["attempts"] == 0
+    assert result["instrument_type"] == "american_option"
+    assert result["instrument_identity_source"] == "semantic_contract.product.instrument_class"
+    assert result["comparison_targets"] == [
+        "polynomial",
+        "laguerre",
+        "hermite",
+        "chebyshev",
+        "high_step_tree_2000",
+    ]
+    assert result["cross_validation"]["status"] == "passed"
+    assert result["cross_validation"]["reference_target"] == "high_step_tree_2000"
+    assert set(result["cross_validation"]["successful_targets"]) == {
+        "polynomial",
+        "laguerre",
+        "hermite",
+        "chebyshev",
+        "high_step_tree_2000",
+    }
+    assert {
+        target_id: payload["payoff_class"]
+        for target_id, payload in result["method_results"].items()
+    } == {
+        "polynomial": "ProofAmericanLSMPolynomialPayoff",
+        "laguerre": "ProofAmericanLSMLaguerrePayoff",
+        "hermite": "ProofAmericanLSMHermitePayoff",
+        "chebyshev": "ProofAmericanLSMChebyshevPayoff",
+        "high_step_tree_2000": "ProofAmericanHighStepTreePayoff",
+    }
 
 
 def test_cross_validate_comparison_task_prices_reused_fx_modules():
@@ -1933,7 +2291,7 @@ def test_run_task_skips_promotion_candidates_when_cross_validation_fails(monkeyp
     assert result["artifacts"]["promotion_candidate_paths"] == []
 
 
-def test_run_task_aggregates_method_blockers_for_comparison_failures():
+def test_run_task_aggregates_method_blockers_for_comparison_failures(capsys):
     from trellis.agent.evals import classify_task_result
     from trellis.agent.task_runtime import run_task
 
@@ -2005,6 +2363,10 @@ def test_run_task_aggregates_method_blockers_for_comparison_failures():
             "path_dependent_early_exercise_under_stochastic_vol"
         )
     assert classify_task_result(result) == "blocked"
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert result["attempts"] == 0
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
 def test_build_result_payload_includes_blocker_details(tmp_path):

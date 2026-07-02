@@ -70,6 +70,27 @@ def test_load_all_results_defaults_to_latest_canonical_runs(monkeypatch):
     assert [r["success"] for r in results] == [True, False]
 
 
+def test_load_all_results_accepts_explicit_results_and_task_filter(tmp_path, monkeypatch):
+    results_path = tmp_path / "task_results_pack.json"
+    with open(results_path, "w") as fh:
+        json.dump(
+            [
+                {"task_id": "T20", "success": False, "failures": ["bad"]},
+                {"task_id": "T105", "success": True, "failures": []},
+            ],
+            fh,
+        )
+
+    monkeypatch.setattr(remediate, "ROOT", tmp_path)
+
+    results = remediate.load_all_results(
+        result_paths=["task_results_pack.json"],
+        task_ids=["T20"],
+    )
+
+    assert [r["task_id"] for r in results] == ["T20"]
+
+
 def test_analyze_failures_uses_nested_method_failure_text():
     nested_result = {
         "task_id": "T900",
@@ -91,6 +112,37 @@ def test_analyze_failures_uses_nested_method_failure_text():
     categories = remediate.analyze_failures([nested_result])
 
     assert [r["task_id"] for r in categories["timeout"]] == ["T900"]
+
+
+def test_analyze_failures_excludes_expected_honest_blocks():
+    expected_block = {
+        "task_id": "E27",
+        "success": False,
+        "task_diagnosis_failure_bucket": "blocked",
+        "blocker_details": {"blocker_codes": ["unsupported_path_dependent_control"]},
+        "computational_problem": {
+            "targets": [{"repair_packet": {"expected_honest_block": True}}],
+        },
+    }
+
+    categories = remediate.analyze_failures([expected_block])
+
+    assert all(not tasks for tasks in categories.values())
+
+
+def test_analyze_failures_prefers_structured_task_diagnosis_bucket():
+    result = {
+        "task_id": "T13",
+        "success": False,
+        "task_diagnosis_failure_bucket": "comparator_build_failure",
+        "failures": ["theta_0.5 failed to build"],
+    }
+
+    categories = remediate.analyze_failures([result])
+
+    assert [r["task_id"] for r in categories["comparator_build_failure"]] == ["T13"]
+    assert not categories["validation_failure"]
+    assert not categories["other"]
 
 
 def test_analyze_failures_buckets_missing_capabilities_as_market_data():

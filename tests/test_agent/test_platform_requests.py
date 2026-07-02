@@ -922,6 +922,35 @@ def test_novel_request_falls_back_with_semantic_gap_metadata():
     assert "semantic_gap" in compiled.request.metadata
 
 
+def test_compile_build_request_uses_explicit_semantic_contract_for_sparse_task_text():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    contract = make_vanilla_option_contract(
+        description="Proof default European call on SPX",
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        preferred_method="monte_carlo",
+        underlying_asset_class="equity",
+        option_type="call",
+    )
+
+    compiled = compile_build_request(
+        "Build a pricer for: GBM call: all 4 schemes convergence order",
+        preferred_method="monte_carlo",
+        semantic_contract=contract,
+    )
+
+    assert compiled.execution_plan.reason == "semantic_contract_request"
+    assert compiled.semantic_contract is not None
+    assert compiled.semantic_contract.semantic_id == "vanilla_option"
+    assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "vanilla_option"
+    assert "semantic_gap" not in compiled.request.metadata
+    assert compiled.product_ir.instrument == "european_option"
+    assert compiled.product_ir.underlying_identifiers == ("SPX",)
+    assert compiled.pricing_plan.method == "monte_carlo"
+
+
 def test_compile_build_request_routes_rate_cap_family_through_semantic_contract():
     from trellis.agent.platform_requests import compile_build_request
 

@@ -252,8 +252,9 @@ See ``tests/test_models/test_analytical_support.py`` and
 Barrier Monitoring
 ------------------
 
-Barrier primitives (survival probability, rebate payment) are **route-local**
-until two independent routes share the same formula verbatim.
+Single-barrier analytical primitives (survival probability, rebate payment)
+remain **route-local** until two independent routes share the same formula
+verbatim.
 
 The current barrier implementation in ``trellis.models.analytical.barrier``
 provides:
@@ -264,10 +265,33 @@ provides:
   — generic Reiner-Rubinstein dispatcher (all 4 barrier types × 2 option types)
 - ``down_and_out_call``, ``down_and_in_call`` — public adapters for the T09 route
 
-``trellis.models.analytical.support.barriers`` is the designated home for
-shared barrier helpers once a second consumer appears.  See
-``docs/quant/basis_claim_patterns.md`` §Barrier Monitoring for the extraction
-policy and checklist.
+``trellis.models.analytical.support.barriers`` owns the shared double-barrier
+primitives used by the checked PDE and Monte Carlo proof routes:
+
+- ``DoubleBarrierSpec`` — lower/upper barrier runtime contract
+- ``terminal_double_barrier_payoff(...)`` — terminal payoff before barrier
+  activation
+- ``double_barrier_path_payoff(...)`` and ``double_barrier_state_payoff(...)`` —
+  shared lower/upper monitoring semantics for full-path and reduced-storage
+  Monte Carlo adapters
+- ``resolve_double_barrier_inputs(...)`` — alias and market binding for route
+  code
+
+``trellis.models.double_barrier_option`` is the preferred pricing-facing
+surface for those primitives:
+
+- ``price_double_barrier_option_pde_result(...)`` — bounded
+  ``[lower_barrier, upper_barrier]`` Black-Scholes grid with absorbing
+  boundaries and knock-in/out parity
+- ``price_double_barrier_option_monte_carlo_result(...)`` — GBM Monte Carlo
+  binding with two explicit barrier monitors through the reduced path-state
+  contract
+
+Single-barrier Reiner-Rubinstein formulas still live in
+``trellis.models.analytical.barrier``; do not force double-barrier tasks
+through that one-barrier formula. Generated double-barrier adapters should
+delegate to the checked pricing-facing surface when the task target matches
+that contract; lower-level primitives remain available as assembly evidence.
 
 
 Agent Integration

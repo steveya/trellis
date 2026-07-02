@@ -144,6 +144,23 @@ def _llm_stage_metadata(
     }
 
 
+def _comparison_target_from_build_metadata(
+    compiled_request,
+    request_metadata: Mapping[str, object] | None,
+) -> object | None:
+    """Return the active comparison target for one task-build attempt.
+
+    Task runtime passes comparison target metadata alongside the compiled
+    request. Some compiled requests are reused across targets, so the explicit
+    build metadata must win over the request's original metadata.
+    """
+    metadata: dict[str, object] = {}
+    request = getattr(compiled_request, "request", None)
+    metadata.update(dict(getattr(request, "metadata", None) or {}))
+    metadata.update(dict(request_metadata or {}))
+    return metadata.get("comparison_target")
+
+
 def _render_spec_default_value(field_type: str, default: str) -> str:
     """Render a spec default using valid Python syntax for the declared field type."""
     normalized_type = field_type.replace(" ", "").lower()
@@ -823,6 +840,7 @@ def build_payoff(
     instrument_type: str | None = None,
     preferred_method: str | None = None,
     request_metadata: Mapping[str, object] | None = None,
+    semantic_contract=None,
     compiled_request=None,
     build_meta: dict | None = None,
     gap_report=None,
@@ -869,6 +887,7 @@ def build_payoff(
                 model=model,
                 preferred_method=preferred_method,
                 metadata=request_metadata,
+                semantic_contract=semantic_contract,
             )
             product_ir = compiled_request.product_ir
         except Exception:
@@ -1011,6 +1030,7 @@ def build_payoff(
         preferred_method=pricing_plan.method,
         spec_schema_hint=_spec_hint,
     )
+    plan = _sanitize_build_plan_module_paths(plan, request_metadata=request_metadata)
     hydrated_spec_schema = _hydrate_spec_schema_defaults_from_semantics(
         getattr(plan, "spec_schema", None),
         semantic_contract=(
@@ -1387,13 +1407,9 @@ def build_payoff(
         stage_model = get_model_for_stage("code_generation", model)
         generated_module: GeneratedModuleResult | None = None
         generation_token_usage: dict[str, object] = {}
-        comparison_target = (
-            (
-                getattr(getattr(compiled_request, "request", None), "metadata", None)
-                or {}
-            ).get("comparison_target")
-            if compiled_request is not None
-            else None
+        comparison_target = _comparison_target_from_build_metadata(
+            compiled_request,
+            request_metadata,
         )
         try:
             generated_module = _materialize_semantic_execution_shim_module(
@@ -2644,6 +2660,7 @@ def _make_test_payoff(
             date(2026, 5, 1),
             date(2026, 6, 1),
         ),
+        "tuple[float, ...]": (0.25, 0.5, 0.75, 1.0),
         "tuple[date, ...] | None": None,
         "Frequency": Frequency.SEMI_ANNUAL,
         "DayCountConvention": DayCountConvention.ACT_360,
@@ -2692,6 +2709,11 @@ def _make_test_payoff(
         "call_schedule": "2027-11-15,2029-11-15,2031-11-15",
         "barrier": 80.0,
         "barrier_type": "down_and_out",
+        "autocall_barrier": 1.0,
+        "protection_barrier": 0.7,
+        "coupon_rate": 0.08,
+        "initial_spot": 100.0,
+        "observation_times": (0.25, 0.5, 0.75, 1.0),
         "option_type": "call",
         "spot": 100.0,
         "fx_pair": "EURUSD",
@@ -3398,12 +3420,23 @@ def _vanilla_equity_monte_carlo_helper_kwargs(comparison_target: str | None) -> 
     return ""
 
 
+def _vanilla_equity_pde_helper_kwargs(comparison_target: str | None) -> str:
+    """Return deterministic helper kwargs for vanilla-equity PDE comparison targets."""
+    target = str(comparison_target or "").strip().lower().replace("-", "_")
+    if target in {"theta_0.5", "theta_0_5", "crank_nicolson"}:
+        return ", theta=0.5"
+    if target in {"theta_1.0", "theta_1_0", "implicit"}:
+        return ", theta=1.0"
+    return ""
+
+
 def _heston_monte_carlo_helper_kwargs(comparison_target: str | None) -> str:
     """Return deterministic helper kwargs for Heston Monte Carlo comparison targets."""
     target = str(comparison_target or "").strip().lower().replace("-", "_")
-    if target in {"heston_mc", "euler_heston", "heston_euler"}:
+    if target in {"euler_heston", "heston_euler"}:
         return ', scheme="euler"'
     if target in {
+        "heston_mc",
         "qe",
         "heston_qe",
         "qe_heston",
@@ -3487,6 +3520,7 @@ def _deterministic_exact_binding_evaluate_body(
     refs = set(_exact_binding_refs(generation_plan))
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
     vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
+    vanilla_equity_pde_kwargs = _vanilla_equity_pde_helper_kwargs(comparison_target)
     heston_mc_kwargs = _heston_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
     heston_transform_kwargs = _heston_transform_helper_kwargs(comparison_target)
@@ -3495,6 +3529,17 @@ def _deterministic_exact_binding_evaluate_body(
     basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
     instrument_type = str(getattr(generation_plan, "instrument_type", "") or "").strip().lower()
     route_free_exact_binding = getattr(generation_plan, "primitive_plan", None) is None
+    normalized_target = str(comparison_target or "").strip().lower().replace("-", "_")
+
+    target_helper_bodies = {
+        "heston_mc": (
+            "return price_heston_option_monte_carlo("
+            f"market_state, spec{heston_mc_kwargs})"
+        ),
+    }
+    if normalized_target in target_helper_bodies:
+        return target_helper_bodies[normalized_target]
+
     if (
         comparison_target == "analytical"
         and instrument_type in {"cap", "floor", "period_rate_option_strip"}
@@ -3764,6 +3809,10 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_vanilla_equity_option_monte_carlo("
             f"market_state, spec{vanilla_equity_mc_kwargs})"
         ),
+        "trellis.models.equity_option_pde.price_vanilla_equity_option_pde": (
+            "return price_vanilla_equity_option_pde("
+            f"market_state, spec{vanilla_equity_pde_kwargs})"
+        ),
         "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo": (
             "return price_heston_option_monte_carlo("
             f"market_state, spec{heston_mc_kwargs})"
@@ -3854,6 +3903,22 @@ def _deterministic_exact_binding_evaluate_body(
             "    observations_per_year=getattr(spec, 'observations_per_year', None),\n"
             ")\n"
             "return spec.notional * price"
+        ),
+        "trellis.models.double_barrier_option.price_double_barrier_option_pde_result": (
+            "return price_double_barrier_option_pde_result(market_state, spec).price"
+        ),
+        "trellis.models.double_barrier_option.price_double_barrier_option_monte_carlo_result": (
+            "return price_double_barrier_option_monte_carlo_result(market_state, spec).price"
+        ),
+        "trellis.models.pde.heston_adi.price_heston_option_adi_pde_result": (
+            "return price_heston_option_adi_pde_result(market_state, spec).price"
+        ),
+        "trellis.models.autocallable.price_autocallable_monte_carlo_result": (
+            "return price_autocallable_monte_carlo_result("
+            'market_state, spec, sampling="sobol").price'
+            if normalized_target == "mc_autocall_qmc"
+            else "return price_autocallable_monte_carlo_result("
+            'market_state, spec, sampling="pseudo").price'
         ),
     }
     for ref, body in helper_bodies.items():
@@ -4034,6 +4099,10 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     imports: list[str] = []
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
+    if "price_heston_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo"
+        )
     return tuple(imports)
 
 
@@ -4495,7 +4564,11 @@ def _try_import_existing(plan) -> type | None:
 
     for step in plan.steps:
         file_path = TRELLIS_ROOT / step.module_path
-        if not file_path.exists():
+        try:
+            exists = file_path.exists()
+        except OSError:
+            return None
+        if not exists:
             return None
 
     last_step = plan.steps[-1]
@@ -4507,6 +4580,30 @@ def _try_import_existing(plan) -> type | None:
         return getattr(mod, plan.payoff_class_name, None)
     except Exception:
         return None
+
+
+def _sanitize_build_plan_module_paths(plan, *, request_metadata: Mapping[str, object] | None):
+    """Sanitize generated `_agent` module paths before reuse or write resolution."""
+    steps = list(getattr(plan, "steps", ()) or ())
+    if not steps:
+        return plan
+
+    sanitized_steps = []
+    changed = False
+    for step in steps:
+        module_path = str(getattr(step, "module_path", "") or "")
+        sanitized = _sanitize_agent_output_module_path(
+            module_path,
+            request_metadata=request_metadata,
+        )
+        if sanitized != module_path:
+            step = replace_dataclass(step, module_path=sanitized)
+            changed = True
+        sanitized_steps.append(step)
+
+    if not changed:
+        return plan
+    return replace_dataclass(plan, steps=sanitized_steps)
 
 
 def _deterministic_reuse_module_paths() -> frozenset[str]:
@@ -4567,6 +4664,10 @@ def _resolve_output_target(
     and catching the leak post-build (QUA-872, layered under QUA-866).
     """
     normalized_module_path = str(module_path or "").replace("\\", "/").strip()
+    normalized_module_path = _sanitize_agent_output_module_path(
+        normalized_module_path,
+        request_metadata=request_metadata,
+    )
     if fresh_build and _is_agent_module_path(normalized_module_path):
         benchmark_root = _benchmark_fresh_build_root(request_metadata)
         if benchmark_root is not None:
@@ -4597,6 +4698,37 @@ def _resolve_output_target(
     output_file_path = TRELLIS_PACKAGE_ROOT / normalized_module_path
     module_name = f"trellis.{normalized_module_path.replace('/', '.').replace('.py', '')}"
     return output_file_path, normalized_module_path, module_name
+
+
+def _sanitize_agent_output_module_path(
+    module_path: str,
+    *,
+    request_metadata: Mapping[str, object] | None,
+    max_stem_length: int = 72,
+) -> str:
+    """Bound unsafe `_agent` module filenames derived from free-form prompts."""
+    normalized = str(module_path or "").replace("\\", "/").strip()
+    if not normalized or not _is_agent_module_path(normalized):
+        return normalized
+
+    parent, separator, filename = normalized.rpartition("/")
+    raw_stem = filename[:-3] if filename.endswith(".py") else filename
+    safe_stem = _normalize_fresh_build_token(raw_stem)
+    safe_stem = re.sub(r"^buildapricerfor_?", "", safe_stem).strip("_")
+    if not safe_stem:
+        metadata = dict(request_metadata or {})
+        safe_stem = (
+            _normalize_fresh_build_token(metadata.get("comparison_target"))
+            or _normalize_fresh_build_token(metadata.get("preferred_method"))
+            or _normalize_fresh_build_token(metadata.get("task_id"))
+            or "agent_payoff"
+        )
+    if len(safe_stem) > max_stem_length:
+        safe_stem = safe_stem[:max_stem_length].rstrip("_")
+    safe_filename = f"{safe_stem or 'agent_payoff'}.py"
+    if filename == safe_filename:
+        return normalized
+    return f"{parent}{separator}{safe_filename}" if separator else safe_filename
 
 
 _FRESH_ISOLATION_SEGMENT = "/_fresh/"
@@ -5776,6 +5908,28 @@ def _route_specific_retry_lines(
         getattr(getattr(request.compiled_request, "request", None), "metadata", None) or {}
     )
     comparison_target = str(request_metadata.get("comparison_target") or "").strip().lower()
+
+    if comparison_target == "heston_adi_pde":
+        return (
+            "For `heston_adi_pde`, bind canonical Heston parameters through the runtime binding boundary before assembling the PDE calculation.",
+            "Use explicit `kappa`, `theta`, `xi`, `rho`, and `v0`; do not read Black vol surface nodes as live Heston parameters.",
+            "Legacy aliases such as `theta_var`, `sigma_v`, and `initial_variance` are normalized only at the binding boundary.",
+        )
+    if comparison_target in {"pde_double_barrier", "mc_double_barrier"}:
+        return (
+            "For double-barrier targets, prefer `trellis.models.double_barrier_option` pricing-facing helpers before hand assembly.",
+            "PDE adapters can call `price_double_barrier_option_pde_result(market_state, spec).price`; manual assembly must use the bounded `[lower_barrier, upper_barrier]` grid and absorbing boundaries.",
+            "MC adapters can call `price_double_barrier_option_monte_carlo_result(market_state, spec).price`; manual assembly must use two barrier monitors or the shared state payoff primitive.",
+            "Do not adapt the single-barrier Reiner-Rubinstein formula to lower/upper barriers by hand.",
+        )
+    if comparison_target in {"mc_autocall", "mc_autocall_qmc"}:
+        sampling = "sobol" if comparison_target.endswith("_qmc") else "pseudo"
+        return (
+            "For autocallable targets, prefer `trellis.models.autocallable.price_autocallable_monte_carlo_result` before writing event branching by hand.",
+            f"Call the helper with `sampling=\"{sampling}\"` for this comparison target; pseudo-MC targets must not require Sobol primitives.",
+            "The helper owns GBM exact-path simulation, observation-step mapping, first-trigger redemption, coupon accrual, terminal protection, and deterministic discounting.",
+            "Do not instantiate `GBM(spot=...)`; pass spot to the simulation engine and keep event branching tied to the task observation schedule.",
+        )
 
     if (
         instrument in {"credit_default_swap", "cds"}

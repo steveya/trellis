@@ -24,6 +24,16 @@ class TestSpecSchema:
         spec = STATIC_SPECS["cap"]
         assert spec.class_name == "AgentCapPayoff"
 
+    def test_heston_static_spec_avoids_llm_spec_design(self):
+        spec = STATIC_SPECS["heston_option"]
+        assert spec.class_name == "HestonOptionPayoff"
+        assert spec.spec_name == "HestonOptionSpec"
+        assert set(spec.requirements) == {"discount_curve", "model_parameters", "spot"}
+        field_names = [f.name for f in spec.fields]
+        assert "spot" in field_names
+        assert "strike" in field_names
+        assert "expiry_date" in field_names
+
     def test_schedule_dependent_static_specs_use_typed_date_tuples(self):
         callable_spec = STATIC_SPECS["callable_bond"]
         puttable_spec = STATIC_SPECS["puttable_bond"]
@@ -71,6 +81,37 @@ class TestPlanStatic:
             set(),
         )
         assert plan.payoff_class_name == "WeatherDerivativePayoff"
+
+    def test_generic_module_path_uses_bounded_description_slug(self):
+        plan = _plan_static(
+            "Build a pricer for: Crank-Nicolson Rannacher smoothing for discontinuous payoffs\n\n"
+            "Construct methods: pde_solver\n"
+            "Comparison targets: cn_rannacher (pde_solver), cn_standard (pde_solver), "
+            "black_scholes_digital (analytical)\n",
+            {"discount_curve"},
+            {"discount_curve"},
+            set(),
+        )
+
+        module_path = plan.steps[0].module_path
+
+        assert module_path.startswith("instruments/_agent/")
+        assert "\n" not in module_path
+        assert ":" not in module_path
+        assert len(module_path) <= len("instruments/_agent/") + 72 + len(".py")
+        assert module_path.endswith(".py")
+        assert "crank_nicolson_rannacher" in module_path
+
+        compact_plan = _plan_static(
+            "BuildAPricerFor:CrankNicolsonRannacherSmoothingForDiscontinuousPayoffs\n\n"
+            "ConstructMethods:PDESolver",
+            {"discount_curve"},
+            {"discount_curve"},
+            set(),
+        )
+
+        assert "buildapricerfor" not in compact_plan.steps[0].module_path
+        assert "cranknicolsonrannacher" in compact_plan.steps[0].module_path
 
     def test_barrier_option_has_spec(self):
         plan = _plan_static(

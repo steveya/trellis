@@ -358,6 +358,49 @@ routes:
         adapters: []
         notes: []
       - when:
+          payoff_family: autocallable
+        primitives:
+          - module: trellis.models.autocallable
+            symbol: price_autocallable_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.autocallable
+            symbol: AutocallableMonteCarloConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.autocallable
+            symbol: resolve_autocallable_inputs
+            role: market_binding
+        adapters: []
+        notes:
+          - "Prefer `price_autocallable_monte_carlo_result(market_state, spec).price` for autocallable MC targets before writing event branching by hand."
+          - "Pseudo-MC targets should not require Sobol primitives; QMC comparison targets select Sobol sampling at the adapter/helper call."
+      - when:
+          payoff_family: barrier_option
+          payoff_traits: [double_barrier]
+        primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierMonteCarloConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+          - module: trellis.models.analytical.support.barriers
+            symbol: double_barrier_state_payoff
+            role: payoff_primitive
+        adapters: []
+        notes:
+          - "Prefer `price_double_barrier_option_monte_carlo_result(...)` for the checked MC surface; if assembling manually, use two explicit BarrierMonitor objects or `double_barrier_state_payoff(...)`."
+      - when:
           payoff_family: vanilla_option
           exercise_style: [european]
           model_family: [generic, equity, equity_diffusion]
@@ -831,9 +874,16 @@ routes:
           - module: trellis.models.analytical.barrier
             symbol: barrier_option_price
             role: route_helper
+          - module: trellis.models.analytical.support.barriers
+            symbol: terminal_double_barrier_payoff
+            role: terminal_payoff
+          - module: trellis.models.analytical.support.barriers
+            symbol: double_barrier_state_payoff
+            role: payoff_primitive
         adapters: []
         notes:
           - "Use `barrier_option_price` directly with scalar spot/strike/barrier/rate/sigma/T inputs instead of instantiating `ResolvedBarrierInputs` in generated adapters."
+          - "For double-barrier targets with lower and upper barriers, compose the PDE grid or MC path estimator using the shared payoff primitives instead of adapting the single-barrier formula."
           - "When the contract carries discrete monitoring or non-zero dividend carry, pass `observations_per_year` and `q` through explicitly."
       - when:
           contract_pattern:
@@ -1180,6 +1230,50 @@ routes:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
 
+  - id: heston_adi_2d
+    engine_family: pde_solver
+    route_family: pde_solver
+    status: promoted
+    confidence: 1.0
+    aliases: [heston_adi_pde]
+    score_hints:
+      payoff_family_bonus:
+        vanilla_option: 1.0
+    match:
+      methods: [pde_solver]
+      payoff_traits: [stochastic_vol]
+      model_family: [stochastic_volatility]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: false
+      supported_state_tags: [terminal_markov]
+      supported_operator_families: [heston_2d_adi]
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.pde.heston_adi
+        symbol: resolve_heston_adi_pde_inputs
+        role: market_binding
+      - module: trellis.models.pde.heston_adi
+        symbol: HestonAdiPDEConfig
+        role: solver_config
+        required: false
+      - module: trellis.models.pde.heston_adi
+        symbol: price_heston_option_adi_pde_result
+        role: route_helper
+    adapters: []
+    notes:
+      - "Bind canonical Heston model parameters at the runtime boundary; do not consume Black vol as a live Heston parameter source."
+      - "Use the ADI result surface for structured PDE evidence; generated code still owns task-level adapter shape and output extraction."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        spot: [market_state.spot, market_state.underlier_spots]
+        model_parameters: [market_state.model_parameters, market_state.model_parameter_sets]
+
   - id: pde_theta_1d
     engine_family: pde_solver
     route_family: pde_solver
@@ -1219,6 +1313,46 @@ routes:
             role: route_helper
         adapters: []
         notes: []
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [stochastic_volatility]
+        primitives:
+          - module: trellis.models.pde.heston_adi
+            symbol: price_heston_option_adi_pde_result
+            role: route_helper
+        adapters: []
+        notes:
+          - "Bind canonical Heston model parameters at the runtime boundary; do not consume Black vol as a live Heston parameter source."
+      - when:
+          payoff_family: barrier_option
+          payoff_traits: [double_barrier]
+        primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_pde_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierPDEConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.pde.grid
+            symbol: Grid
+            role: grid
+          - module: trellis.models.pde.operator
+            symbol: BlackScholesOperator
+            role: spatial_operator
+          - module: trellis.models.pde.theta_method
+            symbol: theta_method_1d
+            role: time_stepping
+          - module: trellis.models.analytical.support.barriers
+            symbol: terminal_double_barrier_payoff
+            role: terminal_payoff
+        adapters: []
+        notes:
+          - "Prefer `price_double_barrier_option_pde_result(...)` for the checked PDE surface; if assembling manually, use a bounded Black-Scholes grid on `[lower_barrier, upper_barrier]` with absorbing boundaries."
       - when: default
         primitives:
           - module: trellis.models.pde.grid
