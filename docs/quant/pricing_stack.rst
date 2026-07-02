@@ -201,7 +201,10 @@ The first migrated vanilla cases now use that boundary directly:
   the Heston runtime binding and keeps Black vol surfaces as
   market/calibration evidence rather than live Heston inputs. Optional
   transform references are recorded as diagnostics and do not replace the PDE
-  scalar or the ADI input resolver.
+  scalar or the ADI input resolver. The variance grid uses a CIR
+  moment-dispersion upper bound, so high-vol-of-vol Heston fixtures keep useful
+  resolution around ``v0`` instead of spreading the grid out to an artificial
+  ``v0 + xi * sqrt(T)`` scale.
 - Heston calibration now has a bounded problem-IR adapter for single-expiry
   implied-vol smiles. Pricing routes consume explicit Heston model parameters
   from task specs, market state, synthetic fixtures, or recorded calibration

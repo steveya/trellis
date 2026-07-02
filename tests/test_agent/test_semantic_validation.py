@@ -168,6 +168,28 @@ def build_price(self, market_state):
 """
 
 
+DOUBLE_BARRIER_PDE_HELPER_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.double_barrier_option import price_double_barrier_option_pde_result
+
+
+def build_price(self, market_state):
+    return float(price_double_barrier_option_pde_result(market_state, self._spec).price)
+"""
+
+
+DOUBLE_BARRIER_MC_HELPER_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.double_barrier_option import price_double_barrier_option_monte_carlo_result
+
+
+def build_price(self, market_state):
+    return float(price_double_barrier_option_monte_carlo_result(market_state, self._spec).price)
+"""
+
+
 HELPER_BACKED_CDS_MONTE_CARLO_SOURCE = """\
 from __future__ import annotations
 
@@ -853,6 +875,71 @@ def test_accepts_helper_backed_autocallable_route():
 
     report = validate_semantics(
         AUTOCALLABLE_HELPER_SOURCE,
+        product_ir=product_ir,
+        generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.required_primitive_missing" not in issue_codes
+    assert report.ok
+
+
+@pytest.mark.parametrize(
+    ("source", "method", "method_modules", "inspected_modules"),
+    [
+        (
+            DOUBLE_BARRIER_PDE_HELPER_SOURCE,
+            "pde_solver",
+            ["trellis.models.pde.theta_method"],
+            (
+                "trellis.models.double_barrier_option",
+                "trellis.models.analytical.support.barriers",
+                "trellis.models.pde.grid",
+                "trellis.models.pde.operator",
+                "trellis.models.pde.theta_method",
+            ),
+        ),
+        (
+            DOUBLE_BARRIER_MC_HELPER_SOURCE,
+            "monte_carlo",
+            ["trellis.models.monte_carlo.engine"],
+            (
+                "trellis.models.double_barrier_option",
+                "trellis.models.analytical.support.barriers",
+                "trellis.models.monte_carlo.engine",
+                "trellis.models.processes.gbm",
+            ),
+        ),
+    ],
+)
+def test_accepts_helper_backed_double_barrier_route_with_internal_primitives_subsumed(
+    source,
+    method,
+    method_modules,
+    inspected_modules,
+):
+    from trellis.agent.semantic_validation import validate_semantics
+
+    pricing_plan = PricingPlan(
+        method=method,
+        method_modules=method_modules,
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "Double barrier option via checked helper",
+        instrument_type="barrier_option",
+    )
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=inspected_modules,
+        product_ir=product_ir,
+    )
+
+    report = validate_semantics(
+        source,
         product_ir=product_ir,
         generation_plan=generation_plan,
     )

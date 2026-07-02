@@ -823,6 +823,51 @@ def test_deterministic_exact_binding_module_materializes_heston_mc_helper_wrappe
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_deterministic_exact_binding_module_materializes_heston_adi_helper():
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(
+            route="heston_adi_2d",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.pde.heston_adi",
+                    "price_heston_option_adi_pde_result",
+                    "route_helper",
+                ),
+            ),
+        ),
+        method="pde_solver",
+        instrument_type="heston_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["heston_option"],
+        "Heston ADI checked helper",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="heston_adi_pde",
+    )
+
+    assert generated is not None
+    assert (
+        "from trellis.models.pde.heston_adi import price_heston_option_adi_pde_result"
+        in generated.code
+    )
+    assert "price_heston_option_adi_pde_result(market_state, spec).price" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 @pytest.mark.parametrize(
     "comparison_target",
     [
@@ -897,7 +942,7 @@ def test_deterministic_exact_binding_module_materializes_autocallable_helper(
     )
 
     skeleton = _generate_skeleton(
-        STATIC_SPECS["barrier_option"],
+        STATIC_SPECS["autocallable"],
         "Autocallable helper target",
         generation_plan=generation_plan,
     )

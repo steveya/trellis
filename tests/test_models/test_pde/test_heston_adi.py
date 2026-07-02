@@ -15,6 +15,7 @@ from trellis.models.pde.heston_adi import (
     resolve_heston_adi_pde_inputs,
 )
 from trellis.models.processes.heston import build_heston_parameter_payload
+from trellis.models.transforms.heston import price_heston_option_transform_result
 
 
 @dataclass(frozen=True)
@@ -59,6 +60,22 @@ def _legacy_alias_market_state() -> MarketState:
     )
 
 
+def _high_vol_of_vol_market_state() -> MarketState:
+    return MarketState(
+        as_of=date(2024, 11, 15),
+        settlement=date(2024, 11, 15),
+        discount=YieldCurve.flat(0.04156507836505682),
+        spot=100.0,
+        model_parameters=build_heston_parameter_payload(
+            kappa=2.0,
+            theta=0.039117,
+            xi=0.469406,
+            rho=-0.68,
+            v0=0.039117,
+        ),
+    )
+
+
 def test_heston_adi_inputs_resolve_runtime_binding_with_canonical_parameters():
     resolved = resolve_heston_adi_pde_inputs(
         _legacy_alias_market_state(),
@@ -84,6 +101,17 @@ def test_heston_adi_pde_consumes_runtime_binding_without_vol_surface_recalibrati
     pde = price_heston_option_adi_pde_result(_market_state(), spec, config=config).price
 
     assert pde > 0.0
+
+
+def test_heston_adi_variance_grid_bound_handles_high_vol_of_vol_regime():
+    market = _high_vol_of_vol_market_state()
+    spec = HestonOptionSpec()
+    config = HestonAdiPDEConfig(spot_steps=64, variance_steps=28, time_steps=80)
+
+    pde = price_heston_option_adi_pde_result(market, spec, config=config).price
+    reference = price_heston_option_transform_result(market, spec, method="fft").price
+
+    assert abs(pde - reference) / reference < 0.05
 
 
 def test_heston_adi_pde_result_exposes_canonical_model_parameters():

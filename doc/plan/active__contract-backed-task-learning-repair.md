@@ -63,13 +63,14 @@ contracts for the agent to write derivative-specific code correctly.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-01`
+Status mirror last synced: `2026-07-02`
 
 ### Parent
 
 | Ticket | Title | Status |
 | --- | --- | --- |
 | `QUA-1131` | Agent learning: contract-backed intra-run repair | Todo |
+| `QUA-1138` | Agent learning: deterministic promotion loop | Backlog |
 
 ### Ordered Implementation Queue
 
@@ -81,6 +82,11 @@ Status mirror last synced: `2026-07-01`
 | `QUA-1135` | Double barrier: PDE and MC assembly contracts | In Progress | `QUA-1132`, `QUA-1133` |
 | `QUA-1136` | Autocallable MC: event engine and QMC primitive obligations | In Progress | `QUA-1132`, `QUA-1133` |
 | `QUA-1137` | Task learning: promotion-grade evidence and docs closeout | Todo | `QUA-1134`, `QUA-1135`, `QUA-1136` |
+| `QUA-1139` | Agent learning: retry attribution contract | Backlog | `QUA-1131` |
+| `QUA-1140` | Agent learning: deterministic overlay consumption | Backlog | `QUA-1132`, `QUA-1133` |
+| `QUA-1141` | Semantic validation: helper-backed primitive closure | Backlog | `QUA-1135` |
+| `QUA-1142` | Semantic contract: static exotic spec catalog | Backlog | `QUA-1134`, `QUA-1136` |
+| `QUA-1143` | Task learning: no-LLM scorecard and docs closeout | Backlog | `QUA-1139`, `QUA-1140`, `QUA-1141`, `QUA-1142` |
 
 ## Validation Plan
 
@@ -110,3 +116,44 @@ The current branch contains useful retry-loop work plus generated task-run
 artifacts from live reruns. Before starting the first ticket branch, isolate the
 source changes from generated result files and lesson traces so review remains
 clean.
+
+## Progress Log
+
+### 2026-07-02 offline local-agent closeout pass
+
+Created `QUA-1138` as the deterministic-promotion-loop parent and child
+tickets `QUA-1139` through `QUA-1143` for attribution, overlay consumption,
+helper-backed semantic validation, static exotic specs, and no-LLM scorecard
+closeout.
+
+Implemented a no-LLM offline local-agent guard for `scripts/run_tasks.py` and
+`scripts/rerun_ids.py`. Offline runs set post-build learning skips, disable
+LLM-backed critic/model-validator review through deterministic review policy,
+and keep the LLM override guard as a hard backstop.
+
+The final no-LLM rerun:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T20 --task-id T22 --task-id T105 --task-id T107 --task-id E27 \
+  --status all --offline-local-agents --recovery-mode assisted \
+  --validation standard \
+  --output task_results_qua1138_offline_subset_20260702_final.json
+```
+
+reported `5/5` passed expectations in `85s`, with `4` pricing successes,
+`1` certified honest block, `0` actionable failures, and zero LLM token usage.
+`T20`, `T22`, `T105`, and `T107` passed. `E27` printed as `HONEST_BLOCK` and
+remained fail-closed with `passed_expectation=true`.
+
+The bounded remediation check:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1138_offline_subset_20260702_final.json \
+  --skip-platform-traces
+```
+
+loaded `5` results, reported `4` success, `1` fail-closed, `5` passed
+expectation, and `0` total failures.

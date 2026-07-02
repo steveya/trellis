@@ -604,6 +604,22 @@ The Heston ADI PDE target uses the same model-parameter boundary. The
 FFT/COS transform calls are optional diagnostics, not the ADI market-binding
 contract.
 
+The ADI helper also owns its variance-grid domain. The grid upper bound is
+based on the CIR variance-process dispersion, not a raw ``xi * sqrt(T)`` move;
+otherwise high vol-of-vol fixtures place the initial variance too close to the
+lower boundary and bias the finite-difference price high. T20-style ADI
+comparisons should therefore use the checked helper instead of rebuilding the
+variance grid in generated code.
+
+Offline local-agent reruns can use ``--offline-local-agents`` on
+``scripts/run_tasks.py`` or ``scripts/rerun_ids.py``. That mode sets the
+post-build learning skips, disables LLM-backed critic/model-validator review
+through deterministic review policy, and leaves the LLM override guard active
+as a hard backstop. Batch summaries report expectation semantics separately
+from pricing success: an expected honest block remains fail-closed with no
+price, but prints as ``HONEST_BLOCK`` and counts toward
+``passed_expectation`` rather than actionable failure.
+
 That route family now also has its own lowered contract boundary. Transform
 tasks compile onto ``TransformPricingIR`` before admissibility, so the canaries
 no longer have to rely on the broader upstream ``vanilla_option`` semantics

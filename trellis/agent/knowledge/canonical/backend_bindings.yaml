@@ -703,7 +703,7 @@ bindings:
         required: false
       - module: trellis.models.pde.heston_adi
         symbol: price_heston_option_adi_pde_result
-        role: numerical_evidence
+        role: route_helper
 
   - route_id: pde_theta_1d
     engine_family: pde_solver
@@ -742,7 +742,7 @@ bindings:
         primitives:
           - module: trellis.models.pde.heston_adi
             symbol: price_heston_option_adi_pde_result
-            role: numerical_evidence
+            role: route_helper
       - when:
           payoff_family: barrier_option
           payoff_traits: [double_barrier]

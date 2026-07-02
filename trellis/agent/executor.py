@@ -2657,6 +2657,7 @@ def _make_test_payoff(
             date(2026, 5, 1),
             date(2026, 6, 1),
         ),
+        "tuple[float, ...]": (0.25, 0.5, 0.75, 1.0),
         "tuple[date, ...] | None": None,
         "Frequency": Frequency.SEMI_ANNUAL,
         "DayCountConvention": DayCountConvention.ACT_360,
@@ -2705,6 +2706,11 @@ def _make_test_payoff(
         "call_schedule": "2027-11-15,2029-11-15,2031-11-15",
         "barrier": 80.0,
         "barrier_type": "down_and_out",
+        "autocall_barrier": 1.0,
+        "protection_barrier": 0.7,
+        "coupon_rate": 0.08,
+        "initial_spot": 100.0,
+        "observation_times": (0.25, 0.5, 0.75, 1.0),
         "option_type": "call",
         "spot": 100.0,
         "fx_pair": "EURUSD",
@@ -3885,6 +3891,9 @@ def _deterministic_exact_binding_evaluate_body(
         ),
         "trellis.models.double_barrier_option.price_double_barrier_option_monte_carlo_result": (
             "return price_double_barrier_option_monte_carlo_result(market_state, spec).price"
+        ),
+        "trellis.models.pde.heston_adi.price_heston_option_adi_pde_result": (
+            "return price_heston_option_adi_pde_result(market_state, spec).price"
         ),
         "trellis.models.autocallable.price_autocallable_monte_carlo_result": (
             "return price_autocallable_monte_carlo_result("

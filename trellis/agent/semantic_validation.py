@@ -34,13 +34,20 @@ _RAW_STRING_SCHEDULE_ANNOTATIONS = frozenset({
 _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES = frozenset({
     "array_backend",
     "event_probability",
+    "grid",
     "loss_distribution",
     "market_binding",
+    "numerical_evidence",
     "path_simulation",
+    "payoff_primitive",
     "pricing_kernel",
     "route_helper",
+    "solver_config",
+    "spatial_operator",
     "state_process",
+    "terminal_payoff",
     "time_measure",
+    "time_stepping",
 })
 _CHECKED_ROUTE_HELPER_CALLS = frozenset({
     "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo",

@@ -185,7 +185,11 @@ Use the existing helper surface before generating adapters:
   binding surface; it resolves the same canonical Heston runtime binding as the
   transform and Monte Carlo helpers and does not use the Black vol surface as a
   model-parameter source. Optional transform references are diagnostics only;
-  they do not replace the PDE scalar price or the ADI binding contract.
+  they do not replace the PDE scalar price or the ADI binding contract. The
+  helper owns the variance-domain policy: it sizes ``Vmax`` from CIR
+  variance-process dispersion so high ``xi`` / high ``|rho|`` European
+  fixtures retain enough resolution around ``v0`` for bounded ADI-vs-MC
+  comparison.
 - ``trellis.models.calibration.heston_fit`` owns the bounded Heston smile and
   surface compression workflows that can produce reusable model parameters.
 - Heston Gauss-Laguerre, Bates, SLV/LSV, and path-dependent Heston control

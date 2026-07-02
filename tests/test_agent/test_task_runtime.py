@@ -2093,7 +2093,7 @@ def test_run_task_skips_promotion_candidates_when_cross_validation_fails(monkeyp
     assert result["artifacts"]["promotion_candidate_paths"] == []
 
 
-def test_run_task_aggregates_method_blockers_for_comparison_failures():
+def test_run_task_aggregates_method_blockers_for_comparison_failures(capsys):
     from trellis.agent.evals import classify_task_result
     from trellis.agent.task_runtime import run_task
 
@@ -2168,6 +2168,7 @@ def test_run_task_aggregates_method_blockers_for_comparison_failures():
     assert result["outcome_class"] == "honest_block"
     assert result["passed_expectation"] is True
     assert result["attempts"] == 0
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
 def test_build_result_payload_includes_blocker_details(tmp_path):

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 
 
 _HIGH_RISK_EXERCISE = {"issuer_call", "holder_put", "bermudan", "american"}
@@ -67,6 +68,16 @@ def determine_review_policy(
     blocking_reason = _validation_contract_blocking_reason(validation_contract)
     contract_review_reason = _validation_contract_review_reason(validation_contract)
 
+    if _env_flag("TRELLIS_OFFLINE_LOCAL_AGENTS"):
+        return ReviewPolicy(
+            risk_level=risk_level,
+            run_critic=False,
+            run_model_validator_llm=False,
+            critic_reason="offline_local_agents",
+            model_validator_reason="offline_local_agents",
+            critic_mode="skip",
+        )
+
     if validation not in {"standard", "thorough"}:
         return ReviewPolicy(
             risk_level=risk_level,
@@ -113,6 +124,10 @@ def determine_review_policy(
         critic_allow_text_fallback=(validation == "thorough"),
         critic_text_max_retries=None if validation == "thorough" else 0,
     )
+
+
+def _env_flag(name: str) -> bool:
+    return str(os.environ.get(name, "")).strip().lower() in {"1", "true", "yes", "on"}
 
 
 def _low_risk_reason(

@@ -234,6 +234,29 @@ def test_builds_mc_plan_for_autocallable_uses_event_contract_helper_without_qmc_
     assert "sobol_normals" not in primitive_symbols
 
 
+def test_plan_build_uses_static_autocallable_spec_under_offline_guard():
+    from trellis.agent.offline_agents import offline_local_agent_llm_guard
+    from trellis.agent.planner import plan_build
+
+    with offline_local_agent_llm_guard():
+        plan = plan_build(
+            "Autocallable note with quarterly observations, coupon, and terminal protection",
+            {"discount_curve", "black_vol_surface"},
+            instrument_type="autocallable",
+            preferred_method="monte_carlo",
+        )
+
+    assert plan.spec_schema is not None
+    assert plan.spec_schema.spec_name == "AutocallableSpec"
+    field_names = {field.name for field in plan.spec_schema.fields}
+    assert {
+        "observation_times",
+        "autocall_barrier",
+        "protection_barrier",
+        "coupon_rate",
+    } <= field_names
+
+
 def test_builds_heston_adi_plan_for_pde_method():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir

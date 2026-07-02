@@ -26,6 +26,26 @@ parser.add_argument(
     default="assisted",
     help="Bounded automatic recovery mode for reruns.",
 )
+parser.add_argument("--validation", default="standard")
+parser.add_argument(
+    "--reuse",
+    action="store_true",
+    help="Reuse existing generated modules when present instead of forcing rebuilds.",
+)
+parser.add_argument(
+    "--fresh-build",
+    action="store_true",
+    help="Bypass deterministic supported-route reuse so tasks exercise fresh build paths.",
+)
+parser.add_argument(
+    "--offline-local-agents",
+    action="store_true",
+    help=(
+        "Forbid live LLM API calls during task execution. Deterministic quant, "
+        "validation, exact bindings, and local/cassette paths may run; any "
+        "attempted text or JSON LLM call fails the task."
+    ),
+)
 args = parser.parse_args()
 
 ids = set(args.ids)
@@ -37,7 +57,28 @@ output_file = ROOT / f"task_results_rerun_{datetime.now().strftime('%H%M')}.json
 results = []
 for i, task in enumerate(tasks):
     print(f"[{i+1}/{len(tasks)}] {task['id']}: {task['title'][:50]}", flush=True)
-    result = run_task(task, ms, recovery_mode=args.recovery_mode)
+    if args.offline_local_agents:
+        from trellis.agent.offline_agents import offline_local_agent_run_scope
+
+        with offline_local_agent_run_scope():
+            result = run_task(
+                task,
+                ms,
+                recovery_mode=args.recovery_mode,
+                validation=args.validation,
+                force_rebuild=(not args.reuse) or args.fresh_build,
+                fresh_build=args.fresh_build,
+            )
+        result["offline_local_agents"] = True
+    else:
+        result = run_task(
+            task,
+            ms,
+            recovery_mode=args.recovery_mode,
+            validation=args.validation,
+            force_rebuild=(not args.reuse) or args.fresh_build,
+            fresh_build=args.fresh_build,
+        )
     results.append(result)
     diagnosis_headline = result.get("task_diagnosis_headline")
     diagnosis_packet_path = result.get("task_diagnosis_packet_path")

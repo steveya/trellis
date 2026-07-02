@@ -1479,7 +1479,18 @@ def run_task(
                 task_kind="pricing",
             )
             result_data["failures"] = _aggregate_failures(result_data)
-        status = "OK" if result_data.get("success") else "FAIL"
+        display_outcome_class = task_result_outcome_class(result_data)
+        display_passed_expectation = task_result_passed_expectation(
+            {**result_data, "outcome_class": display_outcome_class}
+        )
+        if result_data.get("success"):
+            status = "OK"
+        elif display_passed_expectation and display_outcome_class == "honest_block":
+            status = "HONEST_BLOCK"
+        elif display_passed_expectation:
+            status = "EXPECTATION_OK"
+        else:
+            status = "FAIL"
         print(
             f"  [{status}] {elapsed:.1f}s, llm_generation_attempts={result_data.get('attempts', 0)}, "
             f"confidence={result_data.get('gap_confidence', 0):.0%}"

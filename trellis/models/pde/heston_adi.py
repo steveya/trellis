@@ -188,11 +188,7 @@ def _solve_heston_adi_price(resolved, cfg: HestonAdiPDEConfig) -> float:
         float(cfg.spot_max_multiplier) * max(resolved.spot, 1e-8),
         2.0 * max(resolved.strike, 1e-8),
     )
-    v_max = max(
-        float(cfg.variance_max_multiplier) * max(process.theta, process.v0, 1e-6),
-        process.v0 + 4.0 * process.xi * (resolved.maturity ** 0.5),
-        0.2,
-    )
+    v_max = _variance_grid_upper_bound(process, resolved.maturity, cfg)
     s_grid = raw_np.linspace(0.0, s_max, n_s)
     v_grid = raw_np.linspace(0.0, v_max, n_v)
     values = terminal_intrinsic(
@@ -239,6 +235,30 @@ def _solve_heston_adi_price(resolved, cfg: HestonAdiPDEConfig) -> float:
         dtype=float,
     )
     return float(raw_np.interp(resolved.spot, s_grid, interpolated_variance))
+
+
+def _variance_grid_upper_bound(process, maturity: float, cfg: HestonAdiPDEConfig) -> float:
+    """Return a scale-aware upper variance bound for the Heston ADI grid."""
+    theta = max(float(process.theta), 1e-10)
+    v0 = max(float(process.v0), 1e-10)
+    xi = abs(float(process.xi))
+    kappa = max(float(process.kappa), 1e-10)
+    t = max(float(maturity), 0.0)
+
+    long_run_bound = float(cfg.variance_max_multiplier) * max(theta, v0, 1e-6)
+    if t <= 0.0 or xi <= 1e-14:
+        dispersion_bound = max(theta, v0)
+    else:
+        variance_of_variance = (
+            theta
+            * xi
+            * xi
+            / (2.0 * kappa)
+            * (1.0 - raw_np.exp(-2.0 * kappa * t))
+        )
+        std_variance = float(raw_np.sqrt(max(variance_of_variance, 0.0)))
+        dispersion_bound = max(theta, v0) + 4.0 * std_variance
+    return max(long_run_bound, dispersion_bound, v0 + 1e-4, 0.02)
 
 
 def _apply_spot_operator(values, s_grid, v_grid, resolved):

@@ -1263,7 +1263,7 @@ routes:
         required: false
       - module: trellis.models.pde.heston_adi
         symbol: price_heston_option_adi_pde_result
-        role: numerical_evidence
+        role: route_helper
     adapters: []
     notes:
       - "Bind canonical Heston model parameters at the runtime boundary; do not consume Black vol as a live Heston parameter source."
@@ -1320,7 +1320,7 @@ routes:
         primitives:
           - module: trellis.models.pde.heston_adi
             symbol: price_heston_option_adi_pde_result
-            role: numerical_evidence
+            role: route_helper
         adapters: []
         notes:
           - "Bind canonical Heston model parameters at the runtime boundary; do not consume Black vol as a live Heston parameter source."
