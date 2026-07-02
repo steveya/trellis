@@ -75,10 +75,17 @@ def _full_task_replay_test(task_id: str):
             assert len(results) == 1
             result = results[0]
             assert result["success"] is True
-            assert result["execution_mode"] == "cassette_replay"
-            assert result["llm_cassette"]["path"] == str(
-                FULL_TASK_CASSETTES_DIR / f"{task_id}.yaml"
+            expected_execution_mode = (
+                "deterministic_replay"
+                if canary.get("replay_mode") == "deterministic_exact_binding"
+                else "cassette_replay"
             )
+            assert result["execution_mode"] == expected_execution_mode
+            replay_meta = result["llm_cassette"]
+            assert replay_meta["path"] == str(FULL_TASK_CASSETTES_DIR / f"{task_id}.yaml")
+            if expected_execution_mode == "deterministic_replay":
+                assert replay_meta["used"] is False
+                assert result["offline_local_agents"] is True
             assert (result.get("token_usage_summary") or {}).get("total_tokens") == 0
             assert Path(result["task_diagnosis_packet_path"]).exists()
             assert Path(result["task_diagnosis_dossier_path"]).exists()

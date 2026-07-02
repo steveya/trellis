@@ -2,7 +2,8 @@
 
 Provides cassette-aware fixtures and helpers for canary contract tests.
 Replay-backed contract tests run with cassette replay (zero tokens) by
-default, while tasks marked ``record_cassette=false`` opt out of replay.
+default, while tasks marked ``record_cassette=false`` opt out of cassette
+recording. Some canaries instead use deterministic exact-binding replay.
 """
 
 from __future__ import annotations
@@ -72,6 +73,16 @@ def cassette_recording_supported(task_id: str) -> bool:
     return canary is None or canary.get("record_cassette", True)
 
 
+def deterministic_full_task_replay_supported(task_id: str) -> bool:
+    """Return whether *task_id* uses deterministic full-task replay."""
+    canary = CANARY_META.get(task_id)
+    return (
+        canary is not None
+        and str(canary.get("replay_mode", "")).strip().lower()
+        == "deterministic_exact_binding"
+    )
+
+
 def cassette_skip_reason(task_id: str) -> str:
     """Explain why a cassette-backed contract test should skip for *task_id*."""
     if not cassette_recording_supported(task_id):
@@ -96,6 +107,8 @@ def full_task_cassette_path_for(task_id: str) -> Path:
 
 def full_task_cassette_skip_reason(task_id: str) -> str:
     """Explain why a full-task replay contract test should skip for *task_id*."""
+    if deterministic_full_task_replay_supported(task_id):
+        return f"{task_id} uses deterministic exact-binding replay."
     if not cassette_recording_supported(task_id):
         return (
             f"Full-task cassette replay disabled for {task_id}; "
@@ -109,6 +122,8 @@ def full_task_cassette_skip_reason(task_id: str) -> str:
 
 def full_task_cassette_available(task_id: str) -> bool:
     """Check whether a full-task cassette exists for *task_id*."""
+    if deterministic_full_task_replay_supported(task_id):
+        return True
     return (
         cassette_recording_supported(task_id)
         and full_task_cassette_path_for(task_id).exists()
