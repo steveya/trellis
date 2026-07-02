@@ -246,6 +246,76 @@ def evaluate(self, market_state):
         )
         assert any(f.category == "engine_family_mismatch" for f in findings)
 
+    @pytest.mark.parametrize(
+        ("method", "source"),
+        [
+            (
+                "pde_solver",
+                '''
+from trellis.models.double_barrier_option import price_double_barrier_option_pde_result
+
+def evaluate(self, market_state):
+    return price_double_barrier_option_pde_result(market_state, self._spec).price
+''',
+            ),
+            (
+                "monte_carlo",
+                '''
+from trellis.models.double_barrier_option import price_double_barrier_option_monte_carlo_result
+
+def evaluate(self, market_state):
+    return price_double_barrier_option_monte_carlo_result(market_state, self._spec).price
+''',
+            ),
+        ],
+    )
+    def test_accepts_helper_backed_double_barrier_route_without_low_level_findings(
+        self,
+        registry,
+        method,
+        source,
+    ):
+        from trellis.agent.platform_requests import compile_build_request
+
+        compiled = compile_build_request(
+            "Double barrier option via checked helper",
+            instrument_type="barrier_option",
+            preferred_method=method,
+        )
+        route_id = compiled.generation_plan.primitive_plan.route
+        spec = [r for r in registry.routes if r.id == route_id][0]
+
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, compiled.generation_plan, spec)
+
+        assert findings == ()
+
+    def test_flags_double_barrier_helper_signature_mismatch(self, registry):
+        from trellis.agent.platform_requests import compile_build_request
+
+        compiled = compile_build_request(
+            "Double barrier option via checked helper",
+            instrument_type="barrier_option",
+            preferred_method="pde_solver",
+        )
+        route_id = compiled.generation_plan.primitive_plan.route
+        spec = [r for r in registry.routes if r.id == route_id][0]
+        source = '''
+from trellis.models.double_barrier_option import price_double_barrier_option_pde_result
+
+def evaluate(self, market_state):
+    return price_double_barrier_option_pde_result(
+        market_state=market_state,
+        spec=self._spec,
+        spot=self._spec.spot,
+    ).price
+'''
+
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, compiled.generation_plan, spec)
+
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
     def test_heston_adi_result_surface_satisfies_engine_signature(self, registry):
         spec = [r for r in registry.routes if r.id == "heston_adi_2d"][0]
         source = '''

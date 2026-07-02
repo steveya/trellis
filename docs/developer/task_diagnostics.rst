@@ -379,6 +379,16 @@ compiled primitive obligation. For schedule-bearing routes, the same layer now
 also surfaces raw string schedule fields before execution so timeline-typing
 drift is visible in the packet rather than only as a later runtime failure.
 
+For helper-owned exact routes, the packet should not ask a thin adapter to
+prove every internal primitive separately after the route helper surface has
+validated.  For example, a double-barrier PDE or Monte Carlo adapter that calls
+``price_double_barrier_option_pde_result(market_state, spec, *, config=...)``
+or ``price_double_barrier_option_monte_carlo_result(market_state, spec, *,
+config=...)`` delegates grid/operator/payoff, barrier-monitor, and discounting
+internals to the checked helper.  If the adapter omits that helper or passes an
+invented surface such as raw ``spot`` or barrier keywords, the diagnosis should
+remain a route-helper contract failure.
+
 Lane obligations
 ----------------
 
