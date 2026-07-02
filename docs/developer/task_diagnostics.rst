@@ -45,14 +45,22 @@ Full-task canary replays now persist the same task-run and diagnosis artifacts
 as live runs, but they also mark the execution surface explicitly:
 
 - ``execution_mode`` is set to ``cassette_replay``
-- ``llm_cassette`` records the cassette name, path, and replay policy
+- ``execution_mode`` is set to ``deterministic_replay`` for canaries that run
+  under the offline-local exact-binding lane instead of consuming cassette
+  calls
+- ``llm_cassette`` records the cassette name, path, replay policy, and
+  ``used=false`` when deterministic replay bypasses the cassette
 
 That metadata is stored on the top-level task result and the persisted task-run
 record so diagnosis, remediation, and canary-summary tooling can tell live and
-cassette-backed runs apart without needing a separate artifact schema.
+cassette-backed or deterministic replay runs apart without needing a separate
+artifact schema.
 
 For replay stability, record and replay full-task canary cassettes with
 ``PYTHONHASHSEED=0`` and keep them under ``cassettes/full_task/``.
+Canaries that declare ``replay_mode: deterministic_exact_binding`` do not need
+their historical cassette refreshed; they must instead complete with zero live
+LLM calls through deterministic exact bindings.
 
 How to read one
 ---------------

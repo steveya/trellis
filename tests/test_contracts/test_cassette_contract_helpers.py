@@ -63,3 +63,24 @@ class TestCassetteAvailabilityHelpers:
         )
 
         assert contract_conftest.full_task_cassette_available("T13") is True
+
+    def test_full_task_replay_available_for_deterministic_exact_binding_without_cassette(
+        self, monkeypatch, tmp_path
+    ):
+        monkeypatch.setitem(
+            contract_conftest.CANARY_META,
+            "T13",
+            {
+                "id": "T13",
+                "record_cassette": False,
+                "replay_mode": "deterministic_exact_binding",
+            },
+        )
+        monkeypatch.setattr(
+            contract_conftest,
+            "full_task_cassette_path_for",
+            lambda task_id: tmp_path / f"{task_id}.yaml",
+        )
+
+        assert contract_conftest.cassette_recording_supported("T13") is False
+        assert contract_conftest.full_task_cassette_available("T13") is True
