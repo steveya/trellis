@@ -5,8 +5,9 @@ This table is the audit output from the former `TASKS.yaml` corpus. The legacy m
 Current bridge note: `QUA-1146` adds a bounded runtime contract bridge for the
 proof rows that previously failed at `semantic_product_shape`. `T25`, `T26`,
 `T31`, and `T32` now receive explicit European SPX call proof contracts,
-`T27` receives an American SPX put proof contract, and `T18` is a certified
-honest block until the rate payoff and schedule are specified.
+`T27` receives an American SPX put proof contract plus deterministic local LSM
+basis/tree comparison targets, and `T18` is a certified honest block until the
+rate payoff and schedule are specified.
 
 | Task | Bucket | Target | Title |
 | --- | --- | --- | --- |

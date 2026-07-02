@@ -1522,6 +1522,74 @@ def test_sparse_rate_pde_proof_row_blocks_honestly_without_build(monkeypatch, tm
     assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
+def test_sparse_lsm_basis_proof_row_uses_deterministic_local_targets(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T27"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T27 basis proof targets should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_headline": "T27 deterministic basis proof passed.",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["attempts"] == 0
+    assert result["instrument_type"] == "american_option"
+    assert result["instrument_identity_source"] == "semantic_contract.product.instrument_class"
+    assert result["comparison_targets"] == [
+        "polynomial",
+        "laguerre",
+        "hermite",
+        "chebyshev",
+        "high_step_tree_2000",
+    ]
+    assert result["cross_validation"]["status"] == "passed"
+    assert result["cross_validation"]["reference_target"] == "high_step_tree_2000"
+    assert set(result["cross_validation"]["successful_targets"]) == {
+        "polynomial",
+        "laguerre",
+        "hermite",
+        "chebyshev",
+        "high_step_tree_2000",
+    }
+    assert {
+        target_id: payload["payoff_class"]
+        for target_id, payload in result["method_results"].items()
+    } == {
+        "polynomial": "ProofAmericanLSMPolynomialPayoff",
+        "laguerre": "ProofAmericanLSMLaguerrePayoff",
+        "hermite": "ProofAmericanLSMHermitePayoff",
+        "chebyshev": "ProofAmericanLSMChebyshevPayoff",
+        "high_step_tree_2000": "ProofAmericanHighStepTreePayoff",
+    }
+
+
 def test_cross_validate_comparison_task_prices_reused_fx_modules():
     from trellis.agent.task_runtime import (
         ComparisonBuildTarget,

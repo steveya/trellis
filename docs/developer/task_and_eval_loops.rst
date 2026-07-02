@@ -438,12 +438,17 @@ Sparse legacy proof rows can also carry a deterministic task-runtime contract
 bridge before generation. The bridge is intentionally small and auditable:
 ``T25``, ``T26``, ``T31``, and ``T32`` default to a European SPX call
 semantic contract for Monte Carlo numerical-method proof work, while ``T27``
-defaults to an American SPX put contract for the LSM basis comparison. ``T18``
-does not get a synthetic rate payoff; it is certified as an expected honest
-block because the legacy row names a log-space PDE transform for rate
-instruments without specifying the rate payoff, schedule, strike/coupon terms,
-or settlement rule. Those bridge decisions are task-runner contracts, not
-general natural-language parser behavior.
+defaults to an American SPX put contract for the LSM basis comparison. ``T27``
+also binds the comparison target ids ``polynomial``, ``laguerre``,
+``hermite``, ``chebyshev``, and ``high_step_tree_2000`` to deterministic local
+proof adapters that compose the public Longstaff-Schwartz basis primitives and
+CRR tree reference. They are task-runner proof contracts, not promoted
+cookbooks or public pricing APIs. ``T18`` does not get a synthetic rate payoff;
+it is certified as an expected honest block because the legacy row names a
+log-space PDE transform for rate instruments without specifying the rate
+payoff, schedule, strike/coupon terms, or settlement rule. Those bridge
+decisions are task-runner contracts, not general natural-language parser
+behavior.
 
 Stochastic-volatility task runs also carry a ``computational_problem`` block
 when the task target is Heston, Bates, SLV/LSV, or a related unsupported
