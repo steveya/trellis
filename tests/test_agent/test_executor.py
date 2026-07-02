@@ -1498,6 +1498,52 @@ def test_deterministic_exact_binding_module_materializes_barrier_helper_with_tim
     assert EVALUATE_SENTINEL not in generated.code
 
 
+@pytest.mark.parametrize(
+    ("helper_ref", "expected_call"),
+    [
+        (
+            "trellis.models.double_barrier_option.price_double_barrier_option_pde_result",
+            "price_double_barrier_option_pde_result(market_state, spec).price",
+        ),
+        (
+            "trellis.models.double_barrier_option.price_double_barrier_option_monte_carlo_result",
+            "price_double_barrier_option_monte_carlo_result(market_state, spec).price",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_double_barrier_helpers(
+    helper_ref,
+    expected_call,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper_ref,),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type="barrier_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["barrier_option"],
+        "Double barrier checked helper",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_deterministic_black_scholes_comparator_satisfies_required_primitive_validation():
     from trellis.agent.executor import (
         _generate_skeleton,

@@ -279,14 +279,21 @@ def test_barrier_family_support_approves_shared_barrier_primitives():
         product_ir=ProductIR(
             instrument="barrier_option",
             payoff_family="barrier_option",
+            payoff_traits=("double_barrier",),
             exercise_style="european",
             model_family="equity_diffusion",
         ),
     )
 
     assert "trellis.models.analytical.support.barriers" in plan.approved_modules
+    assert "trellis.models.double_barrier_option" in plan.approved_modules
     report = validate_generated_imports(
-        "from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff, double_barrier_state_payoff\n",
+        "from trellis.models.analytical.support.barriers import "
+        "terminal_double_barrier_payoff, double_barrier_state_payoff\n"
+        "from trellis.models.double_barrier_option import "
+        "DoubleBarrierPDEConfig, DoubleBarrierMonteCarloConfig, "
+        "price_double_barrier_option_pde_result, "
+        "price_double_barrier_option_monte_carlo_result\n",
         plan,
     )
     assert report.ok

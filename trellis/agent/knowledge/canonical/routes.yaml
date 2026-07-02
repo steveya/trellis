@@ -376,6 +376,13 @@ routes:
           payoff_family: barrier_option
           payoff_traits: [double_barrier]
         primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierMonteCarloConfig
+            role: solver_config
+            required: false
           - module: trellis.models.analytical.support.barriers
             symbol: resolve_double_barrier_inputs
             role: market_binding
@@ -390,7 +397,7 @@ routes:
             role: payoff_primitive
         adapters: []
         notes:
-          - "Use the double-barrier state payoff primitive or two explicit BarrierMonitor objects; generated code still owns process simulation and discounting."
+          - "Prefer `price_double_barrier_option_monte_carlo_result(...)` for the checked MC surface; if assembling manually, use two explicit BarrierMonitor objects or `double_barrier_state_payoff(...)`."
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]
@@ -1319,6 +1326,13 @@ routes:
           payoff_family: barrier_option
           payoff_traits: [double_barrier]
         primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_pde_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierPDEConfig
+            role: solver_config
+            required: false
           - module: trellis.models.analytical.support.barriers
             symbol: resolve_double_barrier_inputs
             role: market_binding
@@ -1336,7 +1350,7 @@ routes:
             role: terminal_payoff
         adapters: []
         notes:
-          - "Build lower/upper absorbing boundaries on the bounded Black-Scholes grid explicitly."
+          - "Prefer `price_double_barrier_option_pde_result(...)` for the checked PDE surface; if assembling manually, use a bounded Black-Scholes grid on `[lower_barrier, upper_barrier]` with absorbing boundaries."
       - when: default
         primitives:
           - module: trellis.models.pde.grid

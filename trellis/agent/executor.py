@@ -3880,6 +3880,12 @@ def _deterministic_exact_binding_evaluate_body(
             ")\n"
             "return spec.notional * price"
         ),
+        "trellis.models.double_barrier_option.price_double_barrier_option_pde_result": (
+            "return price_double_barrier_option_pde_result(market_state, spec).price"
+        ),
+        "trellis.models.double_barrier_option.price_double_barrier_option_monte_carlo_result": (
+            "return price_double_barrier_option_monte_carlo_result(market_state, spec).price"
+        ),
     }
     for ref, body in helper_bodies.items():
         if ref in refs:
@@ -5814,8 +5820,9 @@ def _route_specific_retry_lines(
         )
     if comparison_target in {"pde_double_barrier", "mc_double_barrier"}:
         return (
-            "For double-barrier targets, use lower and upper barrier primitives from `trellis.models.analytical.support.barriers`.",
-            "PDE adapters should build the bounded grid and absorbing boundary conditions explicitly; MC adapters should use two barrier monitors or the shared state payoff primitive.",
+            "For double-barrier targets, prefer `trellis.models.double_barrier_option` pricing-facing helpers before hand assembly.",
+            "PDE adapters can call `price_double_barrier_option_pde_result(market_state, spec).price`; manual assembly must use the bounded `[lower_barrier, upper_barrier]` grid and absorbing boundaries.",
+            "MC adapters can call `price_double_barrier_option_monte_carlo_result(market_state, spec).price`; manual assembly must use two barrier monitors or the shared state payoff primitive.",
             "Do not adapt the single-barrier Reiner-Rubinstein formula to lower/upper barriers by hand.",
         )
     if comparison_target in {"mc_autocall", "mc_autocall_qmc"}:

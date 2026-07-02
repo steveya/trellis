@@ -184,6 +184,13 @@ bindings:
           payoff_family: barrier_option
           payoff_traits: [double_barrier]
         primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierMonteCarloConfig
+            role: solver_config
+            required: false
           - module: trellis.models.analytical.support.barriers
             symbol: resolve_double_barrier_inputs
             role: market_binding
@@ -739,6 +746,13 @@ bindings:
           payoff_family: barrier_option
           payoff_traits: [double_barrier]
         primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_pde_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierPDEConfig
+            role: solver_config
+            required: false
           - module: trellis.models.analytical.support.barriers
             symbol: resolve_double_barrier_inputs
             role: market_binding

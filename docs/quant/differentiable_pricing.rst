@@ -946,7 +946,7 @@ Where Trellis Still Stays Forward-Only
 - Numba-accelerated tree, Monte Carlo, and PDE kernels
 - discontinuous payoffs that would need smoothing or a custom adjoint
 - broader European barrier families beyond the T09 route. Double-barrier PDE
-  and Monte Carlo adapters now share payoff and monitoring primitives, but
+  and Monte Carlo routes now have checked pricing-facing helpers, but
   discontinuous barrier pathwise derivatives still fail closed under the Monte
   Carlo derivative policy.
 - scalar vega on unsupported smile surfaces, which now reports an explicit

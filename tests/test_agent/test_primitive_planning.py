@@ -151,6 +151,8 @@ def test_builds_pde_plan_for_double_barrier_uses_absorbing_grid_primitives():
     assert plan.primitive_plan.route == "pde_theta_1d"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {
+        "price_double_barrier_option_pde_result",
+        "DoubleBarrierPDEConfig",
         "resolve_double_barrier_inputs",
         "terminal_double_barrier_payoff",
         "Grid",
@@ -189,6 +191,8 @@ def test_builds_mc_plan_for_double_barrier_uses_process_engine_and_payoff_primit
     assert plan.primitive_plan.route == "monte_carlo_paths"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {
+        "price_double_barrier_option_monte_carlo_result",
+        "DoubleBarrierMonteCarloConfig",
         "resolve_double_barrier_inputs",
         "double_barrier_state_payoff",
         "GBM",

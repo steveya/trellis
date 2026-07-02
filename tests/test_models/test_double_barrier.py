@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 
 import numpy as np
+import pytest
 
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
@@ -15,6 +16,12 @@ from trellis.models.analytical.support.barriers import (
     double_barrier_path_payoff,
     double_barrier_state_payoff,
     resolve_double_barrier_inputs,
+)
+from trellis.models.double_barrier_option import (
+    DoubleBarrierMonteCarloConfig,
+    DoubleBarrierPDEConfig,
+    price_double_barrier_option_monte_carlo_result,
+    price_double_barrier_option_pde_result,
 )
 from trellis.models.monte_carlo.path_state import MonteCarloPathState
 from trellis.models.vol_surface import FlatVol
@@ -96,3 +103,73 @@ def test_double_barrier_state_payoff_declares_two_monitors():
     monitors = payoff.path_requirement.barrier_monitors
     assert [monitor.name for monitor in monitors] == ["lower_barrier", "upper_barrier"]
     assert payoff.evaluate_state(state).tolist() == [0.0, 20.0, 31.0]
+
+
+def test_double_barrier_pde_uses_bounded_absorbing_contract():
+    spec = BarrierOptionSpec(lower_barrier=75.0, upper_barrier=150.0)
+    result = price_double_barrier_option_pde_result(
+        _market_state(),
+        spec,
+        config=DoubleBarrierPDEConfig(spot_steps=121, time_steps=220),
+    )
+
+    assert result.validation_bundle == "double_barrier:pde_theta_1d"
+    assert result.grid_bounds == (75.0, 150.0)
+    assert result.boundary_conditions == "absorbing"
+    assert result.operator_signature == "BlackScholesOperator(sigma_fn, r_fn)"
+    assert result.price > 0.0
+    assert result.price < result.vanilla_price
+
+
+def test_double_barrier_monte_carlo_uses_two_barrier_monitors():
+    result = price_double_barrier_option_monte_carlo_result(
+        _market_state(),
+        BarrierOptionSpec(lower_barrier=75.0, upper_barrier=150.0),
+        config=DoubleBarrierMonteCarloConfig(n_paths=20_000, n_steps=126, seed=7),
+    )
+
+    assert result.validation_bundle == "double_barrier:monte_carlo_gbm"
+    assert result.path_contract == ("lower_barrier:down", "upper_barrier:up")
+    assert result.n_paths == 20_000
+    assert result.price > 0.0
+
+
+def test_double_barrier_pde_and_mc_agree_on_non_degenerate_fixture():
+    spec = BarrierOptionSpec(lower_barrier=70.0, upper_barrier=160.0)
+    pde = price_double_barrier_option_pde_result(
+        _market_state(),
+        spec,
+        config=DoubleBarrierPDEConfig(spot_steps=141, time_steps=260),
+    )
+    mc = price_double_barrier_option_monte_carlo_result(
+        _market_state(),
+        spec,
+        config=DoubleBarrierMonteCarloConfig(n_paths=60_000, n_steps=180, seed=19),
+    )
+
+    assert mc.price == pytest.approx(pde.price, rel=0.12, abs=0.75)
+
+
+def test_double_barrier_in_out_parity_uses_vanilla_contract():
+    out_spec = BarrierOptionSpec(
+        lower_barrier=75.0,
+        upper_barrier=150.0,
+        knock="out",
+    )
+    in_spec = BarrierOptionSpec(
+        lower_barrier=75.0,
+        upper_barrier=150.0,
+        knock="in",
+    )
+    out = price_double_barrier_option_pde_result(
+        _market_state(),
+        out_spec,
+        config=DoubleBarrierPDEConfig(spot_steps=121, time_steps=220),
+    )
+    inn = price_double_barrier_option_pde_result(
+        _market_state(),
+        in_spec,
+        config=DoubleBarrierPDEConfig(spot_steps=121, time_steps=220),
+    )
+
+    assert out.price + inn.price == pytest.approx(out.vanilla_price, rel=1e-10)

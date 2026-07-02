@@ -232,8 +232,12 @@ The first migrated vanilla cases now use that boundary directly:
 - Double-barrier proof routes share
   ``trellis.models.analytical.support.barriers`` for lower/upper barrier specs,
   terminal payoff semantics, hit masks, and reduced-storage state payoffs.
-  Generated PDE or Monte Carlo adapters still own the numerical route
-  assembly, grid/simulation controls, parity assembly, and discounting.
+  ``trellis.models.double_barrier_option`` now provides the checked
+  ``price_double_barrier_option_pde_result`` and
+  ``price_double_barrier_option_monte_carlo_result`` surfaces. The PDE helper
+  owns the bounded Black-Scholes grid on ``[lower_barrier, upper_barrier]``,
+  absorbing boundaries, and knock-in/out parity; the Monte Carlo helper owns
+  the GBM engine binding, two barrier monitors, and deterministic discounting.
 - Single-underlier autocallable proof routes use the existing Monte Carlo,
   GBM, event/schedule, and Sobol/QMC primitives. Generated adapters own the
   observation schedule, first-trigger redemption, coupon accrual, terminal

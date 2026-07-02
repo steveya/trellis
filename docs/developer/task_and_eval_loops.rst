@@ -43,12 +43,13 @@ Current composition rules:
   autocallable, not evidence that the product should be narrowed to
   ``barrier_option``.
 - double-barrier requests add the ``double_barrier`` payoff trait. The PDE lane
-  receives ``resolve_double_barrier_inputs``, ``Grid``,
-  ``BlackScholesOperator``, ``theta_method_1d``, and
-  ``terminal_double_barrier_payoff``; the Monte Carlo lane receives
-  ``resolve_double_barrier_inputs``, ``GBM``, ``MonteCarloEngine``, and
-  ``double_barrier_state_payoff``. Neither lane should depend on a final
-  double-barrier scalar pricing helper.
+  prefers ``trellis.models.double_barrier_option``'s
+  ``price_double_barrier_option_pde_result`` and records the lower-level
+  ``resolve_double_barrier_inputs``, ``Grid``, ``BlackScholesOperator``,
+  ``theta_method_1d``, and ``terminal_double_barrier_payoff`` obligations. The
+  Monte Carlo lane prefers ``price_double_barrier_option_monte_carlo_result``
+  and records the ``GBM``, ``MonteCarloEngine``, and
+  ``double_barrier_state_payoff`` path-monitor obligations.
 - stochastic-volatility PDE requests with ``stochastic_vol`` traits can select
   the ``heston_adi_2d`` route. That route is still a ``pde_solver`` family
   route; the route id only supplies the Heston-specific ADI evidence signature
