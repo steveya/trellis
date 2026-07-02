@@ -179,6 +179,17 @@ deterministic build inputs such as ``knowledge_overlays`` or
 recorded, but their attribution kind remains ``candidate_not_retryable`` or
 ``candidate_not_applied`` and ``deterministic_input_changed`` stays false.
 
+Retry overlays also enter the deterministic request compiler.  When a retry
+candidate carries available ``required_primitive`` or ``callable_signature``
+obligations, ``compile_build_request(...)`` adds the corresponding module,
+symbol, reusable primitive ref, and helper ref to the ``GenerationPlan`` before
+validation and route-binding metadata are finalized.  The compiled request
+records ``intra_run_learning_overlay_consumption`` so operators can see which
+candidate ids were consumed and which generation-plan fields changed.  Binding,
+comparison, and market-binding obligations are recorded as structured compiler
+inputs; the compiler does not overwrite an existing checked backend binding
+from an overlay.
+
 What Future Builds Actually Reuse
 ---------------------------------
 

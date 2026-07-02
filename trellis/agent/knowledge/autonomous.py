@@ -667,6 +667,7 @@ def _build_with_tracking(
             build_meta=meta,
             gap_report=gap_report,
             knowledge_retriever=_stage_aware_knowledge_retriever,
+            knowledge_overlays=knowledge_overlays,
         )
 
         meta["attempts"] = attempt_count[0]
