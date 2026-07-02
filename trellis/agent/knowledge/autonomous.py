@@ -159,6 +159,7 @@ def build_with_knowledge(
     preferred_method: str | None = None,
     comparison_target: str | None = None,
     request_metadata: Mapping[str, object] | None = None,
+    semantic_contract=None,
     knowledge_overlays: Sequence[Mapping[str, object]] | None = None,
 ) -> BuildResult:
     """Build a payoff class while autonomously managing the knowledge lifecycle.
@@ -272,6 +273,7 @@ def build_with_knowledge(
                 fresh_build=fresh_build,
                 preferred_method=preferred_method,
                 request_metadata=request_metadata,
+                semantic_contract=semantic_contract,
                 knowledge_overlays=knowledge_overlays,
             )
             result.payoff_cls = payoff_cls
@@ -505,6 +507,7 @@ def _build_with_tracking(
     build_description: str | None = None,
     preferred_method: str | None = None,
     request_metadata: Mapping[str, object] | None = None,
+    semantic_contract=None,
     knowledge_overlays: Sequence[Mapping[str, object]] | None = None,
 ) -> tuple[type | None, dict]:
     """Run ``build_payoff()`` while capturing metadata needed by the reflect phase.
@@ -660,6 +663,7 @@ def _build_with_tracking(
             max_retries=max_retries,
             preferred_method=preferred_method,
             request_metadata=request_metadata,
+            semantic_contract=semantic_contract,
             build_meta=meta,
             gap_report=gap_report,
             knowledge_retriever=_stage_aware_knowledge_retriever,

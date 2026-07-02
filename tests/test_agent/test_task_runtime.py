@@ -1421,6 +1421,107 @@ def test_run_task_carries_stochastic_vol_problem_metadata_for_comparison_task(mo
     assert qe_target["validation_bundle"] == "heston:monte_carlo"
 
 
+def test_task_runtime_bridges_sparse_proof_mc_rows_to_vanilla_option_contract():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] in {"T25", "T26", "T31", "T32"}
+    }
+
+    assert set(tasks) == {"T25", "T26", "T31", "T32"}
+    for task in tasks.values():
+        contract = task_to_semantic_contract(task)
+        assert contract is not None
+        summary = semantic_contract_summary(contract)
+        assert summary["semantic_id"] == "vanilla_option"
+        assert summary["product"]["underlying"] == {
+            "asset_class": "equity",
+            "identifiers": ["SPX"],
+        }
+        assert summary["product"]["option_type"] == "call"
+        assert summary["product"]["exercise_style"] == "european"
+        assert summary["product"]["observation_schedule"] == ["2025-11-15"]
+        assert summary["methods"]["preferred_method"] == "monte_carlo"
+
+
+def test_task_runtime_bridges_sparse_lsm_basis_row_to_american_contract():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T27"
+    )
+
+    contract = task_to_semantic_contract(task)
+
+    assert contract is not None
+    summary = semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "american_option"
+    assert summary["product"]["underlying"] == {
+        "asset_class": "equity",
+        "identifiers": ["SPX"],
+    }
+    assert summary["product"]["option_type"] == "put"
+    assert summary["product"]["exercise_style"] == "american"
+    assert summary["methods"]["preferred_method"] == "monte_carlo"
+
+
+def test_sparse_rate_pde_proof_row_blocks_honestly_without_build(monkeypatch, tmp_path, capsys):
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T18"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T18 honest block should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "blocked",
+            "diagnosis_headline": "Sparse proof row blocked honestly.",
+            "diagnosis_decision_stage": "blocked",
+            "diagnosis_next_action": "Specify the rate payoff and schedule before pricing.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["expected_honest_block"] is True
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert classify_task_result(result) == "blocked"
+    assert result["failure_bucket"] == "blocked"
+    assert result["attempts"] == 0
+    assert result["blocker_details"]["reason"] == "proof_legacy_under_specified_rate_pde"
+    assert "semantic_product_shape" not in "\n".join(result["failures"])
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
+
+
 def test_cross_validate_comparison_task_prices_reused_fx_modules():
     from trellis.agent.task_runtime import (
         ComparisonBuildTarget,

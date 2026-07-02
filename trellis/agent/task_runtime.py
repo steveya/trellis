@@ -356,6 +356,13 @@ class TaskContractError(ValueError):
         return " ".join(part.strip() for part in parts if part and part.strip())
 
 
+@dataclass(frozen=True)
+class ExpectedTaskHonestBlock(Exception):
+    """Raised when a sparse task row is intentionally certified as non-priceable."""
+
+    details: dict[str, Any]
+
+
 _FALLBACK_AGENT_MODULES: dict[str, tuple[str, str]] = {
     "american_option": ("trellis.instruments._agent.americanputpayoff", "AmericanOptionPayoff"),
     "american_put": ("trellis.instruments._agent.americanputpayoff", "AmericanOptionPayoff"),
@@ -814,13 +821,109 @@ def task_to_instrument_identity(task: dict) -> InstrumentIdentityResolution:
     )
 
 
+_PROOF_LEGACY_DEFAULT_UNDERLIER = "SPX"
+_PROOF_LEGACY_DEFAULT_EXPIRY = "2025-11-15"
+_PROOF_LEGACY_VANILLA_MC_CONTRACT_IDS = frozenset({"T25", "T26", "T31", "T32"})
+
+
+def _is_proof_legacy_task(task: Mapping[str, Any]) -> bool:
+    corpus = str(task.get("task_corpus") or "").strip().lower()
+    manifest = str(task.get("task_definition_manifest") or "").strip()
+    return corpus == "proof_legacy" or manifest == "TASKS_PROOF_LEGACY.yaml"
+
+
+def _proof_legacy_semantic_contract(task: dict, description: str):
+    """Return an explicit semantic contract for sparse legacy proof rows."""
+    if not _is_proof_legacy_task(task):
+        return None
+
+    task_id = str(task.get("id") or "").strip()
+    if task_id in _PROOF_LEGACY_VANILLA_MC_CONTRACT_IDS:
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        return make_vanilla_option_contract(
+            description=description,
+            underliers=(_PROOF_LEGACY_DEFAULT_UNDERLIER,),
+            observation_schedule=(_PROOF_LEGACY_DEFAULT_EXPIRY,),
+            preferred_method="monte_carlo",
+            underlying_asset_class="equity",
+            option_type="call",
+        )
+
+    if task_id == "T27":
+        from trellis.agent.semantic_contracts import make_american_option_contract
+
+        return make_american_option_contract(
+            description=description,
+            underliers=(_PROOF_LEGACY_DEFAULT_UNDERLIER,),
+            observation_schedule=(_PROOF_LEGACY_DEFAULT_EXPIRY,),
+            preferred_method="monte_carlo",
+            exercise_style="american",
+            underlying_asset_class="equity",
+            option_type="put",
+        )
+
+    return None
+
+
+def _proof_legacy_expected_honest_block(task: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a deterministic honest-block packet for under-specified proof rows."""
+    if not _is_proof_legacy_task(task):
+        return None
+    task_id = str(task.get("id") or "").strip()
+    if task_id != "T18":
+        return None
+
+    summary = (
+        "T18 names a log-space PDE transform for rate instruments, but the legacy "
+        "proof row does not specify a concrete rate payoff, schedule, strike, or "
+        "settlement rule. Pricing must fail closed until the product contract is explicit."
+    )
+    return {
+        "reason": "proof_legacy_under_specified_rate_pde",
+        "summary": summary,
+        "blocker_report": {
+            "summary": summary,
+            "blockers": [
+                {
+                    "id": "missing_rate_product_payoff",
+                    "category": "manifest_contract_gap",
+                },
+                {
+                    "id": "missing_rate_product_schedule",
+                    "category": "manifest_contract_gap",
+                },
+            ],
+        },
+        "repair_packet": {
+            "packet_type": "manifest_contract_gap",
+            "task_id": task_id,
+            "missing_contract_fields": [
+                "rate_product_payoff",
+                "observation_or_exercise_schedule",
+                "strike_or_coupon_terms",
+                "settlement_rule",
+            ],
+            "suggested_action": (
+                "Rewrite T18 as a concrete cap/floor, swaption, callable bond, "
+                "or other named rate instrument before selecting a PDE transform."
+            ),
+        },
+    }
+
+
 def task_to_semantic_contract(task: dict):
     """Draft the canonical semantic contract for a semantic basket request, if any."""
     from trellis.agent.semantic_contracts import draft_semantic_contract
 
+    description = _effective_task_description(task)
+    bridged = _proof_legacy_semantic_contract(task, description)
+    if bridged is not None:
+        return bridged
+
     try:
         return draft_semantic_contract(
-            _effective_task_description(task),
+            description,
             instrument_type=task_to_instrument_type(task),
         )
     except ValueError:
@@ -1179,6 +1282,9 @@ def run_task(
         result_data["llm_cassette"] = cassette_context
 
     try:
+        expected_honest_block = _proof_legacy_expected_honest_block(task)
+        if expected_honest_block is not None:
+            raise ExpectedTaskHonestBlock(expected_honest_block)
         _validate_task_contract(task, instrument_type, construct_methods)
         market_state, market_context = build_market_state_for_task(task, market_state)
         runtime_contract = _runtime_contract_metadata(
@@ -1233,6 +1339,8 @@ def run_task(
                     "force_rebuild": force_rebuild,
                     "fresh_build": fresh_build,
                 }
+                if semantic_contract is not None:
+                    build_kwargs["semantic_contract"] = semantic_contract
                 if computational_problem_report is not None:
                     target_payload = computational_problem_report.target_payload(target.target_id)
                     if target_payload is not None:
@@ -1416,6 +1524,8 @@ def run_task(
                 "force_rebuild": force_rebuild,
                 "fresh_build": fresh_build,
             }
+            if semantic_contract is not None:
+                build_kwargs["semantic_contract"] = semantic_contract
             if computational_problem_report is not None and comparison_targets:
                 target_payload = computational_problem_report.target_payload(
                     comparison_targets[0].target_id
@@ -1493,6 +1603,38 @@ def run_task(
             status = "FAIL"
         print(
             f"  [{status}] {elapsed:.1f}s, llm_generation_attempts={result_data.get('attempts', 0)}, "
+            f"confidence={result_data.get('gap_confidence', 0):.0%}"
+        )
+    except ExpectedTaskHonestBlock as exc:
+        elapsed = timer() - t0
+        details = dict(exc.details)
+        summary = str(details.get("summary") or details.get("reason") or "Expected honest block.")
+        result_data.update({
+            "success": False,
+            "elapsed_seconds": round(elapsed, 1),
+            "attempts": 0,
+            "gap_confidence": 1.0,
+            "expected_honest_block": True,
+            "blocker_details": details,
+            "error": summary,
+            "failures": [summary],
+        })
+        result_data["learning"] = summarize_task_learning(
+            result_data,
+            task_kind="pricing",
+        )
+        display_outcome_class = task_result_outcome_class(result_data)
+        display_passed_expectation = task_result_passed_expectation(
+            {**result_data, "outcome_class": display_outcome_class}
+        )
+        if display_passed_expectation and display_outcome_class == "honest_block":
+            status = "HONEST_BLOCK"
+        elif display_passed_expectation:
+            status = "EXPECTATION_OK"
+        else:
+            status = "FAIL"
+        print(
+            f"  [{status}] {elapsed:.1f}s, llm_generation_attempts=0, "
             f"confidence={result_data.get('gap_confidence', 0):.0%}"
         )
     except TaskContractError as exc:

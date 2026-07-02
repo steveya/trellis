@@ -2,6 +2,12 @@
 
 This table is the audit output from the former `TASKS.yaml` corpus. The legacy manifest has been replaced by explicit benchmark, extension, negative, and proof corpora, and this map remains as the migration record.
 
+Current bridge note: `QUA-1146` adds a bounded runtime contract bridge for the
+proof rows that previously failed at `semantic_product_shape`. `T25`, `T26`,
+`T31`, and `T32` now receive explicit European SPX call proof contracts,
+`T27` receives an American SPX put proof contract, and `T18` is a certified
+honest block until the rate payoff and schedule are specified.
+
 | Task | Bucket | Target | Title |
 | --- | --- | --- | --- |
 | `T01` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical |
@@ -21,21 +27,21 @@ This table is the audit output from the former `TASKS.yaml` corpus. The legacy m
 | `T15` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | CEV model: CEVOperator PDE vs CEV tree |
 | `T16` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Barrier call: PDE absorbing BC vs MC discrete monitoring |
 | `T17` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Callable bond: HW rate PDE (PSOR) vs HW tree |
-| `T18` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Log-space PDE for rate instruments (avoid negative rates) |
+| `T18` | `certified_honest_block` | `TASKS_PROOF_LEGACY.yaml` | Log-space PDE for rate instruments (avoid negative rates) |
 | `T19` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Non-uniform grid (log-spaced) for PDE near-barrier accuracy |
 | `T20` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | 2D PDE: Heston (S, V) via ADI splitting |
 | `T21` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | European put PDE: put-call parity verification |
 | `T22` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Double barrier option via PDE |
 | `T23` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Crank-Nicolson Rannacher smoothing for discontinuous payoffs |
 | `T24` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Finite element method (FEM) vs finite difference for European |
-| `T25` | `market_or_research_hold` | `TASKS_PROOF_LEGACY.yaml` | GBM call: all 4 schemes convergence order |
-| `T26` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Variance reduction: antithetic + control variate + importance sampling |
-| `T27` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | LSM basis function shootout at σ=0.20 and σ=0.40 |
+| `T25` | `proof_contract_bridge` | `TASKS_PROOF_LEGACY.yaml` | GBM call: all 4 schemes convergence order |
+| `T26` | `proof_contract_bridge` | `TASKS_PROOF_LEGACY.yaml` | Variance reduction: antithetic + control variate + importance sampling |
+| `T27` | `proof_contract_bridge` | `TASKS_PROOF_LEGACY.yaml` | LSM basis function shootout at σ=0.20 and σ=0.40 |
 | `T28` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Heston MC: Euler vs QE scheme (Andersen 2008) |
 | `T29` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Asian option (arithmetic average): MC vs Turnbull-Wakeman |
 | `T30` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Lookback option: MC vs analytical (Goldman-Sosin-Gatto) |
-| `T31` | `market_or_research_hold` | `TASKS_PROOF_LEGACY.yaml` | Quasi-Monte Carlo: Sobol vs pseudo-random convergence |
-| `T32` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Multi-level Monte Carlo (MLMC) for variance reduction |
+| `T31` | `proof_contract_bridge` | `TASKS_PROOF_LEGACY.yaml` | Quasi-Monte Carlo: Sobol vs pseudo-random convergence |
+| `T32` | `proof_contract_bridge` | `TASKS_PROOF_LEGACY.yaml` | Multi-level Monte Carlo (MLMC) for variance reduction |
 | `T33` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Merton jump-diffusion MC vs FFT |
 | `T34` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | SABR MC simulation vs Hagan implied vol |
 | `T35` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Basket option (2 assets): MC with Cholesky correlation |

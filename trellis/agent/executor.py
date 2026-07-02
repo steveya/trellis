@@ -840,6 +840,7 @@ def build_payoff(
     instrument_type: str | None = None,
     preferred_method: str | None = None,
     request_metadata: Mapping[str, object] | None = None,
+    semantic_contract=None,
     compiled_request=None,
     build_meta: dict | None = None,
     gap_report=None,
@@ -886,6 +887,7 @@ def build_payoff(
                 model=model,
                 preferred_method=preferred_method,
                 metadata=request_metadata,
+                semantic_contract=semantic_contract,
             )
             product_ir = compiled_request.product_ir
         except Exception:
