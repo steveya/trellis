@@ -129,6 +129,14 @@ as ``recovery_attempts`` / ``intra_run_learning`` evidence so diagnostics can
 distinguish recovered candidate-knowledge retries, skipped candidates, and
 ordinary build retries.
 
+Assisted retries also persist a retry-attribution record.  The runtime records
+whether the candidate was retryable, whether structured contract evidence was
+present, whether deterministic retry inputs changed, which fields changed, and
+whether the retry changed the observed result.  A retry is counted as
+``contract_evidence_consumed`` only when the candidate's structured obligations
+are carried into changed build inputs; this prevents task scorecards from
+treating a retry attempt itself as evidence that learning helped.
+
 The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 
 - ``make gate-pr`` for PR-ready validation

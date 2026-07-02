@@ -2219,6 +2219,7 @@ def _maybe_retry_with_intra_run_learning(
             source_payload=initial_payload,
             decision="candidate_overlay_insufficient_contract",
             recovered=False,
+            initial_build_kwargs=build_kwargs,
             error="candidate lacks enough structured repair evidence for retry",
         )
         initial_payload["recovery_attempts"] = [record]
@@ -2227,6 +2228,7 @@ def _maybe_retry_with_intra_run_learning(
             candidate=candidate,
             recovered=False,
             attempted=False,
+            retry_attribution=record.get("retry_attribution"),
         )
         return initial_result, initial_payload, record
     if not _callable_accepts_keyword(build_fn, "knowledge_overlays"):
@@ -2235,6 +2237,7 @@ def _maybe_retry_with_intra_run_learning(
             source_payload=initial_payload,
             decision="candidate_overlay_unavailable",
             recovered=False,
+            initial_build_kwargs=build_kwargs,
             error="build function does not accept knowledge_overlays",
         )
         initial_payload["recovery_attempts"] = [record]
@@ -2243,6 +2246,7 @@ def _maybe_retry_with_intra_run_learning(
             candidate=candidate,
             recovered=False,
             attempted=False,
+            retry_attribution=record.get("retry_attribution"),
         )
         return initial_result, initial_payload, record
 
@@ -2265,6 +2269,11 @@ def _maybe_retry_with_intra_run_learning(
         source_payload=initial_payload,
         decision="retry_with_candidate_knowledge",
         recovered=False,
+        initial_build_kwargs=build_kwargs,
+        retry_build_kwargs=retry_kwargs,
+    )
+    retry_metadata["intra_run_learning_retry"]["retry_attribution"] = dict(
+        record.get("retry_attribution") or {}
     )
     try:
         retry_result = build_fn(**retry_kwargs)
@@ -2276,6 +2285,7 @@ def _maybe_retry_with_intra_run_learning(
             candidate=candidate,
             recovered=False,
             attempted=True,
+            retry_attribution=record.get("retry_attribution"),
         )
         return initial_result, initial_payload, record
 
@@ -2290,6 +2300,11 @@ def _maybe_retry_with_intra_run_learning(
     )
     recovered = bool(retry_payload.get("success"))
     record["recovered"] = recovered
+    _attach_retry_outcome_attribution(
+        record,
+        initial_payload=initial_payload,
+        retry_payload=retry_payload,
+    )
     retry_payload["recovery_attempts"] = [record]
     retry_payload["failures_before_recovery"] = list(initial_payload.get("failures") or [])
     retry_payload["reflection_before_recovery"] = dict(initial_payload.get("reflection") or {})
@@ -2298,6 +2313,7 @@ def _maybe_retry_with_intra_run_learning(
         candidate=candidate,
         recovered=recovered,
         attempted=True,
+        retry_attribution=record.get("retry_attribution"),
     )
     return retry_result, retry_payload, record
 
@@ -2325,6 +2341,8 @@ def _recovery_attempt_record(
     source_payload: Mapping[str, Any],
     decision: str,
     recovered: bool,
+    initial_build_kwargs: Mapping[str, Any] | None = None,
+    retry_build_kwargs: Mapping[str, Any] | None = None,
     error: str | None = None,
 ) -> dict[str, Any]:
     """Build one serializable recovery-attempt record."""
@@ -2340,10 +2358,124 @@ def _recovery_attempt_record(
         "repair_obligations": list(candidate.repair_obligations),
         "source_failures": list(source_payload.get("failures") or []),
         "source_reflection": dict(source_payload.get("reflection") or {}),
+        "retry_attribution": _retry_attribution_record(
+            candidate,
+            decision=decision,
+            initial_build_kwargs=initial_build_kwargs,
+            retry_build_kwargs=retry_build_kwargs,
+        ),
     }
     if error:
         record["error"] = error
     return record
+
+
+def _retry_attribution_record(
+    candidate: KnowledgePatchCandidate,
+    *,
+    decision: str,
+    initial_build_kwargs: Mapping[str, Any] | None,
+    retry_build_kwargs: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Return machine-readable evidence that explains whether a retry learned."""
+    changed_fields = _changed_retry_input_fields(
+        initial_build_kwargs,
+        retry_build_kwargs,
+    )
+    deterministic_input_changed = bool(changed_fields)
+    has_contract_evidence = bool(candidate.structured_evidence or candidate.repair_obligations)
+    contract_evidence_consumed = bool(
+        decision == "retry_with_candidate_knowledge"
+        and candidate.retryable
+        and has_contract_evidence
+        and deterministic_input_changed
+    )
+    if contract_evidence_consumed:
+        attribution_kind = "contract_evidence_consumed"
+    elif decision == "retry_with_candidate_knowledge":
+        attribution_kind = "retry_without_contract_evidence"
+    elif not candidate.retryable:
+        attribution_kind = "candidate_not_retryable"
+    else:
+        attribution_kind = "candidate_not_applied"
+
+    return {
+        "attribution_kind": attribution_kind,
+        "candidate_id": candidate.candidate_id,
+        "target_id": candidate.target_id,
+        "patch_type": candidate.patch_type,
+        "decision": decision,
+        "retryable": candidate.retryable,
+        "deterministic_input_changed": deterministic_input_changed,
+        "changed_input_fields": changed_fields,
+        "contract_evidence_consumed": contract_evidence_consumed,
+        "structured_evidence_count": len(candidate.structured_evidence),
+        "repair_obligation_count": len(candidate.repair_obligations),
+        "contract_completeness": candidate.contract_completeness,
+        "source_roles": list(candidate.source_roles),
+        "skip_reasons": list(candidate.skip_reasons),
+    }
+
+
+def _changed_retry_input_fields(
+    initial_build_kwargs: Mapping[str, Any] | None,
+    retry_build_kwargs: Mapping[str, Any] | None,
+) -> list[str]:
+    """Return stable names of build inputs changed by an assisted retry."""
+    if retry_build_kwargs is None:
+        return []
+
+    initial = dict(initial_build_kwargs or {})
+    retry = dict(retry_build_kwargs or {})
+    changed: list[str] = []
+
+    if retry.get("knowledge_overlays"):
+        changed.append("knowledge_overlays")
+
+    initial_metadata = dict(initial.get("request_metadata") or {})
+    retry_metadata = dict(retry.get("request_metadata") or {})
+    if initial_metadata != retry_metadata:
+        if (
+            "intra_run_learning_retry" in retry_metadata
+            and "intra_run_learning_retry" not in initial_metadata
+        ):
+            changed.append("request_metadata.intra_run_learning_retry")
+        else:
+            changed.append("request_metadata")
+
+    ignored = {"knowledge_overlays", "request_metadata"}
+    for key in sorted((set(initial) | set(retry)) - ignored):
+        if initial.get(key) is retry.get(key):
+            continue
+        if initial.get(key) != retry.get(key):
+            changed.append(str(key))
+    return _unique_strings(changed)
+
+
+def _attach_retry_outcome_attribution(
+    record: dict[str, Any],
+    *,
+    initial_payload: Mapping[str, Any],
+    retry_payload: Mapping[str, Any],
+) -> None:
+    """Attach the observed effect of the retry to an existing attempt record."""
+    retry_attribution = dict(record.get("retry_attribution") or {})
+    retry_attribution["outcome_change"] = {
+        "success_changed": bool(initial_payload.get("success")) != bool(
+            retry_payload.get("success")
+        ),
+        "failures_changed": list(initial_payload.get("failures") or []) != list(
+            retry_payload.get("failures") or []
+        ),
+        "payoff_class_changed": str(initial_payload.get("payoff_class") or "") != str(
+            retry_payload.get("payoff_class") or ""
+        ),
+        "initial_success": bool(initial_payload.get("success")),
+        "retry_success": bool(retry_payload.get("success")),
+        "initial_attempts": int(initial_payload.get("attempts") or 0),
+        "attempts_after_retry": int(retry_payload.get("attempts") or 0),
+    }
+    record["retry_attribution"] = retry_attribution
 
 
 def _payload_intra_run_learning(
@@ -2352,9 +2484,11 @@ def _payload_intra_run_learning(
     candidate: KnowledgePatchCandidate,
     recovered: bool,
     attempted: bool,
+    retry_attribution: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Merge retry candidate metadata into a payload-local learning summary."""
     existing = dict(payload.get("intra_run_learning") or {})
+    attribution = dict(retry_attribution or {})
     existing.update(
         {
             "overlay_retry_count": 1 if attempted else 0,
@@ -2367,6 +2501,14 @@ def _payload_intra_run_learning(
             "skip_reasons": list(candidate.skip_reasons),
             "repair_obligation_count": len(candidate.repair_obligations),
             "recovered": recovered,
+            "retry_attribution": attribution,
+            "retry_attribution_kind": str(attribution.get("attribution_kind") or ""),
+            "contract_evidence_consumed": bool(
+                attribution.get("contract_evidence_consumed")
+            ),
+            "deterministic_input_changed": bool(
+                attribution.get("deterministic_input_changed")
+            ),
         }
     )
     return existing
@@ -2564,33 +2706,52 @@ def _aggregate_intra_run_learning(
 ) -> dict[str, Any]:
     """Merge intra-run learning summaries across comparison targets."""
     retry_targets: list[str] = []
+    candidate_targets: list[str] = []
     candidate_ids: list[str] = []
     patch_types: list[str] = []
     recovered_targets: list[str] = []
+    attribution_kinds: list[str] = []
+    evidence_consumed_targets: list[str] = []
+    input_changed_targets: list[str] = []
     for target_id, payload in method_payloads.items():
         if not isinstance(payload, Mapping):
             continue
         learning = payload.get("intra_run_learning")
         if not isinstance(learning, Mapping):
             continue
-        if int(learning.get("overlay_retry_count") or 0) <= 0:
-            continue
         target = str(learning.get("target_id") or target_id)
-        retry_targets.append(target)
+        candidate_targets.append(target)
         candidate_id = str(learning.get("candidate_id") or "").strip()
         if candidate_id:
             candidate_ids.append(candidate_id)
         patch_type = str(learning.get("patch_type") or "").strip()
         if patch_type:
             patch_types.append(patch_type)
+        attribution_kind = str(learning.get("retry_attribution_kind") or "").strip()
+        if attribution_kind:
+            attribution_kinds.append(attribution_kind)
+        if bool(learning.get("contract_evidence_consumed")):
+            evidence_consumed_targets.append(target)
+        if bool(learning.get("deterministic_input_changed")):
+            input_changed_targets.append(target)
+        if int(learning.get("overlay_retry_count") or 0) <= 0:
+            continue
+        retry_targets.append(target)
         if bool(learning.get("recovered")):
             recovered_targets.append(target)
     return {
         "overlay_retry_count": len(retry_targets),
+        "overlay_candidate_count": len(_unique_strings(candidate_targets)),
         "retry_targets": _unique_strings(retry_targets),
+        "candidate_targets": _unique_strings(candidate_targets),
         "candidate_ids": _unique_strings(candidate_ids),
         "patch_types": _unique_strings(patch_types),
+        "retry_attribution_kinds": _unique_strings(attribution_kinds),
+        "contract_evidence_consumed_targets": _unique_strings(evidence_consumed_targets),
+        "deterministic_input_changed_targets": _unique_strings(input_changed_targets),
         "recovered_targets": _unique_strings(recovered_targets),
+        "contract_evidence_consumed": bool(evidence_consumed_targets),
+        "deterministic_input_changed": bool(input_changed_targets),
     }
 
 

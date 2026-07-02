@@ -187,7 +187,24 @@ def test_run_task_assisted_mode_retries_once_with_candidate_overlay():
     assert result["recovery_mode"] == "assisted"
     assert result["recovery_attempts"][0]["decision"] == "retry_with_candidate_knowledge"
     assert result["recovery_attempts"][0]["recovered"] is True
+    retry_attribution = result["recovery_attempts"][0]["retry_attribution"]
+    assert retry_attribution["attribution_kind"] == "contract_evidence_consumed"
+    assert retry_attribution["contract_evidence_consumed"] is True
+    assert retry_attribution["deterministic_input_changed"] is True
+    assert retry_attribution["changed_input_fields"] == [
+        "knowledge_overlays",
+        "request_metadata.intra_run_learning_retry",
+    ]
+    assert retry_attribution["repair_obligation_count"] == 1
+    assert retry_attribution["outcome_change"]["success_changed"] is True
     assert result["intra_run_learning"]["overlay_retry_count"] == 1
+    assert result["intra_run_learning"]["contract_evidence_consumed"] is True
+    assert result["intra_run_learning"]["deterministic_input_changed"] is True
+    assert result["intra_run_learning"]["retry_attribution_kind"] == (
+        "contract_evidence_consumed"
+    )
+    assert result["learning"]["intra_run_learning"]["contract_evidence_consumed"] is True
+    assert result["learning"]["intra_run_learning"]["deterministic_input_changed"] is True
 
 
 def test_run_task_assisted_mode_skips_prose_only_candidate_overlay():
@@ -236,6 +253,14 @@ def test_run_task_assisted_mode_skips_prose_only_candidate_overlay():
     assert result["intra_run_learning"]["overlay_retry_count"] == 0
     assert result["intra_run_learning"]["overlay_candidate_count"] == 1
     assert result["intra_run_learning"]["retryable"] is False
+    retry_attribution = result["recovery_attempts"][0]["retry_attribution"]
+    assert retry_attribution["attribution_kind"] == "candidate_not_retryable"
+    assert retry_attribution["contract_evidence_consumed"] is False
+    assert retry_attribution["deterministic_input_changed"] is False
+    assert result["intra_run_learning"]["contract_evidence_consumed"] is False
+    assert result["intra_run_learning"]["deterministic_input_changed"] is False
+    assert result["learning"]["intra_run_learning"]["contract_evidence_consumed"] is False
+    assert result["learning"]["intra_run_learning"]["deterministic_input_changed"] is False
 
 
 def test_run_task_replays_the_same_simulation_identity_for_the_same_request_and_snapshot():

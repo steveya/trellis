@@ -82,7 +82,7 @@ Status mirror last synced: `2026-07-02`
 | `QUA-1135` | Double barrier: PDE and MC assembly contracts | In Progress | `QUA-1132`, `QUA-1133` |
 | `QUA-1136` | Autocallable MC: event engine and QMC primitive obligations | In Progress | `QUA-1132`, `QUA-1133` |
 | `QUA-1137` | Task learning: promotion-grade evidence and docs closeout | Todo | `QUA-1134`, `QUA-1135`, `QUA-1136` |
-| `QUA-1139` | Agent learning: retry attribution contract | Backlog | `QUA-1131` |
+| `QUA-1139` | Agent learning: retry attribution contract | In Progress | `QUA-1131` |
 | `QUA-1140` | Agent learning: deterministic overlay consumption | Backlog | `QUA-1132`, `QUA-1133` |
 | `QUA-1141` | Semantic validation: helper-backed primitive closure | Backlog | `QUA-1135` |
 | `QUA-1142` | Semantic contract: static exotic spec catalog | Backlog | `QUA-1134`, `QUA-1136` |
@@ -157,3 +157,17 @@ The bounded remediation check:
 
 loaded `5` results, reported `4` success, `1` fail-closed, `5` passed
 expectation, and `0` total failures.
+
+### 2026-07-02 QUA-1139 retry attribution slice
+
+Started `QUA-1139` and added the retry-attribution contract to task runtime
+payloads.  Recovery attempts now record whether a candidate was merely
+constructed, skipped, or actually consumed structured contract evidence that
+changed deterministic build inputs.  The raw attempt record and
+`intra_run_learning` summary expose `attribution_kind`,
+`contract_evidence_consumed`, `deterministic_input_changed`,
+`changed_input_fields`, repair-obligation counts, and observed retry outcome
+changes.
+
+Targeted mocked task-runtime tests cover recovered retries and skipped
+prose-only candidates without live LLM calls.

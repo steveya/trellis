@@ -1119,6 +1119,8 @@ def summarize_task_learning(
     promotion_candidate_paths = list(artifacts.get("promotion_candidate_paths") or [])
     knowledge_trace_paths = list(artifacts.get("knowledge_trace_paths") or [])
     knowledge_gap_paths = list(artifacts.get("knowledge_gap_log_paths") or [])
+    intra_run_learning = dict(result.get("intra_run_learning") or {})
+    retry_attribution = dict(intra_run_learning.get("retry_attribution") or {})
     method_results = result.get("method_results") or {}
     successful_method_results = False
     if isinstance(method_results, Mapping):
@@ -1195,6 +1197,32 @@ def summarize_task_learning(
         "reusable_artifact_count": reusable_artifact_count,
         "knowledge_outcome": knowledge_outcome,
         "knowledge_outcome_reason": knowledge_outcome_reason,
+        "intra_run_learning": {
+            "overlay_retry_count": int(intra_run_learning.get("overlay_retry_count") or 0),
+            "overlay_candidate_count": int(
+                intra_run_learning.get("overlay_candidate_count") or 0
+            ),
+            "retry_attribution_kind": str(
+                intra_run_learning.get("retry_attribution_kind") or ""
+            ),
+            "retry_attribution_kinds": _string_list(
+                intra_run_learning.get("retry_attribution_kinds")
+            ),
+            "contract_evidence_consumed": bool(
+                intra_run_learning.get("contract_evidence_consumed")
+                or retry_attribution.get("contract_evidence_consumed")
+            ),
+            "deterministic_input_changed": bool(
+                intra_run_learning.get("deterministic_input_changed")
+                or retry_attribution.get("deterministic_input_changed")
+            ),
+            "contract_evidence_consumed_targets": _string_list(
+                intra_run_learning.get("contract_evidence_consumed_targets")
+            ),
+            "deterministic_input_changed_targets": _string_list(
+                intra_run_learning.get("deterministic_input_changed_targets")
+            ),
+        },
     }
 
 

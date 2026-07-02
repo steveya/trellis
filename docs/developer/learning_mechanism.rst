@@ -169,6 +169,16 @@ task result records ``recovery_mode``, ``recovery_attempts``, and an
 ``intra_run_learning`` summary so downstream diagnostics can distinguish an
 attempted candidate-knowledge retry from a skipped candidate.
 
+Retry attribution is part of that contract.  Every recorded recovery attempt
+now carries ``retry_attribution`` with the candidate id, patch type, structured
+evidence count, repair-obligation count, changed build-input fields, and a
+compact ``attribution_kind``.  ``contract_evidence_consumed`` is true only when
+the candidate had structured contract evidence and the retry actually changed
+deterministic build inputs such as ``knowledge_overlays`` or
+``request_metadata.intra_run_learning_retry``.  Skipped candidates are still
+recorded, but their attribution kind remains ``candidate_not_retryable`` or
+``candidate_not_applied`` and ``deterministic_input_changed`` stays false.
+
 What Future Builds Actually Reuse
 ---------------------------------
 
