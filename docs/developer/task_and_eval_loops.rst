@@ -589,6 +589,14 @@ longer treats Andersen QE as a missing generated-adapter primitive. It still
 does not recalibrate Heston parameters from a bumped Black vol surface unless a
 separate calibration problem owns that conversion.
 
+The Heston ADI PDE target uses the same model-parameter boundary. The
+``heston_adi_pde`` comparison target should bind through
+``trellis.models.pde.heston_adi.resolve_heston_adi_pde_inputs`` and price with
+``price_heston_option_adi_pde_result``. Agents should not call
+``resolve_heston_transform_inputs`` with payoff arguments such as ``strike``;
+FFT/COS transform calls are optional diagnostics, not the ADI market-binding
+contract.
+
 That route family now also has its own lowered contract boundary. Transform
 tasks compile onto ``TransformPricingIR`` before admissibility, so the canaries
 no longer have to rely on the broader upstream ``vanilla_option`` semantics

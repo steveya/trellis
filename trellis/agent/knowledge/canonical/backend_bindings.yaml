@@ -686,8 +686,8 @@ bindings:
     route_family: pde_solver
     aliases: [heston_adi_pde]
     primitives:
-      - module: trellis.models.transforms.heston
-        symbol: resolve_heston_transform_inputs
+      - module: trellis.models.pde.heston_adi
+        symbol: resolve_heston_adi_pde_inputs
         role: market_binding
       - module: trellis.models.pde.heston_adi
         symbol: HestonAdiPDEConfig

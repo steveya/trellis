@@ -181,10 +181,11 @@ Use the existing helper surface before generating adapters:
   ``scheme="heston_qe"``.
 - ``trellis.models.pde.heston_adi.price_heston_option_adi_pde_result(...)``
   exposes bounded Heston ADI binding and grid diagnostics for T20-style
-  targets. It resolves the same canonical Heston runtime binding as the
+  targets. ``resolve_heston_adi_pde_inputs(...)`` is the ADI route's market
+  binding surface; it resolves the same canonical Heston runtime binding as the
   transform and Monte Carlo helpers and does not use the Black vol surface as a
   model-parameter source. Optional transform references are diagnostics only;
-  they do not replace the PDE scalar price.
+  they do not replace the PDE scalar price or the ADI binding contract.
 - ``trellis.models.calibration.heston_fit`` owns the bounded Heston smile and
   surface compression workflows that can produce reusable model parameters.
 - Heston Gauss-Laguerre, Bates, SLV/LSV, and path-dependent Heston control

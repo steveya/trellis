@@ -194,12 +194,14 @@ The first migrated vanilla cases now use that boundary directly:
   bundle, instead of reusing the vanilla-equity GBM helper
 - stochastic-volatility PDE for European Heston vanilla options now has
   bounded ADI binding and diagnostic scaffolding under
-  ``trellis.models.pde.heston_adi``. The scaffold consumes canonical
+  ``trellis.models.pde.heston_adi``. The route binding is
+  ``resolve_heston_adi_pde_inputs(...)`` plus
+  ``price_heston_option_adi_pde_result(...)``. The scaffold consumes canonical
   ``kappa`` / ``theta`` / ``xi`` / ``rho`` / ``v0`` model parameters through
   the Heston runtime binding and keeps Black vol surfaces as
   market/calibration evidence rather than live Heston inputs. Optional
   transform references are recorded as diagnostics and do not replace the PDE
-  scalar.
+  scalar or the ADI input resolver.
 - Heston calibration now has a bounded problem-IR adapter for single-expiry
   implied-vol smiles. Pricing routes consume explicit Heston model parameters
   from task specs, market state, synthetic fixtures, or recorded calibration

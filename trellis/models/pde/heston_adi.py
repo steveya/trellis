@@ -3,15 +3,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 import numpy as raw_np
 
-from trellis.models.analytical.support import terminal_intrinsic
+from trellis.core.date_utils import year_fraction
+from trellis.core.types import DayCountConvention
+from trellis.models.analytical.support import normalized_option_type, terminal_intrinsic
 from trellis.models.pde.thomas import thomas_solve
-from trellis.models.transforms.heston import (
-    price_heston_option_transform,
-    resolve_heston_transform_inputs,
-)
+from trellis.models.processes.heston import HestonRuntimeBinding, resolve_heston_runtime_binding
+from trellis.models.transforms.heston import price_heston_option_transform
 
 
 @dataclass(frozen=True)
@@ -44,6 +45,76 @@ class HestonAdiPDEResult:
     validation_bundle: str = "heston:adi_pde"
 
 
+@dataclass(frozen=True)
+class ResolvedHestonAdiPDEInputs:
+    """Resolved inputs for the Heston ADI PDE route."""
+
+    notional: float
+    spot: float
+    strike: float
+    maturity: float
+    rate: float
+    dividend_yield: float
+    option_type: str
+    runtime_binding: HestonRuntimeBinding
+    validation_bundle: str = "heston:adi_pde"
+
+
+def resolve_heston_adi_pde_inputs(
+    market_state,
+    spec,
+    *,
+    mu: float | None = None,
+    parameter_set_name: str = "heston",
+) -> ResolvedHestonAdiPDEInputs:
+    """Resolve market, contract, and model inputs for Heston ADI PDE pricing."""
+    settlement = getattr(market_state, "settlement", None) or getattr(
+        market_state,
+        "as_of",
+        None,
+    )
+    if settlement is None:
+        raise ValueError("market_state must provide settlement or as_of for Heston ADI PDE pricing")
+    day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
+    maturity = _resolve_maturity(settlement, spec, day_count)
+    if getattr(market_state, "discount", None) is None and maturity > 0.0:
+        raise ValueError("Heston ADI PDE pricing requires market_state.discount")
+
+    rate = (
+        0.0
+        if maturity <= 0.0
+        else float(market_state.discount.zero_rate(max(maturity, 1e-6)))
+    )
+    dividend_yield = _resolve_dividend_yield(spec)
+    runtime_mu = float(mu) if mu is not None else rate - dividend_yield
+    spec_parameters = _resolve_spec_heston_parameters(spec)
+    runtime_binding = resolve_heston_runtime_binding(
+        market_state,
+        mu=runtime_mu,
+        kappa=spec_parameters.get("kappa"),
+        theta=spec_parameters.get("theta"),
+        xi=spec_parameters.get("xi"),
+        rho=spec_parameters.get("rho"),
+        v0=spec_parameters.get("v0"),
+        parameter_set_name=parameter_set_name,
+    )
+    spot = _resolve_spot(market_state, spec)
+    strike = _resolve_strike(spec, spot=spot)
+    notional_value = getattr(spec, "notional", 1.0)
+    notional = 1.0 if notional_value is None else float(notional_value)
+
+    return ResolvedHestonAdiPDEInputs(
+        notional=notional,
+        spot=spot,
+        strike=strike,
+        maturity=maturity,
+        rate=rate,
+        dividend_yield=dividend_yield,
+        option_type=normalized_option_type(getattr(spec, "option_type", "call")),
+        runtime_binding=runtime_binding,
+    )
+
+
 def price_heston_option_adi_pde_result(
     market_state,
     spec,
@@ -53,10 +124,9 @@ def price_heston_option_adi_pde_result(
     parameter_set_name: str = "heston",
 ) -> HestonAdiPDEResult:
     """Return a structured European Heston option price from the PDE route."""
-    resolved = resolve_heston_transform_inputs(
+    resolved = resolve_heston_adi_pde_inputs(
         market_state,
         spec,
-        method="cos",
         mu=mu,
         parameter_set_name=parameter_set_name,
     )
@@ -283,8 +353,124 @@ def _spot_boundary_values(s_grid, tau: float, resolved) -> tuple[float, float]:
     return 0.0, float(s_grid[-1] - discount_strike)
 
 
+def _resolve_dividend_yield(spec) -> float:
+    for attr in ("dividend_yield", "continuous_dividend_yield", "q"):
+        value = getattr(spec, attr, None)
+        if value is not None:
+            return float(value)
+    return 0.0
+
+
+def _resolve_maturity(settlement: date, spec, day_count) -> float:
+    """Resolve maturity from common date aliases or a direct year fraction."""
+    for attr in (
+        "expiry_date",
+        "maturity_date",
+        "expiration_date",
+        "exercise_date",
+        "expiry",
+        "maturity",
+        "expiry_years",
+        "maturity_years",
+        "time_to_maturity",
+        "tenor_years",
+    ):
+        value = getattr(spec, attr, None)
+        if value is None:
+            continue
+        if isinstance(value, date):
+            return max(float(year_fraction(settlement, value, day_count)), 0.0)
+        if isinstance(value, str):
+            try:
+                parsed = date.fromisoformat(value.strip())
+            except ValueError:
+                parsed = None
+            if parsed is not None:
+                return max(float(year_fraction(settlement, parsed, day_count)), 0.0)
+        try:
+            return max(float(value), 0.0)
+        except (TypeError, ValueError):
+            continue
+    raise ValueError(
+        "spec must provide expiry_date, maturity_date, or numeric maturity for Heston ADI PDE pricing"
+    )
+
+
+def _resolve_spot(market_state, spec) -> float:
+    """Resolve the underlier spot from spec aliases or the market state."""
+    for attr in ("spot", "underlier_spot", "s0"):
+        value = getattr(spec, attr, None)
+        if value is not None:
+            return float(value)
+    value = getattr(market_state, "spot", None)
+    if value is not None:
+        return float(value)
+    underlier_spots = getattr(market_state, "underlier_spots", None)
+    if isinstance(underlier_spots, dict) and len(underlier_spots) == 1:
+        return float(next(iter(underlier_spots.values())))
+    raise ValueError("spec or market_state must provide spot for Heston ADI PDE pricing")
+
+
+def _resolve_strike(spec, *, spot: float) -> float:
+    """Resolve a scalar strike, selecting a representative ATM/grid strike when needed."""
+    for attr in ("strike", "strike_price", "k"):
+        value = getattr(spec, attr, None)
+        if value is not None:
+            return float(value)
+
+    for attr in ("surface_strikes", "strike_grid", "strikes"):
+        values = getattr(spec, attr, None)
+        if not values:
+            continue
+        numeric = []
+        for value in _iter_alias_values(values):
+            try:
+                numeric.append(float(value))
+            except (TypeError, ValueError):
+                continue
+        if numeric:
+            return min(numeric, key=lambda strike: abs(strike - spot))
+    raise ValueError("spec must provide strike or a numeric strike grid for Heston ADI PDE pricing")
+
+
+def _iter_alias_values(values) -> tuple[object, ...]:
+    """Return scalar or iterable alias payloads as a normalized tuple."""
+    if values is None:
+        return ()
+    if isinstance(values, str):
+        pieces = tuple(piece.strip() for piece in values.split(",") if piece.strip())
+        return pieces or (values,)
+    try:
+        iterator = iter(values)
+    except TypeError:
+        return (values,)
+    return tuple(iterator)
+
+
+def _resolve_spec_heston_parameters(spec) -> dict[str, float]:
+    """Return explicit Heston parameters declared on a task spec, if present."""
+    aliases = {
+        "kappa": ("kappa", "mean_reversion"),
+        "theta": ("theta", "long_run_variance", "long_variance", "theta_var"),
+        "xi": ("xi", "vol_of_vol", "variance_vol", "sigma_v"),
+        "rho": ("rho", "correlation"),
+        "v0": ("v0", "initial_variance", "initial_var", "variance0"),
+    }
+    resolved: dict[str, float] = {}
+    for canonical, names in aliases.items():
+        for name in names:
+            value = getattr(spec, name, None)
+            if value is None:
+                continue
+            resolved[canonical] = float(value)
+            break
+    return resolved
+
+
 __all__ = [
     "HestonAdiPDEConfig",
     "HestonAdiPDEResult",
+    "ResolvedHestonAdiPDEInputs",
     "price_heston_option_adi_pde_result",
+    "resolve_heston_adi_pde_inputs",
 ]

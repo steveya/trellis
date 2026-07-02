@@ -114,7 +114,7 @@ pde:
   module: trellis.models.pde
   key_imports:
     - "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde"
-    - "from trellis.models.pde.heston_adi import HestonAdiPDEConfig, price_heston_option_adi_pde_result"
+    - "from trellis.models.pde.heston_adi import HestonAdiPDEConfig, resolve_heston_adi_pde_inputs, price_heston_option_adi_pde_result"
     - "from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff, resolve_double_barrier_inputs"
     - "from trellis.models.pde.grid import Grid"
     - "from trellis.models.pde.theta_method import theta_method_1d"

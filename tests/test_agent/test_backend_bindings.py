@@ -273,7 +273,7 @@ def test_resolve_backend_binding_spec_uses_heston_adi_result_identity():
         "trellis.models.pde.heston_adi.price_heston_option_adi_pde_result",
     )
     assert resolved.market_binding_refs == (
-        "trellis.models.transforms.heston.resolve_heston_transform_inputs",
+        "trellis.models.pde.heston_adi.resolve_heston_adi_pde_inputs",
     )
 
 

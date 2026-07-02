@@ -1245,8 +1245,8 @@ routes:
       supported_operator_families: [heston_2d_adi]
       supports_calibration: false
     primitives:
-      - module: trellis.models.transforms.heston
-        symbol: resolve_heston_transform_inputs
+      - module: trellis.models.pde.heston_adi
+        symbol: resolve_heston_adi_pde_inputs
         role: market_binding
       - module: trellis.models.pde.heston_adi
         symbol: HestonAdiPDEConfig

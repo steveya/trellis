@@ -223,7 +223,7 @@ def test_builds_heston_adi_plan_for_pde_method():
     assert plan.primitive_plan.route == "heston_adi_2d"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {
-        "resolve_heston_transform_inputs",
+        "resolve_heston_adi_pde_inputs",
         "price_heston_option_adi_pde_result",
     } <= primitive_symbols
 

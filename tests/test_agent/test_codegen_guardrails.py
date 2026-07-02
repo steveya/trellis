@@ -313,7 +313,9 @@ def test_heston_family_support_approves_adi_diagnostics():
 
     assert "trellis.models.pde.heston_adi" in plan.approved_modules
     report = validate_generated_imports(
-        "from trellis.models.pde.heston_adi import HestonAdiPDEConfig, price_heston_option_adi_pde_result\n",
+        "from trellis.models.pde.heston_adi import "
+        "HestonAdiPDEConfig, resolve_heston_adi_pde_inputs, "
+        "price_heston_option_adi_pde_result\n",
         plan,
     )
     assert report.ok

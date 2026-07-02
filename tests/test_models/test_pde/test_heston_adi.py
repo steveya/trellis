@@ -12,6 +12,7 @@ from trellis.curves.yield_curve import YieldCurve
 from trellis.models.pde.heston_adi import (
     HestonAdiPDEConfig,
     price_heston_option_adi_pde_result,
+    resolve_heston_adi_pde_inputs,
 )
 from trellis.models.processes.heston import build_heston_parameter_payload
 
@@ -39,6 +40,41 @@ def _market_state() -> MarketState:
             v0=0.04,
         ),
     )
+
+
+def _legacy_alias_market_state() -> MarketState:
+    return MarketState(
+        as_of=date(2024, 11, 15),
+        settlement=date(2024, 11, 15),
+        discount=YieldCurve.flat(0.03),
+        spot=100.0,
+        model_parameters={
+            "model_family": "heston",
+            "kappa": 1.8,
+            "theta_var": 0.04,
+            "sigma_v": 0.25,
+            "rho": -0.35,
+            "initial_variance": 0.04,
+        },
+    )
+
+
+def test_heston_adi_inputs_resolve_runtime_binding_with_canonical_parameters():
+    resolved = resolve_heston_adi_pde_inputs(
+        _legacy_alias_market_state(),
+        HestonOptionSpec(),
+    )
+
+    assert resolved.validation_bundle == "heston:adi_pde"
+    assert resolved.runtime_binding.provenance["source_ref"] == (
+        "resolve_heston_runtime_binding"
+    )
+    assert resolved.runtime_binding.model_parameters["theta"] == pytest.approx(0.04)
+    assert resolved.runtime_binding.model_parameters["xi"] == pytest.approx(0.25)
+    assert resolved.runtime_binding.model_parameters["v0"] == pytest.approx(0.04)
+    assert "theta_var" not in resolved.runtime_binding.model_parameters
+    assert "sigma_v" not in resolved.runtime_binding.model_parameters
+    assert "initial_variance" not in resolved.runtime_binding.model_parameters
 
 
 def test_heston_adi_pde_consumes_runtime_binding_without_vol_surface_recalibration():

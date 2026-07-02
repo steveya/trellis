@@ -18,7 +18,9 @@ from trellis.models.pde.event_aware import (
 from trellis.models.pde.heston_adi import (
     HestonAdiPDEConfig,
     HestonAdiPDEResult,
+    ResolvedHestonAdiPDEInputs,
     price_heston_option_adi_pde_result,
+    resolve_heston_adi_pde_inputs,
 )
 from trellis.models.pde.theta_method import theta_method_1d
 from trellis.models.pde.psor import psor_1d
