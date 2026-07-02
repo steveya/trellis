@@ -83,7 +83,7 @@ Status mirror last synced: `2026-07-02`
 | `QUA-1136` | Autocallable MC: event engine and QMC primitive obligations | In Progress | `QUA-1132`, `QUA-1133` |
 | `QUA-1137` | Task learning: promotion-grade evidence and docs closeout | Todo | `QUA-1134`, `QUA-1135`, `QUA-1136` |
 | `QUA-1139` | Agent learning: retry attribution contract | In Progress | `QUA-1131` |
-| `QUA-1140` | Agent learning: deterministic overlay consumption | Backlog | `QUA-1132`, `QUA-1133` |
+| `QUA-1140` | Agent learning: deterministic overlay consumption | In Progress | `QUA-1132`, `QUA-1133` |
 | `QUA-1141` | Semantic validation: helper-backed primitive closure | Backlog | `QUA-1135` |
 | `QUA-1142` | Semantic contract: static exotic spec catalog | Backlog | `QUA-1134`, `QUA-1136` |
 | `QUA-1143` | Task learning: no-LLM scorecard and docs closeout | Backlog | `QUA-1139`, `QUA-1140`, `QUA-1141`, `QUA-1142` |
@@ -171,3 +171,33 @@ changes.
 
 Targeted mocked task-runtime tests cover recovered retries and skipped
 prose-only candidates without live LLM calls.
+
+### 2026-07-02 QUA-1140 deterministic overlay-consumption slice
+
+Started `QUA-1140` and threaded retry overlays from
+`build_with_knowledge(...)` through `build_payoff(...)` into
+`compile_build_request(...)`.  The request compiler now consumes available
+`required_primitive` and `callable_signature` obligations into
+`GenerationPlan` module, symbol, reusable-primitive, and helper-ref fields
+before validation and route-binding metadata are finalized.  Compiled request
+metadata records `intra_run_learning_overlay_consumption` with candidate ids,
+target ids, obligation kinds, applied deterministic inputs, and unapplied
+obligations.
+
+Validation so far: the new compiler/autonomous tests pass, the autonomous
+suite reports `11 passed`, the platform request suite reports `69 passed`, and
+the touched modules compile cleanly.
+
+The no-LLM offline replay:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T20 --task-id T22 --task-id T105 --task-id T107 --task-id E27 \
+  --status all --offline-local-agents --recovery-mode assisted \
+  --validation standard \
+  --output task_results_qua1140_offline_subset_20260702.json
+```
+
+reported `5/5` passed expectations in `91s`, with `4` pricing successes,
+`1` certified honest block, `0` actionable failures, and zero LLM token usage.
+The bounded remediation analysis for that result file reported `0` failures.

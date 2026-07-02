@@ -12,7 +12,7 @@ from dataclasses import MISSING, asdict, dataclass, fields, is_dataclass, replac
 from datetime import date, datetime
 from importlib import import_module
 from pathlib import Path
-from typing import Any, Callable, Mapping, get_args, get_origin
+from typing import Any, Callable, Mapping, Sequence, get_args, get_origin
 from types import SimpleNamespace
 
 from trellis.agent.codegen_guardrails import (
@@ -845,6 +845,7 @@ def build_payoff(
     build_meta: dict | None = None,
     gap_report=None,
     knowledge_retriever: Callable[[KnowledgeRetrievalRequest], str | None] | None = None,
+    knowledge_overlays: Sequence[Mapping[str, object]] | None = None,
 ) -> type:
     """Build a Payoff class via the multi-agent pipeline.
 
@@ -888,6 +889,7 @@ def build_payoff(
                 preferred_method=preferred_method,
                 metadata=request_metadata,
                 semantic_contract=semantic_contract,
+                knowledge_overlays=knowledge_overlays,
             )
             product_ir = compiled_request.product_ir
         except Exception:
@@ -924,6 +926,14 @@ def build_payoff(
             "knowledge_summary",
             dict(getattr(compiled_request, "knowledge_summary", {}) or {}),
         )
+        compiled_metadata = dict(getattr(getattr(compiled_request, "request", None), "metadata", {}) or {})
+        overlay_consumption = compiled_metadata.get(
+            "intra_run_learning_overlay_consumption"
+        )
+        if isinstance(overlay_consumption, Mapping):
+            build_meta.setdefault("intra_run_learning", {})[
+                "deterministic_overlay_consumption"
+            ] = dict(overlay_consumption)
 
     # Step 1: Quant agent selects method + data requirements
     pricing_plan = (

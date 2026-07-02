@@ -86,6 +86,61 @@ def _semantic_regression_snapshot(compiled):
     }
 
 
+def _autocallable_required_primitive_overlay() -> dict:
+    primitive = "trellis.models.autocallable.price_autocallable_monte_carlo"
+    return {
+        "candidate_id": "retry-autocall-001",
+        "target_id": "mc_autocall",
+        "patch_type": "cookbook_patch",
+        "retryable": True,
+        "contract_completeness": 0.75,
+        "structured_evidence": [
+            {
+                "kind": "required_primitive",
+                "primitive": primitive,
+                "module": "trellis.models.autocallable",
+                "symbol": "price_autocallable_monte_carlo",
+                "qualified_name": primitive,
+                "available": True,
+                "signature": "price_autocallable_monte_carlo(market_state, spec, config=None)",
+            }
+        ],
+        "repair_obligations": [
+            {
+                "kind": "required_primitive",
+                "primitive": primitive,
+                "module": "trellis.models.autocallable",
+                "symbol": "price_autocallable_monte_carlo",
+                "available": True,
+                "signature": "price_autocallable_monte_carlo(market_state, spec, config=None)",
+            }
+        ],
+    }
+
+
+def test_compile_build_request_consumes_retry_overlay_required_primitive():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Autocallable note with barrier, coupon, and early redemption",
+        instrument_type="autocallable",
+        preferred_method="monte_carlo",
+        metadata={
+            "intra_run_learning_overlays": [
+                _autocallable_required_primitive_overlay()
+            ]
+        },
+    )
+
+    consumption = compiled.request.metadata["intra_run_learning_overlay_consumption"]
+    assert consumption["consumed"] is True
+    assert consumption["consumed_candidate_ids"] == ["retry-autocall-001"]
+    assert "generation_plan.approved_modules" in consumption["applied_inputs"]
+    assert "generation_plan.symbols_to_reuse" in consumption["applied_inputs"]
+    assert "trellis.models.autocallable" in compiled.generation_plan.approved_modules
+    assert "price_autocallable_monte_carlo" in compiled.generation_plan.symbols_to_reuse
+
+
 def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     from trellis.agent.platform_requests import compile_build_request
 

@@ -137,6 +137,15 @@ whether the retry changed the observed result.  A retry is counted as
 are carried into changed build inputs; this prevents task scorecards from
 treating a retry attempt itself as evidence that learning helped.
 
+The overlay is not only prompt text.  ``build_with_knowledge(...)`` forwards
+retry overlays into ``build_payoff(...)`` and ``compile_build_request(...)``.
+The compiler consumes available required-primitive and callable-signature
+obligations into ``GenerationPlan`` module, symbol, reusable-primitive, and
+helper-ref fields before validation contracts and route-binding authority are
+computed.  The compiled request records
+``intra_run_learning_overlay_consumption`` with candidate ids, target ids,
+obligation kinds, applied inputs, and unapplied obligations.
+
 The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 
 - ``make gate-pr`` for PR-ready validation
