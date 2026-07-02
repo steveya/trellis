@@ -200,6 +200,16 @@ required helper or invents unsupported helper keywords, validation still emits
 a blocking route-helper finding and the retry cannot be promoted as reusable
 learning.
 
+The July 2, 2026 no-LLM closeout pack is the current reference scorecard for
+this loop.  Running ``T20 T22 T105 T107 E27`` with
+``--offline-local-agents --recovery-mode assisted`` produced four
+``compare_ready`` pricing successes and one ``honest_block`` expectation pass,
+with zero token usage and zero actionable remediation failures.  That result is
+important because the repaired learning did not merely retry successfully; the
+formerly fragile targets built on the first deterministic pass from checked
+contracts, exact helper bindings, static specs, and helper-owned primitive
+closure.
+
 What Future Builds Actually Reuse
 ---------------------------------
 

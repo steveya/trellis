@@ -674,6 +674,23 @@ from pricing success: an expected honest block remains fail-closed with no
 price, but prints as ``HONEST_BLOCK`` and counts toward
 ``passed_expectation`` rather than actionable failure.
 
+The reference no-LLM closeout pack for the contract-backed task-learning work
+is:
+
+.. code-block:: bash
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+     --task-id T20 --task-id T22 --task-id T105 --task-id T107 --task-id E27 \
+     --status all --offline-local-agents --recovery-mode assisted \
+     --validation standard \
+     --output task_results_qua1143_offline_closeout_20260702.json
+
+That run reported ``5/5`` passed expectations in ``95s``: ``T20``, ``T22``,
+``T105``, and ``T107`` were ``compare_ready`` pricing successes; ``E27`` was an
+``honest_block``; token usage was zero; and bounded remediation reported zero
+failures.  The expected healthy shape is now first-pass deterministic reuse,
+not repeated retry recovery.
+
 That route family now also has its own lowered contract boundary. Transform
 tasks compile onto ``TransformPricingIR`` before admissibility, so the canaries
 no longer have to rely on the broader upstream ``vanilla_option`` semantics
