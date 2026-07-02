@@ -3420,6 +3420,16 @@ def _vanilla_equity_monte_carlo_helper_kwargs(comparison_target: str | None) -> 
     return ""
 
 
+def _vanilla_equity_pde_helper_kwargs(comparison_target: str | None) -> str:
+    """Return deterministic helper kwargs for vanilla-equity PDE comparison targets."""
+    target = str(comparison_target or "").strip().lower().replace("-", "_")
+    if target in {"theta_0.5", "theta_0_5", "crank_nicolson"}:
+        return ", theta=0.5"
+    if target in {"theta_1.0", "theta_1_0", "implicit"}:
+        return ", theta=1.0"
+    return ""
+
+
 def _heston_monte_carlo_helper_kwargs(comparison_target: str | None) -> str:
     """Return deterministic helper kwargs for Heston Monte Carlo comparison targets."""
     target = str(comparison_target or "").strip().lower().replace("-", "_")
@@ -3510,6 +3520,7 @@ def _deterministic_exact_binding_evaluate_body(
     refs = set(_exact_binding_refs(generation_plan))
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
     vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
+    vanilla_equity_pde_kwargs = _vanilla_equity_pde_helper_kwargs(comparison_target)
     heston_mc_kwargs = _heston_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
     heston_transform_kwargs = _heston_transform_helper_kwargs(comparison_target)
@@ -3797,6 +3808,10 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo": (
             "return price_vanilla_equity_option_monte_carlo("
             f"market_state, spec{vanilla_equity_mc_kwargs})"
+        ),
+        "trellis.models.equity_option_pde.price_vanilla_equity_option_pde": (
+            "return price_vanilla_equity_option_pde("
+            f"market_state, spec{vanilla_equity_pde_kwargs})"
         ),
         "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo": (
             "return price_heston_option_monte_carlo("
