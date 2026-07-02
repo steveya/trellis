@@ -75,8 +75,8 @@ Status mirror last synced: `2026-07-01`
 
 | Ticket | Title | Status | Depends on |
 | --- | --- | --- | --- |
-| `QUA-1132` | Agent learning: deterministic repair evidence packets | Todo | - |
-| `QUA-1133` | Agent learning: overlay gates and retry contract enforcement | Todo | `QUA-1132` |
+| `QUA-1132` | Agent learning: deterministic repair evidence packets | In Progress | - |
+| `QUA-1133` | Agent learning: overlay gates and retry contract enforcement | In Progress | `QUA-1132` |
 | `QUA-1134` | Heston ADI: exact runtime binding and transform contract | Todo | `QUA-1132`, `QUA-1133` |
 | `QUA-1135` | Double barrier: PDE and MC assembly contracts | Todo | `QUA-1132`, `QUA-1133` |
 | `QUA-1136` | Autocallable MC: event engine and QMC primitive obligations | Todo | `QUA-1132`, `QUA-1133` |

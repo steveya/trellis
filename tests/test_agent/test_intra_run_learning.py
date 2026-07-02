@@ -197,6 +197,50 @@ def test_knowledge_patch_candidate_records_comparison_contract_evidence():
     assert record["payoff_class"] == "HestonEuropeanCallPayoff"
 
 
+def test_knowledge_patch_candidate_marks_prose_only_candidate_not_retryable():
+    candidate = build_knowledge_patch_candidate(
+        target_id="mc_autocall",
+        preferred_method="monte_carlo",
+        instrument_type="autocallable",
+        recovery_mode="assisted",
+        payload={
+            "success": False,
+            "failures": ["generated adapter failed post-build validation"],
+            "reflection": {
+                "gaps_identified": [
+                    "Missing cookbook guidance for autocallable event branching"
+                ]
+            },
+        },
+    )
+
+    assert candidate is not None
+    assert candidate.retryable is False
+    assert candidate.contract_completeness == 0.0
+    assert "missing_structured_repair_obligation" in candidate.skip_reasons
+
+
+def test_knowledge_patch_candidate_marks_contract_backed_candidate_retryable():
+    candidate = build_knowledge_patch_candidate(
+        target_id="pde_double_barrier",
+        preferred_method="pde_solver",
+        instrument_type="barrier_option",
+        recovery_mode="assisted",
+        payload={
+            "success": False,
+            "failures": [
+                "BlackScholesOperator.__init__() got an unexpected keyword argument 'grid'"
+            ],
+            "reflection": {"gaps_identified": ["PDE operator constructor mismatch"]},
+        },
+    )
+
+    assert candidate is not None
+    assert candidate.retryable is True
+    assert candidate.contract_completeness >= 0.5
+    assert candidate.skip_reasons == ()
+
+
 def test_render_knowledge_overlay_is_ephemeral_and_actionable():
     candidate = build_knowledge_patch_candidate(
         target_id="pde_double_barrier",

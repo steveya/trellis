@@ -157,10 +157,17 @@ failures it records structured evidence where possible:
   tolerance, selected route or binding, validation bundle, and payoff identity
 
 Those records are persisted on the candidate as ``structured_evidence`` and
-``repair_obligations``.  The plain-text overlay remains only the rendered form
-of that evidence.  Each task result records ``recovery_mode``,
-``recovery_attempts``, and an ``intra_run_learning`` summary so downstream
-diagnostics can distinguish a normal retry from a candidate-knowledge retry.
+``repair_obligations``.  Candidate construction also assigns a
+``contract_completeness`` score and ``retryable`` flag.  Assisted mode retries
+only when the candidate has concrete structured obligations above the retry
+threshold.  Prose-only candidates are retained as evidence with skip reasons
+such as ``missing_structured_repair_obligation`` but do not call the builder
+again.
+
+The plain-text overlay remains only the rendered form of that evidence.  Each
+task result records ``recovery_mode``, ``recovery_attempts``, and an
+``intra_run_learning`` summary so downstream diagnostics can distinguish an
+attempted candidate-knowledge retry from a skipped candidate.
 
 What Future Builds Actually Reuse
 ---------------------------------

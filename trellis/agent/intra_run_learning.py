@@ -99,6 +99,9 @@ class KnowledgePatchCandidate:
     guidance: tuple[str, ...] = field(default_factory=tuple)
     structured_evidence: tuple[dict[str, Any], ...] = field(default_factory=tuple)
     repair_obligations: tuple[dict[str, Any], ...] = field(default_factory=tuple)
+    contract_completeness: float = 0.0
+    retryable: bool = False
+    skip_reasons: tuple[str, ...] = field(default_factory=tuple)
     lesson_ids: tuple[str, ...] = field(default_factory=tuple)
     source_roles: tuple[str, ...] = field(default_factory=tuple)
 
@@ -147,6 +150,11 @@ def build_knowledge_patch_candidate(
         failures=failures,
     )
     repair_obligations = _repair_obligations_from_evidence(structured_evidence)
+    contract_completeness = _contract_completeness(repair_obligations)
+    retryable, skip_reasons = _retry_gate(
+        repair_obligations=repair_obligations,
+        contract_completeness=contract_completeness,
+    )
     evidence = _unique_strings(
         [
             *failures[:5],
@@ -197,6 +205,9 @@ def build_knowledge_patch_candidate(
         "guidance": guidance,
         "structured_evidence": structured_evidence,
         "repair_obligations": repair_obligations,
+        "contract_completeness": contract_completeness,
+        "retryable": retryable,
+        "skip_reasons": skip_reasons,
     }
     candidate_id = hashlib.sha256(
         json.dumps(seed, sort_keys=True, default=str).encode("utf-8")
@@ -215,6 +226,9 @@ def build_knowledge_patch_candidate(
         guidance=tuple(guidance),
         structured_evidence=tuple(structured_evidence),
         repair_obligations=tuple(repair_obligations),
+        contract_completeness=contract_completeness,
+        retryable=retryable,
+        skip_reasons=tuple(skip_reasons),
         lesson_ids=tuple(lesson_ids),
         source_roles=tuple(_source_roles(observations)),
     )
@@ -244,9 +258,13 @@ def render_knowledge_overlay(
                 f"- Preferred method: `{candidate.preferred_method or 'unknown'}`",
                 f"- Instrument type: `{candidate.instrument_type or 'unknown'}`",
                 f"- Confidence: `{candidate.confidence:.2f}`",
+                f"- Contract completeness: `{candidate.contract_completeness:.2f}`",
+                f"- Retryable: `{candidate.retryable}`",
                 f"- Summary: {candidate.summary}",
             ]
         )
+        if candidate.skip_reasons:
+            lines.append(f"- Skip reasons: {', '.join(candidate.skip_reasons)}")
         if candidate.source_roles:
             lines.append(f"- Source roles: {', '.join(candidate.source_roles)}")
         if candidate.guidance:
@@ -304,6 +322,9 @@ def _candidate_from_any(
             repair_obligations=tuple(
                 _record_tuple(candidate.get("repair_obligations"))
             ),
+            contract_completeness=float(candidate.get("contract_completeness") or 0.0),
+            retryable=bool(candidate.get("retryable")),
+            skip_reasons=tuple(_string_tuple(candidate.get("skip_reasons"))),
             lesson_ids=tuple(_string_tuple(candidate.get("lesson_ids"))),
             source_roles=tuple(_string_tuple(candidate.get("source_roles"))),
         )
@@ -584,6 +605,53 @@ def _repair_obligation_lines(records: Sequence[Mapping[str, Any]]) -> list[str]:
                 f"validation_bundle=`{record.get('validation_bundle', 'unknown')}`."
             )
     return lines
+
+
+def _contract_completeness(records: Sequence[Mapping[str, Any]]) -> float:
+    """Score whether a candidate has enough concrete contract evidence to retry."""
+    score = 0.0
+    for record in records:
+        kind = record.get("kind")
+        if kind == "callable_signature":
+            if record.get("signature") and record.get("do_not_pass"):
+                score += 0.6
+            elif record.get("signature") or record.get("do_not_pass"):
+                score += 0.35
+        elif kind == "required_primitive":
+            if record.get("primitive") and record.get("available") is True:
+                score += 0.6
+            elif record.get("primitive"):
+                score += 0.25
+        elif kind == "comparison_contract":
+            comparison_score = 0.0
+            if record.get("selected_route") or record.get("binding"):
+                comparison_score += 0.25
+            if record.get("validation_bundle"):
+                comparison_score += 0.2
+            if record.get("reference_target") or record.get("tolerance") is not None:
+                comparison_score += 0.15
+            score += comparison_score
+    return round(min(score, 1.0), 2)
+
+
+def _retry_gate(
+    *,
+    repair_obligations: Sequence[Mapping[str, Any]],
+    contract_completeness: float,
+) -> tuple[bool, tuple[str, ...]]:
+    """Return whether an assisted retry may use this candidate."""
+    reasons: list[str] = []
+    if not repair_obligations or contract_completeness <= 0.0:
+        reasons.append("missing_structured_repair_obligation")
+    for obligation in repair_obligations:
+        if (
+            obligation.get("kind") == "required_primitive"
+            and obligation.get("available") is False
+        ):
+            reasons.append("required_primitive_not_importable")
+    if contract_completeness < 0.5:
+        reasons.append("contract_completeness_below_retry_threshold")
+    return not reasons, tuple(_unique_strings(reasons))
 
 
 def _symbol_from_callable_name(callable_name: str) -> str:

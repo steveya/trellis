@@ -1802,6 +1802,22 @@ def _maybe_retry_with_intra_run_learning(
     )
     if candidate is None:
         return initial_result, initial_payload, None
+    if not candidate.retryable:
+        record = _recovery_attempt_record(
+            candidate,
+            source_payload=initial_payload,
+            decision="candidate_overlay_insufficient_contract",
+            recovered=False,
+            error="candidate lacks enough structured repair evidence for retry",
+        )
+        initial_payload["recovery_attempts"] = [record]
+        initial_payload["intra_run_learning"] = _payload_intra_run_learning(
+            initial_payload,
+            candidate=candidate,
+            recovered=False,
+            attempted=False,
+        )
+        return initial_result, initial_payload, record
     if not _callable_accepts_keyword(build_fn, "knowledge_overlays"):
         record = _recovery_attempt_record(
             candidate,
@@ -1815,6 +1831,7 @@ def _maybe_retry_with_intra_run_learning(
             initial_payload,
             candidate=candidate,
             recovered=False,
+            attempted=False,
         )
         return initial_result, initial_payload, record
 
@@ -1826,6 +1843,8 @@ def _maybe_retry_with_intra_run_learning(
         "candidate_id": candidate.candidate_id,
         "patch_type": candidate.patch_type,
         "recovery_mode": recovery_mode.value,
+        "contract_completeness": candidate.contract_completeness,
+        "repair_obligation_count": len(candidate.repair_obligations),
     }
     retry_kwargs["request_metadata"] = retry_metadata
     retry_kwargs["knowledge_overlays"] = [candidate.to_payload()]
@@ -1845,6 +1864,7 @@ def _maybe_retry_with_intra_run_learning(
             initial_payload,
             candidate=candidate,
             recovered=False,
+            attempted=True,
         )
         return initial_result, initial_payload, record
 
@@ -1866,6 +1886,7 @@ def _maybe_retry_with_intra_run_learning(
         retry_payload,
         candidate=candidate,
         recovered=recovered,
+        attempted=True,
     )
     return retry_result, retry_payload, record
 
@@ -1902,6 +1923,10 @@ def _recovery_attempt_record(
         "target_id": candidate.target_id,
         "recovery_mode": candidate.recovery_mode.value,
         "recovered": recovered,
+        "retryable": candidate.retryable,
+        "contract_completeness": candidate.contract_completeness,
+        "skip_reasons": list(candidate.skip_reasons),
+        "repair_obligations": list(candidate.repair_obligations),
         "source_failures": list(source_payload.get("failures") or []),
         "source_reflection": dict(source_payload.get("reflection") or {}),
     }
@@ -1915,15 +1940,21 @@ def _payload_intra_run_learning(
     *,
     candidate: KnowledgePatchCandidate,
     recovered: bool,
+    attempted: bool,
 ) -> dict[str, Any]:
     """Merge retry candidate metadata into a payload-local learning summary."""
     existing = dict(payload.get("intra_run_learning") or {})
     existing.update(
         {
-            "overlay_retry_count": 1,
+            "overlay_retry_count": 1 if attempted else 0,
+            "overlay_candidate_count": 1,
             "candidate_id": candidate.candidate_id,
             "patch_type": candidate.patch_type,
             "target_id": candidate.target_id,
+            "retryable": candidate.retryable,
+            "contract_completeness": candidate.contract_completeness,
+            "skip_reasons": list(candidate.skip_reasons),
+            "repair_obligation_count": len(candidate.repair_obligations),
             "recovered": recovered,
         }
     )

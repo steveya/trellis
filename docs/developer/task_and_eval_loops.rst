@@ -114,10 +114,13 @@ a failed target may receive one bounded intra-run retry with an ephemeral
 and deterministic contract evidence.  The candidate can carry structured
 callable-signature records, required primitive obligations, and comparison
 contract metadata; the prompt overlay is only the rendered form of that bounded
-evidence.  It is not canonical cookbook knowledge and cannot promote itself.
-It is persisted as ``recovery_attempts`` / ``intra_run_learning`` evidence so
-diagnostics can distinguish recovered candidate-knowledge retries from ordinary
-build retries.
+evidence.  The runtime scores ``contract_completeness`` before retrying.  A
+candidate with only prose guidance is persisted as a skipped recovery attempt
+with explicit ``skip_reasons`` and does not call the builder again.  The overlay
+is not canonical cookbook knowledge and cannot promote itself.  It is persisted
+as ``recovery_attempts`` / ``intra_run_learning`` evidence so diagnostics can
+distinguish recovered candidate-knowledge retries, skipped candidates, and
+ordinary build retries.
 
 The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 

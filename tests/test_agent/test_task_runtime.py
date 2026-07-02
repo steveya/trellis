@@ -190,6 +190,54 @@ def test_run_task_assisted_mode_retries_once_with_candidate_overlay():
     assert result["intra_run_learning"]["overlay_retry_count"] == 1
 
 
+def test_run_task_assisted_mode_skips_prose_only_candidate_overlay():
+    from trellis.agent.task_runtime import run_task
+
+    calls: list[dict] = []
+
+    class FailedResult:
+        success = False
+        attempts = 2
+        gap_confidence = 0.4
+        knowledge_gaps = ["missing cookbook"]
+        payoff_cls = None
+        failures = ["generated adapter failed post-build validation"]
+        reflection = {
+            "gaps_identified": [
+                "Missing cookbook guidance for autocallable event branching"
+            ],
+        }
+        agent_observations = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FailedResult()
+
+    result = run_task(
+        {"id": "T107", "title": "Autocallable MC"},
+        market_state=object(),
+        build_fn=fake_build,
+        recovery_mode="assisted",
+        timer=iter([0.0, 2.0]).__next__,
+        now_fn=lambda: datetime(2026, 3, 24, 12, 0, 0),
+    )
+
+    assert len(calls) == 1
+    assert "knowledge_overlays" not in calls[0]
+    assert result["success"] is False
+    assert result["recovery_attempts"][0]["decision"] == (
+        "candidate_overlay_insufficient_contract"
+    )
+    assert result["recovery_attempts"][0]["retryable"] is False
+    assert result["recovery_attempts"][0]["contract_completeness"] == 0.0
+    assert "missing_structured_repair_obligation" in (
+        result["recovery_attempts"][0]["skip_reasons"]
+    )
+    assert result["intra_run_learning"]["overlay_retry_count"] == 0
+    assert result["intra_run_learning"]["overlay_candidate_count"] == 1
+    assert result["intra_run_learning"]["retryable"] is False
+
+
 def test_run_task_replays_the_same_simulation_identity_for_the_same_request_and_snapshot():
     from trellis.agent.task_runtime import run_task
 
