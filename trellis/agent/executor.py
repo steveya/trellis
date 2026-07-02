@@ -3886,6 +3886,13 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.double_barrier_option.price_double_barrier_option_monte_carlo_result": (
             "return price_double_barrier_option_monte_carlo_result(market_state, spec).price"
         ),
+        "trellis.models.autocallable.price_autocallable_monte_carlo_result": (
+            "return price_autocallable_monte_carlo_result("
+            'market_state, spec, sampling="sobol").price'
+            if normalized_target == "mc_autocall_qmc"
+            else "return price_autocallable_monte_carlo_result("
+            'market_state, spec, sampling="pseudo").price'
+        ),
     }
     for ref, body in helper_bodies.items():
         if ref in refs:
@@ -5828,8 +5835,9 @@ def _route_specific_retry_lines(
     if comparison_target in {"mc_autocall", "mc_autocall_qmc"}:
         sampling = "sobol" if comparison_target.endswith("_qmc") else "pseudo"
         return (
-            "For autocallable targets, compose GBM path simulation, observation-step mapping, first-trigger redemption, coupon accrual, and terminal protection in the adapter.",
-            f"Use `{sampling}` sampling semantics for this comparison target; Sobol/QMC targets should source shocks from the QMC/Sobol primitive rather than a separate payoff route.",
+            "For autocallable targets, prefer `trellis.models.autocallable.price_autocallable_monte_carlo_result` before writing event branching by hand.",
+            f"Call the helper with `sampling=\"{sampling}\"` for this comparison target; pseudo-MC targets must not require Sobol primitives.",
+            "The helper owns GBM exact-path simulation, observation-step mapping, first-trigger redemption, coupon accrual, terminal protection, and deterministic discounting.",
             "Do not instantiate `GBM(spot=...)`; pass spot to the simulation engine and keep event branching tied to the task observation schedule.",
         )
 

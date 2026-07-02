@@ -201,6 +201,39 @@ def test_builds_mc_plan_for_double_barrier_uses_process_engine_and_payoff_primit
     assert "price_event_aware_monte_carlo" not in primitive_symbols
 
 
+def test_builds_mc_plan_for_autocallable_uses_event_contract_helper_without_qmc_requirement():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.autocallable"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="autocallable",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="autocallable",
+        inspected_modules=("trellis.models.autocallable",),
+        product_ir=decompose_to_ir(
+            "Autocallable note with coupon, autocall barrier, terminal protection",
+            instrument_type="autocallable",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "monte_carlo_paths"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "AutocallableMonteCarloConfig",
+        "price_autocallable_monte_carlo_result",
+        "resolve_autocallable_inputs",
+    } <= primitive_symbols
+    assert "sobol_normals" not in primitive_symbols
+
+
 def test_builds_heston_adi_plan_for_pde_method():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir

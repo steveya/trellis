@@ -157,26 +157,14 @@ def build_price(self, market_state):
 """
 
 
-AUTOCALLABLE_COMPOSITION_SOURCE = """\
+AUTOCALLABLE_HELPER_SOURCE = """\
 from __future__ import annotations
 
-from trellis.models.monte_carlo.engine import MonteCarloEngine
-from trellis.models.monte_carlo.variance_reduction import sobol_normals
-from trellis.models.processes.gbm import GBM
+from trellis.models.autocallable import price_autocallable_monte_carlo_result
 
 
 def build_price(self, market_state):
-    spec = self._spec
-    process = GBM(mu=0.03, sigma=0.2)
-    engine = MonteCarloEngine(process, n_paths=4096, n_steps=12, seed=42, method="exact")
-    shocks = sobol_normals(4096, 12, seed=42)
-    del shocks
-
-    def payoff_fn(paths):
-        terminal = paths[:, -1]
-        return (terminal >= spec.protection_barrier) * spec.notional
-
-    return float(engine.price(spec.spot, spec.maturity, payoff_fn, discount_rate=0.03)["price"])
+    return float(price_autocallable_monte_carlo_result(market_state, self._spec).price)
 """
 
 
@@ -842,16 +830,12 @@ def test_accepts_helper_only_equity_pde_route_without_low_level_pde_contract():
     assert report.ok
 
 
-def test_accepts_autocallable_component_composition_without_final_helper():
+def test_accepts_helper_backed_autocallable_route():
     from trellis.agent.semantic_validation import validate_semantics
 
     pricing_plan = PricingPlan(
         method="monte_carlo",
-        method_modules=[
-            "trellis.models.monte_carlo.engine",
-            "trellis.models.processes.gbm",
-            "trellis.models.monte_carlo.variance_reduction",
-        ],
+        method_modules=["trellis.models.autocallable"],
         required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="autocallable",
         reasoning="test",
@@ -863,16 +847,12 @@ def test_accepts_autocallable_component_composition_without_final_helper():
     generation_plan = build_generation_plan(
         pricing_plan=pricing_plan,
         instrument_type="autocallable",
-        inspected_modules=(
-            "trellis.models.monte_carlo.engine",
-            "trellis.models.processes.gbm",
-            "trellis.models.monte_carlo.variance_reduction",
-        ),
+        inspected_modules=("trellis.models.autocallable",),
         product_ir=product_ir,
     )
 
     report = validate_semantics(
-        AUTOCALLABLE_COMPOSITION_SOURCE,
+        AUTOCALLABLE_HELPER_SOURCE,
         product_ir=product_ir,
         generation_plan=generation_plan,
     )

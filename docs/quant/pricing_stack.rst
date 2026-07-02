@@ -238,10 +238,13 @@ The first migrated vanilla cases now use that boundary directly:
   owns the bounded Black-Scholes grid on ``[lower_barrier, upper_barrier]``,
   absorbing boundaries, and knock-in/out parity; the Monte Carlo helper owns
   the GBM engine binding, two barrier monitors, and deterministic discounting.
-- Single-underlier autocallable proof routes use the existing Monte Carlo,
-  GBM, event/schedule, and Sobol/QMC primitives. Generated adapters own the
-  observation schedule, first-trigger redemption, coupon accrual, terminal
-  protection, and deterministic discounting.
+- Single-underlier autocallable proof routes now use
+  ``trellis.models.autocallable.price_autocallable_monte_carlo_result`` as the
+  checked MC/QMC event helper. It owns exact GBM path simulation, fixed
+  observation-step mapping, first-trigger redemption, linear coupon accrual,
+  terminal protection, and deterministic discounting. The same helper handles
+  pseudo-MC and Sobol-QMC via the ``sampling`` argument, so Sobol is required
+  only for QMC comparison targets.
 - the local-vol vanilla helper remains a checked route-level wrapper, but it
   now assembles and prices through ``trellis.models.monte_carlo.event_aware``
   instead of maintaining a separate Monte Carlo engine/payoff loop

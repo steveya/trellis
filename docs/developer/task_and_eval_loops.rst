@@ -58,6 +58,12 @@ Current composition rules:
   market-access review checks. Generated code can call the resolver instead of
   duplicating every ``market_state`` lookup inline, as long as it uses the
   selected primitive surface.
+- single-underlier autocallable MC proof routes select
+  ``trellis.models.autocallable.price_autocallable_monte_carlo_result`` as the
+  checked event contract. The pseudo target calls it with
+  ``sampling="pseudo"``; the QMC target calls it with ``sampling="sobol"``.
+  Sobol is therefore a QMC comparison-target obligation, not a base
+  autocallable MC primitive.
 - deterministic API guardrails reject known near-misses before runtime, such
   as ``GBM(spot=...)`` and importing ``SobolNormals``. Use ``GBM(mu=...,
   sigma=...)`` and pass the initial spot to simulation/path construction; use

@@ -79,7 +79,7 @@ Status mirror last synced: `2026-07-01`
 | `QUA-1133` | Agent learning: overlay gates and retry contract enforcement | In Progress | `QUA-1132` |
 | `QUA-1134` | Heston ADI: exact runtime binding and transform contract | In Progress | `QUA-1132`, `QUA-1133` |
 | `QUA-1135` | Double barrier: PDE and MC assembly contracts | In Progress | `QUA-1132`, `QUA-1133` |
-| `QUA-1136` | Autocallable MC: event engine and QMC primitive obligations | Todo | `QUA-1132`, `QUA-1133` |
+| `QUA-1136` | Autocallable MC: event engine and QMC primitive obligations | In Progress | `QUA-1132`, `QUA-1133` |
 | `QUA-1137` | Task learning: promotion-grade evidence and docs closeout | Todo | `QUA-1134`, `QUA-1135`, `QUA-1136` |
 
 ## Validation Plan

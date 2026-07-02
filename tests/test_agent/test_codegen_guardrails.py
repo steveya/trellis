@@ -328,6 +328,29 @@ def test_heston_family_support_approves_adi_diagnostics():
     assert report.ok
 
 
+def test_autocallable_generation_plan_approves_event_helper_surface():
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.autocallable"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="autocallable",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="autocallable",
+        inspected_modules=("trellis.models.autocallable",),
+    )
+
+    assert "trellis.models.autocallable" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.autocallable import "
+        "AutocallableMonteCarloConfig, price_autocallable_monte_carlo_result\n",
+        plan,
+    )
+    assert report.ok
+
+
 def test_qmc_generation_plan_approves_qmc_family_modules():
     pricing_plan = PricingPlan(
         method="qmc",

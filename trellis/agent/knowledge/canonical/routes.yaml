@@ -360,18 +360,20 @@ routes:
       - when:
           payoff_family: autocallable
         primitives:
-          - module: trellis.models.monte_carlo.engine
-            symbol: MonteCarloEngine
-            role: path_simulation
-          - module: trellis.models.processes.gbm
-            symbol: GBM
-            role: state_process
-          - module: trellis.models.monte_carlo.variance_reduction
-            symbol: sobol_normals
-            role: variance_reduction
+          - module: trellis.models.autocallable
+            symbol: price_autocallable_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.autocallable
+            symbol: AutocallableMonteCarloConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.autocallable
+            symbol: resolve_autocallable_inputs
+            role: market_binding
         adapters: []
         notes:
-          - "Compose the autocallable payoff in the generated adapter: fixed observation schedule, first-trigger redemption, coupon accrual, terminal protection, and deterministic discounting."
+          - "Prefer `price_autocallable_monte_carlo_result(market_state, spec).price` for autocallable MC targets before writing event branching by hand."
+          - "Pseudo-MC targets should not require Sobol primitives; QMC comparison targets select Sobol sampling at the adapter/helper call."
       - when:
           payoff_family: barrier_option
           payoff_traits: [double_barrier]

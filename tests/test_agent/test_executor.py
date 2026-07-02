@@ -862,6 +862,61 @@ def test_deterministic_exact_binding_module_does_not_materialize_learning_target
 
 
 @pytest.mark.parametrize(
+    ("comparison_target", "expected_sampling"),
+    [
+        ("mc_autocall", "pseudo"),
+        ("mc_autocall_qmc", "sobol"),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_autocallable_helper(
+    comparison_target,
+    expected_sampling,
+):
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(
+            route="monte_carlo_paths",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.autocallable",
+                    "price_autocallable_monte_carlo_result",
+                    "route_helper",
+                ),
+            ),
+        ),
+        method="monte_carlo",
+        instrument_type="autocallable",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["barrier_option"],
+        "Autocallable helper target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.autocallable import price_autocallable_monte_carlo_result" in generated.code
+    assert (
+        f'price_autocallable_monte_carlo_result(market_state, spec, sampling="{expected_sampling}").price'
+        in generated.code
+    )
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
         ("fft", 'method="fft"'),

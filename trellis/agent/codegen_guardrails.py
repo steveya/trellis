@@ -118,6 +118,7 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.analytical.support.barriers",
     ),
     "autocallable": (
+        "trellis.models.autocallable",
         "trellis.models.monte_carlo.engine",
         "trellis.models.monte_carlo.event_aware",
         "trellis.models.monte_carlo.variance_reduction",

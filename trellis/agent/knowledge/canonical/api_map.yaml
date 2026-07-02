@@ -87,6 +87,7 @@ monte_carlo:
     - "from trellis.models.monte_carlo.schemes import HestonQuadraticExponential, LaguerreBasis"
     - "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo, price_heston_option_monte_carlo_result"
     - "from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff"
+    - "from trellis.models.autocallable import AutocallableMonteCarloConfig, price_autocallable_monte_carlo_result, resolve_autocallable_inputs"
     - "from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_state_payoff, resolve_double_barrier_inputs"
     - "from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, price_double_barrier_option_monte_carlo_result"
     - "from trellis.models.monte_carlo import euler_maruyama, milstein, brownian_bridge"
@@ -94,7 +95,7 @@ monte_carlo:
     - "from trellis.models.processes.gbm import GBM"
   notes:
     - "For American/Bermudan Monte Carlo, simulate paths then call an approved early-exercise control primitive; Trellis currently implements longstaff_schwartz"
-    - "Autocallable MC routes should compose path simulation, observation-step logic, first-trigger redemption, coupon accrual, and terminal protection in generated code"
+    - "Autocallable MC routes should prefer `price_autocallable_monte_carlo_result(...)`; use `sampling='sobol'` only for QMC comparison targets"
     - "Double-barrier MC routes should use two barrier monitors or `double_barrier_state_payoff(...)` instead of adapting a one-barrier analytical formula"
     - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"
     - "Do not invent method='lsm' on MonteCarloEngine"

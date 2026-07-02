@@ -374,15 +374,14 @@
   features: [barrier, early_exercise, path_dependent, coupons, discounting]
   method: monte_carlo
   method_modules:
-    - trellis.models.monte_carlo.engine
-    - trellis.models.processes.gbm
-    - trellis.models.monte_carlo.variance_reduction
+    - trellis.models.autocallable
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
     - >-
-      COMPOSE PAYOFF: Generated code owns the fixed observation schedule,
-      first-trigger redemption, coupon accrual, terminal protection, and
-      discounting; Trellis provides path simulation and Sobol/QMC primitives.
+      USE CHECKED EVENT CONTRACT: Prefer
+      price_autocallable_monte_carlo_result(...) for fixed observation schedule,
+      first-trigger redemption, coupon accrual, terminal protection, discounting,
+      and pseudo/QMC sampling selection.
     - >-
       CONVERGENCE: Use at least 50,000 paths. Verify standard error <1%.
     - >-
