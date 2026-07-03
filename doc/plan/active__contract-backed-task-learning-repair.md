@@ -641,3 +641,24 @@ The final replay reports `7/7` passed expectations in `200s`, all
 first-attempt successes, zero actionable failures, zero lessons/cookbooks
 captured, and zero token usage. The successful tasks are `P002`, `P004`,
 `P006`, `P007`, `T14`, `T15`, and `T16`.
+
+Full pending-pack replay including previously green and expected-block targets:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P001 --task-id P002 --task-id P004 --task-id P006 \
+  --task-id P007 --task-id T14 --task-id T15 --task-id T16 \
+  --task-id T17 --task-id T18 \
+  --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_full_pending_pack_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1154_full_pending_pack_20260703.json \
+  --skip-platform-traces
+```
+
+The full replay reports `10/10` passed expectations in `248s`, with `9`
+pricing successes, `1` honest block (`T18`), `0` actionable failures, all
+pricing tasks succeeding on the first attempt, and zero token usage. Bounded
+remediation reports `0` total failures.
