@@ -662,3 +662,59 @@ The full replay reports `10/10` passed expectations in `248s`, with `9`
 pricing successes, `1` honest block (`T18`), `0` actionable failures, all
 pricing tasks succeeding on the first attempt, and zero token usage. Bounded
 remediation reports `0` total failures.
+
+### 2026-07-03 T19-T32 proof-route exact bindings
+
+The next proof tranche exposed three reusable exact-binding gaps rather than
+new cookbook-learning needs. `T23` needed a checked digital-option PDE wrapper
+for Crank-Nicolson/Rannacher comparison targets; `T29` needed arithmetic-Asian
+MC and Turnbull-Wakeman analytical targets to bind through their method-correct
+helpers; and `T30` needed fixed-lookback MC to delegate to a checked helper
+with continuous-extrema semantics.
+
+The fix adds the bounded digital PDE helper
+`price_equity_digital_option_pde(...)`, a fixed-lookback MC helper
+`price_equity_fixed_lookback_option_monte_carlo(...)`, exact wrapper
+materialization for the digital/Asian/lookback targets, comparison-target
+method mapping for `turnbull_wakeman_approx`, and sparse legacy task identity
+recovery from cross-validation target names. The route and backend-binding
+catalogs now expose these helpers as exact proof surfaces, while generated
+adapters remain thin wrappers over checked runtime code.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_equity_option_pde.py::test_price_equity_digital_option_pde_matches_cash_digital_with_rannacher \
+  tests/test_models/test_lookback_option.py \
+  tests/test_agent/test_import_registry.py::test_digital_pde_and_asian_helpers_are_visible_to_import_registry \
+  tests/test_agent/test_route_registry.py \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_digital_pde_targets \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_asian_targets \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_lookback_mc_target \
+  tests/test_agent/test_codegen_guardrails.py::test_path_dependent_family_support_approves_asian_and_lookback_helpers \
+  tests/test_agent/test_task_runtime.py::test_task_to_instrument_type_uses_cross_validation_target_hints \
+  tests/test_agent/test_task_runtime.py::test_comparison_harness_maps_turnbull_wakeman_target_to_analytical
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T23 --task-id T29 --task-id T30 \
+  --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1155_t23_t29_t30_clean_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  T19 T32 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1155_t19_t32_clean_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1155_t19_t32_clean_20260703.json \
+  --skip-platform-traces
+```
+
+The focused proof-route suite reports `172 passed`; the clean `T23/T29/T30`
+rerun reports `3/3` passed expectations; the full `T19` through `T32` replay
+reports `14/14` passed expectations in `401s`, all with zero token usage; and
+bounded remediation reports `0` total failures. A broader source/metadata
+regression shard excluding dirty generated-adapter imports reports `356`
+passed. The excluded cold-benchmark task-runtime test imported a locally dirty
+generated `trellis/instruments/_agent/barrieroption.py` replay artifact, so it
+is not part of this source commit.

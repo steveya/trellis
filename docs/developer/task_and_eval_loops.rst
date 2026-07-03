@@ -714,6 +714,18 @@ single ``BarrierMonitor``, notional convention, and deterministic discounting.
 Rebate-bearing barriers should remain on the analytical Rubinstein route until
 the PDE/MC rebate contract is implemented.
 
+Digital, Asian, and fixed-lookback proof targets use exact helper wrappers only
+for the retained comparison surfaces that have checked numerical contracts.
+Cash-or-asset digital Crank-Nicolson and Rannacher targets bind to
+``price_equity_digital_option_pde(...)``; arithmetic-Asian MC targets bind to
+``price_arithmetic_asian_option_monte_carlo(...)``; Turnbull-Wakeman targets
+are analytical comparison targets and bind to
+``price_arithmetic_asian_option_analytical(...)`` even when the broader task is
+a multi-method path-dependent option; and fixed-lookback MC targets bind to
+``price_equity_fixed_lookback_option_monte_carlo(...)``. Sparse legacy task
+text may use cross-validation target names to recover product identity, but the
+runtime still fails closed if the resolved contract and exact helper disagree.
+
 Capped/floored cliquet comparisons follow a bounded version of that contract.
 The analytical target can use the checked capped/floored reset-return
 quadrature path, and the Monte Carlo target should call

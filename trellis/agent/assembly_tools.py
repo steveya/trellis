@@ -512,6 +512,8 @@ def _preferred_method_for_target(target_id: str, construct_methods: list[str]) -
         ("stochastic", "monte_carlo"),
         ("fft", "fft_pricing"),
         ("cos", "fft_pricing"),
+        ("turnbull", "analytical"),
+        ("wakeman", "analytical"),
         ("black", "analytical"),
         ("jamshidian", "analytical"),
         ("rubinstein", "analytical"),

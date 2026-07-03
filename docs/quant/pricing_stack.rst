@@ -260,6 +260,23 @@ The first migrated vanilla cases now use that boundary directly:
   owns the bounded Black-Scholes grid on ``[lower_barrier, upper_barrier]``,
   absorbing boundaries, and knock-in/out parity; the Monte Carlo helper owns
   the GBM engine binding, two barrier monitors, and deterministic discounting.
+- Digital proof routes now include a bounded one-dimensional PDE helper,
+  ``trellis.models.equity_option_pde.price_equity_digital_option_pde``. It
+  prices cash-or-nothing and asset-or-nothing equity digitals with the shared
+  Black-Scholes theta solver and optional Rannacher startup smoothing, so
+  Crank-Nicolson/Rannacher comparison targets can delegate to a checked helper
+  instead of regenerating discontinuous-terminal grid code.
+- Arithmetic-Asian proof routes keep the numerical method split explicit:
+  ``trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo``
+  owns the path-sampling MC comparison lane, while
+  ``price_arithmetic_asian_option_analytical`` owns the Turnbull-Wakeman
+  approximation lane. The analytical approximation is not treated as a Monte
+  Carlo primitive just because it appears in an Asian multi-method task.
+- Fixed-lookback MC proof routes use
+  ``trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo``
+  for the checked equity-diffusion comparison surface. The helper applies a
+  Brownian-bridge extrema correction so the MC path summary is aligned with the
+  continuous-monitoring fixed-strike analytical reference.
 - Single-underlier autocallable proof routes now use
   ``trellis.models.autocallable.price_autocallable_monte_carlo_result`` as the
   checked MC/QMC event helper. It owns exact GBM path simulation, fixed

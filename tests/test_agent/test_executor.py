@@ -1158,6 +1158,143 @@ def test_deterministic_exact_binding_module_materializes_heston_adi_helper():
 
 
 @pytest.mark.parametrize(
+    ("comparison_target", "expected_rannacher"),
+    [
+        ("cn_rannacher", 'rannacher_timesteps=getattr(spec, "rannacher_timesteps", 2)'),
+        ("cn_standard", 'rannacher_timesteps=getattr(spec, "rannacher_timesteps", 0)'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_digital_pde_targets(
+    comparison_target,
+    expected_rannacher,
+):
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(
+            route="pde_theta_1d",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.equity_option_pde",
+                    "price_equity_digital_option_pde",
+                    "route_helper",
+                ),
+            ),
+        ),
+        method="pde_solver",
+        instrument_type="digital_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["digital_option"],
+        "Digital PDE proof target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.equity_option_pde import price_equity_digital_option_pde" in generated.code
+    assert "price_equity_digital_option_pde(" in generated.code
+    assert 'theta=getattr(spec, "theta", 0.5)' in generated.code
+    assert expected_rannacher in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "helper_ref", "expected_call"),
+    [
+        (
+            "mc_asian",
+            "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo",
+            "price_arithmetic_asian_option_monte_carlo(market_state, spec)",
+        ),
+        (
+            "turnbull_wakeman_approx",
+            "trellis.models.asian_option.price_arithmetic_asian_option_analytical",
+            "price_arithmetic_asian_option_analytical(market_state, spec)",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_asian_targets(
+    comparison_target,
+    helper_ref,
+    expected_call,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper_ref,),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="asian_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["asian_option"],
+        "Asian option proof target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_lookback_mc_target():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    helper_ref = "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo"
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper_ref,),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="lookback_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["lookback_option"],
+        "Lookback option MC proof target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="mc_lookback",
+    )
+
+    assert generated is not None
+    assert "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo" in generated.code
+    assert "price_equity_fixed_lookback_option_monte_carlo(market_state, spec)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
     "comparison_target",
     [
         "heston_adi_pde",

@@ -394,6 +394,62 @@ def test_european_option_family_support_approves_cev_helper_surfaces():
     assert report.ok
 
 
+def test_path_dependent_family_support_approves_asian_and_lookback_helpers():
+    asian_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="asian_option",
+            reasoning="test",
+        ),
+        instrument_type="asian_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="asian_option",
+            payoff_family="asian_option",
+            payoff_traits=("asian", "path_dependent"),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+    lookback_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="test",
+        ),
+        instrument_type="lookback_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=("lookback", "path_dependent"),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "trellis.models.asian_option" in asian_plan.approved_modules
+    assert "trellis.models.lookback_option" in lookback_plan.approved_modules
+    asian_report = validate_generated_imports(
+        "from trellis.models.asian_option import "
+        "price_arithmetic_asian_option_monte_carlo, "
+        "price_arithmetic_asian_option_analytical\n",
+        asian_plan,
+    )
+    lookback_report = validate_generated_imports(
+        "from trellis.models.lookback_option import "
+        "price_equity_fixed_lookback_option_monte_carlo\n",
+        lookback_plan,
+    )
+
+    assert asian_report.ok
+    assert lookback_report.ok
+
+
 def test_autocallable_generation_plan_approves_event_helper_surface():
     pricing_plan = PricingPlan(
         method="monte_carlo",

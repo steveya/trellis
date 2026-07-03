@@ -94,6 +94,8 @@ monte_carlo:
     - "from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, price_single_barrier_option_monte_carlo_result, resolve_single_barrier_inputs"
     - "from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_state_payoff, resolve_double_barrier_inputs"
     - "from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, price_double_barrier_option_monte_carlo_result"
+    - "from trellis.models.asian_option import price_arithmetic_asian_option_monte_carlo, price_arithmetic_asian_option_analytical"
+    - "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
     - "from trellis.models.monte_carlo import euler_maruyama, milstein, brownian_bridge"
     - "from trellis.models.monte_carlo import antithetic, control_variate, sobol_normals"
     - "from trellis.models.processes.gbm import GBM"
@@ -121,6 +123,7 @@ pde:
   key_imports:
     - "from trellis.models.equity_option_pde import price_cev_option_pde"
     - "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde"
+    - "from trellis.models.equity_option_pde import price_equity_digital_option_pde"
     - "from trellis.models.pde.heston_adi import HestonAdiPDEConfig, resolve_heston_adi_pde_inputs, price_heston_option_adi_pde_result"
     - "from trellis.models.single_barrier_option import SingleBarrierPDEConfig, price_single_barrier_option_pde_result, resolve_single_barrier_inputs"
     - "from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff, resolve_double_barrier_inputs"
@@ -133,6 +136,7 @@ pde:
   notes:
     - "Vanilla European equity PDE routes should prefer the checked-in helper `price_vanilla_equity_option_pde(...)`"
     - "CEV PDE comparison targets should prefer the checked-in helper `price_cev_option_pde(...)`"
+    - "Digital equity PDE comparison targets should prefer `price_equity_digital_option_pde(...)`; use Rannacher timesteps for discontinuous terminal payoffs"
     - "European Heston PDE routes should bind explicit Heston parameters and may use the Heston ADI result object as numerical evidence; a Black vol surface is not a live Heston parameter source"
     - "Single-barrier PDE routes should prefer `price_single_barrier_option_pde_result(...)` for zero-rebate absorbing-boundary comparisons"
     - "Double-barrier PDE routes should build a bounded `[lower_barrier, upper_barrier]` grid with absorbing boundary functions and a terminal payoff from `terminal_double_barrier_payoff(...)`"

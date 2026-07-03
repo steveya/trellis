@@ -20,7 +20,7 @@ from pathlib import Path
 from statistics import mean, median
 from time import perf_counter, time
 from types import SimpleNamespace
-from typing import Any, Callable, Mapping, get_args, get_origin
+from typing import Any, Callable, Mapping, Sequence, get_args, get_origin
 
 _log = logging.getLogger(__name__)
 
@@ -986,12 +986,52 @@ def task_to_instrument_identity(task: dict) -> InstrumentIdentityResolution:
         )
         if part
     )
-    return resolve_instrument_identity(
+    resolution = resolve_instrument_identity(
         title,
         explicit_instrument_type=task.get("instrument_type"),
         explicit_source="task.instrument_type",
         inferred_source="task.title_or_description",
     )
+    if resolution.instrument_type is not None:
+        return resolution
+
+    target_hint = _task_instrument_identity_target_hint(task)
+    if target_hint:
+        return resolve_instrument_identity(
+            " ".join(part for part in (title, target_hint) if part),
+            explicit_instrument_type=task.get("instrument_type"),
+            explicit_source="task.instrument_type",
+            inferred_source="task.title_description_or_targets",
+        )
+    return resolution
+
+
+def _task_instrument_identity_target_hint(task: Mapping[str, Any]) -> str:
+    """Return comparison-target text useful for sparse task identity inference."""
+    cross_validate = task.get("cross_validate")
+    if not isinstance(cross_validate, Mapping):
+        return ""
+
+    hints: list[str] = []
+
+    def add(value: Any) -> None:
+        if value is None:
+            return
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                hints.append(text)
+            return
+        if isinstance(value, Mapping):
+            for nested in value.values():
+                add(nested)
+            return
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for nested in value:
+                add(nested)
+
+    add(cross_validate)
+    return " ".join(hints)
 
 
 _PROOF_LEGACY_DEFAULT_UNDERLIER = "SPX"
@@ -2147,6 +2187,8 @@ def _preferred_method_for_target(target_id: str, construct_methods: list[str]) -
         ("cos", "fft_pricing"),
         ("garman", "analytical"),
         ("gk", "analytical"),
+        ("turnbull", "analytical"),
+        ("wakeman", "analytical"),
         ("black", "analytical"),
         ("jamshidian", "analytical"),
         ("rubinstein", "analytical"),

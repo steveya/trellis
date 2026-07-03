@@ -128,6 +128,17 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.equity_option_pde",
         "trellis.models.equity_option_tree",
     ),
+    "digital_option": (
+        "trellis.models.analytical.equity_exotics",
+        "trellis.models.equity_option_pde",
+    ),
+    "asian_option": (
+        "trellis.models.asian_option",
+    ),
+    "lookback_option": (
+        "trellis.models.analytical.equity_exotics",
+        "trellis.models.lookback_option",
+    ),
     "barrier_option": (
         "trellis.models.analytical.support.barriers",
         "trellis.models.single_barrier_option",

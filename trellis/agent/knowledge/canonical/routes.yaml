@@ -436,6 +436,24 @@ routes:
         notes:
           - "Prefer `price_double_barrier_option_monte_carlo_result(...)` for the checked MC surface; if assembling manually, use two explicit BarrierMonitor objects or `double_barrier_state_payoff(...)`."
       - when:
+          payoff_family: asian_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.asian_option
+            symbol: price_arithmetic_asian_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
+          payoff_family: lookback_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.lookback_option
+            symbol: price_equity_fixed_lookback_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
           payoff_family: vanilla_option
           exercise_style: [european]
           model_family: [generic, equity, equity_diffusion]
@@ -834,7 +852,7 @@ routes:
       # ``payoff_family`` for quanto / FX-vanilla (Phase 2+ work), this
       # exclusion becomes redundant and can be dropped.
       required_market_data: [black_vol_surface]
-      payoff_family: [vanilla_option, basket_option, swaption, barrier_option, digital_option, lookback_option, chooser_option, compound_option, cliquet_option, variance_swap]
+      payoff_family: [vanilla_option, basket_option, asian_option, swaption, barrier_option, digital_option, lookback_option, chooser_option, compound_option, cliquet_option, variance_swap]
       exercise: [european, bermudan, none]
       exclude_required_market_data: [fx_rates]
     admissibility:
@@ -903,6 +921,15 @@ routes:
         primitives:
           - module: trellis.models.basket_option
             symbol: price_basket_option_analytical
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
+          payoff_family: asian_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.asian_option
+            symbol: price_arithmetic_asian_option_analytical
             role: route_helper
         adapters: []
         notes: []
@@ -1421,6 +1448,16 @@ routes:
         adapters: []
         notes:
           - "Bind canonical Heston model parameters at the runtime boundary; do not consume Black vol as a live Heston parameter source."
+      - when:
+          payoff_family: digital_option
+          exercise_style: [european]
+          model_family: [equity, equity_diffusion]
+        primitives:
+          - module: trellis.models.equity_option_pde
+            symbol: price_equity_digital_option_pde
+            role: route_helper
+        adapters: []
+        notes: []
       - when:
           payoff_family: barrier_option
           payoff_traits: [single_barrier]

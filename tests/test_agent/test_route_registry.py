@@ -1947,6 +1947,81 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_digital_pde_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
+        ir = ProductIR(
+            instrument="digital_option",
+            payoff_family="digital_option",
+            payoff_traits=("digital_payoff",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.equity_option_pde", "price_equity_digital_option_pde", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_asian_monte_carlo_primitives_use_checked_helpers(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        ir = ProductIR(
+            instrument="asian_option",
+            payoff_family="asian_option",
+            payoff_traits=("asian",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+            state_dependence="path_dependent",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.asian_option",
+                "price_arithmetic_asian_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_asian_analytical_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        ir = ProductIR(
+            instrument="asian_option",
+            payoff_family="asian_option",
+            payoff_traits=("asian",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+            state_dependence="path_dependent",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.asian_option",
+                "price_arithmetic_asian_option_analytical",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_lookback_monte_carlo_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        ir = ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=("lookback", "path_dependent"),
+            exercise_style="european",
+            model_family="equity_diffusion",
+            state_dependence="path_dependent",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.lookback_option",
+                "price_equity_fixed_lookback_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_cev_pde_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "cev_theta_pde"][0]
         ir = ProductIR(

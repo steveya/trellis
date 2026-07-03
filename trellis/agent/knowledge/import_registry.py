@@ -473,6 +473,10 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Monte Carlo"].append(line)
         elif mod == "trellis.models.equity_option_pde":
             groups["Models — PDE"].append(line)
+        elif mod == "trellis.models.asian_option":
+            groups["Models — Monte Carlo"].append(line)
+        elif mod == "trellis.models.lookback_option":
+            groups["Models — Monte Carlo"].append(line)
         elif mod == "trellis.models.single_barrier_option":
             groups["Models — Monte Carlo"].append(line)
         elif "trellis.models.trees" in mod:
@@ -558,6 +562,8 @@ from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_o
 from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketMonteCarloPayoff, RankedObservationBasketSpec
 from trellis.models.monte_carlo.stochastic_vol import HestonMonteCarloProblem, HestonMonteCarloResult, ResolvedHestonMonteCarloInputs, build_heston_monte_carlo_problem, price_heston_option_monte_carlo, price_heston_option_monte_carlo_result, resolve_heston_monte_carlo_inputs
 from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
+from trellis.models.asian_option import ArithmeticAsianOptionAnalyticalResult, ArithmeticAsianOptionMonteCarloResult, AsianOptionMonteCarloResult, price_arithmetic_asian_option_analytical, price_arithmetic_asian_option_analytical_result, price_arithmetic_asian_option_monte_carlo, price_arithmetic_asian_option_monte_carlo_result, price_asian_option_monte_carlo, price_asian_option_monte_carlo_result
+from trellis.models.lookback_option import FixedLookbackMonteCarloResult, price_equity_fixed_lookback_option_monte_carlo, price_equity_fixed_lookback_option_monte_carlo_result
 from trellis.models.equity_option_monte_carlo import build_vanilla_equity_monte_carlo_problem, price_american_equity_option_lsm_monte_carlo, price_single_state_terminal_claim_monte_carlo_result, price_vanilla_equity_option_monte_carlo, price_vanilla_equity_option_monte_carlo_result, resolve_single_state_terminal_claim_monte_carlo_inputs, resolve_vanilla_equity_monte_carlo_inputs
 
 ### Models — QMC
@@ -571,7 +577,7 @@ from trellis.models.pde.psor import psor_1d
 from trellis.models.pde.grid import Grid
 from trellis.models.pde.thomas import thomas_solve
 from trellis.models.pde.heston_adi import HestonAdiPDEConfig, HestonAdiPDEResult, ResolvedHestonAdiPDEInputs, price_heston_option_adi_pde_result, resolve_heston_adi_pde_inputs
-from trellis.models.equity_option_pde import build_event_aware_equity_pde_problem, build_event_aware_pde_problem, build_vanilla_equity_pde_problem, interpolate_pde_values, price_cev_option_pde, price_event_aware_equity_option_pde, price_vanilla_equity_option_pde, resolve_vanilla_equity_pde_inputs, solve_event_aware_equity_option_pde_surface, solve_event_aware_pde, solve_vanilla_equity_option_pde_surface
+from trellis.models.equity_option_pde import build_event_aware_equity_pde_problem, build_event_aware_pde_problem, build_vanilla_equity_pde_problem, interpolate_pde_values, price_cev_option_pde, price_equity_digital_option_pde, price_event_aware_equity_option_pde, price_vanilla_equity_option_pde, resolve_vanilla_equity_pde_inputs, solve_event_aware_equity_option_pde_surface, solve_event_aware_pde, solve_vanilla_equity_option_pde_surface
 
 ### Models — Transforms (FFT/COS)
 from trellis.models.transforms.cos_method import cos_price

@@ -3778,6 +3778,34 @@ def _deterministic_exact_binding_evaluate_body(
             'n_paths=getattr(spec, "n_paths", 120000), '
             'seed=getattr(spec, "seed", 42))'
         )
+    if (
+        normalized_target in {"cn_rannacher", "cn_standard"}
+        and "trellis.models.equity_option_pde.price_equity_digital_option_pde" in refs
+    ):
+        rannacher_default = 2 if normalized_target == "cn_rannacher" else 0
+        return (
+            "return price_equity_digital_option_pde("
+            "market_state, spec, "
+            'theta=getattr(spec, "theta", 0.5), '
+            f'rannacher_timesteps=getattr(spec, "rannacher_timesteps", {rannacher_default}), '
+            'n_x=getattr(spec, "n_x", 401), '
+            'n_t=getattr(spec, "n_t", 401))'
+        )
+    if (
+        normalized_target == "mc_asian"
+        and "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo" in refs
+    ):
+        return "return price_arithmetic_asian_option_monte_carlo(market_state, spec)"
+    if (
+        normalized_target == "turnbull_wakeman_approx"
+        and "trellis.models.asian_option.price_arithmetic_asian_option_analytical" in refs
+    ):
+        return "return price_arithmetic_asian_option_analytical(market_state, spec)"
+    if (
+        normalized_target == "mc_lookback"
+        and "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo" in refs
+    ):
+        return "return price_equity_fixed_lookback_option_monte_carlo(market_state, spec)"
 
     cds_body = _credit_default_swap_helper_body(refs)
     if cds_body is not None:
@@ -4114,6 +4142,18 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical": (
             "return price_equity_fixed_lookback_option_analytical(market_state, spec)"
         ),
+        "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo": (
+            "return price_equity_fixed_lookback_option_monte_carlo(market_state, spec)"
+        ),
+        "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo": (
+            "return price_arithmetic_asian_option_monte_carlo(market_state, spec)"
+        ),
+        "trellis.models.asian_option.price_arithmetic_asian_option_analytical": (
+            "return price_arithmetic_asian_option_analytical(market_state, spec)"
+        ),
+        "trellis.models.equity_option_pde.price_equity_digital_option_pde": (
+            "return price_equity_digital_option_pde(market_state, spec)"
+        ),
         "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical": (
             "return price_equity_chooser_option_analytical(market_state, spec)"
         ),
@@ -4398,6 +4438,22 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_cev_option_pde(" in body:
         imports.append(
             "from trellis.models.equity_option_pde import price_cev_option_pde"
+        )
+    if "price_equity_digital_option_pde(" in body:
+        imports.append(
+            "from trellis.models.equity_option_pde import price_equity_digital_option_pde"
+        )
+    if "price_arithmetic_asian_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.asian_option import price_arithmetic_asian_option_monte_carlo"
+        )
+    if "price_arithmetic_asian_option_analytical(" in body:
+        imports.append(
+            "from trellis.models.asian_option import price_arithmetic_asian_option_analytical"
+        )
+    if "price_equity_fixed_lookback_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
         )
     if "price_vanilla_equity_option_tree(" in body:
         imports.append(

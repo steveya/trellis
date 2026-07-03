@@ -31,7 +31,7 @@ from trellis.models.pde.event_aware import (
     solve_event_aware_pde,
 )
 from trellis.models.pde.grid import Grid
-from trellis.models.pde.operator import CEVOperator
+from trellis.models.pde.operator import BlackScholesOperator, CEVOperator
 from trellis.models.pde.theta_method import theta_method_1d
 
 np = get_numpy()
@@ -307,6 +307,80 @@ def price_vanilla_equity_option_pde(
     )
 
 
+def price_equity_digital_option_pde(
+    market_state: EquityPDEMarketStateLike,
+    spec: VanillaEquityOptionSpecLike,
+    *,
+    theta: float = 0.5,
+    rannacher_timesteps: int = 2,
+    n_x: int | None = None,
+    n_t: int | None = None,
+    s_max_multiplier: float = 4.0,
+) -> float:
+    """Price a cash-or-asset digital equity option via theta-method PDE."""
+    resolved = resolve_vanilla_equity_pde_inputs(
+        market_state,
+        spec,
+        theta=theta,
+        n_x=n_x,
+        n_t=n_t,
+        s_max_multiplier=s_max_multiplier,
+    )
+    payout_type = str(
+        getattr(spec, "payout_type", "cash_or_nothing") or "cash_or_nothing"
+    ).strip().lower()
+    cash_payoff = float(getattr(spec, "cash_payoff", 1.0) or 1.0)
+    if payout_type not in {"cash_or_nothing", "asset_or_nothing"}:
+        raise ValueError(f"Unsupported payout_type {payout_type!r}")
+    if resolved.maturity <= 0.0:
+        if resolved.option_type == "put":
+            in_the_money = resolved.spot < resolved.strike
+        else:
+            in_the_money = resolved.spot > resolved.strike
+        if not in_the_money:
+            return 0.0
+        payoff = cash_payoff if payout_type == "cash_or_nothing" else resolved.spot
+        return float(resolved.notional * payoff)
+
+    grid = Grid(
+        x_min=0.0,
+        x_max=resolved.s_max,
+        n_x=resolved.n_x,
+        T=resolved.maturity,
+        n_t=resolved.n_t,
+    )
+    operator = BlackScholesOperator(
+        sigma_fn=lambda _s, _t: resolved.sigma,
+        r_fn=lambda _t: resolved.rate,
+    )
+    terminal = _digital_terminal_payoff(
+        grid.x,
+        option_type=resolved.option_type,
+        strike=resolved.strike,
+        payout_type=payout_type,
+        cash_payoff=cash_payoff,
+    )
+    lower_bc, upper_bc = _digital_boundary_conditions(
+        option_type=resolved.option_type,
+        payout_type=payout_type,
+        cash_payoff=cash_payoff,
+        rate=resolved.rate,
+        maturity=resolved.maturity,
+        s_max=resolved.s_max,
+    )
+    values = theta_method_1d(
+        grid,
+        operator,
+        terminal,
+        theta=resolved.theta,
+        lower_bc_fn=lower_bc,
+        upper_bc_fn=upper_bc,
+        rannacher_timesteps=max(int(rannacher_timesteps), 0),
+    )
+    price = interpolate_pde_values(values, grid.x, resolved.spot)
+    return float(resolved.notional * price)
+
+
 def price_cev_option_pde(
     market_state: EquityPDEMarketStateLike,
     spec: VanillaEquityOptionSpecLike,
@@ -494,11 +568,50 @@ def _terminal_payoff(spots: raw_np.ndarray, option_type: str, strike: float) -> 
     return raw_np.maximum(spots - float(strike), 0.0)
 
 
+def _digital_terminal_payoff(
+    spots: raw_np.ndarray,
+    *,
+    option_type: str,
+    strike: float,
+    payout_type: str,
+    cash_payoff: float,
+) -> raw_np.ndarray:
+    if option_type == "put":
+        mask = spots <= float(strike)
+    else:
+        mask = spots >= float(strike)
+    if payout_type == "asset_or_nothing":
+        return raw_np.where(mask, spots, 0.0)
+    return raw_np.where(mask, float(cash_payoff), 0.0)
+
+
+def _digital_boundary_conditions(
+    *,
+    option_type: str,
+    payout_type: str,
+    cash_payoff: float,
+    rate: float,
+    maturity: float,
+    s_max: float,
+):
+    def discounted_cash(time: float) -> float:
+        return float(cash_payoff * raw_np.exp(-rate * (maturity - time)))
+
+    if payout_type == "asset_or_nothing":
+        if option_type == "put":
+            return lambda _t: 0.0, lambda _t: 0.0
+        return lambda _t: 0.0, lambda _t: float(s_max)
+    if option_type == "put":
+        return discounted_cash, lambda _t: 0.0
+    return lambda _t: 0.0, discounted_cash
+
+
 __all__ = [
     "ResolvedEquityPDEInputs",
     "build_event_aware_equity_pde_problem",
     "build_vanilla_equity_pde_problem",
     "price_cev_option_pde",
+    "price_equity_digital_option_pde",
     "price_event_aware_equity_option_pde",
     "price_vanilla_equity_option_pde",
     "resolve_vanilla_equity_pde_inputs",

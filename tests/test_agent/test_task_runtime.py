@@ -921,6 +921,44 @@ def test_task_to_instrument_identity_records_text_fallback_source():
     assert resolution.source == "task.title_or_description"
 
 
+def test_task_to_instrument_type_uses_cross_validation_target_hints():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T23",
+            "title": "Crank-Nicolson Rannacher smoothing for discontinuous payoffs",
+            "cross_validate": {
+                "internal": ["cn_rannacher", "cn_standard"],
+                "analytical": "black_scholes_digital",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "digital_option"
+    assert resolution.source == "task.title_description_or_targets"
+
+
+def test_comparison_harness_maps_turnbull_wakeman_target_to_analytical():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    plan = build_comparison_harness_plan(
+        {
+            "id": "T29",
+            "title": "Asian option (arithmetic average): MC vs Turnbull-Wakeman",
+            "construct": "monte_carlo",
+            "cross_validate": {
+                "internal": ["mc_asian", "turnbull_wakeman_approx"],
+            },
+        }
+    )
+
+    methods = {target.target_id: target.preferred_method for target in plan.targets}
+
+    assert methods["mc_asian"] == "monte_carlo"
+    assert methods["turnbull_wakeman_approx"] == "analytical"
+
+
 def test_build_market_state_for_task_materializes_short_rate_comparison_regime(monkeypatch):
     from trellis.agent.task_runtime import build_market_state_for_task
     from trellis.core.market_state import MarketState
