@@ -44,10 +44,10 @@ Replay marker
 Full-task canary replays now persist the same task-run and diagnosis artifacts
 as live runs, but they also mark the execution surface explicitly:
 
-- ``execution_mode`` is set to ``cassette_replay``
-- ``execution_mode`` is set to ``deterministic_replay`` for canaries that run
-  under the offline-local exact-binding lane instead of consuming cassette
-  calls
+- ``execution_mode`` is set to exactly one replay value:
+  ``cassette_replay`` for cassette-backed canaries or
+  ``deterministic_replay`` for canaries that run under the offline-local
+  exact-binding lane instead of consuming cassette calls
 - ``llm_cassette`` records the cassette name, path, replay policy, and
   ``used=false`` when deterministic replay bypasses the cassette
 
