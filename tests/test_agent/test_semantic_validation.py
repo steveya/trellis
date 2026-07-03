@@ -168,6 +168,17 @@ def build_price(self, market_state):
 """
 
 
+CLIQUET_MC_HELPER_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
+
+
+def build_price(self, market_state):
+    return float(price_equity_cliquet_option_monte_carlo(market_state, self._spec))
+"""
+
+
 DOUBLE_BARRIER_PDE_HELPER_SOURCE = """\
 from __future__ import annotations
 
@@ -875,6 +886,38 @@ def test_accepts_helper_backed_autocallable_route():
 
     report = validate_semantics(
         AUTOCALLABLE_HELPER_SOURCE,
+        product_ir=product_ir,
+        generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.required_primitive_missing" not in issue_codes
+    assert report.ok
+
+
+def test_accepts_helper_backed_cliquet_monte_carlo_route():
+    from trellis.agent.semantic_validation import validate_semantics
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="cliquet_option",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "Capped and floored cliquet option with reset-date Monte Carlo",
+        instrument_type="cliquet_option",
+    )
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="cliquet_option",
+        inspected_modules=("trellis.models.monte_carlo.engine", "trellis.models.monte_carlo.event_aware"),
+        product_ir=product_ir,
+    )
+
+    report = validate_semantics(
+        CLIQUET_MC_HELPER_SOURCE,
         product_ir=product_ir,
         generation_plan=generation_plan,
     )

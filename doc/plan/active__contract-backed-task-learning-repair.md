@@ -491,3 +491,44 @@ The planner/executor regression slice reports `64 passed`; the offline `P004`
 replay reports `1/1` passed expectations, first-attempt success, zero actionable
 failures, and zero token usage. Remaining `QUA-1154` targets are `P007`, `T14`,
 `T15`, and `T16`.
+
+The third implementation slice closes `P007` without LLM calls. The static
+`cliquet_option` spec now carries local/global cap and floor fields, reset-time
+day-count control, quadrature order, path count, and seed. Analytical cliquet
+pricing preserves the existing uncapped FinancePy-parity path and adds a
+bounded Gauss-Hermite reset-return integrator for capped/floored cliquets. The
+Monte Carlo layer now exposes a checked reset-date GBM cliquet helper, and the
+deterministic exact-binding materializer can emit a thin adapter over that
+helper for the MC comparison target.
+
+The validation gates were tightened to match cliquet semantics: volatility
+sensitivity remains active, but generic volatility monotonicity is not enforced
+for cliquet options because local/global caps and floors can make the capped
+return value non-monotone in Black volatility. The semantic and lite-review
+route-helper gates now recognize the checked cliquet MC helper as satisfying
+the lower-level `monte_carlo_paths` route obligation for `cliquet_option`,
+without relaxing ordinary missing-helper checks.
+
+Validation:
+
+```bash
+NUMBA_CACHE_DIR=/tmp/numba_cache \
+  /Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_assembly_tools.py \
+  tests/test_agent/test_validation_bundles.py \
+  tests/test_agent/test_semantic_validation.py \
+  tests/test_agent/test_semantic_validators.py \
+  tests/test_agent/test_lite_review.py \
+  tests/test_agent/test_planner.py \
+  tests/test_agent/test_executor.py \
+  tests/test_models/test_equity_exotics_analytical.py
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P007 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_p007_cliquet_final_20260703.json
+```
+
+The local regression pass reports `293 passed`; the offline `P007` replay
+reports `1/1` passed expectations, first-attempt success, zero actionable
+failures, and zero token usage. Remaining `QUA-1154` targets are `T14`, `T15`,
+and `T16`.

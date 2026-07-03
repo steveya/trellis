@@ -686,6 +686,15 @@ terminal payoff, and discounting obligations, but it still rejects adapters
 that skip the helper or invent alternate raw inputs such as ``spot`` or barrier
 keywords.
 
+Capped/floored cliquet comparisons follow a bounded version of that contract.
+The analytical target can use the checked capped/floored reset-return
+quadrature path, and the Monte Carlo target should call
+``price_equity_cliquet_option_monte_carlo(market_state, spec, ...)`` instead of
+rebuilding reset-date GBM path generation inline. The generic volatility
+monotonicity invariant is not enforced for ``cliquet_option`` because
+local/global caps and floors can make the capped return value non-monotone in
+Black volatility; volatility sensitivity remains part of the validation pack.
+
 The ADI helper also owns its variance-grid domain. The grid upper bound is
 based on the CIR variance-process dispersion, not a raw ``xi * sqrt(T)`` move;
 otherwise high vol-of-vol fixtures place the initial variance too close to the

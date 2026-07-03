@@ -108,6 +108,24 @@ def test_select_validation_bundle_skips_vol_monotonicity_for_barrier_option():
     assert "check_vol_monotonicity" not in bundle.checks
 
 
+def test_select_validation_bundle_skips_vol_monotonicity_for_cliquet_option():
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="cliquet_option",
+        method="analytical",
+        product_ir=SimpleNamespace(
+            instrument="cliquet_option",
+            payoff_traits=("resetting", "capped", "floored"),
+        ),
+    )
+
+    assert "check_non_negativity" in bundle.checks
+    assert "check_price_sanity" in bundle.checks
+    assert "check_vol_sensitivity" in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
+
+
 def test_execute_validation_bundle_respects_validation_level(monkeypatch):
     from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
 

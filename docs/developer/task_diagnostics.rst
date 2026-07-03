@@ -397,6 +397,14 @@ internals to the checked helper.  If the adapter omits that helper or passes an
 invented surface such as raw ``spot`` or barrier keywords, the diagnosis should
 remain a route-helper contract failure.
 
+The same distinction applies to the capped/floored cliquet Monte Carlo helper.
+When the product identity is ``cliquet_option`` and the route is
+``monte_carlo_paths``, a thin adapter that calls
+``price_equity_cliquet_option_monte_carlo(market_state, spec, ...)`` delegates
+reset-date GBM increments, local/global return clipping, antithetic sampling,
+and discounting to the checked helper. Ordinary Monte Carlo adapters still
+need to satisfy their compiled route-helper or primitive obligations directly.
+
 Lane obligations
 ----------------
 

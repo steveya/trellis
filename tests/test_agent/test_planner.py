@@ -215,6 +215,16 @@ class TestPlanStatic:
         assert plan.spec_schema.class_name == "CliquetOptionPayoff"
         assert plan.steps[0].module_path.endswith("cliquetoption.py")
         assert plan.spec_schema.spec_name == "CliquetOptionSpec"
+        field_names = {field.name for field in plan.spec_schema.fields}
+        assert {
+            "local_cap",
+            "local_floor",
+            "global_cap",
+            "global_floor",
+            "time_day_count",
+            "quadrature_order",
+            "max_quadrature_nodes",
+        } <= field_names
 
     @pytest.mark.parametrize(
         ("description", "requirements", "instrument_type", "expected_class"),

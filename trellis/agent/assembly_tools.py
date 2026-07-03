@@ -46,6 +46,7 @@ _OPTION_LIKE_INSTRUMENTS = {
     "barrier_option",
     "bermudan_swaption",
     "cap",
+    "cliquet_option",
     "european_option",
     "floor",
     "swaption",
@@ -75,6 +76,7 @@ _SIGNED_VALUE_INSTRUMENTS = {
 
 _VOL_MONOTONICITY_EXCLUDED_INSTRUMENTS = {
     "barrier_option",
+    "cliquet_option",
 }
 
 _VOL_MONOTONICITY_EXCLUDED_TRAITS = {

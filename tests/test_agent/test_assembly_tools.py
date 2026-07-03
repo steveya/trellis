@@ -193,6 +193,21 @@ def test_select_invariant_pack_keeps_vol_sensitivity_but_skips_monotonicity_for_
     assert "check_vol_monotonicity" not in pack.checks
 
 
+def test_select_invariant_pack_keeps_vol_sensitivity_but_skips_monotonicity_for_cliquet():
+    from trellis.agent.assembly_tools import select_invariant_pack
+
+    pack = select_invariant_pack(
+        instrument_type="cliquet_option",
+        method="analytical",
+        product_ir=SimpleNamespace(payoff_traits=("resetting", "capped", "floored")),
+    )
+
+    assert "check_non_negativity" in pack.checks
+    assert "check_price_sanity" in pack.checks
+    assert "check_vol_sensitivity" in pack.checks
+    assert "check_vol_monotonicity" not in pack.checks
+
+
 def test_build_cookbook_candidate_payload_extracts_template():
     from trellis.agent.assembly_tools import build_cookbook_candidate_payload
 

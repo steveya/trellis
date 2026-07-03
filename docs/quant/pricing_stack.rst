@@ -262,6 +262,13 @@ The first migrated vanilla cases now use that boundary directly:
   discount/credit inputs, tranche bounds or portfolio horizon, and
   dependence-family controls without exposing the raw scalar copula kernels as
   the public route helper
+- capped/floored equity cliquet comparisons now have bounded analytical and
+  Monte Carlo helper surfaces: the analytical path integrates reset returns
+  with local/global caps and floors, while the Monte Carlo path delegates
+  reset-date GBM increments, clipping, antithetic sampling, and discounting to
+  ``trellis.models.monte_carlo.event_aware.price_equity_cliquet_option_monte_carlo``.
+  These helpers support the explicit capped/floored comparison task surface;
+  they do not imply arbitrary cliquet-book or path-contract coverage.
 
 The developer-facing notation and task-triage lifecycle for these
 stochastic-volatility buckets is maintained in

@@ -39,6 +39,7 @@ from trellis.models.monte_carlo.event_aware import (
     build_event_aware_monte_carlo_process,
     build_timed_event_aware_monte_carlo_problem_from_family_ir,
     build_short_rate_discount_reducer,
+    price_equity_cliquet_option_monte_carlo,
     price_event_aware_monte_carlo,
     resolve_hull_white_monte_carlo_process_inputs,
 )

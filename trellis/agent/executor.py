@@ -3727,6 +3727,14 @@ def _deterministic_exact_binding_evaluate_body(
     if normalized_target in target_helper_bodies:
         return target_helper_bodies[normalized_target]
 
+    if comparison_target == "monte_carlo" and instrument_type == "cliquet_option":
+        return (
+            "return price_equity_cliquet_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        )
+
     cds_body = _credit_default_swap_helper_body(refs)
     if cds_body is not None:
         return cds_body
@@ -4071,6 +4079,12 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical": (
             "return price_equity_cliquet_option_analytical(market_state, spec)"
         ),
+        "trellis.models.monte_carlo.event_aware.price_equity_cliquet_option_monte_carlo": (
+            "return price_equity_cliquet_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
         "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical": (
             "return price_equity_variance_swap_analytical(market_state, spec)"
         ),
@@ -4321,6 +4335,11 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_nth_to_default_basket(" in body:
         imports.append(
             "from trellis.instruments.nth_to_default import price_nth_to_default_basket"
+        )
+    if "price_equity_cliquet_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.event_aware import "
+            "price_equity_cliquet_option_monte_carlo"
         )
     return tuple(imports)
 
