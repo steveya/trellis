@@ -514,6 +514,57 @@ def test_compile_comparison_request_keeps_semantic_swaption_method_plans():
     assert mc_plan.semantic_blueprint.calibration_step is not None
 
 
+def test_compile_build_request_preserves_cev_task_contract_bindings():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import _effective_task_description, task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T15"
+    )
+    contract = task_to_semantic_contract(task)
+
+    pde_compiled = compile_build_request(
+        _effective_task_description(task),
+        instrument_type="european_option",
+        preferred_method="pde_solver",
+        semantic_contract=contract,
+    )
+    tree_compiled = compile_build_request(
+        _effective_task_description(task),
+        instrument_type="european_option",
+        preferred_method="rate_tree",
+        semantic_contract=contract,
+    )
+
+    assert pde_compiled.product_ir.model_family == "cev_diffusion"
+    assert pde_compiled.generation_plan.primitive_plan.route == "cev_theta_pde"
+    assert pde_compiled.generation_plan.backend_binding_id == (
+        "trellis.models.equity_option_pde.price_cev_option_pde"
+    )
+    assert pde_compiled.generation_plan.backend_exact_target_refs == (
+        "trellis.models.equity_option_pde.price_cev_option_pde",
+    )
+    assert pde_compiled.validation_contract.bundle_id == "pde_solver:cev_option"
+    assert "check_vol_sensitivity" not in {
+        check.check_id for check in pde_compiled.validation_contract.deterministic_checks
+    }
+    assert tree_compiled.product_ir.model_family == "cev_diffusion"
+    assert tree_compiled.generation_plan.primitive_plan.route == "cev_spot_lattice"
+    assert tree_compiled.generation_plan.backend_binding_id == (
+        "trellis.models.equity_option_tree.price_cev_option_tree"
+    )
+    assert tree_compiled.generation_plan.backend_exact_target_refs == (
+        "trellis.models.equity_option_tree.price_cev_option_tree",
+    )
+    assert tree_compiled.validation_contract.bundle_id == "rate_tree:cev_option"
+    assert "check_vol_sensitivity" not in {
+        check.check_id for check in tree_compiled.validation_contract.deterministic_checks
+    }
+
+
 def test_compile_comparison_request_preserves_explicit_swaption_comparison_regime_for_all_methods():
     from trellis.agent.platform_requests import (
         compile_platform_request,

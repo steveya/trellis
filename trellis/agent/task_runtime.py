@@ -1023,6 +1023,36 @@ def _proof_legacy_semantic_contract(task: dict, description: str):
             option_type="call",
         )
 
+    if task_id == "T15":
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        contract = make_vanilla_option_contract(
+            description=description,
+            underliers=(_PROOF_LEGACY_DEFAULT_UNDERLIER,),
+            observation_schedule=(_PROOF_LEGACY_DEFAULT_EXPIRY,),
+            preferred_method="pde_solver",
+            underlying_asset_class="equity",
+            option_type="call",
+        )
+        product = replace(
+            contract.product,
+            model_family="cev_diffusion",
+            payoff_traits=tuple(
+                dict.fromkeys(
+                    (
+                        *tuple(contract.product.payoff_traits),
+                        "cev_process",
+                        "model_parameter_dependence",
+                    )
+                )
+            ),
+        )
+        blueprint = replace(
+            contract.blueprint,
+            primitive_families=("cev_theta_pde", "cev_spot_lattice"),
+        )
+        return replace(contract, product=product, blueprint=blueprint)
+
     if task_id == "T27":
         from trellis.agent.semantic_contracts import make_american_option_contract
 

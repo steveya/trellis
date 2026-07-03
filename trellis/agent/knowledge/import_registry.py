@@ -536,6 +536,7 @@ from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quant
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
 
 ### Models — Trees
+from trellis.models.equity_option_tree import build_vanilla_equity_lattice, compile_vanilla_equity_contract_spec, price_cev_option_tree, price_vanilla_equity_option_on_lattice, price_vanilla_equity_option_tree, resolve_vanilla_equity_tree_inputs
 from trellis.models.trees.lattice import build_rate_lattice, build_spot_lattice, lattice_backward_induction, build_generic_lattice, calibrate_lattice
 from trellis.models.trees.binomial import BinomialTree
 from trellis.models.trees.backward_induction import backward_induction
@@ -567,7 +568,7 @@ from trellis.models.pde.psor import psor_1d
 from trellis.models.pde.grid import Grid
 from trellis.models.pde.thomas import thomas_solve
 from trellis.models.pde.heston_adi import HestonAdiPDEConfig, HestonAdiPDEResult, ResolvedHestonAdiPDEInputs, price_heston_option_adi_pde_result, resolve_heston_adi_pde_inputs
-from trellis.models.equity_option_pde import build_event_aware_equity_pde_problem, build_event_aware_pde_problem, build_vanilla_equity_pde_problem, interpolate_pde_values, price_event_aware_equity_option_pde, price_vanilla_equity_option_pde, resolve_vanilla_equity_pde_inputs, solve_event_aware_equity_option_pde_surface, solve_event_aware_pde, solve_vanilla_equity_option_pde_surface
+from trellis.models.equity_option_pde import build_event_aware_equity_pde_problem, build_event_aware_pde_problem, build_vanilla_equity_pde_problem, interpolate_pde_values, price_cev_option_pde, price_event_aware_equity_option_pde, price_vanilla_equity_option_pde, resolve_vanilla_equity_pde_inputs, solve_event_aware_equity_option_pde_surface, solve_event_aware_pde, solve_vanilla_equity_option_pde_surface
 
 ### Models — Transforms (FFT/COS)
 from trellis.models.transforms.cos_method import cos_price

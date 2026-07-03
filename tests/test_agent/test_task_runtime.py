@@ -1535,6 +1535,35 @@ def test_task_runtime_bridges_sparse_proof_mc_rows_to_vanilla_option_contract():
         assert summary["methods"]["preferred_method"] == "monte_carlo"
 
 
+def test_task_runtime_bridges_sparse_cev_row_to_cev_route_contract():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T15"
+    )
+
+    contract = task_to_semantic_contract(task)
+
+    assert contract is not None
+    assert contract.product.model_family == "cev_diffusion"
+    assert "cev_process" in contract.product.payoff_traits
+    assert contract.blueprint.primitive_families == ("cev_theta_pde", "cev_spot_lattice")
+    summary = semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "vanilla_option"
+    assert summary["product"]["underlying"] == {
+        "asset_class": "equity",
+        "identifiers": ["SPX"],
+    }
+    assert summary["product"]["option_type"] == "call"
+    assert summary["product"]["exercise_style"] == "european"
+    assert summary["methods"]["preferred_method"] == "pde_solver"
+    assert summary["blueprint"]["primitive_families"] == ["cev_theta_pde", "cev_spot_lattice"]
+
+
 def test_task_runtime_bridges_sparse_lsm_basis_row_to_american_contract():
     from trellis.agent.semantic_contracts import semantic_contract_summary
     from trellis.agent.task_manifests import load_task_manifest

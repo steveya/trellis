@@ -56,6 +56,8 @@ def test_binding_catalog_covers_retired_fallback_routes():
         "local_vol_monte_carlo",
         # slice 2
         "vanilla_equity_theta_pde",
+        "cev_theta_pde",
+        "cev_spot_lattice",
         "pde_theta_1d",
         "exercise_lattice",
         "correlated_basket_monte_carlo",
@@ -77,6 +79,38 @@ def test_binding_catalog_canonical_load_is_not_derived_from_route_registry(monke
     catalog = load_backend_binding_catalog()
 
     assert find_backend_binding_by_route_id("analytical_garman_kohlhagen", catalog) is not None
+
+
+def test_resolve_backend_binding_spec_uses_cev_exact_helpers():
+    catalog = load_backend_binding_catalog()
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        exercise_style="european",
+        model_family="cev_diffusion",
+        candidate_engine_families=("pde", "lattice"),
+    )
+
+    pde_binding = find_backend_binding_by_route_id("cev_theta_pde", catalog)
+    tree_binding = find_backend_binding_by_route_id("cev_spot_lattice", catalog)
+
+    assert pde_binding is not None
+    assert tree_binding is not None
+    pde_resolved = resolve_backend_binding_spec(pde_binding, product_ir=product_ir)
+    tree_resolved = resolve_backend_binding_spec(tree_binding, product_ir=product_ir)
+
+    assert pde_resolved.exact_target_refs == (
+        "trellis.models.equity_option_pde.price_cev_option_pde",
+    )
+    assert pde_resolved.helper_refs == (
+        "trellis.models.equity_option_pde.price_cev_option_pde",
+    )
+    assert tree_resolved.exact_target_refs == (
+        "trellis.models.equity_option_tree.price_cev_option_tree",
+    )
+    assert tree_resolved.helper_refs == (
+        "trellis.models.equity_option_tree.price_cev_option_tree",
+    )
 
 
 def test_binding_catalog_skips_malformed_primitive_rows(monkeypatch):

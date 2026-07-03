@@ -3568,7 +3568,7 @@ def _rebuild_vanilla_option_contract(
 ) -> SemanticContract:
     """Rebuild a vanilla option contract for one preferred method."""
     product = contract.product
-    return make_vanilla_option_contract(
+    rebuilt = make_vanilla_option_contract(
         description=contract.description,
         underliers=tuple(getattr(product, "constituents", ()) or ()),
         observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
@@ -3576,6 +3576,29 @@ def _rebuild_vanilla_option_contract(
         underlying_asset_class=getattr(getattr(product, "underlying", None), "asset_class", ""),
         option_type=str(getattr(product, "option_type", "") or ""),
     )
+    model_family = str(getattr(product, "model_family", "") or "").strip()
+    if model_family not in {"", "generic", "equity_diffusion"}:
+        rebuilt_product = dataclasses.replace(
+            rebuilt.product,
+            model_family=model_family,
+            payoff_traits=tuple(getattr(product, "payoff_traits", ()) or ()),
+        )
+        primitive_families = tuple(
+            getattr(getattr(contract, "blueprint", None), "primitive_families", ()) or ()
+        )
+        if primitive_families:
+            rebuilt_blueprint = dataclasses.replace(
+                rebuilt.blueprint,
+                primitive_families=primitive_families,
+            )
+        else:
+            rebuilt_blueprint = rebuilt.blueprint
+        return dataclasses.replace(
+            rebuilt,
+            product=rebuilt_product,
+            blueprint=rebuilt_blueprint,
+        )
+    return rebuilt
 
 
 def _rebuild_american_option_contract(

@@ -75,6 +75,9 @@ def select_validation_bundle(
         product_ir=product_ir,
         semantic_blueprint=semantic_blueprint,
     )
+    cev_model_product = _is_cev_model_product(product_ir)
+    if cev_model_product:
+        normalized_instrument = "cev_option"
     pack = select_invariant_pack(
         instrument_type=normalized_instrument,
         method=normalized_method,
@@ -91,6 +94,17 @@ def select_validation_bundle(
             )
         )
     )
+    if cev_model_product:
+        checks = tuple(
+            check
+            for check in checks
+            if check
+            not in {
+                "check_vol_sensitivity",
+                "check_vol_monotonicity",
+                "check_zero_vol_intrinsic",
+            }
+        )
     if (
         normalized_instrument == "swaption"
         and normalized_method in {"analytical", "rate_tree", "monte_carlo"}
@@ -434,6 +448,14 @@ def _resolve_validation_instrument(
         getattr(semantic_blueprint, "semantic_id", None),
     )
     return resolved or "unknown"
+
+
+def _is_cev_model_product(product_ir=None) -> bool:
+    """Return whether validation is for a CEV-model vanilla option route."""
+    return (
+        str(getattr(product_ir, "model_family", "") or "").strip().lower()
+        == "cev_diffusion"
+    )
 
 
 def _family_checks_for(

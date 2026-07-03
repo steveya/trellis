@@ -59,10 +59,12 @@ payoff:
 equity_tree:
   module: trellis.models.equity_option_tree
   key_imports:
+    - "from trellis.models.equity_option_tree import price_cev_option_tree"
     - "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
     - "from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction"
   notes:
     - "American/Bermudan equity options should prefer the checked-in helper `price_vanilla_equity_option_tree(...)`"
+    - "CEV tree comparison targets should prefer the checked-in spot-lattice helper `price_cev_option_tree(...)`"
     - "If you need the lower-level path, import the lattice builder/backward induction submodules directly"
 
 rate_lattice:
@@ -116,6 +118,7 @@ qmc:
 pde:
   module: trellis.models.pde
   key_imports:
+    - "from trellis.models.equity_option_pde import price_cev_option_pde"
     - "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde"
     - "from trellis.models.pde.heston_adi import HestonAdiPDEConfig, resolve_heston_adi_pde_inputs, price_heston_option_adi_pde_result"
     - "from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff, resolve_double_barrier_inputs"
@@ -127,6 +130,7 @@ pde:
     - "from trellis.models.pde import HullWhitePDEOperator"
   notes:
     - "Vanilla European equity PDE routes should prefer the checked-in helper `price_vanilla_equity_option_pde(...)`"
+    - "CEV PDE comparison targets should prefer the checked-in helper `price_cev_option_pde(...)`"
     - "European Heston PDE routes should bind explicit Heston parameters and may use the Heston ADI result object as numerical evidence; a Black vol surface is not a live Heston parameter source"
     - "Double-barrier PDE routes should build a bounded `[lower_barrier, upper_barrier]` grid with absorbing boundary functions and a terminal payoff from `terminal_double_barrier_payoff(...)`"
     - "Use theta_method_1d, NOT legacy crank_nicolson_1d or implicit_fd_1d"

@@ -360,6 +360,35 @@ def test_american_put_family_support_approves_equity_helper_surfaces():
     assert report.ok
 
 
+def test_european_option_family_support_approves_cev_helper_surfaces():
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=[],
+            required_market_data={"discount_curve"},
+            model_to_build="european_option",
+            reasoning="test",
+        ),
+        instrument_type="european_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "trellis.models.equity_option_pde" in plan.approved_modules
+    assert "trellis.models.equity_option_tree" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.equity_option_pde import price_cev_option_pde\n"
+        "from trellis.models.equity_option_tree import price_cev_option_tree\n",
+        plan,
+    )
+    assert report.ok
+
+
 def test_autocallable_generation_plan_approves_event_helper_surface():
     pricing_plan = PricingPlan(
         method="monte_carlo",

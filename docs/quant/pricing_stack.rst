@@ -188,6 +188,12 @@ The first migrated vanilla cases now use that boundary directly:
   ``price_american_equity_option_lsm_monte_carlo(...)``. Thin adapters may
   delegate to that helper for Longstaff-Schwartz path simulation and exercise
   control instead of reimplementing GBM path construction in generated code.
+- CEV European-vanilla proof targets have bounded helper surfaces for the
+  retained legacy comparison task: ``price_cev_option_pde(...)`` composes the
+  existing ``CEVOperator`` with the theta PDE solver, while
+  ``price_cev_option_tree(...)`` provides the matching spot-lattice comparison
+  route. These helpers are task-runner proof surfaces for explicit CEV
+  comparison targets, not a replacement for the generic agent assembly path.
 - the transform route uses that thin vanilla helper only for true
   ``equity_diffusion`` contracts; stochastic-volatility transform tasks such
   as Heston smile extraction now lower onto a checked Heston transform helper
@@ -409,12 +415,13 @@ already owns that work.
 
 The analytical / PDE / FFT support cohort now follows the same rule. The
 helper-backed Black76 swaption routes, the vanilla-equity PDE helper, bounded
-event-aware PDE helper branches, Heston ADI diagnostic scaffold,
-double-barrier payoff primitives, and vanilla-equity transform helper keep
-backend binding, admissibility, and validation ownership explicit. Exact-helper
-validation enforces the thin ``(market_state, spec, ...)`` call surface only
-for true checked route helpers; primitive-only supports remain available for
-agent-written route assembly rather than bypassing it.
+CEV PDE/tree proof helpers, bounded event-aware PDE helper branches, Heston ADI
+diagnostic scaffold, double-barrier payoff primitives, and vanilla-equity
+transform helper keep backend binding, admissibility, and validation ownership
+explicit. Exact-helper validation enforces the thin ``(market_state, spec,
+...)`` call surface only for true checked route helpers; primitive-only
+supports remain available for agent-written route assembly rather than
+bypassing it.
 
 For schedule-driven cap/floor strips lowered onto ``analytical_black76``, the
 typed schedule state now carries admissibility directly. Structural

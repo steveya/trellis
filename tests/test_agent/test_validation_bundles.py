@@ -93,6 +93,29 @@ def test_select_validation_bundle_skips_generic_vol_checks_for_explicit_swaption
     assert "check_vol_monotonicity" not in bundle.checks
 
 
+@pytest.mark.parametrize("method", ["pde_solver", "rate_tree"])
+def test_select_validation_bundle_skips_black_vol_checks_for_cev_model(method):
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="european_option",
+        method=method,
+        product_ir=SimpleNamespace(
+            instrument="european_option",
+            model_family="cev_diffusion",
+            payoff_traits=("cev_process", "model_parameter_dependence"),
+        ),
+    )
+
+    assert bundle.bundle_id == f"{method}:cev_option"
+    assert bundle.instrument_type == "cev_option"
+    assert "check_non_negativity" in bundle.checks
+    assert "check_price_sanity" in bundle.checks
+    assert "check_vol_sensitivity" not in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
+    assert "check_zero_vol_intrinsic" not in bundle.checks
+
+
 def test_select_validation_bundle_skips_vol_monotonicity_for_barrier_option():
     from trellis.agent.validation_bundles import select_validation_bundle
 

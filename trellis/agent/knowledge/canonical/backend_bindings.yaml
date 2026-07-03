@@ -386,6 +386,14 @@ bindings:
             symbol: lattice_backward_induction
             role: backward_induction
 
+  - route_id: cev_spot_lattice
+    engine_family: lattice
+    route_family: equity_tree
+    primitives:
+      - module: trellis.models.equity_option_tree
+        symbol: price_cev_option_tree
+        role: route_helper
+
   - route_id: short_rate_bond_option
     engine_family: analytical
     route_family: analytical
@@ -696,6 +704,14 @@ bindings:
     primitives:
       - module: trellis.models.equity_option_pde
         symbol: price_vanilla_equity_option_pde
+        role: route_helper
+
+  - route_id: cev_theta_pde
+    engine_family: pde_solver
+    route_family: pde_solver
+    primitives:
+      - module: trellis.models.equity_option_pde
+        symbol: price_cev_option_pde
         role: route_helper
 
   - route_id: heston_adi_2d

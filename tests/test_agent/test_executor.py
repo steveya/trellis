@@ -1017,6 +1017,57 @@ def test_deterministic_exact_binding_module_materializes_american_put_targets_wi
 
 
 @pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment", "expected_import"),
+    [
+        (
+            "cev_pde",
+            "price_cev_option_pde(",
+            "from trellis.models.equity_option_pde import price_cev_option_pde",
+        ),
+        (
+            "cev_tree",
+            "price_cev_option_tree(",
+            "from trellis.models.equity_option_tree import price_cev_option_tree",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_cev_targets_without_refs(
+    comparison_target,
+    expected_fragment,
+    expected_import,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["cev_option"],
+        "CEV model: CEVOperator PDE vs CEV tree",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_import in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
         ("heston_mc", 'scheme="heston_qe"'),

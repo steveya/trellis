@@ -1204,6 +1204,38 @@ class TestRateTreeRoutes:
         notes = resolve_route_notes(spec, self.EUROPEAN_SWAPTION_IR)
         assert notes == ()
 
+    def test_cev_spot_lattice_candidate_prefers_cev_route(self, registry):
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("cev_process",),
+            exercise_style="european",
+            model_family="cev_diffusion",
+            candidate_engine_families=("lattice",),
+            route_families=("pde_solver", "equity_tree"),
+        )
+
+        new = _new_routes(registry, "rate_tree", ir)
+
+        assert new == ("cev_spot_lattice",)
+
+    def test_cev_spot_lattice_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "cev_spot_lattice"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("cev_process",),
+            exercise_style="european",
+            model_family="cev_diffusion",
+            candidate_engine_families=("lattice",),
+            route_families=("pde_solver", "equity_tree"),
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.equity_option_tree", "price_cev_option_tree", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_backward_induction_engine_family(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
         assert spec.engine_family == "lattice"
@@ -1801,6 +1833,21 @@ class TestFallbackRoutes:
         new = _new_routes(registry, "pde_solver", ir)
         assert new == ("vanilla_equity_theta_pde", "pde_theta_1d")
 
+    def test_cev_pde_candidate_prefers_cev_route(self, registry):
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("cev_process",),
+            exercise_style="european",
+            model_family="cev_diffusion",
+            candidate_engine_families=("pde",),
+            route_families=("pde_solver", "equity_tree"),
+        )
+
+        new = _new_routes(registry, "pde_solver", ir)
+
+        assert new == ("cev_theta_pde", "pde_theta_1d")
+
     def test_vanilla_equity_pde_minimal_ir_still_matches_for_gap_audits(self, registry):
         ir = ProductIR(
             instrument="european_option",
@@ -1897,6 +1944,21 @@ class TestFallbackRoutes:
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
             ("trellis.models.equity_option_pde", "price_vanilla_equity_option_pde", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_cev_pde_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "cev_theta_pde"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("cev_process",),
+            exercise_style="european",
+            model_family="cev_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.equity_option_pde", "price_cev_option_pde", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -2218,6 +2280,7 @@ class TestEngineFamilyCoverage:
         "qmc_sobol_paths": "qmc",
         "exercise_lattice": "lattice",
         "rate_tree_backward_induction": "lattice",
+        "cev_spot_lattice": "lattice",
         "analytical_black76": "analytical",
         # QUA-915: collapsed ZCB-option family takes analytical as its
         # umbrella engine_family; the lattice helper is reached through
@@ -2227,6 +2290,7 @@ class TestEngineFamilyCoverage:
         "analytical_garman_kohlhagen": "analytical",
         "transform_fft": "fft_pricing",
         "vanilla_equity_theta_pde": "pde_solver",
+        "cev_theta_pde": "pde_solver",
         "heston_adi_2d": "pde_solver",
         "pde_theta_1d": "pde_solver",
         "copula_loss_distribution": "copula",

@@ -725,6 +725,37 @@ routes:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
 
+  - id: cev_spot_lattice
+    engine_family: lattice
+    route_family: equity_tree
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [rate_tree]
+      payoff_traits: [cev_process]
+      model_family: [cev_diffusion]
+      exercise: [european]
+    admissibility:
+      control_styles: [identity, holder_max]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov, recombining_safe]
+      supported_operator_families: [cev_1d]
+      supported_event_transform_kinds: []
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.equity_option_tree
+        symbol: price_cev_option_tree
+        role: route_helper
+    adapters: []
+    notes: []
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+
   # -----------------------------------------------------------------------
   # Analytical routes (fallback)
   # -----------------------------------------------------------------------
@@ -1204,6 +1235,37 @@ routes:
   # -----------------------------------------------------------------------
   # PDE routes
   # -----------------------------------------------------------------------
+
+  - id: cev_theta_pde
+    engine_family: pde_solver
+    route_family: pde_solver
+    status: promoted
+    confidence: 1.0
+    match:
+      methods: [pde_solver]
+      payoff_traits: [cev_process]
+      model_family: [cev_diffusion]
+      exercise: [european]
+    admissibility:
+      control_styles: [identity, holder_max]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov, recombining_safe]
+      supported_operator_families: [cev_1d]
+      supported_event_transform_kinds: []
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.equity_option_pde
+        symbol: price_cev_option_pde
+        role: route_helper
+    adapters: []
+    notes: []
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
 
   - id: vanilla_equity_theta_pde
     engine_family: pde_solver

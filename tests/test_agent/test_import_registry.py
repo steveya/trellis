@@ -76,6 +76,26 @@ def test_american_lsm_helper_is_visible_to_import_registry():
     assert symbol in registry_text
 
 
+def test_cev_helpers_are_visible_to_import_registry():
+    pde_module = "trellis.models.equity_option_pde"
+    tree_module = "trellis.models.equity_option_tree"
+
+    assert module_exists(pde_module)
+    assert module_exists(tree_module)
+    assert "price_cev_option_pde" in list_module_exports(pde_module)
+    assert "price_cev_option_tree" in list_module_exports(tree_module)
+    assert find_symbol_modules("price_cev_option_pde") == (pde_module,)
+    assert find_symbol_modules("price_cev_option_tree") == (tree_module,)
+    assert is_valid_import(pde_module, "price_cev_option_pde")
+    assert is_valid_import(tree_module, "price_cev_option_tree")
+
+    registry_text = get_import_registry()
+    assert f"from {pde_module} import" in registry_text
+    assert f"from {tree_module} import" in registry_text
+    assert "price_cev_option_pde" in registry_text
+    assert "price_cev_option_tree" in registry_text
+
+
 def test_resolve_import_candidates_handles_known_and_unknown_symbols():
     candidates = resolve_import_candidates(["theta_method_1d", "definitely_not_real"])
     assert "trellis.models.pde.theta_method" in candidates["theta_method_1d"]

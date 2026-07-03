@@ -3756,6 +3756,20 @@ def _deterministic_exact_binding_evaluate_body(
             'n_steps=getattr(spec, "n_steps", 96), '
             'seed=getattr(spec, "seed", 42))'
         )
+    if normalized_target == "cev_pde":
+        return (
+            "return price_cev_option_pde("
+            "market_state, spec, "
+            'n_x=getattr(spec, "n_x", 401), '
+            'n_t=getattr(spec, "n_t", 501))'
+        )
+    if normalized_target == "cev_tree":
+        return (
+            "return price_cev_option_tree("
+            "market_state, spec, "
+            'n_steps=getattr(spec, "tree_steps", 2000), '
+            'n_x=getattr(spec, "tree_grid_size", 301))'
+        )
 
     if comparison_target == "monte_carlo" and instrument_type == "cliquet_option":
         return (
@@ -4375,9 +4389,17 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.equity_option_pde import price_event_aware_equity_option_pde"
         )
+    if "price_cev_option_pde(" in body:
+        imports.append(
+            "from trellis.models.equity_option_pde import price_cev_option_pde"
+        )
     if "price_vanilla_equity_option_tree(" in body:
         imports.append(
             "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
+        )
+    if "price_cev_option_tree(" in body:
+        imports.append(
+            "from trellis.models.equity_option_tree import price_cev_option_tree"
         )
     if "price_american_equity_option_lsm_monte_carlo(" in body:
         imports.append(

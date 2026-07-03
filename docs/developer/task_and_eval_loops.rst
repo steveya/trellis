@@ -483,9 +483,17 @@ semantic contract for Monte Carlo numerical-method proof work. ``T14`` uses an
 American SPX put contract for the PDE/tree/LSM comparison and resolves
 ``lsm_mc`` through the exact
 ``price_american_equity_option_lsm_monte_carlo(...)`` helper, so the task tests
-route-helper binding rather than generated early-exercise branching. ``T27``
-defaults to an American SPX put contract for the LSM basis comparison and binds
-the comparison target ids ``polynomial``, ``laguerre``,
+route-helper binding rather than generated early-exercise branching. ``T15``
+uses a bounded CEV European call contract for the CEVOperator PDE versus CEV
+tree comparison and binds ``cev_pde`` / ``cev_tree`` to deterministic local
+proof adapters. The PDE adapter must consume CEV parameters through
+``CEVOperator``; it should not silently reuse a Black-vol vanilla PDE helper
+just because the payoff is also European vanilla. Its validation bundle is
+``*:cev_option`` and intentionally skips Black-vol-surface sensitivity checks,
+because CEV proof routes use explicit CEV model parameters rather than a Black
+vol surface as the live model driver. ``T27`` defaults to an American SPX put
+contract for the LSM basis comparison and binds the comparison target ids
+``polynomial``, ``laguerre``,
 ``hermite``, ``chebyshev``, and ``high_step_tree_2000`` to deterministic local
 proof adapters that compose the public Longstaff-Schwartz basis primitives and
 CRR tree reference. They are task-runner proof contracts, not promoted

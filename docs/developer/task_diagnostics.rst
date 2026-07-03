@@ -413,6 +413,13 @@ step construction, and notional scaling. Diagnostics should treat that as
 route-helper evidence, not as a failure to spell out ``GBM`` and
 ``MonteCarloEngine`` inside the generated adapter.
 
+For CEV proof targets, diagnostics should check both the payoff family and the
+model family. ``cev_pde`` and ``cev_tree`` may delegate to
+``price_cev_option_pde(market_state, spec, ...)`` and
+``price_cev_option_tree(market_state, spec, ...)`` respectively, but a generic
+Black-vol vanilla-equity helper is not coherent evidence for a CEV target even
+when the terminal payoff is a European call.
+
 Lane obligations
 ----------------
 

@@ -30,14 +30,9 @@ def test_builds_primitive_plan_for_american_put():
     assert plan.primitive_plan.route == "exercise_monte_carlo"
     assert plan.primitive_plan.engine_family == "exercise"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert {
-        "GBM",
-        "MonteCarloEngine",
-        "longstaff_schwartz",
-        "tsitsiklis_van_roy",
-        "primal_dual_mc",
-        "stochastic_mesh",
-    } <= primitive_symbols
+    assert primitive_symbols == {"price_american_equity_option_lsm_monte_carlo"}
+    primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
+    assert primitive_modules == {"trellis.models.equity_option_monte_carlo"}
     assert "LaguerreBasis" not in primitive_symbols
     assert plan.primitive_plan.blockers == ()
 
@@ -316,6 +311,82 @@ def test_builds_pde_plan_for_european_option_uses_helper_route():
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_vanilla_equity_option_pde"}
     assert primitive_modules == {"trellis.models.equity_option_pde"}
+    assert plan.primitive_plan.adapters == ()
+    assert plan.primitive_plan.notes == ()
+
+
+def test_builds_primitive_plan_for_cev_pde():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.schema import ProductIR
+
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.equity_option_pde"],
+        required_market_data={"discount_curve"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("cev_process",),
+        exercise_style="european",
+        model_family="cev_diffusion",
+        candidate_engine_families=("pde",),
+        route_families=("pde_solver", "equity_tree"),
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.equity_option_pde",),
+        product_ir=product_ir,
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "cev_theta_pde"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_cev_option_pde"}
+    assert primitive_modules == {"trellis.models.equity_option_pde"}
+    assert plan.primitive_plan.adapters == ()
+    assert plan.primitive_plan.notes == ()
+
+
+def test_builds_primitive_plan_for_cev_spot_lattice():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.schema import ProductIR
+
+    pricing_plan = PricingPlan(
+        method="rate_tree",
+        method_modules=["trellis.models.equity_option_tree"],
+        required_market_data={"discount_curve"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("cev_process",),
+        exercise_style="european",
+        model_family="cev_diffusion",
+        candidate_engine_families=("lattice",),
+        route_families=("pde_solver", "equity_tree"),
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.equity_option_tree",),
+        product_ir=product_ir,
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "cev_spot_lattice"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_cev_option_tree"}
+    assert primitive_modules == {"trellis.models.equity_option_tree"}
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.notes == ()
 
@@ -734,9 +805,7 @@ def test_render_generation_plan_includes_primitive_plan_section():
     assert "Backend binding" in text
     assert "exercise_monte_carlo" in text
     assert "Route score" in text
-    assert "longstaff_schwartz" in text
-    assert "tsitsiklis_van_roy" in text
-    assert "primal_dual_mc" in text
+    assert "price_american_equity_option_lsm_monte_carlo" in text
 
 
 def test_build_generation_plan_uses_deterministic_cache():

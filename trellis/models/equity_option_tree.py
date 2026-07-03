@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date
 from typing import Protocol
 
+import numpy as raw_np
 import trellis.models.trees.algebra as lattice_algebra
 
 from trellis.core.date_utils import year_fraction
@@ -154,6 +155,83 @@ def price_vanilla_equity_option_tree(
     )
 
 
+def price_cev_option_tree(
+    market_state: EquityTreeMarketStateLike,
+    spec: VanillaEquityOptionSpecLike,
+    *,
+    n_steps: int | None = None,
+    n_x: int | None = None,
+    s_max_multiplier: float = 4.0,
+) -> float:
+    """Price a European vanilla option under spot CEV dynamics on a spot lattice."""
+    settlement = market_state.settlement or market_state.as_of
+    if settlement is None:
+        raise ValueError("market_state must provide settlement or as_of for CEV tree pricing")
+    if market_state.discount is None:
+        raise ValueError("CEV tree pricing requires market_state.discount")
+
+    day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
+    maturity = max(float(year_fraction(settlement, spec.expiry_date, day_count)), 0.0)
+    strike = float(spec.strike)
+    spot = float(spec.spot)
+    notional = float(getattr(spec, "notional", 1.0) or 1.0)
+    option_type = str(getattr(spec, "option_type", "call") or "call").strip().lower()
+    if option_type not in {"call", "put"}:
+        raise ValueError(f"Unsupported option_type {option_type!r}")
+    if maturity <= 0.0:
+        intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
+        return float(notional * intrinsic)
+
+    rate = float(market_state.discount.zero_rate(max(maturity, 1e-6)))
+    sigma = float(getattr(spec, "cev_sigma", getattr(spec, "sigma", 3.0)))
+    beta = float(getattr(spec, "cev_beta", getattr(spec, "beta", 0.5)))
+    steps = max(int(getattr(spec, "tree_steps", n_steps or 2000)), 1)
+    grid_size = max(int(getattr(spec, "tree_grid_size", n_x or 301)), 11)
+    s_max = max(
+        float(getattr(spec, "s_max", 0.0) or 0.0),
+        float(s_max_multiplier) * max(spot, 1e-12),
+        2.0 * max(strike, 1e-12),
+    )
+    spots = raw_np.linspace(0.0, s_max, grid_size)
+    values = (
+        raw_np.maximum(spots - strike, 0.0)
+        if option_type == "call"
+        else raw_np.maximum(strike - spots, 0.0)
+    )
+    dt = maturity / steps
+    d_s = spots[1] - spots[0]
+    discount = raw_np.exp(-rate * dt)
+
+    for step in range(steps - 1, -1, -1):
+        current_time = step * dt
+        next_values = values.copy()
+        interior = spots[1:-1]
+        variance = raw_np.square(sigma) * raw_np.power(raw_np.maximum(interior, 0.0), 2.0 * beta) * dt
+        drift = rate * interior * dt
+        p_up = 0.5 * (variance / (d_s * d_s) + drift / d_s)
+        p_down = 0.5 * (variance / (d_s * d_s) - drift / d_s)
+        p_mid = 1.0 - p_up - p_down
+        probs = raw_np.column_stack([p_down, p_mid, p_up])
+        probs = raw_np.clip(probs, 0.0, None)
+        row_sums = probs.sum(axis=1)
+        probs = probs / raw_np.maximum(row_sums[:, None], 1e-12)
+        next_values[1:-1] = discount * (
+            probs[:, 0] * values[:-2]
+            + probs[:, 1] * values[1:-1]
+            + probs[:, 2] * values[2:]
+        )
+        tau = maturity - current_time
+        if option_type == "call":
+            next_values[0] = 0.0
+            next_values[-1] = s_max - strike * raw_np.exp(-rate * tau)
+        else:
+            next_values[0] = strike * raw_np.exp(-rate * tau)
+            next_values[-1] = 0.0
+        values = next_values
+
+    return float(notional * raw_np.interp(spot, spots, values))
+
+
 def resolve_vanilla_equity_tree_inputs(
     market_state: EquityTreeMarketStateLike,
     spec: VanillaEquityOptionSpecLike,
@@ -185,6 +263,7 @@ __all__ = [
     "ResolvedEquityTreeInputs",
     "build_vanilla_equity_lattice",
     "compile_vanilla_equity_contract_spec",
+    "price_cev_option_tree",
     "price_vanilla_equity_option_on_lattice",
     "price_vanilla_equity_option_tree",
     "resolve_vanilla_equity_tree_inputs",

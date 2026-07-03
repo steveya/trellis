@@ -387,6 +387,32 @@ class TestPlanBuild:
         assert plan.spec_schema.spec_name == "AmericanPutTreeSpec"
         assert plan.payoff_class_name == "AmericanPutTreePayoff"
 
+    def test_cev_route_uses_deterministic_spec_schema(self):
+        plan = plan_build(
+            "CEV model: CEVOperator PDE vs CEV tree",
+            {"discount_curve"},
+            instrument_type="european_option",
+            preferred_method="pde_solver",
+        )
+
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "CEVOptionSpec"
+        assert plan.payoff_class_name == "CEVOptionPayoff"
+        assert [field.name for field in plan.spec_schema.fields] == [
+            "notional",
+            "spot",
+            "strike",
+            "expiry_date",
+            "option_type",
+            "day_count",
+            "cev_sigma",
+            "cev_beta",
+            "n_x",
+            "n_t",
+            "tree_steps",
+            "tree_grid_size",
+        ]
+
     def test_infer_method_hint_does_not_match_tree_substrings_inside_other_words(self):
         assert _infer_method_hint("main street spot-vol quote pack") is None
         assert _infer_method_hint("american put lattice benchmark") == "rate_tree"

@@ -3322,6 +3322,9 @@ def _route_families_for(
         families.append("pde_solver")
     if instrument == "heston_option" and model_family == "stochastic_volatility":
         families.append("pde_solver")
+    if payoff_family == "vanilla_option" and model_family == "cev_diffusion":
+        families.append("pde_solver")
+        families.append("equity_tree")
     if (
         instrument in {"callable_bond", "puttable_bond", "bermudan_swaption"}
         or (

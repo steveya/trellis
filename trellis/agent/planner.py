@@ -535,6 +535,25 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("n_t", "int", "PDE time-step count", "400"),
         ],
     ),
+    "cev_option": SpecSchema(
+        class_name="CEVOptionPayoff",
+        spec_name="CEVOptionSpec",
+        requirements=["discount_curve"],
+        fields=[
+            FieldDef("notional", "float", "Option notional", "1.0"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("strike", "float", "Option strike price"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("cev_sigma", "float", "CEV diffusion scale in dS = rSdt + sigma S^beta dW", "3.0"),
+            FieldDef("cev_beta", "float", "CEV elasticity beta", "0.5"),
+            FieldDef("n_x", "int", "PDE spot-grid count", "401"),
+            FieldDef("n_t", "int", "PDE time-step count", "501"),
+            FieldDef("tree_steps", "int", "CEV spot-lattice time steps", "2000"),
+            FieldDef("tree_grid_size", "int", "CEV spot-lattice grid count", "301"),
+        ],
+    ),
     "quanto_option_analytical": SpecSchema(
         class_name="QuantoOptionAnalyticalPayoff",
         spec_name="QuantoOptionSpec",
@@ -619,6 +638,7 @@ _SPECIALIZED_SPEC_ALLOWED_INSTRUMENTS: dict[str, frozenset[str]] = {
     "fx_vanilla_analytical": frozenset({"", "european_option"}),
     "fx_vanilla_monte_carlo": frozenset({"", "european_option"}),
     "american_put_tree": frozenset({"", "american_put"}),
+    "cev_option": frozenset({"", "european_option"}),
     "quanto_option_analytical": frozenset({"", "quanto_option"}),
     "quanto_option_monte_carlo": frozenset({"", "quanto_option"}),
     "european_option_analytical": frozenset({"", "european_option"}),
@@ -824,6 +844,9 @@ def _select_specialized_spec(
         or ("american" in desc_lower and "put" in desc_lower)
     ):
         return SPECIALIZED_SPECS["american_put_tree"]
+
+    if _allowed("cev_option") and "cev" in desc_lower:
+        return SPECIALIZED_SPECS["cev_option"]
 
     if _allowed("european_local_vol_monte_carlo") and (
         "local vol" in desc_lower or "local_vol_surface" in normalized_requirements

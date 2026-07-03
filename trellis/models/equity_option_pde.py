@@ -31,6 +31,8 @@ from trellis.models.pde.event_aware import (
     solve_event_aware_pde,
 )
 from trellis.models.pde.grid import Grid
+from trellis.models.pde.operator import CEVOperator
+from trellis.models.pde.theta_method import theta_method_1d
 
 np = get_numpy()
 
@@ -305,6 +307,77 @@ def price_vanilla_equity_option_pde(
     )
 
 
+def price_cev_option_pde(
+    market_state: EquityPDEMarketStateLike,
+    spec: VanillaEquityOptionSpecLike,
+    *,
+    theta: float = 0.5,
+    n_x: int | None = None,
+    n_t: int | None = None,
+    s_max_multiplier: float = 4.0,
+) -> float:
+    """Price a European vanilla option under spot CEV dynamics with a theta PDE."""
+    settlement = market_state.settlement or market_state.as_of
+    if settlement is None:
+        raise ValueError("market_state must provide settlement or as_of for CEV PDE pricing")
+    if market_state.discount is None:
+        raise ValueError("CEV PDE pricing requires market_state.discount")
+
+    day_count = getattr(spec, "day_count", DayCountConvention.ACT_365)
+    maturity = max(float(year_fraction(settlement, spec.expiry_date, day_count)), 0.0)
+    strike = float(spec.strike)
+    spot = float(spec.spot)
+    notional = float(getattr(spec, "notional", 1.0) or 1.0)
+    option_type = str(getattr(spec, "option_type", "call") or "call").strip().lower()
+    if option_type not in {"call", "put"}:
+        raise ValueError(f"Unsupported option_type {option_type!r}")
+    if maturity <= 0.0:
+        return float(
+            notional
+            * _terminal_intrinsic(option_type, spot=spot, strike=strike)
+        )
+
+    rate = float(market_state.discount.zero_rate(max(maturity, 1e-6)))
+    sigma = float(getattr(spec, "cev_sigma", getattr(spec, "sigma", 3.0)))
+    beta = float(getattr(spec, "cev_beta", getattr(spec, "beta", 0.5)))
+    s_max = max(
+        float(getattr(spec, "s_max", 0.0) or 0.0),
+        float(s_max_multiplier) * max(spot, 1e-12),
+        2.0 * max(strike, 1e-12),
+    )
+    grid = Grid(
+        x_min=0.0,
+        x_max=s_max,
+        n_x=int(getattr(spec, "n_x", n_x or 401)),
+        T=maturity,
+        n_t=int(getattr(spec, "n_t", n_t or 500)),
+    )
+    operator = CEVOperator(
+        sigma_fn=lambda _s, _t: sigma,
+        r_fn=lambda _t: rate,
+        beta=beta,
+    )
+    terminal = _terminal_payoff(grid.x, option_type, strike)
+
+    lower_bc, upper_bc = _boundary_conditions(
+        option_type=option_type,
+        strike=strike,
+        rate=rate,
+        maturity=maturity,
+        s_max=s_max,
+    )
+    values = theta_method_1d(
+        grid,
+        operator,
+        terminal,
+        theta=float(theta),
+        lower_bc_fn=lower_bc,
+        upper_bc_fn=upper_bc,
+    )
+    price = interpolate_pde_values(values, grid.x, spot)
+    return float(notional * price)
+
+
 def price_event_aware_equity_option_pde(
     market_state: EquityPDEMarketStateLike,
     spec: EventAwareEquityOptionSpecLike | VanillaEquityOptionSpecLike,
@@ -425,6 +498,7 @@ __all__ = [
     "ResolvedEquityPDEInputs",
     "build_event_aware_equity_pde_problem",
     "build_vanilla_equity_pde_problem",
+    "price_cev_option_pde",
     "price_event_aware_equity_option_pde",
     "price_vanilla_equity_option_pde",
     "resolve_vanilla_equity_pde_inputs",
