@@ -17,6 +17,7 @@ def _result(
     cookbook_enriched: bool = False,
     promotion_candidate_saved: str | None = None,
     total_tokens: int = 0,
+    intra_run_learning: dict | None = None,
 ) -> dict:
     return {
         "task_id": task_id,
@@ -51,6 +52,7 @@ def _result(
             "by_stage": {},
             "by_provider": {},
         },
+        "intra_run_learning": intra_run_learning or {},
     }
 
 
@@ -255,3 +257,69 @@ def test_build_task_learning_benchmark_report_ignores_non_reuse_knowledge_metada
 
     assert report["attribution"]["knowledge_assisted_improvements"]["task_ids"] == []
     assert report["attribution"]["unexplained_improvements"]["task_ids"] == ["T13"]
+
+
+def test_build_task_learning_benchmark_report_labels_retry_learned_recovery():
+    from trellis.agent.task_learning_benchmark import (
+        build_task_learning_benchmark_report,
+        render_task_learning_benchmark_report,
+    )
+
+    retry_learning = {
+        "overlay_retry_count": 1,
+        "recovered": True,
+        "retry_attribution_kind": "contract_evidence_consumed",
+        "contract_evidence_consumed": True,
+        "deterministic_input_changed": True,
+        "retry_attribution": {
+            "attribution_kind": "contract_evidence_consumed",
+            "contract_evidence_consumed": True,
+            "deterministic_input_changed": True,
+        },
+    }
+    report = build_task_learning_benchmark_report(
+        benchmark_name="seeded_retry_learning",
+        cohort_name="seeded_retry_fixture",
+        git_revision="abc1234",
+        tasks=[
+            _task("L001", "Seeded retry fixture"),
+            _task("T13", "First-pass deterministic route"),
+            _task("T22", "Failed retry evidence"),
+        ],
+        pass_runs=[
+            {
+                "pass_number": 1,
+                "label": "pass_1",
+                "results": [
+                    _result(
+                        task_id="L001",
+                        success=True,
+                        attempts=2,
+                        intra_run_learning=retry_learning,
+                    ),
+                    _result(task_id="T13", success=True, attempts=1),
+                    _result(
+                        task_id="T22",
+                        success=False,
+                        attempts=2,
+                        intra_run_learning={
+                            **retry_learning,
+                            "recovered": False,
+                        },
+                    ),
+                ],
+            }
+        ],
+    )
+
+    retry_learning_report = report["attribution"]["retry_learning"]
+    assert retry_learning_report["retry_learned_recoveries"]["task_ids"] == ["L001"]
+    assert retry_learning_report["first_pass_deterministic_reuse"]["task_ids"] == ["T13"]
+    assert retry_learning_report["failed_or_unvalidated_retry_evidence"]["task_ids"] == [
+        "T22"
+    ]
+
+    rendered = render_task_learning_benchmark_report(report)
+    assert "Retry-learned recoveries" in rendered
+    assert "First-pass deterministic reuse" in rendered
+    assert "Failed or unvalidated retry evidence" in rendered

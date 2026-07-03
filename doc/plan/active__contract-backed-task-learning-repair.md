@@ -63,15 +63,15 @@ contracts for the agent to write derivative-specific code correctly.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-02`
+Status mirror last synced: `2026-07-03`
 
 ### Parent
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| `QUA-1131` | Agent learning: contract-backed intra-run repair | Todo |
+| `QUA-1131` | Agent learning: contract-backed intra-run repair | In Progress |
 | `QUA-1138` | Agent learning: deterministic promotion loop | In Progress |
-| `QUA-1151` | Task learning: replay-safe self-learning closure | Todo |
+| `QUA-1151` | Task learning: replay-safe self-learning closure | In Progress |
 
 ### Ordered Implementation Queue
 
@@ -88,8 +88,8 @@ Status mirror last synced: `2026-07-02`
 | `QUA-1141` | Semantic validation: helper-backed primitive closure | In Progress | `QUA-1135` |
 | `QUA-1142` | Semantic contract: static exotic spec catalog | In Progress | `QUA-1134`, `QUA-1136` |
 | `QUA-1143` | Task learning: no-LLM scorecard and docs closeout | In Progress | `QUA-1139`, `QUA-1140`, `QUA-1141`, `QUA-1142` |
-| `QUA-1152` | Canary replay: deterministic exact-binding contract lane | In Progress | `QUA-1138` |
-| `QUA-1153` | Task learning: failure-seeded retry benchmark | Todo | `QUA-1152` |
+| `QUA-1152` | Canary replay: deterministic exact-binding contract lane | Done | `QUA-1138` |
+| `QUA-1153` | Task learning: failure-seeded retry benchmark | In Progress | `QUA-1152` |
 
 ## Validation Plan
 
@@ -331,3 +331,54 @@ make gate-tier2-contracts PYTHON=/Users/steveyang/miniforge3/bin/python3
 The focused unit/manifest/contract-helper set reports `10 passed`; full
 canary replay reports `1 passed, 1 skipped`; and the local tier-2 contract
 shard reports `32 passed, 15 skipped, 7 deselected`.
+
+### 2026-07-03 QUA-1153 failure-seeded retry benchmark
+
+Started `QUA-1153` after `QUA-1152` landed. The goal of this slice is to
+prove actual intra-run learned recovery, not just first-pass deterministic
+reuse from checked exact bindings.
+
+The benchmark runner now supports a local seeded retry fixture:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py \
+  --seeded-retry-fixture --passes 1 --knowledge-light \
+  --report-name qua1153_seeded_retry_20260703
+```
+
+The fixture bypasses manifest task selection and uses a local fake builder. Its
+first build fails with a concrete callable-signature contract error against
+`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`; the
+assisted retry receives the structured `KnowledgePatchCandidate` and succeeds
+only after `knowledge_overlays` is present. The saved scorecard reports
+`retry_learned_recoveries=["L001"]`, `first_pass_deterministic_reuse=[]`,
+`retry_taxonomy.by_stage.contract_evidence_consumed.count=1`, and token usage
+`0`.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_task_learning_benchmark.py \
+  tests/test_agent/test_task_learning_benchmark_runner.py \
+  tests/test_agent/test_evals.py
+/Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py \
+  --seeded-retry-fixture --passes 1 --knowledge-light \
+  --report-name qua1153_seeded_retry_20260703
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T20 --task-id T22 --task-id T105 --task-id T107 --task-id E27 \
+  --status all --offline-local-agents --recovery-mode assisted \
+  --validation standard \
+  --output task_results_qua1153_offline_closeout_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1153_offline_closeout_20260703.json \
+  --skip-platform-traces
+```
+
+The focused unit files report `28 passed`; the seeded fixture reports `1/1`
+success, attempts-to-success `2.0`, and zero token usage; the failed-pack
+closeout remains `5/5` passed expectations with `4` pricing successes, `1`
+honest block, `0` actionable failures, and zero token usage; bounded
+remediation reports `0` failures. PR creation for this slice is intentionally
+deferred under the current commits-only goal constraint.

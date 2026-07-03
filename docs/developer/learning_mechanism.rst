@@ -326,9 +326,10 @@ Today the honest claim is:
 
 That is what ``scripts/run_task_learning_benchmark.py`` measures.
 
-The benchmark uses a non-canary cohort from the active pricing-task manifests and repeated passes
-at a fixed git revision. By default it also forces fresh builds so the score
-is not dominated by trivial adapter reuse. The report records:
+The benchmark uses a non-canary cohort from the active pricing-task manifests
+and repeated passes at a fixed git revision. By default it also forces fresh
+builds so the score is not dominated by trivial adapter reuse. The report
+records:
 
 - success and failure deltas across passes
 - task-level ``first_pass`` and ``attempts_to_success``
@@ -338,6 +339,9 @@ is not dominated by trivial adapter reuse. The report records:
 - attribution buckets for:
 
   * knowledge-assisted improvements
+  * retry-learned recoveries
+  * first-pass deterministic reuse
+  * failed or unvalidated retry evidence
   * residual knowledge gaps
   * residual implementation gaps
   * residual market/provider noise
@@ -345,6 +349,21 @@ is not dominated by trivial adapter reuse. The report records:
 That benchmark is the short-term learning milestone because it tests whether
 the platform gets better at rerunning broader tasks with knowledge it has
 already captured.
+
+For the narrower intra-run claim, use the seeded local fixture:
+
+.. code-block:: bash
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py \
+     --seeded-retry-fixture --passes 1 --knowledge-light \
+     --report-name seeded_retry_learning
+
+That mode does not select manifest tasks and does not call live LLM providers.
+It runs one deterministic fake builder through the real ``run_task(...)``
+assisted-retry path. The first build fails with a concrete callable-signature
+contract error, the retry receives a structured ``KnowledgePatchCandidate``,
+and the scorecard must label the result as a retry-learned recovery rather
+than first-pass deterministic reuse.
 
 Current Boundaries
 ------------------

@@ -423,6 +423,8 @@ The scorecard reports:
 - shared-knowledge reuse signals
 - attribution buckets separating knowledge-assisted improvements from residual
   knowledge gaps, implementation gaps, and market/provider noise
+- retry-learning attribution that separates genuine retry-learned recovery
+  from first-pass deterministic reuse
 
 Use it like this:
 
@@ -435,6 +437,20 @@ If you want to inspect the selected cohort first:
 .. code-block:: bash
 
    /Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py --list-tasks --limit 10
+
+To prove the bounded intra-run retry path itself without live model calls, use
+the seeded local fixture:
+
+.. code-block:: bash
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py \
+     --seeded-retry-fixture --passes 1 --knowledge-light \
+     --report-name seeded_retry_learning
+
+That fixture bypasses manifest selection and uses a local fake builder. The
+first attempt fails on a checked callable signature, then the assisted retry
+must consume structured contract evidence and recover. Its scorecard should
+show a retry-learned recovery, not only a first-pass deterministic route reuse.
 
 Task-run artifacts now preserve analytical trace paths alongside the existing
 platform traces. When a build loop emits an analytical route, the stored task
