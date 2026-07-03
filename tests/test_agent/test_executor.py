@@ -953,6 +953,70 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_help
 
 
 @pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment", "expected_import"),
+    [
+        (
+            "psor_pde",
+            "price_event_aware_equity_option_pde(",
+            "from trellis.models.equity_option_pde import price_event_aware_equity_option_pde",
+        ),
+        (
+            "crr_tree",
+            'float(getattr(spec, "notional", 1.0) or 1.0) * price_vanilla_equity_option_tree(',
+            "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree",
+        ),
+        (
+            "high_step_tree_2000",
+            'float(getattr(spec, "notional", 1.0) or 1.0) * price_vanilla_equity_option_tree(',
+            "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree",
+        ),
+        (
+            "lsm_mc",
+            "price_american_equity_option_lsm_monte_carlo(",
+            "from trellis.models.equity_option_monte_carlo import "
+            "price_american_equity_option_lsm_monte_carlo",
+        ),
+    ],
+)
+@pytest.mark.parametrize("instrument_type", ["american_put", "american_option"])
+def test_deterministic_exact_binding_module_materializes_american_put_targets_without_refs(
+    instrument_type,
+    comparison_target,
+    expected_fragment,
+    expected_import,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type=instrument_type,
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["american_put_tree"],
+        "American put: PSOR vs tree vs LSM three-way",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_import in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
         ("heston_mc", 'scheme="heston_qe"'),

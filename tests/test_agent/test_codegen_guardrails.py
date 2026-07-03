@@ -328,6 +328,38 @@ def test_heston_family_support_approves_adi_diagnostics():
     assert report.ok
 
 
+def test_american_put_family_support_approves_equity_helper_surfaces():
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="american_put",
+            reasoning="test",
+        ),
+        instrument_type="american_put",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="american_put",
+            payoff_family="vanilla_option",
+            exercise_style="american",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "trellis.models.equity_option_pde" in plan.approved_modules
+    assert "trellis.models.equity_option_tree" in plan.approved_modules
+    assert "trellis.models.equity_option_monte_carlo" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.equity_option_pde import price_event_aware_equity_option_pde\n"
+        "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree\n"
+        "from trellis.models.equity_option_monte_carlo import "
+        "price_american_equity_option_lsm_monte_carlo\n",
+        plan,
+    )
+    assert report.ok
+
+
 def test_autocallable_generation_plan_approves_event_helper_surface():
     pricing_plan = PricingPlan(
         method="monte_carlo",

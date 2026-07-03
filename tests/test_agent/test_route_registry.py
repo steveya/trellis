@@ -115,6 +115,31 @@ class TestRegistryValidation:
             "short_rate_bond_option",
         } <= route_ids
 
+    def test_exercise_monte_carlo_resolves_american_equity_lsm_helper(self, registry):
+        route = find_route_by_id("exercise_monte_carlo", registry)
+        assert route is not None
+
+        product_ir = ProductIR(
+            instrument="american_put",
+            payoff_family="vanilla_option",
+            exercise_style="american",
+            model_family="equity_diffusion",
+        )
+
+        primitives = resolve_route_primitives(
+            route,
+            product_ir,
+            method="monte_carlo",
+        )
+
+        assert _prim_set(primitives) == {
+            (
+                "trellis.models.equity_option_monte_carlo",
+                "price_american_equity_option_lsm_monte_carlo",
+                "route_helper",
+            )
+        }
+
     def test_all_routes_promoted(self, registry):
         candidate_ids = {route.id for route in registry.routes if route.status == "candidate"}
         non_promoted = {route.id: route.status for route in registry.routes if route.status not in {"promoted", "candidate"}}

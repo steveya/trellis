@@ -551,6 +551,31 @@ def test_resolve_backend_binding_spec_uses_credit_loss_distribution_exact_helper
     )
 
 
+def test_exercise_monte_carlo_binding_resolves_american_equity_lsm_helper():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("exercise_monte_carlo", catalog)
+    assert binding is not None
+
+    product_ir = ProductIR(
+        instrument="american_put",
+        payoff_family="vanilla_option",
+        exercise_style="american",
+        model_family="equity_diffusion",
+    )
+
+    resolved = resolve_backend_binding_spec(binding, product_ir=product_ir)
+
+    assert resolved.binding_id == (
+        "trellis.models.equity_option_monte_carlo."
+        "price_american_equity_option_lsm_monte_carlo"
+    )
+    assert resolved.helper_refs == (
+        "trellis.models.equity_option_monte_carlo."
+        "price_american_equity_option_lsm_monte_carlo",
+    )
+    assert resolved.exact_target_refs == resolved.helper_refs
+
+
 def test_binding_catalog_cache_tracks_binding_catalog_freshness(monkeypatch):
     clear_backend_binding_catalog_cache()
 

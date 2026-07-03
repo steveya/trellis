@@ -135,6 +135,15 @@ bindings:
         symbol: stochastic_mesh
         role: exercise_control
         required: false
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [american, bermudan]
+          model_family: [equity, equity_diffusion]
+        primitives:
+          - module: trellis.models.equity_option_monte_carlo
+            symbol: price_american_equity_option_lsm_monte_carlo
+            role: route_helper
 
   - route_id: monte_carlo_paths
     engine_family: monte_carlo

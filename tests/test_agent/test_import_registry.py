@@ -62,6 +62,20 @@ def test_cliquet_monte_carlo_helper_is_visible_to_import_registry():
     assert symbol in registry_text
 
 
+def test_american_lsm_helper_is_visible_to_import_registry():
+    module = "trellis.models.equity_option_monte_carlo"
+    symbol = "price_american_equity_option_lsm_monte_carlo"
+
+    assert module_exists(module)
+    assert symbol in list_module_exports(module)
+    assert find_symbol_modules(symbol) == (module,)
+    assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    assert symbol in registry_text
+
+
 def test_resolve_import_candidates_handles_known_and_unknown_symbols():
     candidates = resolve_import_candidates(["theta_method_1d", "definitely_not_real"])
     assert "trellis.models.pde.theta_method" in candidates["theta_method_1d"]

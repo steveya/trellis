@@ -3717,6 +3717,7 @@ def _deterministic_exact_binding_evaluate_body(
     instrument_type = str(_generation_plan_field(generation_plan, "instrument_type", "") or "").strip().lower()
     route_free_exact_binding = _generation_plan_field(generation_plan, "primitive_plan") is None
     normalized_target = str(comparison_target or "").strip().lower().replace("-", "_")
+    is_american_equity_option = instrument_type in {"american_put", "american_option"}
 
     target_helper_bodies = {
         "heston_mc": (
@@ -3726,6 +3727,35 @@ def _deterministic_exact_binding_evaluate_body(
     }
     if normalized_target in target_helper_bodies:
         return target_helper_bodies[normalized_target]
+
+    if is_american_equity_option and normalized_target == "psor_pde":
+        return (
+            "return price_event_aware_equity_option_pde("
+            "market_state, spec, theta=1.0, "
+            'n_x=getattr(spec, "n_x", 301), '
+            'n_t=getattr(spec, "n_t", 400))'
+        )
+    if is_american_equity_option and normalized_target == "crr_tree":
+        return (
+            'return float(getattr(spec, "notional", 1.0) or 1.0) * '
+            "price_vanilla_equity_option_tree("
+            'market_state, spec, model="crr", '
+            'n_steps=getattr(spec, "tree_steps", 800))'
+        )
+    if is_american_equity_option and normalized_target == "high_step_tree_2000":
+        return (
+            'return float(getattr(spec, "notional", 1.0) or 1.0) * '
+            "price_vanilla_equity_option_tree("
+            'market_state, spec, model="crr", n_steps=2000)'
+        )
+    if is_american_equity_option and normalized_target == "lsm_mc":
+        return (
+            "return price_american_equity_option_lsm_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 50000), '
+            'n_steps=getattr(spec, "n_steps", 96), '
+            'seed=getattr(spec, "seed", 42))'
+        )
 
     if comparison_target == "monte_carlo" and instrument_type == "cliquet_option":
         return (
@@ -4340,6 +4370,19 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.monte_carlo.event_aware import "
             "price_equity_cliquet_option_monte_carlo"
+        )
+    if "price_event_aware_equity_option_pde(" in body:
+        imports.append(
+            "from trellis.models.equity_option_pde import price_event_aware_equity_option_pde"
+        )
+    if "price_vanilla_equity_option_tree(" in body:
+        imports.append(
+            "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
+        )
+    if "price_american_equity_option_lsm_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.equity_option_monte_carlo import "
+            "price_american_equity_option_lsm_monte_carlo"
         )
     return tuple(imports)
 

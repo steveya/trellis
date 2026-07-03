@@ -114,6 +114,16 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.pde.heston_adi",
         "trellis.models.monte_carlo.stochastic_vol",
     ),
+    "american_put": (
+        "trellis.models.equity_option_pde",
+        "trellis.models.equity_option_tree",
+        "trellis.models.equity_option_monte_carlo",
+    ),
+    "american_option": (
+        "trellis.models.equity_option_pde",
+        "trellis.models.equity_option_tree",
+        "trellis.models.equity_option_monte_carlo",
+    ),
     "barrier_option": (
         "trellis.models.analytical.support.barriers",
     ),

@@ -479,9 +479,13 @@ of collapsing into a generic validation-failure bucket.
 Sparse legacy proof rows can also carry a deterministic task-runtime contract
 bridge before generation. The bridge is intentionally small and auditable:
 ``T25``, ``T26``, ``T31``, and ``T32`` default to a European SPX call
-semantic contract for Monte Carlo numerical-method proof work, while ``T27``
-defaults to an American SPX put contract for the LSM basis comparison. ``T27``
-also binds the comparison target ids ``polynomial``, ``laguerre``,
+semantic contract for Monte Carlo numerical-method proof work. ``T14`` uses an
+American SPX put contract for the PDE/tree/LSM comparison and resolves
+``lsm_mc`` through the exact
+``price_american_equity_option_lsm_monte_carlo(...)`` helper, so the task tests
+route-helper binding rather than generated early-exercise branching. ``T27``
+defaults to an American SPX put contract for the LSM basis comparison and binds
+the comparison target ids ``polynomial``, ``laguerre``,
 ``hermite``, ``chebyshev``, and ``high_step_tree_2000`` to deterministic local
 proof adapters that compose the public Longstaff-Schwartz basis primitives and
 CRR tree reference. They are task-runner proof contracts, not promoted

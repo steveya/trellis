@@ -360,13 +360,32 @@ class TestPlanBuild:
         assert plan.spec_schema.spec_name == "AmericanPutTreeSpec"
         assert plan.payoff_class_name == "AmericanPutTreePayoff"
         assert [field.name for field in plan.spec_schema.fields] == [
+            "notional",
             "spot",
             "strike",
             "expiry_date",
             "option_type",
             "exercise_style",
             "day_count",
+            "tree_steps",
+            "n_paths",
+            "n_steps",
+            "seed",
+            "n_x",
+            "n_t",
         ]
+
+    def test_american_put_pde_route_uses_deterministic_spec_schema(self):
+        plan = plan_build(
+            "American put: PSOR PDE vs LSM MC",
+            {"discount_curve", "black_vol_surface"},
+            instrument_type="american_put",
+            preferred_method="pde_solver",
+        )
+
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "AmericanPutTreeSpec"
+        assert plan.payoff_class_name == "AmericanPutTreePayoff"
 
     def test_infer_method_hint_does_not_match_tree_substrings_inside_other_words(self):
         assert _infer_method_hint("main street spot-vol quote pack") is None

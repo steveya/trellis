@@ -467,6 +467,12 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Analytical"].append(line)
         elif "trellis.models.resolution" in mod:
             groups["Models — Analytical"].append(line)
+        elif mod == "trellis.models.equity_option_tree":
+            groups["Models — Trees"].append(line)
+        elif mod == "trellis.models.equity_option_monte_carlo":
+            groups["Models — Monte Carlo"].append(line)
+        elif mod == "trellis.models.equity_option_pde":
+            groups["Models — PDE"].append(line)
         elif "trellis.models.trees" in mod:
             groups["Models — Trees"].append(line)
         elif "trellis.models.monte_carlo" in mod:
@@ -548,7 +554,7 @@ from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_o
 from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketMonteCarloPayoff, RankedObservationBasketSpec
 from trellis.models.monte_carlo.stochastic_vol import HestonMonteCarloProblem, HestonMonteCarloResult, ResolvedHestonMonteCarloInputs, build_heston_monte_carlo_problem, price_heston_option_monte_carlo, price_heston_option_monte_carlo_result, resolve_heston_monte_carlo_inputs
 from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
-from trellis.models.equity_option_monte_carlo import build_vanilla_equity_monte_carlo_problem, price_single_state_terminal_claim_monte_carlo_result, price_vanilla_equity_option_monte_carlo, price_vanilla_equity_option_monte_carlo_result, resolve_single_state_terminal_claim_monte_carlo_inputs, resolve_vanilla_equity_monte_carlo_inputs
+from trellis.models.equity_option_monte_carlo import build_vanilla_equity_monte_carlo_problem, price_american_equity_option_lsm_monte_carlo, price_single_state_terminal_claim_monte_carlo_result, price_vanilla_equity_option_monte_carlo, price_vanilla_equity_option_monte_carlo_result, resolve_single_state_terminal_claim_monte_carlo_inputs, resolve_vanilla_equity_monte_carlo_inputs
 
 ### Models — QMC
 from trellis.models.qmc import brownian_bridge, sobol_normals

@@ -520,12 +520,19 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
         spec_name="AmericanPutTreeSpec",
         requirements=["discount_curve", "black_vol_surface"],
         fields=[
+            FieldDef("notional", "float", "Option notional", "1.0"),
             FieldDef("spot", "float", "Current spot price"),
             FieldDef("strike", "float", "Option strike price"),
             FieldDef("expiry_date", "date", "Option expiry date"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'put'"),
             FieldDef("exercise_style", "str", "Exercise style for the checked lattice helper", "'american'"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("tree_steps", "int", "Tree steps for lattice comparison targets", "800"),
+            FieldDef("n_paths", "int", "Monte Carlo paths for LSM comparison targets", "50000"),
+            FieldDef("n_steps", "int", "Time steps for LSM/PDE comparison targets", "96"),
+            FieldDef("seed", "int", "Monte Carlo random seed", "42"),
+            FieldDef("n_x", "int", "PDE spot-grid count", "301"),
+            FieldDef("n_t", "int", "PDE time-step count", "400"),
         ],
     ),
     "quanto_option_analytical": SpecSchema(
@@ -816,8 +823,7 @@ def _select_specialized_spec(
         normalized_instrument == "american_put"
         or ("american" in desc_lower and "put" in desc_lower)
     ):
-        if method_hint == "rate_tree":
-            return SPECIALIZED_SPECS["american_put_tree"]
+        return SPECIALIZED_SPECS["american_put_tree"]
 
     if _allowed("european_local_vol_monte_carlo") and (
         "local vol" in desc_lower or "local_vol_surface" in normalized_requirements

@@ -183,6 +183,11 @@ The first migrated vanilla cases now use that boundary directly:
   single-state diffusion resolver/GBM-support layer under
   ``trellis.models.resolution`` for settlement, maturity, spot, dividend,
   discount, vol, and characteristic-function binding
+- vanilla American/Bermudan equity Monte Carlo now resolves the
+  ``exercise_monte_carlo`` route to the exact helper
+  ``price_american_equity_option_lsm_monte_carlo(...)``. Thin adapters may
+  delegate to that helper for Longstaff-Schwartz path simulation and exercise
+  control instead of reimplementing GBM path construction in generated code.
 - the transform route uses that thin vanilla helper only for true
   ``equity_diffusion`` contracts; stochastic-volatility transform tasks such
   as Heston smile extraction now lower onto a checked Heston transform helper
