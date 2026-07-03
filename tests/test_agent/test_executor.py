@@ -2221,6 +2221,79 @@ def test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_deterministic_exact_binding_module_materializes_ranked_basket_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.resolution.basket_semantics.resolve_basket_semantics",
+            "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
+        ),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="rainbow_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["rainbow_option"],
+        "Asian rainbow average-best-of exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "RankedObservationBasketSpec(" in generated.code
+    assert 'constituents=getattr(spec, "constituents", None) or spec.underliers' in generated.code
+    assert (
+        'aggregation_rule=getattr(spec, "aggregation_rule", None) or "average_locked_levels"'
+        in generated.code
+    )
+    assert "resolved = resolve_basket_semantics(market_state, helper_spec)" in generated.code
+    assert "return price_ranked_observation_basket_monte_carlo(helper_spec, resolved)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_nth_to_default_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.instruments.nth_to_default.price_nth_to_default_basket",),
+        primitive_plan=None,
+        method="copula",
+        instrument_type="nth_to_default",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["nth_to_default"],
+        "Nth-to-default exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)" in generated.code
+    assert "return price_nth_to_default_basket(" in generated.code
+    assert "credit_curve=market_state.credit_curve" in generated.code
+    assert "discount_curve=market_state.discount" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_extract_fragment_body_repairs_orphan_indentation():
     from trellis.agent.executor import _extract_fragment_body
 

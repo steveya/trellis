@@ -3559,6 +3559,70 @@ def _credit_default_swap_helper_body(refs: set[str]) -> str | None:
     ).rstrip()
 
 
+def _ranked_observation_basket_helper_body(refs: set[str]) -> str | None:
+    """Return a thin deterministic wrapper for ranked-observation basket MC."""
+    helper_ref = (
+        "trellis.models.monte_carlo.semantic_basket."
+        "price_ranked_observation_basket_monte_carlo"
+    )
+    if helper_ref not in refs:
+        return None
+
+    return textwrap.dedent(
+        """\
+        spec = self._spec
+        helper_spec = RankedObservationBasketSpec(
+            notional=spec.notional,
+            strike=spec.strike,
+            expiry_date=spec.expiry_date,
+            constituents=getattr(spec, "constituents", None) or spec.underliers,
+            observation_dates=getattr(spec, "observation_dates", None),
+            selection_rule=getattr(spec, "selection_rule", None) or "best_of_remaining",
+            lock_rule=getattr(spec, "lock_rule", None) or "remove_selected",
+            aggregation_rule=getattr(spec, "aggregation_rule", None) or "average_locked_levels",
+            option_type=getattr(spec, "option_type", "call"),
+            selection_count=getattr(spec, "selection_count", None) or 1,
+            day_count=spec.day_count,
+            n_paths=getattr(spec, "n_paths", 50000),
+            n_steps=getattr(spec, "n_steps", 252),
+            seed=getattr(spec, "seed", None) or 42,
+            mc_method=getattr(spec, "mc_method", None) or "exact",
+            correlation_matrix_key=getattr(spec, "correlation_matrix_key", None),
+        )
+        resolved = resolve_basket_semantics(market_state, helper_spec)
+        return price_ranked_observation_basket_monte_carlo(helper_spec, resolved)
+        """
+    ).rstrip()
+
+
+def _nth_to_default_helper_body(refs: set[str]) -> str | None:
+    """Return a thin deterministic wrapper for nth-to-default exact bindings."""
+    helper_ref = "trellis.instruments.nth_to_default.price_nth_to_default_basket"
+    if helper_ref not in refs:
+        return None
+
+    return textwrap.dedent(
+        """\
+        spec = self._spec
+        if market_state.credit_curve is None:
+            raise ValueError("market_state.credit_curve is required for nth-to-default pricing")
+        if market_state.discount is None:
+            raise ValueError("market_state.discount is required for nth-to-default pricing")
+        T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
+        return price_nth_to_default_basket(
+            notional=spec.notional,
+            n_names=spec.n_names,
+            n_th=spec.n_th,
+            horizon=T,
+            correlation=spec.correlation,
+            recovery=spec.recovery,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+        )
+        """
+    ).rstrip()
+
+
 def _deterministic_exact_binding_evaluate_body(
     generation_plan,
     *,
@@ -3592,6 +3656,14 @@ def _deterministic_exact_binding_evaluate_body(
     cds_body = _credit_default_swap_helper_body(refs)
     if cds_body is not None:
         return cds_body
+
+    ranked_basket_body = _ranked_observation_basket_helper_body(refs)
+    if ranked_basket_body is not None:
+        return ranked_basket_body
+
+    nth_to_default_body = _nth_to_default_helper_body(refs)
+    if nth_to_default_body is not None:
+        return nth_to_default_body
 
     if (
         comparison_target == "analytical"
@@ -4163,6 +4235,18 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_cds_monte_carlo(" in body:
         imports.append(
             "from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo"
+        )
+    if "price_ranked_observation_basket_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.semantic_basket import "
+            "RankedObservationBasketSpec, price_ranked_observation_basket_monte_carlo"
+        )
+        imports.append(
+            "from trellis.models.resolution.basket_semantics import resolve_basket_semantics"
+        )
+    if "price_nth_to_default_basket(" in body:
+        imports.append(
+            "from trellis.instruments.nth_to_default import price_nth_to_default_basket"
         )
     return tuple(imports)
 

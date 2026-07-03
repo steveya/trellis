@@ -90,6 +90,7 @@ Status mirror last synced: `2026-07-03`
 | `QUA-1143` | Task learning: no-LLM scorecard and docs closeout | In Progress | `QUA-1139`, `QUA-1140`, `QUA-1141`, `QUA-1142` |
 | `QUA-1152` | Canary replay: deterministic exact-binding contract lane | Done | `QUA-1138` |
 | `QUA-1153` | Task learning: failure-seeded retry benchmark | In Progress | `QUA-1152` |
+| `QUA-1154` | Semantic route materialization: pack-2 offline closure | In Progress | `QUA-1131` |
 
 ## Validation Plan
 
@@ -425,3 +426,43 @@ slice reports `57 passed`; isolated `F007` reports `1/1` pricing success with
 zero LLM calls; the full pending pack reports `10/10` passed expectations,
 all first-attempt offline successes, zero actionable failures, and zero token
 usage; bounded remediation reports `0` failures.
+
+### 2026-07-03 QUA-1154 pack-2 route-materialization slice
+
+Started `QUA-1154` after the next offline local-agent pack reported actionable
+failures for `P002`, `P004`, `P006`, `P007`, `T14`, `T15`, and `T16`; `T18`
+remained an honest manifest block and is excluded from pricing remediation.
+
+The first implementation slice closes `P002` and `P006` without LLM calls.
+`P006` now materializes a deterministic thin wrapper over
+`price_nth_to_default_basket(...)` when the route compiler selects that exact
+binding. `P002` now materializes a deterministic ranked-observation basket
+wrapper over `price_ranked_observation_basket_monte_carlo(...)` and the shared
+basket event-state substrate supports locked selected price levels for
+level-based average-best-of contracts.
+
+This slice also fixed a reduced-state MC bug: the ranked-observation
+state-aware payoff now applies the option payoff transform to the replayed
+basket aggregate instead of returning the raw aggregate level. That restores
+the expected volatility sensitivity for `P002`.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_monte_carlo/test_basket_substrate.py \
+  tests/test_models/test_monte_carlo/test_event_state.py
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_executor.py \
+  -k "ranked_basket_wrapper or nth_to_default_wrapper or deterministic_exact_binding_module"
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P002 --task-id P006 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_p002_p006_payoff_20260703.json
+```
+
+The basket/event substrate tests report `13 passed`; the exact-binding
+executor slice reports `58 passed`; the offline `P002/P006` replay reports
+`2/2` passed expectations, first-attempt successes, zero actionable failures,
+and zero token usage. Remaining `QUA-1154` targets are `P004`, `P007`, `T14`,
+`T15`, and `T16`.
