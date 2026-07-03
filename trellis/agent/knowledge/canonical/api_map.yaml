@@ -153,8 +153,10 @@ fft:
   key_imports:
     - "from trellis.models.transforms.fft_pricer import fft_price"
     - "from trellis.models.transforms.cos_method import cos_price"
+    - "from trellis.models.equity_option_transforms import price_vanilla_equity_option_transform, price_equity_digital_option_transform"
   notes:
     - "Concrete transform helpers live in submodules; do not import `trellis.models.transforms` directly."
+    - "Equity vanilla and digital FFT/COS comparison targets should prefer the semantic-facing helpers in `trellis.models.equity_option_transforms`."
     - "fft_price expects CF of log(S_T) — include log(S0)"
     - "cos_price expects CF of log(S_T/S0) — log-return only"
 

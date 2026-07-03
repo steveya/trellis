@@ -740,8 +740,11 @@ def _plan_static(
     if spec_schema is None and instrument_type:
         # Direct lookup by normalized instrument type (more reliable than text search)
         norm = instrument_type.lower().replace(" ", "_")
-        if norm in STATIC_SPECS:
-            spec_schema = STATIC_SPECS[norm]
+        static_key = {
+            "credit_default_swap": "cds",
+        }.get(norm, norm)
+        if static_key in STATIC_SPECS:
+            spec_schema = STATIC_SPECS[static_key]
             class_name = spec_schema.class_name
             module_name = class_name.lower().replace("payoff", "")
             module = f"instruments/_agent/{module_name}.py"

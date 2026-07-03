@@ -98,24 +98,31 @@ def test_cev_helpers_are_visible_to_import_registry():
 
 def test_digital_pde_and_asian_helpers_are_visible_to_import_registry():
     pde_module = "trellis.models.equity_option_pde"
+    transform_module = "trellis.models.equity_option_transforms"
     asian_module = "trellis.models.asian_option"
 
     assert module_exists(pde_module)
+    assert module_exists(transform_module)
     assert module_exists(asian_module)
     assert "price_equity_digital_option_pde" in list_module_exports(pde_module)
+    assert "price_equity_digital_option_transform" in list_module_exports(transform_module)
     assert "price_arithmetic_asian_option_analytical" in list_module_exports(asian_module)
     assert "price_arithmetic_asian_option_monte_carlo" in list_module_exports(asian_module)
     assert find_symbol_modules("price_equity_digital_option_pde") == (pde_module,)
+    assert find_symbol_modules("price_equity_digital_option_transform") == (transform_module,)
     assert find_symbol_modules("price_arithmetic_asian_option_analytical") == (asian_module,)
     assert find_symbol_modules("price_arithmetic_asian_option_monte_carlo") == (asian_module,)
     assert is_valid_import(pde_module, "price_equity_digital_option_pde")
+    assert is_valid_import(transform_module, "price_equity_digital_option_transform")
     assert is_valid_import(asian_module, "price_arithmetic_asian_option_analytical")
     assert is_valid_import(asian_module, "price_arithmetic_asian_option_monte_carlo")
 
     registry_text = get_import_registry()
     assert f"from {pde_module} import" in registry_text
+    assert f"from {transform_module} import" in registry_text
     assert f"from {asian_module} import" in registry_text
     assert "price_equity_digital_option_pde" in registry_text
+    assert "price_equity_digital_option_transform" in registry_text
     assert "price_arithmetic_asian_option_analytical" in registry_text
     assert "price_arithmetic_asian_option_monte_carlo" in registry_text
 

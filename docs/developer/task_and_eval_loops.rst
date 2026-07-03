@@ -778,6 +778,15 @@ contract. In practice this is what keeps transform canaries such as ``T39`` and
 
 For the analytical benchmark side of those canaries, the runtime now also
 materializes a deterministic exact wrapper around the checked Black76 kernels.
+The same rule applies to sparse transform and credit comparison targets:
+``fft``/``cos`` GBM lanes delegate to
+``price_vanilla_equity_option_transform(...)``, digital ``fft``/``cos`` lanes
+delegate to ``price_equity_digital_option_transform(...)``, and
+``credit_default_swap`` analytical lanes reuse the static ``CDSSpec`` and
+``price_cds_analytical(...)`` binding.  These are task-runtime exact bindings,
+not cookbook-authored generated adapters; under ``--offline-local-agents`` they
+should complete without spec-design, code-generation, critic, or
+model-validator LLM calls.
 That wrapper binds ``year_fraction(...)``, discounting, and expiry-vol lookup
 through the actual runtime market-state protocols instead of asking the build
 loop to regenerate a tiny analytical adapter for every transform comparison.

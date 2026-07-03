@@ -487,7 +487,7 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — QMC"].append(line)
         elif "trellis.models.pde" in mod:
             groups["Models — PDE"].append(line)
-        elif "trellis.models.transforms" in mod:
+        elif "trellis.models.transforms" in mod or mod == "trellis.models.equity_option_transforms":
             groups["Models — Transforms (FFT/COS)"].append(line)
         elif "trellis.models.processes" in mod:
             groups["Models — Processes"].append(line)
@@ -584,7 +584,7 @@ from trellis.models.transforms.cos_method import cos_price
 from trellis.models.transforms.fft_pricer import fft_price
 from trellis.models.transforms.heston import HestonTransformResult, ResolvedHestonTransformInputs, UnsupportedHestonTransformMethod, heston_transform_capability_packet, price_heston_option_transform, price_heston_option_transform_result, resolve_heston_transform_inputs
 from trellis.models.transforms.single_state_diffusion import price_single_state_terminal_claim_transform_result, resolve_single_state_diffusion_inputs, resolve_single_state_terminal_claim_transform_inputs
-from trellis.models.equity_option_transforms import gbm_log_ratio_char_fn, gbm_log_spot_char_fn, price_vanilla_equity_option_transform, price_vanilla_equity_option_transform_result, put_from_call_parity, resolve_single_state_terminal_claim_transform_inputs, resolve_vanilla_equity_transform_inputs, terminal_intrinsic_from_resolved
+from trellis.models.equity_option_transforms import DigitalEquityTransformResult, gbm_log_ratio_char_fn, gbm_log_spot_char_fn, price_equity_digital_option_transform, price_equity_digital_option_transform_result, price_vanilla_equity_option_transform, price_vanilla_equity_option_transform_result, put_from_call_parity, resolve_single_state_terminal_claim_transform_inputs, resolve_vanilla_equity_transform_inputs, terminal_intrinsic_from_resolved
 
 ### Models — Processes
 from trellis.models.processes.gbm import GBM

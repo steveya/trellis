@@ -939,6 +939,24 @@ def test_task_to_instrument_type_uses_cross_validation_target_hints():
     assert resolution.source == "task.title_description_or_targets"
 
 
+def test_task_to_instrument_type_uses_black_scholes_target_hint_for_vanilla():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T42",
+            "title": "COS adaptive truncation for extreme parameters",
+            "cross_validate": {
+                "internal": ["cos_adaptive", "cos_fixed"],
+                "analytical": "black_scholes",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_description_or_targets"
+
+
 def test_comparison_harness_maps_turnbull_wakeman_target_to_analytical():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 

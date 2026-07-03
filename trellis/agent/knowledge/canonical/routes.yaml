@@ -1257,6 +1257,17 @@ routes:
         adapters: []
         notes: []
       - when:
+          payoff_family: digital_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.equity_option_transforms
+            symbol: price_equity_digital_option_transform
+            role: route_helper
+        adapters: []
+        notes:
+          - "Digital FFT/COS proof targets should delegate to `price_equity_digital_option_transform(...)`; it recovers cash/asset digital prices from transform-priced vanilla strike derivatives."
+      - when:
           payoff_family: basket_option
           exercise_style: [european]
           model_family: [equity_diffusion]

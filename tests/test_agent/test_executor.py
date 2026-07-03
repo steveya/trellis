@@ -1746,6 +1746,170 @@ def test_deterministic_exact_binding_module_materializes_black_scholes_comparato
     )
 
 
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_method"),
+    [
+        ("fft", 'method="fft"'),
+        ("cos", 'method="cos"'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_transform_comparators(
+    comparison_target,
+    expected_method,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.equity_option_transforms.price_vanilla_equity_option_transform",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European option transform comparator",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "price_vanilla_equity_option_transform(" in generated.code
+    assert expected_method in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_method"),
+    [
+        ("digital_fft", 'method="fft"'),
+        ("digital_cos", 'method="cos"'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_digital_transform_targets(
+    comparison_target,
+    expected_method,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.equity_option_transforms.price_equity_digital_option_transform",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="digital_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["digital_option"],
+        "Digital option transform comparator",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "price_equity_digital_option_transform(" in generated.code
+    assert expected_method in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_call"),
+    [
+        ("mc_cds", "price_cds_monte_carlo("),
+        ("analytical_cds", "price_cds_analytical("),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_cds_target_aliases(
+    comparison_target,
+    expected_call,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="monte_carlo" if comparison_target == "mc_cds" else "analytical",
+        instrument_type="credit_default_swap",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cds"],
+        "CDS comparison target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
+    assert "build_cds_schedule(" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_uses_metadata_for_cds_target_alias():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="analytical",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cds"],
+        "CDS comparison target with sparse exact plan",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        request_metadata={
+            "instrument_type": "credit_default_swap",
+            "comparison_target": "analytical_cds",
+        },
+    )
+
+    assert generated is not None
+    assert "price_cds_analytical(" in generated.code
+    assert "build_cds_schedule(" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_deterministic_exact_binding_module_materializes_route_free_vanilla_black76_body():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,

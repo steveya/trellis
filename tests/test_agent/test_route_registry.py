@@ -1894,6 +1894,25 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_digital_transform_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        ir = ProductIR(
+            instrument="digital_option",
+            payoff_family="digital_option",
+            payoff_traits=("digital_payoff",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.equity_option_transforms",
+                "price_equity_digital_option_transform",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_vanilla_equity_transform_helper_route_is_thin(self, registry):
         spec = [r for r in registry.routes if r.id == "transform_fft"][0]
         ir = ProductIR(

@@ -131,6 +131,7 @@ FAMILY_SUPPORT_MODULES = {
     "digital_option": (
         "trellis.models.analytical.equity_exotics",
         "trellis.models.equity_option_pde",
+        "trellis.models.equity_option_transforms",
     ),
     "asian_option": (
         "trellis.models.asian_option",

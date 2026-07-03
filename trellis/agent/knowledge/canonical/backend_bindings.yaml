@@ -718,6 +718,14 @@ bindings:
             symbol: price_vanilla_equity_option_transform
             role: route_helper
       - when:
+          payoff_family: digital_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.equity_option_transforms
+            symbol: price_equity_digital_option_transform
+            role: route_helper
+      - when:
           payoff_family: basket_option
           payoff_traits: [two_asset_terminal_basket]
           exercise_style: [european]

@@ -305,6 +305,19 @@ class TestPlanStatic:
         assert any(field.name == "valuation_date" for field in plan.spec_schema.fields)
         assert any(field.name == "pricing_method" for field in plan.spec_schema.fields)
 
+    def test_credit_default_swap_analytical_uses_cds_static_spec(self):
+        plan = _plan_static(
+            "Single-name CDS priced analytically",
+            {"discount_curve", "credit_curve"},
+            {"discount_curve", "credit_curve"},
+            set(),
+            instrument_type="credit_default_swap",
+            preferred_method="analytical",
+        )
+        assert plan.spec_schema is STATIC_SPECS["cds"]
+        assert plan.payoff_class_name == "CDSPayoff"
+        assert plan.steps[0].module_path.endswith("cds.py")
+
     def test_cds_analytical_static_spec_carries_time_origin_and_method_fields(self):
         spec = STATIC_SPECS["cds"]
         field_names = [field.name for field in spec.fields]

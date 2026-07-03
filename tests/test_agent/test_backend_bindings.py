@@ -282,6 +282,32 @@ def test_resolve_backend_binding_spec_uses_heston_transform_helper():
     )
 
 
+def test_resolve_backend_binding_spec_uses_digital_transform_helper():
+    catalog = load_backend_binding_catalog()
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+
+    assert transform is not None
+
+    resolved = resolve_backend_binding_spec(
+        transform,
+        product_ir=ProductIR(
+            instrument="digital_option",
+            payoff_family="digital_option",
+            payoff_traits=("digital_payoff",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert resolved.helper_refs == (
+        "trellis.models.equity_option_transforms.price_equity_digital_option_transform",
+    )
+    assert (
+        resolved.binding_id
+        == "trellis.models.equity_option_transforms.price_equity_digital_option_transform"
+    )
+
+
 def test_resolve_backend_binding_spec_uses_heston_adi_result_identity():
     catalog = load_backend_binding_catalog()
     heston_adi = find_backend_binding_by_route_id("heston_adi_2d", catalog)

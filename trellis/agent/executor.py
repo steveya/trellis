@@ -1437,6 +1437,7 @@ def build_payoff(
                         if compiled_request is not None
                         else None
                     ),
+                    request_metadata=request_metadata,
                     comparison_target=comparison_target,
                 )
             if generated_module is None:
@@ -3533,10 +3534,10 @@ def _heston_monte_carlo_helper_kwargs(comparison_target: str | None) -> str:
 
 def _vanilla_equity_transform_helper_kwargs(comparison_target: str | None) -> str:
     """Return deterministic helper kwargs for transform comparison targets."""
-    target = str(comparison_target or "").strip().lower()
-    if target == "fft":
+    target = str(comparison_target or "").strip().lower().replace("-", "_")
+    if target in {"fft", "digital_fft"}:
         return ', method="fft"'
-    if target == "cos":
+    if target in {"cos", "digital_cos", "cos_adaptive", "cos_fixed"}:
         return ', method="cos"'
     return ""
 
@@ -3600,7 +3601,7 @@ def _credit_default_swap_helper_body(refs: set[str]) -> str | None:
     monte_carlo_ref = "trellis.models.credit_default_swap.price_cds_monte_carlo"
     if monte_carlo_ref in refs:
         helper = "price_cds_monte_carlo"
-        helper_extra = ',\n    n_paths=getattr(spec, "n_paths", 250000) or 250000,\n    seed=42'
+        helper_extra = ',\n        n_paths=getattr(spec, "n_paths", 250000) or 250000,\n        seed=42'
     elif analytical_ref in refs:
         helper = "price_cds_analytical"
         helper_extra = ""
@@ -3609,27 +3610,27 @@ def _credit_default_swap_helper_body(refs: set[str]) -> str | None:
 
     return textwrap.dedent(
         f"""\
-        spec = self._spec
-        if market_state.credit_curve is None:
-            raise ValueError("market_state.credit_curve is required for CDS pricing")
-        if market_state.discount is None:
-            raise ValueError("market_state.discount is required for CDS pricing")
-        schedule = build_cds_schedule(
-            spec.start_date,
-            spec.end_date,
-            spec.frequency,
-            spec.day_count,
-            time_origin=getattr(spec, "valuation_date", None) or spec.start_date,
-        )
-        return {helper}(
-            notional=spec.notional,
-            spread_quote=spec.spread,
-            recovery=spec.recovery,
-            schedule=schedule,
-            credit_curve=market_state.credit_curve,
-            discount_curve=market_state.discount{helper_extra},
-        )
-        """
+spec = self._spec
+if market_state.credit_curve is None:
+    raise ValueError("market_state.credit_curve is required for CDS pricing")
+if market_state.discount is None:
+    raise ValueError("market_state.discount is required for CDS pricing")
+schedule = build_cds_schedule(
+    spec.start_date,
+    spec.end_date,
+    spec.frequency,
+    spec.day_count,
+    time_origin=getattr(spec, "valuation_date", None) or spec.start_date,
+)
+return {helper}(
+    notional=spec.notional,
+    spread_quote=spec.spread,
+    recovery=spec.recovery,
+    schedule=schedule,
+    credit_curve=market_state.credit_curve,
+    discount_curve=market_state.discount{helper_extra},
+)
+"""
     ).rstrip()
 
 
@@ -3701,9 +3702,11 @@ def _deterministic_exact_binding_evaluate_body(
     generation_plan,
     *,
     semantic_blueprint=None,
+    request_metadata: Mapping[str, object] | None = None,
     comparison_target: str | None = None,
 ) -> str | None:
     """Return a deterministic evaluate body for supported exact helper-backed routes."""
+    metadata = dict(request_metadata or {})
     refs = set(_exact_binding_refs(generation_plan))
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
     vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
@@ -3714,10 +3717,37 @@ def _deterministic_exact_binding_evaluate_body(
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
     basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
-    instrument_type = str(_generation_plan_field(generation_plan, "instrument_type", "") or "").strip().lower()
+    runtime_contract = metadata.get("runtime_contract")
+    if not isinstance(runtime_contract, Mapping):
+        runtime_contract = {}
+    instrument_type = str(
+        _generation_plan_field(generation_plan, "instrument_type", "")
+        or metadata.get("instrument_type")
+        or runtime_contract.get("instrument_type")
+        or runtime_contract.get("product_family")
+        or ""
+    ).strip().lower()
     route_free_exact_binding = _generation_plan_field(generation_plan, "primitive_plan") is None
-    normalized_target = str(comparison_target or "").strip().lower().replace("-", "_")
+    normalized_target = str(
+        comparison_target or metadata.get("comparison_target") or ""
+    ).strip().lower().replace("-", "_")
     is_american_equity_option = instrument_type in {"american_put", "american_option"}
+
+    if instrument_type in {"credit_default_swap", "cds"} and normalized_target in {"mc_cds", "cds_mc"}:
+        cds_body = _credit_default_swap_helper_body(
+            {"trellis.models.credit_default_swap.price_cds_monte_carlo"}
+        )
+        if cds_body is not None:
+            return cds_body
+    if instrument_type in {"credit_default_swap", "cds"} and normalized_target in {
+        "analytical_cds",
+        "cds_analytical",
+    }:
+        cds_body = _credit_default_swap_helper_body(
+            {"trellis.models.credit_default_swap.price_cds_analytical"}
+        )
+        if cds_body is not None:
+            return cds_body
 
     target_helper_bodies = {
         "heston_mc": (
@@ -3806,6 +3836,14 @@ def _deterministic_exact_binding_evaluate_body(
         and "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo" in refs
     ):
         return "return price_equity_fixed_lookback_option_monte_carlo(market_state, spec)"
+    if (
+        normalized_target in {"digital_fft", "digital_cos"}
+        and "trellis.models.equity_option_transforms.price_equity_digital_option_transform" in refs
+    ):
+        return (
+            "return price_equity_digital_option_transform("
+            f"market_state, spec{vanilla_equity_transform_kwargs})"
+        )
 
     cds_body = _credit_default_swap_helper_body(refs)
     if cds_body is not None:
@@ -4100,6 +4138,10 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_vanilla_equity_option_transform("
             f"market_state, spec{vanilla_equity_transform_kwargs})"
         ),
+        "trellis.models.equity_option_transforms.price_equity_digital_option_transform": (
+            "return price_equity_digital_option_transform("
+            f"market_state, spec{vanilla_equity_transform_kwargs})"
+        ),
         "trellis.models.transforms.heston.price_heston_option_transform": (
             "return price_heston_option_transform("
             f"market_state, spec{heston_transform_kwargs})"
@@ -4349,12 +4391,14 @@ def _materialize_deterministic_exact_binding_module(
     generation_plan,
     *,
     semantic_blueprint=None,
+    request_metadata: Mapping[str, object] | None = None,
     comparison_target: str | None = None,
 ) -> GeneratedModuleResult | None:
     """Build a thin helper-backed module without invoking the LLM when the route is exact."""
     body = _deterministic_exact_binding_evaluate_body(
         generation_plan,
         semantic_blueprint=semantic_blueprint,
+        request_metadata=request_metadata,
         comparison_target=comparison_target,
     )
     if body is None:
@@ -4442,6 +4486,10 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_equity_digital_option_pde(" in body:
         imports.append(
             "from trellis.models.equity_option_pde import price_equity_digital_option_pde"
+        )
+    if "price_equity_digital_option_transform(" in body:
+        imports.append(
+            "from trellis.models.equity_option_transforms import price_equity_digital_option_transform"
         )
     if "price_arithmetic_asian_option_monte_carlo(" in body:
         imports.append(

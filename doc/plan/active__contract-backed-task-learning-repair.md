@@ -718,3 +718,53 @@ regression shard excluding dirty generated-adapter imports reports `356`
 passed. The excluded cold-benchmark task-runtime test imported a locally dirty
 generated `trellis/instruments/_agent/barrieroption.py` replay artifact, so it
 is not part of this source commit.
+
+### 2026-07-03 T38/T39/T46 exact-binding closure
+
+The next legacy proof shard (`T33` through `T46`) exposed three avoidable
+offline-local failures where checked runtime code already existed but the
+task-runtime boundary still fell through to generated or live-LLM surfaces:
+
+- `T38`: `credit_default_swap` analytical comparison used the existing CDS
+  helper binding but the planner did not alias `credit_default_swap` to the
+  static `cds` spec for analytical targets, so offline execution stopped at
+  spec design.
+- `T39`: sparse GBM transform comparison tasks needed deterministic
+  `fft`/`cos` exact wrappers over the checked equity transform helper.
+- `T46`: digital `fft`/`cos` targets needed a checked digital transform helper
+  and route/backend metadata so adapters could stay thin.
+
+The fix keeps the learning surface deterministic: `credit_default_swap` now
+uses the existing `CDSSpec` analytical schema, exact CDS comparison aliases
+materialize thin helper wrappers, vanilla transform aliases thread `fft`/`cos`
+method names into `price_vanilla_equity_option_transform(...)`, and digital
+transform targets delegate to `price_equity_digital_option_transform(...)`
+rather than hand-writing payoff branch code.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_planner.py \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_target_aliases \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_uses_metadata_for_cds_target_alias \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_analytical_wrapper \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_transforms/test_equity_option_transforms.py::test_price_digital_equity_option_transform_matches_black76_cash_call \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_transform_comparators \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_digital_transform_targets \
+  tests/test_agent/test_route_registry.py::TestFallbackRoutes::test_digital_transform_primitives_use_checked_helper \
+  tests/test_agent/test_backend_bindings.py::test_resolve_backend_binding_spec_uses_digital_transform_helper \
+  tests/test_agent/test_import_registry.py::test_digital_pde_and_asian_helpers_are_visible_to_import_registry \
+  tests/test_agent/test_task_runtime.py::test_task_to_instrument_type_uses_black_scholes_target_hint_for_vanilla
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T38 --task-id T39 --task-id T46 \
+  --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1156_t38_t39_t46_exact_v2_20260703.json
+```
+
+The focused planner/executor pass reports `40 passed`; the transform/CDS
+focused pass reports `16 passed`; and the offline `T38/T39/T46` replay reports
+`3/3` passed expectations with zero token usage.
