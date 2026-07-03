@@ -97,6 +97,21 @@ def _uses_deterministic_replay(canary: dict) -> bool:
     return _canary_replay_mode(canary) == DETERMINISTIC_EXACT_BINDING_REPLAY
 
 
+def _canary_batch_execution_mode(results: list[dict], *, replay: bool) -> str:
+    """Return the persisted execution-mode label for a canary batch."""
+    modes = {
+        str(item.get("execution_mode") or "").strip()
+        for item in results
+        if isinstance(item, dict)
+    }
+    modes.discard("")
+    if len(modes) == 1:
+        return next(iter(modes))
+    if modes:
+        return "mixed_replay" if replay else "mixed"
+    return "cassette_replay" if replay else "live"
+
+
 # ---------------------------------------------------------------------------
 # Dry-run display
 # ---------------------------------------------------------------------------
@@ -252,21 +267,24 @@ def run_canaries(
             if deterministic_replay:
                 from trellis.agent.offline_agents import offline_local_agent_run_scope
 
-                with offline_local_agent_run_scope():
-                    result = run_task(
-                        task,
-                        market_state,
-                        **run_kwargs,
-                    )
-                result["execution_mode"] = "deterministic_replay"
-                result["offline_local_agents"] = True
-                result["llm_cassette"] = {
+                deterministic_cassette = {
                     "mode": "deterministic_replay",
                     "name": task_id,
                     "path": str(cassette_path),
                     "stale_policy": cassette_stale_policy,
                     "used": False,
                 }
+                with offline_local_agent_run_scope():
+                    result = run_task(
+                        task,
+                        market_state,
+                        execution_mode_override="deterministic_replay",
+                        llm_cassette_metadata=deterministic_cassette,
+                        **run_kwargs,
+                    )
+                result["execution_mode"] = "deterministic_replay"
+                result["offline_local_agents"] = True
+                result["llm_cassette"] = deterministic_cassette
             elif replay:
                 from trellis.agent.cassette import llm_cassette_session
 
@@ -361,6 +379,7 @@ def run_canaries(
             validation=validation,
             knowledge_light=knowledge_light,
             replay=replay,
+            execution_mode=_canary_batch_execution_mode(results, replay=replay),
             requested_task_id=requested_task_id,
             requested_subset=requested_subset,
             root=ROOT,

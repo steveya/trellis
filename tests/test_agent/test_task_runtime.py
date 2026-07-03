@@ -1153,6 +1153,68 @@ def test_run_task_marks_cassette_replay_runs_and_persists_metadata(monkeypatch, 
     assert result["task_diagnosis_dossier_path"] == "/tmp/task_runs/diagnostics/history/T13/run.md"
 
 
+def test_run_task_persists_execution_mode_override_metadata(monkeypatch):
+    from trellis.agent.task_runtime import run_task
+
+    persisted: dict[str, object] = {}
+    cassette_metadata = {
+        "mode": "deterministic_replay",
+        "name": "T13",
+        "path": "/tmp/cassettes/T13.yaml",
+        "stale_policy": "error",
+        "used": False,
+    }
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.8
+        knowledge_gaps = []
+        payoff_cls = type("FakePayoff", (), {})
+        failures = []
+        reflection = {}
+
+    def fake_build(**kwargs):
+        return FakeResult()
+
+    def fake_persist(task, result, *, root, storage_layout, persisted_at=None):
+        persisted["task"] = task
+        persisted["result"] = dict(result)
+        return {
+            "history_path": "/tmp/task_runs/history/T13/run.json",
+            "latest_path": "/tmp/task_runs/latest/T13.json",
+            "latest_index_path": "/tmp/task_results_latest.json",
+            "diagnosis_packet_path": "/tmp/task_runs/diagnostics/history/T13/run.json",
+            "diagnosis_dossier_path": "/tmp/task_runs/diagnostics/history/T13/run.md",
+            "latest_diagnosis_packet_path": "/tmp/task_runs/diagnostics/latest/T13.json",
+            "latest_diagnosis_dossier_path": "/tmp/task_runs/diagnostics/latest/T13.md",
+            "diagnosis_headline": "Replay task completed successfully.",
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+            "diagnosis_persist_error": "",
+            "diagnosis_persist_skipped": "",
+        }
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        fake_persist,
+    )
+
+    result = run_task(
+        {"id": "T13", "title": "European call: theta-method convergence order"},
+        market_state=object(),
+        build_fn=fake_build,
+        execution_mode_override="deterministic_replay",
+        llm_cassette_metadata=cassette_metadata,
+    )
+
+    assert result["execution_mode"] == "deterministic_replay"
+    assert result["llm_cassette"] == cassette_metadata
+    assert persisted["result"]["execution_mode"] == "deterministic_replay"
+    assert persisted["result"]["llm_cassette"] == cassette_metadata
+
+
 def test_run_task_forwards_isolated_task_run_storage(monkeypatch):
     from trellis.agent.task_runtime import run_task
 

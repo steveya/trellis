@@ -465,6 +465,13 @@ class TestRunCanaries:
         self, monkeypatch, tmp_path
     ):
         seen: dict[str, object] = {}
+        deterministic_cassette = {
+            "mode": "deterministic_replay",
+            "name": "T13",
+            "path": str(tmp_path / "T13.yaml"),
+            "stale_policy": "error",
+            "used": False,
+        }
 
         def fake_build_market_state():
             return object()
@@ -476,10 +483,36 @@ class TestRunCanaries:
             seen["task_id"] = task["id"]
             seen["force_rebuild"] = kwargs.get("force_rebuild")
             seen["offline_env"] = os.environ.get("TRELLIS_OFFLINE_LOCAL_AGENTS")
+            seen["execution_mode_override"] = kwargs.get("execution_mode_override")
+            seen["llm_cassette_metadata"] = kwargs.get("llm_cassette_metadata")
             return {
                 "task_id": task["id"],
                 "success": True,
                 "token_usage_summary": {"total_tokens": 0},
+            }
+
+        def fake_persist_canary_batch_record(
+            *,
+            canaries,
+            meta,
+            results,
+            model,
+            validation,
+            knowledge_light,
+            replay,
+            execution_mode,
+            requested_task_id,
+            requested_subset,
+            root,
+            started_at,
+            finished_at,
+        ):
+            seen["batch_execution_mode"] = execution_mode
+            seen["batch_result_execution_mode"] = results[0].get("execution_mode")
+            return {
+                "batch_id": "canary_20260410T120000Z",
+                "history_path": str(tmp_path / "task_runs" / "canary_batches" / "history" / "canary_20260410T120000Z.json"),
+                "latest_path": str(tmp_path / "task_runs" / "canary_batches" / "latest" / "deterministic_replay__task_T13__standard__default.json"),
             }
 
         monkeypatch.setattr(
@@ -493,6 +526,10 @@ class TestRunCanaries:
         monkeypatch.setattr(
             "trellis.agent.task_runtime.run_task",
             fake_run_task,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_run_store.persist_canary_batch_record",
+            fake_persist_canary_batch_record,
         )
 
         results = run_canaries(
@@ -514,17 +551,15 @@ class TestRunCanaries:
             "task_id": "T13",
             "force_rebuild": True,
             "offline_env": "1",
+            "execution_mode_override": "deterministic_replay",
+            "llm_cassette_metadata": deterministic_cassette,
+            "batch_execution_mode": "deterministic_replay",
+            "batch_result_execution_mode": "deterministic_replay",
         }
         assert results[0]["success"] is True
         assert results[0]["execution_mode"] == "deterministic_replay"
         assert results[0]["offline_local_agents"] is True
-        assert results[0]["llm_cassette"] == {
-            "mode": "deterministic_replay",
-            "name": "T13",
-            "path": str(tmp_path / "T13.yaml"),
-            "stale_policy": "error",
-            "used": False,
-        }
+        assert results[0]["llm_cassette"] == deterministic_cassette
 
     def test_run_canaries_replay_mode_uses_full_task_cassette(self, monkeypatch, tmp_path):
         from trellis.agent.cassette import _prompt_hash
@@ -625,6 +660,7 @@ class TestRunCanaries:
             validation,
             knowledge_light,
             replay,
+            execution_mode,
             requested_task_id,
             requested_subset,
             root,
@@ -638,6 +674,7 @@ class TestRunCanaries:
             seen["validation"] = validation
             seen["knowledge_light"] = knowledge_light
             seen["replay"] = replay
+            seen["execution_mode"] = execution_mode
             seen["requested_task_id"] = requested_task_id
             seen["requested_subset"] = requested_subset
             seen["root"] = root
@@ -674,6 +711,7 @@ class TestRunCanaries:
         )
 
         assert seen["replay"] is False
+        assert seen["execution_mode"] == "live"
         assert seen["requested_task_id"] is None
         assert seen["requested_subset"] is None
         assert seen["knowledge_light"] is False

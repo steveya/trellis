@@ -1438,6 +1438,8 @@ def run_task(
     task_run_storage_root: Path | None = None,
     task_run_storage_layout: str = "repo",
     recovery_mode: str | RecoveryMode = RecoveryMode.STRICT,
+    execution_mode_override: str | None = None,
+    llm_cassette_metadata: Mapping[str, Any] | None = None,
 ) -> dict:
     """Execute one task through the knowledge-aware build pipeline."""
     from trellis.agent.cassette import current_llm_cassette_context
@@ -1475,10 +1477,18 @@ def run_task(
         else None
     )
     cassette_context = current_llm_cassette_context()
-    execution_mode = (
-        f"cassette_{cassette_context['mode']}"
-        if cassette_context is not None
-        else "live"
+    execution_mode = str(
+        execution_mode_override
+        or (
+            f"cassette_{cassette_context['mode']}"
+            if cassette_context is not None
+            else "live"
+        )
+    ).strip() or "live"
+    llm_cassette_payload = (
+        dict(llm_cassette_metadata)
+        if llm_cassette_metadata is not None
+        else (dict(cassette_context) if cassette_context is not None else None)
     )
 
     print(f"\n{'=' * 60}")
@@ -1525,8 +1535,8 @@ def run_task(
     }
     if computational_problem_payload is not None:
         result_data["computational_problem"] = computational_problem_payload
-    if cassette_context is not None:
-        result_data["llm_cassette"] = cassette_context
+    if llm_cassette_payload is not None:
+        result_data["llm_cassette"] = llm_cassette_payload
 
     try:
         expected_honest_block = _proof_legacy_expected_honest_block(task)
