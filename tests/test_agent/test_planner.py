@@ -24,6 +24,16 @@ class TestSpecSchema:
         spec = STATIC_SPECS["cap"]
         assert spec.class_name == "AgentCapPayoff"
 
+    def test_period_rate_option_strip_static_spec_supports_collar_aliases(self):
+        spec = STATIC_SPECS["period_rate_option_strip"]
+        assert spec.class_name == "PeriodRateOptionStripPayoff"
+        field_names = [f.name for f in spec.fields]
+        assert "cap_strike" in field_names
+        assert "floor_strike" in field_names
+        assert "exercise_dates" in field_names
+        assert "accrual_dates" in field_names
+        assert "coupon_dates" in field_names
+
     def test_heston_static_spec_avoids_llm_spec_design(self):
         spec = STATIC_SPECS["heston_option"]
         assert spec.class_name == "HestonOptionPayoff"
@@ -63,6 +73,19 @@ class TestPlanStatic:
         assert plan.spec_schema.class_name == "SwaptionPayoff"
         assert len(plan.steps) == 1
         assert "swaption" in plan.steps[0].module_path
+
+    def test_period_rate_option_strip_plan_has_static_spec(self):
+        plan = plan_build(
+            "Price a callable cap/floor collar with a non-standard accrual schedule.",
+            {"discount_curve", "forward_curve", "black_vol_surface"},
+            instrument_type="period_rate_option_strip",
+            preferred_method="analytical",
+        )
+
+        assert plan.payoff_class_name == "PeriodRateOptionStripPayoff"
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "PeriodRateOptionStripSpec"
+        assert "periodrateoptionstrip" in plan.steps[0].module_path
 
     def test_unknown_instrument_no_spec(self):
         plan = _plan_static(

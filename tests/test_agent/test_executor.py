@@ -596,6 +596,135 @@ def test_deterministic_exact_binding_module_materializes_cap_strip_comparison_wr
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_exact_binding_refs_collect_backend_helper_refs_from_route_authority():
+    from trellis.agent.executor import _exact_binding_refs
+
+    refs = _exact_binding_refs(
+        SimpleNamespace(
+            lane_exact_binding_refs=(),
+            backend_helper_refs=(),
+            primitive_plan=None,
+            route_binding_authority={
+                "backend_binding": {
+                    "binding_id": "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",
+                    "helper_refs": [
+                        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+                    ],
+                }
+            },
+        )
+    )
+
+    assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical" in refs
+    assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo" in refs
+
+
+def test_exact_binding_refs_collect_backend_helper_refs_from_mapping_plan():
+    from trellis.agent.executor import _exact_binding_refs
+
+    refs = _exact_binding_refs(
+        {
+            "instrument_type": "period_rate_option_strip",
+            "route_binding_authority": {
+                "backend_binding": {
+                    "binding_id": "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",
+                    "helper_refs": [
+                        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+                    ],
+                    "target_bindings": [
+                        {
+                            "module": "trellis.models.black",
+                            "symbol": "black76_call",
+                            "role": "pricing_kernel",
+                        }
+                    ],
+                }
+            },
+        }
+    )
+
+    assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical" in refs
+    assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo" in refs
+    assert "trellis.models.black.black76_call" in refs
+
+
+def test_deterministic_exact_binding_module_materializes_period_rate_strip_from_backend_refs():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        backend_helper_refs=(),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="period_rate_option_strip",
+        route_binding_authority={
+            "backend_binding": {
+                "helper_refs": [
+                    "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical"
+                ],
+            }
+        },
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cap"],
+        "Callable cap/floor collar comparison exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="analytical",
+    )
+
+    assert generated is not None
+    assert "price_rate_cap_floor_strip_analytical(" in generated.code
+    assert 'instrument_class=getattr(spec, "instrument_class", None) or "cap"' in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_period_rate_strip_from_mapping_refs():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = {
+        "method": "monte_carlo",
+        "instrument_type": "period_rate_option_strip",
+        "route_binding_authority": {
+            "backend_binding": {
+                "helper_refs": [
+                    "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+                ],
+            }
+        },
+    }
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cap"],
+        "Callable cap/floor collar comparison exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="monte_carlo",
+    )
+
+    assert generated is not None
+    assert "price_rate_cap_floor_strip_monte_carlo(" in generated.code
+    assert 'instrument_class=getattr(spec, "instrument_class", None) or "cap"' in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_make_test_payoff_reconciles_stale_schema_against_payoff_dataclass(monkeypatch):
     from trellis.agent.executor import _make_test_payoff
 

@@ -3315,13 +3315,21 @@ def _skeleton_semantic_helper_hints(
     return helper_hints.get((instrument_type, method), ((), ()))
 
 
+def _generation_plan_field(generation_plan, name: str, default=None):
+    if generation_plan is None:
+        return default
+    if isinstance(generation_plan, Mapping):
+        return generation_plan.get(name, default)
+    return getattr(generation_plan, name, default)
+
+
 def _skeleton_exact_binding_import_lines(generation_plan) -> tuple[str, ...]:
     """Return import lines for compiler-selected exact bindings."""
     if generation_plan is None:
         return ()
 
     refs: list[str] = list(_exact_binding_refs(generation_plan))
-    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
     if primitive_plan is not None:
         refs.extend(
             f"{primitive.module}.{primitive.symbol}"
@@ -3353,16 +3361,82 @@ def _exact_binding_refs(generation_plan) -> tuple[str, ...]:
     """Return the normalized exact/helper binding refs declared by the generation plan."""
     if generation_plan is None:
         return ()
-    refs: list[str] = list(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
-    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    refs: list[str] = []
+
+    def add_ref(value) -> None:
+        if value is None:
+            return
+        if isinstance(value, str):
+            text = value.strip()
+            if text and text not in refs:
+                refs.append(text)
+            return
+        if isinstance(value, Mapping):
+            module = value.get("module")
+            symbol = value.get("symbol")
+            if module and symbol:
+                add_ref(f"{module}.{symbol}")
+            for key in (
+                "binding_id",
+                "backend_binding_id",
+                "exact_target_refs",
+                "backend_exact_target_refs",
+                "helper_refs",
+                "backend_helper_refs",
+                "primitive_ref",
+                "primitive_refs",
+                "pricing_kernel_refs",
+                "schedule_builder_refs",
+                "cashflow_engine_refs",
+                "dsl_helper_refs",
+                "dsl_target_bindings",
+                "target_bindings",
+                "reusable_bindings",
+                "lowering",
+                "construction_identity",
+                "route_binding_authority",
+            ):
+                add_ref(value.get(key))
+            add_ref(value.get("backend_binding"))
+            add_ref(value.get("primitive_plan"))
+            return
+        if isinstance(value, Sequence):
+            for item in value:
+                add_ref(item)
+
+    add_ref(generation_plan)
+
+    for attr in (
+        "lane_exact_binding_refs",
+        "backend_binding_id",
+        "backend_exact_target_refs",
+        "backend_helper_refs",
+        "lowering_helper_refs",
+    ):
+        add_ref(_generation_plan_field(generation_plan, attr))
+
+    primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
     if primitive_plan is not None:
-        refs.extend(
+        for attr in (
+            "backend_binding_id",
+            "backend_exact_target_refs",
+            "backend_helper_refs",
+        ):
+            add_ref(_generation_plan_field(primitive_plan, attr))
+        add_ref(tuple(
             f"{primitive.module}.{primitive.symbol}"
             for primitive in getattr(primitive_plan, "primitives", ()) or ()
             if getattr(primitive, "role", "") == "route_helper"
             and getattr(primitive, "module", "")
             and getattr(primitive, "symbol", "")
-        )
+        ))
+
+    authority = _generation_plan_field(generation_plan, "route_binding_authority")
+    if authority is not None:
+        if isinstance(authority, Mapping):
+            add_ref(authority)
+        else:
+            add_ref(getattr(authority, "backend_binding", None))
 
     normalized: list[str] = []
     for ref in refs:
@@ -3640,8 +3714,8 @@ def _deterministic_exact_binding_evaluate_body(
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
     basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
-    instrument_type = str(getattr(generation_plan, "instrument_type", "") or "").strip().lower()
-    route_free_exact_binding = getattr(generation_plan, "primitive_plan", None) is None
+    instrument_type = str(_generation_plan_field(generation_plan, "instrument_type", "") or "").strip().lower()
+    route_free_exact_binding = _generation_plan_field(generation_plan, "primitive_plan") is None
     normalized_target = str(comparison_target or "").strip().lower().replace("-", "_")
 
     target_helper_bodies = {

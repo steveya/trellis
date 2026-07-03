@@ -466,3 +466,28 @@ executor slice reports `58 passed`; the offline `P002/P006` replay reports
 `2/2` passed expectations, first-attempt successes, zero actionable failures,
 and zero token usage. Remaining `QUA-1154` targets are `P004`, `P007`, `T14`,
 `T15`, and `T16`.
+
+The second implementation slice closes `P004` without LLM calls. The executor
+now reads exact backend/helper refs from both object-shaped and mapping-shaped
+generation plans, including nested `route_binding_authority` payloads emitted by
+the compiler. The planner now has a deterministic
+`period_rate_option_strip` spec schema that exposes cap/floor collar aliases,
+call dates, and schedule tweaks, so offline-local runs do not need LLM spec
+design before exact helper materialization.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_planner.py tests/test_agent/test_executor.py \
+  -k "period_rate_option_strip or cap_strip or exact_binding_refs_collect_backend_helper_refs or deterministic_exact_binding_module"
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P004 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_p004_static_spec_20260703.json
+```
+
+The planner/executor regression slice reports `64 passed`; the offline `P004`
+replay reports `1/1` passed expectations, first-attempt success, zero actionable
+failures, and zero token usage. Remaining `QUA-1154` targets are `P007`, `T14`,
+`T15`, and `T16`.
