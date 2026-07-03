@@ -130,6 +130,7 @@ FAMILY_SUPPORT_MODULES = {
     ),
     "barrier_option": (
         "trellis.models.analytical.support.barriers",
+        "trellis.models.single_barrier_option",
     ),
     "autocallable": (
         "trellis.models.autocallable",

@@ -3072,13 +3072,19 @@ def _candidate_engine_families_for(
 def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> ProductIR:
     """Augment ProductIR with high-signal request context missing from static decompositions."""
     desc = _normalise(description)
-    if ir.instrument == "barrier_option" and (
-        "double_barrier" in desc
-        or "lower_and_upper_barriers" in desc
-        or "lower_upper_barriers" in desc
-    ):
+    if ir.instrument == "barrier_option":
         payoff_traits = list(ir.payoff_traits)
-        for trait in ("barrier", "double_barrier"):
+        is_double_barrier = (
+            "double_barrier" in desc
+            or "lower_and_upper_barriers" in desc
+            or "lower_upper_barriers" in desc
+        )
+        contextual_traits = (
+            ("barrier", "double_barrier")
+            if is_double_barrier
+            else ("barrier", "single_barrier")
+        )
+        for trait in contextual_traits:
             if trait not in payoff_traits:
                 payoff_traits.append(trait)
         ir = replace(ir, payoff_traits=tuple(payoff_traits))

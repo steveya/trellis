@@ -532,3 +532,112 @@ The local regression pass reports `293 passed`; the offline `P007` replay
 reports `1/1` passed expectations, first-attempt success, zero actionable
 failures, and zero token usage. Remaining `QUA-1154` targets are `T14`, `T15`,
 and `T16`.
+
+The fourth implementation slice closes `T14` without LLM calls. Sparse legacy
+American-put text now compiles to the American-option route contract, and the
+deterministic adapter delegates the LSM comparison target to
+`price_american_equity_option_lsm_monte_carlo(...)` instead of trying to
+assemble raw GBM, regression, and exercise logic inside generated code.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_primitive_planning.py \
+  tests/test_agent/test_platform_requests.py \
+  tests/test_agent/test_task_runtime.py \
+  tests/test_agent/test_executor.py
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T14 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_t14_american_lsm_v4_20260703.json
+```
+
+The focused regression pass and offline replay were green, with first-attempt
+task success and zero token usage. Remaining `QUA-1154` targets are `T15` and
+`T16`.
+
+The fifth implementation slice closes `T15` without LLM calls. Sparse CEV proof
+text now bridges to a `vanilla_option` contract with `model_family=cev_diffusion`
+and a `cev_process` trait. The PDE and tree comparison lanes bind to
+`price_cev_option_pde(...)` and `price_cev_option_tree(...)`; validation uses
+the `*:cev_option` bundle so Black-vol-surface monotonicity checks do not
+misclassify explicit CEV-parameter helpers.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_equity_option_pde.py \
+  tests/test_models/test_equity_option_tree.py \
+  tests/test_agent/test_backend_bindings.py \
+  tests/test_agent/test_route_registry.py \
+  tests/test_agent/test_primitive_planning.py \
+  tests/test_agent/test_validation_bundles.py \
+  tests/test_agent/test_validation_contract.py \
+  tests/test_agent/test_platform_requests.py \
+  tests/test_agent/test_task_runtime.py \
+  tests/test_agent/test_planner.py \
+  tests/test_agent/test_executor.py \
+  tests/test_agent/test_codegen_guardrails.py \
+  tests/test_agent/test_import_registry.py \
+  tests/test_agent/test_knowledge_store.py -x
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  T14 T15 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_t14_t15_v1_20260703.json
+```
+
+The broad touched-suite pass reports `724 passed`; the offline `T14/T15` replay
+reports `2/2` passed expectations, first-attempt successes, zero actionable
+failures, and zero token usage. Remaining `QUA-1154` target is `T16`.
+
+The sixth implementation slice closes `T16` without LLM calls. Ordinary
+barrier-option text now receives a `single_barrier` payoff trait, distinct from
+`double_barrier`. The PDE and MC comparison lanes bind to
+`price_single_barrier_option_pde_result(...)` and
+`price_single_barrier_option_monte_carlo_result(...)`; the helper owns the
+absorbing barrier boundary, far vanilla boundary, single `BarrierMonitor`,
+notional convention, and deterministic discounting.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_single_barrier_option.py \
+  tests/test_agent/test_decomposition_ir.py::TestProductIR::test_ir_for_barrier_option_includes_promoted_analytical_support \
+  tests/test_agent/test_primitive_planning.py::test_builds_pde_plan_for_barrier_option_uses_grid_and_operator \
+  tests/test_agent/test_primitive_planning.py::test_builds_mc_plan_for_barrier_option_uses_single_barrier_helper \
+  tests/test_agent/test_backend_bindings.py::test_resolve_backend_binding_spec_uses_single_barrier_exact_helpers \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_barrier_helpers \
+  tests/test_agent/test_platform_requests.py::test_compile_build_request_preserves_single_barrier_exact_binding_for_t16_targets \
+  tests/test_agent/test_import_registry.py::test_single_barrier_helpers_are_visible_to_import_registry \
+  tests/test_agent/test_codegen_guardrails.py::test_barrier_family_support_approves_shared_barrier_primitives
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T16 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_t16_single_barrier_20260703.json
+```
+
+The focused regression pass reports `17 passed`; the offline `T16` replay
+reports `1/1` passed expectations, first-attempt success, zero actionable
+failures, and zero token usage. `T16` prices were `pde_barrier=23418.55`,
+`mc_barrier=23700.11`, and `rubinstein=23463.24`, with both comparison lanes
+within tolerance. All named `QUA-1154` pack-2 targets are now green and ready
+for a final pack replay.
+
+Final `QUA-1154` pack replay:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P002 --task-id P004 --task-id P006 --task-id P007 \
+  --task-id T14 --task-id T15 --task-id T16 \
+  --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_final_pack_20260703.json
+```
+
+The final replay reports `7/7` passed expectations in `200s`, all
+first-attempt successes, zero actionable failures, zero lessons/cookbooks
+captured, and zero token usage. The successful tasks are `P002`, `P004`,
+`P006`, `P007`, `T14`, `T15`, and `T16`.

@@ -42,6 +42,12 @@ Current composition rules:
   words. A terminal protection or autocall barrier is a trait of an
   autocallable, not evidence that the product should be narrowed to
   ``barrier_option``.
+- ordinary barrier-option requests add the ``single_barrier`` payoff trait
+  unless they explicitly name lower-and-upper or double-barrier structure. The
+  PDE lane prefers ``price_single_barrier_option_pde_result`` and the Monte
+  Carlo lane prefers ``price_single_barrier_option_monte_carlo_result`` from
+  ``trellis.models.single_barrier_option`` for zero-rebate single-barrier
+  comparison targets.
 - double-barrier requests add the ``double_barrier`` payoff trait. The PDE lane
   prefers ``trellis.models.double_barrier_option``'s
   ``price_double_barrier_option_pde_result`` and records the lower-level
@@ -697,6 +703,16 @@ the checked helper as owning its internal grid, operator, barrier monitor,
 terminal payoff, and discounting obligations, but it still rejects adapters
 that skip the helper or invent alternate raw inputs such as ``spot`` or barrier
 keywords.
+
+Single-barrier PDE and Monte Carlo targets follow the same helper-owned
+contract for the ordinary zero-rebate barrier cohort. When the compiled
+primitive plan selects ``price_single_barrier_option_pde_result`` or
+``price_single_barrier_option_monte_carlo_result``, a generated adapter should
+delegate directly to that helper with ``market_state`` plus the original spec.
+The helper owns the absorbing barrier boundary, far vanilla boundary,
+single ``BarrierMonitor``, notional convention, and deterministic discounting.
+Rebate-bearing barriers should remain on the analytical Rubinstein route until
+the PDE/MC rebate contract is implemented.
 
 Capped/floored cliquet comparisons follow a bounded version of that contract.
 The analytical target can use the checked capped/floored reset-return

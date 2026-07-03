@@ -473,6 +473,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Monte Carlo"].append(line)
         elif mod == "trellis.models.equity_option_pde":
             groups["Models — PDE"].append(line)
+        elif mod == "trellis.models.single_barrier_option":
+            groups["Models — Monte Carlo"].append(line)
         elif "trellis.models.trees" in mod:
             groups["Models — Trees"].append(line)
         elif "trellis.models.monte_carlo" in mod:
@@ -531,6 +533,7 @@ from trellis.models.analytical.barrier import barrier_option_price, down_and_out
 from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_hit_mask, double_barrier_path_payoff, double_barrier_state_payoff, resolve_double_barrier_inputs, terminal_double_barrier_payoff
 from trellis.models.autocallable import AutocallableMonteCarloConfig, AutocallableMonteCarloResult, AutocallableRuntimeSpec, autocallable_observation_steps, autocallable_path_payoffs, price_autocallable_monte_carlo, price_autocallable_monte_carlo_result, resolve_autocallable_inputs
 from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, DoubleBarrierMonteCarloResult, DoubleBarrierPDEConfig, DoubleBarrierPDEResult, price_double_barrier_option_monte_carlo, price_double_barrier_option_monte_carlo_result, price_double_barrier_option_pde, price_double_barrier_option_pde_result
+from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, SingleBarrierMonteCarloResult, SingleBarrierPDEConfig, SingleBarrierPDEResult, SingleBarrierSpec, price_single_barrier_option_monte_carlo, price_single_barrier_option_monte_carlo_result, price_single_barrier_option_pde, price_single_barrier_option_pde_result, resolve_single_barrier_inputs, single_barrier_state_payoff
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics

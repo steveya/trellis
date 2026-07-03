@@ -192,6 +192,23 @@ bindings:
             role: market_binding
       - when:
           payoff_family: barrier_option
+          payoff_traits: [single_barrier]
+        primitives:
+          - module: trellis.models.single_barrier_option
+            symbol: price_single_barrier_option_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.single_barrier_option
+            symbol: SingleBarrierMonteCarloConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.single_barrier_option
+            symbol: resolve_single_barrier_inputs
+            role: market_binding
+          - module: trellis.models.single_barrier_option
+            symbol: single_barrier_state_payoff
+            role: payoff_primitive
+      - when:
+          payoff_family: barrier_option
           payoff_traits: [double_barrier]
         primitives:
           - module: trellis.models.double_barrier_option
@@ -768,6 +785,20 @@ bindings:
           - module: trellis.models.pde.heston_adi
             symbol: price_heston_option_adi_pde_result
             role: route_helper
+      - when:
+          payoff_family: barrier_option
+          payoff_traits: [single_barrier]
+        primitives:
+          - module: trellis.models.single_barrier_option
+            symbol: price_single_barrier_option_pde_result
+            role: route_helper
+          - module: trellis.models.single_barrier_option
+            symbol: SingleBarrierPDEConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.single_barrier_option
+            symbol: resolve_single_barrier_inputs
+            role: market_binding
       - when:
           payoff_family: barrier_option
           payoff_traits: [double_barrier]

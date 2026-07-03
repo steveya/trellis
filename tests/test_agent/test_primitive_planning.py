@@ -98,13 +98,51 @@ def test_builds_pde_plan_for_barrier_option_uses_grid_and_operator():
     assert plan.primitive_plan.route == "pde_theta_1d"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
-    assert {"Grid", "BlackScholesOperator", "theta_method_1d"} <= primitive_symbols
     assert {
-        "trellis.models.pde.grid",
-        "trellis.models.pde.operator",
-        "trellis.models.pde.theta_method",
-    } <= primitive_modules
-    assert any("rannacher_timesteps" in note for note in plan.primitive_plan.notes)
+        "price_single_barrier_option_pde_result",
+        "SingleBarrierPDEConfig",
+        "resolve_single_barrier_inputs",
+    } <= primitive_symbols
+    assert "trellis.models.single_barrier_option" in primitive_modules
+    assert any("absorbing boundary" in note for note in plan.primitive_plan.notes)
+
+
+def test_builds_mc_plan_for_barrier_option_uses_single_barrier_helper():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=(
+            "trellis.models.single_barrier_option",
+            "trellis.models.monte_carlo.engine",
+            "trellis.models.processes.gbm",
+        ),
+        product_ir=decompose_to_ir(
+            "Barrier call: PDE absorbing BC vs MC discrete monitoring",
+            instrument_type="barrier_option",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "monte_carlo_paths"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "price_single_barrier_option_monte_carlo_result",
+        "SingleBarrierMonteCarloConfig",
+        "resolve_single_barrier_inputs",
+        "single_barrier_state_payoff",
+    } <= primitive_symbols
+    assert "price_double_barrier_option_monte_carlo_result" not in primitive_symbols
 
 
 def test_double_barrier_text_emits_trait_for_route_conditions():

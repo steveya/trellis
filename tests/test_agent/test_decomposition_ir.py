@@ -69,6 +69,9 @@ class TestProductIR:
         assert ir.payoff_family == "barrier_option"
         assert ir.exercise_style == "european"
         assert ir.model_family == "equity_diffusion"
+        assert "barrier" in ir.payoff_traits
+        assert "single_barrier" in ir.payoff_traits
+        assert "double_barrier" not in ir.payoff_traits
         assert set(ir.candidate_engine_families) >= {"analytical", "monte_carlo", "pde"}
         assert "analytical" in ir.route_families
         assert "pde_solver" in ir.route_families

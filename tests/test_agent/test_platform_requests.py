@@ -803,6 +803,46 @@ def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_fina
         assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
 
 
+@pytest.mark.parametrize(
+    "preferred_method,expected_route,expected_ref",
+    [
+        (
+            "pde_solver",
+            "pde_theta_1d",
+            "trellis.models.single_barrier_option.price_single_barrier_option_pde_result",
+        ),
+        (
+            "monte_carlo",
+            "monte_carlo_paths",
+            "trellis.models.single_barrier_option.price_single_barrier_option_monte_carlo_result",
+        ),
+    ],
+)
+def test_compile_build_request_preserves_single_barrier_exact_binding_for_t16_targets(
+    preferred_method,
+    expected_route,
+    expected_ref,
+):
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Barrier call: PDE absorbing BC vs MC discrete monitoring",
+        instrument_type="barrier_option",
+        preferred_method=preferred_method,
+    )
+
+    assert compiled.product_ir is not None
+    assert "single_barrier" in compiled.product_ir.payoff_traits
+    assert "double_barrier" not in compiled.product_ir.payoff_traits
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == expected_route
+    assert expected_ref in compiled.generation_plan.backend_exact_target_refs
+    authority = compiled.request.metadata["route_binding_authority"]
+    assert authority["authority_kind"] == "exact_backend_fit"
+    assert expected_ref in authority["backend_binding"]["exact_target_refs"]
+
+
 def test_compile_term_sheet_request_uses_quanto_semantic_contract():
     from trellis.agent.platform_requests import (
         compile_platform_request,

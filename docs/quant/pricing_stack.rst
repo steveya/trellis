@@ -243,6 +243,14 @@ The first migrated vanilla cases now use that boundary directly:
   summary, early-exercise control policy, Heston path-state coupling, and the
   target-specific PDE/Monte Carlo/transform blocker. These tasks remain
   expected honest blocks until those abstractions and solvers exist.
+- Single-barrier proof routes use
+  ``trellis.models.single_barrier_option`` for zero-rebate Black-Scholes
+  comparison targets. ``price_single_barrier_option_pde_result`` owns the
+  bounded one-dimensional grid with an absorbing barrier boundary and far
+  vanilla boundary; ``price_single_barrier_option_monte_carlo_result`` owns the
+  GBM path simulation, one ``BarrierMonitor``, notional scaling, and
+  deterministic discounting. Knock-in targets are derived by vanilla-minus-out
+  parity.
 - Double-barrier proof routes share
   ``trellis.models.analytical.support.barriers`` for lower/upper barrier specs,
   terminal payoff semantics, hit masks, and reduced-storage state payoffs.

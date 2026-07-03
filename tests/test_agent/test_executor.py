@@ -1924,6 +1924,14 @@ def test_deterministic_exact_binding_module_materializes_barrier_helper_with_tim
     ("helper_ref", "expected_call"),
     [
         (
+            "trellis.models.single_barrier_option.price_single_barrier_option_pde_result",
+            "price_single_barrier_option_pde_result(market_state, spec).price",
+        ),
+        (
+            "trellis.models.single_barrier_option.price_single_barrier_option_monte_carlo_result",
+            "price_single_barrier_option_monte_carlo_result(market_state, spec).price",
+        ),
+        (
             "trellis.models.double_barrier_option.price_double_barrier_option_pde_result",
             "price_double_barrier_option_pde_result(market_state, spec).price",
         ),
@@ -1933,7 +1941,7 @@ def test_deterministic_exact_binding_module_materializes_barrier_helper_with_tim
         ),
     ],
 )
-def test_deterministic_exact_binding_module_materializes_double_barrier_helpers(
+def test_deterministic_exact_binding_module_materializes_barrier_helpers(
     helper_ref,
     expected_call,
 ):

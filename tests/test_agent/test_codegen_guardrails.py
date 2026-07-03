@@ -286,8 +286,13 @@ def test_barrier_family_support_approves_shared_barrier_primitives():
     )
 
     assert "trellis.models.analytical.support.barriers" in plan.approved_modules
+    assert "trellis.models.single_barrier_option" in plan.approved_modules
     assert "trellis.models.double_barrier_option" in plan.approved_modules
     report = validate_generated_imports(
+        "from trellis.models.single_barrier_option import "
+        "SingleBarrierPDEConfig, SingleBarrierMonteCarloConfig, "
+        "price_single_barrier_option_pde_result, "
+        "price_single_barrier_option_monte_carlo_result\n"
         "from trellis.models.analytical.support.barriers import "
         "terminal_double_barrier_payoff, double_barrier_state_payoff\n"
         "from trellis.models.double_barrier_option import "

@@ -4161,6 +4161,12 @@ def _deterministic_exact_binding_evaluate_body(
             ")\n"
             "return spec.notional * price"
         ),
+        "trellis.models.single_barrier_option.price_single_barrier_option_pde_result": (
+            "return price_single_barrier_option_pde_result(market_state, spec).price"
+        ),
+        "trellis.models.single_barrier_option.price_single_barrier_option_monte_carlo_result": (
+            "return price_single_barrier_option_monte_carlo_result(market_state, spec).price"
+        ),
         "trellis.models.double_barrier_option.price_double_barrier_option_pde_result": (
             "return price_double_barrier_option_pde_result(market_state, spec).price"
         ),

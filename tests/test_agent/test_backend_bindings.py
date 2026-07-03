@@ -312,6 +312,49 @@ def test_resolve_backend_binding_spec_uses_heston_adi_result_identity():
 
 
 @pytest.mark.parametrize(
+    "route_id,expected_ref,expected_market_binding",
+    [
+        (
+            "pde_theta_1d",
+            "trellis.models.single_barrier_option.price_single_barrier_option_pde_result",
+            "trellis.models.single_barrier_option.resolve_single_barrier_inputs",
+        ),
+        (
+            "monte_carlo_paths",
+            "trellis.models.single_barrier_option.price_single_barrier_option_monte_carlo_result",
+            "trellis.models.single_barrier_option.resolve_single_barrier_inputs",
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_single_barrier_exact_helpers(
+    route_id,
+    expected_ref,
+    expected_market_binding,
+):
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id(route_id, catalog)
+
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        ),
+        method="pde_solver" if route_id == "pde_theta_1d" else "monte_carlo",
+    )
+
+    assert resolved.binding_id == expected_ref
+    assert resolved.exact_target_refs == (expected_ref,)
+    assert resolved.market_binding_refs == (expected_market_binding,)
+
+
+@pytest.mark.parametrize(
     "product_ir,expected_route_family,expected_helper_refs,expected_kernel_refs",
     [
         pytest.param(
