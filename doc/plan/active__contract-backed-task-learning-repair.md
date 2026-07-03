@@ -382,3 +382,46 @@ closeout remains `5/5` passed expectations with `4` pricing successes, `1`
 honest block, `0` actionable failures, and zero token usage; bounded
 remediation reports `0` failures. PR creation for this slice is intentionally
 deferred under the current commits-only goal constraint.
+
+### 2026-07-03 F007 CDS exact-binding offline closure
+
+The next pending offline pack found one actionable failure:
+`F007` selected the single-name CDS analytical route and exact CDS helper
+surface, but offline execution still fell through to live LLM generation
+instead of materializing a thin deterministic helper-backed wrapper.
+
+The fix adds deterministic exact-binding materialization for CDS analytical and
+Monte Carlo route helpers. The generated adapter builds the CDS schedule from
+`CDSSpec`, requires `market_state.credit_curve` and `market_state.discount`,
+and delegates to `price_cds_analytical(...)` or `price_cds_monte_carlo(...)`.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_analytical_wrapper \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_executor.py \
+  -k "deterministic_exact_binding_module or generate_skeleton_prefills_cds"
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id F007 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1131_f007_exact_binding_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id F004 --task-id F005 --task-id F007 --task-id F009 \
+  --task-id F010 --task-id F011 --task-id F012 --task-id F013 \
+  --task-id F014 --task-id F015 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1131_pending_pack1_fixed_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1131_pending_pack1_fixed_20260703.json \
+  --skip-platform-traces
+```
+
+The focused CDS wrapper tests report `2 passed`; the exact-binding executor
+slice reports `57 passed`; isolated `F007` reports `1/1` pricing success with
+zero LLM calls; the full pending pack reports `10/10` passed expectations,
+all first-attempt offline successes, zero actionable failures, and zero token
+usage; bounded remediation reports `0` failures.

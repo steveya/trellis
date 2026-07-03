@@ -2152,6 +2152,75 @@ def test_generate_skeleton_prefills_cds_exact_bindings_from_compiler_plan():
     assert "from trellis.models.black import black76_call, black76_put" not in skeleton
 
 
+def test_deterministic_exact_binding_module_materializes_cds_analytical_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.credit_default_swap.price_cds_analytical",),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="credit_default_swap",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cds"],
+        "Single-name CDS analytical exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.credit_default_swap import build_cds_schedule" in generated.code
+    assert "schedule = build_cds_schedule(" in generated.code
+    assert 'time_origin=getattr(spec, "valuation_date", None) or spec.start_date' in generated.code
+    assert "return price_cds_analytical(" in generated.code
+    assert "credit_curve=market_state.credit_curve" in generated.code
+    assert "discount_curve=market_state.discount" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.credit_default_swap.price_cds_monte_carlo",),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="credit_default_swap",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["cds_monte_carlo"],
+        "Single-name CDS Monte Carlo exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.credit_default_swap import build_cds_schedule" in generated.code
+    assert "schedule = build_cds_schedule(" in generated.code
+    assert "return price_cds_monte_carlo(" in generated.code
+    assert 'n_paths=getattr(spec, "n_paths", 250000)' in generated.code
+    assert "seed=42" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_extract_fragment_body_repairs_orphan_indentation():
     from trellis.agent.executor import _extract_fragment_body
 

@@ -3520,6 +3520,45 @@ def _basket_option_helper_kwargs(comparison_target: str | None) -> str:
     return f', comparison_target="{target}"'
 
 
+def _credit_default_swap_helper_body(refs: set[str]) -> str | None:
+    """Return a thin deterministic CDS wrapper for analytical or MC exact bindings."""
+    analytical_ref = "trellis.models.credit_default_swap.price_cds_analytical"
+    monte_carlo_ref = "trellis.models.credit_default_swap.price_cds_monte_carlo"
+    if monte_carlo_ref in refs:
+        helper = "price_cds_monte_carlo"
+        helper_extra = ',\n    n_paths=getattr(spec, "n_paths", 250000) or 250000,\n    seed=42'
+    elif analytical_ref in refs:
+        helper = "price_cds_analytical"
+        helper_extra = ""
+    else:
+        return None
+
+    return textwrap.dedent(
+        f"""\
+        spec = self._spec
+        if market_state.credit_curve is None:
+            raise ValueError("market_state.credit_curve is required for CDS pricing")
+        if market_state.discount is None:
+            raise ValueError("market_state.discount is required for CDS pricing")
+        schedule = build_cds_schedule(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            spec.day_count,
+            time_origin=getattr(spec, "valuation_date", None) or spec.start_date,
+        )
+        return {helper}(
+            notional=spec.notional,
+            spread_quote=spec.spread,
+            recovery=spec.recovery,
+            schedule=schedule,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount{helper_extra},
+        )
+        """
+    ).rstrip()
+
+
 def _deterministic_exact_binding_evaluate_body(
     generation_plan,
     *,
@@ -3549,6 +3588,10 @@ def _deterministic_exact_binding_evaluate_body(
     }
     if normalized_target in target_helper_bodies:
         return target_helper_bodies[normalized_target]
+
+    cds_body = _credit_default_swap_helper_body(refs)
+    if cds_body is not None:
+        return cds_body
 
     if (
         comparison_target == "analytical"
@@ -4112,6 +4155,14 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_heston_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo"
+        )
+    if "price_cds_analytical(" in body:
+        imports.append(
+            "from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical"
+        )
+    if "price_cds_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo"
         )
     return tuple(imports)
 
