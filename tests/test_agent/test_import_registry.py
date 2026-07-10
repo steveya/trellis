@@ -98,6 +98,27 @@ def test_counterparty_cva_helpers_are_visible_to_import_registry():
         assert symbol in registry_text
 
 
+def test_credit_index_option_helpers_are_visible_to_import_registry():
+    module = "trellis.models.credit_index_option"
+    symbols = {
+        "CreditIndexOptionSpec",
+        "price_credit_index_option_black_on_spread",
+        "price_credit_index_option_monte_carlo",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
 def test_variance_swap_monte_carlo_helper_is_visible_to_import_registry():
     module = "trellis.models.variance_swap"
     symbols = {

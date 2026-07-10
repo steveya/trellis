@@ -659,6 +659,21 @@ def test_classify_semantic_gap_treats_wrong_way_cva_as_correlated_default_shape(
     assert "wrong_way_cva_binding_helper" in report.missing_binding_helpers
 
 
+def test_classify_semantic_gap_treats_credit_index_option_as_spread_contract():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "Credit index option: Black on spread vs MC",
+        instrument_type="credit_index_option",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+    assert "forward_spread" in report.missing_contract_fields
+    assert "spread_volatility" in report.missing_contract_fields
+    assert "credit_index_option_binding_helper" in report.missing_binding_helpers
+
+
 @pytest.mark.parametrize(
     ("description", "instrument_type", "semantic_id"),
     [

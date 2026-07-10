@@ -66,6 +66,7 @@ from trellis.agent.task_manifests import (
     load_negative_tasks as load_negative_task_manifest,
     load_pricing_tasks as load_pricing_task_manifests,
 )
+from trellis.models.credit_index_option import CreditIndexOptionSpec
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -634,6 +635,48 @@ class ProofInterestRateSwapWrongWayCVAPayoff(_ProofCounterpartyCVABasePayoff):
         return float(price_interest_rate_swap_wrong_way_cva(market_state, **kwargs))
 
 
+class _ProofCreditIndexOptionBasePayoff:
+    """Credit-index proof adapter over bounded spread-option helpers."""
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve"}
+
+    def __init__(self, spec: CreditIndexOptionSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> CreditIndexOptionSpec:
+        return self._spec
+
+
+class ProofCreditIndexBlackOnSpreadPayoff(_ProofCreditIndexOptionBasePayoff):
+    """Credit index option target: Black-76 on quoted forward spread."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.credit_index_option import (
+            price_credit_index_option_black_on_spread,
+        )
+
+        return float(price_credit_index_option_black_on_spread(market_state, self._spec))
+
+
+class ProofCreditIndexMonteCarloPayoff(_ProofCreditIndexOptionBasePayoff):
+    """Credit index option target: antithetic lognormal spread MC."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.credit_index_option import price_credit_index_option_monte_carlo
+
+        return float(
+            price_credit_index_option_monte_carlo(
+                market_state,
+                self._spec,
+                n_paths=65_536,
+                seed=55,
+            )
+        )
+
+
 _PROOF_AMERICAN_LSM_TARGETS: dict[str, type] = {
     "polynomial": ProofAmericanLSMPolynomialPayoff,
     "laguerre": ProofAmericanLSMLaguerrePayoff,
@@ -642,7 +685,7 @@ _PROOF_AMERICAN_LSM_TARGETS: dict[str, type] = {
     "high_step_tree_2000": ProofAmericanHighStepTreePayoff,
 }
 
-_PROOF_COUNTERPARTY_TARGETS: dict[str, dict[str, type]] = {
+_PROOF_DETERMINISTIC_TARGETS: dict[str, dict[str, type]] = {
     "T52": {
         "mc_cva": ProofInterestRateSwapMCVAPayoff,
         "analytical_cva_approx": ProofInterestRateSwapAnalyticalCVAApproxPayoff,
@@ -650,6 +693,10 @@ _PROOF_COUNTERPARTY_TARGETS: dict[str, dict[str, type]] = {
     "T54": {
         "correlated_cva": ProofInterestRateSwapWrongWayCVAPayoff,
         "independent_cva": ProofInterestRateSwapIndependentCVAPayoff,
+    },
+    "T55": {
+        "black_on_spread": ProofCreditIndexBlackOnSpreadPayoff,
+        "mc_credit_index": ProofCreditIndexMonteCarloPayoff,
     },
 }
 
@@ -1270,7 +1317,7 @@ def _proof_legacy_comparison_build_result(
     if task_id == "T27":
         payoff_cls = _PROOF_AMERICAN_LSM_TARGETS.get(target.target_id)
     else:
-        payoff_cls = _PROOF_COUNTERPARTY_TARGETS.get(task_id, {}).get(target.target_id)
+        payoff_cls = _PROOF_DETERMINISTIC_TARGETS.get(task_id, {}).get(target.target_id)
     if payoff_cls is None:
         return None
 

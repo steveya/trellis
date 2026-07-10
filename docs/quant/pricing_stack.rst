@@ -316,6 +316,12 @@ The first migrated vanilla cases now use that boundary directly:
   discount/credit inputs, tranche bounds or portfolio horizon, and
   dependence-family controls without exposing the raw scalar copula kernels as
   the public route helper
+- bounded credit-index spread-option comparisons use
+  ``trellis.models.credit_index_option``. The Black-on-spread helper and the
+  antithetic lognormal MC helper share one ``CreditIndexOptionSpec`` carrying
+  forward spread, strike spread, spread volatility, index annuity, discounting,
+  and loss convention. This is a spread-option task helper, not an index-loss
+  curve, tranche, or base-correlation model.
 - capped/floored equity cliquet comparisons now have bounded analytical and
   Monte Carlo helper surfaces: the analytical path integrates reset returns
   with local/global caps and floors, while the Monte Carlo path delegates

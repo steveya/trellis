@@ -468,6 +468,19 @@ def classify_semantic_gap(
             )
         )
         missing_binding_helpers.append("wrong_way_cva_binding_helper")
+    if cues["credit_index_option"]:
+        missing_contract_fields.extend(
+            (
+                "forward_spread",
+                "strike_spread",
+                "spread_volatility",
+                "index_annuity",
+                "loss_convention",
+            )
+        )
+        missing_market_inputs.append("discount_curve")
+        missing_binding_helpers.append("credit_index_option_binding_helper")
+        missing_knowledge_artifacts.append("semantic_contract_lesson")
     if cues["schedule"]:
         missing_contract_fields.append("observation_schedule")
         missing_runtime_primitives.append("generate_schedule")
@@ -775,6 +788,16 @@ def _semantic_cues(normalized_text: str) -> dict[str, bool]:
                 "default exposure correlation",
             ),
         ),
+        "credit_index_option": _contains_any(
+            normalized_text,
+            (
+                "credit index option",
+                "black on spread",
+                "black_on_spread",
+                "mc_credit_index",
+                "credit_index_option",
+            ),
+        ),
         "credit": _contains_any(
             normalized_text,
             (
@@ -931,6 +954,13 @@ def _propose_binding_helpers(report: SemanticGapReport) -> list[str]:
         suggestions.append("trellis.analytics.counterparty.price_interest_rate_swap_cva_monte_carlo")
     if "wrong_way_cva_binding_helper" in report.missing_binding_helpers:
         suggestions.append("trellis.analytics.counterparty.price_interest_rate_swap_wrong_way_cva")
+    if "credit_index_option_binding_helper" in report.missing_binding_helpers:
+        suggestions.extend(
+            (
+                "trellis.models.credit_index_option.price_credit_index_option_black_on_spread",
+                "trellis.models.credit_index_option.price_credit_index_option_monte_carlo",
+            )
+        )
     return suggestions
 
 

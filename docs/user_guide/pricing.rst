@@ -1373,6 +1373,39 @@ wins; the materialized surface is the bounded fallback for exact
 maturity/attachment/detachment nodes produced by the homogeneous calibration
 workflow.
 
+Credit-index spread options have a bounded helper surface for task/eval
+comparisons:
+
+.. code-block:: python
+
+   from trellis.models.credit_index_option import (
+       CreditIndexOptionSpec,
+       price_credit_index_option_black_on_spread,
+       price_credit_index_option_monte_carlo,
+   )
+
+   spec = CreditIndexOptionSpec(
+       notional=10_000_000.0,
+       forward_spread=0.0125,
+       strike_spread=0.0100,
+       spread_volatility=0.30,
+       maturity_years=1.25,
+       index_annuity=4.2,
+       option_type="call",
+   )
+
+   black = price_credit_index_option_black_on_spread(market_state, spec)
+   mc = price_credit_index_option_monte_carlo(
+       market_state,
+       spec,
+       n_paths=65_536,
+       seed=55,
+   )
+
+This helper treats the credit index option as an option on quoted forward
+spread times an explicit index annuity. It is not a replacement for index
+curve calibration, tranche-loss modeling, or base-correlation workflows.
+
 Missing Data Errors
 -------------------
 

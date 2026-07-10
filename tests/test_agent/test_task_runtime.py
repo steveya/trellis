@@ -1990,6 +1990,60 @@ def test_sparse_wrong_way_proof_row_uses_independent_cva_reference(monkeypatch, 
     assert result["method_results"]["independent_cva"]["reference_target"] is True
 
 
+def test_sparse_credit_index_option_row_uses_deterministic_spread_targets(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T55"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T55 credit-index proof targets should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_headline": "T55 deterministic credit-index proof passed.",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["attempts"] == 0
+    assert result["instrument_type"] == "credit_index_option"
+    assert result["comparison_targets"] == ["black_on_spread", "mc_credit_index"]
+    assert result["cross_validation"]["status"] == "passed"
+    assert set(result["cross_validation"]["successful_targets"]) == {
+        "black_on_spread",
+        "mc_credit_index",
+    }
+    assert {
+        target_id: payload["payoff_class"]
+        for target_id, payload in result["method_results"].items()
+    } == {
+        "black_on_spread": "ProofCreditIndexBlackOnSpreadPayoff",
+        "mc_credit_index": "ProofCreditIndexMonteCarloPayoff",
+    }
+
+
 def test_cross_validate_comparison_task_prices_reused_fx_modules():
     from trellis.agent.task_runtime import (
         ComparisonBuildTarget,

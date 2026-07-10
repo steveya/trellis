@@ -162,6 +162,13 @@ a directional ``>=`` relation.  Directional comparisons should be represented
 with ``cross_validate.reference_target`` plus per-target ``relations`` rather
 than forced through the median/equality harness.
 
+The same deterministic-proof pattern applies to ``T55``.  The credit-index
+option row binds ``black_on_spread`` and ``mc_credit_index`` to
+``trellis.models.credit_index_option`` over a shared
+``CreditIndexOptionSpec``.  Keep future spread-option tasks on that explicit
+contract surface instead of asking generated adapters to infer spread forward,
+spread volatility, annuity, and loss-convention fields from a sparse title.
+
 The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 
 - ``make gate-pr`` for PR-ready validation
