@@ -467,6 +467,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Analytical"].append(line)
         elif "trellis.models.resolution" in mod:
             groups["Models — Analytical"].append(line)
+        elif mod == "trellis.models.sabr_option":
+            groups["Models — Analytical"].append(line)
         elif mod == "trellis.models.equity_option_tree":
             groups["Models — Trees"].append(line)
         elif mod == "trellis.models.equity_option_monte_carlo":
@@ -547,6 +549,7 @@ from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, 
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
+from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
 
 ### Models — Trees
 from trellis.models.equity_option_tree import build_vanilla_equity_lattice, compile_vanilla_equity_contract_spec, price_cev_option_tree, price_vanilla_equity_option_on_lattice, price_vanilla_equity_option_tree, resolve_vanilla_equity_tree_inputs

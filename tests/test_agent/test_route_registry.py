@@ -791,6 +791,13 @@ class TestMonteCarloPathsRoutes:
         exercise_style="european",
         model_family="stochastic_volatility",
     )
+    SABR_IR = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("sabr",),
+        exercise_style="european",
+        model_family="sabr",
+    )
     VARIANCE_SWAP_IR = ProductIR(
         instrument="variance_swap",
         payoff_family="variance_swap",
@@ -882,6 +889,18 @@ class TestMonteCarloPathsRoutes:
             (
                 "trellis.models.merton_jump_diffusion_option",
                 "price_merton_jump_diffusion_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_sabr_primitives_use_forward_option_monte_carlo_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        new_prims = resolve_route_primitives(spec, self.SABR_IR)
+        expected_prims = {
+            (
+                "trellis.models.sabr_option",
+                "price_sabr_forward_option_monte_carlo",
                 "route_helper",
             ),
         }
@@ -1308,6 +1327,14 @@ class TestAnalyticalRoutes:
         model_family="interest_rate",
     )
     VANILLA_IR = ProductIR(instrument="european_option", payoff_family="vanilla_option", exercise_style="european")
+    SABR_IR = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("sabr",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="sabr",
+    )
     BARRIER_IR = ProductIR(
         instrument="barrier_option",
         payoff_family="barrier_option",
@@ -1375,6 +1402,14 @@ class TestAnalyticalRoutes:
         "analytical",
         market_data={"discount_curve", "black_vol_surface"},
     )
+    SABR_PLAN = _make_plan(
+        "analytical",
+        market_data={"discount_curve", "model_parameters", "spot"},
+    )
+    SABR_PLAN_WITH_BLACK_SURFACE = _make_plan(
+        "analytical",
+        market_data={"black_vol_surface", "discount_curve", "model_parameters", "spot"},
+    )
 
     def test_analytical_black76_absorbed_exotics_do_not_match_by_instrument(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
@@ -1392,6 +1427,23 @@ class TestAnalyticalRoutes:
             registry, "analytical", self.SWAPTION_IR, pricing_plan=self.BLACK76_PLAN,
         )
         assert new == ("analytical_black76",)
+
+    def test_sabr_candidate_uses_hagan_route_without_black_vol_surface(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.SABR_IR, pricing_plan=self.SABR_PLAN,
+        )
+        assert "sabr_hagan_analytical" in new
+        assert "analytical_black76" not in new
+
+    def test_sabr_candidate_excludes_black76_when_black_surface_is_ambient(self, registry):
+        new = _new_routes(
+            registry,
+            "analytical",
+            self.SABR_IR,
+            pricing_plan=self.SABR_PLAN_WITH_BLACK_SURFACE,
+        )
+        assert "sabr_hagan_analytical" in new
+        assert "analytical_black76" not in new
 
     def test_barrier_candidate(self, registry):
         new = _new_routes(
@@ -1470,6 +1522,22 @@ class TestAnalyticalRoutes:
         assert "black76_call" in prim_symbols
         assert "black76_put" in prim_symbols
         assert "year_fraction" in prim_symbols
+
+    def test_sabr_hagan_primitives_with_product_ir(self, registry):
+        spec = [r for r in registry.routes if r.id == "sabr_hagan_analytical"][0]
+        new_prims = resolve_route_primitives(spec, self.SABR_IR)
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.sabr_option",
+                "price_sabr_forward_option_hagan",
+                "route_helper",
+            ),
+            (
+                "trellis.models.sabr_option",
+                "resolve_sabr_forward_option_inputs",
+                "market_binding",
+            ),
+        }
 
     def test_default_primitives_without_vanilla(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
@@ -2215,6 +2283,7 @@ class TestFallbackRoutes:
         assert transform.admissibility.supported_characteristic_families == (
             "gbm_log_spot",
             "heston_log_spot",
+            "merton_log_spot",
         )
 
     def test_transform_route_admissibility_accepts_european_holder_control_surface(self, registry):
@@ -2443,6 +2512,7 @@ class TestEngineFamilyCoverage:
         "exercise_lattice": "lattice",
         "rate_tree_backward_induction": "lattice",
         "cev_spot_lattice": "lattice",
+        "sabr_hagan_analytical": "analytical",
         "analytical_black76": "analytical",
         # QUA-915: collapsed ZCB-option family takes analytical as its
         # umbrella engine_family; the lattice helper is reached through

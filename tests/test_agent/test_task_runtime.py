@@ -975,6 +975,24 @@ def test_task_to_instrument_type_uses_merton_target_hint_for_vanilla_option():
     assert resolution.source == "task.title_or_description"
 
 
+def test_task_to_instrument_type_uses_sabr_hagan_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T34",
+            "title": "SABR MC simulation vs Hagan implied vol",
+            "cross_validate": {
+                "internal": ["sabr_mc", "sabr_hagan_analytical"],
+                "external": ["quantlib"],
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
 def test_comparison_harness_maps_turnbull_wakeman_target_to_analytical():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 

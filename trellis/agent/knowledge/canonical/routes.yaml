@@ -392,6 +392,17 @@ routes:
         notes:
           - "Use the Merton jump-diffusion terminal MC helper with `market_state` and `spec`; do not instantiate generic GBM or hand-code jump aggregation in adapters."
       - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [sabr]
+        primitives:
+          - module: trellis.models.sabr_option
+            symbol: price_sabr_forward_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the SABR forward-option MC helper with `market_state` and `spec`; it owns SABR parameter binding and correlated forward/vol simulation."
+      - when:
           payoff_family: autocallable
         primitives:
           - module: trellis.models.autocallable
@@ -829,6 +840,44 @@ routes:
   # Analytical routes (fallback)
   # -----------------------------------------------------------------------
 
+  - id: sabr_hagan_analytical
+    engine_family: analytical
+    route_family: analytical
+    status: promoted
+    confidence: 1.0
+    compatibility_alias_policy: internal_only
+    match:
+      methods: [analytical]
+      required_market_data: [model_parameters]
+      payoff_family: [vanilla_option]
+      exercise: [european]
+      model_family: [sabr]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov]
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.sabr_option
+        symbol: price_sabr_forward_option_hagan
+        role: route_helper
+      - module: trellis.models.sabr_option
+        symbol: resolve_sabr_forward_option_inputs
+        role: market_binding
+        required: false
+    adapters: []
+    notes:
+      - "Use the Hagan SABR helper for SABR model-family vanilla forward-option targets; do not substitute a pre-bumped Black vol surface unless a calibration step explicitly produced one."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        model_parameters: [market_state.model_parameters, market_state.model_parameter_sets]
+        spot: [market_state.spot, market_state.underlier_spots]
+
   - id: analytical_black76
     engine_family: analytical
     route_family: analytical
@@ -879,6 +928,7 @@ routes:
       required_market_data: [black_vol_surface]
       payoff_family: [vanilla_option, basket_option, asian_option, swaption, barrier_option, digital_option, lookback_option, chooser_option, compound_option, cliquet_option, variance_swap]
       exercise: [european, bermudan, none]
+      model_family: [generic, equity, equity_diffusion, interest_rate, short_rate]
       exclude_required_market_data: [fx_rates]
     admissibility:
       control_styles: [identity, holder_max]

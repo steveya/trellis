@@ -95,6 +95,15 @@ SABR
    \text{corr} = \rho
 
 Hagan approximation gives closed-form implied vol :math:`\sigma_{\text{impl}}(K)`.
+The checked European forward-style option support lives in
+``trellis.models.sabr_option``. That helper resolves SABR parameters from
+``spec.sabr``, named ``market_state.model_parameter_sets``, default
+``market_state.model_parameters``, or synthetic-market provenance, using
+canonical keys ``alpha``, ``beta``, ``rho``, and ``nu``. It exposes a Hagan
+Black76 price and an Euler Monte Carlo comparator under the same runtime
+contract. The helper consumes model parameters directly; it does not infer a
+SABR process from a Black vol surface unless an upstream calibration workflow
+has explicitly produced the SABR parameter pack.
 
 Local Volatility
 ----------------
@@ -147,6 +156,8 @@ Implementation
    :members:
 .. autoclass:: trellis.models.processes.sabr.SABRProcess
    :members:
+.. autofunction:: trellis.models.sabr_option.price_sabr_forward_option_hagan
+.. autofunction:: trellis.models.sabr_option.price_sabr_forward_option_monte_carlo
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_monte_carlo
 

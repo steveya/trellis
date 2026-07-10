@@ -592,6 +592,34 @@ def test_resolve_backend_binding_spec_uses_merton_jump_diffusion_helpers():
     )
 
 
+def test_resolve_backend_binding_spec_uses_sabr_forward_option_helpers():
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("sabr_hagan_analytical", catalog)
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("sabr",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        schedule_dependence=False,
+        model_family="sabr",
+    )
+
+    assert analytical is not None
+    assert monte_carlo is not None
+
+    analytical_resolved = resolve_backend_binding_spec(analytical, product_ir=product_ir)
+    mc_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+
+    assert analytical_resolved.helper_refs == (
+        "trellis.models.sabr_option.price_sabr_forward_option_hagan",
+    )
+    assert mc_resolved.helper_refs == (
+        "trellis.models.sabr_option.price_sabr_forward_option_monte_carlo",
+    )
+
+
 def test_resolve_backend_binding_spec_keeps_generic_multi_asset_baskets_off_two_asset_exact_helpers():
     catalog = load_backend_binding_catalog()
     analytical = find_backend_binding_by_route_id("analytical_black76", catalog)

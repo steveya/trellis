@@ -1920,6 +1920,15 @@ def _validate_build(
         str(getattr(product_ir, "model_family", "") or "").strip().lower() == "jump_diffusion"
         or any("merton_jump_diffusion_option" in str(ref) for ref in exact_binding_refs)
     )
+    requires_sabr_model_parameters = (
+        str(getattr(product_ir, "model_family", "") or "").strip().lower() == "sabr"
+        or any("sabr_option" in str(ref) for ref in exact_binding_refs)
+        or str(getattr(getattr(compiled_request, "comparison_spec", None), "target_name", "") or "")
+        .strip()
+        .lower()
+        .replace("-", "_")
+        in {"sabr_mc", "sabr_hagan_analytical"}
+    )
 
     # Try to instantiate the payoff with default test parameters
     try:
@@ -2015,7 +2024,7 @@ def _validate_build(
             from trellis.curves.credit_curve import CreditCurve
 
             payload["credit_curve"] = CreditCurve.flat(0.02)
-        if "model_parameters" in effective_requirements:
+        if "model_parameters" in effective_requirements or requires_sabr_model_parameters:
             product_model_family = str(getattr(product_ir, "model_family", "") or "").lower()
             if "heston" in itype or product_model_family == "stochastic_volatility":
                 from trellis.models.processes.heston import build_heston_parameter_payload
@@ -2032,6 +2041,16 @@ def _validate_build(
                 )
                 payload["model_parameters"] = heston_payload
                 payload["model_parameter_sets"] = {"heston_validation": heston_payload}
+            elif product_model_family == "sabr" or requires_sabr_model_parameters:
+                sabr_payload = {
+                    "family": "sabr",
+                    "alpha": vol,
+                    "beta": 0.5,
+                    "rho": -0.2,
+                    "nu": 0.35,
+                }
+                payload["model_parameters"] = {"sabr": sabr_payload}
+                payload["model_parameter_sets"] = {"sabr_validation": sabr_payload}
             else:
                 payload["model_parameters"] = {"quanto_correlation": corr}
         if "jump_parameters" in effective_requirements or requires_merton_jump_parameters:
@@ -3784,6 +3803,16 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_merton_jump_diffusion_option_transform("
             'market_state, spec, method="cos")'
         ),
+        "sabr_mc": (
+            "return price_sabr_forward_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'n_steps=getattr(spec, "n_steps", 96), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "sabr_hagan_analytical": (
+            "return price_sabr_forward_option_hagan(market_state, spec)"
+        ),
         "mc_variance_swap": (
             "return price_equity_variance_swap_monte_carlo("
             "market_state, spec, "
@@ -4465,6 +4494,11 @@ def _materialize_deterministic_exact_binding_module(
     )
     if "price_merton_jump_diffusion_option_" in body:
         rendered = _merge_generated_requirements(rendered, ("jump_parameters",))
+    if "price_sabr_forward_option_" in body:
+        rendered = _set_generated_requirements(
+            rendered,
+            ("discount_curve", "model_parameters"),
+        )
     if benchmark_outputs_block is not None:
         rendered = (
             rendered.rstrip("\n")
@@ -4501,6 +4535,18 @@ def _merge_generated_requirements(source: str, extra_requirements: Sequence[str]
     return re.sub(pattern, _replace, source, count=1)
 
 
+def _set_generated_requirements(source: str, requirements: Sequence[str]) -> str:
+    """Replace deterministic skeleton market requirements with a route contract."""
+    required = {str(requirement) for requirement in requirements if str(requirement)}
+    pattern = (
+        r"(    def requirements\(self\) -> set\[str\]:\n"
+        r"        return \{)([^}]*)"
+        r"(\})"
+    )
+    rendered = ", ".join(f'"{item}"' for item in sorted(required))
+    return re.sub(pattern, rf"\1{rendered}\3", source, count=1)
+
+
 def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     """Return extra imports required by deterministic exact-binding bodies.
 
@@ -4525,6 +4571,15 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.merton_jump_diffusion_option import "
             "price_merton_jump_diffusion_option_transform"
+        )
+    if "price_sabr_forward_option_hagan(" in body:
+        imports.append(
+            "from trellis.models.sabr_option import price_sabr_forward_option_hagan"
+        )
+    if "price_sabr_forward_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.sabr_option import "
+            "price_sabr_forward_option_monte_carlo"
         )
     if "price_cds_analytical(" in body:
         imports.append(

@@ -2566,6 +2566,7 @@ def _traits_from_text(desc: str) -> tuple[str, ...]:
         "early_exercise": ("early exercise",),
         "stochastic_vol": ("heston", "stochastic vol", "stochastic_vol"),
         "jump_diffusion": ("jump", "jump_diffusion", "merton"),
+        "sabr": ("sabr", "hagan"),
         "mean_reversion": ("mean_reversion", "mean reversion", "short rate"),
     }
     traits: set[str] = set()
@@ -3018,6 +3019,8 @@ def _model_family_for(
         return "stochastic_volatility"
     if "jump_diffusion" in payoff_traits:
         return "jump_diffusion"
+    if "sabr" in payoff_traits or "sabr" in desc:
+        return "sabr"
     if instrument in {"swap", "swaption", "bermudan_swaption", "callable_bond", "puttable_bond", "bond", "cap", "floor", "zcb_option"}:
         return "interest_rate"
     if method == "copula" or instrument in {"cdo", "nth_to_default", "credit_loss_distribution"}:
@@ -3066,6 +3069,10 @@ def _candidate_engine_families_for(
         families.append("pde")
     if model_family == "stochastic_volatility" and "monte_carlo" not in families:
         families.append("monte_carlo")
+    if model_family == "sabr":
+        for family in ("analytical", "monte_carlo"):
+            if family not in families:
+                families.append(family)
     return tuple(families)
 
 
@@ -3103,6 +3110,41 @@ def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> Prod
                     (
                         *ir.reusable_primitives,
                         "trellis.models.merton_jump_diffusion_option",
+                    )
+                )
+            ),
+        )
+
+    if ir.instrument == "european_option" and ("sabr" in desc or "hagan" in desc):
+        payoff_traits = list(ir.payoff_traits)
+        for trait in ("sabr", "discounting", "model_parameter_dependence"):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+        candidate_engine_families = list(ir.candidate_engine_families)
+        for family in ("analytical", "monte_carlo"):
+            if family not in candidate_engine_families:
+                candidate_engine_families.append(family)
+        route_families = list(ir.route_families)
+        for family in ("analytical", "monte_carlo"):
+            if family not in route_families:
+                route_families.append(family)
+        required_market_data = set(ir.required_market_data)
+        required_market_data.update({"discount_curve", "model_parameters", "spot"})
+        return replace(
+            ir,
+            payoff_traits=tuple(payoff_traits),
+            model_family="sabr",
+            candidate_engine_families=tuple(candidate_engine_families),
+            route_families=tuple(route_families),
+            required_market_data=frozenset(
+                normalize_market_data_requirements(required_market_data)
+            ),
+            reusable_primitives=tuple(
+                dict.fromkeys(
+                    (
+                        *ir.reusable_primitives,
+                        "trellis.models.sabr_option",
+                        "trellis.models.processes.sabr",
                     )
                 )
             ),

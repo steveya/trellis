@@ -197,6 +197,14 @@ bindings:
             symbol: price_merton_jump_diffusion_option_monte_carlo
             role: route_helper
       - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [sabr]
+        primitives:
+          - module: trellis.models.sabr_option
+            symbol: price_sabr_forward_option_monte_carlo
+            role: route_helper
+      - when:
           payoff_family: autocallable
         primitives:
           - module: trellis.models.autocallable
@@ -708,6 +716,19 @@ bindings:
       - module: trellis.models.fx_vanilla
         symbol: price_fx_vanilla_analytical
         role: route_helper
+
+  - route_id: sabr_hagan_analytical
+    engine_family: analytical
+    route_family: analytical
+    compatibility_alias_policy: internal_only
+    primitives:
+      - module: trellis.models.sabr_option
+        symbol: price_sabr_forward_option_hagan
+        role: route_helper
+      - module: trellis.models.sabr_option
+        symbol: resolve_sabr_forward_option_inputs
+        role: market_binding
+        required: false
 
   - route_id: transform_fft
     engine_family: fft_pricing

@@ -684,6 +684,17 @@ and ``merton_mc`` binds to the sibling terminal Monte Carlo helper. The
 evidence. Validation fixtures must include those jump parameters instead of
 trying to reinterpret the task as an ordinary Black-vol vanilla route.
 
+SABR comparison targets keep the same product-shape discipline. A task such as
+``sabr_mc`` versus ``sabr_hagan_analytical`` remains a European vanilla
+forward-style option in ``ProductIR`` and narrows by ``model_family=sabr`` plus
+``model_parameters``. The Hagan target binds through
+``trellis.models.sabr_option.price_sabr_forward_option_hagan`` and the MC
+target binds through
+``trellis.models.sabr_option.price_sabr_forward_option_monte_carlo``. The
+generated wrapper must not inherit a ``black_vol_surface`` requirement from the
+generic Black76 skeleton; SABR parameters are the runtime evidence unless a
+separate calibration problem explicitly owns the Black-vol-to-SABR conversion.
+
 The Monte Carlo lane now follows the same model-family separation for European
 Heston vanilla options. ``euler_heston`` and ``heston_mc`` targets bind to
 ``trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo``
