@@ -477,6 +477,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Monte Carlo"].append(line)
         elif mod == "trellis.models.lookback_option":
             groups["Models — Monte Carlo"].append(line)
+        elif mod == "trellis.models.variance_swap":
+            groups["Models — Monte Carlo"].append(line)
         elif mod == "trellis.models.single_barrier_option":
             groups["Models — Monte Carlo"].append(line)
         elif "trellis.models.trees" in mod:
@@ -564,6 +566,7 @@ from trellis.models.monte_carlo.stochastic_vol import HestonMonteCarloProblem, H
 from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
 from trellis.models.asian_option import ArithmeticAsianOptionAnalyticalResult, ArithmeticAsianOptionMonteCarloResult, AsianOptionMonteCarloResult, price_arithmetic_asian_option_analytical, price_arithmetic_asian_option_analytical_result, price_arithmetic_asian_option_monte_carlo, price_arithmetic_asian_option_monte_carlo_result, price_asian_option_monte_carlo, price_asian_option_monte_carlo_result
 from trellis.models.lookback_option import FixedLookbackMonteCarloResult, price_equity_fixed_lookback_option_monte_carlo, price_equity_fixed_lookback_option_monte_carlo_result
+from trellis.models.variance_swap import EquityVarianceSwapMonteCarloResult, ResolvedEquityVarianceSwapMonteCarloInputs, equity_variance_swap_outputs_monte_carlo, price_equity_variance_swap_monte_carlo, price_equity_variance_swap_monte_carlo_result, resolve_equity_variance_swap_monte_carlo_inputs
 from trellis.models.equity_option_monte_carlo import build_vanilla_equity_monte_carlo_problem, price_american_equity_option_lsm_monte_carlo, price_single_state_terminal_claim_monte_carlo_result, price_vanilla_equity_option_monte_carlo, price_vanilla_equity_option_monte_carlo_result, resolve_single_state_terminal_claim_monte_carlo_inputs, resolve_vanilla_equity_monte_carlo_inputs
 
 ### Models — QMC

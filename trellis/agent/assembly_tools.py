@@ -83,6 +83,10 @@ _VOL_MONOTONICITY_EXCLUDED_TRAITS = {
     "barrier",
 }
 
+_GENERIC_VOL_CHECK_EXCLUDED_INSTRUMENTS = {
+    "variance_swap",
+}
+
 
 @dataclass(frozen=True)
 class PrimitiveLookupResult:
@@ -352,6 +356,7 @@ def select_invariant_pack(
 
     if (
         normalized_instrument not in _CREDIT_INSTRUMENTS
+        and normalized_instrument not in _GENERIC_VOL_CHECK_EXCLUDED_INSTRUMENTS
         and not analytical_swaption_helper_regime
         and (
             normalized_instrument in _OPTION_LIKE_INSTRUMENTS

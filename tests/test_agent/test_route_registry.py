@@ -791,6 +791,19 @@ class TestMonteCarloPathsRoutes:
         exercise_style="european",
         model_family="stochastic_volatility",
     )
+    VARIANCE_SWAP_IR = ProductIR(
+        instrument="variance_swap",
+        payoff_family="variance_swap",
+        payoff_traits=(
+            "discounting",
+            "path_dependent",
+            "vol_surface_dependence",
+        ),
+        exercise_style="none",
+        state_dependence="path_dependent",
+        schedule_dependence=False,
+        model_family="generic",
+    )
     GENERIC_IR = ProductIR(
         instrument="path_dependent_note",
         payoff_family="path_dependent_generic",
@@ -822,6 +835,23 @@ class TestMonteCarloPathsRoutes:
                 "trellis.models.equity_option_monte_carlo",
                 "price_vanilla_equity_option_monte_carlo",
                 "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_variance_swap_primitives_use_realized_variance_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        new_prims = resolve_route_primitives(spec, self.VARIANCE_SWAP_IR)
+        expected_prims = {
+            (
+                "trellis.models.variance_swap",
+                "price_equity_variance_swap_monte_carlo",
+                "route_helper",
+            ),
+            (
+                "trellis.models.variance_swap",
+                "equity_variance_swap_outputs_monte_carlo",
+                "pricing_kernel",
             ),
         }
         assert _prim_set(new_prims) == expected_prims

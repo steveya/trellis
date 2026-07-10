@@ -722,6 +722,9 @@ def _semantic_cues(normalized_text: str) -> dict[str, bool]:
                 "european",
                 "vanilla",
                 "digital",
+                "variance swap",
+                "variance_swap",
+                "log contract",
             ),
         ),
         "credit": _contains_any(

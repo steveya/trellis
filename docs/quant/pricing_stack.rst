@@ -188,6 +188,14 @@ The first migrated vanilla cases now use that boundary directly:
   ``price_american_equity_option_lsm_monte_carlo(...)``. Thin adapters may
   delegate to that helper for Longstaff-Schwartz path simulation and exercise
   control instead of reimplementing GBM path construction in generated code.
+- equity variance-swap comparison targets now have a checked Monte Carlo
+  realised-variance route in ``trellis.models.variance_swap``. The MC helper
+  simulates annualised log-return variance under the market state's GBM
+  surface binding and reports both price and fair strike variance, while the
+  analytical route remains the log-contract style replication helper in
+  ``trellis.models.analytical.equity_exotics``. Variance swaps deliberately
+  skip the generic embedded-option flat-vega invariant; their proof contract is
+  price sanity plus cross-method fair-strike/price comparison, not option vega.
 - CEV European-vanilla proof targets have bounded helper surfaces for the
   retained legacy comparison task: ``price_cev_option_pde(...)`` composes the
   existing ``CEVOperator`` with the theta PDE solver, while

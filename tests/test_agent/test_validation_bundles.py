@@ -247,6 +247,20 @@ def test_execute_validation_bundle_skips_generic_vol_checks_for_explicit_replica
     assert execution.skipped_checks == ("check_vol_sensitivity", "check_vol_monotonicity")
 
 
+def test_select_validation_bundle_for_variance_swap_skips_generic_vol_checks():
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="variance_swap",
+        method="analytical",
+    )
+
+    assert bundle.bundle_id == "analytical:variance_swap"
+    assert "check_price_sanity" in bundle.checks
+    assert "check_vol_sensitivity" not in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
+
+
 def test_select_validation_bundle_for_quanto_option_includes_family_checks():
     from trellis.agent.validation_bundles import select_validation_bundle
 

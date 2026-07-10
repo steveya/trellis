@@ -1199,9 +1199,14 @@ def test_compile_build_request_routes_cap_strip_benchmarks_through_route_free_st
             "nth_to_default",
             "nth_to_default",
         ),
+        (
+            "Variance swap: MC replication vs analytical log contract",
+            "variance_swap",
+            "variance_swap",
+        ),
     ],
 )
-def test_compile_build_request_does_not_block_title_only_credit_builder_requests(
+def test_compile_build_request_does_not_block_title_only_known_builder_requests(
     description: str,
     instrument_type: str,
     expected_instrument: str,

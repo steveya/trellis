@@ -592,6 +592,18 @@ def test_classify_semantic_gap_treats_cds_as_credit_request():
     assert "credit_curve" in report.missing_market_inputs
 
 
+def test_classify_semantic_gap_treats_variance_swap_as_known_shape():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "Variance swap: MC replication vs analytical log contract",
+        instrument_type="variance_swap",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+
+
 @pytest.mark.parametrize(
     ("description", "instrument_type", "semantic_id"),
     [

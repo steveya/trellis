@@ -535,6 +535,35 @@ def test_resolve_backend_binding_spec_uses_exact_helpers_for_absorbed_black76_eq
     assert resolved.pricing_kernel_refs == expected_kernel_refs
 
 
+def test_resolve_backend_binding_spec_uses_variance_swap_monte_carlo_helper():
+    catalog = load_backend_binding_catalog()
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    product_ir = ProductIR(
+        instrument="variance_swap",
+        payoff_family="variance_swap",
+        payoff_traits=(
+            "discounting",
+            "path_dependent",
+            "vol_surface_dependence",
+        ),
+        exercise_style="none",
+        state_dependence="path_dependent",
+        schedule_dependence=False,
+        model_family="generic",
+    )
+
+    assert monte_carlo is not None
+
+    resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+
+    assert resolved.helper_refs == (
+        "trellis.models.variance_swap.price_equity_variance_swap_monte_carlo",
+    )
+    assert resolved.pricing_kernel_refs == (
+        "trellis.models.variance_swap.equity_variance_swap_outputs_monte_carlo",
+    )
+
+
 def test_resolve_backend_binding_spec_keeps_generic_multi_asset_baskets_off_two_asset_exact_helpers():
     catalog = load_backend_binding_catalog()
     analytical = find_backend_binding_by_route_id("analytical_black76", catalog)

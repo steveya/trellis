@@ -163,6 +163,17 @@ bindings:
         role: route_helper
     conditional_primitives:
       - when:
+          payoff_family: variance_swap
+          exercise_style: [none]
+        primitives:
+          - module: trellis.models.variance_swap
+            symbol: price_equity_variance_swap_monte_carlo
+            role: route_helper
+          - module: trellis.models.variance_swap
+            symbol: equity_variance_swap_outputs_monte_carlo
+            role: pricing_kernel
+            required: false
+      - when:
           payoff_family: credit_loss_distribution
           model_family: [credit_copula]
         primitives:

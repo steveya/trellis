@@ -357,6 +357,20 @@ routes:
         black_vol_surface: [market_state.vol_surface]
     conditional_primitives:
       - when:
+          payoff_family: variance_swap
+          exercise_style: [none]
+        primitives:
+          - module: trellis.models.variance_swap
+            symbol: price_equity_variance_swap_monte_carlo
+            role: route_helper
+          - module: trellis.models.variance_swap
+            symbol: equity_variance_swap_outputs_monte_carlo
+            role: pricing_kernel
+            required: false
+        adapters: []
+        notes:
+          - "Use the variance-swap Monte Carlo helper with `market_state` and `spec`; do not rebuild GBM path simulation or realised-variance aggregation in generated adapters."
+      - when:
           payoff_family: vanilla_option
           exercise_style: [european]
           model_family: [stochastic_volatility]

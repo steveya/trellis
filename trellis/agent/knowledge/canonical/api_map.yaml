@@ -96,6 +96,7 @@ monte_carlo:
     - "from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, price_double_barrier_option_monte_carlo_result"
     - "from trellis.models.asian_option import price_arithmetic_asian_option_monte_carlo, price_arithmetic_asian_option_analytical"
     - "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
+    - "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo, price_equity_variance_swap_monte_carlo_result, equity_variance_swap_outputs_monte_carlo"
     - "from trellis.models.monte_carlo import euler_maruyama, milstein, brownian_bridge"
     - "from trellis.models.monte_carlo import antithetic, control_variate, sobol_normals"
     - "from trellis.models.processes.gbm import GBM"

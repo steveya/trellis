@@ -768,3 +768,43 @@ Validation:
 The focused planner/executor pass reports `40 passed`; the transform/CDS
 focused pass reports `16 passed`; and the offline `T38/T39/T46` replay reports
 `3/3` passed expectations with zero token usage.
+
+### 2026-07-09 T37 variance-swap MC/log-contract closure
+
+The remaining `T33` through `T46` shard showed that `T37` had two avoidable
+runtime-contract gaps rather than a missing task definition:
+
+- semantic gap classification still treated a known `variance_swap` task as
+  missing `semantic_product_shape`, even though the task identity, ProductIR,
+  analytical helper binding, and validation bundle were already known
+- the MC comparison target selected the generic event-aware MC route instead
+  of a variance-swap realised-variance helper, while the analytical target was
+  rejected by the generic embedded-option flat-vega invariant
+
+The fix adds a bounded reusable variance-swap MC helper at
+`trellis.models.variance_swap`. It simulates annualised realised log variance
+under the market state's GBM surface binding and reports price, fair strike
+variance, and standard error. Backend binding metadata now maps
+`monte_carlo:variance_swap` to that helper instead of the generic event-aware
+route. Variance swaps are also excluded from the generic option-vega invariant;
+their standard proof contract is price sanity plus cross-method comparison.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_monte_carlo/test_variance_swap.py \
+  tests/test_agent/test_assembly_tools.py::test_select_invariant_pack_skips_generic_vol_checks_for_variance_swap \
+  tests/test_agent/test_validation_bundles.py::test_select_validation_bundle_for_variance_swap_skips_generic_vol_checks \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_variance_swap_mc_target \
+  tests/test_agent/test_backend_bindings.py::test_resolve_backend_binding_spec_uses_variance_swap_monte_carlo_helper \
+  tests/test_agent/test_import_registry.py::test_variance_swap_monte_carlo_helper_is_visible_to_import_registry
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T37 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1156_t37_variance_mc_20260703.json
+```
+
+The focused suite reports `7 passed`; the offline `T37` replay reports `1/1`
+passed expectations in `18s`, with zero LLM token usage and
+`llm_generation_attempts=0`.

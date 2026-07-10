@@ -178,6 +178,19 @@ def test_select_invariant_pack_skips_vol_checks_for_credit_loss_distribution():
     assert "check_vol_monotonicity" not in pack.checks
 
 
+def test_select_invariant_pack_skips_generic_vol_checks_for_variance_swap():
+    from trellis.agent.assembly_tools import select_invariant_pack
+
+    pack = select_invariant_pack(
+        instrument_type="variance_swap",
+        method="analytical",
+    )
+
+    assert "check_price_sanity" in pack.checks
+    assert "check_vol_sensitivity" not in pack.checks
+    assert "check_vol_monotonicity" not in pack.checks
+
+
 def test_select_invariant_pack_keeps_vol_sensitivity_but_skips_monotonicity_for_barrier():
     from trellis.agent.assembly_tools import select_invariant_pack
 

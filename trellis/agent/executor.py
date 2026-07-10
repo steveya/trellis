@@ -3754,6 +3754,13 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_heston_option_monte_carlo("
             f"market_state, spec{heston_mc_kwargs})"
         ),
+        "mc_variance_swap": (
+            "return price_equity_variance_swap_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 60000), '
+            'n_steps=getattr(spec, "n_steps", 252), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
     }
     if normalized_target in target_helper_bodies:
         return target_helper_bodies[normalized_target]
@@ -4214,6 +4221,13 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical": (
             "return price_equity_variance_swap_analytical(market_state, spec)"
         ),
+        "trellis.models.variance_swap.price_equity_variance_swap_monte_carlo": (
+            "return price_equity_variance_swap_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 60000), '
+            'n_steps=getattr(spec, "n_steps", 252), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
         "trellis.models.analytical.barrier.barrier_option_price": (
             "if market_state.discount is None:\n"
             '    raise ValueError("market_state.discount is required for analytical barrier pricing")\n'
@@ -4502,6 +4516,10 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_equity_fixed_lookback_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
+        )
+    if "price_equity_variance_swap_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo"
         )
     if "price_vanilla_equity_option_tree(" in body:
         imports.append(
