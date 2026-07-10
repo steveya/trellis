@@ -189,6 +189,14 @@ bindings:
             symbol: price_heston_option_monte_carlo
             role: route_helper
       - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [jump_diffusion]
+        primitives:
+          - module: trellis.models.merton_jump_diffusion_option
+            symbol: price_merton_jump_diffusion_option_monte_carlo
+            role: route_helper
+      - when:
           payoff_family: autocallable
         primitives:
           - module: trellis.models.autocallable
@@ -712,6 +720,14 @@ bindings:
         primitives:
           - module: trellis.models.transforms.heston
             symbol: price_heston_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [jump_diffusion]
+        primitives:
+          - module: trellis.models.merton_jump_diffusion_option
+            symbol: price_merton_jump_diffusion_option_transform
             role: route_helper
       - when:
           payoff_family: credit_loss_distribution

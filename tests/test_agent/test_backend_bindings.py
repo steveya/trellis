@@ -564,6 +564,34 @@ def test_resolve_backend_binding_spec_uses_variance_swap_monte_carlo_helper():
     )
 
 
+def test_resolve_backend_binding_spec_uses_merton_jump_diffusion_helpers():
+    catalog = load_backend_binding_catalog()
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("jump_diffusion",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        schedule_dependence=False,
+        model_family="jump_diffusion",
+    )
+
+    assert monte_carlo is not None
+    assert transform is not None
+
+    mc_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+    transform_resolved = resolve_backend_binding_spec(transform, product_ir=product_ir)
+
+    assert mc_resolved.helper_refs == (
+        "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_monte_carlo",
+    )
+    assert transform_resolved.helper_refs == (
+        "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform",
+    )
+
+
 def test_resolve_backend_binding_spec_keeps_generic_multi_asset_baskets_off_two_asset_exact_helpers():
     catalog = load_backend_binding_catalog()
     analytical = find_backend_binding_by_route_id("analytical_black76", catalog)

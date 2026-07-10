@@ -3072,6 +3072,42 @@ def _candidate_engine_families_for(
 def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> ProductIR:
     """Augment ProductIR with high-signal request context missing from static decompositions."""
     desc = _normalise(description)
+    if ir.instrument == "european_option" and (
+        "merton" in desc or "jump_diffusion" in desc or "jump" in desc
+    ):
+        payoff_traits = list(ir.payoff_traits)
+        for trait in ("jump_diffusion", "discounting", "vol_surface_dependence"):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+        candidate_engine_families = list(ir.candidate_engine_families)
+        for family in ("monte_carlo", "transforms"):
+            if family not in candidate_engine_families:
+                candidate_engine_families.append(family)
+        route_families = list(ir.route_families)
+        for family in ("monte_carlo", "fft_pricing"):
+            if family not in route_families:
+                route_families.append(family)
+        required_market_data = set(ir.required_market_data)
+        required_market_data.update({"discount_curve", "black_vol_surface", "jump_parameters"})
+        return replace(
+            ir,
+            payoff_traits=tuple(payoff_traits),
+            model_family="jump_diffusion",
+            candidate_engine_families=tuple(candidate_engine_families),
+            route_families=tuple(route_families),
+            required_market_data=frozenset(
+                normalize_market_data_requirements(required_market_data)
+            ),
+            reusable_primitives=tuple(
+                dict.fromkeys(
+                    (
+                        *ir.reusable_primitives,
+                        "trellis.models.merton_jump_diffusion_option",
+                    )
+                )
+            ),
+        )
+
     if ir.instrument == "barrier_option":
         payoff_traits = list(ir.payoff_traits)
         is_double_barrier = (

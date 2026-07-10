@@ -128,6 +128,15 @@ Merton Jump-Diffusion
    dS/S = (\mu - \lambda k)\,dt + \sigma\,dW + J\,dN
 
 Poisson jumps :math:`N` with intensity :math:`\lambda`, log-normal jump size :math:`J`.
+The checked European vanilla support lives in
+``trellis.models.merton_jump_diffusion_option``. That helper resolves
+``jump_parameters`` / ``jump_parameter_sets`` from the runtime ``MarketState``
+using canonical keys ``sigma``, ``lam`` or ``jump_intensity``,
+``jump_mean``, and ``jump_vol``. It exposes a Poisson-mixture Black reference,
+FFT/COS transform pricing, and direct terminal Monte Carlo sampling. The
+transform route is a model-family-specific binding; it should not be replaced
+with a vanilla Black-vol adapter when the product contract says
+``model_family=jump_diffusion``.
 
 Implementation
 --------------
@@ -138,6 +147,8 @@ Implementation
    :members:
 .. autoclass:: trellis.models.processes.sabr.SABRProcess
    :members:
+.. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform
+.. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_monte_carlo
 
 References
 ----------

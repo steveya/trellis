@@ -1507,6 +1507,93 @@ def test_deterministic_exact_binding_module_materializes_heston_transform_helper
     assert EVALUATE_SENTINEL not in generated.code
 
 
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
+        ("merton_fft", 'method="fft"'),
+        ("merton_cos", 'method="cos"'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_merton_transform_helper_wrapper(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "Merton jump-diffusion option transforms",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert (
+        "from trellis.models.merton_jump_diffusion_option import "
+        "price_merton_jump_diffusion_option_transform"
+    ) in generated.code
+    assert 'return {"black_vol_surface", "discount_curve", "jump_parameters"}' in generated.code
+    assert "price_merton_jump_diffusion_option_transform(market_state, spec" in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_merton_monte_carlo_helper_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_monte_carlo",
+        ),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_monte_carlo"],
+        "Merton jump-diffusion option MC",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="merton_mc",
+    )
+
+    assert generated is not None
+    assert (
+        "from trellis.models.merton_jump_diffusion_option import "
+        "price_merton_jump_diffusion_option_monte_carlo"
+    ) in generated.code
+    assert 'return {"black_vol_surface", "discount_curve", "jump_parameters"}' in generated.code
+    assert "price_merton_jump_diffusion_option_monte_carlo(market_state, spec" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_validate_build_uses_heston_model_payload_for_heston_transform(monkeypatch):
     from trellis.agent.executor import _validate_build
     from trellis.agent.planner import FieldDef, SpecSchema
@@ -1579,6 +1666,99 @@ def test_validate_build_uses_heston_model_payload_for_heston_transform(monkeypat
         HestonExactPayoffForValidation,
         code="",
         description="Heston option transform route",
+        spec_schema=spec_schema,
+        validation="smoke",
+        compiled_request=compiled_request,
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+    )
+
+    assert not failures
+
+
+def test_validate_build_uses_merton_jump_payload_for_jump_diffusion_routes(monkeypatch):
+    from trellis.agent.executor import _validate_build
+    from trellis.agent.planner import FieldDef, SpecSchema
+    from trellis.core.types import DayCountConvention
+    from trellis.models.merton_jump_diffusion_option import (
+        price_merton_jump_diffusion_option_transform,
+    )
+
+    monkeypatch.setattr("trellis.agent.executor._record_platform_event", lambda *args, **kwargs: None)
+
+    @dataclass(frozen=True)
+    class MertonExactSpecForValidation:
+        notional: float
+        spot: float
+        strike: float
+        expiry_date: date
+        option_type: str = "call"
+        day_count: DayCountConvention = DayCountConvention.ACT_365
+
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "MertonExactSpecForValidation",
+        MertonExactSpecForValidation,
+        raising=False,
+    )
+
+    class MertonExactPayoffForValidation:
+        def __init__(self, spec: MertonExactSpecForValidation):
+            self._spec = spec
+
+        @property
+        def spec(self) -> MertonExactSpecForValidation:
+            return self._spec
+
+        @property
+        def requirements(self) -> set[str]:
+            return {"discount_curve", "black_vol_surface"}
+
+        def evaluate(self, market_state):
+            return price_merton_jump_diffusion_option_transform(
+                market_state,
+                self._spec,
+                method="fft",
+            )
+
+    spec_schema = SpecSchema(
+        class_name="MertonExactPayoffForValidation",
+        spec_name="MertonExactSpecForValidation",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Notional"),
+            FieldDef("spot", "float", "Spot"),
+            FieldDef("strike", "float", "Strike"),
+            FieldDef("expiry_date", "date", "Expiry"),
+            FieldDef("option_type", "str", "Option type", '"call"'),
+            FieldDef("day_count", "DayCountConvention", "Day count", "DayCountConvention.ACT_365"),
+        ],
+    )
+    pricing_plan = SimpleNamespace(
+        method="fft_pricing",
+        required_market_data={"discount_curve", "black_vol_surface"},
+    )
+    product_ir = SimpleNamespace(
+        instrument="european_option",
+        model_family="jump_diffusion",
+    )
+    compiled_request = SimpleNamespace(
+        request=SimpleNamespace(metadata={}),
+        validation_contract=None,
+        semantic_blueprint=None,
+        generation_plan=SimpleNamespace(
+            lane_exact_binding_refs=(
+                "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform",
+            ),
+            route_binding_authority=None,
+        ),
+        execution_plan=SimpleNamespace(route_method="fft_pricing"),
+    )
+
+    failures = _validate_build(
+        MertonExactPayoffForValidation,
+        code="",
+        description="Merton jump-diffusion option transform route",
         spec_schema=spec_schema,
         validation="smoke",
         compiled_request=compiled_request,

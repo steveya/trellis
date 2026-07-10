@@ -868,6 +868,25 @@ class TestMonteCarloPathsRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_merton_primitives_use_jump_diffusion_monte_carlo_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("jump_diffusion",),
+            exercise_style="european",
+            model_family="jump_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.merton_jump_diffusion_option",
+                "price_merton_jump_diffusion_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_default_branch_preserves_base_adapters_and_notes_for_generic_requests(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
 
@@ -1967,6 +1986,25 @@ class TestFallbackRoutes:
             (
                 "trellis.models.transforms.heston",
                 "price_heston_option_transform",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_jump_diffusion_transform_primitives_use_merton_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("jump_diffusion",),
+            exercise_style="european",
+            model_family="jump_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.merton_jump_diffusion_option",
+                "price_merton_jump_diffusion_option_transform",
                 "route_helper",
             ),
         }

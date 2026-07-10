@@ -675,6 +675,15 @@ of falling back to a vanilla Black-vol adapter. T114-style targets also carry a
 Heston characteristic-function quadrature kernel, integration requirements,
 diagnostics, and validation bundle explicitly.
 
+Jump-diffusion transform targets follow that same separation. Merton comparison
+targets such as ``merton_fft`` and ``merton_cos`` now bind to
+``trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform``,
+and ``merton_mc`` binds to the sibling terminal Monte Carlo helper. The
+``ProductIR`` keeps the product shape as a European vanilla option, but adds
+``model_family=jump_diffusion`` and ``jump_parameters`` as required runtime
+evidence. Validation fixtures must include those jump parameters instead of
+trying to reinterpret the task as an ordinary Black-vol vanilla route.
+
 The Monte Carlo lane now follows the same model-family separation for European
 Heston vanilla options. ``euler_heston`` and ``heston_mc`` targets bind to
 ``trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo``

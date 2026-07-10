@@ -381,6 +381,17 @@ routes:
         adapters: []
         notes: []
       - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [jump_diffusion]
+        primitives:
+          - module: trellis.models.merton_jump_diffusion_option
+            symbol: price_merton_jump_diffusion_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the Merton jump-diffusion terminal MC helper with `market_state` and `spec`; do not instantiate generic GBM or hand-code jump aggregation in adapters."
+      - when:
           payoff_family: autocallable
         primitives:
           - module: trellis.models.autocallable
@@ -1247,7 +1258,7 @@ routes:
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov]
-      supported_characteristic_families: [gbm_log_spot, heston_log_spot]
+      supported_characteristic_families: [gbm_log_spot, heston_log_spot, merton_log_spot]
       supports_calibration: false
     conditional_primitives:
       - when:
@@ -1260,6 +1271,17 @@ routes:
             role: route_helper
         adapters: []
         notes: []
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [jump_diffusion]
+        primitives:
+          - module: trellis.models.merton_jump_diffusion_option
+            symbol: price_merton_jump_diffusion_option_transform
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use `price_merton_jump_diffusion_option_transform(..., method='fft'|'cos')` for Merton transform targets; the helper owns characteristic-function and jump-parameter binding."
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]

@@ -54,6 +54,24 @@ required model parameters, Gauss-Laguerre nodes/weights, damping or contour
 policy, oscillatory-integrand stabilization, diagnostics, and the missing
 ``heston_gauss_laguerre_transform_kernel`` plus validation bundle.
 
+Merton Jump-Diffusion Route Binding
+-----------------------------------
+
+``trellis.models.merton_jump_diffusion_option`` provides the checked helper
+surface for European vanilla options under Merton jump diffusion. The transform
+helper binds the Merton log-spot or log-ratio characteristic function to the
+shared FFT/COS kernels, while the same module also exposes a Poisson-series
+reference and terminal Monte Carlo route. Runtime inputs come from
+``market_state.jump_parameters`` or a selected entry in
+``market_state.jump_parameter_sets``; canonical payloads use ``sigma``,
+``lam`` / ``jump_intensity``, ``jump_mean``, and ``jump_vol``.
+
+The task runtime treats ``model_family=jump_diffusion`` as a separate
+admissibility signal from ordinary ``equity_diffusion`` vanilla options. COS
+pricing uses a higher default term count on this helper than the generic GBM
+examples because low diffusion volatility plus discrete jump mass can otherwise
+produce unstable truncation artifacts.
+
 Implementation
 --------------
 
@@ -61,6 +79,8 @@ Implementation
 .. autofunction:: trellis.models.transforms.cos_method.cos_price
 .. autofunction:: trellis.models.transforms.heston.price_heston_option_transform
 .. autofunction:: trellis.models.transforms.heston.price_heston_option_transform_result
+.. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform
+.. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_poisson_series
 
 References
 ----------

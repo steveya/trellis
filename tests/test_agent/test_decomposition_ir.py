@@ -77,6 +77,22 @@ class TestProductIR:
         assert "pde_solver" in ir.route_families
         assert ir.supported is True
 
+    def test_ir_for_merton_jump_diffusion_keeps_vanilla_product_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Merton jump-diffusion MC vs FFT",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "jump_diffusion" in ir.payoff_traits
+        assert ir.model_family == "jump_diffusion"
+        assert "jump_parameters" in ir.required_market_data
+        assert "monte_carlo" in ir.route_families
+        assert "fft_pricing" in ir.route_families
+
     def test_ir_for_absorbed_analytical_exotics_uses_specific_payoff_families(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 

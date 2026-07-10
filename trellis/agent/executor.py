@@ -1914,6 +1914,12 @@ def _validate_build(
     review_prompt_surface = "none"
     benchmark_spec_overrides = _benchmark_spec_overrides_from_compiled_request(compiled_request)
     runtime_spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
+    generation_plan = getattr(compiled_request, "generation_plan", None)
+    exact_binding_refs = tuple(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
+    requires_merton_jump_parameters = (
+        str(getattr(product_ir, "model_family", "") or "").strip().lower() == "jump_diffusion"
+        or any("merton_jump_diffusion_option" in str(ref) for ref in exact_binding_refs)
+    )
 
     # Try to instantiate the payoff with default test parameters
     try:
@@ -2028,6 +2034,16 @@ def _validate_build(
                 payload["model_parameter_sets"] = {"heston_validation": heston_payload}
             else:
                 payload["model_parameters"] = {"quanto_correlation": corr}
+        if "jump_parameters" in effective_requirements or requires_merton_jump_parameters:
+            jump_payload = {
+                "mu": rate,
+                "sigma": vol,
+                "lam": 0.35,
+                "jump_mean": -0.08,
+                "jump_vol": 0.18,
+            }
+            payload["jump_parameters"] = jump_payload
+            payload["jump_parameter_sets"] = {"merton_validation": jump_payload}
         return MarketState(**payload)
 
     # Build the initial market state from the plan's required_market_data.
@@ -3754,6 +3770,20 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_heston_option_monte_carlo("
             f"market_state, spec{heston_mc_kwargs})"
         ),
+        "merton_mc": (
+            "return price_merton_jump_diffusion_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 100000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "merton_fft": (
+            "return price_merton_jump_diffusion_option_transform("
+            'market_state, spec, method="fft")'
+        ),
+        "merton_cos": (
+            "return price_merton_jump_diffusion_option_transform("
+            'market_state, spec, method="cos")'
+        ),
         "mc_variance_swap": (
             "return price_equity_variance_swap_monte_carlo("
             "market_state, spec, "
@@ -4433,6 +4463,8 @@ def _materialize_deterministic_exact_binding_module(
         EVALUATE_SENTINEL,
         textwrap.indent(body, "        "),
     )
+    if "price_merton_jump_diffusion_option_" in body:
+        rendered = _merge_generated_requirements(rendered, ("jump_parameters",))
     if benchmark_outputs_block is not None:
         rendered = (
             rendered.rstrip("\n")
@@ -4449,6 +4481,26 @@ def _materialize_deterministic_exact_binding_module(
     )
 
 
+def _merge_generated_requirements(source: str, extra_requirements: Sequence[str]) -> str:
+    """Add route-owned market requirements to a deterministic skeleton."""
+    extras = {str(requirement) for requirement in extra_requirements if str(requirement)}
+    if not extras:
+        return source
+
+    pattern = (
+        r"(    def requirements\(self\) -> set\[str\]:\n"
+        r"        return \{)([^}]*)"
+        r"(\})"
+    )
+
+    def _replace(match: re.Match[str]) -> str:
+        existing = set(re.findall(r'"([^"]+)"', match.group(2)))
+        merged = ", ".join(f'"{item}"' for item in sorted(existing | extras))
+        return f"{match.group(1)}{merged}{match.group(3)}"
+
+    return re.sub(pattern, _replace, source, count=1)
+
+
 def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     """Return extra imports required by deterministic exact-binding bodies.
 
@@ -4463,6 +4515,16 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_heston_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo"
+        )
+    if "price_merton_jump_diffusion_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.merton_jump_diffusion_option import "
+            "price_merton_jump_diffusion_option_monte_carlo"
+        )
+    if "price_merton_jump_diffusion_option_transform(" in body:
+        imports.append(
+            "from trellis.models.merton_jump_diffusion_option import "
+            "price_merton_jump_diffusion_option_transform"
         )
     if "price_cds_analytical(" in body:
         imports.append(

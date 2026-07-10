@@ -604,6 +604,18 @@ def test_classify_semantic_gap_treats_variance_swap_as_known_shape():
     assert "semantic_product_shape" not in report.missing_contract_fields
 
 
+def test_classify_semantic_gap_treats_merton_jump_diffusion_as_known_vanilla_shape():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "Build a pricer for Merton jump-diffusion MC vs FFT.",
+        instrument_type="european_option",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+
+
 @pytest.mark.parametrize(
     ("description", "instrument_type", "semantic_id"),
     [

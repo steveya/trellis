@@ -957,6 +957,24 @@ def test_task_to_instrument_type_uses_black_scholes_target_hint_for_vanilla():
     assert resolution.source == "task.title_description_or_targets"
 
 
+def test_task_to_instrument_type_uses_merton_target_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T33",
+            "title": "Merton jump-diffusion MC vs FFT",
+            "cross_validate": {
+                "internal": ["merton_mc", "merton_fft"],
+                "external": ["quantlib"],
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
 def test_comparison_harness_maps_turnbull_wakeman_target_to_analytical():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 

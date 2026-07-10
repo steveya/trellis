@@ -725,6 +725,9 @@ def _semantic_cues(normalized_text: str) -> dict[str, bool]:
                 "variance swap",
                 "variance_swap",
                 "log contract",
+                "merton",
+                "jump-diffusion",
+                "jump diffusion",
             ),
         ),
         "credit": _contains_any(
