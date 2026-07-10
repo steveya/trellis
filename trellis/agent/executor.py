@@ -3888,6 +3888,13 @@ def _deterministic_exact_binding_evaluate_body(
         comparison_target or metadata.get("comparison_target") or ""
     ).strip().lower().replace("-", "_")
     is_american_equity_option = instrument_type in {"american_put", "american_option"}
+    black_scholes_vanilla_exact_binding = _is_black_scholes_vanilla_exact_binding(
+        generation_plan,
+        refs,
+        instrument_type=instrument_type,
+        normalized_target=normalized_target,
+        route_free_exact_binding=route_free_exact_binding,
+    )
 
     if instrument_type in {"credit_default_swap", "cds"} and normalized_target in {"mc_cds", "cds_mc"}:
         cds_body = _credit_default_swap_helper_body(
@@ -4238,44 +4245,7 @@ def _deterministic_exact_binding_evaluate_body(
             )
             """
         ).rstrip()
-    if (
-        comparison_target == "black_scholes"
-        and "trellis.models.black.black76_call" in refs
-        and "trellis.models.black.black76_put" in refs
-    ):
-        return textwrap.dedent(
-            """\
-            spec = self._spec
-            if market_state.discount is None:
-                raise ValueError("market_state.discount is required for Black-Scholes comparison")
-            if market_state.vol_surface is None:
-                raise ValueError("market_state.vol_surface is required for Black-Scholes comparison")
-            T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
-            spot = spec.spot
-            strike = spec.strike
-            option_type = str(spec.option_type or "call").strip().lower()
-            if T <= 0.0:
-                intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
-                return spec.notional * intrinsic
-            df = market_state.discount.discount(T)
-            sigma = market_state.vol_surface.black_vol(max(T, 1e-6), strike)
-            forward = spot / max(df, 1e-12)
-            if option_type == "call":
-                undiscounted = black76_call(forward, strike, sigma, T)
-            elif option_type == "put":
-                undiscounted = black76_put(forward, strike, sigma, T)
-            else:
-                raise ValueError(f"Unsupported option_type {spec.option_type!r}")
-            return spec.notional * df * undiscounted
-            """
-        ).rstrip()
-    if (
-        comparison_target is None
-        and route_free_exact_binding
-        and instrument_type == "european_option"
-        and "trellis.models.black.black76_call" in refs
-        and "trellis.models.black.black76_put" in refs
-    ):
+    if black_scholes_vanilla_exact_binding:
         return textwrap.dedent(
             """\
             spec = self._spec
@@ -4579,10 +4549,17 @@ def _deterministic_exact_binding_benchmark_outputs_block(
     route does not have a native Greek helper available (QUA-862).
     """
     refs = set(_exact_binding_refs(generation_plan))
-    if (
-        comparison_target == "black_scholes"
-        and "trellis.models.black.black76_call" in refs
-        and "trellis.models.black.black76_put" in refs
+    normalized_target = str(comparison_target or "").strip().lower().replace("-", "_")
+    route_free_exact_binding = _generation_plan_field(generation_plan, "primitive_plan") is None
+    instrument_type = str(
+        _generation_plan_field(generation_plan, "instrument_type", "") or ""
+    ).strip().lower()
+    if _is_black_scholes_vanilla_exact_binding(
+        generation_plan,
+        refs,
+        instrument_type=instrument_type,
+        normalized_target=normalized_target,
+        route_free_exact_binding=route_free_exact_binding,
     ):
         return textwrap.dedent(
             """\
@@ -4602,6 +4579,38 @@ def _deterministic_exact_binding_benchmark_outputs_block(
             """
         )
     return None
+
+
+def _is_black_scholes_vanilla_exact_binding(
+    generation_plan,
+    refs: set[str],
+    *,
+    instrument_type: str,
+    normalized_target: str,
+    route_free_exact_binding: bool,
+) -> bool:
+    """Return whether an exact Black-76 equity vanilla adapter can be materialized."""
+    if "trellis.models.black.black76_call" not in refs:
+        return False
+    if "trellis.models.black.black76_put" not in refs:
+        return False
+
+    primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
+    route = ""
+    if isinstance(primitive_plan, Mapping):
+        route = str(primitive_plan.get("route") or "").strip().lower()
+    elif primitive_plan is not None:
+        route = str(getattr(primitive_plan, "route", "") or "").strip().lower()
+
+    if normalized_target == "black_scholes":
+        return True
+
+    if normalized_target not in {"", "analytical"}:
+        return False
+
+    return instrument_type == "european_option" and (
+        route_free_exact_binding or route == "analytical_black76"
+    )
 
 
 def _materialize_semantic_execution_shim_module(

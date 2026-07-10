@@ -2403,6 +2403,43 @@ def test_deterministic_exact_binding_module_materializes_route_free_vanilla_blac
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_deterministic_exact_binding_module_treats_analytical_black76_target_as_exact():
+    """F001-style offline harness lanes must not call the LLM for the generic analytical target."""
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+        ),
+        primitive_plan=SimpleNamespace(route="analytical_black76"),
+        method="analytical",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European option analytical exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="analytical",
+    )
+
+    assert generated is not None
+    assert "black76_call(forward, strike, sigma, T)" in generated.code
+    assert "black76_put(forward, strike, sigma, T)" in generated.code
+    assert "equity_vanilla_bs_outputs(market_state, self._spec)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 @pytest.mark.parametrize(
     ("lane_exact_binding_refs", "expected_fragment"),
     [
