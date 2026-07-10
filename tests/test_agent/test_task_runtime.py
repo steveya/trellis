@@ -993,6 +993,42 @@ def test_task_to_instrument_type_uses_sabr_hagan_hint_for_vanilla_option():
     assert resolution.source == "task.title_or_description"
 
 
+def test_task_to_instrument_type_uses_variance_gamma_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T41",
+            "title": "Variance Gamma: COS vs MC",
+            "cross_validate": {
+                "internal": ["vg_cos", "vg_mc"],
+                "analytical": "madan_carr_chang_reference",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
+def test_task_to_instrument_type_uses_cgmy_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T45",
+            "title": "CGMY / tempered stable process via COS",
+            "cross_validate": {
+                "internal": ["cgmy_cos", "cgmy_mc"],
+                "analytical": "cgmy_reference_values",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
 def test_comparison_harness_maps_turnbull_wakeman_target_to_analytical():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 

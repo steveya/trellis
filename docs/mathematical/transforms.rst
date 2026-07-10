@@ -72,6 +72,22 @@ pricing uses a higher default term count on this helper than the generic GBM
 examples because low diffusion volatility plus discrete jump mass can otherwise
 produce unstable truncation artifacts.
 
+Levy Route Binding
+------------------
+
+``trellis.models.levy_option`` provides checked helper surfaces for European
+vanilla options under Variance Gamma and CGMY Levy models. The task runtime
+uses ``model_family=variance_gamma`` or ``model_family=cgmy`` as an
+admissibility signal, then binds the corresponding log-spot characteristic
+function to the shared FFT/COS kernels.
+
+Runtime inputs come from explicit model-parameter payloads rather than Black
+volatility surfaces. Variance Gamma payloads use ``sigma``, ``theta``, and
+``nu``. CGMY payloads use ``C``, ``G``, ``M``, and ``Y``. The analytical
+reference route is intentionally a helper-owned target for proof comparison;
+it should not cause the product contract to narrow away from the underlying
+European vanilla option shape.
+
 Implementation
 --------------
 
@@ -81,6 +97,10 @@ Implementation
 .. autofunction:: trellis.models.transforms.heston.price_heston_option_transform_result
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_poisson_series
+.. autofunction:: trellis.models.levy_option.price_variance_gamma_option_transform
+.. autofunction:: trellis.models.levy_option.price_variance_gamma_option_reference
+.. autofunction:: trellis.models.levy_option.price_cgmy_option_transform
+.. autofunction:: trellis.models.levy_option.price_cgmy_option_reference
 
 References
 ----------

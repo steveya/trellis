@@ -205,6 +205,22 @@ bindings:
             symbol: price_sabr_forward_option_monte_carlo
             role: route_helper
       - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [variance_gamma]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_variance_gamma_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [cgmy]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_cgmy_option_monte_carlo
+            role: route_helper
+      - when:
           payoff_family: autocallable
         primitives:
           - module: trellis.models.autocallable
@@ -730,6 +746,28 @@ bindings:
         role: market_binding
         required: false
 
+  - route_id: levy_reference_analytical
+    engine_family: analytical
+    route_family: analytical
+    compatibility_alias_policy: internal_only
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [variance_gamma]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_variance_gamma_option_reference
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [cgmy]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_cgmy_option_reference
+            role: route_helper
+
   - route_id: transform_fft
     engine_family: fft_pricing
     route_family: fft_pricing
@@ -749,6 +787,22 @@ bindings:
         primitives:
           - module: trellis.models.merton_jump_diffusion_option
             symbol: price_merton_jump_diffusion_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [variance_gamma]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_variance_gamma_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [cgmy]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_cgmy_option_transform
             role: route_helper
       - when:
           payoff_family: credit_loss_distribution

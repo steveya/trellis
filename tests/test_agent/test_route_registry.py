@@ -906,6 +906,37 @@ class TestMonteCarloPathsRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    @pytest.mark.parametrize(
+        ("model_family", "expected_symbol"),
+        [
+            ("variance_gamma", "price_variance_gamma_option_monte_carlo"),
+            ("cgmy", "price_cgmy_option_monte_carlo"),
+        ],
+    )
+    def test_levy_primitives_use_model_specific_monte_carlo_helpers(
+        self,
+        registry,
+        model_family,
+        expected_symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=(model_family,),
+            exercise_style="european",
+            model_family=model_family,
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.levy_option",
+                expected_symbol,
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_default_branch_preserves_base_adapters_and_notes_for_generic_requests(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
 
@@ -1335,6 +1366,22 @@ class TestAnalyticalRoutes:
         state_dependence="terminal_markov",
         model_family="sabr",
     )
+    VARIANCE_GAMMA_IR = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("variance_gamma",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="variance_gamma",
+    )
+    CGMY_IR = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("cgmy",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="cgmy",
+    )
     BARRIER_IR = ProductIR(
         instrument="barrier_option",
         payoff_family="barrier_option",
@@ -1444,6 +1491,41 @@ class TestAnalyticalRoutes:
         )
         assert "sabr_hagan_analytical" in new
         assert "analytical_black76" not in new
+
+    @pytest.mark.parametrize("product_ir", [VARIANCE_GAMMA_IR, CGMY_IR])
+    def test_levy_reference_candidate_excludes_black76(self, registry, product_ir):
+        new = _new_routes(
+            registry,
+            "analytical",
+            product_ir,
+            pricing_plan=self.SABR_PLAN,
+        )
+        assert "levy_reference_analytical" in new
+        assert "analytical_black76" not in new
+
+    @pytest.mark.parametrize(
+        ("product_ir", "expected_symbol"),
+        [
+            (VARIANCE_GAMMA_IR, "price_variance_gamma_option_reference"),
+            (CGMY_IR, "price_cgmy_option_reference"),
+        ],
+    )
+    def test_levy_reference_primitives_use_model_specific_helpers(
+        self,
+        registry,
+        product_ir,
+        expected_symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "levy_reference_analytical"][0]
+        new_prims = resolve_route_primitives(spec, product_ir)
+        expected_prims = {
+            (
+                "trellis.models.levy_option",
+                expected_symbol,
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
 
     def test_barrier_candidate(self, registry):
         new = _new_routes(
@@ -2078,6 +2160,37 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    @pytest.mark.parametrize(
+        ("model_family", "expected_symbol"),
+        [
+            ("variance_gamma", "price_variance_gamma_option_transform"),
+            ("cgmy", "price_cgmy_option_transform"),
+        ],
+    )
+    def test_levy_transform_primitives_use_model_specific_helpers(
+        self,
+        registry,
+        model_family,
+        expected_symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=(model_family,),
+            exercise_style="european",
+            model_family=model_family,
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.levy_option",
+                expected_symbol,
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_pde_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
         new_prims = resolve_route_primitives(spec, None)
@@ -2284,6 +2397,8 @@ class TestFallbackRoutes:
             "gbm_log_spot",
             "heston_log_spot",
             "merton_log_spot",
+            "variance_gamma_log_spot",
+            "cgmy_log_spot",
         )
 
     def test_transform_route_admissibility_accepts_european_holder_control_surface(self, registry):
@@ -2513,6 +2628,7 @@ class TestEngineFamilyCoverage:
         "rate_tree_backward_induction": "lattice",
         "cev_spot_lattice": "lattice",
         "sabr_hagan_analytical": "analytical",
+        "levy_reference_analytical": "analytical",
         "analytical_black76": "analytical",
         # QUA-915: collapsed ZCB-option family takes analytical as its
         # umbrella engine_family; the lattice helper is reached through

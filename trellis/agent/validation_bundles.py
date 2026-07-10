@@ -154,7 +154,10 @@ def execute_validation_bundle(
     vol_direction = _vol_monotonicity_direction(bundle.instrument_type)
     swaption_comparison_kwargs = _swaption_comparison_kwargs_from_blueprint(semantic_blueprint)
     explicit_replication_surface = _has_explicit_replication_vol_surface(test_payoff)
-    explicit_heston_model_parameters = _uses_heston_model_parameter_route(bundle, test_payoff)
+    explicit_model_parameter_volatility = _uses_model_parameter_volatility_route(
+        bundle,
+        test_payoff,
+    )
 
     for check in bundle.checks:
         if failures and check not in UNIVERSAL_CHECKS:
@@ -274,7 +277,7 @@ def execute_validation_bundle(
                 continue
             if (
                 check in {"check_vol_sensitivity", "check_vol_monotonicity"}
-                and (explicit_replication_surface or explicit_heston_model_parameters)
+                and (explicit_replication_surface or explicit_model_parameter_volatility)
             ):
                 skipped_checks.append(check)
                 continue
@@ -365,33 +368,46 @@ def _has_explicit_replication_vol_surface(test_payoff: Any | None) -> bool:
     return bool(vol_grid)
 
 
-def _uses_heston_model_parameter_route(
+def _uses_model_parameter_volatility_route(
     bundle: ValidationBundle,
     test_payoff: Any | None,
 ) -> bool:
-    """Return whether volatility-like validation inputs are Heston model params."""
+    """Return whether volatility-like validation inputs are model parameters."""
     identifiers = (
         bundle.bundle_id,
         bundle.instrument_type or "",
         bundle.method,
     )
-    if any("heston" in str(identifier or "").strip().lower() for identifier in identifiers):
+    if any(
+        marker in str(identifier or "").strip().lower()
+        for identifier in identifiers
+        for marker in ("heston", "sabr", "variance_gamma", "cgmy")
+    ):
         return True
 
     spec = getattr(test_payoff, "spec", None)
-    if spec is None:
-        return False
-    return any(
-        getattr(spec, attr, None) is not None
-        for attr in (
-            "kappa",
-            "theta",
-            "xi",
-            "rho",
-            "v0",
-            "initial_variance",
+    requirements = set(getattr(test_payoff, "requirements", set()) or set())
+    if "model_parameters" in requirements and not (
+        {"black_vol_surface", "local_vol_surface"} & requirements
+    ):
+        return True
+
+    if spec is not None:
+        return any(
+            getattr(spec, attr, None) is not None
+            for attr in (
+                "kappa",
+                "theta",
+                "xi",
+                "rho",
+                "v0",
+                "initial_variance",
+                "sabr_parameter_set",
+                "model_parameter_set",
+                "levy_parameter_set",
+            )
         )
-    )
+    return False
 
 
 def _run_check_with_diagnostics(check_fn, check_name: str, *args, **kwargs) -> tuple[list[str], list[Any]]:

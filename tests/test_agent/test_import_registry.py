@@ -142,6 +142,33 @@ def test_sabr_forward_option_helpers_are_visible_to_import_registry():
         assert symbol in registry_text
 
 
+def test_levy_option_helpers_are_visible_to_import_registry():
+    module = "trellis.models.levy_option"
+    symbols = {
+        "price_cgmy_option_monte_carlo",
+        "price_cgmy_option_monte_carlo_result",
+        "price_cgmy_option_reference",
+        "price_cgmy_option_transform",
+        "price_variance_gamma_option_monte_carlo",
+        "price_variance_gamma_option_monte_carlo_result",
+        "price_variance_gamma_option_reference",
+        "price_variance_gamma_option_transform",
+        "resolve_levy_option_inputs",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
 def test_cev_helpers_are_visible_to_import_registry():
     pde_module = "trellis.models.equity_option_pde"
     tree_module = "trellis.models.equity_option_tree"

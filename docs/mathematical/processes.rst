@@ -147,6 +147,27 @@ transform route is a model-family-specific binding; it should not be replaced
 with a vanilla Black-vol adapter when the product contract says
 ``model_family=jump_diffusion``.
 
+Variance Gamma And CGMY Levy Models
+-----------------------------------
+
+Variance Gamma and CGMY targets keep the product shape as a European vanilla
+option while narrowing the runtime model family to an explicit Levy process.
+They consume model parameters from ``market_state.model_parameters`` or named
+``market_state.model_parameter_sets`` entries; they do not infer Levy
+parameters from a Black volatility surface.
+
+For Variance Gamma, canonical payloads use ``sigma``, ``theta``, and ``nu``.
+The checked helper in ``trellis.models.levy_option`` exposes FFT/COS transform
+pricing, a Madan-Carr-Chang-style reference wrapper, and direct terminal Monte
+Carlo sampling via gamma subordination.
+
+For CGMY, canonical payloads use ``C``, ``G``, ``M``, and ``Y``. The checked
+helper exposes FFT/COS transform pricing and a bounded terminal-distribution
+Monte Carlo comparator obtained from the characteristic function. That
+comparator is useful for proof and cross-method validation of terminal
+European payoffs, but it is not a path simulator for barrier, Asian, or other
+path-dependent Levy claims.
+
 Implementation
 --------------
 
@@ -160,6 +181,10 @@ Implementation
 .. autofunction:: trellis.models.sabr_option.price_sabr_forward_option_monte_carlo
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_monte_carlo
+.. autofunction:: trellis.models.levy_option.price_variance_gamma_option_transform
+.. autofunction:: trellis.models.levy_option.price_variance_gamma_option_monte_carlo
+.. autofunction:: trellis.models.levy_option.price_cgmy_option_transform
+.. autofunction:: trellis.models.levy_option.price_cgmy_option_monte_carlo
 
 References
 ----------
@@ -168,3 +193,5 @@ References
 - Heston (1993). *Review of Financial Studies*, 6(2), 327-343.
 - Hagan et al. (2002). *Wilmott Magazine*, Sep 2002.
 - Merton (1976). *Journal of Financial Economics*, 3, 125-144.
+- Madan, Carr, and Chang (1998). *European Economic Review*, 42, 79-105.
+- Carr, Geman, Madan, and Yor (2002). *Journal of Business*, 75(2), 305-332.

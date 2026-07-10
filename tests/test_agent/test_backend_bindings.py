@@ -51,6 +51,7 @@ def test_binding_catalog_covers_retired_fallback_routes():
     assert {
         # slice 1
         "analytical_black76",
+        "levy_reference_analytical",
         "transform_fft",
         "monte_carlo_paths",
         "local_vol_monte_carlo",
@@ -618,6 +619,54 @@ def test_resolve_backend_binding_spec_uses_sabr_forward_option_helpers():
     assert mc_resolved.helper_refs == (
         "trellis.models.sabr_option.price_sabr_forward_option_monte_carlo",
     )
+
+
+@pytest.mark.parametrize(
+    ("model_family", "transform_helper", "mc_helper"),
+    [
+        (
+            "variance_gamma",
+            "trellis.models.levy_option.price_variance_gamma_option_transform",
+            "trellis.models.levy_option.price_variance_gamma_option_monte_carlo",
+        ),
+        (
+            "cgmy",
+            "trellis.models.levy_option.price_cgmy_option_transform",
+            "trellis.models.levy_option.price_cgmy_option_monte_carlo",
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_levy_option_helpers(
+    model_family,
+    transform_helper,
+    mc_helper,
+):
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("levy_reference_analytical", catalog)
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=(model_family,),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        schedule_dependence=False,
+        model_family=model_family,
+    )
+
+    assert analytical is not None
+    assert monte_carlo is not None
+    assert transform is not None
+
+    analytical_resolved = resolve_backend_binding_spec(analytical, product_ir=product_ir)
+    mc_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+    transform_resolved = resolve_backend_binding_spec(transform, product_ir=product_ir)
+
+    reference_helper = transform_helper.replace("_transform", "_reference")
+    assert analytical_resolved.helper_refs == (reference_helper,)
+    assert mc_resolved.helper_refs == (mc_helper,)
+    assert transform_resolved.helper_refs == (transform_helper,)
 
 
 def test_resolve_backend_binding_spec_keeps_generic_multi_asset_baskets_off_two_asset_exact_helpers():

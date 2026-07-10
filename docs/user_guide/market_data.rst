@@ -453,13 +453,17 @@ stochastic-volatility authority surface as well:
 
 - the volatility model pack stores seeded Heston parameters for
   ``heston_equity``
+- the same pack also stores bounded Variance Gamma and CGMY parameter sets for
+  terminal European vanilla proof comparisons
 - the snapshot now carries a named ``spx_heston_implied_vol`` surface
   generated from those parameters
 - ``spx_local_vol`` is derived from that stored implied-vol surface through the
   supported Dupire workflow instead of being guessed independently
 
 This keeps the implied-vol surface, the local-vol fixture, and the runtime
-Heston parameter payload aligned off the same seeded assumptions.
+model-parameter payloads aligned off the same seeded assumptions. Levy
+parameter sets are explicit reduced-form model payloads; they are not inferred
+from the Black volatility surface during pricing.
 
 For the migrated calibration workflows, the derived
 ``model_consistency_contract`` still records the bounded deterministic rates,

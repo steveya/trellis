@@ -403,6 +403,28 @@ routes:
         notes:
           - "Use the SABR forward-option MC helper with `market_state` and `spec`; it owns SABR parameter binding and correlated forward/vol simulation."
       - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [variance_gamma]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_variance_gamma_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the Variance Gamma terminal MC helper with `market_state` and `spec`; it owns model-parameter binding and gamma-subordination sampling."
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [cgmy]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_cgmy_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the CGMY terminal-distribution MC helper with `market_state` and `spec`; it owns model-parameter binding and declares the CF-inversion sampler."
+      - when:
           payoff_family: autocallable
         primitives:
           - module: trellis.models.autocallable
@@ -878,6 +900,59 @@ routes:
         model_parameters: [market_state.model_parameters, market_state.model_parameter_sets]
         spot: [market_state.spot, market_state.underlier_spots]
 
+  - id: levy_reference_analytical
+    engine_family: analytical
+    route_family: analytical
+    status: promoted
+    confidence: 1.0
+    compatibility_alias_policy: internal_only
+    match:
+      methods: [analytical]
+      required_market_data: [model_parameters]
+      payoff_family: [vanilla_option]
+      exercise: [european]
+      model_family: [variance_gamma, cgmy]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov]
+      supported_characteristic_families: [variance_gamma_log_spot, cgmy_log_spot]
+      supports_calibration: false
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [variance_gamma]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_variance_gamma_option_reference
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the high-resolution Variance Gamma COS reference helper for analytical comparison targets."
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [cgmy]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_cgmy_option_reference
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the high-resolution CGMY COS reference helper for analytical comparison targets."
+    adapters: []
+    notes: []
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        model_parameters: [market_state.model_parameters, market_state.model_parameter_sets]
+        spot: [market_state.spot, market_state.underlier_spots]
+
   - id: analytical_black76
     engine_family: analytical
     route_family: analytical
@@ -1308,7 +1383,7 @@ routes:
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov]
-      supported_characteristic_families: [gbm_log_spot, heston_log_spot, merton_log_spot]
+      supported_characteristic_families: [gbm_log_spot, heston_log_spot, merton_log_spot, variance_gamma_log_spot, cgmy_log_spot]
       supports_calibration: false
     conditional_primitives:
       - when:
@@ -1332,6 +1407,28 @@ routes:
         adapters: []
         notes:
           - "Use `price_merton_jump_diffusion_option_transform(..., method='fft'|'cos')` for Merton transform targets; the helper owns characteristic-function and jump-parameter binding."
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [variance_gamma]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_variance_gamma_option_transform
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use `price_variance_gamma_option_transform(..., method='fft'|'cos')`; the helper owns characteristic-function and model-parameter binding."
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [cgmy]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_cgmy_option_transform
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use `price_cgmy_option_transform(..., method='fft'|'cos')`; the helper owns characteristic-function and model-parameter binding."
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]

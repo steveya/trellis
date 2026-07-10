@@ -2380,6 +2380,20 @@ def _infer_instrument(description: str, instrument_type: str | None) -> str | No
         ("compound_option", ("compound_option", "compound option")),
         ("cliquet_option", ("cliquet_option", "cliquet option", "cliquet")),
         ("heston_option", ("heston_option", "heston option", "heston")),
+        (
+            "european_option",
+            (
+                "variance_gamma",
+                "variance gamma",
+                "vg_cos",
+                "vg_mc",
+                "madan_carr_chang",
+                "madan carr chang",
+                "cgmy",
+                "tempered_stable",
+                "tempered stable",
+            ),
+        ),
         ("variance_swap", ("variance_swap", "variance swap")),
         (
             "credit_loss_distribution",
@@ -2567,6 +2581,8 @@ def _traits_from_text(desc: str) -> tuple[str, ...]:
         "stochastic_vol": ("heston", "stochastic vol", "stochastic_vol"),
         "jump_diffusion": ("jump", "jump_diffusion", "merton"),
         "sabr": ("sabr", "hagan"),
+        "variance_gamma": ("variance_gamma", "variance gamma", "vg_cos", "vg_mc"),
+        "cgmy": ("cgmy", "tempered_stable", "tempered stable"),
         "mean_reversion": ("mean_reversion", "mean reversion", "short rate"),
     }
     traits: set[str] = set()
@@ -3021,6 +3037,15 @@ def _model_family_for(
         return "jump_diffusion"
     if "sabr" in payoff_traits or "sabr" in desc:
         return "sabr"
+    if (
+        "variance_gamma" in payoff_traits
+        or "variance_gamma" in desc
+        or "vg_cos" in desc
+        or "vg_mc" in desc
+    ):
+        return "variance_gamma"
+    if "cgmy" in payoff_traits or "cgmy" in desc or "tempered_stable" in desc:
+        return "cgmy"
     if instrument in {"swap", "swaption", "bermudan_swaption", "callable_bond", "puttable_bond", "bond", "cap", "floor", "zcb_option"}:
         return "interest_rate"
     if method == "copula" or instrument in {"cdo", "nth_to_default", "credit_loss_distribution"}:
@@ -3071,6 +3096,10 @@ def _candidate_engine_families_for(
         families.append("monte_carlo")
     if model_family == "sabr":
         for family in ("analytical", "monte_carlo"):
+            if family not in families:
+                families.append(family)
+    if model_family in {"variance_gamma", "cgmy"}:
+        for family in ("transforms", "monte_carlo", "analytical"):
             if family not in families:
                 families.append(family)
     return tuple(families)
@@ -3145,6 +3174,99 @@ def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> Prod
                         *ir.reusable_primitives,
                         "trellis.models.sabr_option",
                         "trellis.models.processes.sabr",
+                    )
+                )
+            ),
+        )
+
+    if ir.instrument == "european_option" and (
+        "variance_gamma" in desc
+        or "vg_cos" in desc
+        or "vg_mc" in desc
+        or "madan_carr_chang" in desc
+    ):
+        payoff_traits = [
+            trait for trait in ir.payoff_traits if trait != "vol_surface_dependence"
+        ]
+        for trait in (
+            "variance_gamma",
+            "levy_process",
+            "discounting",
+            "model_parameter_dependence",
+        ):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+        candidate_engine_families = list(ir.candidate_engine_families)
+        for family in ("transforms", "monte_carlo", "analytical"):
+            if family not in candidate_engine_families:
+                candidate_engine_families.append(family)
+        route_families = list(ir.route_families)
+        for family in ("fft_pricing", "monte_carlo", "analytical"):
+            if family not in route_families:
+                route_families.append(family)
+        required_market_data = {
+            item for item in ir.required_market_data if item != "black_vol_surface"
+        }
+        required_market_data.update({"discount_curve", "model_parameters", "spot"})
+        return replace(
+            ir,
+            payoff_traits=tuple(payoff_traits),
+            model_family="variance_gamma",
+            candidate_engine_families=tuple(candidate_engine_families),
+            route_families=tuple(route_families),
+            required_market_data=frozenset(
+                normalize_market_data_requirements(required_market_data)
+            ),
+            reusable_primitives=tuple(
+                dict.fromkeys(
+                    (
+                        *ir.reusable_primitives,
+                        "trellis.models.levy_option",
+                    )
+                )
+            ),
+        )
+
+    if ir.instrument == "european_option" and (
+        "cgmy" in desc or "tempered_stable" in desc
+    ):
+        payoff_traits = [
+            trait for trait in ir.payoff_traits if trait != "vol_surface_dependence"
+        ]
+        for trait in (
+            "cgmy",
+            "levy_process",
+            "discounting",
+            "model_parameter_dependence",
+        ):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+        candidate_engine_families = list(ir.candidate_engine_families)
+        for family in ("transforms", "monte_carlo", "analytical"):
+            if family not in candidate_engine_families:
+                candidate_engine_families.append(family)
+        route_families = list(ir.route_families)
+        for family in ("fft_pricing", "monte_carlo", "analytical"):
+            if family not in route_families:
+                route_families.append(family)
+        required_market_data = {
+            item for item in ir.required_market_data if item != "black_vol_surface"
+        }
+        required_market_data.update({"discount_curve", "model_parameters", "spot"})
+        return replace(
+            ir,
+            payoff_traits=tuple(payoff_traits),
+            model_family="cgmy",
+            candidate_engine_families=tuple(candidate_engine_families),
+            route_families=tuple(route_families),
+            required_market_data=frozenset(
+                normalize_market_data_requirements(required_market_data)
+            ),
+            reusable_primitives=tuple(
+                dict.fromkeys(
+                    (
+                        *ir.reusable_primitives,
+                        "trellis.models.levy_option",
                     )
                 )
             ),
@@ -3409,6 +3531,10 @@ def _route_families_for(
     if payoff_family == "vanilla_option" and model_family == "cev_diffusion":
         families.append("pde_solver")
         families.append("equity_tree")
+    if payoff_family == "vanilla_option" and model_family in {"variance_gamma", "cgmy"}:
+        families.append("fft_pricing")
+        families.append("monte_carlo")
+        families.append("analytical")
     if (
         instrument in {"callable_bond", "puttable_bond", "bermudan_swaption"}
         or (

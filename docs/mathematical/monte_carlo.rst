@@ -46,6 +46,16 @@ Use ``scheme="heston_qe"`` for ``qe_heston`` targets and ``scheme="euler"`` for
 ``theta`` as variances. It does not infer Heston parameters from a Black
 volatility surface; that bridge belongs to an explicit calibration problem.
 
+**Levy terminal sampling** for European vanilla proof comparisons:
+
+``trellis.models.levy_option`` exposes bounded Monte Carlo helpers for
+Variance Gamma and CGMY European vanilla options. Variance Gamma uses direct
+gamma-subordination terminal sampling. CGMY uses a deterministic terminal
+distribution built from its characteristic function and samples that
+distribution for comparison against the transform/reference routes. These
+helpers are terminal-payoff comparators; they are not path simulators and
+should not be reused for barrier, Asian, or event-monitored Levy claims.
+
 Brownian Bridge
 ---------------
 

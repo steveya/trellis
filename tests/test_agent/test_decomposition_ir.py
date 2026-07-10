@@ -109,6 +109,38 @@ class TestProductIR:
         assert "monte_carlo" in ir.route_families
         assert "analytical" in ir.route_families
 
+    def test_ir_for_variance_gamma_keeps_vanilla_option_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Variance Gamma: COS vs MC",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "variance_gamma" in ir.payoff_traits
+        assert ir.model_family == "variance_gamma"
+        assert "model_parameters" in ir.required_market_data
+        assert "fft_pricing" in ir.route_families
+        assert "monte_carlo" in ir.route_families
+
+    def test_ir_for_cgmy_keeps_vanilla_option_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "CGMY / tempered stable process via COS",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "cgmy" in ir.payoff_traits
+        assert ir.model_family == "cgmy"
+        assert "model_parameters" in ir.required_market_data
+        assert "fft_pricing" in ir.route_families
+        assert "monte_carlo" in ir.route_families
+
     def test_ir_for_absorbed_analytical_exotics_uses_specific_payoff_families(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 
