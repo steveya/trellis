@@ -188,6 +188,13 @@ The first migrated vanilla cases now use that boundary directly:
   ``price_american_equity_option_lsm_monte_carlo(...)``. Thin adapters may
   delegate to that helper for Longstaff-Schwartz path simulation and exercise
   control instead of reimplementing GBM path construction in generated code.
+- FX single-barrier options now have dedicated analytical and Monte Carlo
+  helper-backed routes in ``trellis.models.fx_barrier_option``. These routes
+  bind spot FX, domestic discounting, foreign discounting, and Black volatility
+  explicitly instead of passing FX barrier tasks through the vanilla
+  Garman-Kohlhagen adapters. When an observation frequency is not supplied, the
+  FX analytical helper uses the Monte Carlo grid's effective monitoring
+  frequency for task-level cross-method parity.
 - equity variance-swap comparison targets now have a checked Monte Carlo
   realised-variance route in ``trellis.models.variance_swap``. The MC helper
   simulates annualised log-return variance under the market state's GBM

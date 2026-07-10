@@ -547,6 +547,39 @@ def test_builds_fx_analytical_plan_for_fx_option_context():
     assert plan.primitive_plan.blockers == ()
 
 
+def test_builds_fx_barrier_plan_for_knock_in_fx_context():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+    from trellis.agent.quant import PricingPlan
+
+    description = "Price an FX knock-in call with domestic/foreign discounting."
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.fx_barrier_option"],
+        required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(description, instrument_type="barrier_option")
+
+    assert product_ir.model_family == "fx"
+    assert {"fx_rates", "forward_curve", "spot"} <= product_ir.required_market_data
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=("trellis.models.fx_barrier_option",),
+        product_ir=product_ir,
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "analytical_fx_barrier"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_fx_barrier_option_analytical"}
+    assert plan.primitive_plan.adapters == ()
+    assert plan.primitive_plan.blockers == ()
+
+
 def test_builds_quanto_analytical_plan_with_shared_resolution_and_black76():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir

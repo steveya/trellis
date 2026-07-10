@@ -477,6 +477,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Analytical"].append(line)
         elif mod == "trellis.models.credit_index_option":
             groups["Models — Analytical"].append(line)
+        elif mod == "trellis.models.fx_barrier_option":
+            groups["Models — Analytical"].append(line)
         elif mod == "trellis.models.equity_option_tree":
             groups["Models — Trees"].append(line)
         elif mod == "trellis.models.equity_option_monte_carlo":
@@ -558,6 +560,7 @@ from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double
 from trellis.models.autocallable import AutocallableMonteCarloConfig, AutocallableMonteCarloResult, AutocallableRuntimeSpec, autocallable_observation_steps, autocallable_path_payoffs, price_autocallable_monte_carlo, price_autocallable_monte_carlo_result, resolve_autocallable_inputs
 from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, DoubleBarrierMonteCarloResult, DoubleBarrierPDEConfig, DoubleBarrierPDEResult, price_double_barrier_option_monte_carlo, price_double_barrier_option_monte_carlo_result, price_double_barrier_option_pde, price_double_barrier_option_pde_result
 from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, SingleBarrierMonteCarloResult, SingleBarrierPDEConfig, SingleBarrierPDEResult, SingleBarrierSpec, price_single_barrier_option_monte_carlo, price_single_barrier_option_monte_carlo_result, price_single_barrier_option_pde, price_single_barrier_option_pde_result, resolve_single_barrier_inputs, single_barrier_state_payoff
+from trellis.models.fx_barrier_option import FXBarrierMonteCarloResult, FXBarrierOptionSpec, ResolvedFXBarrierInputs, price_fx_barrier_option_analytical, price_fx_barrier_option_monte_carlo, price_fx_barrier_option_monte_carlo_result, resolve_fx_barrier_inputs
 from trellis.models.credit_index_option import CreditIndexOptionSpec, price_credit_index_option_black_on_spread, price_credit_index_option_monte_carlo
 from trellis.models.local_vol_option import LocalVolPDEResult, LocalVolVanillaOptionSpec, price_local_vol_option_monte_carlo, price_local_vol_option_pde, price_local_vol_option_pde_result
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result

@@ -24,6 +24,8 @@ def test_binding_catalog_loads_core_route_backed_bindings():
         "analytical_black76",
         "credit_default_swap",
         "credit_basket_nth_to_default",
+        "analytical_fx_barrier",
+        "monte_carlo_fx_barrier",
         "analytical_garman_kohlhagen",
         "waterfall_cashflows",
     } <= route_ids
@@ -64,6 +66,8 @@ def test_binding_catalog_covers_retired_fallback_routes():
         "correlated_basket_monte_carlo",
         "credit_default_swap",
         "credit_basket_nth_to_default",
+        "analytical_fx_barrier",
+        "monte_carlo_fx_barrier",
     } <= route_ids
 
 
@@ -379,6 +383,49 @@ def test_resolve_backend_binding_spec_uses_single_barrier_exact_helpers(
     assert resolved.binding_id == expected_ref
     assert resolved.exact_target_refs == (expected_ref,)
     assert resolved.market_binding_refs == (expected_market_binding,)
+
+
+@pytest.mark.parametrize(
+    "route_id,method,expected_ref",
+    [
+        (
+            "analytical_fx_barrier",
+            "analytical",
+            "trellis.models.fx_barrier_option.price_fx_barrier_option_analytical",
+        ),
+        (
+            "monte_carlo_fx_barrier",
+            "monte_carlo",
+            "trellis.models.fx_barrier_option.price_fx_barrier_option_monte_carlo",
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_fx_barrier_exact_helpers(
+    route_id,
+    method,
+    expected_ref,
+):
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id(route_id, catalog)
+
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="fx",
+        ),
+        method=method,
+    )
+
+    assert resolved.binding_id == expected_ref
+    assert resolved.exact_target_refs == (expected_ref,)
+    assert resolved.helper_refs == (expected_ref,)
 
 
 @pytest.mark.parametrize(

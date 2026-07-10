@@ -384,6 +384,24 @@ def test_compile_build_request_emits_fallback_lane_plan_for_fx_monte_carlo_route
     assert any("FXRate" in step for step in compiled.generation_plan.lane_construction_steps)
 
 
+def test_compile_build_request_selects_fx_barrier_monte_carlo_route():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Price an FX knock-in call with domestic/foreign discounting.",
+        instrument_type="barrier_option",
+        preferred_method="monte_carlo",
+        knowledge_profile="knowledge_light",
+    )
+
+    assert compiled.semantic_blueprint is None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "monte_carlo_fx_barrier"
+    assert compiled.generation_plan.lane_exact_binding_refs == (
+        "trellis.models.fx_barrier_option.price_fx_barrier_option_monte_carlo",
+    )
+
+
 def test_compile_build_request_respects_quanto_preferred_monte_carlo_route():
     from trellis.agent.platform_requests import compile_build_request
 

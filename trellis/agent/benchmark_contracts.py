@@ -60,6 +60,9 @@ _DIRECT_OVERRIDE_KEYS: tuple[str, ...] = (
     "lookback_type",
     "payoff",
     "style",
+    "currency_pair",
+    "fx_pair",
+    "foreign_discount_key",
     "rebate",
     "call_strike",
     "put_strike",
@@ -123,6 +126,7 @@ _CALENDAR_MAP: dict[str, Calendar] = {
 _BENCHMARK_PRODUCT_INSTRUMENT_TYPES: dict[str, str] = {
     "equity_vanilla": "european_option",
     "fx_vanilla": "european_option",
+    "fx_barrier_option": "barrier_option",
     "swaption": "swaption",
     "cds": "cds",
     "barrier_option": "barrier_option",
@@ -293,7 +297,7 @@ def benchmark_spec_overrides(
             overrides[spec_key] = parsed_dates
 
     product = str(contract.get("product") or "").strip().lower()
-    if product == "fx_vanilla":
+    if product in {"fx_vanilla", "fx_barrier_option"}:
         overrides.update(
             _fx_vanilla_overrides(
                 contract,
@@ -301,6 +305,8 @@ def benchmark_spec_overrides(
                 valuation_date=valuation_date,
             )
         )
+        if product == "fx_barrier_option":
+            overrides.update(_barrier_option_overrides(contract, valuation_date=valuation_date))
     elif product in {"period_rate_option_strip", "rate_cap_floor_collar"}:
         overrides.update(
             _rate_cap_floor_overrides(
@@ -633,6 +639,11 @@ def _benchmark_summary_line(contract: Mapping[str, Any]) -> str:
             f"Price a {contract.get('option_type', 'call')} FX vanilla option on "
             f"{contract.get('currency_pair', 'EURUSD')} under the analytical benchmark surface."
         )
+    if product == "fx_barrier_option":
+        return (
+            f"Price a {contract.get('barrier_type', 'barrier')} FX option on "
+            f"{contract.get('currency_pair', 'EURUSD')} with domestic/foreign discounting."
+        )
     if product == "period_rate_option_strip":
         kind = str(contract.get("cap_floor") or "cap").strip().lower()
         return f"Price a {kind} strip under the declared benchmark rates surface."
@@ -672,6 +683,25 @@ def _benchmark_detail_lines(
                 f"Option type: {contract.get('option_type', 'call')}.",
                 f"Strike: {contract.get('strike')}.",
                 f"Spot: {contract.get('spot')}.",
+                f"Expiry date: {expiry_date.isoformat()}.",
+                f"Notional: {contract.get('notional')}.",
+            ]
+        )
+        if scenario_contract is not None and scenario_contract.foreign_curve_name:
+            lines.append(f"Foreign discount key: {scenario_contract.foreign_curve_name}.")
+        return lines
+    if product == "fx_barrier_option":
+        expiry_date = _valuation_date(contract, scenario_contract) + timedelta(
+            days=round(float(contract.get("expiry_years") or 0.0) * 365.0)
+        )
+        lines.extend(
+            [
+                f"Currency pair: {contract.get('currency_pair', 'EURUSD')}.",
+                f"Option type: {contract.get('option_type', 'call')}.",
+                f"Strike: {contract.get('strike')}.",
+                f"Spot: {contract.get('spot')}.",
+                f"Barrier: {contract.get('barrier')}.",
+                f"Barrier type: {contract.get('barrier_type')}.",
                 f"Expiry date: {expiry_date.isoformat()}.",
                 f"Notional: {contract.get('notional')}.",
             ]

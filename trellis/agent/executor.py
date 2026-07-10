@@ -4330,6 +4330,12 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.fx_vanilla.price_fx_vanilla_analytical": (
             "return price_fx_vanilla_analytical(market_state, spec)"
         ),
+        "trellis.models.fx_barrier_option.price_fx_barrier_option_analytical": (
+            "return price_fx_barrier_option_analytical(market_state, spec)"
+        ),
+        "trellis.models.fx_barrier_option.price_fx_barrier_option_monte_carlo": (
+            "return price_fx_barrier_option_monte_carlo(market_state, spec)"
+        ),
         "trellis.models.callable_bond_pde.price_callable_bond_pde": (
             "return price_callable_bond_pde(market_state, spec)"
         ),
@@ -4936,6 +4942,14 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_equity_variance_swap_monte_carlo(" in body:
         imports.append(
             "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo"
+        )
+    if "price_fx_barrier_option_analytical(" in body:
+        imports.append(
+            "from trellis.models.fx_barrier_option import price_fx_barrier_option_analytical"
+        )
+    if "price_fx_barrier_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.fx_barrier_option import price_fx_barrier_option_monte_carlo"
         )
     if "price_vanilla_equity_option_tree(" in body:
         imports.append(

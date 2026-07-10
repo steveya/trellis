@@ -202,7 +202,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("barrier_type", "str", "Type: 'up_and_out', 'down_and_out', 'up_and_in', 'down_and_in'"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
             FieldDef("rebate", "float", "Cash rebate paid when the barrier event knocks out", "0.0"),
-            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None means continuous monitoring", "None"),
+            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None derives from n_steps", "None"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
         ],
     ),
@@ -526,6 +526,44 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
         ],
     ),
+    "fx_barrier_option_analytical": SpecSchema(
+        class_name="FXBarrierAnalyticalPayoff",
+        spec_name="FXBarrierOptionSpec",
+        requirements=["discount_curve", "forward_curve", "black_vol_surface", "fx_rates"],
+        fields=[
+            FieldDef("notional", "float", "Option notional in foreign units"),
+            FieldDef("strike", "float", "Strike in domestic currency per unit of foreign currency"),
+            FieldDef("barrier", "float", "Barrier level in domestic currency per unit of foreign currency"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("fx_pair", "str", "FX quote key such as 'EURUSD'"),
+            FieldDef("foreign_discount_key", "str", "Foreign discount curve key such as 'EUR-DISC'"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("barrier_type", "str", "Type: 'up_and_out', 'down_and_out', 'up_and_in', 'down_and_in'"),
+            FieldDef("rebate", "float", "Cash rebate paid when the barrier event knocks out", "0.0"),
+            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None derives from n_steps", "None"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "fx_barrier_option_monte_carlo": SpecSchema(
+        class_name="FXBarrierMonteCarloPayoff",
+        spec_name="FXBarrierOptionSpec",
+        requirements=["discount_curve", "forward_curve", "black_vol_surface", "fx_rates"],
+        fields=[
+            FieldDef("notional", "float", "Option notional in foreign units"),
+            FieldDef("strike", "float", "Strike in domestic currency per unit of foreign currency"),
+            FieldDef("barrier", "float", "Barrier level in domestic currency per unit of foreign currency"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("fx_pair", "str", "FX quote key such as 'EURUSD'"),
+            FieldDef("foreign_discount_key", "str", "Foreign discount curve key such as 'EUR-DISC'"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("barrier_type", "str", "Type: 'up_and_out', 'down_and_out', 'up_and_in', 'down_and_in'"),
+            FieldDef("rebate", "float", "Cash rebate paid when the barrier event knocks out", "0.0"),
+            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None means continuous monitoring", "None"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("n_paths", "int", "Number of Monte Carlo paths", "120000"),
+            FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
+        ],
+    ),
     "american_put_tree": SpecSchema(
         class_name="AmericanPutTreePayoff",
         spec_name="AmericanPutTreeSpec",
@@ -648,6 +686,8 @@ _SPECIALIZED_SPEC_ALLOWED_INSTRUMENTS: dict[str, frozenset[str]] = {
     "cds_monte_carlo": frozenset({"", "cds", "credit_default_swap"}),
     "fx_vanilla_analytical": frozenset({"", "european_option"}),
     "fx_vanilla_monte_carlo": frozenset({"", "european_option"}),
+    "fx_barrier_option_analytical": frozenset({"", "barrier_option"}),
+    "fx_barrier_option_monte_carlo": frozenset({"", "barrier_option"}),
     "american_put_tree": frozenset({"", "american_put"}),
     "cev_option": frozenset({"", "european_option"}),
     "quanto_option_analytical": frozenset({"", "quanto_option"}),
@@ -844,6 +884,16 @@ def _select_specialized_spec(
         if method_hint == "monte_carlo":
             return SPECIALIZED_SPECS["cds_monte_carlo"]
 
+    if _allowed("fx_barrier_option_analytical") and _looks_like_fx_barrier(
+        description,
+        desc_lower,
+        normalized_requirements,
+        normalized_instrument=normalized_instrument,
+    ):
+        if method_hint == "monte_carlo":
+            return SPECIALIZED_SPECS["fx_barrier_option_monte_carlo"]
+        return SPECIALIZED_SPECS["fx_barrier_option_analytical"]
+
     if _allowed("fx_vanilla_analytical") and _looks_like_fx_vanilla(
         description,
         desc_lower,
@@ -891,6 +941,31 @@ def _looks_like_fx_vanilla(
     if any(token in desc_lower for token in fx_tokens):
         return True
     return any(re.fullmatch(r"[A-Z]{6}", token) for token in re.findall(r"\b[A-Za-z]{6}\b", description))
+
+
+def _looks_like_fx_barrier(
+    description: str,
+    desc_lower: str,
+    normalized_requirements: set[str],
+    *,
+    normalized_instrument: str,
+) -> bool:
+    """Whether the build request clearly targets an FX option with a barrier event."""
+    has_fx = (
+        {"fx_rates", "forward_curve"} <= normalized_requirements
+        or "fx" in desc_lower
+        or "foreign discount" in desc_lower
+        or any(re.fullmatch(r"[A-Z]{6}", token) for token in re.findall(r"\b[A-Za-z]{6}\b", description))
+    )
+    has_barrier = (
+        normalized_instrument == "barrier_option"
+        or "barrier" in desc_lower
+        or "knock-in" in desc_lower
+        or "knock in" in desc_lower
+        or "knock-out" in desc_lower
+        or "knock out" in desc_lower
+    )
+    return bool(has_fx and has_barrier)
 
 
 def _infer_method_hint(desc_lower: str, *, preferred_method: str | None = None) -> str | None:

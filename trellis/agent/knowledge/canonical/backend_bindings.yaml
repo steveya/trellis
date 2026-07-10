@@ -336,6 +336,14 @@ bindings:
             role: route_helper
       - when: default
 
+  - route_id: monte_carlo_fx_barrier
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    primitives:
+      - module: trellis.models.fx_barrier_option
+        symbol: price_fx_barrier_option_monte_carlo
+        role: route_helper
+
   - route_id: monte_carlo_fx_vanilla
     engine_family: monte_carlo
     route_family: monte_carlo
@@ -771,6 +779,14 @@ bindings:
           - module: trellis.core.date_utils
             symbol: year_fraction
             role: time_measure
+
+  - route_id: analytical_fx_barrier
+    engine_family: analytical
+    route_family: analytical
+    primitives:
+      - module: trellis.models.fx_barrier_option
+        symbol: price_fx_barrier_option_analytical
+        role: route_helper
 
   - route_id: analytical_garman_kohlhagen
     engine_family: analytical

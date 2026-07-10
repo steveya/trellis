@@ -354,6 +354,21 @@ def test_single_barrier_helpers_are_visible_to_import_registry():
     assert "price_single_barrier_option_pde_result" in registry_text
 
 
+def test_fx_barrier_helpers_are_visible_to_import_registry():
+    module = "trellis.models.fx_barrier_option"
+
+    assert module_exists(module)
+    assert "price_fx_barrier_option_analytical" in list_module_exports(module)
+    assert "price_fx_barrier_option_monte_carlo" in list_module_exports(module)
+    assert find_symbol_modules("price_fx_barrier_option_analytical") == (module,)
+    assert find_symbol_modules("price_fx_barrier_option_monte_carlo") == (module,)
+    assert is_valid_import(module, "FXBarrierOptionSpec")
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    assert "price_fx_barrier_option_analytical" in registry_text
+
+
 def test_resolve_import_candidates_handles_known_and_unknown_symbols():
     candidates = resolve_import_candidates(["theta_method_1d", "definitely_not_real"])
     assert "trellis.models.pde.theta_method" in candidates["theta_method_1d"]

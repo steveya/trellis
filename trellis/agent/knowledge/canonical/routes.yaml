@@ -567,6 +567,47 @@ routes:
         primitives: []
         adapters: []
 
+  - id: monte_carlo_fx_barrier
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      bonus_when_market_data: {fx_rates: 4.0, forward_curve: 4.0}
+      payoff_trait_bonus: {single_barrier: 5.0}
+      payoff_family_bonus: {barrier_option: 2.0}
+      non_european_penalty: -2.0
+    match:
+      methods: [monte_carlo]
+      exclude_instruments: [quanto_option, cds, nth_to_default, basket_option]
+      required_market_data: [fx_rates, forward_curve]
+      payoff_traits: [single_barrier]
+      model_family: [fx]
+    admissibility:
+      control_styles: [identity]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: native_payout_with_fx
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: false
+      supported_state_tags: [pathwise_only, terminal_markov, schedule_state]
+      supported_process_families: [gbm_1d]
+      supported_path_requirement_kinds: [full_path, event_replay]
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.fx_barrier_option
+        symbol: price_fx_barrier_option_monte_carlo
+        role: route_helper
+    adapters: []
+    notes:
+      - "Use the FX barrier helper for FX knock-in/knock-out tasks; vanilla FX helpers intentionally ignore barrier events."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        forward_curve: [market_state.forward_curve, market_state.forecast_curves]
+        black_vol_surface: [market_state.vol_surface]
+        spot: [market_state.spot, market_state.underlier_spots, market_state.fx_rates]
+
   - id: monte_carlo_fx_vanilla
     engine_family: monte_carlo
     route_family: monte_carlo
@@ -581,6 +622,7 @@ routes:
       methods: [monte_carlo]
       exclude_instruments: [quanto_option, cds, nth_to_default, basket_option]
       required_market_data: [fx_rates, forward_curve]
+      payoff_family: [vanilla_option]
     admissibility:
       control_styles: [identity]
       event_support: automatic
@@ -1445,6 +1487,45 @@ routes:
         discount_curve: [market_state.discount]
         model_parameters: [market_state.model_parameters, market_state.model_parameter_sets]
 
+  - id: analytical_fx_barrier
+    engine_family: analytical
+    route_family: analytical
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      bonus_when_market_data: {fx_rates: 4.0, forward_curve: 4.0}
+      payoff_trait_bonus: {single_barrier: 5.0}
+      payoff_family_bonus: {barrier_option: 2.0}
+      non_european_penalty: -4.0
+    match:
+      methods: [analytical]
+      exclude_instruments: [quanto_option, cds, nth_to_default]
+      required_market_data: [fx_rates, forward_curve]
+      payoff_traits: [single_barrier]
+      model_family: [fx]
+    admissibility:
+      control_styles: [identity, holder_max]
+      event_support: automatic
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: native_payout_with_fx
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: false
+      supported_state_tags: [terminal_markov, recombining_safe]
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.fx_barrier_option
+        symbol: price_fx_barrier_option_analytical
+        role: route_helper
+    adapters: []
+    notes:
+      - "Use the FX barrier helper for FX knock-in/knock-out tasks; pass foreign carry as the analytical barrier `q` input."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        forward_curve: [market_state.forward_curve, market_state.forecast_curves]
+        black_vol_surface: [market_state.vol_surface]
+        spot: [market_state.spot, market_state.underlier_spots, market_state.fx_rates]
+
   - id: analytical_garman_kohlhagen
     engine_family: analytical
     route_family: analytical
@@ -1458,6 +1539,7 @@ routes:
       methods: [analytical]
       exclude_instruments: [quanto_option, cds, nth_to_default]
       required_market_data: [fx_rates, forward_curve]
+      payoff_family: [vanilla_option]
     admissibility:
       control_styles: [identity, holder_max]
       event_support: none

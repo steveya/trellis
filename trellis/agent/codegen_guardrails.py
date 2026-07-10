@@ -1926,6 +1926,14 @@ def _route_score(
         if isinstance(pf_bonuses, dict) and product_ir.payoff_family in pf_bonuses:
             score += pf_bonuses[product_ir.payoff_family]
 
+        # payoff_trait_bonus: dict mapping payoff_trait -> bonus
+        trait_bonuses = hints.get("payoff_trait_bonus", {})
+        if isinstance(trait_bonuses, dict):
+            payoff_traits = set(getattr(product_ir, "payoff_traits", ()) or ())
+            for trait, trait_bonus in trait_bonuses.items():
+                if trait in payoff_traits:
+                    score += trait_bonus
+
         # non_european_penalty: penalty when exercise is not european/none
         non_euro_penalty = hints.get("non_european_penalty", 0.0)
         if non_euro_penalty and product_ir.exercise_style not in {"none", "european"}:

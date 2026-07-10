@@ -3684,7 +3684,7 @@ def _looks_like_fx_option_context(
     *,
     instrument_type: str | None = None,
 ) -> bool:
-    """Detect a vanilla FX-option context from free-form request text."""
+    """Detect an FX option context from free-form request text."""
     if instrument_type == "fx_option":
         return True
     if not description:
@@ -3694,6 +3694,33 @@ def _looks_like_fx_option_context(
         token in lower
         for token in ("fx option", "fx vanilla", "forex option", "garman-kohlhagen", "gk analytical")
     ):
+        return True
+    has_fx_context = any(
+        token in lower
+        for token in (
+            " fx ",
+            "fx ",
+            "forex",
+            "foreign exchange",
+            "foreign discount",
+            "domestic/foreign",
+            "foreign/domestic",
+        )
+    )
+    option_like = any(
+        token in lower
+        for token in (
+            " option",
+            " call",
+            " put",
+            "barrier",
+            "knock-in",
+            "knock-out",
+            "knock in",
+            "knock out",
+        )
+    )
+    if has_fx_context and option_like:
         return True
     return re.search(r"\b[A-Z]{6}\b", description) is not None
 

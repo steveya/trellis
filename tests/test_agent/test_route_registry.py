@@ -1984,6 +1984,59 @@ class TestFXAnalyticalRoutes:
         assert _prim_set(new_prims) == expected_prims
 
 
+class TestFXBarrierRoutes:
+    FX_BARRIER_IR = ProductIR(
+        instrument="barrier_option",
+        payoff_family="barrier_option",
+        payoff_traits=("barrier", "single_barrier"),
+        exercise_style="european",
+        model_family="fx",
+    )
+    FX_BARRIER_PLAN = _make_plan(
+        "analytical",
+        market_data={"fx_rates", "forward_curve", "discount_curve", "black_vol_surface", "spot"},
+    )
+
+    def test_fx_barrier_analytical_candidate(self, registry):
+        new = _new_routes(
+            registry,
+            "analytical",
+            self.FX_BARRIER_IR,
+            pricing_plan=self.FX_BARRIER_PLAN,
+        )
+        assert new == ("analytical_fx_barrier",)
+
+    def test_fx_barrier_analytical_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_fx_barrier"][0]
+        new_prims = resolve_route_primitives(spec, self.FX_BARRIER_IR)
+        expected_prims = {
+            ("trellis.models.fx_barrier_option", "price_fx_barrier_option_analytical", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_fx_barrier_monte_carlo_candidate(self, registry):
+        plan = _make_plan(
+            "monte_carlo",
+            market_data={"fx_rates", "forward_curve", "discount_curve", "black_vol_surface", "spot"},
+        )
+        new = _new_routes(
+            registry,
+            "monte_carlo",
+            self.FX_BARRIER_IR,
+            pricing_plan=plan,
+        )
+        assert "monte_carlo_fx_barrier" in new
+        assert "monte_carlo_fx_vanilla" not in new
+
+    def test_fx_barrier_monte_carlo_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_fx_barrier"][0]
+        new_prims = resolve_route_primitives(spec, self.FX_BARRIER_IR)
+        expected_prims = {
+            ("trellis.models.fx_barrier_option", "price_fx_barrier_option_monte_carlo", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+
 class TestFXMonteCarloRoutes:
     FX_IR = ProductIR(instrument="fx_option", payoff_family="vanilla_option", exercise_style="european")
     FX_PLAN = _make_plan(
@@ -2653,6 +2706,7 @@ class TestEngineFamilyCoverage:
         "correlated_basket_monte_carlo": "monte_carlo",
         "exercise_monte_carlo": "exercise",
         "monte_carlo_paths": "monte_carlo",
+        "monte_carlo_fx_barrier": "monte_carlo",
         "monte_carlo_fx_vanilla": "monte_carlo",
         "local_vol_monte_carlo": "monte_carlo",
         "local_vol_pde": "pde_solver",
@@ -2668,6 +2722,7 @@ class TestEngineFamilyCoverage:
         # the rate_tree when-clause and resolve_route_family's
         # conditional_route_family override.
         "short_rate_bond_option": "analytical",
+        "analytical_fx_barrier": "analytical",
         "analytical_garman_kohlhagen": "analytical",
         "transform_fft": "fft_pricing",
         "vanilla_equity_theta_pde": "pde_solver",
