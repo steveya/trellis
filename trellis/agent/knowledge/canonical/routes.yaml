@@ -646,6 +646,39 @@ routes:
         local_vol_surface: [market_state.local_vol_surface, market_state.local_vol_surfaces]
         spot: [market_state.spot, market_state.underlier_spots]
 
+  - id: local_vol_pde
+    engine_family: pde_solver
+    route_family: pde_solver
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      bonus_when_market_data: {local_vol_surface: 3.0, spot: 1.0}
+    match:
+      methods: [pde_solver]
+      required_market_data: [local_vol_surface]
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov, recombining_safe]
+      supported_operator_families: [local_vol_1d]
+      supports_calibration: false
+    primitives:
+      - module: trellis.models.local_vol_option
+        symbol: price_local_vol_option_pde
+        role: route_helper
+    adapters: []
+    notes:
+      - "Use the local-vol option helper for one-dimensional European vanilla Dupire PDE targets; the helper consumes an explicit local-vol surface and fails closed on nonzero dividend yield until the PDE operator separates carry from discounting."
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        local_vol_surface: [market_state.local_vol_surface, market_state.local_vol_surfaces]
+        spot: [market_state.spot, market_state.underlier_spots]
+
   - id: qmc_sobol_paths
     engine_family: qmc
     route_family: qmc
@@ -1712,7 +1745,7 @@ routes:
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov, recombining_safe]
-      supported_operator_families: [black_scholes_1d, hull_white_1f]
+      supported_operator_families: [black_scholes_1d, local_vol_1d, hull_white_1f]
       supported_event_transform_kinds: [add_cashflow, project_max, project_min]
       supports_calibration: true
     conditional_primitives:

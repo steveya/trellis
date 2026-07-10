@@ -67,6 +67,7 @@ from trellis.agent.task_manifests import (
     load_pricing_tasks as load_pricing_task_manifests,
 )
 from trellis.models.credit_index_option import CreditIndexOptionSpec
+from trellis.models.local_vol_option import LocalVolVanillaOptionSpec
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -677,6 +678,124 @@ class ProofCreditIndexMonteCarloPayoff(_ProofCreditIndexOptionBasePayoff):
         )
 
 
+class _ProofLocalVolBasePayoff:
+    """Local-vol proof adapter over shared PDE and MC helpers."""
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve", "local_vol_surface", "spot"}
+
+    def __init__(self, spec: LocalVolVanillaOptionSpec):
+        if spec.local_vol_surface is None:
+            spec = replace(
+                spec,
+                local_vol_surface=_constant_local_vol_surface(spec.local_vol_level),
+            )
+        self._spec = spec
+
+    @property
+    def spec(self) -> LocalVolVanillaOptionSpec:
+        return self._spec
+
+
+class ProofLocalVolDupirePDEPayoff(_ProofLocalVolBasePayoff):
+    """Local volatility target: Dupire-style one-dimensional PDE."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.local_vol_option import price_local_vol_option_pde
+
+        return float(
+            price_local_vol_option_pde(
+                market_state,
+                self._spec,
+                n_x=161,
+                n_t=180,
+            )
+        )
+
+
+class ProofLocalVolMonteCarloPayoff(_ProofLocalVolBasePayoff):
+    """Local volatility target: terminal vanilla local-vol MC."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.local_vol_option import price_local_vol_option_monte_carlo
+
+        return float(
+            price_local_vol_option_monte_carlo(
+                market_state,
+                self._spec,
+                n_paths=80_000,
+                n_steps=120,
+                seed=59,
+            )
+        )
+
+
+@dataclass(frozen=True)
+class ProofHestonOptionSpec:
+    """Internal proof-task spec for bounded vanilla Heston MC targets."""
+
+    notional: float = 1.0
+    spot: float = 100.0
+    strike: float = 100.0
+    maturity_years: float = 1.0
+    option_type: str = "call"
+    kappa: float = 2.0
+    theta: float = 0.04
+    xi: float = 0.30
+    rho: float = -0.70
+    v0: float = 0.04
+    scheme: str = "heston_qe"
+    n_paths: int = 4096
+    n_steps: int = 64
+    seed: int = 60
+
+
+class ProofHestonMonteCarloPayoff:
+    """Heston target: bounded terminal vanilla Monte Carlo."""
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve", "model_parameters", "spot"}
+
+    def __init__(self, spec: ProofHestonOptionSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> ProofHestonOptionSpec:
+        return self._spec
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo
+
+        return float(
+            price_heston_option_monte_carlo(
+                market_state,
+                self._spec,
+                scheme=self._spec.scheme,
+                n_paths=self._spec.n_paths,
+                n_steps=self._spec.n_steps,
+                seed=self._spec.seed,
+                parameter_set_name="heston_validation",
+            )
+        )
+
+
+def _constant_local_vol_surface(level: float):
+    """Return a vectorized flat local-vol surface for sparse proof rows."""
+    import numpy as raw_np
+
+    local_level = float(level)
+
+    def surface(spot, _time):
+        spot_array = raw_np.asarray(spot, dtype=float)
+        if spot_array.ndim == 0:
+            return local_level
+        return raw_np.full(spot_array.shape, local_level, dtype=float)
+
+    return surface
+
+
 _PROOF_AMERICAN_LSM_TARGETS: dict[str, type] = {
     "polynomial": ProofAmericanLSMPolynomialPayoff,
     "laguerre": ProofAmericanLSMLaguerrePayoff,
@@ -697,6 +816,13 @@ _PROOF_DETERMINISTIC_TARGETS: dict[str, dict[str, type]] = {
     "T55": {
         "black_on_spread": ProofCreditIndexBlackOnSpreadPayoff,
         "mc_credit_index": ProofCreditIndexMonteCarloPayoff,
+    },
+    "T59": {
+        "dupire_pde": ProofLocalVolDupirePDEPayoff,
+        "local_vol_mc": ProofLocalVolMonteCarloPayoff,
+    },
+    "T60": {
+        "heston_mc": ProofHestonMonteCarloPayoff,
     },
 }
 

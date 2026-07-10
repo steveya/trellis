@@ -2044,6 +2044,118 @@ def test_sparse_credit_index_option_row_uses_deterministic_spread_targets(monkey
     }
 
 
+def test_sparse_local_vol_row_uses_deterministic_pde_and_mc_targets(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T59"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T59 local-vol proof targets should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_headline": "T59 deterministic local-vol proof passed.",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["attempts"] == 0
+    assert result["comparison_targets"] == ["dupire_pde", "local_vol_mc"]
+    assert result["cross_validation"]["status"] == "passed"
+    assert set(result["cross_validation"]["successful_targets"]) == {
+        "dupire_pde",
+        "local_vol_mc",
+    }
+    assert {
+        target_id: payload["payoff_class"]
+        for target_id, payload in result["method_results"].items()
+    } == {
+        "dupire_pde": "ProofLocalVolDupirePDEPayoff",
+        "local_vol_mc": "ProofLocalVolMonteCarloPayoff",
+    }
+
+
+def test_sparse_slv_row_runs_heston_target_and_blocks_missing_leverage(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T60"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T60 should use deterministic heston target and SLV repair packet")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "blocked",
+            "diagnosis_headline": "T60 SLV leverage contract blocked honestly.",
+            "diagnosis_decision_stage": "blocked",
+            "diagnosis_next_action": "Supply a leverage-function contract before SLV pricing.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert classify_task_result(result) == "blocked"
+    assert result["attempts"] == 0
+    assert result["method_results"]["heston_mc"]["success"] is True
+    assert result["method_results"]["heston_mc"]["payoff_class"] == "ProofHestonMonteCarloPayoff"
+    slv_result = result["method_results"]["slv_mc"]
+    assert slv_result["success"] is False
+    assert slv_result["blocker_details"]["repair_packet"]["packet_type"] == (
+        "missing_slv_lsv_leverage_contract"
+    )
+    assert result["blocker_details"]["method_targets"] == ["slv_mc"]
+    assert result["cross_validation"]["successful_targets"] == ["heston_mc"]
+    assert result["cross_validation"]["status"] == "insufficient_results"
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
+
+
 def test_cross_validate_comparison_task_prices_reused_fx_modules():
     from trellis.agent.task_runtime import (
         ComparisonBuildTarget,

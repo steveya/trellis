@@ -119,6 +119,29 @@ def test_credit_index_option_helpers_are_visible_to_import_registry():
         assert symbol in registry_text
 
 
+def test_local_vol_option_helpers_are_visible_to_import_registry():
+    module = "trellis.models.local_vol_option"
+    symbols = {
+        "LocalVolPDEResult",
+        "LocalVolVanillaOptionSpec",
+        "price_local_vol_option_monte_carlo",
+        "price_local_vol_option_pde",
+        "price_local_vol_option_pde_result",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
 def test_variance_swap_monte_carlo_helper_is_visible_to_import_registry():
     module = "trellis.models.variance_swap"
     symbols = {

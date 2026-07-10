@@ -169,6 +169,14 @@ option row binds ``black_on_spread`` and ``mc_credit_index`` to
 contract surface instead of asking generated adapters to infer spread forward,
 spread volatility, annuity, and loss-convention fields from a sparse title.
 
+``T59`` and ``T60`` use the same sparse-proof boundary.  ``T59`` binds
+``dupire_pde`` and ``local_vol_mc`` to ``trellis.models.local_vol_option`` over
+one ``LocalVolVanillaOptionSpec``.  ``T60`` executes the ``heston_mc`` target
+through the checked Heston Monte Carlo helper but keeps ``slv_mc`` as a
+certified honest block unless the task supplies an explicit leverage-function
+contract.  The SLV/LSV blocker is expected evidence, not an actionable adapter
+failure.
+
 The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 
 - ``make gate-pr`` for PR-ready validation

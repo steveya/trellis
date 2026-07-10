@@ -2242,6 +2242,20 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_local_vol_pde_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "local_vol_pde"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="local_vol",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.local_vol_option", "price_local_vol_option_pde", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_asian_monte_carlo_primitives_use_checked_helpers(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         ir = ProductIR(
@@ -2396,7 +2410,11 @@ class TestFallbackRoutes:
         assert vanilla.admissibility.supported_event_transform_kinds == ()
         assert generic is not None
         assert generic.admissibility.supported_control_styles == ("identity", "holder_max", "issuer_min")
-        assert generic.admissibility.supported_operator_families == ("black_scholes_1d", "hull_white_1f")
+        assert generic.admissibility.supported_operator_families == (
+            "black_scholes_1d",
+            "local_vol_1d",
+            "hull_white_1f",
+        )
         assert generic.admissibility.supported_event_transform_kinds == (
             "add_cashflow",
             "project_max",
@@ -2411,6 +2429,7 @@ class TestFallbackRoutes:
             "merton_log_spot",
             "variance_gamma_log_spot",
             "cgmy_log_spot",
+            "kou_log_spot",
             "bates_log_spot",
         )
 
@@ -2636,6 +2655,7 @@ class TestEngineFamilyCoverage:
         "monte_carlo_paths": "monte_carlo",
         "monte_carlo_fx_vanilla": "monte_carlo",
         "local_vol_monte_carlo": "monte_carlo",
+        "local_vol_pde": "pde_solver",
         "qmc_sobol_paths": "qmc",
         "exercise_lattice": "lattice",
         "rate_tree_backward_induction": "lattice",

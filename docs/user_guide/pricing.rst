@@ -183,6 +183,34 @@ result and can project the named local-vol surface back onto
 ``MarketState.local_vol_surface`` / ``local_vol_surfaces`` for later runtime
 consumers.
 
+European vanilla local-vol pricing has a bounded comparison helper as well:
+
+.. code-block:: python
+
+   from trellis.models.local_vol_option import (
+       LocalVolVanillaOptionSpec,
+       price_local_vol_option_monte_carlo,
+       price_local_vol_option_pde,
+   )
+
+   spec = LocalVolVanillaOptionSpec(
+       spot=100.0,
+       strike=100.0,
+       maturity_years=1.0,
+       discount_rate=0.04,
+       local_vol_level=0.20,
+       option_type="call",
+   )
+
+   pde = price_local_vol_option_pde(market_state, spec)
+   mc = price_local_vol_option_monte_carlo(market_state, spec, seed=59)
+
+The helper consumes ``spec.local_vol_surface`` first, then
+``MarketState.local_vol_surface`` / ``local_vol_surfaces``, and finally the
+flat ``local_vol_level`` fallback.  The PDE side is intentionally limited to
+zero dividend yield until the one-factor operator has separate carry and
+discount-rate terms.
+
 Those migrated calibration workflows now share one typed runtime binding
 surface as well. ``apply_to_market_state(...)`` still keeps the compatibility
 fields populated, but the authoritative binding metadata lives under

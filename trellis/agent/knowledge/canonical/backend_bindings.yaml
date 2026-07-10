@@ -358,6 +358,14 @@ bindings:
         symbol: local_vol_european_vanilla_price
         role: pricing_kernel
 
+  - route_id: local_vol_pde
+    engine_family: pde_solver
+    route_family: pde_solver
+    primitives:
+      - module: trellis.models.local_vol_option
+        symbol: price_local_vol_option_pde
+        role: route_helper
+
   - route_id: qmc_sobol_paths
     engine_family: qmc
     route_family: qmc

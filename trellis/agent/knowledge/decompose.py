@@ -3061,6 +3061,13 @@ def _model_family_for(
     if "stochastic_vol" in payoff_traits or "heston" in desc or instrument == "heston_option":
         return "stochastic_volatility"
     if (
+        "local_vol" in payoff_traits
+        or "local_vol" in desc
+        or "local vol" in desc
+        or "local volatility" in desc
+    ):
+        return "local_vol"
+    if (
         "kou" in payoff_traits
         or "double_exponential_jump" in payoff_traits
         or "kou" in desc
@@ -3129,6 +3136,10 @@ def _candidate_engine_families_for(
         families.append("pde")
     if model_family == "stochastic_volatility" and "monte_carlo" not in families:
         families.append("monte_carlo")
+    if model_family == "local_vol":
+        for family in ("pde", "monte_carlo"):
+            if family not in families:
+                families.append(family)
     if model_family == "sabr":
         for family in ("analytical", "monte_carlo"):
             if family not in families:

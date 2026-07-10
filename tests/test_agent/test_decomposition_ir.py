@@ -57,6 +57,19 @@ class TestProductIR:
         assert "monte_carlo" in ir.candidate_engine_families
         assert ir.supported is True
 
+    def test_ir_for_local_vol_option_uses_local_vol_model_family(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "European equity call under local vol: PDE vs MC",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert ir.model_family == "local_vol"
+        assert {"pde", "monte_carlo"}.issubset(set(ir.candidate_engine_families))
+
     def test_ir_for_barrier_option_includes_promoted_analytical_support(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 

@@ -128,6 +128,12 @@ class QuadratureTransformSemantics:
             "diagnostics": list(self.diagnostics),
             "validation_requirements": list(self.validation_requirements),
             "supported_now": self.supported_now,
+            "expected_honest_block": not self.supported_now,
+            "model_validator_policy": (
+                "skip_expected_honest_block"
+                if not self.supported_now
+                else "validate_when_executable"
+            ),
             "missing_components": list(self.missing_components),
             "evidence": list(self.evidence),
         }
@@ -199,6 +205,12 @@ class LeverageFunctionSemantics:
             "solver_requirements": list(self.solver_requirements),
             "validation_requirements": list(self.validation_requirements),
             "supported_now": self.supported_now,
+            "expected_honest_block": not self.supported_now,
+            "model_validator_policy": (
+                "skip_expected_honest_block"
+                if not self.supported_now
+                else "validate_when_executable"
+            ),
             "missing_components": list(self.missing_components),
             "evidence": list(self.evidence),
         }

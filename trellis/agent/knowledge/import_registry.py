@@ -483,6 +483,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Monte Carlo"].append(line)
         elif mod == "trellis.models.equity_option_pde":
             groups["Models — PDE"].append(line)
+        elif mod == "trellis.models.local_vol_option":
+            groups["Models — PDE"].append(line)
         elif mod == "trellis.models.asian_option":
             groups["Models — Monte Carlo"].append(line)
         elif mod == "trellis.models.lookback_option":
@@ -557,6 +559,7 @@ from trellis.models.autocallable import AutocallableMonteCarloConfig, Autocallab
 from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, DoubleBarrierMonteCarloResult, DoubleBarrierPDEConfig, DoubleBarrierPDEResult, price_double_barrier_option_monte_carlo, price_double_barrier_option_monte_carlo_result, price_double_barrier_option_pde, price_double_barrier_option_pde_result
 from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, SingleBarrierMonteCarloResult, SingleBarrierPDEConfig, SingleBarrierPDEResult, SingleBarrierSpec, price_single_barrier_option_monte_carlo, price_single_barrier_option_monte_carlo_result, price_single_barrier_option_pde, price_single_barrier_option_pde_result, resolve_single_barrier_inputs, single_barrier_state_payoff
 from trellis.models.credit_index_option import CreditIndexOptionSpec, price_credit_index_option_black_on_spread, price_credit_index_option_monte_carlo
+from trellis.models.local_vol_option import LocalVolPDEResult, LocalVolVanillaOptionSpec, price_local_vol_option_monte_carlo, price_local_vol_option_pde, price_local_vol_option_pde_result
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
