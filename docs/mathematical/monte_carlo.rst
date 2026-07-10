@@ -61,12 +61,14 @@ exercise claims under Bates.
 **Levy terminal sampling** for European vanilla proof comparisons:
 
 ``trellis.models.levy_option`` exposes bounded Monte Carlo helpers for
-Variance Gamma and CGMY European vanilla options. Variance Gamma uses direct
-gamma-subordination terminal sampling. CGMY uses a deterministic terminal
-distribution built from its characteristic function and samples that
-distribution for comparison against the transform/reference routes. These
-helpers are terminal-payoff comparators; they are not path simulators and
-should not be reused for barrier, Asian, or event-monitored Levy claims.
+Variance Gamma, CGMY, and Kou European vanilla options. Variance Gamma uses
+direct gamma-subordination terminal sampling. CGMY uses a deterministic
+terminal distribution built from its characteristic function and samples that
+distribution for comparison against the transform/reference routes. Kou uses
+direct compound-Poisson terminal sampling of asymmetric double-exponential
+jump sums. These helpers are terminal-payoff comparators; they are not path
+simulators and should not be reused for barrier, Asian, or event-monitored
+Levy claims.
 
 Brownian Bridge
 ---------------

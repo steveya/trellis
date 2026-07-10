@@ -202,13 +202,14 @@ The first migrated vanilla cases now use that boundary directly:
   ``price_cev_option_tree(...)`` provides the matching spot-lattice comparison
   route. These helpers are task-runner proof surfaces for explicit CEV
   comparison targets, not a replacement for the generic agent assembly path.
-- Variance Gamma and CGMY proof targets keep the same European vanilla option
-  product shape but select ``model_family=variance_gamma`` or
-  ``model_family=cgmy``. Transform/reference/MC comparison targets bind through
-  ``trellis.models.levy_option`` and require explicit model parameters rather
-  than inherited ``black_vol_surface`` inputs. The CGMY MC target is a bounded
-  terminal-distribution comparator from the characteristic function, not a
-  pathwise Levy simulator.
+- Variance Gamma, CGMY, and Kou proof targets keep the same European vanilla
+  option product shape but select ``model_family=variance_gamma``,
+  ``model_family=cgmy``, or ``model_family=kou``. Transform/reference/MC
+  comparison targets bind through ``trellis.models.levy_option`` and require
+  explicit model parameters rather than inherited ``black_vol_surface``
+  inputs. The CGMY MC target is a bounded terminal-distribution comparator
+  from the characteristic function, and the Kou MC target is direct terminal
+  double-exponential jump sampling; neither is a pathwise Levy simulator.
 - the transform route uses that thin vanilla helper only for true
   ``equity_diffusion`` contracts; stochastic-volatility transform tasks such
   as Heston smile extraction now lower onto a checked Heston transform helper

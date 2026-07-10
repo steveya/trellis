@@ -136,7 +136,10 @@ def price_variance_gamma_option_monte_carlo_result(
         spec,
         model_family="variance_gamma",
     )
-    resolved_n_paths = max(int(n_paths if n_paths is not None else getattr(spec, "n_paths", 120_000)), 1)
+    resolved_n_paths = max(
+        int(n_paths if n_paths is not None else getattr(spec, "n_paths", 120_000)),
+        1,
+    )
     resolved_seed = seed if seed is not None else getattr(spec, "seed", 42)
     if resolved.maturity <= 0.0:
         return _intrinsic_mc_result(resolved, resolved_seed, "variance_gamma_gamma_subordination")
@@ -274,6 +277,131 @@ def price_cgmy_option_monte_carlo(
     )
 
 
+def price_kou_option_transform(
+    market_state,
+    spec,
+    *,
+    method: str | None = None,
+    fft_alpha: float | None = None,
+    fft_points: int | None = None,
+    fft_eta: float | None = None,
+    cos_points: int | None = None,
+    cos_truncation: float | None = None,
+) -> float:
+    """Return a scalar FFT/COS Kou double-exponential vanilla option price."""
+    return float(
+        _price_levy_option_transform_result(
+            market_state,
+            spec,
+            model_family="kou",
+            method=method,
+            fft_alpha=fft_alpha,
+            fft_points=fft_points,
+            fft_eta=fft_eta,
+            cos_points=cos_points,
+            cos_truncation=cos_truncation,
+        ).price
+    )
+
+
+def price_kou_option_reference(market_state, spec) -> float:
+    """Return a high-resolution COS reference for a Kou vanilla option."""
+    return price_kou_option_transform(
+        market_state,
+        spec,
+        method="cos",
+        cos_points=4096,
+        cos_truncation=18.0,
+    )
+
+
+def price_kou_option_monte_carlo_result(
+    market_state,
+    spec,
+    *,
+    n_paths: int | None = None,
+    seed: int | None = None,
+) -> LevyOptionMonteCarloResult:
+    """Price a Kou option by direct terminal double-exponential sampling."""
+    resolved = resolve_levy_option_inputs(market_state, spec, model_family="kou")
+    resolved_n_paths = max(int(n_paths if n_paths is not None else getattr(spec, "n_paths", 120_000)), 1)
+    resolved_seed = seed if seed is not None else getattr(spec, "seed", 42)
+    if resolved.maturity <= 0.0:
+        return _intrinsic_mc_result(
+            resolved,
+            resolved_seed,
+            "kou_double_exponential_terminal",
+        )
+
+    sigma = resolved.parameters["sigma"]
+    jump_intensity = resolved.parameters["jump_intensity"]
+    up_probability = resolved.parameters["up_probability"]
+    eta_up = resolved.parameters["eta_up"]
+    eta_down = resolved.parameters["eta_down"]
+    jump_compensator = _kou_jump_compensator(resolved)
+
+    rng = raw_np.random.default_rng(resolved_seed)
+    arrivals = rng.poisson(jump_intensity * resolved.maturity, size=resolved_n_paths)
+    up_counts = rng.binomial(arrivals, up_probability)
+    down_counts = arrivals - up_counts
+
+    up_jump_sum = raw_np.zeros(resolved_n_paths)
+    up_mask = up_counts > 0
+    if raw_np.any(up_mask):
+        up_jump_sum[up_mask] = rng.gamma(
+            shape=up_counts[up_mask].astype(float),
+            scale=1.0 / eta_up,
+        )
+
+    down_jump_sum = raw_np.zeros(resolved_n_paths)
+    down_mask = down_counts > 0
+    if raw_np.any(down_mask):
+        down_jump_sum[down_mask] = rng.gamma(
+            shape=down_counts[down_mask].astype(float),
+            scale=1.0 / eta_down,
+        )
+
+    diffusion_shock = rng.standard_normal(resolved_n_paths)
+    log_terminal = (
+        raw_np.log(resolved.spot)
+        + (
+            resolved.rate
+            - resolved.dividend_yield
+            - jump_intensity * jump_compensator
+            - 0.5 * sigma**2
+        )
+        * resolved.maturity
+        + sigma * raw_np.sqrt(resolved.maturity) * diffusion_shock
+        + up_jump_sum
+        - down_jump_sum
+    )
+    return _discounted_terminal_mc_result(
+        resolved,
+        raw_np.exp(log_terminal),
+        resolved_n_paths,
+        resolved_seed,
+        "kou_double_exponential_terminal",
+    )
+
+
+def price_kou_option_monte_carlo(
+    market_state,
+    spec,
+    *,
+    n_paths: int | None = None,
+    seed: int | None = None,
+) -> float:
+    """Return a scalar terminal Monte Carlo Kou vanilla option price."""
+    return float(
+        price_kou_option_monte_carlo_result(
+            market_state,
+            spec,
+            n_paths=n_paths,
+            seed=seed,
+        ).price
+    )
+
+
 def variance_gamma_log_ratio_char_fn(resolved: ResolvedLevyOptionInputs):
     """Return ``E[exp(iu log(S_T/S_0))]`` for Variance Gamma."""
     sigma = resolved.parameters["sigma"]
@@ -319,6 +447,50 @@ def cgmy_log_spot_char_fn(resolved: ResolvedLevyOptionInputs):
     return phi
 
 
+def kou_log_ratio_char_fn(resolved: ResolvedLevyOptionInputs):
+    """Return ``E[exp(iu log(S_T/S_0))]`` for Kou double-exponential jumps."""
+    sigma = resolved.parameters["sigma"]
+    jump_intensity = resolved.parameters["jump_intensity"]
+    up_probability = resolved.parameters["up_probability"]
+    eta_up = resolved.parameters["eta_up"]
+    eta_down = resolved.parameters["eta_down"]
+    jump_compensator = _kou_jump_compensator(resolved)
+    drift = (
+        resolved.rate
+        - resolved.dividend_yield
+        - jump_intensity * jump_compensator
+        - 0.5 * sigma**2
+    ) * resolved.maturity
+    diffusion_variance = sigma**2 * resolved.maturity
+    jump_arrival = jump_intensity * resolved.maturity
+
+    def phi(u):
+        u_arr = raw_np.asarray(u, dtype=complex)
+        jump_cf = (
+            up_probability * eta_up / (eta_up - 1j * u_arr)
+            + (1.0 - up_probability) * eta_down / (eta_down + 1j * u_arr)
+        )
+        return raw_np.exp(
+            1j * u_arr * drift
+            - 0.5 * diffusion_variance * u_arr**2
+            + jump_arrival * (jump_cf - 1.0)
+        )
+
+    return phi
+
+
+def kou_log_spot_char_fn(resolved: ResolvedLevyOptionInputs):
+    """Return ``E[exp(iu log(S_T))]`` for Kou double-exponential jumps."""
+    log_spot = raw_np.log(resolved.spot)
+    ratio_cf = kou_log_ratio_char_fn(resolved)
+
+    def phi(u):
+        u_arr = raw_np.asarray(u, dtype=complex)
+        return raw_np.exp(1j * u_arr * log_spot) * ratio_cf(u_arr)
+
+    return phi
+
+
 def _price_levy_option_transform_result(
     market_state,
     spec,
@@ -360,6 +532,9 @@ def _price_levy_option_transform_result(
     elif resolved.model_family == "cgmy":
         ratio_cf = _cgmy_log_ratio_char_fn(resolved)
         spot_cf = cgmy_log_spot_char_fn(resolved)
+    elif resolved.model_family == "kou":
+        ratio_cf = kou_log_ratio_char_fn(resolved)
+        spot_cf = kou_log_spot_char_fn(resolved)
     else:
         raise ValueError(f"Unsupported Levy model family {resolved.model_family!r}")
 
@@ -413,6 +588,8 @@ def _resolve_model_parameter_payload(
         getattr(spec, "variance_gamma", None),
         getattr(spec, "vg", None),
         getattr(spec, "cgmy", None),
+        getattr(spec, "kou", None),
+        getattr(spec, "double_exponential_jump", None),
     ):
         extracted = _extract_family_payload(explicit, requested_family)
         if extracted is not None:
@@ -490,6 +667,8 @@ def _infer_family_from_payload(payload: Mapping[str, object], requested_family: 
         return "variance_gamma"
     if _has_family_keys(payload, "cgmy"):
         return "cgmy"
+    if _has_family_keys(payload, "kou"):
+        return "kou"
     raise ValueError("Cannot infer Levy model family from model parameter payload")
 
 
@@ -530,6 +709,58 @@ def _canonical_parameters(payload: Mapping[str, object], family: str) -> dict[st
             "M": float(m_value),
             "Y": float(y_value),
         }
+    if family == "kou":
+        sigma = _resolve_positive_float(
+            payload,
+            ("sigma", "diffusion_sigma", "volatility", "vol"),
+            default=None,
+        )
+        jump_intensity = _resolve_nonnegative_float(
+            payload,
+            ("jump_intensity", "lambda", "lam", "intensity"),
+            default=None,
+        )
+        up_probability = _resolve_float(
+            payload,
+            ("up_probability", "p_up", "prob_up", "p"),
+            default=None,
+        )
+        eta_up = _resolve_positive_float(
+            payload,
+            ("eta_up", "eta1", "eta_plus", "up_eta"),
+            default=None,
+        )
+        eta_down = _resolve_positive_float(
+            payload,
+            ("eta_down", "eta2", "eta_minus", "down_eta"),
+            default=None,
+        )
+        missing = [
+            name
+            for name, value in (
+                ("sigma", sigma),
+                ("jump_intensity", jump_intensity),
+                ("up_probability", up_probability),
+                ("eta_up", eta_up),
+                ("eta_down", eta_down),
+            )
+            if value is None
+        ]
+        if missing:
+            raise ValueError(f"Kou payload is missing {', '.join(missing)}")
+        if not 0.0 <= float(up_probability) <= 1.0:
+            raise ValueError(
+                f"Kou up_probability must be in [0, 1], got {up_probability}"
+            )
+        if float(eta_up) <= 1.0:
+            raise ValueError("Kou eta_up must exceed 1.0 for the stock-price martingale")
+        return {
+            "sigma": float(sigma),
+            "jump_intensity": float(jump_intensity),
+            "up_probability": float(up_probability),
+            "eta_up": float(eta_up),
+            "eta_down": float(eta_down),
+        }
     raise ValueError(f"Unsupported Levy model family {family!r}")
 
 
@@ -546,6 +777,14 @@ def _has_family_keys(payload: Mapping[str, object], family: str) -> bool:
             and _has_any_key(payload, ("G", "g"))
             and _has_any_key(payload, ("M", "m"))
             and _has_any_key(payload, ("Y", "y"))
+        )
+    if family == "kou":
+        return (
+            _has_any_key(payload, ("sigma", "diffusion_sigma", "volatility", "vol"))
+            and _has_any_key(payload, ("jump_intensity", "lambda", "lam", "intensity"))
+            and _has_any_key(payload, ("up_probability", "p_up", "prob_up", "p"))
+            and _has_any_key(payload, ("eta_up", "eta1", "eta_plus", "up_eta"))
+            and _has_any_key(payload, ("eta_down", "eta2", "eta_minus", "down_eta"))
         )
     return False
 
@@ -578,6 +817,17 @@ def _variance_gamma_martingale_adjustment(resolved: ResolvedLevyOptionInputs) ->
     theta = resolved.parameters["theta"]
     nu = resolved.parameters["nu"]
     return float(raw_np.log(1.0 - theta * nu - 0.5 * sigma**2 * nu) / nu)
+
+
+def _kou_jump_compensator(resolved: ResolvedLevyOptionInputs) -> float:
+    up_probability = resolved.parameters["up_probability"]
+    eta_up = resolved.parameters["eta_up"]
+    eta_down = resolved.parameters["eta_down"]
+    return float(
+        up_probability * eta_up / (eta_up - 1.0)
+        + (1.0 - up_probability) * eta_down / (eta_down + 1.0)
+        - 1.0
+    )
 
 
 def _cgmy_log_ratio_char_fn(resolved: ResolvedLevyOptionInputs):
@@ -702,6 +952,11 @@ def _normalize_family(value: object) -> str:
         "vg": "variance_gamma",
         "variancegamma": "variance_gamma",
         "tempered_stable": "cgmy",
+        "double_exponential": "kou",
+        "double_exponential_jump": "kou",
+        "double_exponential_jump_diffusion": "kou",
+        "kou_jump": "kou",
+        "kou_process": "kou",
     }
     return aliases.get(family, family)
 
@@ -711,6 +966,14 @@ def _family_aliases(family: str) -> tuple[str, ...]:
         return ("variance_gamma", "vg", "variance_gamma_equity")
     if family == "cgmy":
         return ("cgmy", "tempered_stable", "cgmy_equity")
+    if family == "kou":
+        return (
+            "kou",
+            "kou_equity",
+            "double_exponential",
+            "double_exponential_jump",
+            "double_exponential_jump_diffusion",
+        )
     return (family,)
 
 
@@ -744,16 +1007,34 @@ def _resolve_positive_float(
     return value
 
 
+def _resolve_nonnegative_float(
+    payload: Mapping[str, object],
+    names: tuple[str, ...],
+    *,
+    default: float | None,
+) -> float | None:
+    value = _resolve_float(payload, names, default=default)
+    if value is not None and value < 0.0:
+        raise ValueError(f"Levy parameter {names[0]} must be non-negative")
+    return value
+
+
 __all__ = [
     "LevyOptionMonteCarloResult",
     "LevyOptionTransformResult",
     "ResolvedLevyOptionInputs",
     "cgmy_log_ratio_char_fn",
     "cgmy_log_spot_char_fn",
+    "kou_log_ratio_char_fn",
+    "kou_log_spot_char_fn",
     "price_cgmy_option_monte_carlo",
     "price_cgmy_option_monte_carlo_result",
     "price_cgmy_option_reference",
     "price_cgmy_option_transform",
+    "price_kou_option_monte_carlo",
+    "price_kou_option_monte_carlo_result",
+    "price_kou_option_reference",
+    "price_kou_option_transform",
     "price_variance_gamma_option_monte_carlo",
     "price_variance_gamma_option_monte_carlo_result",
     "price_variance_gamma_option_reference",

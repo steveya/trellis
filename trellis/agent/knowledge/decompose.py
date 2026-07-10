@@ -2604,6 +2604,8 @@ def _traits_from_text(desc: str) -> tuple[str, ...]:
         "sabr": ("sabr", "hagan"),
         "variance_gamma": ("variance_gamma", "variance gamma", "vg_cos", "vg_mc"),
         "cgmy": ("cgmy", "tempered_stable", "tempered stable"),
+        "kou": ("kou", "double_exponential", "double exponential", "kou_fft", "kou_mc"),
+        "double_exponential_jump": ("double_exponential_jump", "double exponential jump"),
         "mean_reversion": ("mean_reversion", "mean reversion", "short rate"),
     }
     traits: set[str] = set()
@@ -3058,6 +3060,14 @@ def _model_family_for(
         return "bates"
     if "stochastic_vol" in payoff_traits or "heston" in desc or instrument == "heston_option":
         return "stochastic_volatility"
+    if (
+        "kou" in payoff_traits
+        or "double_exponential_jump" in payoff_traits
+        or "kou" in desc
+        or "double_exponential" in desc
+        or "double exponential" in desc
+    ):
+        return "kou"
     if "jump_diffusion" in payoff_traits:
         return "jump_diffusion"
     if "sabr" in payoff_traits or "sabr" in desc:
@@ -3183,7 +3193,9 @@ def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> Prod
 
     if ir.instrument == "european_option" and "bates" in desc:
         payoff_traits = [
-            trait for trait in ir.payoff_traits if trait != "vol_surface_dependence"
+            trait
+            for trait in ir.payoff_traits
+            if trait not in {"vol_surface_dependence", "jump_parameter_dependence"}
         ]
         for trait in (
             "affine_jump_stochastic_vol",
@@ -3204,7 +3216,9 @@ def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> Prod
             if family not in route_families:
                 route_families.append(family)
         required_market_data = {
-            item for item in ir.required_market_data if item != "black_vol_surface"
+            item
+            for item in ir.required_market_data
+            if item not in {"black_vol_surface", "jump_parameters"}
         }
         required_market_data.update({"discount_curve", "model_parameters", "jump_parameters", "spot"})
         return replace(
@@ -3221,6 +3235,56 @@ def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> Prod
                     (
                         *ir.reusable_primitives,
                         "trellis.models.bates_option",
+                    )
+                )
+            ),
+        )
+
+    if ir.instrument == "european_option" and (
+        "kou" in desc or "double_exponential" in desc or "double exponential" in desc
+    ):
+        payoff_traits = [
+            trait
+            for trait in ir.payoff_traits
+            if trait not in {"vol_surface_dependence", "jump_parameter_dependence"}
+        ]
+        for trait in (
+            "kou",
+            "double_exponential_jump",
+            "levy_process",
+            "discounting",
+            "model_parameter_dependence",
+        ):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+        candidate_engine_families = list(ir.candidate_engine_families)
+        for family in ("transforms", "monte_carlo", "analytical"):
+            if family not in candidate_engine_families:
+                candidate_engine_families.append(family)
+        route_families = list(ir.route_families)
+        for family in ("fft_pricing", "monte_carlo", "analytical"):
+            if family not in route_families:
+                route_families.append(family)
+        required_market_data = {
+            item
+            for item in ir.required_market_data
+            if item not in {"black_vol_surface", "jump_parameters"}
+        }
+        required_market_data.update({"discount_curve", "model_parameters", "spot"})
+        return replace(
+            ir,
+            payoff_traits=tuple(payoff_traits),
+            model_family="kou",
+            candidate_engine_families=tuple(candidate_engine_families),
+            route_families=tuple(route_families),
+            required_market_data=frozenset(
+                normalize_market_data_requirements(required_market_data)
+            ),
+            reusable_primitives=tuple(
+                dict.fromkeys(
+                    (
+                        *ir.reusable_primitives,
+                        "trellis.models.levy_option",
                     )
                 )
             ),
@@ -3652,7 +3716,7 @@ def _route_families_for(
     if payoff_family == "vanilla_option" and model_family == "bates":
         families.append("fft_pricing")
         families.append("monte_carlo")
-    if payoff_family == "vanilla_option" and model_family in {"variance_gamma", "cgmy"}:
+    if payoff_family == "vanilla_option" and model_family in {"variance_gamma", "cgmy", "kou"}:
         families.append("fft_pricing")
         families.append("monte_carlo")
         families.append("analytical")
@@ -3697,6 +3761,8 @@ def _reusable_primitives_for(
         primitives.append("trellis.models.processes.heston")
     if model_family == "bates":
         primitives.append("trellis.models.bates_option")
+    if model_family in {"variance_gamma", "cgmy", "kou"}:
+        primitives.append("trellis.models.levy_option")
     if "american" in payoff_traits:
         primitives.extend([
             "trellis.models.monte_carlo.lsm",

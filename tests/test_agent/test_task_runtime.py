@@ -1029,6 +1029,24 @@ def test_task_to_instrument_type_uses_cgmy_hint_for_vanilla_option():
     assert resolution.source == "task.title_or_description"
 
 
+def test_task_to_instrument_type_uses_kou_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T58",
+            "title": "Kou double-exponential jump: FFT vs MC",
+            "cross_validate": {
+                "internal": ["kou_fft", "kou_mc"],
+                "analytical": "kou_reference_values",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
 def test_task_to_instrument_type_uses_bates_hint_for_vanilla_option():
     from trellis.agent.task_runtime import task_to_instrument_identity
 

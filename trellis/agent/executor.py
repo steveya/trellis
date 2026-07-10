@@ -1931,7 +1931,7 @@ def _validate_build(
     )
     requires_levy_model_parameters = (
         str(getattr(product_ir, "model_family", "") or "").strip().lower()
-        in {"variance_gamma", "cgmy"}
+        in {"variance_gamma", "cgmy", "kou"}
         or any("levy_option" in str(ref) for ref in exact_binding_refs)
         or str(getattr(getattr(compiled_request, "comparison_spec", None), "target_name", "") or "")
         .strip()
@@ -1944,6 +1944,9 @@ def _validate_build(
             "cgmy_cos",
             "cgmy_mc",
             "cgmy_reference_values",
+            "kou_fft",
+            "kou_mc",
+            "kou_reference_values",
         }
     )
     requires_bates_model_parameters = (
@@ -2149,6 +2152,19 @@ def _validate_build(
                 }
                 payload["model_parameters"] = {"cgmy": cgmy_payload}
                 payload["model_parameter_sets"] = {"cgmy_validation": cgmy_payload}
+            elif product_model_family == "kou" or any(
+                "kou_option" in str(ref) for ref in exact_binding_refs
+            ):
+                kou_payload = {
+                    "family": "kou",
+                    "sigma": vol,
+                    "jump_intensity": 0.35,
+                    "up_probability": 0.35,
+                    "eta_up": 8.0,
+                    "eta_down": 6.0,
+                }
+                payload["model_parameters"] = {"kou": kou_payload}
+                payload["model_parameter_sets"] = {"kou_validation": kou_payload}
             else:
                 payload["model_parameters"] = {"quanto_correlation": corr}
         if (
@@ -3964,6 +3980,19 @@ def _deterministic_exact_binding_evaluate_body(
         "cgmy_reference_values": (
             "return price_cgmy_option_reference(market_state, spec)"
         ),
+        "kou_fft": (
+            "return price_kou_option_transform("
+            'market_state, spec, method="fft")'
+        ),
+        "kou_mc": (
+            "return price_kou_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "kou_reference_values": (
+            "return price_kou_option_reference(market_state, spec)"
+        ),
         "bates_fft": (
             "return price_bates_option_transform("
             'market_state, spec, method="fft")'
@@ -4384,6 +4413,18 @@ def _deterministic_exact_binding_evaluate_body(
             'n_steps=getattr(spec, "n_steps", 96), '
             'seed=getattr(spec, "seed", 42))'
         ),
+        "trellis.models.levy_option.price_kou_option_transform": (
+            'return price_kou_option_transform(market_state, spec, method="fft")'
+        ),
+        "trellis.models.levy_option.price_kou_option_monte_carlo": (
+            "return price_kou_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "trellis.models.levy_option.price_kou_option_reference": (
+            "return price_kou_option_reference(market_state, spec)"
+        ),
         "trellis.models.zcb_option_tree.price_zcb_option_tree": (
             "return price_zcb_option_tree("
             f"market_state, spec{zcb_option_tree_kwargs})"
@@ -4688,6 +4729,7 @@ def _materialize_deterministic_exact_binding_module(
     if (
         "price_variance_gamma_option_" in body
         or "price_cgmy_option_" in body
+        or "price_kou_option_" in body
     ):
         rendered = _set_generated_requirements(
             rendered,
@@ -4798,6 +4840,18 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_cgmy_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.levy_option import price_cgmy_option_monte_carlo"
+        )
+    if "price_kou_option_transform(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_kou_option_transform"
+        )
+    if "price_kou_option_reference(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_kou_option_reference"
+        )
+    if "price_kou_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_kou_option_monte_carlo"
         )
     if "price_bates_option_transform(" in body:
         imports.append(

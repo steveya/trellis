@@ -728,6 +728,9 @@ def _semantic_cues(normalized_text: str) -> dict[str, bool]:
                 "merton",
                 "jump-diffusion",
                 "jump diffusion",
+                "kou",
+                "double-exponential",
+                "double exponential",
             ),
         ),
         "credit": _contains_any(

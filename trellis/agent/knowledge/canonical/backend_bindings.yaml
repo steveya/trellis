@@ -223,6 +223,14 @@ bindings:
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]
+          model_family: [kou]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_kou_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
           model_family: [bates]
         primitives:
           - module: trellis.models.bates_option
@@ -798,6 +806,14 @@ bindings:
           - module: trellis.models.levy_option
             symbol: price_cgmy_option_reference
             role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [kou]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_kou_option_reference
+            role: route_helper
 
   - route_id: transform_fft
     engine_family: fft_pricing
@@ -834,6 +850,14 @@ bindings:
         primitives:
           - module: trellis.models.levy_option
             symbol: price_cgmy_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [kou]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_kou_option_transform
             role: route_helper
       - when:
           payoff_family: vanilla_option

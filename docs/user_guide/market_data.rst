@@ -453,8 +453,8 @@ stochastic-volatility authority surface as well:
 
 - the volatility model pack stores seeded Heston parameters for
   ``heston_equity``
-- the same pack also stores bounded Variance Gamma and CGMY parameter sets for
-  terminal European vanilla proof comparisons
+- the same pack also stores bounded Variance Gamma, CGMY, and Kou parameter
+  sets for terminal European vanilla proof comparisons
 - the snapshot now carries a named ``spx_heston_implied_vol`` surface
   generated from those parameters
 - ``spx_local_vol`` is derived from that stored implied-vol surface through the

@@ -637,6 +637,12 @@ def test_resolve_backend_binding_spec_uses_sabr_forward_option_helpers():
             "trellis.models.levy_option.price_cgmy_option_reference",
         ),
         (
+            "kou",
+            "trellis.models.levy_option.price_kou_option_transform",
+            "trellis.models.levy_option.price_kou_option_monte_carlo",
+            "trellis.models.levy_option.price_kou_option_reference",
+        ),
+        (
             "bates",
             "trellis.models.bates_option.price_bates_option_transform",
             "trellis.models.bates_option.price_bates_option_monte_carlo",

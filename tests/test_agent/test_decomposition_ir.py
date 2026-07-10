@@ -141,6 +141,26 @@ class TestProductIR:
         assert "fft_pricing" in ir.route_families
         assert "monte_carlo" in ir.route_families
 
+    def test_ir_for_kou_keeps_vanilla_option_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Kou double-exponential jump: FFT vs MC",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "kou" in ir.payoff_traits
+        assert "double_exponential_jump" in ir.payoff_traits
+        assert ir.model_family == "kou"
+        assert "model_parameters" in ir.required_market_data
+        assert "black_vol_surface" not in ir.required_market_data
+        assert "fft_pricing" in ir.route_families
+        assert "monte_carlo" in ir.route_families
+        assert "analytical" in ir.route_families
+        assert "trellis.models.levy_option" in ir.reusable_primitives
+
     def test_ir_for_bates_keeps_vanilla_option_shape(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 

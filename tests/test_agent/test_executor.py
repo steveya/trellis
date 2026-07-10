@@ -1617,6 +1617,16 @@ def test_deterministic_exact_binding_module_materializes_merton_monte_carlo_help
             "price_cgmy_option_reference",
             "price_cgmy_option_reference(market_state, spec)",
         ),
+        (
+            "kou_fft",
+            "price_kou_option_transform",
+            'method="fft"',
+        ),
+        (
+            "kou_reference_values",
+            "price_kou_option_reference",
+            "price_kou_option_reference(market_state, spec)",
+        ),
     ],
 )
 def test_deterministic_exact_binding_module_materializes_levy_transform_helper_wrapper(
@@ -1663,6 +1673,7 @@ def test_deterministic_exact_binding_module_materializes_levy_transform_helper_w
     [
         ("vg_mc", "price_variance_gamma_option_monte_carlo"),
         ("cgmy_mc", "price_cgmy_option_monte_carlo"),
+        ("kou_mc", "price_kou_option_monte_carlo"),
     ],
 )
 def test_deterministic_exact_binding_module_materializes_levy_monte_carlo_helper_wrapper(

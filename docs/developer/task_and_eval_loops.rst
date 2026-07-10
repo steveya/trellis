@@ -684,12 +684,14 @@ and ``merton_mc`` binds to the sibling terminal Monte Carlo helper. The
 evidence. Validation fixtures must include those jump parameters instead of
 trying to reinterpret the task as an ordinary Black-vol vanilla route.
 
-Variance Gamma and CGMY targets use the same ProductIR discipline. Sparse task
-labels such as ``vg_cos``, ``vg_mc``, ``madan_carr_chang_reference``,
-``cgmy_cos``, ``cgmy_mc``, and ``cgmy_reference_values`` remain European
-vanilla options, but their ``model_family`` narrows to ``variance_gamma`` or
-``cgmy`` and their market evidence narrows to explicit ``model_parameters``.
-The deterministic exact-binding wrappers should call the checked
+Variance Gamma, CGMY, and Kou targets use the same ProductIR discipline.
+Sparse task labels such as ``vg_cos``, ``vg_mc``,
+``madan_carr_chang_reference``, ``cgmy_cos``, ``cgmy_mc``,
+``cgmy_reference_values``, ``kou_fft``, ``kou_mc``, and
+``kou_reference_values`` remain European vanilla options, but their
+``model_family`` narrows to ``variance_gamma``, ``cgmy``, or ``kou`` and
+their market evidence narrows to explicit ``model_parameters``. The
+deterministic exact-binding wrappers should call the checked
 ``trellis.models.levy_option`` helpers. Validation should not run generic
 Black-vol vega checks for these routes unless a separate calibration problem
 explicitly owns a Black-vol-to-Levy-parameter bridge.

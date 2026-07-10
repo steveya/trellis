@@ -908,6 +908,14 @@ def _build_synthetic_volatility_model_pack(
                 "M": 6.0,
                 "Y": 0.55,
             },
+            "kou_equity": {
+                "family": "kou",
+                "sigma": round(float(jump_params["sigma"]) * jump_scale, 6),
+                "jump_intensity": round(float(jump_params["lam"]) * jump_scale, 6),
+                "up_probability": 0.35,
+                "eta_up": 8.0,
+                "eta_down": 6.0,
+            },
         },
     )
 

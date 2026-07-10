@@ -427,6 +427,17 @@ routes:
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]
+          model_family: [kou]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_kou_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the Kou terminal MC helper with `market_state` and `spec`; it owns double-exponential jump parameter binding and terminal jump sampling."
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
           model_family: [bates]
         primitives:
           - module: trellis.models.bates_option
@@ -922,7 +933,7 @@ routes:
       required_market_data: [model_parameters]
       payoff_family: [vanilla_option]
       exercise: [european]
-      model_family: [variance_gamma, cgmy]
+      model_family: [variance_gamma, cgmy, kou]
     admissibility:
       control_styles: [identity]
       event_support: none
@@ -931,7 +942,7 @@ routes:
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov]
-      supported_characteristic_families: [variance_gamma_log_spot, cgmy_log_spot]
+      supported_characteristic_families: [variance_gamma_log_spot, cgmy_log_spot, kou_log_spot]
       supports_calibration: false
     conditional_primitives:
       - when:
@@ -956,6 +967,17 @@ routes:
         adapters: []
         notes:
           - "Use the high-resolution CGMY COS reference helper for analytical comparison targets."
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [kou]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_kou_option_reference
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the high-resolution Kou COS reference helper for analytical comparison targets."
     adapters: []
     notes: []
     market_data_access:
@@ -1444,7 +1466,7 @@ routes:
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov]
-      supported_characteristic_families: [gbm_log_spot, heston_log_spot, merton_log_spot, variance_gamma_log_spot, cgmy_log_spot, bates_log_spot]
+      supported_characteristic_families: [gbm_log_spot, heston_log_spot, merton_log_spot, variance_gamma_log_spot, cgmy_log_spot, kou_log_spot, bates_log_spot]
       supports_calibration: false
     conditional_primitives:
       - when:
@@ -1490,6 +1512,17 @@ routes:
         adapters: []
         notes:
           - "Use `price_cgmy_option_transform(..., method='fft'|'cos')`; the helper owns characteristic-function and model-parameter binding."
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [kou]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_kou_option_transform
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use `price_kou_option_transform(..., method='fft'|'cos')`; the helper owns characteristic-function and double-exponential model-parameter binding."
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]

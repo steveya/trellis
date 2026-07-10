@@ -76,17 +76,19 @@ Levy Route Binding
 ------------------
 
 ``trellis.models.levy_option`` provides checked helper surfaces for European
-vanilla options under Variance Gamma and CGMY Levy models. The task runtime
-uses ``model_family=variance_gamma`` or ``model_family=cgmy`` as an
-admissibility signal, then binds the corresponding log-spot characteristic
-function to the shared FFT/COS kernels.
+vanilla options under Variance Gamma, CGMY, and Kou double-exponential Levy
+models. The task runtime uses ``model_family=variance_gamma``,
+``model_family=cgmy``, or ``model_family=kou`` as an admissibility signal,
+then binds the corresponding log-spot characteristic function to the shared
+FFT/COS kernels.
 
 Runtime inputs come from explicit model-parameter payloads rather than Black
 volatility surfaces. Variance Gamma payloads use ``sigma``, ``theta``, and
-``nu``. CGMY payloads use ``C``, ``G``, ``M``, and ``Y``. The analytical
-reference route is intentionally a helper-owned target for proof comparison;
-it should not cause the product contract to narrow away from the underlying
-European vanilla option shape.
+``nu``. CGMY payloads use ``C``, ``G``, ``M``, and ``Y``. Kou payloads use
+``sigma``, ``jump_intensity``, ``up_probability``, ``eta_up``, and
+``eta_down``. The analytical reference route is intentionally a helper-owned
+target for proof comparison; it should not cause the product contract to
+narrow away from the underlying European vanilla option shape.
 
 Bates Route Binding
 -------------------
@@ -117,6 +119,8 @@ Implementation
 .. autofunction:: trellis.models.levy_option.price_variance_gamma_option_reference
 .. autofunction:: trellis.models.levy_option.price_cgmy_option_transform
 .. autofunction:: trellis.models.levy_option.price_cgmy_option_reference
+.. autofunction:: trellis.models.levy_option.price_kou_option_transform
+.. autofunction:: trellis.models.levy_option.price_kou_option_reference
 
 References
 ----------

@@ -170,13 +170,13 @@ transform route is a model-family-specific binding; it should not be replaced
 with a vanilla Black-vol adapter when the product contract says
 ``model_family=jump_diffusion``.
 
-Variance Gamma And CGMY Levy Models
------------------------------------
+Variance Gamma, CGMY, And Kou Levy Models
+-----------------------------------------
 
-Variance Gamma and CGMY targets keep the product shape as a European vanilla
-option while narrowing the runtime model family to an explicit Levy process.
-They consume model parameters from ``market_state.model_parameters`` or named
-``market_state.model_parameter_sets`` entries; they do not infer Levy
+Variance Gamma, CGMY, and Kou targets keep the product shape as a European
+vanilla option while narrowing the runtime model family to an explicit Levy
+process. They consume model parameters from ``market_state.model_parameters``
+or named ``market_state.model_parameter_sets`` entries; they do not infer Levy
 parameters from a Black volatility surface.
 
 For Variance Gamma, canonical payloads use ``sigma``, ``theta``, and ``nu``.
@@ -190,6 +190,15 @@ Monte Carlo comparator obtained from the characteristic function. That
 comparator is useful for proof and cross-method validation of terminal
 European payoffs, but it is not a path simulator for barrier, Asian, or other
 path-dependent Levy claims.
+
+For Kou double-exponential jump diffusion, canonical payloads use ``sigma``,
+``jump_intensity``, ``up_probability``, ``eta_up``, and ``eta_down``. The
+checked helper exposes FFT/COS transform pricing, a high-resolution COS
+reference, and direct terminal Monte Carlo sampling of the asymmetric
+double-exponential jump sum. The support boundary is the same as for the other
+checked Levy proof routes: European vanilla terminal claims only, with no
+path-dependent monitors, early exercise, calibration bridge, or broad Levy
+model selection.
 
 Implementation
 --------------
