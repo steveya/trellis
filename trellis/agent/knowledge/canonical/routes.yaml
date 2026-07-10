@@ -425,6 +425,17 @@ routes:
         notes:
           - "Use the CGMY terminal-distribution MC helper with `market_state` and `spec`; it owns model-parameter binding and declares the CF-inversion sampler."
       - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [bates]
+        primitives:
+          - module: trellis.models.bates_option
+            symbol: price_bates_option_monte_carlo
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use the Bates MC helper with `market_state` and `spec`; it owns Heston parameter binding, jump-parameter binding, and terminal compound-Poisson jumps."
+      - when:
           payoff_family: autocallable
         primitives:
           - module: trellis.models.autocallable
@@ -1383,7 +1394,7 @@ routes:
       supported_outputs: [price, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [terminal_markov]
-      supported_characteristic_families: [gbm_log_spot, heston_log_spot, merton_log_spot, variance_gamma_log_spot, cgmy_log_spot]
+      supported_characteristic_families: [gbm_log_spot, heston_log_spot, merton_log_spot, variance_gamma_log_spot, cgmy_log_spot, bates_log_spot]
       supports_calibration: false
     conditional_primitives:
       - when:
@@ -1429,6 +1440,17 @@ routes:
         adapters: []
         notes:
           - "Use `price_cgmy_option_transform(..., method='fft'|'cos')`; the helper owns characteristic-function and model-parameter binding."
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [bates]
+        primitives:
+          - module: trellis.models.bates_option
+            symbol: price_bates_option_transform
+            role: route_helper
+        adapters: []
+        notes:
+          - "Use `price_bates_option_transform(..., method='fft'|'cos')`; the helper owns Heston parameter binding, jump-parameter binding, and the Bates characteristic function."
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]

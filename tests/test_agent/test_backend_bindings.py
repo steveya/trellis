@@ -622,17 +622,25 @@ def test_resolve_backend_binding_spec_uses_sabr_forward_option_helpers():
 
 
 @pytest.mark.parametrize(
-    ("model_family", "transform_helper", "mc_helper"),
+    ("model_family", "transform_helper", "mc_helper", "reference_helper"),
     [
         (
             "variance_gamma",
             "trellis.models.levy_option.price_variance_gamma_option_transform",
             "trellis.models.levy_option.price_variance_gamma_option_monte_carlo",
+            "trellis.models.levy_option.price_variance_gamma_option_reference",
         ),
         (
             "cgmy",
             "trellis.models.levy_option.price_cgmy_option_transform",
             "trellis.models.levy_option.price_cgmy_option_monte_carlo",
+            "trellis.models.levy_option.price_cgmy_option_reference",
+        ),
+        (
+            "bates",
+            "trellis.models.bates_option.price_bates_option_transform",
+            "trellis.models.bates_option.price_bates_option_monte_carlo",
+            None,
         ),
     ],
 )
@@ -640,6 +648,7 @@ def test_resolve_backend_binding_spec_uses_levy_option_helpers(
     model_family,
     transform_helper,
     mc_helper,
+    reference_helper,
 ):
     catalog = load_backend_binding_catalog()
     analytical = find_backend_binding_by_route_id("levy_reference_analytical", catalog)
@@ -663,8 +672,9 @@ def test_resolve_backend_binding_spec_uses_levy_option_helpers(
     mc_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
     transform_resolved = resolve_backend_binding_spec(transform, product_ir=product_ir)
 
-    reference_helper = transform_helper.replace("_transform", "_reference")
-    assert analytical_resolved.helper_refs == (reference_helper,)
+    assert analytical_resolved.helper_refs == (
+        () if reference_helper is None else (reference_helper,)
+    )
     assert mc_resolved.helper_refs == (mc_helper,)
     assert transform_resolved.helper_refs == (transform_helper,)
 

@@ -2383,6 +2383,10 @@ def _infer_instrument(description: str, instrument_type: str | None) -> str | No
         (
             "european_option",
             (
+                "bates model",
+                "bates_fft",
+                "bates_mc",
+                "bates",
                 "variance_gamma",
                 "variance gamma",
                 "vg_cos",
@@ -2580,6 +2584,13 @@ def _traits_from_text(desc: str) -> tuple[str, ...]:
         "early_exercise": ("early exercise",),
         "stochastic_vol": ("heston", "stochastic vol", "stochastic_vol"),
         "jump_diffusion": ("jump", "jump_diffusion", "merton"),
+        "affine_jump_stochastic_vol": (
+            "bates",
+            "bates_fft",
+            "bates_mc",
+            "affine jump",
+            "heston jumps",
+        ),
         "sabr": ("sabr", "hagan"),
         "variance_gamma": ("variance_gamma", "variance gamma", "vg_cos", "vg_mc"),
         "cgmy": ("cgmy", "tempered_stable", "tempered stable"),
@@ -3031,6 +3042,8 @@ def _model_family_for(
 ) -> str:
     """Map traits and method to a broad model family."""
     desc = _normalise(description)
+    if "affine_jump_stochastic_vol" in payoff_traits or "bates" in desc:
+        return "bates"
     if "stochastic_vol" in payoff_traits or "heston" in desc or instrument == "heston_option":
         return "stochastic_volatility"
     if "jump_diffusion" in payoff_traits:
@@ -3098,6 +3111,10 @@ def _candidate_engine_families_for(
         for family in ("analytical", "monte_carlo"):
             if family not in families:
                 families.append(family)
+    if model_family == "bates":
+        for family in ("transforms", "monte_carlo"):
+            if family not in families:
+                families.append(family)
     if model_family in {"variance_gamma", "cgmy"}:
         for family in ("transforms", "monte_carlo", "analytical"):
             if family not in families:
@@ -3108,6 +3125,51 @@ def _candidate_engine_families_for(
 def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> ProductIR:
     """Augment ProductIR with high-signal request context missing from static decompositions."""
     desc = _normalise(description)
+    if ir.instrument == "european_option" and "bates" in desc:
+        payoff_traits = [
+            trait for trait in ir.payoff_traits if trait != "vol_surface_dependence"
+        ]
+        for trait in (
+            "affine_jump_stochastic_vol",
+            "stochastic_vol",
+            "jump_diffusion",
+            "discounting",
+            "model_parameter_dependence",
+            "jump_parameter_dependence",
+        ):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+        candidate_engine_families = list(ir.candidate_engine_families)
+        for family in ("transforms", "monte_carlo"):
+            if family not in candidate_engine_families:
+                candidate_engine_families.append(family)
+        route_families = list(ir.route_families)
+        for family in ("fft_pricing", "monte_carlo"):
+            if family not in route_families:
+                route_families.append(family)
+        required_market_data = {
+            item for item in ir.required_market_data if item != "black_vol_surface"
+        }
+        required_market_data.update({"discount_curve", "model_parameters", "jump_parameters", "spot"})
+        return replace(
+            ir,
+            payoff_traits=tuple(payoff_traits),
+            model_family="bates",
+            candidate_engine_families=tuple(candidate_engine_families),
+            route_families=tuple(route_families),
+            required_market_data=frozenset(
+                normalize_market_data_requirements(required_market_data)
+            ),
+            reusable_primitives=tuple(
+                dict.fromkeys(
+                    (
+                        *ir.reusable_primitives,
+                        "trellis.models.bates_option",
+                    )
+                )
+            ),
+        )
+
     if ir.instrument == "european_option" and (
         "merton" in desc or "jump_diffusion" in desc or "jump" in desc
     ):
@@ -3531,6 +3593,9 @@ def _route_families_for(
     if payoff_family == "vanilla_option" and model_family == "cev_diffusion":
         families.append("pde_solver")
         families.append("equity_tree")
+    if payoff_family == "vanilla_option" and model_family == "bates":
+        families.append("fft_pricing")
+        families.append("monte_carlo")
     if payoff_family == "vanilla_option" and model_family in {"variance_gamma", "cgmy"}:
         families.append("fft_pricing")
         families.append("monte_carlo")
@@ -3574,6 +3639,8 @@ def _reusable_primitives_for(
         ])
     if model_family == "stochastic_volatility":
         primitives.append("trellis.models.processes.heston")
+    if model_family == "bates":
+        primitives.append("trellis.models.bates_option")
     if "american" in payoff_traits:
         primitives.extend([
             "trellis.models.monte_carlo.lsm",

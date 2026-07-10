@@ -79,11 +79,18 @@ process with compound-Poisson lognormal spot jumps:
 
 The computational contract is Heston model parameters
 ``kappa``, ``theta``, ``xi``, ``rho``, and ``v0`` plus jump parameters
-``jump_intensity``, ``jump_mean``, and ``jump_variance``. Current diagnostics
-recognize this contract and emit the missing
-``bates_affine_jump_stochastic_vol_kernel`` primitive for Bates transform or
-Monte Carlo targets. Trellis does not yet admit a checked Bates characteristic
-function or simulation route.
+``jump_intensity``, ``jump_mean``, and ``jump_vol`` (or
+``jump_variance``). The checked European vanilla support lives in
+``trellis.models.bates_option``. That helper composes the existing Heston
+runtime binding with compound-Poisson lognormal jumps, exposes Bates
+FFT/COS transform pricing through the shared transform kernels, and exposes a
+terminal Monte Carlo comparator using Heston paths plus independent jump
+aggregation. It consumes explicit model and jump parameters; it does not infer
+Bates parameters from a Black volatility surface.
+
+The support boundary is still narrow: Bates calibration, path-dependent Bates
+payoffs, early exercise under Bates, and Bates PIDE/PDE solvers are not
+checked routes today.
 
 SABR
 ----
@@ -181,6 +188,8 @@ Implementation
 .. autofunction:: trellis.models.sabr_option.price_sabr_forward_option_monte_carlo
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_monte_carlo
+.. autofunction:: trellis.models.bates_option.price_bates_option_transform
+.. autofunction:: trellis.models.bates_option.price_bates_option_monte_carlo
 .. autofunction:: trellis.models.levy_option.price_variance_gamma_option_transform
 .. autofunction:: trellis.models.levy_option.price_variance_gamma_option_monte_carlo
 .. autofunction:: trellis.models.levy_option.price_cgmy_option_transform

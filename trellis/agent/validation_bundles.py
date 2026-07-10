@@ -381,7 +381,7 @@ def _uses_model_parameter_volatility_route(
     if any(
         marker in str(identifier or "").strip().lower()
         for identifier in identifiers
-        for marker in ("heston", "sabr", "variance_gamma", "cgmy")
+        for marker in ("heston", "sabr", "variance_gamma", "cgmy", "bates")
     ):
         return True
 

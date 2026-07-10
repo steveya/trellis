@@ -1946,6 +1946,15 @@ def _validate_build(
             "cgmy_reference_values",
         }
     )
+    requires_bates_model_parameters = (
+        str(getattr(product_ir, "model_family", "") or "").strip().lower() == "bates"
+        or any("bates_option" in str(ref) for ref in exact_binding_refs)
+        or str(getattr(getattr(compiled_request, "comparison_spec", None), "target_name", "") or "")
+        .strip()
+        .lower()
+        .replace("-", "_")
+        in {"bates_fft", "bates_mc"}
+    )
 
     # Try to instantiate the payoff with default test parameters
     try:
@@ -2045,9 +2054,29 @@ def _validate_build(
             "model_parameters" in effective_requirements
             or requires_sabr_model_parameters
             or requires_levy_model_parameters
+            or requires_bates_model_parameters
         ):
             product_model_family = str(getattr(product_ir, "model_family", "") or "").lower()
-            if "heston" in itype or product_model_family == "stochastic_volatility":
+            if product_model_family == "bates" or requires_bates_model_parameters:
+                from trellis.models.processes.heston import build_heston_parameter_payload
+
+                bates_payload = build_heston_parameter_payload(
+                    kappa=2.0,
+                    theta=0.04,
+                    xi=0.30,
+                    rho=-0.55,
+                    v0=0.04,
+                    mu=rate,
+                    parameter_set_name="bates_validation",
+                    source_kind="validation_fixture",
+                    metadata={"model_family": "bates"},
+                )
+                payload["model_parameters"] = bates_payload
+                payload["model_parameter_sets"] = {
+                    "bates_validation": bates_payload,
+                    "heston_validation": bates_payload,
+                }
+            elif "heston" in itype or product_model_family == "stochastic_volatility":
                 from trellis.models.processes.heston import build_heston_parameter_payload
 
                 heston_payload = build_heston_parameter_payload(
@@ -2099,7 +2128,11 @@ def _validate_build(
                 payload["model_parameter_sets"] = {"cgmy_validation": cgmy_payload}
             else:
                 payload["model_parameters"] = {"quanto_correlation": corr}
-        if "jump_parameters" in effective_requirements or requires_merton_jump_parameters:
+        if (
+            "jump_parameters" in effective_requirements
+            or requires_merton_jump_parameters
+            or requires_bates_model_parameters
+        ):
             jump_payload = {
                 "mu": rate,
                 "sigma": vol,
@@ -2108,7 +2141,10 @@ def _validate_build(
                 "jump_vol": 0.18,
             }
             payload["jump_parameters"] = jump_payload
-            payload["jump_parameter_sets"] = {"merton_validation": jump_payload}
+            payload["jump_parameter_sets"] = {
+                "merton_validation": jump_payload,
+                "bates_validation": jump_payload,
+            }
         return MarketState(**payload)
 
     # Build the initial market state from the plan's required_market_data.
@@ -3885,6 +3921,17 @@ def _deterministic_exact_binding_evaluate_body(
         "cgmy_reference_values": (
             "return price_cgmy_option_reference(market_state, spec)"
         ),
+        "bates_fft": (
+            "return price_bates_option_transform("
+            'market_state, spec, method="fft")'
+        ),
+        "bates_mc": (
+            "return price_bates_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 80000), '
+            'n_steps=getattr(spec, "n_steps", 96), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
         "mc_variance_swap": (
             "return price_equity_variance_swap_monte_carlo("
             "market_state, spec, "
@@ -4284,6 +4331,16 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_heston_option_transform("
             f"market_state, spec{heston_transform_kwargs})"
         ),
+        "trellis.models.bates_option.price_bates_option_transform": (
+            'return price_bates_option_transform(market_state, spec, method="fft")'
+        ),
+        "trellis.models.bates_option.price_bates_option_monte_carlo": (
+            "return price_bates_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 80000), '
+            'n_steps=getattr(spec, "n_steps", 96), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
         "trellis.models.zcb_option_tree.price_zcb_option_tree": (
             "return price_zcb_option_tree("
             f"market_state, spec{zcb_option_tree_kwargs})"
@@ -4566,6 +4623,11 @@ def _materialize_deterministic_exact_binding_module(
     )
     if "price_merton_jump_diffusion_option_" in body:
         rendered = _merge_generated_requirements(rendered, ("jump_parameters",))
+    if "price_bates_option_" in body:
+        rendered = _set_generated_requirements(
+            rendered,
+            ("discount_curve", "jump_parameters", "model_parameters"),
+        )
     if "price_sabr_forward_option_" in body:
         rendered = _set_generated_requirements(
             rendered,
@@ -4684,6 +4746,14 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_cgmy_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.levy_option import price_cgmy_option_monte_carlo"
+        )
+    if "price_bates_option_transform(" in body:
+        imports.append(
+            "from trellis.models.bates_option import price_bates_option_transform"
+        )
+    if "price_bates_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.bates_option import price_bates_option_monte_carlo"
         )
     if "price_cds_analytical(" in body:
         imports.append(

@@ -126,9 +126,12 @@ When a task asks for a computational class Trellis does not yet implement, the
 same block carries a machine-readable ``repair_packet`` naming the missing
 primitive or unsupported class. Examples include
 ``heston_gauss_laguerre_transform_kernel``,
-``bates_affine_jump_stochastic_vol_kernel``, ``leverage_function_contract``, and
-``path_dependent_early_exercise_under_stochastic_vol``. Remediation tools
-should group these packets before falling back to raw exception text.
+``leverage_function_contract``, and
+``path_dependent_early_exercise_under_stochastic_vol``. Bates calibration,
+path-dependent, early-exercise, and PDE/PIDE shapes may still produce future
+Bates-specific repair packets, but European vanilla Bates FFT/MC targets bind
+to the checked helper route. Remediation tools should group repair packets
+before falling back to raw exception text.
 
 For unsupported Heston Gauss-Laguerre transform targets, each target may carry
 a ``quadrature_transform_contract`` block. That block records the quadrature
@@ -141,9 +144,11 @@ For Bates-style affine jump stochastic-volatility targets, each target also
 carries an ``affine_jump_process`` block. That block records the required
 Heston model parameters, the compound-Poisson lognormal jump parameters
 (``jump_intensity``, ``jump_mean``, and ``jump_variance``), accepted legacy
-aliases such as ``lam`` and ``jump_vol``, and the missing transform/Monte Carlo
-capabilities. The block is evidence for an honest implementation gap; it does
-not admit a Bates pricing route until the named primitive exists.
+aliases such as ``lam`` and ``jump_vol``, and the transform/Monte Carlo
+capabilities. For European vanilla Bates targets this block is executable
+evidence for ``trellis.models.bates_option`` route binding. For calibration,
+path-dependent, early-exercise, or PDE/PIDE Bates targets it still helps
+identify the missing abstraction before the task fails closed.
 
 For SLV/LSV targets, each target may carry a ``leverage_function_contract``
 block. That block records the required local-vol and Black-vol market

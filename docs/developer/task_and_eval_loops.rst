@@ -511,8 +511,8 @@ decisions are task-runner contracts, not general natural-language parser
 behavior.
 
 Stochastic-volatility task runs also carry a ``computational_problem`` block
-when the task target is Heston, Bates, SLV/LSV, or a related unsupported
-path-dependent control shape. The block is copied into the task result,
+when the task target is Heston, Bates, SLV/LSV, or a related path-dependent
+control shape. The block is copied into the task result,
 ``runtime_contract``, comparison-target request metadata, and the diagnosis
 packet. It is meant for task triage and remediation: it records the
 computational bucket, model-parameter semantics, validation bundle, and any
@@ -693,6 +693,15 @@ The deterministic exact-binding wrappers should call the checked
 ``trellis.models.levy_option`` helpers. Validation should not run generic
 Black-vol vega checks for these routes unless a separate calibration problem
 explicitly owns a Black-vol-to-Levy-parameter bridge.
+
+Bates comparison targets keep the same product-shape discipline. A task such
+as ``bates_fft`` versus ``bates_mc`` remains a European vanilla option in
+``ProductIR`` and narrows by ``model_family=bates`` plus both
+``model_parameters`` and ``jump_parameters``. The FFT target binds through
+``trellis.models.bates_option.price_bates_option_transform`` and the MC target
+binds through ``trellis.models.bates_option.price_bates_option_monte_carlo``.
+Generated wrappers should call those helpers rather than composing Heston
+paths and jump aggregation locally.
 
 SABR comparison targets keep the same product-shape discipline. A task such as
 ``sabr_mc`` versus ``sabr_hagan_analytical`` remains a European vanilla

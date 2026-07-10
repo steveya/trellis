@@ -102,9 +102,10 @@ The key user-facing rule is that a blocked stochastic-vol task can be the
 correct result. Heston pricing consumes explicit Heston model parameters; a
 Black implied-vol surface is market evidence or a calibration target unless a
 recorded calibration problem produces model parameters from it. Unsupported
-Gauss-Laguerre Heston, Bates, SLV/LSV, or path-dependent Heston control shapes
-therefore fail closed with structured blockers instead of falling back to a
-nearby vanilla adapter. See
+Gauss-Laguerre Heston, Bates shapes outside the checked European vanilla
+FFT/MC boundary, SLV/LSV, or path-dependent Heston control shapes therefore
+fail closed with structured blockers instead of falling back to a nearby
+vanilla adapter. See
 :doc:`../developer/stochastic_vol_computational_ir` for the developer-facing
 notation and triage lifecycle.
 

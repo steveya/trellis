@@ -88,6 +88,21 @@ reference route is intentionally a helper-owned target for proof comparison;
 it should not cause the product contract to narrow away from the underlying
 European vanilla option shape.
 
+Bates Route Binding
+-------------------
+
+``trellis.models.bates_option`` provides the checked FFT/COS helper surface for
+European vanilla Bates options. The task runtime keeps the product shape as a
+European vanilla option, narrows ``model_family`` to ``bates``, and requires
+both ``model_parameters`` and ``jump_parameters``. The transform helper binds a
+Heston log-spot characteristic function with compound-Poisson lognormal jumps
+to the shared FFT/COS kernels.
+
+The helper is a route primitive, not a calibration bridge. It consumes Heston
+base parameters and jump parameters that already exist in the runtime market
+state or task spec; Black volatility surfaces are not reinterpreted as Bates
+parameters.
+
 Implementation
 --------------
 
@@ -97,6 +112,7 @@ Implementation
 .. autofunction:: trellis.models.transforms.heston.price_heston_option_transform_result
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_poisson_series
+.. autofunction:: trellis.models.bates_option.price_bates_option_transform
 .. autofunction:: trellis.models.levy_option.price_variance_gamma_option_transform
 .. autofunction:: trellis.models.levy_option.price_variance_gamma_option_reference
 .. autofunction:: trellis.models.levy_option.price_cgmy_option_transform

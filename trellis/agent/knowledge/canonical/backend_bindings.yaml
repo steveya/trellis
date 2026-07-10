@@ -221,6 +221,14 @@ bindings:
             symbol: price_cgmy_option_monte_carlo
             role: route_helper
       - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [bates]
+        primitives:
+          - module: trellis.models.bates_option
+            symbol: price_bates_option_monte_carlo
+            role: route_helper
+      - when:
           payoff_family: autocallable
         primitives:
           - module: trellis.models.autocallable
@@ -803,6 +811,14 @@ bindings:
         primitives:
           - module: trellis.models.levy_option
             symbol: price_cgmy_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [bates]
+        primitives:
+          - module: trellis.models.bates_option
+            symbol: price_bates_option_transform
             role: route_helper
       - when:
           payoff_family: credit_loss_distribution

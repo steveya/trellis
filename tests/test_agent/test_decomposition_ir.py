@@ -141,6 +141,25 @@ class TestProductIR:
         assert "fft_pricing" in ir.route_families
         assert "monte_carlo" in ir.route_families
 
+    def test_ir_for_bates_keeps_vanilla_option_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Bates model (Heston + jumps): FFT vs MC",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "affine_jump_stochastic_vol" in ir.payoff_traits
+        assert ir.model_family == "bates"
+        assert "model_parameters" in ir.required_market_data
+        assert "jump_parameters" in ir.required_market_data
+        assert "black_vol_surface" not in ir.required_market_data
+        assert "fft_pricing" in ir.route_families
+        assert "monte_carlo" in ir.route_families
+        assert "trellis.models.bates_option" in ir.reusable_primitives
+
     def test_ir_for_absorbed_analytical_exotics_uses_specific_payoff_families(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 

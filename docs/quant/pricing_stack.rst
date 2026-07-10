@@ -241,11 +241,13 @@ The first migrated vanilla cases now use that boundary directly:
   characteristic-function binding, required model parameters, nodes/weights,
   damping or contour policy, stabilization requirements, diagnostics, and the
   missing quadrature kernel plus validation bundle.
-- Bates-style affine jump stochastic-volatility tasks now lower to an explicit
-  blocker contract rather than a generic unsupported route. The contract names
-  the Heston base parameters, compound-Poisson lognormal jump parameters, the
-  missing characteristic-function capability, the missing Monte Carlo process
-  capability, and the jump-parameter validation requirements.
+- Bates-style affine jump stochastic-volatility European vanilla tasks now
+  lower to explicit ``model_family=bates`` route bindings backed by
+  ``trellis.models.bates_option``. The contract names the Heston base
+  parameters, compound-Poisson lognormal jump parameters, checked transform and
+  terminal Monte Carlo capabilities, and the jump-parameter validation
+  requirements. Bates calibration, path-dependent payoffs, early exercise, and
+  PDE/PIDE routes remain outside the checked boundary.
 - SLV/LSV targets now lower to an explicit leverage-function contract. The
   contract names the local-vol and Black-vol surface authority, Heston model
   parameters, leverage-function surface, recorded leverage calibration

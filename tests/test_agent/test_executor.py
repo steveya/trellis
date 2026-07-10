@@ -1703,6 +1703,52 @@ def test_deterministic_exact_binding_module_materializes_levy_monte_carlo_helper
     assert EVALUATE_SENTINEL not in generated.code
 
 
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
+        ("bates_fft", 'price_bates_option_transform(market_state, spec, method="fft")'),
+        ("bates_mc", "price_bates_option_monte_carlo("),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_bates_helper_wrapper(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.bates_option.price_bates_option_transform",
+            "trellis.models.bates_option.price_bates_option_monte_carlo",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "Bates option",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.bates_option import" in generated.code
+    assert 'return {"discount_curve", "jump_parameters", "model_parameters"}' in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_deterministic_exact_binding_module_materializes_sabr_hagan_helper_wrapper():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,

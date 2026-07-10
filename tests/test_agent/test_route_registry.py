@@ -907,16 +907,22 @@ class TestMonteCarloPathsRoutes:
         assert _prim_set(new_prims) == expected_prims
 
     @pytest.mark.parametrize(
-        ("model_family", "expected_symbol"),
+        ("model_family", "expected_module", "expected_symbol"),
         [
-            ("variance_gamma", "price_variance_gamma_option_monte_carlo"),
-            ("cgmy", "price_cgmy_option_monte_carlo"),
+            (
+                "variance_gamma",
+                "trellis.models.levy_option",
+                "price_variance_gamma_option_monte_carlo",
+            ),
+            ("cgmy", "trellis.models.levy_option", "price_cgmy_option_monte_carlo"),
+            ("bates", "trellis.models.bates_option", "price_bates_option_monte_carlo"),
         ],
     )
     def test_levy_primitives_use_model_specific_monte_carlo_helpers(
         self,
         registry,
         model_family,
+        expected_module,
         expected_symbol,
     ):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
@@ -930,7 +936,7 @@ class TestMonteCarloPathsRoutes:
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
             (
-                "trellis.models.levy_option",
+                expected_module,
                 expected_symbol,
                 "route_helper",
             ),
@@ -2161,16 +2167,22 @@ class TestFallbackRoutes:
         assert _prim_set(new_prims) == expected_prims
 
     @pytest.mark.parametrize(
-        ("model_family", "expected_symbol"),
+        ("model_family", "expected_module", "expected_symbol"),
         [
-            ("variance_gamma", "price_variance_gamma_option_transform"),
-            ("cgmy", "price_cgmy_option_transform"),
+            (
+                "variance_gamma",
+                "trellis.models.levy_option",
+                "price_variance_gamma_option_transform",
+            ),
+            ("cgmy", "trellis.models.levy_option", "price_cgmy_option_transform"),
+            ("bates", "trellis.models.bates_option", "price_bates_option_transform"),
         ],
     )
     def test_levy_transform_primitives_use_model_specific_helpers(
         self,
         registry,
         model_family,
+        expected_module,
         expected_symbol,
     ):
         spec = [r for r in registry.routes if r.id == "transform_fft"][0]
@@ -2184,7 +2196,7 @@ class TestFallbackRoutes:
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
             (
-                "trellis.models.levy_option",
+                expected_module,
                 expected_symbol,
                 "route_helper",
             ),
@@ -2399,6 +2411,7 @@ class TestFallbackRoutes:
             "merton_log_spot",
             "variance_gamma_log_spot",
             "cgmy_log_spot",
+            "bates_log_spot",
         )
 
     def test_transform_route_admissibility_accepts_european_holder_control_surface(self, registry):
