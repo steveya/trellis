@@ -115,7 +115,7 @@ class TestRegistryValidation:
             "short_rate_bond_option",
         } <= route_ids
 
-    def test_exercise_monte_carlo_resolves_american_equity_lsm_helper(self, registry):
+    def test_exercise_monte_carlo_resolves_american_equity_lsm_composition(self, registry):
         route = find_route_by_id("exercise_monte_carlo", registry)
         assert route is not None
 
@@ -134,11 +134,33 @@ class TestRegistryValidation:
 
         assert _prim_set(primitives) == {
             (
+                "trellis.models.processes.gbm",
+                "GBM",
+                "state_process",
+            ),
+            (
+                "trellis.models.monte_carlo.engine",
+                "MonteCarloEngine",
+                "path_simulation",
+            ),
+            (
+                "trellis.models.monte_carlo.lsm",
+                "longstaff_schwartz",
+                "exercise_control",
+            ),
+            (
                 "trellis.models.equity_option_monte_carlo",
                 "price_american_equity_option_lsm_monte_carlo",
                 "route_helper",
             )
         }
+        helper = next(primitive for primitive in primitives if primitive.role == "route_helper")
+        assert helper.required is False
+        assert all(
+            primitive.required
+            for primitive in primitives
+            if primitive.role != "route_helper"
+        )
 
     def test_all_routes_promoted(self, registry):
         candidate_ids = {route.id for route in registry.routes if route.status == "candidate"}
@@ -2722,6 +2744,7 @@ class TestEngineFamilyCoverage:
         # the rate_tree when-clause and resolve_route_family's
         # conditional_route_family override.
         "short_rate_bond_option": "analytical",
+        "short_rate_zero_coupon_bond": "analytical",
         "analytical_fx_barrier": "analytical",
         "analytical_garman_kohlhagen": "analytical",
         "transform_fft": "fft_pricing",

@@ -687,6 +687,35 @@ comparators. That keeps canaries such as ``T65`` on the stable
 ``price_swaption_tree(...)`` surface instead of regenerating inline lattice
 exercise code for the comparison target.
 
+Semantic composition gaps versus helper gaps
+---------------------------------------------
+
+Task execution must preserve declared contract refinements before selecting a
+route. ``benchmark_contract`` and ``extension_contract`` payloads are rendered
+into the effective request description, including exercise style and explicit
+schedules. A broad instrument identity such as ``swaption`` cannot erase a
+narrower ``style=bermudan`` contract.
+
+If semantic compilation rejects a requested method, the executor must not fall
+back to broad text decomposition. It records a
+``semantic_method_composition_gap`` with:
+
+- the semantic family and requested method;
+- reusable capabilities already present in the repository;
+- the missing composition capabilities;
+- the methods that remain admitted for the contract.
+
+This classification is intentionally different from ``missing_helper``. The
+repair target is a reusable computational or API surface, not a new function
+named after the failing product and method. A product-method helper may remain
+as compatibility evidence, but it cannot turn an incompatible route green.
+
+``P005`` is the proving case. Its Bermudan exercise schedule is retained through
+semantic drafting. The rate-tree lane remains admitted. The Monte Carlo lane
+blocks before generation until the generic rates-MC composition surface can map
+the irregular exercise schedule, apply pathwise numeraire discounting, and feed
+pathwise swap values into the early-exercise controller.
+
 Transform proving now also distinguishes model families explicitly. The thin
 vanilla transform helper surface is only used for ``equity_diffusion`` claims;
 stochastic-volatility tasks such as the Heston smile canary stay on a checked

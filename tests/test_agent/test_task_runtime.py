@@ -2910,6 +2910,87 @@ def test_run_task_aggregates_method_blockers_for_comparison_failures(capsys):
     assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
+def test_run_task_certifies_semantic_method_composition_gap(capsys):
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_runtime import run_task
+
+    class FakePayoff:
+        def __init__(self, price: float):
+            self.price = price
+
+    class FakeResult:
+        def __init__(self, *, success: bool, target: str):
+            self.success = success
+            self.attempts = 0
+            self.gap_confidence = 1.0 if not success else 0.0
+            self.knowledge_gaps = []
+            self.payoff_cls = (lambda: FakePayoff(1.0)) if success else None
+            self.failures = [] if success else [f"{target} blocked"]
+            self.agent_observations = []
+            self.knowledge_summary = {}
+            self.token_usage_summary = {}
+            self.intra_run_learning = {}
+            self.platform_request_id = f"executor_build_{target}"
+            self.platform_trace_path = None
+            self.analytical_trace_path = None
+            self.analytical_trace_text_path = None
+            self.audit_record_path = None
+            self.blocker_details = (
+                None
+                if success
+                else {
+                    "reason": "semantic_method_composition_gap",
+                    "semantic_family": "rate_style_swaption:bermudan",
+                    "requested_method": "monte_carlo",
+                    "available_capabilities": ["hull_white_factor_simulation"],
+                    "missing_capabilities": ["pathwise_numeraire_discounting"],
+                }
+            )
+            self.post_build_tracking = {}
+            self.reflection = {}
+
+    def fake_build(**kwargs):
+        target = kwargs["comparison_target"]
+        return FakeResult(success=target == "rate_tree", target=target)
+
+    result = run_task(
+        {
+            "id": "P005-UNIT",
+            "title": "Bermudan swaption composition gap",
+            "description": (
+                "Bermudan payer swaption. Exercise dates: 2025-11-15, "
+                "2026-05-15, 2026-11-15."
+            ),
+            "instrument_type": "swaption",
+            "construct": ["lattice", "monte_carlo"],
+        },
+        market_state=object(),
+        build_fn=fake_build,
+        payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
+        price_fn=lambda payoff, market_state: payoff.price,
+    )
+
+    assert result["success"] is False
+    assert classify_task_result(result) == "blocked"
+    assert result["expected_honest_block"] is True
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert result["blocker_details"]["reasons"] == [
+        "semantic_method_composition_gap"
+    ]
+    assert result["blocker_details"]["semantic_families"] == [
+        "rate_style_swaption:bermudan"
+    ]
+    assert result["blocker_details"]["requested_methods"] == ["monte_carlo"]
+    assert result["blocker_details"]["available_capabilities"] == [
+        "hull_white_factor_simulation"
+    ]
+    assert result["blocker_details"]["missing_capabilities"] == [
+        "pathwise_numeraire_discounting"
+    ]
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
+
+
 def test_build_result_payload_includes_blocker_details(tmp_path):
     from trellis.agent.task_runtime import _build_result_payload
 
@@ -3180,6 +3261,34 @@ def test_effective_task_description_bootstraps_title_only_swaption_proof_tasks()
     assert "Expiry: 2025-11-15." in description
     assert "Hull-White model: mean reversion a=0.05, vol sigma=0.01." in description
     assert "Comparison targets: black76 (analytical), hw_tree (rate_tree), hw_mc (monte_carlo)" in description
+
+
+def test_p005_preserves_bermudan_extension_semantics():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import _effective_task_description, task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml")
+        if task["id"] == "P005"
+    )
+
+    description = _effective_task_description(task)
+    contract = task_to_semantic_contract(task)
+
+    assert "Style: bermudan." in description
+    assert "Exercise dates: 2025-11-15, 2026-05-15, 2026-11-15." in description
+    assert contract is not None
+    summary = semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "rate_style_swaption"
+    assert summary["product"]["exercise_style"] == "bermudan"
+    assert summary["product"]["observation_schedule"] == [
+        "2025-11-15",
+        "2026-05-15",
+        "2026-11-15",
+    ]
+    assert summary["methods"]["candidate_methods"] == ["analytical", "rate_tree"]
 
 
 def test_task_to_instrument_type_does_not_misclassify_cdo_or_nth_loss_distribution_titles():
@@ -3741,7 +3850,7 @@ def test_prepare_existing_task_infers_schema_for_matching_generic_module(monkeyp
             return 0.0
 
     module = ModuleType("trellis.instruments._agent.buildapayoff")
-    module.__doc__ = "Agent-generated payoff: Build a pricer for: FFT vs COS: GBM calls/puts across strikes and maturities."
+    module.__doc__ = "Agent-generated payoff: Cached schema inference benchmark."
     FFTvsCOSSpec.__module__ = module.__name__
     FFTvsCOSPricer.__module__ = module.__name__
     setattr(module, "FFTvsCOSSpec", FFTvsCOSSpec)
@@ -3770,7 +3879,7 @@ def test_prepare_existing_task_infers_schema_for_matching_generic_module(monkeyp
     )
 
     prepared = prepare_existing_task(
-        {"id": "T39", "title": "FFT vs COS: GBM calls/puts across strikes and maturities"},
+        {"id": "X_SCHEMA_INFERENCE", "title": "Cached schema inference benchmark"},
         model="test-model",
     )
 
@@ -4048,8 +4157,8 @@ def test_benchmark_existing_task_uses_cached_payoff(monkeypatch):
     assert result["max_seconds"] == pytest.approx(0.25)
 
 
-def test_benchmark_existing_task_supports_generic_cached_transform_task():
-    """A real cached generic transform task should benchmark without rebuild."""
+def test_benchmark_existing_task_supports_cached_transform_task():
+    """A cached transform task should retain its canonical instrument identity."""
     from trellis.agent.task_runtime import benchmark_existing_task, build_market_state
 
     result = benchmark_existing_task(
@@ -4063,8 +4172,8 @@ def test_benchmark_existing_task_supports_generic_cached_transform_task():
     )
 
     assert result["task_id"] == "T39"
-    assert result["instrument_type"] == "generic"
-    assert result["payoff_class"] == "FFTvsCOSPricer"
+    assert result["instrument_type"] == "european_option"
+    assert result["payoff_class"] == "EuropeanOptionAnalyticalPayoff"
     assert result["mean_seconds"] >= 0.0
     assert result["last_price"] > 0.0
 

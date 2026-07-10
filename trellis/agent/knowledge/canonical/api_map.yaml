@@ -101,11 +101,24 @@ monte_carlo:
     - "from trellis.models.monte_carlo import antithetic, control_variate, sobol_normals"
     - "from trellis.models.processes.gbm import GBM"
   notes:
-    - "For American/Bermudan vanilla equity Monte Carlo, prefer `price_american_equity_option_lsm_monte_carlo(...)`; lower-level routes can still simulate paths and call the approved `longstaff_schwartz` primitive explicitly"
+    - "For American/Bermudan vanilla equity Monte Carlo, compose `GBM`, `MonteCarloEngine`, and `longstaff_schwartz` explicitly when writing a derivative adapter; `price_american_equity_option_lsm_monte_carlo(...)` is an optional compatibility/reference surface"
     - "Autocallable MC routes should prefer `price_autocallable_monte_carlo_result(...)`; use `sampling='sobol'` only for QMC comparison targets"
     - "Double-barrier MC routes should use two barrier monitors or `double_barrier_state_payoff(...)` instead of adapting a one-barrier analytical formula"
     - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"
     - "Do not invent method='lsm' on MonteCarloEngine"
+
+rate_monte_carlo_composition:
+  module: trellis.models.monte_carlo.simulation_substrate
+  key_imports:
+    - "from trellis.models.monte_carlo.event_aware import build_event_aware_monte_carlo_process, resolve_hull_white_monte_carlo_process_inputs"
+    - "from trellis.models.monte_carlo.simulation_substrate import FactorStateSimulationResult, HullWhiteRateProjection, HullWhiteSwapFutureValueModel, SwapFloatResetProgram"
+    - "from trellis.models.monte_carlo.simulation_substrate import evaluate_conditional_valuation_paths, simulate_factor_state_observations"
+    - "from trellis.models.monte_carlo.lsm import longstaff_schwartz_result"
+  notes:
+    - "Use this section to inspect reusable Hull-White factor simulation, projected rate-market views, pathwise swap values, and continuation regression before considering any product helper"
+    - "The current generic composition surface does not yet map an arbitrary exercise schedule onto the simulation grid, pass pathwise numeraire discounts into Longstaff-Schwartz, or bind swap-value paths into the early-exercise controller"
+    - "Until those three capabilities are admitted, Bermudan swaption Monte Carlo must block as a semantic_method_composition_gap instead of falling back to the European swaption helper"
+    - "A task-shaped pricing helper is not a substitute for a missing reusable composition capability"
 
 qmc:
   module: trellis.models.qmc

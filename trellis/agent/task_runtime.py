@@ -2107,6 +2107,8 @@ def run_task(
             aggregated_blockers = _aggregate_blocker_details(method_results)
             if aggregated_blockers is not None:
                 result_data["blocker_details"] = aggregated_blockers
+            if _only_certified_semantic_composition_failures(method_results):
+                result_data["expected_honest_block"] = True
             result_data["learning"] = summarize_task_learning(
                 result_data,
                 task_kind="pricing",
@@ -2177,6 +2179,10 @@ def run_task(
                 "preferred_method": preferred_method,
                 "runtime_contract": runtime_contract_result,
             })
+            if _only_certified_semantic_composition_failures(
+                {target_id: payload}
+            ):
+                result_data["expected_honest_block"] = True
             if result_data.get("success"):
                 try:
                     result_data.update(
@@ -3268,6 +3274,10 @@ def _aggregate_blocker_details(
     workflow_items: list[dict[str, Any]] = []
     seen_workflow_items: set[str] = set()
     reasons: list[str] = []
+    semantic_families: list[str] = []
+    requested_methods: list[str] = []
+    available_capabilities: list[str] = []
+    missing_capabilities: list[str] = []
 
     for method, payload in method_payloads.items():
         details = payload.get("blocker_details")
@@ -3313,6 +3323,22 @@ def _aggregate_blocker_details(
         reason = str(details.get("reason") or "").strip()
         if reason:
             reasons.append(reason)
+        semantic_family = str(details.get("semantic_family") or "").strip()
+        if semantic_family:
+            semantic_families.append(semantic_family)
+        requested_method = str(details.get("requested_method") or "").strip()
+        if requested_method:
+            requested_methods.append(requested_method)
+        available_capabilities.extend(
+            str(capability).strip()
+            for capability in (details.get("available_capabilities") or ())
+            if str(capability).strip()
+        )
+        missing_capabilities.extend(
+            str(capability).strip()
+            for capability in (details.get("missing_capabilities") or ())
+            if str(capability).strip()
+        )
 
     if not method_targets:
         return None
@@ -3337,7 +3363,39 @@ def _aggregate_blocker_details(
         }
     if reasons:
         aggregated["reasons"] = _unique_strings(reasons)
+    if semantic_families:
+        aggregated["semantic_families"] = _unique_strings(semantic_families)
+    if requested_methods:
+        aggregated["requested_methods"] = _unique_strings(requested_methods)
+    if available_capabilities:
+        aggregated["available_capabilities"] = _unique_strings(
+            available_capabilities
+        )
+    if missing_capabilities:
+        aggregated["missing_capabilities"] = _unique_strings(
+            missing_capabilities
+        )
     return aggregated
+
+
+def _only_certified_semantic_composition_failures(
+    method_payloads: Mapping[str, Mapping[str, Any]],
+) -> bool:
+    """Return whether every failed lane is a deterministic composition gap."""
+    failed_payloads = [
+        payload
+        for payload in method_payloads.values()
+        if not bool(payload.get("success"))
+    ]
+    if not failed_payloads:
+        return False
+    for payload in failed_payloads:
+        details = payload.get("blocker_details")
+        if not isinstance(details, Mapping):
+            return False
+        if details.get("reason") != "semantic_method_composition_gap":
+            return False
+    return True
 
 
 def _write_benchmark_sidecars(

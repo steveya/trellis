@@ -299,9 +299,19 @@ routes:
           exercise_style: [american, bermudan]
           model_family: [equity, equity_diffusion]
         primitives:
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+          - module: trellis.models.monte_carlo.lsm
+            symbol: longstaff_schwartz
+            role: exercise_control
           - module: trellis.models.equity_option_monte_carlo
             symbol: price_american_equity_option_lsm_monte_carlo
             role: route_helper
+            required: false
     # QUA-880: adapters, static notes, and dynamic_notes retired onto the
     # lane-obligation surface.  `lane_obligations._control_obligations_for`
     # now emits `approved_exercise_policies` / `implemented_exercise_policies`
@@ -1183,15 +1193,6 @@ routes:
         adapters: []
         notes: []
       - when:
-          payoff_family: asian_option
-          exercise_style: [european]
-        primitives:
-          - module: trellis.models.asian_option
-            symbol: price_arithmetic_asian_option_analytical
-            role: route_helper
-        adapters: []
-        notes: []
-      - when:
           contract_pattern:
             payoff:
               kind: swaption_payoff
@@ -1212,6 +1213,15 @@ routes:
         primitives:
           - module: trellis.models.rate_style_swaption
             symbol: price_swaption_black76
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
+          payoff_family: asian_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.asian_option
+            symbol: price_arithmetic_asian_option_analytical
             role: route_helper
         adapters: []
         notes: []
@@ -1447,7 +1457,6 @@ routes:
     match:
       methods: [analytical, rate_tree]
       required_market_data: [discount_curve, model_parameters]
-      instruments: [short_rate_bond]
       payoff_family: [discount_bond]
       model_family: [interest_rate]
     conditional_route_family:

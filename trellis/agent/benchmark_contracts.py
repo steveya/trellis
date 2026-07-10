@@ -195,7 +195,7 @@ def benchmark_request_description(
     root=None,
 ) -> str | None:
     """Render one deterministic contract-rich request description for a benchmark task."""
-    contract = benchmark_contract(task)
+    contract = _spec_override_contract(task)
     if not contract:
         return None
 
@@ -648,6 +648,9 @@ def _benchmark_summary_line(contract: Mapping[str, Any]) -> str:
         kind = str(contract.get("cap_floor") or "cap").strip().lower()
         return f"Price a {kind} strip under the declared benchmark rates surface."
     if product == "swaption":
+        style = str(contract.get("style") or "european").strip().lower()
+        if style == "bermudan":
+            return "Price a Bermudan swaption under the declared benchmark rates surface."
         return "Price a European-style swaption under the declared Black benchmark surface."
     if product == "barrier_option":
         monitoring = str(contract.get("monitoring") or "").strip().lower()
@@ -743,21 +746,34 @@ def _benchmark_detail_lines(
             )
         return lines
     if product == "swaption":
+        style = str(contract.get("style") or "european").strip().lower()
         lines.extend(
             [
+                f"Style: {style}.",
                 f"Payer/receiver: {contract.get('payer_receiver', 'payer')}.",
                 f"Fixed coupon: {contract.get('fixed_coupon')}.",
                 f"Notional: {contract.get('notional')}.",
             ]
         )
+        exercise_dates = _parse_date_sequence(contract.get("exercise_dates"))
+        if exercise_dates:
+            lines.append(
+                "Exercise dates: "
+                + ", ".join(item.isoformat() for item in exercise_dates)
+                + "."
+            )
         for key in ("settle_date", "exercise_date", "maturity_date"):
             parsed = _parse_date(contract.get(key))
             if parsed is not None:
                 lines.append(f"{key.replace('_', ' ').capitalize()}: {parsed.isoformat()}.")
         if contract.get("fixed_frequency"):
             lines.append(f"Fixed frequency: {contract['fixed_frequency']}.")
+        if contract.get("float_frequency"):
+            lines.append(f"Floating frequency: {contract['float_frequency']}.")
         if contract.get("fixed_day_count"):
             lines.append(f"Fixed day count: {contract['fixed_day_count']}.")
+        if scenario_contract is not None and scenario_contract.forecast_curve_name:
+            lines.append(f"Rate index: {scenario_contract.forecast_curve_name}.")
         return lines
     if product == "barrier_option":
         expiry_date = _valuation_date(contract, scenario_contract) + timedelta(

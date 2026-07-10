@@ -30,9 +30,25 @@ def test_builds_primitive_plan_for_american_put():
     assert plan.primitive_plan.route == "exercise_monte_carlo"
     assert plan.primitive_plan.engine_family == "exercise"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_american_equity_option_lsm_monte_carlo"}
+    assert primitive_symbols == {
+        "GBM",
+        "MonteCarloEngine",
+        "longstaff_schwartz",
+        "price_american_equity_option_lsm_monte_carlo",
+    }
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
-    assert primitive_modules == {"trellis.models.equity_option_monte_carlo"}
+    assert primitive_modules == {
+        "trellis.models.equity_option_monte_carlo",
+        "trellis.models.monte_carlo.engine",
+        "trellis.models.monte_carlo.lsm",
+        "trellis.models.processes.gbm",
+    }
+    route_helper = next(
+        primitive
+        for primitive in plan.primitive_plan.primitives
+        if primitive.role == "route_helper"
+    )
+    assert route_helper.required is False
     assert "LaguerreBasis" not in primitive_symbols
     assert plan.primitive_plan.blockers == ()
 

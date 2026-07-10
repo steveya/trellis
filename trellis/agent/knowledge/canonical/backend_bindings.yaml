@@ -141,9 +141,19 @@ bindings:
           exercise_style: [american, bermudan]
           model_family: [equity, equity_diffusion]
         primitives:
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+          - module: trellis.models.monte_carlo.lsm
+            symbol: longstaff_schwartz
+            role: exercise_control
           - module: trellis.models.equity_option_monte_carlo
             symbol: price_american_equity_option_lsm_monte_carlo
             role: route_helper
+            required: false
 
   - route_id: monte_carlo_paths
     engine_family: monte_carlo

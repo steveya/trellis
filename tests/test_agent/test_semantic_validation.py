@@ -1210,7 +1210,13 @@ def test_requires_selected_primitives_from_generation_plan():
 
     issue_codes = {issue.code for issue in report.issues}
     assert "exercise.missing_control_primitive" in issue_codes
-    assert "assembly.required_primitive_missing" not in issue_codes
+    assert "assembly.required_primitive_missing" in issue_codes
+    assembly_issue = next(
+        issue
+        for issue in report.issues
+        if issue.code == "assembly.required_primitive_missing"
+    )
+    assert "trellis.models.monte_carlo.lsm.longstaff_schwartz" in assembly_issue.message
 
 
 def test_rejects_generation_plan_with_blockers():

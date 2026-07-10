@@ -576,8 +576,14 @@ def resolve_semantic_method_surface(
     try:
         return definition.method_surfaces[normalized_method]
     except KeyError as exc:
-        raise ValueError(
-            f"Semantic family `{definition.family_key}` does not support method `{normalized_method}`."
+        gap = _SEMANTIC_METHOD_COMPOSITION_GAPS.get(
+            (definition.family_key, normalized_method)
+        )
+        raise UnsupportedSemanticMethodError(
+            family_key=definition.family_key,
+            requested_method=normalized_method,
+            supported_methods=definition.candidate_methods,
+            gap=gap,
         ) from exc
 
 
@@ -775,6 +781,98 @@ class SemanticFamilyDefinition:
     candidate_methods: tuple[str, ...]
     default_preferred_method: str | None
     method_surfaces: Mapping[str, SemanticMethodSurfaceDefinition]
+
+
+@dataclass(frozen=True)
+class SemanticMethodCompositionGap:
+    """Reusable capability evidence for one unsupported semantic method lane."""
+
+    summary: str
+    available_capabilities: tuple[str, ...] = ()
+    missing_capabilities: tuple[str, ...] = ()
+
+
+class UnsupportedSemanticMethodError(ValueError):
+    """Raised when a semantic family lacks an admitted method composition."""
+
+    def __init__(
+        self,
+        *,
+        family_key: str,
+        requested_method: str,
+        supported_methods: tuple[str, ...],
+        gap: SemanticMethodCompositionGap | None = None,
+    ) -> None:
+        self.family_key = family_key
+        self.requested_method = requested_method
+        self.supported_methods = tuple(supported_methods)
+        self.gap = gap
+        unsupported = (
+            f"Semantic family `{family_key}` does not support method "
+            f"`{requested_method}`."
+        )
+        summary = f"{unsupported} {gap.summary}" if gap is not None else unsupported
+        super().__init__(summary)
+
+    def to_blocker_details(self) -> dict[str, object]:
+        """Return a task-persistable composition-gap packet."""
+        available = tuple(self.gap.available_capabilities if self.gap else ())
+        missing = tuple(self.gap.missing_capabilities if self.gap else ())
+        summary = str(self)
+        blocker_id = (
+            "missing_composition_surface:"
+            f"{self.family_key}:{self.requested_method}"
+        )
+        return {
+            "reason": "semantic_method_composition_gap",
+            "summary": summary,
+            "semantic_family": self.family_key,
+            "requested_method": self.requested_method,
+            "supported_methods": list(self.supported_methods),
+            "available_capabilities": sorted(available),
+            "missing_capabilities": sorted(missing),
+            "blocker_codes": [blocker_id],
+            "blocker_report": {
+                "summary": summary,
+                "should_block": True,
+                "blockers": [
+                    {
+                        "id": blocker_id,
+                        "category": "missing_computational_abstraction",
+                        "severity": "high",
+                        "summary": summary,
+                        "evidence": list(available),
+                    }
+                ],
+            },
+        }
+
+
+_SEMANTIC_METHOD_COMPOSITION_GAPS = MappingProxyType(
+    {
+        (
+            "rate_style_swaption:bermudan",
+            "monte_carlo",
+        ): SemanticMethodCompositionGap(
+            summary=(
+                "Bermudan swaption Monte Carlo requires an admitted composition "
+                "from irregular exercise dates and pathwise swap values into an "
+                "early-exercise control with pathwise numeraire discounting."
+            ),
+            available_capabilities=(
+                "hull_white_factor_simulation",
+                "irregular_exercise_schedule",
+                "longstaff_schwartz_continuation",
+                "pathwise_swap_value_projection",
+            ),
+            missing_capabilities=(
+                "exercise_schedule_to_simulation_grid",
+                "pathwise_numeraire_discounting",
+                "swap_value_paths_to_early_exercise_control",
+            ),
+        ),
+    }
+)
 
 
 def _to_compact_dict(obj) -> dict:
@@ -5211,10 +5309,15 @@ _RATE_STYLE_SWAPTION_DRAFT_VARIANTS = (
     SemanticDraftVariantProfile(
         variant_key="bermudan_swaption",
         instrument_aliases=("bermudan_swaption",),
+        selection_cues=(
+            "bermudan swaption",
+            "style: bermudan",
+            "irregular exercise",
+            "exercise dates:",
+        ),
     ),
     SemanticDraftVariantProfile(
         variant_key="swaption",
-        instrument_aliases=("swaption",),
     ),
 )
 
@@ -5504,10 +5607,26 @@ def _draft_rate_style_swaption_contract(
     term_sheet,
 ) -> SemanticContract:
     """Draft a rate-style swaption contract from request text."""
-    observation_schedule = _split_supported_dates(
+    exercise_line = re.search(
+        r"exercise dates\s*:\s*([^\n]+)",
         text,
-        term_sheet,
-        parameter_keys=("expiry_date", "expiry", "exercise_date", "observation_schedule", "observation_dates"),
+        flags=re.IGNORECASE,
+    )
+    observation_schedule = (
+        tuple(re.findall(r"\b\d{4}-\d{2}-\d{2}\b", exercise_line.group(1)))
+        if exercise_line is not None
+        else _split_supported_dates(
+            text,
+            term_sheet,
+            parameter_keys=(
+                "expiry_date",
+                "expiry",
+                "exercise_date",
+                "exercise_dates",
+                "observation_schedule",
+                "observation_dates",
+            ),
+        )
     )
     if not observation_schedule:
         raise ValueError(

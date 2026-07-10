@@ -874,6 +874,7 @@ def build_payoff(
     )
     from trellis.agent.knowledge.decompose import decompose_to_ir
     from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.semantic_contracts import UnsupportedSemanticMethodError
     from trellis.core.market_state import MissingCapabilityError
 
     model = model or get_default_model()
@@ -892,7 +893,14 @@ def build_payoff(
                 knowledge_overlays=knowledge_overlays,
             )
             product_ir = compiled_request.product_ir
+        except UnsupportedSemanticMethodError as exc:
+            blocker_details = exc.to_blocker_details()
+            if build_meta is not None:
+                build_meta["blocker_details"] = blocker_details
+            raise
         except Exception:
+            if semantic_contract is not None:
+                raise
             try:
                 product_ir = decompose_to_ir(
                     payoff_description,
@@ -4349,6 +4357,9 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.rate_style_swaption_tree.price_swaption_tree": (
             "return price_swaption_tree(market_state, spec"
             f"{swaption_comparison_kwargs})"
+        ),
+        "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree": (
+            "return price_bermudan_swaption_tree(market_state, spec)"
         ),
         "trellis.models.rate_style_swaption.price_swaption_monte_carlo": (
             "return price_swaption_monte_carlo("

@@ -267,6 +267,59 @@ def test_build_payoff_persists_structured_blockers_when_pre_generation_gate_bloc
     assert blocker_details["new_primitive_workflow"]["items"][0]["title"] == "exercise primitive"
 
 
+def test_explicit_semantic_method_gap_does_not_fall_back_to_broad_route(monkeypatch):
+    from importlib import import_module
+
+    from trellis.agent.executor import build_payoff
+    from trellis.agent.semantic_contracts import (
+        UnsupportedSemanticMethodError,
+        make_rate_style_swaption_contract,
+    )
+
+    contract = make_rate_style_swaption_contract(
+        description="Bermudan payer swaption with an irregular exercise schedule",
+        observation_schedule=("2025-11-15", "2026-05-15", "2026-11-15"),
+        preferred_method="rate_tree",
+        exercise_style="bermudan",
+    )
+    build_meta: dict[str, object] = {}
+
+    def _forbid_fallback(*args, **kwargs):
+        raise AssertionError("explicit semantic compilation must not use broad fallback")
+
+    decompose_module = import_module("trellis.agent.knowledge.decompose")
+    monkeypatch.setattr(decompose_module, "decompose_to_ir", _forbid_fallback)
+    monkeypatch.setattr("trellis.agent.planner.plan_build", _forbid_fallback)
+
+    with pytest.raises(
+        UnsupportedSemanticMethodError,
+        match="Bermudan swaption Monte Carlo",
+    ):
+        build_payoff(
+            "Bermudan payer swaption with an irregular exercise schedule",
+            instrument_type="swaption",
+            preferred_method="monte_carlo",
+            semantic_contract=contract,
+            build_meta=build_meta,
+        )
+
+    blocker_details = build_meta["blocker_details"]
+    assert blocker_details["reason"] == "semantic_method_composition_gap"
+    assert blocker_details["semantic_family"] == "rate_style_swaption:bermudan"
+    assert blocker_details["requested_method"] == "monte_carlo"
+    assert blocker_details["available_capabilities"] == [
+        "hull_white_factor_simulation",
+        "irregular_exercise_schedule",
+        "longstaff_schwartz_continuation",
+        "pathwise_swap_value_projection",
+    ]
+    assert blocker_details["missing_capabilities"] == [
+        "exercise_schedule_to_simulation_grid",
+        "pathwise_numeraire_discounting",
+        "swap_value_paths_to_early_exercise_control",
+    ]
+
+
 def test_record_lesson_maps_fields_into_canonical_payload(monkeypatch):
     from trellis.agent.test_resolution import Lesson, record_lesson
 
@@ -506,6 +559,38 @@ def test_deterministic_exact_binding_module_materializes_swaption_helper_wrapper
     assert generated is not None
     assert "return price_swaption_black76(market_state, spec)" in generated.code
     assert "sigma=0.01" not in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_bermudan_tree_compat_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree",
+        ),
+        primitive_plan=SimpleNamespace(route="exercise_lattice"),
+        method="rate_tree",
+        instrument_type="swaption",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["bermudan_swaption"],
+        "Bermudan payer swaption",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "return price_bermudan_swaption_tree(market_state, spec)" in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
