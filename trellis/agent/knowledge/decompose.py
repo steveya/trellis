@@ -2360,6 +2360,16 @@ def _infer_instrument(description: str, instrument_type: str | None) -> str | No
         ("callable_bond", ("callable_bond", "callable bond")),
         ("puttable_bond", ("puttable_bond", "puttable bond")),
         ("zcb_option", ("zcb_option", "zcb option", "zero_coupon_bond_option", "zero-coupon bond option")),
+        (
+            "short_rate_bond",
+            (
+                "short_rate_bond",
+                "short-rate bond",
+                "short rate bond",
+                "vasicek bond",
+                "cir bond",
+            ),
+        ),
         ("american_put", ("american_put", "american put")),
         ("american_option", ("american_option", "american option")),
         ("barrier_option", ("barrier_option", "barrier option")),
@@ -2732,6 +2742,8 @@ def _payoff_family_for(
         return EVENT_TRIGGERED_TWO_LEGGED_CONTRACT_FAMILY
     if instrument == "zcb_option":
         return "zcb_option"
+    if instrument == "short_rate_bond":
+        return "discount_bond"
     if instrument == "callable_bond":
         return "callable_fixed_income"
     if instrument == "puttable_bond":
@@ -3059,7 +3071,7 @@ def _model_family_for(
         return "variance_gamma"
     if "cgmy" in payoff_traits or "cgmy" in desc or "tempered_stable" in desc:
         return "cgmy"
-    if instrument in {"swap", "swaption", "bermudan_swaption", "callable_bond", "puttable_bond", "bond", "cap", "floor", "zcb_option"}:
+    if instrument in {"swap", "swaption", "bermudan_swaption", "callable_bond", "puttable_bond", "bond", "cap", "floor", "short_rate_bond", "zcb_option"}:
         return "interest_rate"
     if method == "copula" or instrument in {"cdo", "nth_to_default", "credit_loss_distribution"}:
         return "credit_copula"
@@ -3125,6 +3137,50 @@ def _candidate_engine_families_for(
 def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> ProductIR:
     """Augment ProductIR with high-signal request context missing from static decompositions."""
     desc = _normalise(description)
+    if ir.instrument == "short_rate_bond":
+        payoff_traits = list(ir.payoff_traits)
+        for trait in (
+            "short_rate_model",
+            "discounting",
+            "model_parameter_dependence",
+        ):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+        if "vasicek" in desc and "vasicek" not in payoff_traits:
+            payoff_traits.append("vasicek")
+        if "cir" in desc and "cir" not in payoff_traits:
+            payoff_traits.append("cir")
+
+        candidate_engine_families = list(ir.candidate_engine_families)
+        for family in ("analytical", "lattice"):
+            if family not in candidate_engine_families:
+                candidate_engine_families.append(family)
+        route_families = list(ir.route_families)
+        for family in ("analytical", "rate_tree", "rate_lattice"):
+            if family not in route_families:
+                route_families.append(family)
+        required_market_data = set(ir.required_market_data)
+        required_market_data.update({"discount_curve", "model_parameters"})
+        return replace(
+            ir,
+            payoff_family="discount_bond",
+            payoff_traits=tuple(payoff_traits),
+            model_family="interest_rate",
+            candidate_engine_families=tuple(candidate_engine_families),
+            route_families=tuple(route_families),
+            required_market_data=frozenset(
+                normalize_market_data_requirements(required_market_data)
+            ),
+            reusable_primitives=tuple(
+                dict.fromkeys(
+                    (
+                        *ir.reusable_primitives,
+                        "trellis.models.short_rate_bond",
+                    )
+                )
+            ),
+        )
+
     if ir.instrument == "european_option" and "bates" in desc:
         payoff_traits = [
             trait for trait in ir.payoff_traits if trait != "vol_surface_dependence"

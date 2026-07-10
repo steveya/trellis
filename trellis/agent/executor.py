@@ -2057,7 +2057,30 @@ def _validate_build(
             or requires_bates_model_parameters
         ):
             product_model_family = str(getattr(product_ir, "model_family", "") or "").lower()
-            if product_model_family == "bates" or requires_bates_model_parameters:
+            if itype == "short_rate_bond":
+                vasicek_payload = {
+                    "family": "vasicek",
+                    "r0": rate,
+                    "a": 0.10,
+                    "b": rate,
+                    "sigma": 0.01,
+                }
+                cir_payload = {
+                    "family": "cir",
+                    "r0": rate,
+                    "kappa": 0.10,
+                    "theta": rate,
+                    "sigma": 0.01,
+                }
+                payload["model_parameters"] = {
+                    "vasicek": vasicek_payload,
+                    "cir": cir_payload,
+                }
+                payload["model_parameter_sets"] = {
+                    "vasicek_validation": vasicek_payload,
+                    "cir_validation": cir_payload,
+                }
+            elif product_model_family == "bates" or requires_bates_model_parameters:
                 from trellis.models.processes.heston import build_heston_parameter_payload
 
                 bates_payload = build_heston_parameter_payload(
@@ -3867,6 +3890,26 @@ def _deterministic_exact_binding_evaluate_body(
             return cds_body
 
     target_helper_bodies = {
+        "vasicek_tree": (
+            "return price_short_rate_zero_coupon_bond_tree("
+            'market_state, spec, model="vasicek", '
+            'n_steps=getattr(spec, "tree_steps", 360), '
+            "allow_benchmark_defaults=True)"
+        ),
+        "cir_tree": (
+            "return price_short_rate_zero_coupon_bond_tree("
+            'market_state, spec, model="cir", '
+            'n_steps=getattr(spec, "tree_steps", 360), '
+            "allow_benchmark_defaults=True)"
+        ),
+        "vasicek_analytical": (
+            "return price_short_rate_zero_coupon_bond_analytical("
+            'market_state, spec, model="vasicek", allow_benchmark_defaults=True)'
+        ),
+        "cir_analytical": (
+            "return price_short_rate_zero_coupon_bond_analytical("
+            'market_state, spec, model="cir", allow_benchmark_defaults=True)'
+        ),
         "heston_mc": (
             "return price_heston_option_monte_carlo("
             f"market_state, spec{heston_mc_kwargs})"
@@ -4345,6 +4388,15 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_zcb_option_tree("
             f"market_state, spec{zcb_option_tree_kwargs})"
         ),
+        "trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_analytical": (
+            "return price_short_rate_zero_coupon_bond_analytical("
+            "market_state, spec, allow_benchmark_defaults=True)"
+        ),
+        "trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_tree": (
+            "return price_short_rate_zero_coupon_bond_tree("
+            'market_state, spec, n_steps=getattr(spec, "tree_steps", 360), '
+            "allow_benchmark_defaults=True)"
+        ),
         "trellis.models.credit_basket_copula.price_credit_basket_tranche": (
             "return price_credit_basket_tranche("
             f"market_state, spec{credit_basket_tranche_kwargs})"
@@ -4754,6 +4806,16 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_bates_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.bates_option import price_bates_option_monte_carlo"
+        )
+    if "price_short_rate_zero_coupon_bond_analytical(" in body:
+        imports.append(
+            "from trellis.models.short_rate_bond import "
+            "price_short_rate_zero_coupon_bond_analytical"
+        )
+    if "price_short_rate_zero_coupon_bond_tree(" in body:
+        imports.append(
+            "from trellis.models.short_rate_bond import "
+            "price_short_rate_zero_coupon_bond_tree"
         )
     if "price_cds_analytical(" in body:
         imports.append(

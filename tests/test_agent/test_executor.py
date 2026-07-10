@@ -2836,6 +2836,55 @@ def test_deterministic_exact_binding_module_materializes_zcb_option_tree_helper_
 @pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
+        ("vasicek_tree", 'model="vasicek"'),
+        ("cir_tree", 'model="cir"'),
+        ("vasicek_analytical", 'model="vasicek"'),
+        ("cir_analytical", 'model="cir"'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_short_rate_bond_helper_wrappers(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    helper = (
+        "trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_tree"
+        if comparison_target.endswith("_tree")
+        else "trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_analytical"
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper,),
+        primitive_plan=None,
+        method="rate_tree" if comparison_target.endswith("_tree") else "analytical",
+        instrument_type="short_rate_bond",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["short_rate_bond"],
+        "Short-rate zero-coupon bond",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_fragment in generated.code
+    assert "price_short_rate_zero_coupon_bond_" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
         ("gaussian_copula", 'copula_family="gaussian"'),
         ("student_t_copula", 'copula_family="student_t", degrees_of_freedom=5.0, n_paths=40000, seed=42'),
     ],

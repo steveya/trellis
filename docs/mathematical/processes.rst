@@ -33,6 +33,22 @@ CIR
 
 Positive rates when Feller condition :math:`2ab > \sigma^2` holds.
 
+Plain Short-Rate Zero-Coupon Bonds
+----------------------------------
+
+The bounded proof route for plain zero-coupon bonds under one-factor affine
+short-rate models lives in ``trellis.models.short_rate_bond``. It exposes
+Vasicek and CIR analytical prices plus a bounded trinomial tree comparator for
+the same ``(market_state, spec)`` contract. The resolver consumes explicit
+``market_state.model_parameters`` / ``model_parameter_sets`` entries keyed by
+``vasicek`` or ``cir`` and ignores Heston-shaped stochastic-volatility payloads
+such as ``kappa/theta/xi/rho/v0``.
+
+Sparse legacy proof tasks may opt into benchmark defaults through the internal
+task exact-binding path. Ordinary helper use remains fail-closed unless the
+short-rate volatility is supplied by model parameters or by an explicit
+short-rate comparison regime.
+
 Hull-White
 ----------
 
@@ -190,6 +206,8 @@ Implementation
 .. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_monte_carlo
 .. autofunction:: trellis.models.bates_option.price_bates_option_transform
 .. autofunction:: trellis.models.bates_option.price_bates_option_monte_carlo
+.. autofunction:: trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_analytical
+.. autofunction:: trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_tree
 .. autofunction:: trellis.models.levy_option.price_variance_gamma_option_transform
 .. autofunction:: trellis.models.levy_option.price_variance_gamma_option_monte_carlo
 .. autofunction:: trellis.models.levy_option.price_cgmy_option_transform

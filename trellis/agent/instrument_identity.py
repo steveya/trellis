@@ -14,6 +14,10 @@ _INSTRUMENT_PATTERNS: tuple[tuple[str, str], ...] = (
     ("portfolio loss distribution", "credit_loss_distribution"),
     ("multi-name portfolio loss distribution", "credit_loss_distribution"),
     ("recursive loss distribution", "credit_loss_distribution"),
+    ("vasicek bond pricing", "short_rate_bond"),
+    ("cir bond pricing", "short_rate_bond"),
+    ("short-rate bond", "short_rate_bond"),
+    ("short rate bond", "short_rate_bond"),
     ("zero-coupon bond option", "zcb_option"),
     ("zero coupon bond option", "zcb_option"),
     ("zero-coupon bond", "zcb_option"),
@@ -128,7 +132,7 @@ _REFINABLE_INSTRUMENT_FAMILIES: dict[str, frozenset[str]] = {
         }
     ),
     "american_option": frozenset({"american_put"}),
-    "bond": frozenset({"callable_bond", "puttable_bond", "range_accrual", "zcb_option"}),
+    "bond": frozenset({"callable_bond", "puttable_bond", "range_accrual", "short_rate_bond", "zcb_option"}),
     "swaption": frozenset({"bermudan_swaption"}),
 }
 

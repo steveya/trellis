@@ -558,6 +558,14 @@ the callable-bond user surface stable while letting later short-rate claim
 families reuse the same helper substrate instead of copying callable-bond-local
 glue code.
 
+Plain Vasicek/CIR zero-coupon bond proof tasks use
+``trellis.models.short_rate_bond`` instead of callable-bond or ZCB-option
+helpers. The analytical and tree wrappers share the same short-rate
+``model_parameters`` contract, and the task exact-binding path can provide
+bounded benchmark defaults only for sparse legacy proof manifests. User code
+should provide explicit Vasicek/CIR parameters or a short-rate comparison
+regime rather than relying on those internal defaults.
+
 The execution layer now also exposes that callable structure directly for the
 bounded proving slice. ``trellis.execution.compile_dynamic_execution_ir(...)``
 can lower an admitted callable-bond ``DynamicContractIR`` into a route-free

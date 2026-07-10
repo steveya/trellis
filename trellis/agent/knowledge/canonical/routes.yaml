@@ -1340,6 +1340,56 @@ routes:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
 
+  - id: short_rate_zero_coupon_bond
+    engine_family: analytical
+    route_family: analytical
+    status: promoted
+    confidence: 1.0
+    score_hints:
+      payoff_family_bonus: {discount_bond: 2.0}
+    match:
+      methods: [analytical, rate_tree]
+      required_market_data: [discount_curve, model_parameters]
+      instruments: [short_rate_bond]
+      payoff_family: [discount_bond]
+      model_family: [interest_rate]
+    conditional_route_family:
+      - when:
+          methods: [rate_tree]
+        route_family: rate_lattice
+      - when: default
+        route_family: analytical
+    admissibility:
+      control_styles: [identity]
+      event_support: none
+      phase_sensitivity: default_phase_order_only
+      multicurrency_support: single_currency_only
+      supported_outputs: [price, scenario_pnl]
+      supports_sensitivity_outputs: true
+      supported_state_tags: [terminal_markov, recombining_safe, schedule_state]
+      supports_calibration: false
+    conditional_primitives:
+      - when:
+          methods: [analytical]
+        primitives:
+          - module: trellis.models.short_rate_bond
+            symbol: price_short_rate_zero_coupon_bond_analytical
+            role: route_helper
+        adapters: []
+        notes: []
+      - when:
+          methods: [rate_tree]
+        primitives:
+          - module: trellis.models.short_rate_bond
+            symbol: price_short_rate_zero_coupon_bond_tree
+            role: route_helper
+        adapters: []
+        notes: []
+    market_data_access:
+      required:
+        discount_curve: [market_state.discount]
+        model_parameters: [market_state.model_parameters, market_state.model_parameter_sets]
+
   - id: analytical_garman_kohlhagen
     engine_family: analytical
     route_family: analytical

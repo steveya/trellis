@@ -455,6 +455,17 @@ lattice helper. The route card still carries no lattice-construction or
 short-rate-input assembly instructions because the checked helper surface
 already owns that work.
 
+Plain zero-coupon bond comparison tasks under Vasicek or CIR use a separate
+``short_rate_zero_coupon_bond`` route. That route narrows the product to
+``instrument=short_rate_bond`` and ``payoff_family=discount_bond`` so it does
+not reuse ZCB-option or generic rate-tree artifacts. Analytical targets call
+``price_short_rate_zero_coupon_bond_analytical(...)`` and rate-tree targets
+call ``price_short_rate_zero_coupon_bond_tree(...)`` from
+``trellis.models.short_rate_bond``. The exact task binding may opt into
+benchmark defaults for sparse proof manifests, but the reusable helper itself
+does not treat equity/Heston model payloads or generic Black-vol surfaces as
+short-rate model parameters.
+
 The analytical / PDE / FFT support cohort now follows the same rule. The
 helper-backed Black76 swaption routes, the vanilla-equity PDE helper, bounded
 CEV PDE/tree proof helpers, bounded event-aware PDE helper branches, Heston ADI

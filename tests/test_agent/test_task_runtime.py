@@ -1044,6 +1044,30 @@ def test_task_to_instrument_type_uses_bates_hint_for_vanilla_option():
     assert resolution.source == "task.title_or_description"
 
 
+def test_task_to_instrument_type_uses_short_rate_bond_hint_for_vasicek_cir_bond_tasks():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    vasicek = task_to_instrument_identity(
+        {
+            "id": "T56",
+            "title": "Vasicek bond pricing: tree vs analytical",
+            "cross_validate": {"internal": ["vasicek_tree", "vasicek_analytical"]},
+        }
+    )
+    cir = task_to_instrument_identity(
+        {
+            "id": "T57",
+            "title": "CIR bond pricing: tree vs analytical",
+            "cross_validate": {"internal": ["cir_tree", "cir_analytical"]},
+        }
+    )
+
+    assert vasicek.instrument_type == "short_rate_bond"
+    assert vasicek.source == "task.title_or_description"
+    assert cir.instrument_type == "short_rate_bond"
+    assert cir.source == "task.title_or_description"
+
+
 def test_comparison_harness_maps_turnbull_wakeman_target_to_analytical():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 

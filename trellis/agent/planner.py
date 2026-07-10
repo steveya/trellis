@@ -87,6 +87,17 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
         ],
     ),
+    "short_rate_bond": SpecSchema(
+        class_name="ShortRateBondPayoff",
+        spec_name="ShortRateBondSpec",
+        requirements=["discount_curve", "model_parameters"],
+        fields=[
+            FieldDef("notional", "float", "Face value / notional"),
+            FieldDef("maturity_date", "date", "Zero-coupon bond maturity date"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("tree_steps", "int", "Tree time steps for lattice comparison targets", "360"),
+        ],
+    ),
     "cap": SpecSchema(
         class_name="AgentCapPayoff",
         spec_name="AgentCapSpec",

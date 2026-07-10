@@ -469,6 +469,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Analytical"].append(line)
         elif mod == "trellis.models.sabr_option":
             groups["Models — Analytical"].append(line)
+        elif mod == "trellis.models.short_rate_bond":
+            groups["Models — Analytical"].append(line)
         elif mod == "trellis.models.equity_option_tree":
             groups["Models — Trees"].append(line)
         elif mod == "trellis.models.equity_option_monte_carlo":
@@ -551,6 +553,7 @@ from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, 
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
+from trellis.models.short_rate_bond import ResolvedShortRateBondInputs, price_cir_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_tree, price_vasicek_zero_coupon_bond_analytical, resolve_short_rate_bond_inputs
 from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
 
 ### Models — Trees

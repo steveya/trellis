@@ -670,6 +670,64 @@ def test_builds_zcb_option_rate_tree_plan():
     assert plan.primitive_plan.adapters == ()
 
 
+def test_builds_short_rate_bond_rate_tree_plan():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="rate_tree",
+        method_modules=["trellis.models.short_rate_bond"],
+        required_market_data={"discount_curve", "model_parameters"},
+        model_to_build="short_rate_bond",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="short_rate_bond",
+        inspected_modules=("trellis.models.short_rate_bond",),
+        product_ir=decompose_to_ir(
+            "Vasicek bond pricing: tree vs analytical",
+            instrument_type="short_rate_bond",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "short_rate_zero_coupon_bond"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_short_rate_zero_coupon_bond_tree"}
+    assert plan.primitive_plan.adapters == ()
+
+
+def test_builds_short_rate_bond_analytical_plan():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.short_rate_bond"],
+        required_market_data={"discount_curve", "model_parameters"},
+        model_to_build="short_rate_bond",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="short_rate_bond",
+        inspected_modules=("trellis.models.short_rate_bond",),
+        product_ir=decompose_to_ir(
+            "CIR bond pricing: tree vs analytical",
+            instrument_type="short_rate_bond",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "short_rate_zero_coupon_bond"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_short_rate_zero_coupon_bond_analytical"}
+    assert plan.primitive_plan.adapters == ()
+
+
 def test_builds_exercise_lattice_plan_for_callable_bond():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir

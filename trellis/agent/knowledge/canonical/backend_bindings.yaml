@@ -499,6 +499,29 @@ bindings:
             symbol: price_zcb_option_tree
             role: route_helper
 
+  - route_id: short_rate_zero_coupon_bond
+    engine_family: analytical
+    route_family: analytical
+    conditional_route_family:
+      - when:
+          methods: [rate_tree]
+        route_family: rate_lattice
+      - when: default
+        route_family: analytical
+    conditional_primitives:
+      - when:
+          methods: [analytical]
+        primitives:
+          - module: trellis.models.short_rate_bond
+            symbol: price_short_rate_zero_coupon_bond_analytical
+            role: route_helper
+      - when:
+          methods: [rate_tree]
+        primitives:
+          - module: trellis.models.short_rate_bond
+            symbol: price_short_rate_zero_coupon_bond_tree
+            role: route_helper
+
   - route_id: analytical_black76
     engine_family: analytical
     route_family: analytical

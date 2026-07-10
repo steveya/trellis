@@ -160,6 +160,24 @@ class TestProductIR:
         assert "monte_carlo" in ir.route_families
         assert "trellis.models.bates_option" in ir.reusable_primitives
 
+    def test_ir_for_short_rate_bond_uses_affine_rate_model_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Vasicek bond pricing: tree vs analytical",
+            instrument_type="short_rate_bond",
+        )
+
+        assert ir.instrument == "short_rate_bond"
+        assert ir.payoff_family == "discount_bond"
+        assert "short_rate_model" in ir.payoff_traits
+        assert ir.model_family == "interest_rate"
+        assert "discount_curve" in ir.required_market_data
+        assert "model_parameters" in ir.required_market_data
+        assert "analytical" in ir.route_families
+        assert "rate_tree" in ir.route_families
+        assert "trellis.models.short_rate_bond" in ir.reusable_primitives
+
     def test_ir_for_absorbed_analytical_exotics_uses_specific_payoff_families(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 
