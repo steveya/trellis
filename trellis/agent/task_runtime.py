@@ -541,12 +541,116 @@ class ProofAmericanHighStepTreePayoff:
         )
 
 
+@dataclass(frozen=True)
+class ProofCounterpartyCVASpec:
+    """Internal proof-task spec for bounded IRS CVA comparison targets."""
+
+    notional: float = 1_000_000.0
+    fixed_rate: float = 0.045
+    maturity_years: int = 3
+    rate_index: str = "USD-SOFR-3M"
+    counterparty_hazard_rate: float = 0.02
+    counterparty_recovery_rate: float = 0.40
+    default_exposure_correlation: float = 0.35
+    n_paths: int = 1024
+    n_steps: int = 72
+    seed: int = 52
+
+
+class _ProofCounterpartyCVABasePayoff:
+    """Counterparty proof adapter over the shared IRS exposure/xVA stack."""
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve", "forward_curve", "credit_curve"}
+
+    def __init__(self, spec: ProofCounterpartyCVASpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> ProofCounterpartyCVASpec:
+        return self._spec
+
+    def _common_kwargs(self) -> dict[str, object]:
+        spec = self._spec
+        return {
+            "notional": float(spec.notional),
+            "fixed_rate": float(spec.fixed_rate),
+            "maturity_years": int(spec.maturity_years),
+            "rate_index": str(spec.rate_index),
+            "counterparty_hazard_rate": float(spec.counterparty_hazard_rate),
+            "counterparty_recovery_rate": float(spec.counterparty_recovery_rate),
+            "n_paths": int(spec.n_paths),
+            "n_steps": int(spec.n_steps),
+            "seed": int(spec.seed),
+        }
+
+
+class ProofInterestRateSwapMCVAPayoff(_ProofCounterpartyCVABasePayoff):
+    """CVA on interest rate swap: MC exposure simulation."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.analytics.counterparty import price_interest_rate_swap_cva_monte_carlo
+
+        return float(price_interest_rate_swap_cva_monte_carlo(market_state, **self._common_kwargs()))
+
+
+class ProofInterestRateSwapAnalyticalCVAApproxPayoff(_ProofCounterpartyCVABasePayoff):
+    """CVA on interest rate swap: analytical flat-hazard EPE approximation."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.analytics.counterparty import (
+            price_interest_rate_swap_cva_analytical_approx,
+        )
+
+        return float(
+            price_interest_rate_swap_cva_analytical_approx(
+                market_state,
+                **self._common_kwargs(),
+            )
+        )
+
+
+class ProofInterestRateSwapIndependentCVAPayoff(_ProofCounterpartyCVABasePayoff):
+    """Wrong-way risk reference target: independent default and exposure."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.analytics.counterparty import price_interest_rate_swap_independent_cva
+
+        kwargs = self._common_kwargs()
+        kwargs["seed"] = int(self._spec.seed) + 2
+        return float(price_interest_rate_swap_independent_cva(market_state, **kwargs))
+
+
+class ProofInterestRateSwapWrongWayCVAPayoff(_ProofCounterpartyCVABasePayoff):
+    """Wrong-way risk target: default intensity increases with exposure."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.analytics.counterparty import price_interest_rate_swap_wrong_way_cva
+
+        kwargs = self._common_kwargs()
+        kwargs["seed"] = int(self._spec.seed) + 2
+        kwargs["default_exposure_correlation"] = float(self._spec.default_exposure_correlation)
+        return float(price_interest_rate_swap_wrong_way_cva(market_state, **kwargs))
+
+
 _PROOF_AMERICAN_LSM_TARGETS: dict[str, type] = {
     "polynomial": ProofAmericanLSMPolynomialPayoff,
     "laguerre": ProofAmericanLSMLaguerrePayoff,
     "hermite": ProofAmericanLSMHermitePayoff,
     "chebyshev": ProofAmericanLSMChebyshevPayoff,
     "high_step_tree_2000": ProofAmericanHighStepTreePayoff,
+}
+
+_PROOF_COUNTERPARTY_TARGETS: dict[str, dict[str, type]] = {
+    "T52": {
+        "mc_cva": ProofInterestRateSwapMCVAPayoff,
+        "analytical_cva_approx": ProofInterestRateSwapAnalyticalCVAApproxPayoff,
+    },
+    "T54": {
+        "correlated_cva": ProofInterestRateSwapWrongWayCVAPayoff,
+        "independent_cva": ProofInterestRateSwapIndependentCVAPayoff,
+    },
 }
 
 
@@ -1162,10 +1266,11 @@ def _proof_legacy_comparison_build_result(
     """Return deterministic local build results for sparse proof-only targets."""
     if not _is_proof_legacy_task(task):
         return None
-    if str(task.get("id") or "").strip() != "T27":
-        return None
-
-    payoff_cls = _PROOF_AMERICAN_LSM_TARGETS.get(target.target_id)
+    task_id = str(task.get("id") or "").strip()
+    if task_id == "T27":
+        payoff_cls = _PROOF_AMERICAN_LSM_TARGETS.get(target.target_id)
+    else:
+        payoff_cls = _PROOF_COUNTERPARTY_TARGETS.get(task_id, {}).get(target.target_id)
     if payoff_cls is None:
         return None
 
@@ -1182,7 +1287,7 @@ def _proof_legacy_comparison_build_result(
                 "agent": "task_runtime",
                 "kind": "deterministic_proof_target",
                 "summary": (
-                    f"Resolved proof legacy T27 target `{target.target_id}` "
+                    f"Resolved proof legacy {task_id} target `{target.target_id}` "
                     f"to `{payoff_cls.__name__}` without generation."
                 ),
             }
@@ -3940,8 +4045,10 @@ def _module_matches_task(module, task_title: str) -> bool:
 
 def _infer_spec_schema_from_module(module, payoff_cls: type) -> SpecSchema | None:
     """Infer a planner-compatible spec schema from a cached module dataclass."""
-    spec_cls = None
+    spec_cls = _infer_spec_cls_from_payoff_signature(payoff_cls)
     for value in module.__dict__.values():
+        if spec_cls is not None:
+            break
         if isinstance(value, type) and is_dataclass(value) and value.__name__.endswith("Spec"):
             spec_cls = value
             break
@@ -3968,6 +4075,31 @@ def _infer_spec_schema_from_module(module, payoff_cls: type) -> SpecSchema | Non
         requirements=[],
         fields=field_defs,
     )
+
+
+def _infer_spec_cls_from_payoff_signature(payoff_cls: type) -> type | None:
+    """Infer a spec dataclass from a payoff constructor annotation."""
+    try:
+        signature = inspect.signature(payoff_cls.__init__)
+    except (TypeError, ValueError):
+        return None
+    for parameter in signature.parameters.values():
+        if parameter.name == "self":
+            continue
+        annotation = parameter.annotation
+        if isinstance(annotation, str):
+            annotation = getattr(
+                sys.modules.get(getattr(payoff_cls, "__module__", "")),
+                annotation,
+                None,
+            )
+        if (
+            isinstance(annotation, type)
+            and is_dataclass(annotation)
+            and annotation.__name__.endswith("Spec")
+        ):
+            return annotation
+    return None
 
 
 def _find_cached_payoff_class(module) -> type | None:

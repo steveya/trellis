@@ -239,6 +239,7 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
 
     include_prefixes = (
         "trellis.models.",
+        "trellis.analytics.",
         "trellis.core.",
         "trellis.curves.",
         "trellis.execution",
@@ -451,13 +452,16 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
         "Models — Cashflow Engine": [],
         "Models — Vol Surface": [],
         "Models — Quoted Observable": [],
+        "Analytics": [],
         "Instruments (reference)": [],
     }
 
     for mod, symbols in sorted(registry.items()):
         line = f"from {mod} import {', '.join(symbols)}"
 
-        if "trellis.core." in mod:
+        if "trellis.analytics." in mod:
+            groups["Analytics"].append(line)
+        elif "trellis.core." in mod:
             groups["Core"].append(line)
         elif "trellis.curves." in mod:
             groups["Curves"].append(line)
@@ -633,4 +637,7 @@ from trellis.models.cashflow_engine.amortization import level_pay, scheduled
 
 ### Models — Vol Surface
 from trellis.models.vol_surface import FlatVol, VolSurface
+
+### Analytics
+from trellis.analytics.counterparty import CollateralAgreement, CollateralStateProjection, CounterpartySemanticContract, CounterpartySemanticValidationReport, ExposureMetricResult, NettingSet, NettingSetExposureCube, XVAAssumptionSet, XVAResult, aggregate_netting_set_exposures, compute_exposure_metrics, compute_xva_from_exposure_cube, price_counterparty_xva, price_interest_rate_swap_cva_analytical_approx, price_interest_rate_swap_cva_monte_carlo, price_interest_rate_swap_independent_cva, price_interest_rate_swap_wrong_way_cva, project_collateral_state, validate_counterparty_semantic_contract
 """

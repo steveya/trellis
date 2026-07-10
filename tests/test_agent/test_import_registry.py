@@ -76,6 +76,28 @@ def test_american_lsm_helper_is_visible_to_import_registry():
     assert symbol in registry_text
 
 
+def test_counterparty_cva_helpers_are_visible_to_import_registry():
+    module = "trellis.analytics.counterparty"
+    symbols = {
+        "price_interest_rate_swap_cva_analytical_approx",
+        "price_interest_rate_swap_cva_monte_carlo",
+        "price_interest_rate_swap_independent_cva",
+        "price_interest_rate_swap_wrong_way_cva",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
 def test_variance_swap_monte_carlo_helper_is_visible_to_import_registry():
     module = "trellis.models.variance_swap"
     symbols = {

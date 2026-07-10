@@ -447,6 +447,27 @@ def classify_semantic_gap(
     if has_shape_authority:
         missing_contract_fields.extend(("underlier_structure", "payoff_rule", "settlement_rule"))
         missing_knowledge_artifacts.append("semantic_contract_lesson")
+    if cues["counterparty"]:
+        missing_contract_fields.extend(
+            (
+                "counterparty_exposure_driver",
+                "underlying_trade_contract",
+                "netting_set_contract",
+                "counterparty_default_model",
+            )
+        )
+        missing_market_inputs.extend(("discount_curve", "credit_curve"))
+        missing_runtime_primitives.append("counterparty_exposure_cube")
+        missing_binding_helpers.append("exposure_cube_builder")
+        missing_knowledge_artifacts.append("semantic_contract_lesson")
+    if cues["wrong_way"]:
+        missing_contract_fields.extend(
+            (
+                "default_exposure_correlation",
+                "pathwise_default_intensity_rule",
+            )
+        )
+        missing_binding_helpers.append("wrong_way_cva_binding_helper")
     if cues["schedule"]:
         missing_contract_fields.append("observation_schedule")
         missing_runtime_primitives.append("generate_schedule")
@@ -733,6 +754,27 @@ def _semantic_cues(normalized_text: str) -> dict[str, bool]:
                 "double exponential",
             ),
         ),
+        "counterparty": _contains_any(
+            normalized_text,
+            (
+                "cva",
+                "xva",
+                "counterparty",
+                "wrong-way risk",
+                "wrong way risk",
+                "exposure simulation",
+                "exposure cube",
+            ),
+        ),
+        "wrong_way": _contains_any(
+            normalized_text,
+            (
+                "wrong-way",
+                "wrong way",
+                "correlated default and exposure",
+                "default exposure correlation",
+            ),
+        ),
         "credit": _contains_any(
             normalized_text,
             (
@@ -865,6 +907,13 @@ def _propose_runtime_primitives(report: SemanticGapReport) -> list[str]:
                 "trellis.models.monte_carlo.ranked_observation_payoffs",
             )
         )
+    if "counterparty_exposure_cube" in report.missing_runtime_primitives:
+        suggestions.extend(
+            (
+                "trellis.models.monte_carlo.simulation_substrate",
+                "trellis.analytics.counterparty",
+            )
+        )
     return suggestions
 
 
@@ -878,6 +927,10 @@ def _propose_binding_helpers(report: SemanticGapReport) -> list[str]:
                 "trellis.models.monte_carlo.semantic_basket",
             )
         )
+    if "exposure_cube_builder" in report.missing_binding_helpers:
+        suggestions.append("trellis.analytics.counterparty.price_interest_rate_swap_cva_monte_carlo")
+    if "wrong_way_cva_binding_helper" in report.missing_binding_helpers:
+        suggestions.append("trellis.analytics.counterparty.price_interest_rate_swap_wrong_way_cva")
     return suggestions
 
 

@@ -420,22 +420,34 @@ def build_comparison_harness_plan(task: Mapping[str, Any]) -> ComparisonHarnessP
     relation_overrides = cross_validate.get("relations") or {}
     internal_targets = list(cross_validate.get("internal") or ())
     analytical_target = cross_validate.get("analytical")
+    reference_target_override = str(
+        cross_validate.get("reference_target")
+        or cross_validate.get("reference")
+        or ""
+    ).strip()
 
     targets: list[ComparisonHarnessTarget] = []
     if internal_targets:
         for target_id in internal_targets:
             relation = None
             normalized_target_id = str(target_id).strip()
+            is_reference = bool(
+                reference_target_override
+                and normalized_target_id == reference_target_override
+            )
             if normalized_target_id:
                 relation = normalize_comparison_relation(
                     relation_overrides.get(normalized_target_id)
                     if isinstance(relation_overrides, Mapping)
                     else None
                 )
+            if is_reference:
+                relation = None
             targets.append(
                 ComparisonHarnessTarget(
                     target_id=normalized_target_id,
                     preferred_method=_preferred_method_for_target(normalized_target_id, construct_methods),
+                    is_reference=is_reference,
                     relation=relation,
                 )
             )

@@ -628,6 +628,37 @@ def test_classify_semantic_gap_treats_kou_as_known_vanilla_shape():
     assert "semantic_product_shape" not in report.missing_contract_fields
 
 
+def test_classify_semantic_gap_treats_cva_as_counterparty_exposure_shape():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "CVA on interest rate swap: MC exposure simulation",
+        instrument_type="counterparty_cva",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+    assert "counterparty_exposure_driver" in report.missing_contract_fields
+    assert "underlying_trade_contract" in report.missing_contract_fields
+    assert "credit_curve" in report.missing_market_inputs
+    assert "exposure_cube_builder" in report.missing_binding_helpers
+
+
+def test_classify_semantic_gap_treats_wrong_way_cva_as_correlated_default_shape():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "Wrong-way risk: correlated default and exposure",
+        instrument_type="counterparty_cva",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+    assert "default_exposure_correlation" in report.missing_contract_fields
+    assert "pathwise_default_intensity_rule" in report.missing_contract_fields
+    assert "wrong_way_cva_binding_helper" in report.missing_binding_helpers
+
+
 @pytest.mark.parametrize(
     ("description", "instrument_type", "semantic_id"),
     [

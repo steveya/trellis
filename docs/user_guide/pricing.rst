@@ -1032,6 +1032,9 @@ those later aggregation workflows run:
        aggregate_netting_set_exposures,
        compute_exposure_metrics,
        price_counterparty_xva,
+       price_interest_rate_swap_cva_monte_carlo,
+       price_interest_rate_swap_independent_cva,
+       price_interest_rate_swap_wrong_way_cva,
        project_collateral_state,
        validate_counterparty_semantic_contract,
    )
@@ -1097,14 +1100,30 @@ those later aggregation workflows run:
    xva.fva
    xva.total_xva
 
+   swap_cva = price_interest_rate_swap_cva_monte_carlo(
+       market_state,
+       n_paths=1024,
+       n_steps=72,
+       seed=52,
+   )
+   independent = price_interest_rate_swap_independent_cva(market_state)
+   wrong_way = price_interest_rate_swap_wrong_way_cva(
+       market_state,
+       default_exposure_correlation=0.35,
+   )
+
 The projection is deliberately explicit: held collateral is computed from
 valuation-lagged netted values, and closeout values come from the margin-period
 observation horizon. The netting-set exposure cube turns those per-set
 projections into closeout-ready packets. The first metric output reports
 portfolio and per-netting-set ``EE``/``EPE``/``PFE`` curves. The xVA workflow is
 bounded to scalar flat-hazard ``CVA``/``DVA``/``FVA`` assumptions over that same
-exposure stack; it is not a replacement for an enterprise counterparty-risk,
-capital, margin, or funding platform.
+exposure stack. The IRS convenience helpers use the supported vanilla
+fixed-float swap future-value cube and the same bounded xVA stack; the
+wrong-way helper tilts default intensity pathwise from exposure and is intended
+for controlled comparisons against the independent helper. It is not a
+replacement for an enterprise counterparty-risk, capital, margin, or funding
+platform.
 
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use

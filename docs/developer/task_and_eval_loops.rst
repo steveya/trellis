@@ -152,6 +152,16 @@ computed.  The compiled request records
 ``intra_run_learning_overlay_consumption`` with candidate ids, target ids,
 obligation kinds, applied inputs, and unapplied obligations.
 
+Sparse proof rows may also bind directly to deterministic task-runtime
+targets when the reusable library primitive already exists and code generation
+would only create adapter noise.  The counterparty CVA proof rows use this path
+for ``T52`` and ``T54``: ``T52`` compares the bounded IRS exposure-CVA helper
+against its flat-hazard expected-exposure approximation, while ``T54`` declares
+``independent_cva`` as the reference target and checks ``correlated_cva`` with
+a directional ``>=`` relation.  Directional comparisons should be represented
+with ``cross_validate.reference_target`` plus per-target ``relations`` rather
+than forced through the median/equality harness.
+
 The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 
 - ``make gate-pr`` for PR-ready validation

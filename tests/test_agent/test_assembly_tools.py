@@ -118,6 +118,32 @@ def test_build_comparison_harness_plan_resolves_targets_and_reference():
     }
 
 
+def test_build_comparison_harness_plan_marks_internal_reference_target():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    plan = build_comparison_harness_plan(
+        {
+            "construct": ["credit", "monte_carlo"],
+            "cross_validate": {
+                "internal": ["correlated_cva", "independent_cva"],
+                "reference_target": "independent_cva",
+                "relations": {"correlated_cva": ">="},
+            },
+        }
+    )
+
+    assert [target.target_id for target in plan.targets] == [
+        "correlated_cva",
+        "independent_cva",
+    ]
+    assert plan.reference_target == "independent_cva"
+    assert [target.is_reference for target in plan.targets] == [False, True]
+    assert {target.target_id: target.relation for target in plan.targets} == {
+        "correlated_cva": ">=",
+        "independent_cva": None,
+    }
+
+
 def test_build_comparison_harness_plan_ignores_non_method_credit_construct_labels():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 

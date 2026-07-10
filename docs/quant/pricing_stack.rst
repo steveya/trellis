@@ -649,10 +649,18 @@ xVA consumers. ``compute_exposure_metrics(...)`` now produces the first stable
 ``EE`` curve, trapezoidal ``EPE``, and ``PFE`` quantile curves at portfolio and
 per-netting-set levels. ``price_counterparty_xva(...)`` consumes the same
 semantic contract and exposure stack to compute bounded flat-hazard
-``CVA``/``DVA``/``FVA`` outputs under an explicit ``XVAAssumptionSet``. This is
-not a full enterprise counterparty-risk platform: ``MVA``/``KVA``, stochastic
-credit curves, capital models, legal enforceability workflows, and funding
-desk integration remain outside the checked contract.
+``CVA``/``DVA``/``FVA`` outputs under an explicit ``XVAAssumptionSet``.
+Task-facing IRS helpers now bind the supported vanilla swap future-value cube
+directly into that stack:
+``price_interest_rate_swap_cva_monte_carlo(...)`` and
+``price_interest_rate_swap_cva_analytical_approx(...)`` share the same
+flat-hazard exposure integration contract, while
+``price_interest_rate_swap_wrong_way_cva(...)`` applies a bounded pathwise
+default-intensity tilt against ``price_interest_rate_swap_independent_cva(...)``
+for wrong-way-risk comparisons. This is not a full enterprise counterparty-risk
+platform: ``MVA``/``KVA``, stochastic credit curves, capital models, legal
+enforceability workflows, and funding desk integration remain outside the
+checked contract.
 
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,
