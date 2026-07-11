@@ -79,14 +79,14 @@ class PDEOperator(Protocol):
 class BlackScholesOperator:
     """Black-Scholes PDE operator on a uniform grid.
 
-    L[V] = 0.5*σ²*S²*V_SS + r*S*V_S - r*V
+    L[V] = 0.5*σ²*S²*V_SS + (r-q)*S*V_S - r*V
 
     Central differences on uniform grid with spacing dS:
         V_SS ≈ (V_{i-1} - 2V_i + V_{i+1}) / dS²
         V_S  ≈ (V_{i+1} - V_{i-1}) / (2*dS)
     """
 
-    def __init__(self, sigma_fn, r_fn):
+    def __init__(self, sigma_fn, r_fn, dividend_yield_fn=None):
         """
         Parameters
         ----------
@@ -94,21 +94,25 @@ class BlackScholesOperator:
             Local volatility at spot S and time t.
         r_fn : callable(t) -> float
             Risk-free rate at time t.
+        dividend_yield_fn : callable(t) -> float, optional
+            Continuous dividend yield. Defaults to zero.
         """
         self.sigma_fn = sigma_fn
         self.r_fn = r_fn
+        self.dividend_yield_fn = dividend_yield_fn or (lambda _t: 0.0)
 
     def coefficients(self, S, t, dt):
         """Return the finite-difference Black-Scholes operator coefficients scaled by ``dt``."""
         S_int = S[1:-1]
         dS = S[1] - S[0]  # uniform grid
         r = self.r_fn(t)
+        dividend_yield = self.dividend_yield_fn(t)
         sig = _evaluate_spatial_callable(self.sigma_fn, S_int, t)
 
         inv_dS = 1.0 / dS
         inv_dS2 = inv_dS * inv_dS
         diff = 0.5 * raw_np.square(sig) * raw_np.square(S_int) * inv_dS2
-        drift = 0.5 * r * S_int * inv_dS
+        drift = 0.5 * (r - dividend_yield) * S_int * inv_dS
 
         a = dt * (diff - drift)
         b = dt * (-2.0 * diff - r)

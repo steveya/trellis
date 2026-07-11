@@ -740,39 +740,24 @@ def price(spec, market_state):
     assert "lite.local_vol_monte_carlo_local_vol_surface_access_missing" in issue_codes
 
 
-def test_lite_review_accepts_helper_backed_pde_route_without_direct_market_access():
-    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+def test_lite_review_accepts_vanilla_pde_market_binding_resolver():
     from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.platform_requests import compile_build_request
     from trellis.agent.quant import PricingPlan
 
     source = """\
-from trellis.models.equity_option_pde import price_vanilla_equity_option_pde
+from trellis.models.resolution.single_state_diffusion import resolve_single_state_diffusion_inputs
 
 def price(spec, market_state):
-    return float(price_vanilla_equity_option_pde(market_state, spec, theta=1.0))
+    resolved = resolve_single_state_diffusion_inputs(market_state, spec)
+    return float(resolved.spot)
 """
 
-    plan = GenerationPlan(
-        method="pde_solver",
+    plan = compile_build_request(
+        "European equity call on AAPL",
         instrument_type="european_option",
-        inspected_modules=("trellis.models.equity_option_pde",),
-        approved_modules=("trellis.models.equity_option_pde",),
-        symbols_to_reuse=("price_vanilla_equity_option_pde",),
-        proposed_tests=("tests/test_agent/test_build_loop.py",),
-        primitive_plan=PrimitivePlan(
-            route="vanilla_equity_theta_pde",
-            engine_family="pde_solver",
-            primitives=(
-                PrimitiveRef(
-                    "trellis.models.equity_option_pde",
-                    "price_vanilla_equity_option_pde",
-                    "route_helper",
-                ),
-            ),
-            adapters=(),
-            blockers=(),
-        ),
-    )
+        preferred_method="pde_solver",
+    ).generation_plan
     pricing_plan = PricingPlan(
         method="pde_solver",
         method_modules=["trellis.models.equity_option_pde"],

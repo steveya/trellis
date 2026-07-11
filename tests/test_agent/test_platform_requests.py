@@ -334,6 +334,20 @@ def test_compile_build_request_records_generated_skill_artifacts_in_shared_bundl
     assert "routing" in compiled.knowledge_summary["selected_artifacts_by_audience"]
 
 
+def test_compile_vanilla_pde_request_excludes_sibling_route_helper_skills():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "European call: theta-method convergence order measurement",
+        instrument_type="european_option",
+        preferred_method="pde_solver",
+    )
+
+    selected_ids = set(compiled.knowledge_summary["selected_artifact_ids"])
+    assert "route_hint:cev_theta_pde:route-helper" not in selected_ids
+    assert "route_hint:heston_adi_2d:route-helper" not in selected_ids
+
+
 def test_compile_build_request_supports_knowledge_light_profile():
     from trellis.agent.platform_requests import compile_build_request
 

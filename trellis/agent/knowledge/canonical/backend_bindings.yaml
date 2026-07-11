@@ -1003,9 +1003,33 @@ bindings:
     engine_family: pde_solver
     route_family: pde_solver
     primitives:
-      - module: trellis.models.equity_option_pde
-        symbol: price_vanilla_equity_option_pde
-        role: route_helper
+      - module: trellis.models.resolution.single_state_diffusion
+        symbol: resolve_single_state_diffusion_inputs
+        role: market_binding
+      - module: trellis.models.resolution.single_state_diffusion
+        symbol: terminal_intrinsic_from_resolved
+        role: payoff_primitive
+      - module: trellis.models.pde.event_aware
+        symbol: EventAwarePDEGridSpec
+        role: grid
+      - module: trellis.models.pde.event_aware
+        symbol: EventAwarePDEOperatorSpec
+        role: spatial_operator
+      - module: trellis.models.pde.event_aware
+        symbol: EventAwarePDEBoundarySpec
+        role: boundary_condition
+      - module: trellis.models.pde.event_aware
+        symbol: EventAwarePDEProblemSpec
+        role: problem_spec
+      - module: trellis.models.pde.event_aware
+        symbol: build_event_aware_pde_problem
+        role: problem_builder
+      - module: trellis.models.pde.event_aware
+        symbol: solve_event_aware_pde
+        role: pricing_kernel
+      - module: trellis.models.pde.event_aware
+        symbol: interpolate_pde_values
+        role: interpolation
 
   - route_id: cev_theta_pde
     engine_family: pde_solver

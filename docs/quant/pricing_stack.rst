@@ -493,14 +493,14 @@ does not treat equity/Heston model payloads or generic Black-vol surfaces as
 short-rate model parameters.
 
 The analytical / PDE / FFT support cohort now follows the same rule. The
-helper-backed Black76 swaption routes, the vanilla-equity PDE helper, bounded
-CEV PDE/tree proof helpers, bounded event-aware PDE helper branches, Heston ADI
-diagnostic scaffold, double-barrier payoff primitives, and vanilla-equity
-transform helper keep backend binding, admissibility, and validation ownership
-explicit. Exact-helper validation enforces the thin ``(market_state, spec,
-...)`` call surface only for true checked route helpers; primitive-only
-supports remain available for agent-written route assembly rather than
-bypassing it.
+helper-backed Black76 swaption routes, the primitive-composed vanilla-equity
+PDE route, bounded CEV PDE/tree proof helpers, bounded event-aware PDE helper
+branches, Heston ADI diagnostic scaffold, double-barrier payoff primitives,
+and vanilla-equity transform helper keep backend binding, admissibility, and
+validation ownership explicit. Exact-helper validation enforces the thin
+``(market_state, spec, ...)`` call surface only for true checked route helpers;
+primitive-only supports, including vanilla theta-method PDE, require
+agent-written route assembly rather than a product/method wrapper.
 
 For schedule-driven cap/floor strips lowered onto ``analytical_black76``, the
 typed schedule state now carries admissibility directly. Structural

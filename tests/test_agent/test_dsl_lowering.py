@@ -478,7 +478,7 @@ def test_vanilla_put_analytical_lowers_to_put_kernel():
     assert lowering.normalized_expr.primitive_ref == "trellis.models.black.black76_put"
 
 
-def test_vanilla_option_pde_lowers_to_checked_in_helper():
+def test_vanilla_option_pde_lowers_to_event_aware_primitive_composition():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_vanilla_option_contract
 
@@ -499,9 +499,19 @@ def test_vanilla_option_pde_lowers_to_checked_in_helper():
     assert lowering.family_ir.theta == 0.5
     assert lowering.family_ir.operator_spec.operator_family == "black_scholes_1d"
     assert lowering.family_ir.required_input_ids == blueprint.required_market_data
-    assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert lowering.normalized_expr.primitive_ref == (
-        "trellis.models.equity_option_pde.price_vanilla_equity_option_pde"
+    assert isinstance(lowering.normalized_expr, ThenExpr)
+    assert tuple(term.primitive_ref for term in lowering.normalized_expr.terms) == (
+        "trellis.models.resolution.single_state_diffusion."
+        "resolve_single_state_diffusion_inputs",
+        "trellis.models.resolution.single_state_diffusion."
+        "terminal_intrinsic_from_resolved",
+        "trellis.models.pde.event_aware.build_event_aware_pde_problem",
+        "trellis.models.pde.event_aware.solve_event_aware_pde",
+        "trellis.models.pde.event_aware.interpolate_pde_values",
+    )
+    assert blueprint.lane_plan is not None
+    assert blueprint.lane_plan.exact_target_refs == (
+        "trellis.models.pde.event_aware.solve_event_aware_pde",
     )
 
 

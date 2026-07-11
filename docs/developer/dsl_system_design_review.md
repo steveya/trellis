@@ -160,12 +160,16 @@ That substrate is intentionally 1D and deterministic-schedule-only, but it
 means the compiler no longer lowers into a family IR without a matching
 product-agnostic rollback assembly layer.
 
-The checked vanilla-equity PDE helper now uses that same runtime substrate. The
-route still exposes `price_vanilla_equity_option_pde`, but the helper assembles
-an `EventAwarePDEProblem` with no event buckets instead of carrying a separate
-vanilla-only rollback loop. `VanillaEquityPDEIR` is now explicitly
-transitional-only: the intended end state is to retire the wrapper once trace
-and review consumers stop keying on the legacy family-IR type.
+The vanilla-equity PDE route now binds that runtime substrate directly. Its
+lowering expression sequences the single-state market resolver, terminal
+payoff primitive, typed problem builder, generic event-aware solve, and scalar
+interpolation. Generated adapters therefore own product terms and boundary
+composition without delegating the whole derivative/method pair to
+`price_vanilla_equity_option_pde`. That wrapper remains available for
+compatibility and reference use, but semantic validation no longer accepts it
+as route authority. `VanillaEquityPDEIR` remains explicitly transitional-only:
+the intended end state is to retire the wrapper type once trace and review
+consumers stop keying on the legacy family-IR type.
 
 For supported schedule-driven PDE requests, the compiler can now preserve a
 typed event timeline on `EventAwarePDEIR` even when DSL lowering cannot yet

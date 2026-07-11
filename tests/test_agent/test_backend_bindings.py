@@ -118,6 +118,36 @@ def test_resolve_backend_binding_spec_uses_cev_exact_helpers():
     )
 
 
+def test_resolve_backend_binding_spec_uses_vanilla_pde_primitive_composition():
+    catalog = load_backend_binding_catalog()
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        exercise_style="european",
+        model_family="equity_diffusion",
+        candidate_engine_families=("pde",),
+    )
+    binding = find_backend_binding_by_route_id("vanilla_equity_theta_pde", catalog)
+
+    assert binding is not None
+    resolved = resolve_backend_binding_spec(binding, product_ir=product_ir)
+
+    assert resolved.exact_target_refs == (
+        "trellis.models.pde.event_aware.solve_event_aware_pde",
+    )
+    assert resolved.helper_refs == ()
+    assert {
+        (primitive.symbol, primitive.role)
+        for primitive in resolved.primitives
+    } >= {
+        ("resolve_single_state_diffusion_inputs", "market_binding"),
+        ("terminal_intrinsic_from_resolved", "payoff_primitive"),
+        ("build_event_aware_pde_problem", "problem_builder"),
+        ("solve_event_aware_pde", "pricing_kernel"),
+        ("interpolate_pde_values", "interpolation"),
+    }
+
+
 def test_binding_catalog_skips_malformed_primitive_rows(monkeypatch):
     from trellis.agent import backend_bindings as backend_bindings_module
 

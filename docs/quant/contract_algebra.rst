@@ -461,10 +461,15 @@ state is for the vanilla route to emit a plain ``EventAwarePDEIR`` once
 downstream traces and review surfaces no longer rely on the legacy wrapper
 type.
 
-The first migrated runtime consumer is the checked vanilla-equity PDE helper in
-``trellis.models.equity_option_pde``. It now assembles an
-``EventAwarePDEProblem`` with an empty event timeline and ``identity`` control
-instead of maintaining a separate vanilla-only rollback implementation.
+The vanilla-equity theta-method route now composes that substrate directly.
+Generated adapters resolve market and contract inputs with
+``resolve_single_state_diffusion_inputs(...)``, declare terminal intrinsic and
+boundary behavior, build an ``EventAwarePDEProblem``, solve it with
+``solve_event_aware_pde(...)``, and interpolate the resulting surface at spot.
+The product-level ``price_vanilla_equity_option_pde(...)`` wrapper remains a
+compatibility and reference surface, not route authority. Continuous dividend
+yield is carried explicitly through the resolved inputs, Black-Scholes
+operator, and far-field boundary conditions.
 
 For schedule-driven PDE requests, lowering can now preserve explicit event-time
 payloads even when no checked rollback helper exists yet. In that case the

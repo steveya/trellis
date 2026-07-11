@@ -923,7 +923,7 @@ def test_rejects_helper_only_equity_tree_route_without_required_algebra_primitiv
     assert not report.ok
 
 
-def test_accepts_helper_only_equity_pde_route_without_low_level_pde_contract():
+def test_rejects_helper_only_equity_pde_route_without_required_composition():
     from trellis.agent.semantic_validation import validate_semantics
 
     pricing_plan = PricingPlan(
@@ -952,8 +952,8 @@ def test_accepts_helper_only_equity_pde_route_without_low_level_pde_contract():
 
     issue_codes = {issue.code for issue in report.issues}
     assert "engine.family_incompatible_with_ir" not in issue_codes
-    assert "assembly.required_primitive_missing" not in issue_codes
-    assert report.ok
+    assert "assembly.required_primitive_missing" in issue_codes
+    assert not report.ok
 
 
 def test_rejects_helper_only_equity_monte_carlo_without_terminal_claim_primitives():

@@ -3967,6 +3967,12 @@ def _deterministic_exact_binding_evaluate_body(
             "    ),\n"
         )
     vanilla_equity_pde_kwargs = _vanilla_equity_pde_helper_kwargs(comparison_target)
+    vanilla_equity_pde_theta = (
+        "1.0"
+        if str(comparison_target or "").strip().lower().replace("-", "_")
+        in {"theta_1.0", "theta_1_0", "implicit"}
+        else "0.5"
+    )
     heston_mc_kwargs = _heston_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
     heston_transform_kwargs = _heston_transform_helper_kwargs(comparison_target)
@@ -4521,6 +4527,74 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_vanilla_equity_option_pde("
             f"market_state, spec{vanilla_equity_pde_kwargs})"
         ),
+        "trellis.models.pde.event_aware.solve_event_aware_pde": textwrap.dedent(
+            f"""\
+            resolved = resolve_single_state_diffusion_inputs(market_state, spec)
+            if resolved.maturity <= 0.0:
+                return float(
+                    resolved.notional
+                    * terminal_intrinsic_from_resolved(resolved.spot, resolved)
+                )
+
+            s_max = max(
+                float(getattr(spec, "s_max", 0.0) or 0.0),
+                4.0 * max(resolved.spot, 1e-12),
+                2.0 * max(resolved.strike, 1e-12),
+                1e-6,
+            )
+            n_x = max(int(getattr(spec, "n_x", 201)), 5)
+            n_t = max(
+                int(getattr(spec, "n_t", max(200, round(resolved.maturity * 252)))),
+                1,
+            )
+
+            def remaining_time(t):
+                return max(resolved.maturity - float(t), 0.0)
+
+            if resolved.option_type == "call":
+                lower_boundary = 0.0
+                upper_boundary = lambda t: (
+                    s_max * exp(-resolved.dividend_yield * remaining_time(t))
+                    - resolved.strike * exp(-resolved.rate * remaining_time(t))
+                )
+            else:
+                lower_boundary = lambda t: (
+                    resolved.strike * exp(-resolved.rate * remaining_time(t))
+                )
+                upper_boundary = 0.0
+
+            problem = build_event_aware_pde_problem(
+                EventAwarePDEProblemSpec(
+                    grid_spec=EventAwarePDEGridSpec(
+                        x_min=0.0,
+                        x_max=s_max,
+                        n_x=n_x,
+                        maturity=resolved.maturity,
+                        n_t=n_t,
+                    ),
+                    operator_spec=EventAwarePDEOperatorSpec(
+                        family="black_scholes_1d",
+                        sigma=resolved.sigma,
+                        r=resolved.rate,
+                        dividend_yield=resolved.dividend_yield,
+                    ),
+                    terminal_condition=lambda terminal: (
+                        terminal_intrinsic_from_resolved(terminal, resolved)
+                    ),
+                    boundary_spec=EventAwarePDEBoundarySpec(
+                        lower=lower_boundary,
+                        upper=upper_boundary,
+                    ),
+                    theta={vanilla_equity_pde_theta},
+                )
+            )
+            values = solve_event_aware_pde(problem)
+            return float(
+                resolved.notional
+                * interpolate_pde_values(values, problem.grid.x, resolved.spot)
+            )
+            """
+        ).rstrip(),
         "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo": (
             "return price_heston_option_monte_carlo("
             f"market_state, spec{heston_mc_kwargs})"
@@ -4965,7 +5039,7 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     ordinary generated modules.
     """
     imports: list[str] = []
-    if "control_variate_expected=lambda resolved:" in body:
+    if "exp(" in body:
         imports.append("from math import exp")
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
@@ -5128,6 +5202,18 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.monte_carlo.single_state_diffusion import "
             "price_single_state_terminal_claim_monte_carlo_result"
+        )
+    if "build_event_aware_pde_problem(" in body:
+        imports.append(
+            "from trellis.models.pde.event_aware import (\n"
+            "    EventAwarePDEBoundarySpec,\n"
+            "    EventAwarePDEGridSpec,\n"
+            "    EventAwarePDEOperatorSpec,\n"
+            "    EventAwarePDEProblemSpec,\n"
+            "    build_event_aware_pde_problem,\n"
+            "    interpolate_pde_values,\n"
+            "    solve_event_aware_pde,\n"
+            ")"
         )
     if "resolve_single_state_diffusion_inputs(" in body:
         imports.append(
@@ -6806,6 +6892,11 @@ def _skill_record_matches_request(
     route_id_tags = {f"route:{route_id}" for route_id in route_ids if route_id}
 
     if record.kind == "route_hint":
+        record_route_tags = {
+            tag for tag in record_tags if tag.startswith("route:")
+        }
+        if route_id_tags and record_route_tags:
+            return bool(route_id_tags & record_route_tags)
         if route_id_tags & record_tags:
             return True
         if route_families and record_route_families and set(route_families) & record_route_families:
@@ -7174,11 +7265,11 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
-            "Vanilla European PDE routes should stay on the checked-in helper surface whenever the contract is plain call/put Black-Scholes.",
-            "Prefer `from trellis.models.equity_option_pde import price_vanilla_equity_option_pde` and delegate to that helper from the adapter.",
+            "Vanilla European PDE routes should compose the admitted single-state resolver, terminal payoff primitive, and event-aware PDE substrate.",
+            "Use `resolve_single_state_diffusion_inputs` and `terminal_intrinsic_from_resolved`, then build an `EventAwarePDEProblemSpec` with explicit grid, operator, boundary, and terminal contracts.",
             "Map `implementation_target=theta_0.5` to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.",
-            "Do not rebuild terminal intrinsic branches, boundary callables, scalar interpolation, or discount-to-rate glue inline when the checked-in helper already matches the route.",
-            "Use the lower-level `Grid`, `BlackScholesOperator`, and `theta_method_1d` primitives only if the payoff or boundary contract genuinely differs from plain vanilla European call/put.",
+            "Call `build_event_aware_pde_problem`, `solve_event_aware_pde`, and `interpolate_pde_values`; do not route through `price_vanilla_equity_option_pde`.",
+            "Keep dividend carry explicit in `EventAwarePDEOperatorSpec` and in the far-field boundary functions.",
         )
     if (
         instrument == "european_option"

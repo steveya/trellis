@@ -138,8 +138,9 @@ pde:
   module: trellis.models.pde
   key_imports:
     - "from trellis.models.equity_option_pde import price_cev_option_pde"
-    - "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde"
     - "from trellis.models.equity_option_pde import price_equity_digital_option_pde"
+    - "from trellis.models.resolution.single_state_diffusion import resolve_single_state_diffusion_inputs, terminal_intrinsic_from_resolved"
+    - "from trellis.models.pde.event_aware import EventAwarePDEGridSpec, EventAwarePDEOperatorSpec, EventAwarePDEBoundarySpec, EventAwarePDEProblemSpec, build_event_aware_pde_problem, solve_event_aware_pde, interpolate_pde_values"
     - "from trellis.models.pde.heston_adi import HestonAdiPDEConfig, resolve_heston_adi_pde_inputs, price_heston_option_adi_pde_result"
     - "from trellis.models.single_barrier_option import SingleBarrierPDEConfig, price_single_barrier_option_pde_result, resolve_single_barrier_inputs"
     - "from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff, resolve_double_barrier_inputs"
@@ -150,7 +151,7 @@ pde:
     - "from trellis.models.pde import psor_1d  # American options"
     - "from trellis.models.pde import HullWhitePDEOperator"
   notes:
-    - "Vanilla European equity PDE routes should prefer the checked-in helper `price_vanilla_equity_option_pde(...)`"
+    - "Vanilla European equity PDE routes should resolve single-state market inputs, declare terminal intrinsic and boundaries, build an EventAwarePDEProblemSpec, call solve_event_aware_pde(...), and interpolate the solved surface back to spot"
     - "CEV PDE comparison targets should prefer the checked-in helper `price_cev_option_pde(...)`"
     - "Digital equity PDE comparison targets should prefer `price_equity_digital_option_pde(...)`; use Rannacher timesteps for discontinuous terminal payoffs"
     - "European Heston PDE routes should bind explicit Heston parameters and may use the Heston ADI result object as numerical evidence; a Black vol surface is not a live Heston parameter source"

@@ -24,6 +24,7 @@ class EuropeanOptionSpec:
     strike: float
     expiry_date: date
     option_type: str = "call"
+    dividend_yield: float = 0.0
     day_count: DayCountConvention = DayCountConvention.ACT_365
     n_paths: int = 50000
     n_steps: int = 252
