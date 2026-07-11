@@ -22,7 +22,12 @@ from trellis.agent.family_lowering_ir import (
     TransformPricingIR,
     TransformStateSpec,
 )
-from trellis.agent.lane_obligations import compile_lane_construction_plan
+from trellis.agent.codegen_guardrails import PrimitivePlan, PrimitiveRef
+from trellis.agent.knowledge.schema import ProductIR
+from trellis.agent.lane_obligations import (
+    compile_fallback_lane_construction_plan,
+    compile_lane_construction_plan,
+)
 
 
 def test_event_aware_monte_carlo_lane_plan_emits_process_path_and_event_contracts():
@@ -125,6 +130,53 @@ def test_event_aware_monte_carlo_lane_plan_emits_process_path_and_event_contract
     assert "measure_family:risk_neutral" in plan.control_obligations
     assert any("hull_white_1f" in step for step in plan.construction_steps)
     assert any("event_replay" in step for step in plan.construction_steps)
+
+
+def test_terminal_claim_monte_carlo_fallback_emits_payoff_and_control_steps():
+    primitive_plan = PrimitivePlan(
+        route="monte_carlo_paths",
+        route_family="monte_carlo",
+        engine_family="monte_carlo",
+        primitives=(
+            PrimitiveRef(
+                module="trellis.models.monte_carlo.single_state_diffusion",
+                symbol="price_single_state_terminal_claim_monte_carlo_result",
+                role="monte_carlo_estimator",
+            ),
+            PrimitiveRef(
+                module="trellis.models.resolution.single_state_diffusion",
+                symbol="terminal_intrinsic_from_resolved",
+                role="payoff_primitive",
+            ),
+        ),
+        adapters=(),
+        blockers=(),
+    )
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        exercise_style="european",
+        model_family="equity_diffusion",
+    )
+
+    plan = compile_fallback_lane_construction_plan(
+        preferred_method="monte_carlo",
+        required_market_data=("discount_curve", "black_vol_surface"),
+        primitive_plan=primitive_plan,
+        product_ir=product_ir,
+        instrument_type="european_option",
+    )
+
+    assert plan is not None
+    assert plan.exact_target_refs == (
+        "trellis.models.monte_carlo.single_state_diffusion."
+        "price_single_state_terminal_claim_monte_carlo_result",
+    )
+    steps = " ".join(plan.construction_steps)
+    assert "terminal_intrinsic_from_resolved" in steps
+    assert "payoff callback" in steps
+    assert "scheme" in steps
+    assert "variance-reduction" in steps
 
 
 def test_transform_lane_plan_emits_terminal_characteristic_contract():

@@ -558,7 +558,7 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("transform_fft", "fft_pricing"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
-    def test_flags_vanilla_equity_monte_carlo_helper_signature_mismatch(self, registry):
+    def test_vanilla_equity_monte_carlo_helper_is_not_exact_route_authority(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         vanilla_ir = ProductIR(
             instrument="european_option",
@@ -579,9 +579,10 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("monte_carlo_paths", "monte_carlo"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert all(primitive.role != "route_helper" for primitive in spec.primitives)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
-    def test_accepts_vanilla_equity_monte_carlo_helper_surface(self, registry):
+    def test_vanilla_equity_monte_carlo_compatibility_helper_has_no_route_signature_contract(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         vanilla_ir = ProductIR(
             instrument="european_option",

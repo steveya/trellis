@@ -157,6 +157,17 @@ def build_price(self, market_state):
 """
 
 
+HELPER_ONLY_EQUITY_MONTE_CARLO_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.equity_option_monte_carlo import price_vanilla_equity_option_monte_carlo
+
+
+def build_price(self, market_state):
+    return float(price_vanilla_equity_option_monte_carlo(market_state, self._spec))
+"""
+
+
 AUTOCALLABLE_HELPER_SOURCE = """\
 from __future__ import annotations
 
@@ -943,6 +954,38 @@ def test_accepts_helper_only_equity_pde_route_without_low_level_pde_contract():
     assert "engine.family_incompatible_with_ir" not in issue_codes
     assert "assembly.required_primitive_missing" not in issue_codes
     assert report.ok
+
+
+def test_rejects_helper_only_equity_monte_carlo_without_terminal_claim_primitives():
+    from trellis.agent.semantic_validation import validate_semantics
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.single_state_diffusion"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "European call option on equity",
+        instrument_type="european_option",
+    )
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.monte_carlo.single_state_diffusion",),
+        product_ir=product_ir,
+    )
+
+    report = validate_semantics(
+        HELPER_ONLY_EQUITY_MONTE_CARLO_SOURCE,
+        product_ir=product_ir,
+        generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.required_primitive_missing" in issue_codes
+    assert not report.ok
 
 
 def test_accepts_helper_backed_autocallable_route():

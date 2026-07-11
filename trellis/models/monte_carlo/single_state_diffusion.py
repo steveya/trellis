@@ -196,7 +196,7 @@ def price_single_state_terminal_claim_monte_carlo_result(
     | None = None,
     control_variate_expected: Callable[[ResolvedSingleStateMonteCarloInputs], float] | None = None,
 ) -> SingleStateMonteCarloResult:
-    """Price one bounded single-state terminal claim through the generic MC family helper."""
+    """Estimate one bounded single-state terminal claim from an explicit payoff callback."""
     resolved, problem = build_single_state_terminal_claim_monte_carlo_problem(
         market_state,
         spec,

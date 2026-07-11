@@ -440,9 +440,14 @@ The first vanilla migration slice is now checked in as well:
 
 - vanilla European Monte Carlo lowers as a terminal-only ``gbm_1d`` family
   instance with no synthetic event-replay timeline
-- the existing local-vol vanilla helper remains a compatibility surface, but
-  it now delegates into the generic event-aware Monte Carlo runtime rather than
-  owning a separate engine/payoff implementation
+- its lowering expression composes the selected terminal-payoff primitive with
+  ``price_single_state_terminal_claim_monte_carlo_result(...)`` rather than
+  lowering to a product-level pricing helper
+- generated adapters supply the derivative-specific payoff callback and bind
+  scheme and variance-reduction controls explicitly; the estimator owns the
+  checked single-state market binding and simulation machinery
+- the product-level vanilla Monte Carlo wrapper remains a compatibility and
+  reference surface, not route authority
 
 In the current tranche this is still a bounded 1D family surface. It makes the
 operator family and event-transform contract explicit before the generic

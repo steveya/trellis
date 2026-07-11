@@ -3952,6 +3952,20 @@ def _deterministic_exact_binding_evaluate_body(
     refs = set(_exact_binding_refs(generation_plan))
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
     vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
+    vanilla_equity_mc_call_kwargs = (
+        vanilla_equity_mc_kwargs.lstrip(", ")
+        or 'scheme="exact", variance_reduction="none"'
+    )
+    vanilla_equity_mc_control_kwargs = ""
+    if 'variance_reduction="control_variate"' in vanilla_equity_mc_call_kwargs:
+        vanilla_equity_mc_control_kwargs = (
+            "    control_variate_values=lambda terminal, _resolved: terminal,\n"
+            "    control_variate_expected=lambda resolved: float(\n"
+            "        resolved.spot * exp(\n"
+            "            (resolved.rate - resolved.dividend_yield) * resolved.maturity\n"
+            "        )\n"
+            "    ),\n"
+        )
     vanilla_equity_pde_kwargs = _vanilla_equity_pde_helper_kwargs(comparison_target)
     heston_mc_kwargs = _heston_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
@@ -4492,9 +4506,16 @@ def _deterministic_exact_binding_evaluate_body(
             "market_state, spec, n_paths=20000, seed=42"
             f"{swaption_comparison_kwargs})"
         ),
-        "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo": (
-            "return price_vanilla_equity_option_monte_carlo("
-            f"market_state, spec{vanilla_equity_mc_kwargs})"
+        "trellis.models.monte_carlo.single_state_diffusion.price_single_state_terminal_claim_monte_carlo_result": (
+            "result = price_single_state_terminal_claim_monte_carlo_result(\n"
+            "    market_state,\n"
+            "    spec,\n"
+            "    terminal_payoff=lambda terminal, resolved: "
+            "terminal_intrinsic_from_resolved(terminal, resolved),\n"
+            f"    {vanilla_equity_mc_call_kwargs},\n"
+            f"{vanilla_equity_mc_control_kwargs}"
+            ")\n"
+            "return float(result.price)"
         ),
         "trellis.models.equity_option_pde.price_vanilla_equity_option_pde": (
             "return price_vanilla_equity_option_pde("
@@ -4944,6 +4965,8 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     ordinary generated modules.
     """
     imports: list[str] = []
+    if "control_variate_expected=lambda resolved:" in body:
+        imports.append("from math import exp")
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
     if "price_heston_option_monte_carlo(" in body:
@@ -5100,6 +5123,11 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.monte_carlo.single_state_diffusion import "
             "resolve_single_state_monte_carlo_inputs"
+        )
+    if "price_single_state_terminal_claim_monte_carlo_result(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.single_state_diffusion import "
+            "price_single_state_terminal_claim_monte_carlo_result"
         )
     if "resolve_single_state_diffusion_inputs(" in body:
         imports.append(

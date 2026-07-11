@@ -510,7 +510,15 @@ of collapsing into a generic validation-failure bucket.
 Sparse legacy proof rows can also carry a deterministic task-runtime contract
 bridge before generation. The bridge is intentionally small and auditable:
 ``T25``, ``T26``, ``T31``, and ``T32`` default to a European SPX call
-semantic contract for Monte Carlo numerical-method proof work. ``T14`` uses an
+semantic contract for Monte Carlo numerical-method proof work. ``T25`` and
+``T26`` lower the European terminal claim to
+``price_single_state_terminal_claim_monte_carlo_result(...)`` plus an explicit
+``terminal_intrinsic_from_resolved(...)`` callback. Their generated targets
+bind Euler, Milstein, exact, log-Euler, antithetic, and control-variate choices
+at the adapter boundary; control-variate targets also provide the
+dividend-adjusted expected terminal spot. The product-level vanilla Monte
+Carlo wrapper is not admitted target evidence, and strict offline replay uses
+no LLM generation or recovery. ``T14`` uses an
 American SPX put contract for the PDE/tree/LSM comparison. Its ``lsm_mc`` target
 must compose the admitted single-state market resolver, GBM process, Monte Carlo
 engine, intrinsic payoff primitive, and Longstaff-Schwartz exercise control.

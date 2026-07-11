@@ -550,9 +550,12 @@ routes:
           exercise_style: [european]
           model_family: [generic, equity, equity_diffusion]
         primitives:
-          - module: trellis.models.equity_option_monte_carlo
-            symbol: price_vanilla_equity_option_monte_carlo
-            role: route_helper
+          - module: trellis.models.monte_carlo.single_state_diffusion
+            symbol: price_single_state_terminal_claim_monte_carlo_result
+            role: monte_carlo_estimator
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: terminal_intrinsic_from_resolved
+            role: payoff_primitive
         adapters: []
         notes: []
       - when:

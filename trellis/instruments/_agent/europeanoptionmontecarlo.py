@@ -1,33 +1,4 @@
-"""Agent-generated payoff: Build a pricer for: Heston smile: FFT vs COS vs MC implied vol surface
-
-Extract the implied volatility smile surface under the Heston
-stochastic volatility model for SPX.
-Use the market snapshot (as_of 2024-11-15) which provides:
-  - SPX spot (S=5890)
-  - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
-  - USD OIS discount curve
-  - A reference implied vol smile surface (6 expiries x 7 strikes)
-Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
-6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
-Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
-Method 2: Heston COS method.
-Method 3: Heston MC (QE scheme, 200k paths).
-From each set of prices, extract the implied vol surface by inverting
-Black-Scholes.  All three surfaces should agree within 0.5 vol points.
-The resulting smile should show negative skew (lower strikes have
-higher IV) consistent with rho=-0.68.
-
-Construct methods: fft_pricing, monte_carlo
-Comparison targets: heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)
-Cross-validation harness:
-  internal targets: heston_fft, heston_cos, heston_mc
-  external targets: quantlib
-New component: implied_vol_surface_extraction
-
-Implementation target: heston_mc
-Preferred method family: monte_carlo
-
-Implementation target: heston_mc."""
+"""Admitted adapter for a European single-state terminal claim."""
 
 from __future__ import annotations
 
@@ -36,83 +7,30 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.equity_option_monte_carlo import price_vanilla_equity_option_monte_carlo
-
+from trellis.models.monte_carlo.single_state_diffusion import (
+    price_single_state_terminal_claim_monte_carlo_result,
+)
+from trellis.models.resolution.single_state_diffusion import (
+    terminal_intrinsic_from_resolved,
+)
 
 
 @dataclass(frozen=True)
 class EuropeanOptionSpec:
-    """Specification for Build a pricer for: Heston smile: FFT vs COS vs MC implied vol surface
+    """Minimal European call/put terms consumed by the generic MC estimator."""
 
-Extract the implied volatility smile surface under the Heston
-stochastic volatility model for SPX.
-Use the market snapshot (as_of 2024-11-15) which provides:
-  - SPX spot (S=5890)
-  - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
-  - USD OIS discount curve
-  - A reference implied vol smile surface (6 expiries x 7 strikes)
-Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
-6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
-Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
-Method 2: Heston COS method.
-Method 3: Heston MC (QE scheme, 200k paths).
-From each set of prices, extract the implied vol surface by inverting
-Black-Scholes.  All three surfaces should agree within 0.5 vol points.
-The resulting smile should show negative skew (lower strikes have
-higher IV) consistent with rho=-0.68.
-
-Construct methods: fft_pricing, monte_carlo
-Comparison targets: heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)
-Cross-validation harness:
-  internal targets: heston_fft, heston_cos, heston_mc
-  external targets: quantlib
-New component: implied_vol_surface_extraction
-
-Implementation target: heston_mc
-Preferred method family: monte_carlo
-
-Implementation target: heston_mc."""
     notional: float
     spot: float
     strike: float
     expiry_date: date
-    option_type: str = "'call'"
+    option_type: str = "call"
     day_count: DayCountConvention = DayCountConvention.ACT_365
     n_paths: int = 50000
     n_steps: int = 252
 
 
 class EuropeanOptionMonteCarloPayoff:
-    """Build a pricer for: Heston smile: FFT vs COS vs MC implied vol surface
-
-Extract the implied volatility smile surface under the Heston
-stochastic volatility model for SPX.
-Use the market snapshot (as_of 2024-11-15) which provides:
-  - SPX spot (S=5890)
-  - Heston parameters: kappa=2.0, theta=0.04, xi=0.48, rho=-0.68, v0=0.04
-  - USD OIS discount curve
-  - A reference implied vol smile surface (6 expiries x 7 strikes)
-Price European calls across strikes K=[5400, 5600, 5800, 5900, 6000,
-6200, 6400] and maturities T=[0.25, 0.5, 1.0, 2.0] years.
-Method 1: Heston FFT (Carr-Madan with the Heston characteristic function).
-Method 2: Heston COS method.
-Method 3: Heston MC (QE scheme, 200k paths).
-From each set of prices, extract the implied vol surface by inverting
-Black-Scholes.  All three surfaces should agree within 0.5 vol points.
-The resulting smile should show negative skew (lower strikes have
-higher IV) consistent with rho=-0.68.
-
-Construct methods: fft_pricing, monte_carlo
-Comparison targets: heston_fft (fft_pricing), heston_cos (fft_pricing), heston_mc (monte_carlo)
-Cross-validation harness:
-  internal targets: heston_fft, heston_cos, heston_mc
-  external targets: quantlib
-New component: implied_vol_surface_extraction
-
-Implementation target: heston_mc
-Preferred method family: monte_carlo
-
-Implementation target: heston_mc."""
+    """Compose a vanilla terminal payoff with the single-state MC estimator."""
 
     def __init__(self, spec: EuropeanOptionSpec):
         self._spec = spec
@@ -126,5 +44,14 @@ Implementation target: heston_mc."""
         return {"black_vol_surface", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        spec = self._spec
-        return float(price_vanilla_equity_option_monte_carlo(market_state, spec))
+        result = price_single_state_terminal_claim_monte_carlo_result(
+            market_state,
+            self._spec,
+            terminal_payoff=lambda terminal, resolved: terminal_intrinsic_from_resolved(
+                terminal,
+                resolved,
+            ),
+            scheme="exact",
+            variance_reduction="none",
+        )
+        return float(result.price)

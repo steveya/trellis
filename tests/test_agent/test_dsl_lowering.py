@@ -335,21 +335,27 @@ def test_vanilla_option_monte_carlo_lowers_to_terminal_only_compilation_steps():
     assert isinstance(lowering.family_ir, EventAwareMonteCarloIR)
     assert lowering.family_ir.path_requirement_spec.requirement_kind == "terminal_only"
     assert lowering.family_ir.event_kinds == ()
-    assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert (
-        lowering.binding_id
-        == "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo"
-    )
-    assert lowering.normalized_expr.atom_id == (
-        "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo:"
-        "route_helper"
-    )
-    assert lowering.normalized_expr.primitive_ref == (
-        "trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo"
+    assert isinstance(lowering.normalized_expr, ThenExpr)
+    assert lowering.binding_id == "monte_carlo:monte_carlo:fallback"
+    assert tuple(
+        term.primitive_ref for term in lowering.normalized_expr.terms
+    ) == (
+        "trellis.models.resolution.single_state_diffusion."
+        "terminal_intrinsic_from_resolved",
+        "trellis.models.monte_carlo.single_state_diffusion."
+        "price_single_state_terminal_claim_monte_carlo_result",
     )
     assert blueprint.lane_plan is not None
+    assert blueprint.lane_plan.exact_target_refs == (
+        "trellis.models.monte_carlo.single_state_diffusion."
+        "price_single_state_terminal_claim_monte_carlo_result",
+    )
     assert "spot" in blueprint.lane_plan.state_obligations
     assert "terminal_only" in blueprint.lane_plan.state_obligations
+    steps = " ".join(blueprint.lane_plan.construction_steps)
+    assert "payoff callback" in steps
+    assert "scheme" in steps
+    assert "variance-reduction" in steps
 
 
 def test_vanilla_option_analytical_lowers_to_checked_in_black76_kernel():
