@@ -168,6 +168,22 @@ def build_price(self, market_state):
 """
 
 
+HELPER_ONLY_FX_BARRIER_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.fx_barrier_option import (
+    price_fx_barrier_option_analytical,
+    price_fx_barrier_option_monte_carlo,
+)
+
+
+def build_price(self, market_state, method="analytical"):
+    if method == "monte_carlo":
+        return float(price_fx_barrier_option_monte_carlo(market_state, self._spec))
+    return float(price_fx_barrier_option_analytical(market_state, self._spec))
+"""
+
+
 AUTOCALLABLE_HELPER_SOURCE = """\
 from __future__ import annotations
 
@@ -979,6 +995,48 @@ def test_rejects_helper_only_equity_monte_carlo_without_terminal_claim_primitive
 
     report = validate_semantics(
         HELPER_ONLY_EQUITY_MONTE_CARLO_SOURCE,
+        product_ir=product_ir,
+        generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.required_primitive_missing" in issue_codes
+    assert not report.ok
+
+
+@pytest.mark.parametrize("method", ["analytical", "monte_carlo"])
+def test_rejects_helper_only_fx_barrier_without_required_composition(method):
+    from trellis.agent.semantic_validation import validate_semantics
+
+    product_ir = decompose_to_ir(
+        "Price an FX knock-in call with domestic/foreign discounting.",
+        instrument_type="barrier_option",
+    )
+    pricing_plan = PricingPlan(
+        method=method,
+        method_modules=[
+            "trellis.models.fx_barrier_option",
+            "trellis.models.monte_carlo.engine",
+        ],
+        required_market_data={
+            "discount_curve",
+            "forward_curve",
+            "black_vol_surface",
+            "fx_rates",
+            "spot",
+        },
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=tuple(pricing_plan.method_modules),
+        product_ir=product_ir,
+    )
+
+    report = validate_semantics(
+        HELPER_ONLY_FX_BARRIER_SOURCE,
         product_ir=product_ir,
         generation_plan=generation_plan,
     )

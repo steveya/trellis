@@ -529,7 +529,18 @@ rule: generated code composes the neutral diffusion resolver with
 ``equity_tree``, ``with_control``, ``compile_lattice_recipe``, ``build_lattice``,
 and ``price_on_lattice``. Bermudan variants map contract dates to exercise
 steps before attaching control. The product-level tree helper remains a
-compatibility/reference surface and is not admitted route evidence. ``T15``
+compatibility/reference surface and is not admitted route evidence. ``P003``
+and legacy ``T109`` apply the same artifact-coherence
+rule to FX single-barrier comparison: the analytical target resolves the FX
+market contract and calls the scalar barrier kernel, while the Monte Carlo
+target constructs GBM simulation plus an explicit reduced-state barrier
+monitor and terminal payoff. Neither target may count a product-level FX
+barrier wrapper as method evidence. The wrappers remain available to ordinary
+callers as compatibility/reference APIs, and cookbook promotion remains owned
+by quant/model-validator evidence rather than the route lowering. Legacy
+``T109`` declares the nondegenerate FX barrier terms and market scenario in its
+task manifest, so generic task-contract materialization supplies both targets
+without a task-id-specific runtime patch. ``T15``
 uses a bounded CEV European call contract for the CEVOperator PDE versus CEV
 tree comparison and binds ``cev_pde`` / ``cev_tree`` to deterministic local
 proof adapters. The PDE adapter must consume CEV parameters through

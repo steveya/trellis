@@ -99,6 +99,7 @@ def compile_lane_construction_plan(
         for binding in reusable_bindings
         if binding.role
         in {
+            "engine",
             "monte_carlo_estimator",
             "route_helper",
             "pricing_kernel",
@@ -168,6 +169,7 @@ def compile_fallback_lane_construction_plan(
         for binding in reusable_bindings
         if binding.role
         in {
+            "engine",
             "monte_carlo_estimator",
             "route_helper",
             "pricing_kernel",
@@ -287,7 +289,7 @@ def _binding_kind_for_role(role: str) -> str:
     """Classify lowering bindings for prompt rendering."""
     if role == "market_binding":
         return "market_binding"
-    if role in {"route_helper", "pricing_kernel", "schedule_builder"}:
+    if role in {"engine", "route_helper", "pricing_kernel", "schedule_builder"}:
         return "exact_backend"
     return "reusable_primitive"
 

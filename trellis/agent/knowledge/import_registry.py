@@ -553,7 +553,7 @@ from trellis.curves.credit_curve import CreditCurve
 
 ### Models — Analytical
 from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put
-from trellis.models.analytical import terminal_vanilla_from_basis
+from trellis.models.analytical import terminal_intrinsic, terminal_vanilla_from_basis
 from trellis.models.analytical.jamshidian import zcb_option_hw
 from trellis.models.analytical.barrier import barrier_option_price, down_and_out_call, down_and_in_call
 from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_hit_mask, double_barrier_path_payoff, double_barrier_state_payoff, resolve_double_barrier_inputs, terminal_double_barrier_payoff

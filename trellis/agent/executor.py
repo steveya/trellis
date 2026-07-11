@@ -4001,6 +4001,137 @@ def _deterministic_exact_binding_evaluate_body(
         normalized_target=normalized_target,
         route_free_exact_binding=route_free_exact_binding,
     )
+    primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
+    primitive_route = str(getattr(primitive_plan, "route", "") or "").strip()
+    if (
+        primitive_route == "analytical_fx_barrier"
+        and "trellis.models.analytical.barrier.barrier_option_price" in refs
+    ):
+        return textwrap.dedent(
+            """\
+            resolved = resolve_fx_barrier_inputs(market_state, self._spec)
+            unit_price = barrier_option_price(
+                resolved.spot,
+                resolved.strike,
+                resolved.barrier,
+                resolved.domestic_rate,
+                resolved.sigma,
+                resolved.maturity,
+                barrier_type=resolved.barrier_type,
+                option_type=resolved.option_type,
+                rebate=resolved.rebate,
+                q=resolved.foreign_rate,
+                observations_per_year=resolved.observations_per_year,
+            )
+            return float(resolved.notional) * float(unit_price)
+            """
+        ).rstrip()
+    if (
+        primitive_route == "monte_carlo_fx_barrier"
+        and "trellis.models.monte_carlo.engine.MonteCarloEngine" in refs
+    ):
+        return textwrap.dedent(
+            """\
+            resolved = resolve_fx_barrier_inputs(market_state, self._spec)
+            direction = "down" if resolved.barrier_type.startswith("down") else "up"
+            knock = "in" if resolved.barrier_type.endswith("_in") else "out"
+            initial_touched = (
+                resolved.spot <= resolved.barrier
+                if direction == "down"
+                else resolved.spot >= resolved.barrier
+            )
+            if resolved.maturity <= 0.0:
+                active = initial_touched if knock == "in" else not initial_touched
+                intrinsic = terminal_intrinsic(
+                    resolved.option_type,
+                    spot=resolved.spot,
+                    strike=resolved.strike,
+                )
+                payoff_at_expiry = intrinsic if active else resolved.rebate
+                return float(resolved.notional * payoff_at_expiry)
+
+            observation_steps = ()
+            if resolved.observations_per_year is not None:
+                observation_count = max(
+                    int(round(resolved.maturity * resolved.observations_per_year)),
+                    1,
+                )
+                observation_steps = (
+                    0,
+                    *tuple(
+                        sorted(
+                            {
+                                max(
+                                    1,
+                                    min(
+                                        resolved.n_steps,
+                                        int(round(index * resolved.n_steps / observation_count)),
+                                    ),
+                                )
+                                for index in range(1, observation_count + 1)
+                            }
+                        )
+                    ),
+                )
+            monitor = BarrierMonitor(
+                name="barrier",
+                level=resolved.barrier,
+                direction=direction,
+                observation_steps=observation_steps,
+            )
+            requirement = MonteCarloPathRequirement(barrier_monitors=(monitor,))
+
+            def apply_barrier(terminal, touched):
+                intrinsic = terminal_intrinsic(
+                    resolved.option_type,
+                    spot=terminal,
+                    strike=resolved.strike,
+                )
+                active = touched if knock == "in" else ~touched
+                return resolved.notional * raw_np.where(active, intrinsic, resolved.rebate)
+
+            def evaluate_paths(paths):
+                observed = paths[:, observation_steps] if observation_steps else paths
+                touched = (
+                    raw_np.any(observed <= resolved.barrier, axis=1)
+                    if direction == "down"
+                    else raw_np.any(observed >= resolved.barrier, axis=1)
+                )
+                return apply_barrier(paths[:, -1], touched)
+
+            def evaluate_state(state):
+                return apply_barrier(
+                    state.terminal_values,
+                    state.barrier_hit(monitor.name),
+                )
+
+            payoff = StateAwarePayoff(
+                path_requirement=requirement,
+                evaluate_paths_fn=evaluate_paths,
+                evaluate_state_fn=evaluate_state,
+                name="fx_single_barrier",
+            )
+            process = GBM(
+                mu=resolved.domestic_rate - resolved.foreign_rate,
+                sigma=resolved.sigma,
+            )
+            engine = MonteCarloEngine(
+                process,
+                n_paths=resolved.n_paths,
+                n_steps=resolved.n_steps,
+                seed=resolved.seed,
+                method="exact",
+            )
+            result = engine.price(
+                resolved.spot,
+                resolved.maturity,
+                payoff,
+                discount_rate=resolved.domestic_rate,
+                return_paths=False,
+            )
+            return float(result["price"])
+            """
+        ).rstrip()
 
     if instrument_type in {"credit_default_swap", "cds"} and normalized_target in {"mc_cds", "cds_mc"}:
         cds_body = _credit_default_swap_helper_body(
@@ -5186,6 +5317,25 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.fx_barrier_option import price_fx_barrier_option_monte_carlo"
         )
+    if "resolve_fx_barrier_inputs(" in body:
+        imports.append(
+            "from trellis.models.fx_barrier_option import resolve_fx_barrier_inputs"
+        )
+    if "barrier_option_price(" in body:
+        imports.append(
+            "from trellis.models.analytical.barrier import barrier_option_price"
+        )
+    if "BarrierMonitor(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.path_state import "
+            "BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff"
+        )
+    if "terminal_intrinsic(" in body:
+        imports.append(
+            "from trellis.models.analytical import terminal_intrinsic"
+        )
+    if "raw_np." in body:
+        imports.append("import numpy as raw_np")
     if "price_vanilla_equity_option_tree(" in body:
         imports.append(
             "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
