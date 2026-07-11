@@ -545,8 +545,14 @@ def _calls_checked_route_helper(
     source: str,
     plan: GenerationPlan | None = None,
     route_spec: RouteSpec | None = None,
+    exact_surface_primitives=(),
 ) -> bool:
-    """Return whether source delegates to a checked helper-owned route."""
+    """Return whether source delegates to a checked wrapper for a required route helper."""
+    if not any(
+        prim.role == "route_helper" and prim.required
+        for prim in exact_surface_primitives
+    ):
+        return False
     route_id = str(getattr(route_spec, "id", "") or "").strip()
     instrument_type = str(getattr(plan, "instrument_type", "") or "").strip()
     for symbol, binding in _CHECKED_ROUTE_HELPER_BINDINGS.items():
@@ -607,7 +613,12 @@ class AlgorithmContractValidator:
             return ()
 
         exact_surface_primitives = _exact_surface_primitives(plan, route_spec)
-        checked_route_helper_call = _calls_checked_route_helper(source, plan, route_spec)
+        checked_route_helper_call = _calls_checked_route_helper(
+            source,
+            plan,
+            route_spec,
+            exact_surface_primitives,
+        )
         helper_owned_route = (
             _calls_helper_owned_required_route_helper(source, exact_surface_primitives)
             or checked_route_helper_call
@@ -619,7 +630,7 @@ class AlgorithmContractValidator:
                 source,
                 route_spec,
                 exact_surface_primitives,
-                helper_owned_route=checked_route_helper_call,
+                helper_owned_route=helper_owned_route,
             )
         )
         findings.extend(self._check_exact_helper_surface(source, route_spec, exact_surface_primitives))
@@ -888,6 +899,8 @@ def _call_satisfies_required_surface(
     if required_parameters:
         for index, parameter in enumerate(required_parameters):
             if index < len(call.args):
+                if parameter in keyword_names:
+                    return False
                 if index < len(positional_markers):
                     markers = tuple(str(marker) for marker in positional_markers[index])
                     if markers and not _argument_matches_markers(call.args[index], markers):
