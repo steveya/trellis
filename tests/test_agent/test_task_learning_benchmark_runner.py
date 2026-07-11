@@ -107,4 +107,48 @@ def test_run_learning_benchmark_writes_pass_outputs_and_report(tmp_path, monkeyp
     assert pass_two_summary["totals"]["successes"] == 1
     assert "Pass 1/2" in stdout
     assert "Pass 2/2" in stdout
+
+
+def test_run_learning_benchmark_seeded_retry_fixture_recovers_without_llm(
+    tmp_path,
+    monkeypatch,
+    capsys,
+):
+    module = _load_module()
+    monkeypatch.setattr(module, "_git_revision", lambda: "abc1234")
+
+    artifacts = module.run_learning_benchmark(
+        module.build_seeded_retry_fixture_tasks(),
+        benchmark_name="seeded_retry_learning",
+        cohort_name="seeded_retry_fixture",
+        output_root=tmp_path,
+        passes=1,
+        model="local-fixture",
+        validation="standard",
+        fresh_build=True,
+        knowledge_light=True,
+        seeded_retry_fixture=True,
+    )
+
+    raw_results = json.loads(
+        (tmp_path / "raw" / "seeded_retry_learning_pass_1.json").read_text()
+    )
+    report = json.loads(artifacts["report_json_path"].read_text())
+    stdout = capsys.readouterr().out
+    result = raw_results[0]
+
+    assert result["success"] is True
+    assert result["attempts"] == 2
+    assert result["token_usage_summary"]["total_tokens"] == 0
+    assert result["intra_run_learning"]["retry_attribution_kind"] == (
+        "contract_evidence_consumed"
+    )
+    assert result["intra_run_learning"]["contract_evidence_consumed"] is True
+    assert result["intra_run_learning"]["deterministic_input_changed"] is True
+    assert result["recovery_attempts"][0]["retry_attribution"]["outcome_change"][
+        "success_changed"
+    ] is True
+    assert report["attribution"]["retry_learning"]["retry_learned_recoveries"][
+        "task_ids"
+    ] == ["L001"]
     assert "Saved learning benchmark report" in stdout

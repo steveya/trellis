@@ -54,6 +54,57 @@ required model parameters, Gauss-Laguerre nodes/weights, damping or contour
 policy, oscillatory-integrand stabilization, diagnostics, and the missing
 ``heston_gauss_laguerre_transform_kernel`` plus validation bundle.
 
+Merton Jump-Diffusion Route Binding
+-----------------------------------
+
+``trellis.models.merton_jump_diffusion_option`` provides the checked helper
+surface for European vanilla options under Merton jump diffusion. The transform
+helper binds the Merton log-spot or log-ratio characteristic function to the
+shared FFT/COS kernels, while the same module also exposes a Poisson-series
+reference and terminal Monte Carlo route. Runtime inputs come from
+``market_state.jump_parameters`` or a selected entry in
+``market_state.jump_parameter_sets``; canonical payloads use ``sigma``,
+``lam`` / ``jump_intensity``, ``jump_mean``, and ``jump_vol``.
+
+The task runtime treats ``model_family=jump_diffusion`` as a separate
+admissibility signal from ordinary ``equity_diffusion`` vanilla options. COS
+pricing uses a higher default term count on this helper than the generic GBM
+examples because low diffusion volatility plus discrete jump mass can otherwise
+produce unstable truncation artifacts.
+
+Levy Route Binding
+------------------
+
+``trellis.models.levy_option`` provides checked helper surfaces for European
+vanilla options under Variance Gamma, CGMY, and Kou double-exponential Levy
+models. The task runtime uses ``model_family=variance_gamma``,
+``model_family=cgmy``, or ``model_family=kou`` as an admissibility signal,
+then binds the corresponding log-spot characteristic function to the shared
+FFT/COS kernels.
+
+Runtime inputs come from explicit model-parameter payloads rather than Black
+volatility surfaces. Variance Gamma payloads use ``sigma``, ``theta``, and
+``nu``. CGMY payloads use ``C``, ``G``, ``M``, and ``Y``. Kou payloads use
+``sigma``, ``jump_intensity``, ``up_probability``, ``eta_up``, and
+``eta_down``. The analytical reference route is intentionally a helper-owned
+target for proof comparison; it should not cause the product contract to
+narrow away from the underlying European vanilla option shape.
+
+Bates Route Binding
+-------------------
+
+``trellis.models.bates_option`` provides the checked FFT/COS helper surface for
+European vanilla Bates options. The task runtime keeps the product shape as a
+European vanilla option, narrows ``model_family`` to ``bates``, and requires
+both ``model_parameters`` and ``jump_parameters``. The transform helper binds a
+Heston log-spot characteristic function with compound-Poisson lognormal jumps
+to the shared FFT/COS kernels.
+
+The helper is a route primitive, not a calibration bridge. It consumes Heston
+base parameters and jump parameters that already exist in the runtime market
+state or task spec; Black volatility surfaces are not reinterpreted as Bates
+parameters.
+
 Implementation
 --------------
 
@@ -61,6 +112,15 @@ Implementation
 .. autofunction:: trellis.models.transforms.cos_method.cos_price
 .. autofunction:: trellis.models.transforms.heston.price_heston_option_transform
 .. autofunction:: trellis.models.transforms.heston.price_heston_option_transform_result
+.. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform
+.. autofunction:: trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_poisson_series
+.. autofunction:: trellis.models.bates_option.price_bates_option_transform
+.. autofunction:: trellis.models.levy_option.price_variance_gamma_option_transform
+.. autofunction:: trellis.models.levy_option.price_variance_gamma_option_reference
+.. autofunction:: trellis.models.levy_option.price_cgmy_option_transform
+.. autofunction:: trellis.models.levy_option.price_cgmy_option_reference
+.. autofunction:: trellis.models.levy_option.price_kou_option_transform
+.. autofunction:: trellis.models.levy_option.price_kou_option_reference
 
 References
 ----------

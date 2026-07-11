@@ -401,3 +401,54 @@ def test_price_counterparty_xva_consumes_semantic_exposure_stack():
     assert result.total_xva == pytest.approx(0.2259375)
     assert result.metadata["counterparty_contract_id"] == "cp_alpha"
     assert result.to_dict()["assumptions"]["funding_spread"] == 0.005
+
+
+def test_interest_rate_swap_cva_helpers_expose_independent_and_wrong_way_routes():
+    from trellis.analytics.counterparty import (
+        price_interest_rate_swap_cva_analytical_approx,
+        price_interest_rate_swap_cva_monte_carlo,
+        price_interest_rate_swap_independent_cva,
+        price_interest_rate_swap_wrong_way_cva,
+    )
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.vol_surface import FlatVol
+
+    settle = date(2024, 11, 15)
+    market_state = MarketState(
+        as_of=settle,
+        settlement=settle,
+        discount=YieldCurve.flat(0.042, max_tenor=10.0),
+        vol_surface=FlatVol(0.20),
+    )
+
+    mc_cva = price_interest_rate_swap_cva_monte_carlo(
+        market_state,
+        n_paths=384,
+        n_steps=48,
+        seed=52,
+    )
+    approx_cva = price_interest_rate_swap_cva_analytical_approx(
+        market_state,
+        n_paths=384,
+        n_steps=48,
+        seed=52,
+    )
+    independent_cva = price_interest_rate_swap_independent_cva(
+        market_state,
+        n_paths=384,
+        n_steps=48,
+        seed=54,
+    )
+    wrong_way_cva = price_interest_rate_swap_wrong_way_cva(
+        market_state,
+        n_paths=384,
+        n_steps=48,
+        seed=54,
+        default_exposure_correlation=0.45,
+    )
+
+    assert mc_cva > 0.0
+    assert approx_cva == pytest.approx(mc_cva, rel=1e-12)
+    assert independent_cva > 0.0
+    assert wrong_way_cva > independent_cva

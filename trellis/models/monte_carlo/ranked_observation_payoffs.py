@@ -116,7 +116,7 @@ def build_ranked_observation_basket_state_payoff(
         return terminal_ranked_observation_basket_payoff(spec, paths, resolved)
 
     def evaluate_state(state):
-        return evaluate_ranked_observation_basket_state(
+        aggregate = evaluate_ranked_observation_basket_state(
             state,
             resolved.constituent_spots,
             observation_steps,
@@ -125,6 +125,7 @@ def build_ranked_observation_basket_state_payoff(
             aggregation_rule=resolved.aggregation_rule,
             selection_count=resolved.selection_count,
         )
+        return _ranked_observation_option_payoff(spec, aggregate)
 
     return StateAwarePayoff(
         path_requirement=requirement,
@@ -172,6 +173,14 @@ def terminal_ranked_observation_basket_payoff(
         selection_count=resolved.selection_count,
     )
 
+    return _ranked_observation_option_payoff(spec, aggregate)
+
+
+def _ranked_observation_option_payoff(
+    spec: RankedObservationBasketSpecLike,
+    aggregate,
+):
+    """Apply the option payoff transform to a ranked basket aggregate."""
     option_type = normalized_option_type(_spec_attr(spec, "option_type", default="call"))
     strike = float(_spec_attr(spec, "strike", default=0.0))
     if option_type == "put":

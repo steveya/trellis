@@ -222,11 +222,15 @@ def render_task_learning_benchmark_report(report: Mapping[str, Any]) -> str:
             )
 
     attribution = dict(report.get("attribution") or {})
+    retry_learning = dict(attribution.get("retry_learning") or {})
     lines.extend(
         [
             "",
             "## Attribution",
             f"- Knowledge-assisted improvements: {', '.join(_format_task_ids(attribution.get('knowledge_assisted_improvements', {}).get('task_ids') or [])) or 'none'}",
+            f"- Retry-learned recoveries: {', '.join(_format_task_ids(retry_learning.get('retry_learned_recoveries', {}).get('task_ids') or [])) or 'none'}",
+            f"- First-pass deterministic reuse: {', '.join(_format_task_ids(retry_learning.get('first_pass_deterministic_reuse', {}).get('task_ids') or [])) or 'none'}",
+            f"- Failed or unvalidated retry evidence: {', '.join(_format_task_ids(retry_learning.get('failed_or_unvalidated_retry_evidence', {}).get('task_ids') or [])) or 'none'}",
             f"- Residual knowledge gaps: {', '.join(_format_task_ids(attribution.get('residual_knowledge_gaps', {}).get('task_ids') or [])) or 'none'}",
             f"- Residual implementation gaps: {', '.join(_format_task_ids(attribution.get('residual_implementation_gaps', {}).get('task_ids') or [])) or 'none'}",
             f"- Residual market/provider noise: {', '.join(_format_task_ids(attribution.get('residual_market_or_provider_noise', {}).get('task_ids') or [])) or 'none'}",
@@ -353,6 +357,7 @@ def _build_learning_attribution(
             "count": len(residual_market_noise),
             "task_ids": residual_market_noise,
         },
+        "retry_learning": _build_retry_learning_attribution(latest_results),
     }
 
 
@@ -364,7 +369,146 @@ def _empty_attribution() -> dict[str, Any]:
         "residual_knowledge_gaps": {"count": 0, "task_ids": []},
         "residual_implementation_gaps": {"count": 0, "task_ids": []},
         "residual_market_or_provider_noise": {"count": 0, "task_ids": []},
+        "retry_learning": _empty_retry_learning_attribution(),
     }
+
+
+def _empty_retry_learning_attribution() -> dict[str, Any]:
+    return {
+        "retry_learned_recoveries": {"count": 0, "task_ids": []},
+        "first_pass_deterministic_reuse": {"count": 0, "task_ids": []},
+        "failed_or_unvalidated_retry_evidence": {"count": 0, "task_ids": []},
+    }
+
+
+def _build_retry_learning_attribution(
+    results: Sequence[Mapping[str, Any]],
+) -> dict[str, Any]:
+    retry_learned: list[str] = []
+    first_pass_reuse: list[str] = []
+    unvalidated_retry: list[str] = []
+
+    for result in results:
+        task_id = str(result.get("task_id") or "").strip()
+        if not task_id:
+            continue
+        has_retry_evidence = _result_has_retry_learning_evidence(result)
+        if _result_has_retry_learned_recovery(result):
+            retry_learned.append(task_id)
+        elif has_retry_evidence:
+            unvalidated_retry.append(task_id)
+        elif bool(result.get("success")) and _result_attempts_to_success(result) <= 1:
+            first_pass_reuse.append(task_id)
+
+    return {
+        "retry_learned_recoveries": {
+            "count": len(retry_learned),
+            "task_ids": sorted(retry_learned),
+        },
+        "first_pass_deterministic_reuse": {
+            "count": len(first_pass_reuse),
+            "task_ids": sorted(first_pass_reuse),
+        },
+        "failed_or_unvalidated_retry_evidence": {
+            "count": len(unvalidated_retry),
+            "task_ids": sorted(unvalidated_retry),
+        },
+    }
+
+
+def _result_has_retry_learned_recovery(result: Mapping[str, Any]) -> bool:
+    parent_success = bool(result.get("success"))
+    return any(
+        _payload_has_retry_learned_recovery(payload, parent_success=parent_success)
+        for payload in _iter_result_payloads(result)
+    )
+
+
+def _result_has_retry_learning_evidence(result: Mapping[str, Any]) -> bool:
+    return any(
+        _payload_has_retry_learning_evidence(payload)
+        for payload in _iter_result_payloads(result)
+    )
+
+
+def _payload_has_retry_learned_recovery(
+    payload: Mapping[str, Any],
+    *,
+    parent_success: bool,
+) -> bool:
+    learning = _payload_intra_run_learning(payload)
+    if not learning:
+        return False
+    recovered_value = learning.get("recovered")
+    recovered = bool(payload.get("success") or parent_success)
+    if recovered_value is not None:
+        recovered = bool(recovered_value)
+    return (
+        recovered
+        and _payload_retry_attribution_kind(learning) == "contract_evidence_consumed"
+        and bool(learning.get("contract_evidence_consumed"))
+        and bool(learning.get("deterministic_input_changed"))
+    )
+
+
+def _payload_has_retry_learning_evidence(payload: Mapping[str, Any]) -> bool:
+    learning = _payload_intra_run_learning(payload)
+    if not learning:
+        return False
+    return (
+        int(learning.get("overlay_retry_count") or 0) > 0
+        or bool(learning.get("contract_evidence_consumed"))
+        or bool(learning.get("deterministic_input_changed"))
+        or bool(_payload_retry_attribution_kind(learning))
+    )
+
+
+def _payload_retry_attribution_kind(learning: Mapping[str, Any]) -> str:
+    kind = str(learning.get("retry_attribution_kind") or "").strip()
+    if kind:
+        return kind
+    attribution = learning.get("retry_attribution")
+    if isinstance(attribution, Mapping):
+        return str(attribution.get("attribution_kind") or "").strip()
+    kinds = _normalize_strings(learning.get("retry_attribution_kinds"))
+    return kinds[0] if kinds else ""
+
+
+def _payload_intra_run_learning(payload: Mapping[str, Any]) -> Mapping[str, Any]:
+    direct = payload.get("intra_run_learning")
+    if isinstance(direct, Mapping):
+        return direct
+    learning = payload.get("learning")
+    if isinstance(learning, Mapping):
+        nested = learning.get("intra_run_learning")
+        if isinstance(nested, Mapping):
+            return nested
+    return {}
+
+
+def _iter_result_payloads(result: Mapping[str, Any]) -> list[Mapping[str, Any]]:
+    payloads: list[Mapping[str, Any]] = [result]
+    method_results = result.get("method_results")
+    if isinstance(method_results, Mapping):
+        payloads.extend(
+            payload
+            for payload in method_results.values()
+            if isinstance(payload, Mapping)
+        )
+    return payloads
+
+
+def _result_attempts_to_success(result: Mapping[str, Any]) -> int:
+    method_results = result.get("method_results")
+    if isinstance(method_results, Mapping):
+        method_attempts = [
+            max(int(payload.get("attempts") or 0), 0)
+            for payload in method_results.values()
+            if isinstance(payload, Mapping)
+        ]
+        if method_attempts:
+            return max(method_attempts)
+    return max(int(result.get("attempts") or 0), 0)
 
 
 def _result_has_knowledge_signal(result: Mapping[str, Any]) -> bool:

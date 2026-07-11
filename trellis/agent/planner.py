@@ -87,6 +87,17 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
         ],
     ),
+    "short_rate_bond": SpecSchema(
+        class_name="ShortRateBondPayoff",
+        spec_name="ShortRateBondSpec",
+        requirements=["discount_curve", "model_parameters"],
+        fields=[
+            FieldDef("notional", "float", "Face value / notional"),
+            FieldDef("maturity_date", "date", "Zero-coupon bond maturity date"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("tree_steps", "int", "Tree time steps for lattice comparison targets", "360"),
+        ],
+    ),
     "cap": SpecSchema(
         class_name="AgentCapPayoff",
         spec_name="AgentCapSpec",
@@ -116,6 +127,33 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("frequency", "Frequency", "Floorlet frequency", "Frequency.QUARTERLY"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
             FieldDef("rate_index", "str | None", "Forecast curve key", "None"),
+            FieldDef("model", "str | None", "Cap/floor model override", "None"),
+            FieldDef("shift", "float | None", "Shift for shifted-Black pricing", "None"),
+            FieldDef("sabr", "dict[str, float] | None", "SABR parameter bundle", "None"),
+        ],
+    ),
+    "period_rate_option_strip": SpecSchema(
+        class_name="PeriodRateOptionStripPayoff",
+        spec_name="PeriodRateOptionStripSpec",
+        requirements=["discount_curve", "forward_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Notional amount"),
+            FieldDef("start_date", "date", "First accrual period start"),
+            FieldDef("end_date", "date", "Final accrual or payment date"),
+            FieldDef("instrument_class", "str | None", "Strip style: cap, floor, or collar-compatible alias", "None"),
+            FieldDef("strike", "float | None", "Common strike for vanilla cap/floor strips", "None"),
+            FieldDef("cap_strike", "float | None", "Cap strike for collar-style strips", "None"),
+            FieldDef("floor_strike", "float | None", "Floor strike for collar-style strips", "None"),
+            FieldDef("call_price", "float | None", "Callable exercise price or callable premium adjustment", "None"),
+            FieldDef("exercise_dates", "tuple[date, ...] | None", "Ordered callable exercise dates", "None"),
+            FieldDef("coupon_dates", "tuple[date, ...] | None", "Explicit coupon or payment dates", "None"),
+            FieldDef("accrual_dates", "tuple[date, ...] | None", "Explicit accrual boundary dates", "None"),
+            FieldDef("is_payer", "bool | None", "Payer/receiver orientation when applicable", "None"),
+            FieldDef("frequency", "Frequency", "Coupon frequency", "Frequency.QUARTERLY"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
+            FieldDef("rate_index", "str | None", "Forecast curve key", "None"),
+            FieldDef("calendar_name", "str | None", "Calendar name for generated schedules", "None"),
+            FieldDef("business_day_adjustment", "str | None", "Business-day adjustment convention", "None"),
             FieldDef("model", "str | None", "Cap/floor model override", "None"),
             FieldDef("shift", "float | None", "Shift for shifted-Black pricing", "None"),
             FieldDef("sabr", "dict[str, float] | None", "SABR parameter bundle", "None"),
@@ -164,7 +202,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("barrier_type", "str", "Type: 'up_and_out', 'down_and_out', 'up_and_in', 'down_and_in'"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
             FieldDef("rebate", "float", "Cash rebate paid when the barrier event knocks out", "0.0"),
-            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None means continuous monitoring", "None"),
+            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None derives from n_steps", "None"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
         ],
     ),
@@ -252,6 +290,15 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("expiry_date", "date", "Final cliquet expiry date"),
             FieldDef("observation_dates", "tuple[date, ...]", "Ordered reset observation dates"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("local_cap", "float | None", "Per-reset return cap", "None"),
+            FieldDef("local_floor", "float | None", "Per-reset return floor", "None"),
+            FieldDef("global_cap", "float | None", "Cap on the accumulated reset return", "None"),
+            FieldDef("global_floor", "float | None", "Floor on the accumulated reset return", "None"),
+            FieldDef("time_day_count", "DayCountConvention", "Time measure for reset intervals", "DayCountConvention.ACT_365"),
+            FieldDef("quadrature_order", "int", "Gauss-Hermite quadrature order for capped/floored analytical cliquets", "21"),
+            FieldDef("max_quadrature_nodes", "int", "Maximum tensor quadrature nodes before failing closed", "2000000"),
+            FieldDef("n_paths", "int", "Monte Carlo path count for comparison runs", "120000"),
+            FieldDef("seed", "int | None", "Monte Carlo random seed", "42"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.THIRTY_E_360"),
         ],
     ),
@@ -479,17 +526,81 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
         ],
     ),
+    "fx_barrier_option_analytical": SpecSchema(
+        class_name="FXBarrierAnalyticalPayoff",
+        spec_name="FXBarrierOptionSpec",
+        requirements=["discount_curve", "forward_curve", "black_vol_surface", "fx_rates"],
+        fields=[
+            FieldDef("notional", "float", "Option notional in foreign units"),
+            FieldDef("strike", "float", "Strike in domestic currency per unit of foreign currency"),
+            FieldDef("barrier", "float", "Barrier level in domestic currency per unit of foreign currency"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("fx_pair", "str", "FX quote key such as 'EURUSD'"),
+            FieldDef("foreign_discount_key", "str", "Foreign discount curve key such as 'EUR-DISC'"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("barrier_type", "str", "Type: 'up_and_out', 'down_and_out', 'up_and_in', 'down_and_in'"),
+            FieldDef("rebate", "float", "Cash rebate paid when the barrier event knocks out", "0.0"),
+            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None derives from n_steps", "None"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+        ],
+    ),
+    "fx_barrier_option_monte_carlo": SpecSchema(
+        class_name="FXBarrierMonteCarloPayoff",
+        spec_name="FXBarrierOptionSpec",
+        requirements=["discount_curve", "forward_curve", "black_vol_surface", "fx_rates"],
+        fields=[
+            FieldDef("notional", "float", "Option notional in foreign units"),
+            FieldDef("strike", "float", "Strike in domestic currency per unit of foreign currency"),
+            FieldDef("barrier", "float", "Barrier level in domestic currency per unit of foreign currency"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("fx_pair", "str", "FX quote key such as 'EURUSD'"),
+            FieldDef("foreign_discount_key", "str", "Foreign discount curve key such as 'EUR-DISC'"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("barrier_type", "str", "Type: 'up_and_out', 'down_and_out', 'up_and_in', 'down_and_in'"),
+            FieldDef("rebate", "float", "Cash rebate paid when the barrier event knocks out", "0.0"),
+            FieldDef("observations_per_year", "int | None", "Discrete monitoring frequency per year; None means continuous monitoring", "None"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("n_paths", "int", "Number of Monte Carlo paths", "120000"),
+            FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
+        ],
+    ),
     "american_put_tree": SpecSchema(
         class_name="AmericanPutTreePayoff",
         spec_name="AmericanPutTreeSpec",
         requirements=["discount_curve", "black_vol_surface"],
         fields=[
+            FieldDef("notional", "float", "Option notional", "1.0"),
             FieldDef("spot", "float", "Current spot price"),
             FieldDef("strike", "float", "Option strike price"),
             FieldDef("expiry_date", "date", "Option expiry date"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'put'"),
             FieldDef("exercise_style", "str", "Exercise style for the checked lattice helper", "'american'"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("tree_steps", "int", "Tree steps for lattice comparison targets", "800"),
+            FieldDef("n_paths", "int", "Monte Carlo paths for LSM comparison targets", "50000"),
+            FieldDef("n_steps", "int", "Time steps for LSM/PDE comparison targets", "96"),
+            FieldDef("seed", "int", "Monte Carlo random seed", "42"),
+            FieldDef("n_x", "int", "PDE spot-grid count", "301"),
+            FieldDef("n_t", "int", "PDE time-step count", "400"),
+        ],
+    ),
+    "cev_option": SpecSchema(
+        class_name="CEVOptionPayoff",
+        spec_name="CEVOptionSpec",
+        requirements=["discount_curve"],
+        fields=[
+            FieldDef("notional", "float", "Option notional", "1.0"),
+            FieldDef("spot", "float", "Current spot price"),
+            FieldDef("strike", "float", "Option strike price"),
+            FieldDef("expiry_date", "date", "Option expiry date"),
+            FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
+            FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
+            FieldDef("cev_sigma", "float", "CEV diffusion scale in dS = rSdt + sigma S^beta dW", "3.0"),
+            FieldDef("cev_beta", "float", "CEV elasticity beta", "0.5"),
+            FieldDef("n_x", "int", "PDE spot-grid count", "401"),
+            FieldDef("n_t", "int", "PDE time-step count", "501"),
+            FieldDef("tree_steps", "int", "CEV spot-lattice time steps", "2000"),
+            FieldDef("tree_grid_size", "int", "CEV spot-lattice grid count", "301"),
         ],
     ),
     "quanto_option_analytical": SpecSchema(
@@ -575,7 +686,10 @@ _SPECIALIZED_SPEC_ALLOWED_INSTRUMENTS: dict[str, frozenset[str]] = {
     "cds_monte_carlo": frozenset({"", "cds", "credit_default_swap"}),
     "fx_vanilla_analytical": frozenset({"", "european_option"}),
     "fx_vanilla_monte_carlo": frozenset({"", "european_option"}),
+    "fx_barrier_option_analytical": frozenset({"", "barrier_option"}),
+    "fx_barrier_option_monte_carlo": frozenset({"", "barrier_option"}),
     "american_put_tree": frozenset({"", "american_put"}),
+    "cev_option": frozenset({"", "european_option"}),
     "quanto_option_analytical": frozenset({"", "quanto_option"}),
     "quanto_option_monte_carlo": frozenset({"", "quanto_option"}),
     "european_option_analytical": frozenset({"", "european_option"}),
@@ -677,8 +791,11 @@ def _plan_static(
     if spec_schema is None and instrument_type:
         # Direct lookup by normalized instrument type (more reliable than text search)
         norm = instrument_type.lower().replace(" ", "_")
-        if norm in STATIC_SPECS:
-            spec_schema = STATIC_SPECS[norm]
+        static_key = {
+            "credit_default_swap": "cds",
+        }.get(norm, norm)
+        if static_key in STATIC_SPECS:
+            spec_schema = STATIC_SPECS[static_key]
             class_name = spec_schema.class_name
             module_name = class_name.lower().replace("payoff", "")
             module = f"instruments/_agent/{module_name}.py"
@@ -767,6 +884,16 @@ def _select_specialized_spec(
         if method_hint == "monte_carlo":
             return SPECIALIZED_SPECS["cds_monte_carlo"]
 
+    if _allowed("fx_barrier_option_analytical") and _looks_like_fx_barrier(
+        description,
+        desc_lower,
+        normalized_requirements,
+        normalized_instrument=normalized_instrument,
+    ):
+        if method_hint == "monte_carlo":
+            return SPECIALIZED_SPECS["fx_barrier_option_monte_carlo"]
+        return SPECIALIZED_SPECS["fx_barrier_option_analytical"]
+
     if _allowed("fx_vanilla_analytical") and _looks_like_fx_vanilla(
         description,
         desc_lower,
@@ -780,8 +907,10 @@ def _select_specialized_spec(
         normalized_instrument == "american_put"
         or ("american" in desc_lower and "put" in desc_lower)
     ):
-        if method_hint == "rate_tree":
-            return SPECIALIZED_SPECS["american_put_tree"]
+        return SPECIALIZED_SPECS["american_put_tree"]
+
+    if _allowed("cev_option") and "cev" in desc_lower:
+        return SPECIALIZED_SPECS["cev_option"]
 
     if _allowed("european_local_vol_monte_carlo") and (
         "local vol" in desc_lower or "local_vol_surface" in normalized_requirements
@@ -812,6 +941,31 @@ def _looks_like_fx_vanilla(
     if any(token in desc_lower for token in fx_tokens):
         return True
     return any(re.fullmatch(r"[A-Z]{6}", token) for token in re.findall(r"\b[A-Za-z]{6}\b", description))
+
+
+def _looks_like_fx_barrier(
+    description: str,
+    desc_lower: str,
+    normalized_requirements: set[str],
+    *,
+    normalized_instrument: str,
+) -> bool:
+    """Whether the build request clearly targets an FX option with a barrier event."""
+    has_fx = (
+        {"fx_rates", "forward_curve"} <= normalized_requirements
+        or "fx" in desc_lower
+        or "foreign discount" in desc_lower
+        or any(re.fullmatch(r"[A-Z]{6}", token) for token in re.findall(r"\b[A-Za-z]{6}\b", description))
+    )
+    has_barrier = (
+        normalized_instrument == "barrier_option"
+        or "barrier" in desc_lower
+        or "knock-in" in desc_lower
+        or "knock in" in desc_lower
+        or "knock-out" in desc_lower
+        or "knock out" in desc_lower
+    )
+    return bool(has_fx and has_barrier)
 
 
 def _infer_method_hint(desc_lower: str, *, preferred_method: str | None = None) -> str | None:

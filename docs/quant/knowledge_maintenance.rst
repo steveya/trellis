@@ -91,8 +91,44 @@ In practice:
   ``canonical/model_grammar.yaml`` when a workflow becomes a maintained
   authority surface
 - keep cookbook examples method-generic and import-safe
+- create or materially extend cookbook guidance through the validated quant /
+  model-validator promotion path. A task failure is evidence for a candidate
+  lesson or capability gap; it is not sufficient reason to hand-author a
+  product-method recipe that makes only that task green.
 - use lessons for failures or edge cases, not for normal method definitions
 - do not reintroduce a sidecar lesson file outside ``trellis/agent/knowledge/``
+
+Primitive-first navigation
+--------------------------
+
+The knowledge layer should help a bounded-context agent assemble a pricing
+program without requiring it to read the whole repository. Retrieval should
+therefore narrow context in this order:
+
+1. preserve the declared semantic contract, including product refinements,
+   schedules, observables, state, and exercise/control semantics;
+2. use ``canonical/api_map.yaml`` to find the relevant module families;
+3. retrieve exact public symbols from the import registry;
+4. assemble reusable process, market-binding, schedule, payoff, control,
+   discounting, and validation capabilities;
+5. use an exact product helper only when it is itself the admitted public
+   runtime for the unchanged semantic contract.
+
+Product-method helpers and checked-in task adapters may remain as compatibility
+or reference evidence while a route is migrated. They must not narrow a richer
+contract, override a conflicting exercise style, or hide a missing composition
+capability. In particular, a helper that prices a European swaption is not
+authority for a Bermudan swaption merely because both share the broad
+``swaption`` instrument label.
+
+When the available primitives do not yet compose correctly, fail closed with a
+structured capability packet. The packet should distinguish capabilities that
+already exist from the missing glue. For Bermudan swaption Monte Carlo, Trellis
+currently exposes Hull-White factor simulation, irregular exercise schedules,
+pathwise swap-value projection, and Longstaff-Schwartz continuation. The
+authoritative composition surface still lacks exercise-grid mapping, pathwise
+numeraire discounting, and a binding from swap-value paths into the
+early-exercise controller.
 
 The model-grammar registry is descriptive knowledge, not an approval mechanism.
 It should stay aligned with the shipped code/docs authority for engine-model

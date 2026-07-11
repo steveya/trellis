@@ -34,6 +34,7 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
     workflow = dict(record.get("workflow") or {})
     learning = dict(record.get("learning") or {})
     comparison = dict(record.get("comparison") or {})
+    execution = dict(record.get("execution") or {})
     market = dict(record.get("market") or {})
     framework = dict(record.get("framework") or {})
     telemetry = _telemetry_section(record)
@@ -112,6 +113,7 @@ def build_task_diagnosis_packet(record: Mapping[str, Any]) -> dict[str, Any]:
         "learning": learning,
         "workflow": workflow,
         "comparison": comparison,
+        "execution": execution,
         "market": market,
         "framework": framework,
         "telemetry": telemetry,
@@ -177,6 +179,7 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
     learning = dict(packet.get("learning") or {})
     workflow = dict(packet.get("workflow") or {})
     comparison = dict(packet.get("comparison") or {})
+    execution = dict(packet.get("execution") or {})
     telemetry = dict(packet.get("telemetry") or {})
     runtime_controls = dict(packet.get("runtime_controls") or {})
     post_build = dict(packet.get("post_build") or {})
@@ -190,6 +193,7 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
         f"- Task kind: `{task.get('kind', '')}`",
         f"- Run id: `{run.get('run_id', '')}`",
         f"- Persisted at: `{run.get('persisted_at', '')}`",
+        f"- Execution mode: `{execution.get('mode', '')}`",
         f"- Outcome: `{outcome.get('status', '')}`",
         f"- Failure bucket: `{outcome.get('failure_bucket', '')}`",
         f"- Decision stage: `{outcome.get('decision_stage', '')}`",

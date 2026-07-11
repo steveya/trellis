@@ -9,10 +9,12 @@ engine.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import erf, exp, log, sqrt
+from itertools import product
+from math import erf, exp, log, pi, sqrt
 from typing import Protocol
 
 from scipy.optimize import newton
+from scipy.special import roots_hermitenorm
 from scipy.stats import multivariate_normal
 
 from trellis.core.date_utils import year_fraction
@@ -166,6 +168,122 @@ def _resolve_common_inputs(market_state: MarketState, spec: _EquityOptionLike) -
         sigma=sigma,
         notional=float(getattr(spec, "notional", 1.0) or 1.0),
     )
+
+
+def _optional_float_attr(spec, name: str) -> float | None:
+    value = getattr(spec, name, None)
+    if value is None:
+        return None
+    return float(value)
+
+
+def _cliquet_has_return_bounds(spec) -> bool:
+    return any(
+        getattr(spec, name, None) is not None
+        for name in ("local_cap", "local_floor", "global_cap", "global_floor")
+    )
+
+
+def _cliquet_observation_times(
+    market_state: MarketState,
+    spec,
+    *,
+    settlement,
+    time_day_count,
+) -> tuple[float, ...]:
+    raw_times = getattr(spec, "observation_times", None)
+    if raw_times:
+        return tuple(sorted(float(time) for time in raw_times if float(time) > 0.0))
+    observation_dates = tuple(sorted(getattr(spec, "observation_dates", ()) or ()))
+    return tuple(
+        sorted(
+            max(float(year_fraction(settlement, observation_date, time_day_count)), 0.0)
+            for observation_date in observation_dates
+        )
+    )
+
+
+def _clip_return(value: float, lower: float, upper: float) -> float:
+    if value < lower:
+        return lower
+    if value > upper:
+        return upper
+    return value
+
+
+def _validated_cliquet_bounds(spec, *, option_type: str) -> tuple[float, float, float, float]:
+    local_floor = _optional_float_attr(spec, "local_floor")
+    local_cap = _optional_float_attr(spec, "local_cap")
+    global_floor = _optional_float_attr(spec, "global_floor")
+    global_cap = _optional_float_attr(spec, "global_cap")
+
+    local_lower = 0.0 if local_floor is None and option_type in {"call", "put"} else float(local_floor)
+    local_upper = float("inf") if local_cap is None else float(local_cap)
+    global_lower = float("-inf") if global_floor is None else float(global_floor)
+    global_upper = float("inf") if global_cap is None else float(global_cap)
+    if local_upper < local_lower:
+        raise ValueError("local_cap must be greater than or equal to local_floor")
+    if global_upper < global_lower:
+        raise ValueError("global_cap must be greater than or equal to global_floor")
+    return local_lower, local_upper, global_lower, global_upper
+
+
+def _price_capped_floored_cliquet_quadrature(
+    market_state: MarketState,
+    spec,
+    resolved: ResolvedEquityAnalyticalInputs,
+    *,
+    observation_times: tuple[float, ...],
+    option_type: str,
+) -> float:
+    if not observation_times:
+        raise ValueError("Cliquet pricing requires at least one positive observation time")
+    local_floor, local_cap, global_floor, global_cap = _validated_cliquet_bounds(
+        spec,
+        option_type=option_type,
+    )
+    quadrature_order = max(int(getattr(spec, "quadrature_order", 21) or 21), 3)
+    carry = resolved.dividend
+    previous_time = 0.0
+    period_inputs: list[tuple[float, float, float]] = []
+    for observation_time in observation_times:
+        if observation_time <= previous_time + 1e-12:
+            continue
+        tau = observation_time - previous_time
+        rate = float(market_state.discount.zero_rate(max(observation_time, 1e-6)))
+        sigma = float(market_state.vol_surface.black_vol(max(tau, 1e-6), resolved.spot))
+        period_inputs.append((tau, rate, sigma))
+        previous_time = observation_time
+    if not period_inputs:
+        return 0.0
+    node_count = quadrature_order ** len(period_inputs)
+    max_node_count = max(int(getattr(spec, "max_quadrature_nodes", 2_000_000) or 2_000_000), 1)
+    if node_count > max_node_count:
+        raise ValueError(
+            "Capped/floored cliquet quadrature grid is too large; "
+            "use the Monte Carlo helper or lower quadrature_order"
+        )
+
+    nodes, weights = roots_hermitenorm(quadrature_order)
+    probability_weights = tuple(float(weight) / sqrt(2.0 * pi) for weight in weights)
+
+    expected_return = 0.0
+    for indices in product(range(quadrature_order), repeat=len(period_inputs)):
+        probability = 1.0
+        cumulative = 0.0
+        for node_index, (tau, rate, sigma) in zip(indices, period_inputs):
+            probability *= probability_weights[node_index]
+            normal = float(nodes[node_index])
+            gross_return = exp(
+                (rate - carry - 0.5 * sigma * sigma) * tau
+                + sigma * sqrt(max(tau, 0.0)) * normal
+            )
+            period_return = gross_return - 1.0 if option_type == "call" else 1.0 - gross_return
+            cumulative += _clip_return(period_return, local_floor, local_cap)
+        expected_return += probability * _clip_return(cumulative, global_floor, global_cap)
+
+    discount_factor = float(market_state.discount.discount(observation_times[-1]))
+    return resolved.notional * resolved.spot * discount_factor * float(expected_return)
 
 
 def price_equity_digital_option_analytical(market_state: MarketState, spec) -> float:
@@ -408,13 +526,31 @@ def price_equity_cliquet_option_analytical(market_state: MarketState, spec) -> f
     if market_state.vol_surface is None:
         raise ValueError("Cliquet analytical pricing requires market_state.vol_surface")
 
+    option_type = str(getattr(spec, "option_type", "call") or "call").strip().lower()
+    if option_type not in {"call", "put"}:
+        raise ValueError(f"Unsupported cliquet option_type {option_type!r}")
+    carry = resolved.dividend
+    time_day_count = getattr(spec, "time_day_count", None) or getattr(spec, "day_count", DayCountConvention.ACT_365)
+    observation_times = _cliquet_observation_times(
+        market_state,
+        spec,
+        settlement=settlement,
+        time_day_count=time_day_count,
+    )
+    if not observation_times:
+        raise ValueError("Cliquet analytical pricing requires non-empty observation_dates")
+    if _cliquet_has_return_bounds(spec):
+        return _price_capped_floored_cliquet_quadrature(
+            market_state,
+            spec,
+            resolved,
+            observation_times=observation_times,
+            option_type=option_type,
+        )
+
     observation_dates = tuple(sorted(getattr(spec, "observation_dates", ()) or ()))
     if not observation_dates:
         raise ValueError("Cliquet analytical pricing requires non-empty observation_dates")
-
-    option_type = str(getattr(spec, "option_type", "call") or "call").strip().lower()
-    carry = resolved.dividend
-    time_day_count = getattr(spec, "time_day_count", None) or getattr(spec, "day_count", DayCountConvention.ACT_365)
     total = 0.0
     previous_time = 0.0
     for observation_date in observation_dates:

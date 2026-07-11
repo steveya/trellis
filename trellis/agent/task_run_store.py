@@ -170,6 +170,7 @@ def persist_canary_batch_record(
     validation: str,
     knowledge_light: bool,
     replay: bool,
+    execution_mode: str | None = None,
     requested_task_id: str | None,
     requested_subset: str | None,
     root: Path = ROOT,
@@ -178,7 +179,9 @@ def persist_canary_batch_record(
 ) -> dict[str, str]:
     """Persist one explicit canary-batch record and stable latest view."""
     batch_id = f"canary_{started_at.astimezone(timezone.utc).strftime('%Y%m%dT%H%M%S%fZ')}"
-    execution_mode = "cassette_replay" if replay else "live"
+    execution_mode = str(
+        execution_mode or ("cassette_replay" if replay else "live")
+    ).strip() or ("cassette_replay" if replay else "live")
     revisions = runtime_revision_metadata()
     batch_scope, scope_slug = _canary_batch_scope(
         requested_task_id=requested_task_id,

@@ -93,6 +93,29 @@ def test_select_validation_bundle_skips_generic_vol_checks_for_explicit_swaption
     assert "check_vol_monotonicity" not in bundle.checks
 
 
+@pytest.mark.parametrize("method", ["pde_solver", "rate_tree"])
+def test_select_validation_bundle_skips_black_vol_checks_for_cev_model(method):
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="european_option",
+        method=method,
+        product_ir=SimpleNamespace(
+            instrument="european_option",
+            model_family="cev_diffusion",
+            payoff_traits=("cev_process", "model_parameter_dependence"),
+        ),
+    )
+
+    assert bundle.bundle_id == f"{method}:cev_option"
+    assert bundle.instrument_type == "cev_option"
+    assert "check_non_negativity" in bundle.checks
+    assert "check_price_sanity" in bundle.checks
+    assert "check_vol_sensitivity" not in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
+    assert "check_zero_vol_intrinsic" not in bundle.checks
+
+
 def test_select_validation_bundle_skips_vol_monotonicity_for_barrier_option():
     from trellis.agent.validation_bundles import select_validation_bundle
 
@@ -100,6 +123,24 @@ def test_select_validation_bundle_skips_vol_monotonicity_for_barrier_option():
         instrument_type="barrier_option",
         method="analytical",
         product_ir=SimpleNamespace(instrument="barrier_option", payoff_traits=("barrier",)),
+    )
+
+    assert "check_non_negativity" in bundle.checks
+    assert "check_price_sanity" in bundle.checks
+    assert "check_vol_sensitivity" in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
+
+
+def test_select_validation_bundle_skips_vol_monotonicity_for_cliquet_option():
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="cliquet_option",
+        method="analytical",
+        product_ir=SimpleNamespace(
+            instrument="cliquet_option",
+            payoff_traits=("resetting", "capped", "floored"),
+        ),
     )
 
     assert "check_non_negativity" in bundle.checks
@@ -204,6 +245,20 @@ def test_execute_validation_bundle_skips_generic_vol_checks_for_explicit_replica
     assert execution.failures == ()
     assert execution.executed_checks == ("check_non_negativity", "check_price_sanity")
     assert execution.skipped_checks == ("check_vol_sensitivity", "check_vol_monotonicity")
+
+
+def test_select_validation_bundle_for_variance_swap_skips_generic_vol_checks():
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="variance_swap",
+        method="analytical",
+    )
+
+    assert bundle.bundle_id == "analytical:variance_swap"
+    assert "check_price_sanity" in bundle.checks
+    assert "check_vol_sensitivity" not in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
 
 
 def test_select_validation_bundle_for_quanto_option_includes_family_checks():
@@ -428,6 +483,60 @@ def test_execute_validation_bundle_skips_generic_vol_checks_for_heston_model_rou
         test_payoff=object(),
         market_state=object(),
         payoff_factory=lambda: object(),
+        market_state_factory=lambda **kwargs: object(),
+    )
+
+    assert execution.failures == ()
+    assert execution.executed_checks == ("check_non_negativity", "check_price_sanity")
+    assert execution.skipped_checks == ("check_vol_sensitivity", "check_vol_monotonicity")
+    assert calls == ["check_non_negativity", "check_price_sanity"]
+
+
+def test_execute_validation_bundle_skips_generic_vol_checks_for_model_parameter_route(monkeypatch):
+    from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
+
+    calls: list[str] = []
+
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_non_negativity",
+        lambda payoff, market_state: calls.append("check_non_negativity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_price_sanity",
+        lambda payoff, market_state: calls.append("check_price_sanity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_vol_sensitivity",
+        lambda payoff_factory, market_state_factory: calls.append("check_vol_sensitivity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_vol_monotonicity",
+        lambda payoff_factory, market_state_factory, expected_direction=None: calls.append("check_vol_monotonicity") or [],
+    )
+
+    test_payoff = SimpleNamespace(requirements={"discount_curve", "model_parameters"})
+    bundle = ValidationBundle(
+        bundle_id="fft_pricing:european_option",
+        instrument_type="european_option",
+        method="fft_pricing",
+        checks=(
+            "check_non_negativity",
+            "check_price_sanity",
+            "check_vol_sensitivity",
+            "check_vol_monotonicity",
+        ),
+        categories={
+            "universal": ("check_non_negativity", "check_price_sanity"),
+            "no_arbitrage": ("check_vol_sensitivity", "check_vol_monotonicity"),
+        },
+    )
+
+    execution = execute_validation_bundle(
+        bundle,
+        validation_level="standard",
+        test_payoff=test_payoff,
+        market_state=object(),
+        payoff_factory=lambda: test_payoff,
         market_state_factory=lambda **kwargs: object(),
     )
 

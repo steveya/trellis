@@ -132,8 +132,10 @@ Computational buckets
        parameters.
    * - ``affine_jump_stochastic_vol``
      - ``affine_jump_transform``, ``affine_jump_monte_carlo``
-     - Bates-style Heston plus compound-Poisson lognormal jumps. Current tasks
-       get a repair packet for ``bates_affine_jump_stochastic_vol_kernel``.
+     - Bates-style Heston plus compound-Poisson lognormal jumps. European
+       vanilla Bates transform/Monte Carlo targets are supported through
+       ``trellis.models.bates_option`` when explicit model and jump parameters
+       are available.
    * - ``slv_lsv``
      - ``leverage_function_pde``, ``leverage_function_monte_carlo``
      - Stochastic-local-vol or local-stochastic-vol targets. They require
@@ -192,9 +194,10 @@ Use the existing helper surface before generating adapters:
   comparison.
 - ``trellis.models.calibration.heston_fit`` owns the bounded Heston smile and
   surface compression workflows that can produce reusable model parameters.
-- Heston Gauss-Laguerre, Bates, SLV/LSV, and path-dependent Heston control
-  targets should produce repair packets or honest blocks until the named
-  primitives and validation bundles exist.
+- Heston Gauss-Laguerre, SLV/LSV, and path-dependent Heston control targets
+  should produce repair packets or honest blocks until the named primitives
+  and validation bundles exist. Bates only remains a blocker outside the
+  checked European vanilla transform/Monte Carlo boundary.
 
 Thin route adapters may bind task-specific specs to these helpers, but they
 must not reimplement the stochastic process, transform kernel, Monte Carlo
@@ -237,9 +240,6 @@ adapter fixes. Current stochastic-vol packets include:
    * - ``heston_gauss_laguerre_transform_kernel``
      - Add a checked Heston characteristic-function quadrature kernel, damping
        or contour policy, stabilization diagnostics, and validation bundle.
-   * - ``bates_affine_jump_stochastic_vol_kernel``
-     - Add Bates characteristic-function and simulation capability over Heston
-       base parameters plus lognormal jump parameters.
    * - ``leverage_function_contract``
      - Add an executable SLV/LSV leverage calibration and solver contract over
        local-vol, Black-vol, and Heston inputs.
@@ -289,8 +289,8 @@ Use the recent task pack as regression examples:
        fall back to an FX or Black-vol vanilla adapter.
    * - ``T44``
      - ``affine_jump_stochastic_vol``
-     - Bates requires Heston plus jump parameters and a named affine jump
-       stochastic-vol primitive.
+     - Bates requires Heston plus jump parameters and should bind to the
+       checked European vanilla Bates transform/Monte Carlo helpers.
    * - ``T60`` and ``T117``
      - ``slv_lsv``
      - SLV/LSV requires leverage-function authority and solver contracts.

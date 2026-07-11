@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
@@ -62,6 +63,72 @@ def test_ranked_observation_basket_state_replays_locked_returns_from_snapshots()
 
     assert payoff.shape == (1,)
     assert payoff[0] == pytest.approx(0.11)
+
+
+def test_ranked_observation_basket_state_replays_locked_levels_from_snapshots():
+    from trellis.models.monte_carlo.basket_state import (
+        evaluate_ranked_observation_basket_paths,
+        observation_step_indices,
+    )
+
+    resolved = _resolved_basket_inputs()
+    paths = np.array(
+        [
+            [
+                [100.0, 100.0],
+                [110.0, 105.0],
+                [120.0, 112.0],
+            ]
+        ],
+        dtype=float,
+    )
+
+    payoff = evaluate_ranked_observation_basket_paths(
+        paths,
+        resolved.constituent_spots,
+        observation_step_indices(resolved.observation_times, resolved.T, paths.shape[1] - 1),
+        selection_rule=resolved.selection_rule,
+        lock_rule=resolved.lock_rule,
+        aggregation_rule="average_locked_levels",
+        selection_count=resolved.selection_count,
+    )
+
+    assert payoff.shape == (1,)
+    assert payoff[0] == pytest.approx(111.0)
+
+
+def test_ranked_observation_state_payoff_applies_strike_to_locked_levels(monkeypatch):
+    from trellis.models.monte_carlo import ranked_observation_payoffs as basket_mc
+    from trellis.models.monte_carlo.path_state import MonteCarloPathState
+    from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketSpec
+
+    resolved = replace(_resolved_basket_inputs(), aggregation_rule="average_locked_levels")
+    spec = RankedObservationBasketSpec(
+        notional=1.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        constituents="SPX,NDX",
+        aggregation_rule="average_locked_levels",
+        n_steps=2,
+        seed=7,
+    )
+    monkeypatch.setattr(
+        basket_mc,
+        "recommended_ranked_observation_basket_mc_engine_kwargs",
+        lambda *_args, **_kwargs: {"n_paths": 1, "n_steps": 2, "seed": 7, "method": "exact"},
+    )
+    payoff = basket_mc.build_ranked_observation_basket_state_payoff(spec, resolved)
+    state = MonteCarloPathState(
+        initial_value=np.array([100.0, 100.0], dtype=float),
+        n_steps=2,
+        terminal_values=np.array([[120.0, 112.0]], dtype=float),
+        snapshots={1: np.array([[110.0, 105.0]], dtype=float)},
+    )
+
+    value = payoff.evaluate_state(state)
+
+    assert value.shape == (1,)
+    assert value[0] == pytest.approx(11.0)
 
 
 def test_ranked_observation_basket_price_helper_uses_snapshot_state_requirement(monkeypatch):

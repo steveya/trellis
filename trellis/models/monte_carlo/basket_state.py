@@ -78,6 +78,11 @@ def _settled_basket_value(state, aggregation_rule: str) -> np.ndarray:
         if state.locked_returns is None
         else np.asarray(state.locked_returns, dtype=float)
     )
+    locked_levels = (
+        np.zeros(state.n_paths, dtype=float)
+        if state.locked_levels is None
+        else np.asarray(state.locked_levels, dtype=float)
+    )
     selected_counts = (
         np.zeros(state.n_paths, dtype=float)
         if state.selected_counts is None
@@ -88,8 +93,14 @@ def _settled_basket_value(state, aggregation_rule: str) -> np.ndarray:
         return locked_returns / denominator
     if aggregation_rule == "sum_locked_returns":
         return locked_returns
+    if aggregation_rule in {"average_locked_levels", "average_selected_levels"}:
+        denominator = np.where(selected_counts > 0, selected_counts, 1.0)
+        return locked_levels / denominator
+    if aggregation_rule == "sum_locked_levels":
+        return locked_levels
     raise ValueError(
-        f"Unsupported basket aggregation_rule {aggregation_rule!r}; expected average_locked_returns or sum_locked_returns"
+        f"Unsupported basket aggregation_rule {aggregation_rule!r}; expected "
+        "average_locked_returns, sum_locked_returns, average_locked_levels, or sum_locked_levels"
     )
 
 
