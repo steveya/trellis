@@ -782,6 +782,50 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_mc_helpe
 @pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
+        ("theta_0.5", "price_vanilla_equity_option_pde(market_state, spec, theta=0.5)"),
+        ("theta_1.0", "price_vanilla_equity_option_pde(market_state, spec, theta=1.0)"),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_helper_wrapper(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.equity_option_pde.price_vanilla_equity_option_pde",
+        ),
+        primitive_plan=SimpleNamespace(route="vanilla_equity_theta_pde"),
+        method="pde_solver",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European call: theta-method convergence order measurement",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde" in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
         ("heston_mc", 'scheme="heston_qe"'),
         ("euler_heston", 'scheme="euler"'),
         ("qe_heston", 'scheme="heston_qe"'),

@@ -71,6 +71,7 @@ Status mirror last synced: `2026-07-02`
 | --- | --- | --- |
 | `QUA-1131` | Agent learning: contract-backed intra-run repair | Todo |
 | `QUA-1138` | Agent learning: deterministic promotion loop | In Progress |
+| `QUA-1151` | Task learning: replay-safe self-learning closure | Todo |
 
 ### Ordered Implementation Queue
 
@@ -85,8 +86,10 @@ Status mirror last synced: `2026-07-02`
 | `QUA-1139` | Agent learning: retry attribution contract | In Progress | `QUA-1131` |
 | `QUA-1140` | Agent learning: deterministic overlay consumption | In Progress | `QUA-1132`, `QUA-1133` |
 | `QUA-1141` | Semantic validation: helper-backed primitive closure | In Progress | `QUA-1135` |
-| `QUA-1142` | Semantic contract: static exotic spec catalog | Backlog | `QUA-1134`, `QUA-1136` |
-| `QUA-1143` | Task learning: no-LLM scorecard and docs closeout | Backlog | `QUA-1139`, `QUA-1140`, `QUA-1141`, `QUA-1142` |
+| `QUA-1142` | Semantic contract: static exotic spec catalog | In Progress | `QUA-1134`, `QUA-1136` |
+| `QUA-1143` | Task learning: no-LLM scorecard and docs closeout | In Progress | `QUA-1139`, `QUA-1140`, `QUA-1141`, `QUA-1142` |
+| `QUA-1152` | Canary replay: deterministic exact-binding contract lane | In Progress | `QUA-1138` |
+| `QUA-1153` | Task learning: failure-seeded retry benchmark | Todo | `QUA-1152` |
 
 ## Validation Plan
 
@@ -233,3 +236,98 @@ The semantic-validator suite reports `59 passed`; the helper-backed
 double-barrier semantic-validation test reports `2 passed`; the offline T22
 replay reports `1/1` passed expectation with zero LLM calls; and bounded
 remediation reports `0` failures.
+
+### 2026-07-02 QUA-1142 static exotic spec audit
+
+Audited `QUA-1142` and found it already satisfied by the existing base repair
+stack rather than needing a new code branch. Heston ADI now has exact helper
+binding materialization and primitive planning. Autocallable targets now use a
+static `AutocallableSpec` under the offline guard and deterministic helper
+materialization for pseudo-MC and Sobol QMC targets.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_primitive_planning.py::test_plan_build_uses_static_autocallable_spec_under_offline_guard \
+  tests/test_agent/test_primitive_planning.py::test_builds_heston_adi_plan_for_pde_method \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_heston_adi_helper \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_autocallable_helper
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T20 --task-id T107 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1142_t20_t107_20260702.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1142_t20_t107_20260702.json \
+  --skip-platform-traces
+```
+
+The targeted unit checks report `5 passed`; the offline T20/T107 replay reports
+`2/2` passed expectations with zero LLM calls; and bounded remediation reports
+`0` failures. Linear `QUA-1142` remains `In Progress`, not `Done`, until the
+base PR stack lands.
+
+### 2026-07-02 QUA-1143 no-LLM scorecard closeout
+
+Started `QUA-1143` and reran the full failed-pack closeout with offline local
+agents:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T20 --task-id T22 --task-id T105 --task-id T107 --task-id E27 \
+  --status all --offline-local-agents --recovery-mode assisted \
+  --validation standard \
+  --output task_results_qua1143_offline_closeout_20260702.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1143_offline_closeout_20260702.json \
+  --skip-platform-traces
+```
+
+The run reported `5/5` passed expectations in `95s`: `T20`, `T22`, `T105`, and
+`T107` were `compare_ready` pricing successes; `E27` was an `honest_block`;
+token usage was zero; and bounded remediation reported `0` failures. The
+important interpretation is that the pack is now first-pass deterministic reuse
+of checked contracts rather than retry rescue: `successful_after_retry=0`,
+`first_attempt_successes=4`, and all pricing successes had shared context.
+
+### 2026-07-02 QUA-1152 deterministic canary replay lane
+
+Started `QUA-1152` after the stacked PRs failed `pr-gate-tier2-contracts`.
+The failing CI path was `T13` full-task canary replay.  Pricing had become
+deterministic, but the old full-task cassette still recorded generation and
+critic calls, so the replay failed on stale prompt hashes or unconsumed calls.
+
+The fix added a deterministic exact-binding replay lane to
+`scripts/run_canary.py`.  Canary entries with
+`replay_mode: deterministic_exact_binding` run the normal `run_task(...)`
+surface under the offline-local LLM guard, persist the same diagnosis packet
+and dossier artifacts, and mark the result with
+`execution_mode=deterministic_replay` plus `llm_cassette.used=false`.
+T13 now uses that lane.  Cassette replay remains strict for canaries that
+actually need recorded LLM calls.
+
+The same slice added deterministic exact-binding materialization for
+`price_vanilla_equity_option_pde(...)` comparison targets.  The generated
+wrapper maps `theta_0.5` to `theta=0.5` and `theta_1.0` to `theta=1.0`, then
+delegates to the checked helper instead of regenerating PDE code.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_helper_wrapper \
+  tests/test_agent/test_canary_runner.py::TestRunCanaries::test_run_canaries_deterministic_replay_uses_offline_local_scope_without_cassette \
+  tests/test_agent/test_canary_runner.py::TestCanaryFileValidity::test_real_canary_file_marks_t38_as_live_only_during_route_refactor \
+  tests/test_agent/test_canary_runner.py::TestCanaryFileValidity::test_real_canary_file_covers_canary_kinds \
+  tests/test_contracts/test_cassette_contract_helpers.py
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_contracts/test_canary_replay_contracts.py \
+  -m "tier2 and not freshness"
+make gate-tier2-contracts PYTHON=/Users/steveyang/miniforge3/bin/python3
+```
+
+The focused unit/manifest/contract-helper set reports `10 passed`; full
+canary replay reports `1 passed, 1 skipped`; and the local tier-2 contract
+shard reports `32 passed, 15 skipped, 7 deselected`.

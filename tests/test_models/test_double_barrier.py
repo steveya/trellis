@@ -80,6 +80,21 @@ def test_double_barrier_path_payoff_tracks_lower_and_upper_hits():
     assert double_barrier_path_payoff(paths, spec).tolist() == [25.0, 0.0, 0.0]
 
 
+@pytest.mark.parametrize(
+    ("alias", "expected"),
+    [
+        ("knock_out", "out"),
+        ("knock-out", "out"),
+        ("knock_in", "in"),
+        ("knock-in", "in"),
+    ],
+)
+def test_double_barrier_spec_normalizes_knock_aliases(alias, expected):
+    spec = DoubleBarrierSpec(knock=alias)
+
+    assert spec.knock == expected
+
+
 def test_double_barrier_state_payoff_declares_two_monitors():
     spec = DoubleBarrierSpec(
         notional=1.0,

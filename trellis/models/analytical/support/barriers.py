@@ -47,7 +47,7 @@ class DoubleBarrierSpec:
         knock = str(self.knock or "out").strip().lower().replace("-", "_")
         if knock not in {"out", "in", "knock_out", "knock_in"}:
             raise ValueError("knock must be 'out' or 'in'")
-        object.__setattr__(self, "knock", "in" if knock.endswith("_in") else knock)
+        object.__setattr__(self, "knock", "in" if knock in {"in", "knock_in"} else "out")
 
     @classmethod
     def from_spec(cls, spec: Any, **overrides: Any) -> "DoubleBarrierSpec":
