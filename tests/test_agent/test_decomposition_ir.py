@@ -57,6 +57,19 @@ class TestProductIR:
         assert "monte_carlo" in ir.candidate_engine_families
         assert ir.supported is True
 
+    def test_ir_for_local_vol_option_uses_local_vol_model_family(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "European equity call under local vol: PDE vs MC",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert ir.model_family == "local_vol"
+        assert {"pde", "monte_carlo"}.issubset(set(ir.candidate_engine_families))
+
     def test_ir_for_barrier_option_includes_promoted_analytical_support(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 
@@ -69,10 +82,134 @@ class TestProductIR:
         assert ir.payoff_family == "barrier_option"
         assert ir.exercise_style == "european"
         assert ir.model_family == "equity_diffusion"
+        assert "barrier" in ir.payoff_traits
+        assert "single_barrier" in ir.payoff_traits
+        assert "double_barrier" not in ir.payoff_traits
         assert set(ir.candidate_engine_families) >= {"analytical", "monte_carlo", "pde"}
         assert "analytical" in ir.route_families
         assert "pde_solver" in ir.route_families
         assert ir.supported is True
+
+    def test_ir_for_merton_jump_diffusion_keeps_vanilla_product_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Merton jump-diffusion MC vs FFT",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "jump_diffusion" in ir.payoff_traits
+        assert ir.model_family == "jump_diffusion"
+        assert "jump_parameters" in ir.required_market_data
+        assert "monte_carlo" in ir.route_families
+        assert "fft_pricing" in ir.route_families
+
+    def test_ir_for_sabr_hagan_mc_keeps_vanilla_forward_option_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "SABR MC simulation vs Hagan implied vol",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "sabr" in ir.payoff_traits
+        assert ir.model_family == "sabr"
+        assert "model_parameters" in ir.required_market_data
+        assert "monte_carlo" in ir.route_families
+        assert "analytical" in ir.route_families
+
+    def test_ir_for_variance_gamma_keeps_vanilla_option_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Variance Gamma: COS vs MC",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "variance_gamma" in ir.payoff_traits
+        assert ir.model_family == "variance_gamma"
+        assert "model_parameters" in ir.required_market_data
+        assert "fft_pricing" in ir.route_families
+        assert "monte_carlo" in ir.route_families
+
+    def test_ir_for_cgmy_keeps_vanilla_option_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "CGMY / tempered stable process via COS",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "cgmy" in ir.payoff_traits
+        assert ir.model_family == "cgmy"
+        assert "model_parameters" in ir.required_market_data
+        assert "fft_pricing" in ir.route_families
+        assert "monte_carlo" in ir.route_families
+
+    def test_ir_for_kou_keeps_vanilla_option_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Kou double-exponential jump: FFT vs MC",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "kou" in ir.payoff_traits
+        assert "double_exponential_jump" in ir.payoff_traits
+        assert ir.model_family == "kou"
+        assert "model_parameters" in ir.required_market_data
+        assert "black_vol_surface" not in ir.required_market_data
+        assert "fft_pricing" in ir.route_families
+        assert "monte_carlo" in ir.route_families
+        assert "analytical" in ir.route_families
+        assert "trellis.models.levy_option" in ir.reusable_primitives
+
+    def test_ir_for_bates_keeps_vanilla_option_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Bates model (Heston + jumps): FFT vs MC",
+            instrument_type="european_option",
+        )
+
+        assert ir.instrument == "european_option"
+        assert ir.payoff_family == "vanilla_option"
+        assert "affine_jump_stochastic_vol" in ir.payoff_traits
+        assert ir.model_family == "bates"
+        assert "model_parameters" in ir.required_market_data
+        assert "jump_parameters" in ir.required_market_data
+        assert "black_vol_surface" not in ir.required_market_data
+        assert "fft_pricing" in ir.route_families
+        assert "monte_carlo" in ir.route_families
+        assert "trellis.models.bates_option" in ir.reusable_primitives
+
+    def test_ir_for_short_rate_bond_uses_affine_rate_model_shape(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        ir = decompose_to_ir(
+            "Vasicek bond pricing: tree vs analytical",
+            instrument_type="short_rate_bond",
+        )
+
+        assert ir.instrument == "short_rate_bond"
+        assert ir.payoff_family == "discount_bond"
+        assert "short_rate_model" in ir.payoff_traits
+        assert ir.model_family == "interest_rate"
+        assert "discount_curve" in ir.required_market_data
+        assert "model_parameters" in ir.required_market_data
+        assert "analytical" in ir.route_families
+        assert "rate_tree" in ir.route_families
+        assert "trellis.models.short_rate_bond" in ir.reusable_primitives
 
     def test_ir_for_absorbed_analytical_exotics_uses_specific_payoff_families(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir

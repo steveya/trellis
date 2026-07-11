@@ -392,6 +392,202 @@ def _generation_plan_should_block(generation_plan) -> bool:
     return bool(blocker_report and blocker_report.should_block)
 
 
+def _unique_strings(values) -> list[str]:
+    """Return non-empty strings in first-seen order."""
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values or ():
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def _intra_run_overlay_payloads(metadata: Mapping[str, object]) -> list[dict[str, Any]]:
+    """Return retry-overlay payloads attached to request metadata."""
+    raw = metadata.get("intra_run_learning_overlays")
+    if raw is None:
+        raw = metadata.get("knowledge_overlays")
+    if isinstance(raw, Mapping):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [dict(item) for item in raw if isinstance(item, Mapping)]
+
+
+def _overlay_obligations(overlay: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Return structured obligations from one retry overlay."""
+    raw = overlay.get("repair_obligations") or overlay.get("structured_evidence")
+    if isinstance(raw, Mapping):
+        raw = [raw]
+    if not isinstance(raw, (list, tuple)):
+        return []
+    return [dict(item) for item in raw if isinstance(item, Mapping)]
+
+
+def _overlay_qualified_ref(obligation: Mapping[str, Any]) -> str:
+    """Resolve a qualified helper/primitive reference from an overlay obligation."""
+    for key in ("primitive", "qualified_name", "binding"):
+        value = str(obligation.get(key) or "").strip()
+        if value.startswith("trellis."):
+            return value
+    module = str(obligation.get("module") or "").strip()
+    symbol = str(obligation.get("symbol") or "").strip()
+    if module.startswith("trellis.") and symbol:
+        return f"{module}.{symbol}"
+    return ""
+
+
+def _overlay_module(ref: str, obligation: Mapping[str, Any]) -> str:
+    """Return the module part for a qualified overlay reference."""
+    module = str(obligation.get("module") or "").strip()
+    if module.startswith("trellis."):
+        return module
+    if ref.startswith("trellis.") and "." in ref:
+        return ref.rpartition(".")[0]
+    return ""
+
+
+def _overlay_symbol(ref: str, obligation: Mapping[str, Any]) -> str:
+    """Return the symbol part for a qualified overlay reference."""
+    symbol = str(obligation.get("symbol") or "").strip()
+    if symbol:
+        return symbol
+    if ref.startswith("trellis.") and "." in ref:
+        return ref.rpartition(".")[2]
+    return ""
+
+
+def _apply_intra_run_overlay_consumption(generation_plan, metadata: Mapping[str, object]):
+    """Apply retry-overlay obligations to deterministic generation-plan inputs."""
+    overlays = _intra_run_overlay_payloads(metadata)
+    if generation_plan is None or not overlays:
+        return generation_plan, None
+
+    approved_modules = list(getattr(generation_plan, "approved_modules", ()) or ())
+    symbols_to_reuse = list(getattr(generation_plan, "symbols_to_reuse", ()) or ())
+    lane_reusable_primitives = list(
+        getattr(generation_plan, "lane_reusable_primitives", ()) or ()
+    )
+    backend_helper_refs = list(getattr(generation_plan, "backend_helper_refs", ()) or ())
+    backend_market_binding_refs = list(
+        getattr(generation_plan, "backend_market_binding_refs", ()) or ()
+    )
+
+    candidate_ids: list[str] = []
+    target_ids: list[str] = []
+    consumed_candidate_ids: list[str] = []
+    applied_inputs: list[str] = []
+    obligation_kinds: list[str] = []
+    unapplied_obligations: list[dict[str, Any]] = []
+
+    for overlay in overlays:
+        candidate_id = str(overlay.get("candidate_id") or "").strip()
+        target_id = str(overlay.get("target_id") or "").strip()
+        if candidate_id:
+            candidate_ids.append(candidate_id)
+        if target_id:
+            target_ids.append(target_id)
+        consumed_this_candidate = False
+        for obligation in _overlay_obligations(overlay):
+            kind = str(obligation.get("kind") or "").strip()
+            if kind:
+                obligation_kinds.append(kind)
+            if kind in {"required_primitive", "callable_signature"}:
+                if obligation.get("available") is False:
+                    unapplied_obligations.append(
+                        {
+                            "candidate_id": candidate_id,
+                            "kind": kind,
+                            "reason": "not_available",
+                        }
+                    )
+                    continue
+                ref = _overlay_qualified_ref(obligation)
+                module = _overlay_module(ref, obligation)
+                symbol = _overlay_symbol(ref, obligation)
+                if not module and not symbol and not ref:
+                    unapplied_obligations.append(
+                        {
+                            "candidate_id": candidate_id,
+                            "kind": kind,
+                            "reason": "missing_ref",
+                        }
+                    )
+                    continue
+                if module:
+                    approved_modules.append(module)
+                    applied_inputs.append("generation_plan.approved_modules")
+                if symbol:
+                    symbols_to_reuse.append(symbol)
+                    applied_inputs.append("generation_plan.symbols_to_reuse")
+                if ref:
+                    lane_reusable_primitives.append(ref)
+                    backend_helper_refs.append(ref)
+                    applied_inputs.append("generation_plan.lane_reusable_primitives")
+                    applied_inputs.append("generation_plan.backend_helper_refs")
+                consumed_this_candidate = True
+            elif kind == "comparison_contract":
+                binding = str(obligation.get("binding") or "").strip()
+                selected_route = str(obligation.get("selected_route") or "").strip()
+                if binding:
+                    backend_helper_refs.append(binding)
+                    applied_inputs.append("generation_plan.backend_helper_refs")
+                    consumed_this_candidate = True
+                if selected_route:
+                    applied_inputs.append("request.metadata.selected_route_evidence")
+                    consumed_this_candidate = True
+            elif kind == "market_binding":
+                binding_ref = str(
+                    obligation.get("binding")
+                    or obligation.get("alias")
+                    or obligation.get("market_binding")
+                    or ""
+                ).strip()
+                if binding_ref:
+                    backend_market_binding_refs.append(binding_ref)
+                    applied_inputs.append("generation_plan.backend_market_binding_refs")
+                    consumed_this_candidate = True
+            else:
+                unapplied_obligations.append(
+                    {
+                        "candidate_id": candidate_id,
+                        "kind": kind or "unknown",
+                        "reason": "unsupported_obligation_kind",
+                    }
+                )
+        if consumed_this_candidate and candidate_id:
+            consumed_candidate_ids.append(candidate_id)
+
+    applied_inputs = _unique_strings(applied_inputs)
+    consumption = {
+        "overlay_count": len(overlays),
+        "candidate_ids": _unique_strings(candidate_ids),
+        "target_ids": _unique_strings(target_ids),
+        "consumed": bool(applied_inputs),
+        "consumed_candidate_ids": _unique_strings(consumed_candidate_ids),
+        "applied_inputs": applied_inputs,
+        "obligation_kinds": _unique_strings(obligation_kinds),
+        "unapplied_obligations": unapplied_obligations,
+    }
+    if not applied_inputs:
+        return generation_plan, consumption
+
+    updated_plan = replace(
+        generation_plan,
+        approved_modules=tuple(_unique_strings(approved_modules)),
+        symbols_to_reuse=tuple(_unique_strings(symbols_to_reuse)),
+        lane_reusable_primitives=tuple(_unique_strings(lane_reusable_primitives)),
+        backend_helper_refs=tuple(_unique_strings(backend_helper_refs)),
+        backend_market_binding_refs=tuple(
+            _unique_strings(backend_market_binding_refs)
+        ),
+    )
+    return updated_plan, consumption
+
+
 def _compile_user_defined_request(request: PlatformRequest) -> CompiledPlatformRequest:
     """Compile a structured user-defined product into build/price execution artifacts."""
     from trellis.agent.user_defined_products import compile_user_defined_product
@@ -1108,6 +1304,14 @@ def _finalize_compiled_request(
         quant_summary = quant_challenger_packet_summary(pricing_plan)
         if quant_summary:
             request_metadata["quant_challenger_packet"] = quant_summary
+    overlay_consumption = None
+    if generation_plan is not None:
+        generation_plan, overlay_consumption = _apply_intra_run_overlay_consumption(
+            generation_plan,
+            request_metadata,
+        )
+        if overlay_consumption is not None:
+            request_metadata["intra_run_learning_overlay_consumption"] = overlay_consumption
     validation_contract = None
     if any(
         item is not None
@@ -1467,8 +1671,19 @@ def compile_build_request(
     measures: list | None = None,
     knowledge_profile: str | None = None,
     metadata: Mapping[str, object] | None = None,
+    semantic_contract=None,
+    knowledge_overlays: Any = None,
 ) -> CompiledPlatformRequest:
     """Compile a free-form build request through the canonical path."""
+    request_metadata = dict(metadata or {})
+    if knowledge_overlays is not None:
+        if isinstance(knowledge_overlays, Mapping):
+            overlay_payloads = [dict(knowledge_overlays)]
+        else:
+            overlay_payloads = [
+                dict(item) for item in knowledge_overlays if isinstance(item, Mapping)
+            ]
+        request_metadata["intra_run_learning_overlays"] = overlay_payloads
     request = PlatformRequest(
         request_id=_new_request_id("executor", "build"),
         request_type="build",
@@ -1480,7 +1695,7 @@ def compile_build_request(
         measures=_normalize_measures(measures),
         model=model,
         metadata={
-            **(metadata or {}),
+            **request_metadata,
             **(
                 {"knowledge_profile": knowledge_profile}
                 if knowledge_profile is not None
@@ -1488,6 +1703,13 @@ def compile_build_request(
             ),
         },
     )
+    if semantic_contract is not None:
+        return _compile_semantic_request(
+            request=request,
+            semantic_contract=semantic_contract,
+            reason="semantic_contract_request",
+            preferred_method=preferred_method,
+        )
     semantic_contract = _draft_semantic_contract(
         description,
         instrument_type=instrument_type,

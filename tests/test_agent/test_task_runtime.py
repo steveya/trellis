@@ -89,6 +89,180 @@ def test_run_task_passes_force_rebuild_and_validation():
     monkeypatch.undo()
 
 
+def test_run_task_strict_mode_does_not_retry_failed_target():
+    from trellis.agent.task_runtime import run_task
+
+    calls: list[dict] = []
+
+    class FailedResult:
+        success = False
+        attempts = 2
+        gap_confidence = 0.4
+        knowledge_gaps = ["missing cookbook"]
+        payoff_cls = None
+        failures = ["helper() got an unexpected keyword argument 'resolved'"]
+        reflection = {
+            "lesson_captured": "fd_044",
+            "gaps_identified": ["Missing helper signature contract"],
+        }
+        agent_observations = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FailedResult()
+
+    result = run_task(
+        {"id": "T20", "title": "Heston ADI PDE"},
+        market_state=object(),
+        build_fn=fake_build,
+        recovery_mode="strict",
+        timer=iter([0.0, 1.0]).__next__,
+        now_fn=lambda: datetime(2026, 3, 24, 12, 0, 0),
+    )
+
+    assert len(calls) == 1
+    assert "knowledge_overlays" not in calls[0]
+    assert result["success"] is False
+    assert result["recovery_mode"] == "strict"
+    assert result["recovery_attempts"] == []
+
+
+def test_run_task_assisted_mode_retries_once_with_candidate_overlay():
+    from trellis.agent.task_runtime import run_task
+
+    calls: list[dict] = []
+
+    class FailedResult:
+        success = False
+        attempts = 2
+        gap_confidence = 0.4
+        knowledge_gaps = ["missing cookbook"]
+        payoff_cls = None
+        failures = ["resolve_double_barrier_inputs() got an unexpected keyword argument 'spot'"]
+        reflection = {
+            "lesson_captured": "fd_045",
+            "gaps_identified": [
+                "Missing cookbook guidance for adapting market-state fields "
+                "into barrier helper inputs"
+            ],
+        }
+        agent_observations = [
+            {
+                "agent": "quant",
+                "kind": "decision",
+                "summary": "Selected pricing method `pde_solver`",
+            }
+        ]
+
+    class RecoveredResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.8
+        knowledge_gaps = []
+        payoff_cls = type("RecoveredPayoff", (), {})
+        failures = []
+        reflection = {}
+        agent_observations = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FailedResult() if len(calls) == 1 else RecoveredResult()
+
+    result = run_task(
+        {"id": "T22", "title": "Double barrier PDE"},
+        market_state=object(),
+        build_fn=fake_build,
+        recovery_mode="assisted",
+        timer=iter([0.0, 2.0]).__next__,
+        now_fn=lambda: datetime(2026, 3, 24, 12, 0, 0),
+    )
+
+    assert len(calls) == 2
+    assert calls[1]["request_metadata"]["intra_run_learning_retry"]["target_id"] == "T22"
+    assert calls[1]["request_metadata"]["intra_run_learning_retry"]["attempt"] == 1
+    assert calls[1]["knowledge_overlays"][0]["target_id"] == "T22"
+    assert calls[1]["knowledge_overlays"][0]["patch_type"] == "cookbook_patch"
+    assert result["success"] is True
+    assert result["attempts"] == 3
+    assert result["recovery_mode"] == "assisted"
+    assert result["recovery_attempts"][0]["decision"] == "retry_with_candidate_knowledge"
+    assert result["recovery_attempts"][0]["recovered"] is True
+    retry_attribution = result["recovery_attempts"][0]["retry_attribution"]
+    assert retry_attribution["attribution_kind"] == "contract_evidence_consumed"
+    assert retry_attribution["contract_evidence_consumed"] is True
+    assert retry_attribution["deterministic_input_changed"] is True
+    assert retry_attribution["changed_input_fields"] == [
+        "knowledge_overlays",
+        "request_metadata.intra_run_learning_retry",
+    ]
+    assert retry_attribution["repair_obligation_count"] == 1
+    assert retry_attribution["outcome_change"]["success_changed"] is True
+    assert result["intra_run_learning"]["overlay_retry_count"] == 1
+    assert result["intra_run_learning"]["contract_evidence_consumed"] is True
+    assert result["intra_run_learning"]["deterministic_input_changed"] is True
+    assert result["intra_run_learning"]["retry_attribution_kind"] == (
+        "contract_evidence_consumed"
+    )
+    assert result["learning"]["intra_run_learning"]["contract_evidence_consumed"] is True
+    assert result["learning"]["intra_run_learning"]["deterministic_input_changed"] is True
+
+
+def test_run_task_assisted_mode_skips_prose_only_candidate_overlay():
+    from trellis.agent.task_runtime import run_task
+
+    calls: list[dict] = []
+
+    class FailedResult:
+        success = False
+        attempts = 2
+        gap_confidence = 0.4
+        knowledge_gaps = ["missing cookbook"]
+        payoff_cls = None
+        failures = ["generated adapter failed post-build validation"]
+        reflection = {
+            "gaps_identified": [
+                "Missing cookbook guidance for autocallable event branching"
+            ],
+        }
+        agent_observations = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FailedResult()
+
+    result = run_task(
+        {"id": "T107", "title": "Autocallable MC"},
+        market_state=object(),
+        build_fn=fake_build,
+        recovery_mode="assisted",
+        timer=iter([0.0, 2.0]).__next__,
+        now_fn=lambda: datetime(2026, 3, 24, 12, 0, 0),
+    )
+
+    assert len(calls) == 1
+    assert "knowledge_overlays" not in calls[0]
+    assert result["success"] is False
+    assert result["recovery_attempts"][0]["decision"] == (
+        "candidate_overlay_insufficient_contract"
+    )
+    assert result["recovery_attempts"][0]["retryable"] is False
+    assert result["recovery_attempts"][0]["contract_completeness"] == 0.0
+    assert "missing_structured_repair_obligation" in (
+        result["recovery_attempts"][0]["skip_reasons"]
+    )
+    assert result["intra_run_learning"]["overlay_retry_count"] == 0
+    assert result["intra_run_learning"]["overlay_candidate_count"] == 1
+    assert result["intra_run_learning"]["retryable"] is False
+    retry_attribution = result["recovery_attempts"][0]["retry_attribution"]
+    assert retry_attribution["attribution_kind"] == "candidate_not_retryable"
+    assert retry_attribution["contract_evidence_consumed"] is False
+    assert retry_attribution["deterministic_input_changed"] is False
+    assert result["intra_run_learning"]["contract_evidence_consumed"] is False
+    assert result["intra_run_learning"]["deterministic_input_changed"] is False
+    assert result["learning"]["intra_run_learning"]["contract_evidence_consumed"] is False
+    assert result["learning"]["intra_run_learning"]["deterministic_input_changed"] is False
+
+
 def test_run_task_replays_the_same_simulation_identity_for_the_same_request_and_snapshot():
     from trellis.agent.task_runtime import run_task
 
@@ -722,6 +896,17 @@ def test_task_to_instrument_type_uses_shared_lower_layer_mapping():
     ) == "cdo"
 
 
+def test_task_to_instrument_type_prefers_autocallable_over_barrier_trait_text():
+    from trellis.agent.task_runtime import task_to_instrument_type
+
+    assert task_to_instrument_type(
+        {
+            "id": "T107",
+            "title": "Autocallable note: MC with barrier + coupon + early redemption",
+        }
+    ) == "autocallable"
+
+
 def test_task_to_instrument_identity_records_text_fallback_source():
     from trellis.agent.task_runtime import task_to_instrument_identity
 
@@ -734,6 +919,191 @@ def test_task_to_instrument_identity_records_text_fallback_source():
 
     assert resolution.instrument_type == "cdo"
     assert resolution.source == "task.title_or_description"
+
+
+def test_task_to_instrument_type_uses_cross_validation_target_hints():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T23",
+            "title": "Crank-Nicolson Rannacher smoothing for discontinuous payoffs",
+            "cross_validate": {
+                "internal": ["cn_rannacher", "cn_standard"],
+                "analytical": "black_scholes_digital",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "digital_option"
+    assert resolution.source == "task.title_description_or_targets"
+
+
+def test_task_to_instrument_type_uses_black_scholes_target_hint_for_vanilla():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T42",
+            "title": "COS adaptive truncation for extreme parameters",
+            "cross_validate": {
+                "internal": ["cos_adaptive", "cos_fixed"],
+                "analytical": "black_scholes",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_description_or_targets"
+
+
+def test_task_to_instrument_type_uses_merton_target_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T33",
+            "title": "Merton jump-diffusion MC vs FFT",
+            "cross_validate": {
+                "internal": ["merton_mc", "merton_fft"],
+                "external": ["quantlib"],
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
+def test_task_to_instrument_type_uses_sabr_hagan_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T34",
+            "title": "SABR MC simulation vs Hagan implied vol",
+            "cross_validate": {
+                "internal": ["sabr_mc", "sabr_hagan_analytical"],
+                "external": ["quantlib"],
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
+def test_task_to_instrument_type_uses_variance_gamma_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T41",
+            "title": "Variance Gamma: COS vs MC",
+            "cross_validate": {
+                "internal": ["vg_cos", "vg_mc"],
+                "analytical": "madan_carr_chang_reference",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
+def test_task_to_instrument_type_uses_cgmy_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T45",
+            "title": "CGMY / tempered stable process via COS",
+            "cross_validate": {
+                "internal": ["cgmy_cos", "cgmy_mc"],
+                "analytical": "cgmy_reference_values",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
+def test_task_to_instrument_type_uses_kou_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T58",
+            "title": "Kou double-exponential jump: FFT vs MC",
+            "cross_validate": {
+                "internal": ["kou_fft", "kou_mc"],
+                "analytical": "kou_reference_values",
+            },
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
+def test_task_to_instrument_type_uses_bates_hint_for_vanilla_option():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    resolution = task_to_instrument_identity(
+        {
+            "id": "T44",
+            "title": "Bates model (Heston + jumps): FFT vs MC",
+            "cross_validate": {"internal": ["bates_fft", "bates_mc"]},
+        }
+    )
+
+    assert resolution.instrument_type == "european_option"
+    assert resolution.source == "task.title_or_description"
+
+
+def test_task_to_instrument_type_uses_short_rate_bond_hint_for_vasicek_cir_bond_tasks():
+    from trellis.agent.task_runtime import task_to_instrument_identity
+
+    vasicek = task_to_instrument_identity(
+        {
+            "id": "T56",
+            "title": "Vasicek bond pricing: tree vs analytical",
+            "cross_validate": {"internal": ["vasicek_tree", "vasicek_analytical"]},
+        }
+    )
+    cir = task_to_instrument_identity(
+        {
+            "id": "T57",
+            "title": "CIR bond pricing: tree vs analytical",
+            "cross_validate": {"internal": ["cir_tree", "cir_analytical"]},
+        }
+    )
+
+    assert vasicek.instrument_type == "short_rate_bond"
+    assert vasicek.source == "task.title_or_description"
+    assert cir.instrument_type == "short_rate_bond"
+    assert cir.source == "task.title_or_description"
+
+
+def test_comparison_harness_maps_turnbull_wakeman_target_to_analytical():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    plan = build_comparison_harness_plan(
+        {
+            "id": "T29",
+            "title": "Asian option (arithmetic average): MC vs Turnbull-Wakeman",
+            "construct": "monte_carlo",
+            "cross_validate": {
+                "internal": ["mc_asian", "turnbull_wakeman_approx"],
+            },
+        }
+    )
+
+    methods = {target.target_id: target.preferred_method for target in plan.targets}
+
+    assert methods["mc_asian"] == "monte_carlo"
+    assert methods["turnbull_wakeman_approx"] == "analytical"
 
 
 def test_build_market_state_for_task_materializes_short_rate_comparison_regime(monkeypatch):
@@ -865,6 +1235,10 @@ def test_run_task_persists_latest_record(monkeypatch):
     assert result["task_diagnosis_latest_packet_path"] == "/tmp/task_runs/diagnostics/latest/T13.json"
     assert result["task_diagnosis_latest_dossier_path"] == "/tmp/task_runs/diagnostics/latest/T13.md"
     assert result["task_diagnosis_headline"] == "Demo task completed successfully."
+    assert result["failure_bucket"] == "success"
+    assert result["diagnosis_headline"] == "Demo task completed successfully."
+    assert result["diagnosis_decision_stage"] == "completed"
+    assert result["diagnosis_next_action"] == "No action required."
     assert result["task_diagnosis_persist_error"] == ""
     assert result["task_diagnosis_persist_skipped"] == ""
 
@@ -962,6 +1336,68 @@ def test_run_task_marks_cassette_replay_runs_and_persists_metadata(monkeypatch, 
     assert persisted["result"]["llm_cassette"]["path"] == str(cassette_path)
     assert result["task_diagnosis_packet_path"] == "/tmp/task_runs/diagnostics/history/T13/run.json"
     assert result["task_diagnosis_dossier_path"] == "/tmp/task_runs/diagnostics/history/T13/run.md"
+
+
+def test_run_task_persists_execution_mode_override_metadata(monkeypatch):
+    from trellis.agent.task_runtime import run_task
+
+    persisted: dict[str, object] = {}
+    cassette_metadata = {
+        "mode": "deterministic_replay",
+        "name": "T13",
+        "path": "/tmp/cassettes/T13.yaml",
+        "stale_policy": "error",
+        "used": False,
+    }
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.8
+        knowledge_gaps = []
+        payoff_cls = type("FakePayoff", (), {})
+        failures = []
+        reflection = {}
+
+    def fake_build(**kwargs):
+        return FakeResult()
+
+    def fake_persist(task, result, *, root, storage_layout, persisted_at=None):
+        persisted["task"] = task
+        persisted["result"] = dict(result)
+        return {
+            "history_path": "/tmp/task_runs/history/T13/run.json",
+            "latest_path": "/tmp/task_runs/latest/T13.json",
+            "latest_index_path": "/tmp/task_results_latest.json",
+            "diagnosis_packet_path": "/tmp/task_runs/diagnostics/history/T13/run.json",
+            "diagnosis_dossier_path": "/tmp/task_runs/diagnostics/history/T13/run.md",
+            "latest_diagnosis_packet_path": "/tmp/task_runs/diagnostics/latest/T13.json",
+            "latest_diagnosis_dossier_path": "/tmp/task_runs/diagnostics/latest/T13.md",
+            "diagnosis_headline": "Replay task completed successfully.",
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+            "diagnosis_persist_error": "",
+            "diagnosis_persist_skipped": "",
+        }
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        fake_persist,
+    )
+
+    result = run_task(
+        {"id": "T13", "title": "European call: theta-method convergence order"},
+        market_state=object(),
+        build_fn=fake_build,
+        execution_mode_override="deterministic_replay",
+        llm_cassette_metadata=cassette_metadata,
+    )
+
+    assert result["execution_mode"] == "deterministic_replay"
+    assert result["llm_cassette"] == cassette_metadata
+    assert persisted["result"]["execution_mode"] == "deterministic_replay"
+    assert persisted["result"]["llm_cassette"] == cassette_metadata
 
 
 def test_run_task_forwards_isolated_task_run_storage(monkeypatch):
@@ -1255,6 +1691,469 @@ def test_run_task_carries_stochastic_vol_problem_metadata_for_comparison_task(mo
     assert qe_target["repair_packet"] is None
     assert qe_target["solver_target"] == "monte_carlo_qe"
     assert qe_target["validation_bundle"] == "heston:monte_carlo"
+
+
+def test_task_runtime_bridges_sparse_proof_mc_rows_to_vanilla_option_contract():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] in {"T25", "T26", "T31", "T32"}
+    }
+
+    assert set(tasks) == {"T25", "T26", "T31", "T32"}
+    for task in tasks.values():
+        contract = task_to_semantic_contract(task)
+        assert contract is not None
+        summary = semantic_contract_summary(contract)
+        assert summary["semantic_id"] == "vanilla_option"
+        assert summary["product"]["underlying"] == {
+            "asset_class": "equity",
+            "identifiers": ["SPX"],
+        }
+        assert summary["product"]["option_type"] == "call"
+        assert summary["product"]["exercise_style"] == "european"
+        assert summary["product"]["observation_schedule"] == ["2025-11-15"]
+        assert summary["methods"]["preferred_method"] == "monte_carlo"
+
+
+def test_task_runtime_bridges_sparse_cev_row_to_cev_route_contract():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T15"
+    )
+
+    contract = task_to_semantic_contract(task)
+
+    assert contract is not None
+    assert contract.product.model_family == "cev_diffusion"
+    assert "cev_process" in contract.product.payoff_traits
+    assert contract.blueprint.primitive_families == ("cev_theta_pde", "cev_spot_lattice")
+    summary = semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "vanilla_option"
+    assert summary["product"]["underlying"] == {
+        "asset_class": "equity",
+        "identifiers": ["SPX"],
+    }
+    assert summary["product"]["option_type"] == "call"
+    assert summary["product"]["exercise_style"] == "european"
+    assert summary["methods"]["preferred_method"] == "pde_solver"
+    assert summary["blueprint"]["primitive_families"] == ["cev_theta_pde", "cev_spot_lattice"]
+
+
+def test_task_runtime_bridges_sparse_lsm_basis_row_to_american_contract():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T27"
+    )
+
+    contract = task_to_semantic_contract(task)
+
+    assert contract is not None
+    summary = semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "american_option"
+    assert summary["product"]["underlying"] == {
+        "asset_class": "equity",
+        "identifiers": ["SPX"],
+    }
+    assert summary["product"]["option_type"] == "put"
+    assert summary["product"]["exercise_style"] == "american"
+    assert summary["methods"]["preferred_method"] == "monte_carlo"
+
+
+def test_sparse_rate_pde_proof_row_blocks_honestly_without_build(monkeypatch, tmp_path, capsys):
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T18"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T18 honest block should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "blocked",
+            "diagnosis_headline": "Sparse proof row blocked honestly.",
+            "diagnosis_decision_stage": "blocked",
+            "diagnosis_next_action": "Specify the rate payoff and schedule before pricing.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["expected_honest_block"] is True
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert classify_task_result(result) == "blocked"
+    assert result["failure_bucket"] == "blocked"
+    assert result["attempts"] == 0
+    assert result["blocker_details"]["reason"] == "proof_legacy_under_specified_rate_pde"
+    assert "semantic_product_shape" not in "\n".join(result["failures"])
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
+
+
+def test_sparse_lsm_basis_proof_row_uses_deterministic_local_targets(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T27"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T27 basis proof targets should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_headline": "T27 deterministic basis proof passed.",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["attempts"] == 0
+    assert result["instrument_type"] == "american_option"
+    assert result["instrument_identity_source"] == "semantic_contract.product.instrument_class"
+    assert result["comparison_targets"] == [
+        "polynomial",
+        "laguerre",
+        "hermite",
+        "chebyshev",
+        "high_step_tree_2000",
+    ]
+    assert result["cross_validation"]["status"] == "passed"
+    assert result["cross_validation"]["reference_target"] == "high_step_tree_2000"
+    assert set(result["cross_validation"]["successful_targets"]) == {
+        "polynomial",
+        "laguerre",
+        "hermite",
+        "chebyshev",
+        "high_step_tree_2000",
+    }
+    assert {
+        target_id: payload["payoff_class"]
+        for target_id, payload in result["method_results"].items()
+    } == {
+        "polynomial": "ProofAmericanLSMPolynomialPayoff",
+        "laguerre": "ProofAmericanLSMLaguerrePayoff",
+        "hermite": "ProofAmericanLSMHermitePayoff",
+        "chebyshev": "ProofAmericanLSMChebyshevPayoff",
+        "high_step_tree_2000": "ProofAmericanHighStepTreePayoff",
+    }
+
+
+def test_sparse_cva_proof_row_uses_deterministic_counterparty_targets(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T52"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T52 counterparty proof targets should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_headline": "T52 deterministic counterparty proof passed.",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["attempts"] == 0
+    assert result["comparison_targets"] == ["mc_cva", "analytical_cva_approx"]
+    assert result["cross_validation"]["status"] == "passed"
+    assert set(result["cross_validation"]["successful_targets"]) == {
+        "mc_cva",
+        "analytical_cva_approx",
+    }
+    assert {
+        target_id: payload["payoff_class"]
+        for target_id, payload in result["method_results"].items()
+    } == {
+        "mc_cva": "ProofInterestRateSwapMCVAPayoff",
+        "analytical_cva_approx": "ProofInterestRateSwapAnalyticalCVAApproxPayoff",
+    }
+
+
+def test_sparse_wrong_way_proof_row_uses_independent_cva_reference(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T54"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T54 counterparty proof targets should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_headline": "T54 deterministic wrong-way proof passed.",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["attempts"] == 0
+    assert result["comparison_targets"] == ["correlated_cva", "independent_cva"]
+    assert result["cross_validation"]["status"] == "passed"
+    assert result["cross_validation"]["reference_target"] == "independent_cva"
+    assert result["cross_validation"]["comparison_relations"] == {"correlated_cva": ">="}
+    assert result["cross_validation"]["prices"]["correlated_cva"] > result["cross_validation"]["prices"]["independent_cva"]
+    assert result["method_results"]["independent_cva"]["reference_target"] is True
+
+
+def test_sparse_credit_index_option_row_uses_deterministic_spread_targets(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T55"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T55 credit-index proof targets should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_headline": "T55 deterministic credit-index proof passed.",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["attempts"] == 0
+    assert result["instrument_type"] == "credit_index_option"
+    assert result["comparison_targets"] == ["black_on_spread", "mc_credit_index"]
+    assert result["cross_validation"]["status"] == "passed"
+    assert set(result["cross_validation"]["successful_targets"]) == {
+        "black_on_spread",
+        "mc_credit_index",
+    }
+    assert {
+        target_id: payload["payoff_class"]
+        for target_id, payload in result["method_results"].items()
+    } == {
+        "black_on_spread": "ProofCreditIndexBlackOnSpreadPayoff",
+        "mc_credit_index": "ProofCreditIndexMonteCarloPayoff",
+    }
+
+
+def test_sparse_local_vol_row_uses_deterministic_pde_and_mc_targets(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T59"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T59 local-vol proof targets should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_headline": "T59 deterministic local-vol proof passed.",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is True
+    assert result["attempts"] == 0
+    assert result["comparison_targets"] == ["dupire_pde", "local_vol_mc"]
+    assert result["cross_validation"]["status"] == "passed"
+    assert set(result["cross_validation"]["successful_targets"]) == {
+        "dupire_pde",
+        "local_vol_mc",
+    }
+    assert {
+        target_id: payload["payoff_class"]
+        for target_id, payload in result["method_results"].items()
+    } == {
+        "dupire_pde": "ProofLocalVolDupirePDEPayoff",
+        "local_vol_mc": "ProofLocalVolMonteCarloPayoff",
+    }
+
+
+def test_sparse_slv_row_runs_heston_target_and_blocks_missing_leverage(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T60"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("T60 should use deterministic heston target and SLV repair packet")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "blocked",
+            "diagnosis_headline": "T60 SLV leverage contract blocked honestly.",
+            "diagnosis_decision_stage": "blocked",
+            "diagnosis_next_action": "Supply a leverage-function contract before SLV pricing.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=None,
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert classify_task_result(result) == "blocked"
+    assert result["attempts"] == 0
+    assert result["method_results"]["heston_mc"]["success"] is True
+    assert result["method_results"]["heston_mc"]["payoff_class"] == "ProofHestonMonteCarloPayoff"
+    slv_result = result["method_results"]["slv_mc"]
+    assert slv_result["success"] is False
+    assert slv_result["blocker_details"]["repair_packet"]["packet_type"] == (
+        "missing_slv_lsv_leverage_contract"
+    )
+    assert result["blocker_details"]["method_targets"] == ["slv_mc"]
+    assert result["cross_validation"]["successful_targets"] == ["heston_mc"]
+    assert result["cross_validation"]["status"] == "insufficient_results"
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
 def test_cross_validate_comparison_task_prices_reused_fx_modules():
@@ -1933,7 +2832,7 @@ def test_run_task_skips_promotion_candidates_when_cross_validation_fails(monkeyp
     assert result["artifacts"]["promotion_candidate_paths"] == []
 
 
-def test_run_task_aggregates_method_blockers_for_comparison_failures():
+def test_run_task_aggregates_method_blockers_for_comparison_failures(capsys):
     from trellis.agent.evals import classify_task_result
     from trellis.agent.task_runtime import run_task
 
@@ -2005,6 +2904,91 @@ def test_run_task_aggregates_method_blockers_for_comparison_failures():
             "path_dependent_early_exercise_under_stochastic_vol"
         )
     assert classify_task_result(result) == "blocked"
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert result["attempts"] == 0
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
+
+
+def test_run_task_certifies_semantic_method_composition_gap(capsys):
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_runtime import run_task
+
+    class FakePayoff:
+        def __init__(self, price: float):
+            self.price = price
+
+    class FakeResult:
+        def __init__(self, *, success: bool, target: str):
+            self.success = success
+            self.attempts = 0
+            self.gap_confidence = 1.0 if not success else 0.0
+            self.knowledge_gaps = []
+            self.payoff_cls = (lambda: FakePayoff(1.0)) if success else None
+            self.failures = [] if success else [f"{target} blocked"]
+            self.agent_observations = []
+            self.knowledge_summary = {}
+            self.token_usage_summary = {}
+            self.intra_run_learning = {}
+            self.platform_request_id = f"executor_build_{target}"
+            self.platform_trace_path = None
+            self.analytical_trace_path = None
+            self.analytical_trace_text_path = None
+            self.audit_record_path = None
+            self.blocker_details = (
+                None
+                if success
+                else {
+                    "reason": "semantic_method_composition_gap",
+                    "semantic_family": "rate_style_swaption:bermudan",
+                    "requested_method": "monte_carlo",
+                    "available_capabilities": ["hull_white_factor_simulation"],
+                    "missing_capabilities": ["pathwise_numeraire_discounting"],
+                }
+            )
+            self.post_build_tracking = {}
+            self.reflection = {}
+
+    def fake_build(**kwargs):
+        target = kwargs["comparison_target"]
+        return FakeResult(success=target == "rate_tree", target=target)
+
+    result = run_task(
+        {
+            "id": "P005-UNIT",
+            "title": "Bermudan swaption composition gap",
+            "description": (
+                "Bermudan payer swaption. Exercise dates: 2025-11-15, "
+                "2026-05-15, 2026-11-15."
+            ),
+            "instrument_type": "swaption",
+            "construct": ["lattice", "monte_carlo"],
+        },
+        market_state=object(),
+        build_fn=fake_build,
+        payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
+        price_fn=lambda payoff, market_state: payoff.price,
+    )
+
+    assert result["success"] is False
+    assert classify_task_result(result) == "blocked"
+    assert result["expected_honest_block"] is True
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert result["blocker_details"]["reasons"] == [
+        "semantic_method_composition_gap"
+    ]
+    assert result["blocker_details"]["semantic_families"] == [
+        "rate_style_swaption:bermudan"
+    ]
+    assert result["blocker_details"]["requested_methods"] == ["monte_carlo"]
+    assert result["blocker_details"]["available_capabilities"] == [
+        "hull_white_factor_simulation"
+    ]
+    assert result["blocker_details"]["missing_capabilities"] == [
+        "pathwise_numeraire_discounting"
+    ]
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
 def test_build_result_payload_includes_blocker_details(tmp_path):
@@ -2277,6 +3261,34 @@ def test_effective_task_description_bootstraps_title_only_swaption_proof_tasks()
     assert "Expiry: 2025-11-15." in description
     assert "Hull-White model: mean reversion a=0.05, vol sigma=0.01." in description
     assert "Comparison targets: black76 (analytical), hw_tree (rate_tree), hw_mc (monte_carlo)" in description
+
+
+def test_p005_preserves_bermudan_extension_semantics():
+    from trellis.agent.semantic_contracts import semantic_contract_summary
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import _effective_task_description, task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml")
+        if task["id"] == "P005"
+    )
+
+    description = _effective_task_description(task)
+    contract = task_to_semantic_contract(task)
+
+    assert "Style: bermudan." in description
+    assert "Exercise dates: 2025-11-15, 2026-05-15, 2026-11-15." in description
+    assert contract is not None
+    summary = semantic_contract_summary(contract)
+    assert summary["semantic_id"] == "rate_style_swaption"
+    assert summary["product"]["exercise_style"] == "bermudan"
+    assert summary["product"]["observation_schedule"] == [
+        "2025-11-15",
+        "2026-05-15",
+        "2026-11-15",
+    ]
+    assert summary["methods"]["candidate_methods"] == ["analytical", "rate_tree"]
 
 
 def test_task_to_instrument_type_does_not_misclassify_cdo_or_nth_loss_distribution_titles():
@@ -2838,7 +3850,7 @@ def test_prepare_existing_task_infers_schema_for_matching_generic_module(monkeyp
             return 0.0
 
     module = ModuleType("trellis.instruments._agent.buildapayoff")
-    module.__doc__ = "Agent-generated payoff: Build a pricer for: FFT vs COS: GBM calls/puts across strikes and maturities."
+    module.__doc__ = "Agent-generated payoff: Cached schema inference benchmark."
     FFTvsCOSSpec.__module__ = module.__name__
     FFTvsCOSPricer.__module__ = module.__name__
     setattr(module, "FFTvsCOSSpec", FFTvsCOSSpec)
@@ -2867,7 +3879,7 @@ def test_prepare_existing_task_infers_schema_for_matching_generic_module(monkeyp
     )
 
     prepared = prepare_existing_task(
-        {"id": "T39", "title": "FFT vs COS: GBM calls/puts across strikes and maturities"},
+        {"id": "X_SCHEMA_INFERENCE", "title": "Cached schema inference benchmark"},
         model="test-model",
     )
 
@@ -3145,8 +4157,8 @@ def test_benchmark_existing_task_uses_cached_payoff(monkeypatch):
     assert result["max_seconds"] == pytest.approx(0.25)
 
 
-def test_benchmark_existing_task_supports_generic_cached_transform_task():
-    """A real cached generic transform task should benchmark without rebuild."""
+def test_benchmark_existing_task_supports_cached_transform_task():
+    """A cached transform task should retain its canonical instrument identity."""
     from trellis.agent.task_runtime import benchmark_existing_task, build_market_state
 
     result = benchmark_existing_task(
@@ -3160,8 +4172,8 @@ def test_benchmark_existing_task_supports_generic_cached_transform_task():
     )
 
     assert result["task_id"] == "T39"
-    assert result["instrument_type"] == "generic"
-    assert result["payoff_class"] == "FFTvsCOSPricer"
+    assert result["instrument_type"] == "european_option"
+    assert result["payoff_class"] == "EuropeanOptionAnalyticalPayoff"
     assert result["mean_seconds"] >= 0.0
     assert result["last_price"] > 0.0
 

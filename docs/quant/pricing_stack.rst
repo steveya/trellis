@@ -183,6 +183,40 @@ The first migrated vanilla cases now use that boundary directly:
   single-state diffusion resolver/GBM-support layer under
   ``trellis.models.resolution`` for settlement, maturity, spot, dividend,
   discount, vol, and characteristic-function binding
+- vanilla American/Bermudan equity Monte Carlo now resolves the
+  ``exercise_monte_carlo`` route to the exact helper
+  ``price_american_equity_option_lsm_monte_carlo(...)``. Thin adapters may
+  delegate to that helper for Longstaff-Schwartz path simulation and exercise
+  control instead of reimplementing GBM path construction in generated code.
+- FX single-barrier options now have dedicated analytical and Monte Carlo
+  helper-backed routes in ``trellis.models.fx_barrier_option``. These routes
+  bind spot FX, domestic discounting, foreign discounting, and Black volatility
+  explicitly instead of passing FX barrier tasks through the vanilla
+  Garman-Kohlhagen adapters. When an observation frequency is not supplied, the
+  FX analytical helper uses the Monte Carlo grid's effective monitoring
+  frequency for task-level cross-method parity.
+- equity variance-swap comparison targets now have a checked Monte Carlo
+  realised-variance route in ``trellis.models.variance_swap``. The MC helper
+  simulates annualised log-return variance under the market state's GBM
+  surface binding and reports both price and fair strike variance, while the
+  analytical route remains the log-contract style replication helper in
+  ``trellis.models.analytical.equity_exotics``. Variance swaps deliberately
+  skip the generic embedded-option flat-vega invariant; their proof contract is
+  price sanity plus cross-method fair-strike/price comparison, not option vega.
+- CEV European-vanilla proof targets have bounded helper surfaces for the
+  retained legacy comparison task: ``price_cev_option_pde(...)`` composes the
+  existing ``CEVOperator`` with the theta PDE solver, while
+  ``price_cev_option_tree(...)`` provides the matching spot-lattice comparison
+  route. These helpers are task-runner proof surfaces for explicit CEV
+  comparison targets, not a replacement for the generic agent assembly path.
+- Variance Gamma, CGMY, and Kou proof targets keep the same European vanilla
+  option product shape but select ``model_family=variance_gamma``,
+  ``model_family=cgmy``, or ``model_family=kou``. Transform/reference/MC
+  comparison targets bind through ``trellis.models.levy_option`` and require
+  explicit model parameters rather than inherited ``black_vol_surface``
+  inputs. The CGMY MC target is a bounded terminal-distribution comparator
+  from the characteristic function, and the Kou MC target is direct terminal
+  double-exponential jump sampling; neither is a pathwise Levy simulator.
 - the transform route uses that thin vanilla helper only for true
   ``equity_diffusion`` contracts; stochastic-volatility transform tasks such
   as Heston smile extraction now lower onto a checked Heston transform helper
@@ -192,6 +226,19 @@ The first migrated vanilla cases now use that boundary directly:
   onto a checked ``heston`` two-state helper, with explicit ``euler`` versus
   ``heston_qe`` scheme selection and the ``heston:monte_carlo`` validation
   bundle, instead of reusing the vanilla-equity GBM helper
+- stochastic-volatility PDE for European Heston vanilla options now has
+  bounded ADI binding and diagnostic scaffolding under
+  ``trellis.models.pde.heston_adi``. The route binding is
+  ``resolve_heston_adi_pde_inputs(...)`` plus
+  ``price_heston_option_adi_pde_result(...)``. The scaffold consumes canonical
+  ``kappa`` / ``theta`` / ``xi`` / ``rho`` / ``v0`` model parameters through
+  the Heston runtime binding and keeps Black vol surfaces as
+  market/calibration evidence rather than live Heston inputs. Optional
+  transform references are recorded as diagnostics and do not replace the PDE
+  scalar or the ADI input resolver. The variance grid uses a CIR
+  moment-dispersion upper bound, so high-vol-of-vol Heston fixtures keep useful
+  resolution around ``v0`` instead of spreading the grid out to an artificial
+  ``v0 + xi * sqrt(T)`` scale.
 - Heston calibration now has a bounded problem-IR adapter for single-expiry
   implied-vol smiles. Pricing routes consume explicit Heston model parameters
   from task specs, market state, synthetic fixtures, or recorded calibration
@@ -202,11 +249,13 @@ The first migrated vanilla cases now use that boundary directly:
   characteristic-function binding, required model parameters, nodes/weights,
   damping or contour policy, stabilization requirements, diagnostics, and the
   missing quadrature kernel plus validation bundle.
-- Bates-style affine jump stochastic-volatility tasks now lower to an explicit
-  blocker contract rather than a generic unsupported route. The contract names
-  the Heston base parameters, compound-Poisson lognormal jump parameters, the
-  missing characteristic-function capability, the missing Monte Carlo process
-  capability, and the jump-parameter validation requirements.
+- Bates-style affine jump stochastic-volatility European vanilla tasks now
+  lower to explicit ``model_family=bates`` route bindings backed by
+  ``trellis.models.bates_option``. The contract names the Heston base
+  parameters, compound-Poisson lognormal jump parameters, checked transform and
+  terminal Monte Carlo capabilities, and the jump-parameter validation
+  requirements. Bates calibration, path-dependent payoffs, early exercise, and
+  PDE/PIDE routes remain outside the checked boundary.
 - SLV/LSV targets now lower to an explicit leverage-function contract. The
   contract names the local-vol and Black-vol surface authority, Heston model
   parameters, leverage-function surface, recorded leverage calibration
@@ -219,9 +268,54 @@ The first migrated vanilla cases now use that boundary directly:
   summary, early-exercise control policy, Heston path-state coupling, and the
   target-specific PDE/Monte Carlo/transform blocker. These tasks remain
   expected honest blocks until those abstractions and solvers exist.
-- the local-vol vanilla helper remains a checked route-level wrapper, but it
-  now assembles and prices through ``trellis.models.monte_carlo.event_aware``
-  instead of maintaining a separate Monte Carlo engine/payoff loop
+- Single-barrier proof routes use
+  ``trellis.models.single_barrier_option`` for zero-rebate Black-Scholes
+  comparison targets. ``price_single_barrier_option_pde_result`` owns the
+  bounded one-dimensional grid with an absorbing barrier boundary and far
+  vanilla boundary; ``price_single_barrier_option_monte_carlo_result`` owns the
+  GBM path simulation, one ``BarrierMonitor``, notional scaling, and
+  deterministic discounting. Knock-in targets are derived by vanilla-minus-out
+  parity.
+- Double-barrier proof routes share
+  ``trellis.models.analytical.support.barriers`` for lower/upper barrier specs,
+  terminal payoff semantics, hit masks, and reduced-storage state payoffs.
+  ``trellis.models.double_barrier_option`` now provides the checked
+  ``price_double_barrier_option_pde_result`` and
+  ``price_double_barrier_option_monte_carlo_result`` surfaces. The PDE helper
+  owns the bounded Black-Scholes grid on ``[lower_barrier, upper_barrier]``,
+  absorbing boundaries, and knock-in/out parity; the Monte Carlo helper owns
+  the GBM engine binding, two barrier monitors, and deterministic discounting.
+- Digital proof routes now include a bounded one-dimensional PDE helper,
+  ``trellis.models.equity_option_pde.price_equity_digital_option_pde``. It
+  prices cash-or-nothing and asset-or-nothing equity digitals with the shared
+  Black-Scholes theta solver and optional Rannacher startup smoothing, so
+  Crank-Nicolson/Rannacher comparison targets can delegate to a checked helper
+  instead of regenerating discontinuous-terminal grid code.
+- Arithmetic-Asian proof routes keep the numerical method split explicit:
+  ``trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo``
+  owns the path-sampling MC comparison lane, while
+  ``price_arithmetic_asian_option_analytical`` owns the Turnbull-Wakeman
+  approximation lane. The analytical approximation is not treated as a Monte
+  Carlo primitive just because it appears in an Asian multi-method task.
+- Fixed-lookback MC proof routes use
+  ``trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo``
+  for the checked equity-diffusion comparison surface. The helper applies a
+  Brownian-bridge extrema correction so the MC path summary is aligned with the
+  continuous-monitoring fixed-strike analytical reference.
+- Single-underlier autocallable proof routes now use
+  ``trellis.models.autocallable.price_autocallable_monte_carlo_result`` as the
+  checked MC/QMC event helper. It owns exact GBM path simulation, fixed
+  observation-step mapping, first-trigger redemption, linear coupon accrual,
+  terminal protection, and deterministic discounting. The same helper handles
+  pseudo-MC and Sobol-QMC via the ``sampling`` argument, so Sobol is required
+  only for QMC comparison targets.
+- local-vol vanilla comparisons now use ``trellis.models.local_vol_option``
+  over one ``LocalVolVanillaOptionSpec``.  The Dupire PDE side assembles the
+  shared event-aware PDE substrate with ``operator_family=local_vol_1d`` and a
+  supplied local-vol surface; the MC side delegates to
+  ``trellis.models.monte_carlo.local_vol``.  This is a bounded European
+  vanilla local-vol route and intentionally rejects nonzero dividend yield on
+  the PDE side until the operator separates carry from discounting.
 - FX vanilla and quanto routes now expose semantic-facing helper kits in
   ``trellis.models.fx_vanilla`` and ``trellis.models.quanto_option`` so the
   checked analytical and Monte Carlo adapters can stay as thin shells over
@@ -233,6 +327,19 @@ The first migrated vanilla cases now use that boundary directly:
   discount/credit inputs, tranche bounds or portfolio horizon, and
   dependence-family controls without exposing the raw scalar copula kernels as
   the public route helper
+- bounded credit-index spread-option comparisons use
+  ``trellis.models.credit_index_option``. The Black-on-spread helper and the
+  antithetic lognormal MC helper share one ``CreditIndexOptionSpec`` carrying
+  forward spread, strike spread, spread volatility, index annuity, discounting,
+  and loss convention. This is a spread-option task helper, not an index-loss
+  curve, tranche, or base-correlation model.
+- capped/floored equity cliquet comparisons now have bounded analytical and
+  Monte Carlo helper surfaces: the analytical path integrates reset returns
+  with local/global caps and floors, while the Monte Carlo path delegates
+  reset-date GBM increments, clipping, antithetic sampling, and discounting to
+  ``trellis.models.monte_carlo.event_aware.price_equity_cliquet_option_monte_carlo``.
+  These helpers support the explicit capped/floored comparison task surface;
+  they do not imply arbitrary cliquet-book or path-contract coverage.
 
 The developer-facing notation and task-triage lifecycle for these
 stochastic-volatility buckets is maintained in
@@ -366,14 +473,26 @@ lattice helper. The route card still carries no lattice-construction or
 short-rate-input assembly instructions because the checked helper surface
 already owns that work.
 
-The analytical / PDE / FFT helper cohort now follows the same rule. The
-helper-backed Black76 swaption routes, the vanilla-equity PDE helper, the
-bounded event-aware PDE helper branches, and the vanilla-equity transform
-helper keep backend binding, admissibility, and validation ownership while
-dropping route-card adapter prose and backend notes once the checked helper
-surface already owns that assembly. Exact-helper validation now enforces the
-thin ``(market_state, spec, ...)`` call surface for those helpers instead of
-letting comparator or repair scaffolds rebuild raw market-input bundles inline.
+Plain zero-coupon bond comparison tasks under Vasicek or CIR use a separate
+``short_rate_zero_coupon_bond`` route. That route narrows the product to
+``instrument=short_rate_bond`` and ``payoff_family=discount_bond`` so it does
+not reuse ZCB-option or generic rate-tree artifacts. Analytical targets call
+``price_short_rate_zero_coupon_bond_analytical(...)`` and rate-tree targets
+call ``price_short_rate_zero_coupon_bond_tree(...)`` from
+``trellis.models.short_rate_bond``. The exact task binding may opt into
+benchmark defaults for sparse proof manifests, but the reusable helper itself
+does not treat equity/Heston model payloads or generic Black-vol surfaces as
+short-rate model parameters.
+
+The analytical / PDE / FFT support cohort now follows the same rule. The
+helper-backed Black76 swaption routes, the vanilla-equity PDE helper, bounded
+CEV PDE/tree proof helpers, bounded event-aware PDE helper branches, Heston ADI
+diagnostic scaffold, double-barrier payoff primitives, and vanilla-equity
+transform helper keep backend binding, admissibility, and validation ownership
+explicit. Exact-helper validation enforces the thin ``(market_state, spec,
+...)`` call surface only for true checked route helpers; primitive-only
+supports remain available for agent-written route assembly rather than
+bypassing it.
 
 For schedule-driven cap/floor strips lowered onto ``analytical_black76``, the
 typed schedule state now carries admissibility directly. Structural
@@ -547,10 +666,18 @@ xVA consumers. ``compute_exposure_metrics(...)`` now produces the first stable
 ``EE`` curve, trapezoidal ``EPE``, and ``PFE`` quantile curves at portfolio and
 per-netting-set levels. ``price_counterparty_xva(...)`` consumes the same
 semantic contract and exposure stack to compute bounded flat-hazard
-``CVA``/``DVA``/``FVA`` outputs under an explicit ``XVAAssumptionSet``. This is
-not a full enterprise counterparty-risk platform: ``MVA``/``KVA``, stochastic
-credit curves, capital models, legal enforceability workflows, and funding
-desk integration remain outside the checked contract.
+``CVA``/``DVA``/``FVA`` outputs under an explicit ``XVAAssumptionSet``.
+Task-facing IRS helpers now bind the supported vanilla swap future-value cube
+directly into that stack:
+``price_interest_rate_swap_cva_monte_carlo(...)`` and
+``price_interest_rate_swap_cva_analytical_approx(...)`` share the same
+flat-hazard exposure integration contract, while
+``price_interest_rate_swap_wrong_way_cva(...)`` applies a bounded pathwise
+default-intensity tilt against ``price_interest_rate_swap_independent_cva(...)``
+for wrong-way-risk comparisons. This is not a full enterprise counterparty-risk
+platform: ``MVA``/``KVA``, stochastic credit curves, capital models, legal
+enforceability workflows, and funding desk integration remain outside the
+checked contract.
 
 Those pod-risk workflows now also have a checked throughput baseline.
 ``trellis.analytics.benchmarking`` records scenario-cube execution,

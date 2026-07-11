@@ -128,6 +128,12 @@ class QuadratureTransformSemantics:
             "diagnostics": list(self.diagnostics),
             "validation_requirements": list(self.validation_requirements),
             "supported_now": self.supported_now,
+            "expected_honest_block": not self.supported_now,
+            "model_validator_policy": (
+                "skip_expected_honest_block"
+                if not self.supported_now
+                else "validate_when_executable"
+            ),
             "missing_components": list(self.missing_components),
             "evidence": list(self.evidence),
         }
@@ -199,6 +205,12 @@ class LeverageFunctionSemantics:
             "solver_requirements": list(self.solver_requirements),
             "validation_requirements": list(self.validation_requirements),
             "supported_now": self.supported_now,
+            "expected_honest_block": not self.supported_now,
+            "model_validator_policy": (
+                "skip_expected_honest_block"
+                if not self.supported_now
+                else "validate_when_executable"
+            ),
             "missing_components": list(self.missing_components),
             "evidence": list(self.evidence),
         }
@@ -394,9 +406,15 @@ def _classify_target(
     bucket = _target_bucket(target_text)
     solver_target = _solver_target(target_text, bucket)
     process_family = _process_family(context_text, bucket)
+    payoff_class = _payoff_class(context_text)
     semantics = _model_parameter_semantics(bucket, process_family)
     bindings = _market_bindings(bucket, process_family)
-    repair_packet = _repair_packet(bucket, target_id=target_id, text=target_text)
+    repair_packet = _repair_packet(
+        bucket,
+        target_id=target_id,
+        text=target_text,
+        payoff_class=payoff_class,
+    )
     unsupported = _unsupported_features(bucket, repair_packet)
     calibration_problem = _calibration_problem_semantics(
         bucket,
@@ -435,7 +453,7 @@ def _classify_target(
         bucket=bucket,
         solver_target=solver_target,
         process_family=process_family,
-        payoff_class=_payoff_class(context_text),
+        payoff_class=payoff_class,
         model_parameter_semantics=semantics,
         market_bindings=bindings,
         validation_bundle=_validation_bundle(bucket, process_family),
@@ -516,6 +534,8 @@ def _process_family(text: str, bucket: str) -> str:
 def _payoff_class(text: str) -> str:
     if _has_any(text, ("american_pathdep", "american path", "asian barrier")):
         return "path_dependent_early_exercise"
+    if _has_any(text, ("barrier", "asian", "lookback", "path dependent", "path_dependent")):
+        return "path_dependent_option"
     return "vanilla_option"
 
 
@@ -569,16 +589,29 @@ def _validation_bundle(bucket: str, process_family: str) -> str:
     return "heston:path_dependent_control"
 
 
-def _repair_packet(bucket: str, *, target_id: str, text: str) -> RepairPacket | None:
+def _repair_packet(
+    bucket: str,
+    *,
+    target_id: str,
+    text: str,
+    payoff_class: str,
+) -> RepairPacket | None:
     evidence = tuple(item for item in (target_id, _short_text_evidence(text)) if item)
     if bucket == AFFINE_JUMP_STOCHASTIC_VOL:
+        if _is_supported_bates_vanilla_target(
+            target_id,
+            text,
+            payoff_class=payoff_class,
+        ):
+            return None
         return RepairPacket(
-            packet_type="missing_affine_jump_stochastic_vol_kernel",
-            missing_primitive="bates_affine_jump_stochastic_vol_kernel",
+            packet_type="missing_bates_nonvanilla_route_contract",
+            missing_primitive="bates_nonvanilla_route_contract",
             summary=(
-                "Bates targets need an affine Heston-plus-jump characteristic "
-                "function and matching MC process contract."
+                "Bates support is currently bounded to European vanilla "
+                "FFT/COS and terminal Monte Carlo targets."
             ),
+            unsupported_class="bates_nonvanilla_or_unrecognized_target",
             evidence=evidence,
         )
     if bucket == SLV_LSV:
@@ -616,6 +649,27 @@ def _repair_packet(bucket: str, *, target_id: str, text: str) -> RepairPacket | 
             evidence=evidence,
         )
     return None
+
+
+def _is_supported_bates_vanilla_target(
+    target_id: str,
+    text: str,
+    *,
+    payoff_class: str,
+) -> bool:
+    if payoff_class != "vanilla_option":
+        return False
+    normalized = f"{target_id} {text}".lower().replace("-", "_")
+    return any(
+        marker in normalized
+        for marker in (
+            "bates_fft",
+            "bates_cos",
+            "bates_mc",
+            "bates_transform",
+            "bates_monte_carlo",
+        )
+    )
 
 
 def _calibration_problem_semantics(
@@ -658,7 +712,6 @@ def _affine_jump_process_semantics(
 ) -> AffineJumpStochasticVolSemantics | None:
     if bucket != AFFINE_JUMP_STOCHASTIC_VOL:
         return None
-    missing_primitive = "bates_affine_jump_stochastic_vol_kernel"
     return AffineJumpStochasticVolSemantics(
         process_family=process_family,
         base_process_family="heston",
@@ -681,8 +734,8 @@ def _affine_jump_process_semantics(
             "reject_black_vol_surface_as_model_parameters",
             "cross_validate_transform_and_monte_carlo_when_admitted",
         ),
-        supported_now=False,
-        missing_primitives=(missing_primitive,),
+        supported_now=True,
+        missing_primitives=(),
         evidence=tuple(item for item in (target_id, _short_text_evidence(text)) if item),
     )
 
@@ -915,7 +968,7 @@ def _unsupported_features(
 ) -> tuple[str, ...]:
     if repair_packet is not None and repair_packet.unsupported_class:
         return (repair_packet.unsupported_class,)
-    if bucket in {AFFINE_JUMP_STOCHASTIC_VOL, SLV_LSV}:
+    if bucket == SLV_LSV:
         return (bucket,)
     return ()
 

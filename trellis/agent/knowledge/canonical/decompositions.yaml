@@ -353,7 +353,10 @@
   modeling_requirements:
     - >-
       ROUTE HELPER: Use trellis.models.transforms.heston.price_heston_option_transform
-      for checked FFT/COS Heston vanilla pricing.
+      for checked FFT/COS Heston vanilla pricing. Heston ADI/PDE tasks must
+      still bind canonical model parameters explicitly and must not imply
+      recalibration from a Black vol surface without a recorded calibration
+      problem.
     - >-
       MARKET INPUTS: Read the underlier spot from the spec or market_state.spot
       and Heston kappa, theta, xi, rho, and v0 from market_state.model_parameters;
@@ -371,10 +374,14 @@
   features: [barrier, early_exercise, path_dependent, coupons, discounting]
   method: monte_carlo
   method_modules:
-    - trellis.models.monte_carlo.engine
-    - trellis.models.processes.gbm
+    - trellis.models.autocallable
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
+    - >-
+      USE CHECKED EVENT CONTRACT: Prefer
+      price_autocallable_monte_carlo_result(...) for fixed observation schedule,
+      first-trigger redemption, coupon accrual, terminal protection, discounting,
+      and pseudo/QMC sampling selection.
     - >-
       CONVERGENCE: Use at least 50,000 paths. Verify standard error <1%.
     - >-

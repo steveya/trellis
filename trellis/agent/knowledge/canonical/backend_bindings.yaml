@@ -135,6 +135,25 @@ bindings:
         symbol: stochastic_mesh
         role: exercise_control
         required: false
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [american, bermudan]
+          model_family: [equity, equity_diffusion]
+        primitives:
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+          - module: trellis.models.monte_carlo.lsm
+            symbol: longstaff_schwartz
+            role: exercise_control
+          - module: trellis.models.equity_option_monte_carlo
+            symbol: price_american_equity_option_lsm_monte_carlo
+            role: route_helper
+            required: false
 
   - route_id: monte_carlo_paths
     engine_family: monte_carlo
@@ -154,6 +173,17 @@ bindings:
         role: route_helper
     conditional_primitives:
       - when:
+          payoff_family: variance_swap
+          exercise_style: [none]
+        primitives:
+          - module: trellis.models.variance_swap
+            symbol: price_equity_variance_swap_monte_carlo
+            role: route_helper
+          - module: trellis.models.variance_swap
+            symbol: equity_variance_swap_outputs_monte_carlo
+            role: pricing_kernel
+            required: false
+      - when:
           payoff_family: credit_loss_distribution
           model_family: [credit_copula]
         primitives:
@@ -167,6 +197,121 @@ bindings:
         primitives:
           - module: trellis.models.monte_carlo.stochastic_vol
             symbol: price_heston_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [jump_diffusion]
+        primitives:
+          - module: trellis.models.merton_jump_diffusion_option
+            symbol: price_merton_jump_diffusion_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [sabr]
+        primitives:
+          - module: trellis.models.sabr_option
+            symbol: price_sabr_forward_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [variance_gamma]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_variance_gamma_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [cgmy]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_cgmy_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [kou]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_kou_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [bates]
+        primitives:
+          - module: trellis.models.bates_option
+            symbol: price_bates_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: autocallable
+        primitives:
+          - module: trellis.models.autocallable
+            symbol: price_autocallable_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.autocallable
+            symbol: AutocallableMonteCarloConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.autocallable
+            symbol: resolve_autocallable_inputs
+            role: market_binding
+      - when:
+          payoff_family: barrier_option
+          payoff_traits: [single_barrier]
+        primitives:
+          - module: trellis.models.single_barrier_option
+            symbol: price_single_barrier_option_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.single_barrier_option
+            symbol: SingleBarrierMonteCarloConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.single_barrier_option
+            symbol: resolve_single_barrier_inputs
+            role: market_binding
+          - module: trellis.models.single_barrier_option
+            symbol: single_barrier_state_payoff
+            role: payoff_primitive
+      - when:
+          payoff_family: barrier_option
+          payoff_traits: [double_barrier]
+        primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_monte_carlo_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierMonteCarloConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+          - module: trellis.models.analytical.support.barriers
+            symbol: double_barrier_state_payoff
+            role: payoff_primitive
+      - when:
+          payoff_family: asian_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.asian_option
+            symbol: price_arithmetic_asian_option_monte_carlo
+            role: route_helper
+      - when:
+          payoff_family: lookback_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.lookback_option
+            symbol: price_equity_fixed_lookback_option_monte_carlo
             role: route_helper
       - when:
           payoff_family: vanilla_option
@@ -201,6 +346,14 @@ bindings:
             role: route_helper
       - when: default
 
+  - route_id: monte_carlo_fx_barrier
+    engine_family: monte_carlo
+    route_family: monte_carlo
+    primitives:
+      - module: trellis.models.fx_barrier_option
+        symbol: price_fx_barrier_option_monte_carlo
+        role: route_helper
+
   - route_id: monte_carlo_fx_vanilla
     engine_family: monte_carlo
     route_family: monte_carlo
@@ -222,6 +375,14 @@ bindings:
       - module: trellis.models.monte_carlo.local_vol
         symbol: local_vol_european_vanilla_price
         role: pricing_kernel
+
+  - route_id: local_vol_pde
+    engine_family: pde_solver
+    route_family: pde_solver
+    primitives:
+      - module: trellis.models.local_vol_option
+        symbol: price_local_vol_option_pde
+        role: route_helper
 
   - route_id: qmc_sobol_paths
     engine_family: qmc
@@ -341,6 +502,14 @@ bindings:
             symbol: lattice_backward_induction
             role: backward_induction
 
+  - route_id: cev_spot_lattice
+    engine_family: lattice
+    route_family: equity_tree
+    primitives:
+      - module: trellis.models.equity_option_tree
+        symbol: price_cev_option_tree
+        role: route_helper
+
   - route_id: short_rate_bond_option
     engine_family: analytical
     route_family: analytical
@@ -362,6 +531,29 @@ bindings:
         primitives:
           - module: trellis.models.zcb_option_tree
             symbol: price_zcb_option_tree
+            role: route_helper
+
+  - route_id: short_rate_zero_coupon_bond
+    engine_family: analytical
+    route_family: analytical
+    conditional_route_family:
+      - when:
+          methods: [rate_tree]
+        route_family: rate_lattice
+      - when: default
+        route_family: analytical
+    conditional_primitives:
+      - when:
+          methods: [analytical]
+        primitives:
+          - module: trellis.models.short_rate_bond
+            symbol: price_short_rate_zero_coupon_bond_analytical
+            role: route_helper
+      - when:
+          methods: [rate_tree]
+        primitives:
+          - module: trellis.models.short_rate_bond
+            symbol: price_short_rate_zero_coupon_bond_tree
             role: route_helper
 
   - route_id: analytical_black76
@@ -461,6 +653,13 @@ bindings:
         primitives:
           - module: trellis.models.basket_option
             symbol: price_basket_option_analytical
+            role: route_helper
+      - when:
+          payoff_family: asian_option
+          exercise_style: [european]
+        primitives:
+          - module: trellis.models.asian_option
+            symbol: price_arithmetic_asian_option_analytical
             role: route_helper
       - when:
           contract_pattern:
@@ -591,6 +790,14 @@ bindings:
             symbol: year_fraction
             role: time_measure
 
+  - route_id: analytical_fx_barrier
+    engine_family: analytical
+    route_family: analytical
+    primitives:
+      - module: trellis.models.fx_barrier_option
+        symbol: price_fx_barrier_option_analytical
+        role: route_helper
+
   - route_id: analytical_garman_kohlhagen
     engine_family: analytical
     route_family: analytical
@@ -598,6 +805,49 @@ bindings:
       - module: trellis.models.fx_vanilla
         symbol: price_fx_vanilla_analytical
         role: route_helper
+
+  - route_id: sabr_hagan_analytical
+    engine_family: analytical
+    route_family: analytical
+    compatibility_alias_policy: internal_only
+    primitives:
+      - module: trellis.models.sabr_option
+        symbol: price_sabr_forward_option_hagan
+        role: route_helper
+      - module: trellis.models.sabr_option
+        symbol: resolve_sabr_forward_option_inputs
+        role: market_binding
+        required: false
+
+  - route_id: levy_reference_analytical
+    engine_family: analytical
+    route_family: analytical
+    compatibility_alias_policy: internal_only
+    conditional_primitives:
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [variance_gamma]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_variance_gamma_option_reference
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [cgmy]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_cgmy_option_reference
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [kou]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_kou_option_reference
+            role: route_helper
 
   - route_id: transform_fft
     engine_family: fft_pricing
@@ -610,6 +860,46 @@ bindings:
         primitives:
           - module: trellis.models.transforms.heston
             symbol: price_heston_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [jump_diffusion]
+        primitives:
+          - module: trellis.models.merton_jump_diffusion_option
+            symbol: price_merton_jump_diffusion_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [variance_gamma]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_variance_gamma_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [cgmy]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_cgmy_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [kou]
+        primitives:
+          - module: trellis.models.levy_option
+            symbol: price_kou_option_transform
+            role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [bates]
+        primitives:
+          - module: trellis.models.bates_option
+            symbol: price_bates_option_transform
             role: route_helper
       - when:
           payoff_family: credit_loss_distribution
@@ -625,6 +915,14 @@ bindings:
         primitives:
           - module: trellis.models.equity_option_transforms
             symbol: price_vanilla_equity_option_transform
+            role: route_helper
+      - when:
+          payoff_family: digital_option
+          exercise_style: [european]
+          model_family: [equity_diffusion]
+        primitives:
+          - module: trellis.models.equity_option_transforms
+            symbol: price_equity_digital_option_transform
             role: route_helper
       - when:
           payoff_family: basket_option
@@ -651,6 +949,30 @@ bindings:
     primitives:
       - module: trellis.models.equity_option_pde
         symbol: price_vanilla_equity_option_pde
+        role: route_helper
+
+  - route_id: cev_theta_pde
+    engine_family: pde_solver
+    route_family: pde_solver
+    primitives:
+      - module: trellis.models.equity_option_pde
+        symbol: price_cev_option_pde
+        role: route_helper
+
+  - route_id: heston_adi_2d
+    engine_family: pde_solver
+    route_family: pde_solver
+    aliases: [heston_adi_pde]
+    primitives:
+      - module: trellis.models.pde.heston_adi
+        symbol: resolve_heston_adi_pde_inputs
+        role: market_binding
+      - module: trellis.models.pde.heston_adi
+        symbol: HestonAdiPDEConfig
+        role: solver_config
+        required: false
+      - module: trellis.models.pde.heston_adi
+        symbol: price_heston_option_adi_pde_result
         role: route_helper
 
   - route_id: pde_theta_1d
@@ -683,6 +1005,62 @@ bindings:
           - module: trellis.models.callable_bond_pde
             symbol: price_callable_bond_pde
             role: route_helper
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: [european]
+          model_family: [stochastic_volatility]
+        primitives:
+          - module: trellis.models.pde.heston_adi
+            symbol: price_heston_option_adi_pde_result
+            role: route_helper
+      - when:
+          payoff_family: digital_option
+          exercise_style: [european]
+          model_family: [equity, equity_diffusion]
+        primitives:
+          - module: trellis.models.equity_option_pde
+            symbol: price_equity_digital_option_pde
+            role: route_helper
+      - when:
+          payoff_family: barrier_option
+          payoff_traits: [single_barrier]
+        primitives:
+          - module: trellis.models.single_barrier_option
+            symbol: price_single_barrier_option_pde_result
+            role: route_helper
+          - module: trellis.models.single_barrier_option
+            symbol: SingleBarrierPDEConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.single_barrier_option
+            symbol: resolve_single_barrier_inputs
+            role: market_binding
+      - when:
+          payoff_family: barrier_option
+          payoff_traits: [double_barrier]
+        primitives:
+          - module: trellis.models.double_barrier_option
+            symbol: price_double_barrier_option_pde_result
+            role: route_helper
+          - module: trellis.models.double_barrier_option
+            symbol: DoubleBarrierPDEConfig
+            role: solver_config
+            required: false
+          - module: trellis.models.analytical.support.barriers
+            symbol: resolve_double_barrier_inputs
+            role: market_binding
+          - module: trellis.models.pde.grid
+            symbol: Grid
+            role: grid
+          - module: trellis.models.pde.operator
+            symbol: BlackScholesOperator
+            role: spatial_operator
+          - module: trellis.models.pde.theta_method
+            symbol: theta_method_1d
+            role: time_stepping
+          - module: trellis.models.analytical.support.barriers
+            symbol: terminal_double_barrier_payoff
+            role: terminal_payoff
       - when: default
         primitives:
           - module: trellis.models.pde.grid

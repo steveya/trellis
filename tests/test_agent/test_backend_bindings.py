@@ -24,6 +24,8 @@ def test_binding_catalog_loads_core_route_backed_bindings():
         "analytical_black76",
         "credit_default_swap",
         "credit_basket_nth_to_default",
+        "analytical_fx_barrier",
+        "monte_carlo_fx_barrier",
         "analytical_garman_kohlhagen",
         "waterfall_cashflows",
     } <= route_ids
@@ -51,16 +53,21 @@ def test_binding_catalog_covers_retired_fallback_routes():
     assert {
         # slice 1
         "analytical_black76",
+        "levy_reference_analytical",
         "transform_fft",
         "monte_carlo_paths",
         "local_vol_monte_carlo",
         # slice 2
         "vanilla_equity_theta_pde",
+        "cev_theta_pde",
+        "cev_spot_lattice",
         "pde_theta_1d",
         "exercise_lattice",
         "correlated_basket_monte_carlo",
         "credit_default_swap",
         "credit_basket_nth_to_default",
+        "analytical_fx_barrier",
+        "monte_carlo_fx_barrier",
     } <= route_ids
 
 
@@ -77,6 +84,38 @@ def test_binding_catalog_canonical_load_is_not_derived_from_route_registry(monke
     catalog = load_backend_binding_catalog()
 
     assert find_backend_binding_by_route_id("analytical_garman_kohlhagen", catalog) is not None
+
+
+def test_resolve_backend_binding_spec_uses_cev_exact_helpers():
+    catalog = load_backend_binding_catalog()
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        exercise_style="european",
+        model_family="cev_diffusion",
+        candidate_engine_families=("pde", "lattice"),
+    )
+
+    pde_binding = find_backend_binding_by_route_id("cev_theta_pde", catalog)
+    tree_binding = find_backend_binding_by_route_id("cev_spot_lattice", catalog)
+
+    assert pde_binding is not None
+    assert tree_binding is not None
+    pde_resolved = resolve_backend_binding_spec(pde_binding, product_ir=product_ir)
+    tree_resolved = resolve_backend_binding_spec(tree_binding, product_ir=product_ir)
+
+    assert pde_resolved.exact_target_refs == (
+        "trellis.models.equity_option_pde.price_cev_option_pde",
+    )
+    assert pde_resolved.helper_refs == (
+        "trellis.models.equity_option_pde.price_cev_option_pde",
+    )
+    assert tree_resolved.exact_target_refs == (
+        "trellis.models.equity_option_tree.price_cev_option_tree",
+    )
+    assert tree_resolved.helper_refs == (
+        "trellis.models.equity_option_tree.price_cev_option_tree",
+    )
 
 
 def test_binding_catalog_skips_malformed_primitive_rows(monkeypatch):
@@ -248,6 +287,147 @@ def test_resolve_backend_binding_spec_uses_heston_transform_helper():
     )
 
 
+def test_resolve_backend_binding_spec_uses_digital_transform_helper():
+    catalog = load_backend_binding_catalog()
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+
+    assert transform is not None
+
+    resolved = resolve_backend_binding_spec(
+        transform,
+        product_ir=ProductIR(
+            instrument="digital_option",
+            payoff_family="digital_option",
+            payoff_traits=("digital_payoff",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert resolved.helper_refs == (
+        "trellis.models.equity_option_transforms.price_equity_digital_option_transform",
+    )
+    assert (
+        resolved.binding_id
+        == "trellis.models.equity_option_transforms.price_equity_digital_option_transform"
+    )
+
+
+def test_resolve_backend_binding_spec_uses_heston_adi_result_identity():
+    catalog = load_backend_binding_catalog()
+    heston_adi = find_backend_binding_by_route_id("heston_adi_2d", catalog)
+
+    assert heston_adi is not None
+
+    resolved = resolve_backend_binding_spec(
+        heston_adi,
+        product_ir=ProductIR(
+            instrument="heston_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("stochastic_vol",),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="stochastic_volatility",
+        ),
+    )
+
+    assert resolved.binding_id == (
+        "trellis.models.pde.heston_adi.price_heston_option_adi_pde_result"
+    )
+    assert resolved.exact_target_refs == (
+        "trellis.models.pde.heston_adi.price_heston_option_adi_pde_result",
+    )
+    assert resolved.market_binding_refs == (
+        "trellis.models.pde.heston_adi.resolve_heston_adi_pde_inputs",
+    )
+
+
+@pytest.mark.parametrize(
+    "route_id,expected_ref,expected_market_binding",
+    [
+        (
+            "pde_theta_1d",
+            "trellis.models.single_barrier_option.price_single_barrier_option_pde_result",
+            "trellis.models.single_barrier_option.resolve_single_barrier_inputs",
+        ),
+        (
+            "monte_carlo_paths",
+            "trellis.models.single_barrier_option.price_single_barrier_option_monte_carlo_result",
+            "trellis.models.single_barrier_option.resolve_single_barrier_inputs",
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_single_barrier_exact_helpers(
+    route_id,
+    expected_ref,
+    expected_market_binding,
+):
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id(route_id, catalog)
+
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        ),
+        method="pde_solver" if route_id == "pde_theta_1d" else "monte_carlo",
+    )
+
+    assert resolved.binding_id == expected_ref
+    assert resolved.exact_target_refs == (expected_ref,)
+    assert resolved.market_binding_refs == (expected_market_binding,)
+
+
+@pytest.mark.parametrize(
+    "route_id,method,expected_ref",
+    [
+        (
+            "analytical_fx_barrier",
+            "analytical",
+            "trellis.models.fx_barrier_option.price_fx_barrier_option_analytical",
+        ),
+        (
+            "monte_carlo_fx_barrier",
+            "monte_carlo",
+            "trellis.models.fx_barrier_option.price_fx_barrier_option_monte_carlo",
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_fx_barrier_exact_helpers(
+    route_id,
+    method,
+    expected_ref,
+):
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id(route_id, catalog)
+
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="fx",
+        ),
+        method=method,
+    )
+
+    assert resolved.binding_id == expected_ref
+    assert resolved.exact_target_refs == (expected_ref,)
+    assert resolved.helper_refs == (expected_ref,)
+
+
 @pytest.mark.parametrize(
     "product_ir,expected_route_family,expected_helper_refs,expected_kernel_refs",
     [
@@ -403,6 +583,155 @@ def test_resolve_backend_binding_spec_uses_exact_helpers_for_absorbed_black76_eq
     assert resolved.pricing_kernel_refs == expected_kernel_refs
 
 
+def test_resolve_backend_binding_spec_uses_variance_swap_monte_carlo_helper():
+    catalog = load_backend_binding_catalog()
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    product_ir = ProductIR(
+        instrument="variance_swap",
+        payoff_family="variance_swap",
+        payoff_traits=(
+            "discounting",
+            "path_dependent",
+            "vol_surface_dependence",
+        ),
+        exercise_style="none",
+        state_dependence="path_dependent",
+        schedule_dependence=False,
+        model_family="generic",
+    )
+
+    assert monte_carlo is not None
+
+    resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+
+    assert resolved.helper_refs == (
+        "trellis.models.variance_swap.price_equity_variance_swap_monte_carlo",
+    )
+    assert resolved.pricing_kernel_refs == (
+        "trellis.models.variance_swap.equity_variance_swap_outputs_monte_carlo",
+    )
+
+
+def test_resolve_backend_binding_spec_uses_merton_jump_diffusion_helpers():
+    catalog = load_backend_binding_catalog()
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("jump_diffusion",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        schedule_dependence=False,
+        model_family="jump_diffusion",
+    )
+
+    assert monte_carlo is not None
+    assert transform is not None
+
+    mc_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+    transform_resolved = resolve_backend_binding_spec(transform, product_ir=product_ir)
+
+    assert mc_resolved.helper_refs == (
+        "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_monte_carlo",
+    )
+    assert transform_resolved.helper_refs == (
+        "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform",
+    )
+
+
+def test_resolve_backend_binding_spec_uses_sabr_forward_option_helpers():
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("sabr_hagan_analytical", catalog)
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("sabr",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        schedule_dependence=False,
+        model_family="sabr",
+    )
+
+    assert analytical is not None
+    assert monte_carlo is not None
+
+    analytical_resolved = resolve_backend_binding_spec(analytical, product_ir=product_ir)
+    mc_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+
+    assert analytical_resolved.helper_refs == (
+        "trellis.models.sabr_option.price_sabr_forward_option_hagan",
+    )
+    assert mc_resolved.helper_refs == (
+        "trellis.models.sabr_option.price_sabr_forward_option_monte_carlo",
+    )
+
+
+@pytest.mark.parametrize(
+    ("model_family", "transform_helper", "mc_helper", "reference_helper"),
+    [
+        (
+            "variance_gamma",
+            "trellis.models.levy_option.price_variance_gamma_option_transform",
+            "trellis.models.levy_option.price_variance_gamma_option_monte_carlo",
+            "trellis.models.levy_option.price_variance_gamma_option_reference",
+        ),
+        (
+            "cgmy",
+            "trellis.models.levy_option.price_cgmy_option_transform",
+            "trellis.models.levy_option.price_cgmy_option_monte_carlo",
+            "trellis.models.levy_option.price_cgmy_option_reference",
+        ),
+        (
+            "kou",
+            "trellis.models.levy_option.price_kou_option_transform",
+            "trellis.models.levy_option.price_kou_option_monte_carlo",
+            "trellis.models.levy_option.price_kou_option_reference",
+        ),
+        (
+            "bates",
+            "trellis.models.bates_option.price_bates_option_transform",
+            "trellis.models.bates_option.price_bates_option_monte_carlo",
+            None,
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_levy_option_helpers(
+    model_family,
+    transform_helper,
+    mc_helper,
+    reference_helper,
+):
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("levy_reference_analytical", catalog)
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    transform = find_backend_binding_by_route_id("transform_fft", catalog)
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=(model_family,),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        schedule_dependence=False,
+        model_family=model_family,
+    )
+
+    assert analytical is not None
+    assert monte_carlo is not None
+    assert transform is not None
+
+    analytical_resolved = resolve_backend_binding_spec(analytical, product_ir=product_ir)
+    mc_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+    transform_resolved = resolve_backend_binding_spec(transform, product_ir=product_ir)
+
+    assert analytical_resolved.helper_refs == (
+        () if reference_helper is None else (reference_helper,)
+    )
+    assert mc_resolved.helper_refs == (mc_helper,)
+    assert transform_resolved.helper_refs == (transform_helper,)
+
+
 def test_resolve_backend_binding_spec_keeps_generic_multi_asset_baskets_off_two_asset_exact_helpers():
     catalog = load_backend_binding_catalog()
     analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
@@ -520,6 +849,31 @@ def test_resolve_backend_binding_spec_uses_credit_loss_distribution_exact_helper
     assert transform_resolved.helper_refs == (
         "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_transform_proxy",
     )
+
+
+def test_exercise_monte_carlo_binding_resolves_american_equity_lsm_helper():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("exercise_monte_carlo", catalog)
+    assert binding is not None
+
+    product_ir = ProductIR(
+        instrument="american_put",
+        payoff_family="vanilla_option",
+        exercise_style="american",
+        model_family="equity_diffusion",
+    )
+
+    resolved = resolve_backend_binding_spec(binding, product_ir=product_ir)
+
+    assert resolved.binding_id == (
+        "trellis.models.equity_option_monte_carlo."
+        "price_american_equity_option_lsm_monte_carlo"
+    )
+    assert resolved.helper_refs == (
+        "trellis.models.equity_option_monte_carlo."
+        "price_american_equity_option_lsm_monte_carlo",
+    )
+    assert resolved.exact_target_refs == resolved.helper_refs
 
 
 def test_binding_catalog_cache_tracks_binding_catalog_freshness(monkeypatch):

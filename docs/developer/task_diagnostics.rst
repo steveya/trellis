@@ -44,15 +44,23 @@ Replay marker
 Full-task canary replays now persist the same task-run and diagnosis artifacts
 as live runs, but they also mark the execution surface explicitly:
 
-- ``execution_mode`` is set to ``cassette_replay``
-- ``llm_cassette`` records the cassette name, path, and replay policy
+- ``execution_mode`` is set to exactly one replay value:
+  ``cassette_replay`` for cassette-backed canaries or
+  ``deterministic_replay`` for canaries that run under the offline-local
+  exact-binding lane instead of consuming cassette calls
+- ``llm_cassette`` records the cassette name, path, replay policy, and
+  ``used=false`` when deterministic replay bypasses the cassette
 
 That metadata is stored on the top-level task result and the persisted task-run
 record so diagnosis, remediation, and canary-summary tooling can tell live and
-cassette-backed runs apart without needing a separate artifact schema.
+cassette-backed or deterministic replay runs apart without needing a separate
+artifact schema.
 
 For replay stability, record and replay full-task canary cassettes with
 ``PYTHONHASHSEED=0`` and keep them under ``cassettes/full_task/``.
+Canaries that declare ``replay_mode: deterministic_exact_binding`` do not need
+their historical cassette refreshed; they must instead complete with zero live
+LLM calls through deterministic exact bindings.
 
 How to read one
 ---------------
@@ -118,9 +126,12 @@ When a task asks for a computational class Trellis does not yet implement, the
 same block carries a machine-readable ``repair_packet`` naming the missing
 primitive or unsupported class. Examples include
 ``heston_gauss_laguerre_transform_kernel``,
-``bates_affine_jump_stochastic_vol_kernel``, ``leverage_function_contract``, and
-``path_dependent_early_exercise_under_stochastic_vol``. Remediation tools
-should group these packets before falling back to raw exception text.
+``leverage_function_contract``, and
+``path_dependent_early_exercise_under_stochastic_vol``. Bates calibration,
+path-dependent, early-exercise, and PDE/PIDE shapes may still produce future
+Bates-specific repair packets, but European vanilla Bates FFT/MC targets bind
+to the checked helper route. Remediation tools should group repair packets
+before falling back to raw exception text.
 
 For unsupported Heston Gauss-Laguerre transform targets, each target may carry
 a ``quadrature_transform_contract`` block. That block records the quadrature
@@ -133,9 +144,11 @@ For Bates-style affine jump stochastic-volatility targets, each target also
 carries an ``affine_jump_process`` block. That block records the required
 Heston model parameters, the compound-Poisson lognormal jump parameters
 (``jump_intensity``, ``jump_mean``, and ``jump_variance``), accepted legacy
-aliases such as ``lam`` and ``jump_vol``, and the missing transform/Monte Carlo
-capabilities. The block is evidence for an honest implementation gap; it does
-not admit a Bates pricing route until the named primitive exists.
+aliases such as ``lam`` and ``jump_vol``, and the transform/Monte Carlo
+capabilities. For European vanilla Bates targets this block is executable
+evidence for ``trellis.models.bates_option`` route binding. For calibration,
+path-dependent, early-exercise, or PDE/PIDE Bates targets it still helps
+identify the missing abstraction before the task fails closed.
 
 For SLV/LSV targets, each target may carry a ``leverage_function_contract``
 block. That block records the required local-vol and Black-vol market
@@ -378,6 +391,44 @@ the place to confirm whether the generated adapter actually satisfied the
 compiled primitive obligation. For schedule-bearing routes, the same layer now
 also surfaces raw string schedule fields before execution so timeline-typing
 drift is visible in the packet rather than only as a later runtime failure.
+
+For helper-owned exact routes, the packet should not ask a thin adapter to
+prove every internal primitive separately after the route helper surface has
+validated.  For example, a single-barrier PDE or Monte Carlo adapter that calls
+``price_single_barrier_option_pde_result(market_state, spec, *, config=...)``
+or ``price_single_barrier_option_monte_carlo_result(market_state, spec, *,
+config=...)`` delegates absorbing-boundary, single-monitor payoff, notional,
+and discounting internals to the checked helper.  Likewise, a double-barrier
+PDE or Monte Carlo adapter that calls
+``price_double_barrier_option_pde_result(market_state, spec, *, config=...)``
+or ``price_double_barrier_option_monte_carlo_result(market_state, spec, *,
+config=...)`` delegates grid/operator/payoff, barrier-monitor, and discounting
+internals to the checked helper.  If the adapter omits that helper or passes an
+invented surface such as raw ``spot`` or barrier keywords, the diagnosis should
+remain a route-helper contract failure.
+
+The same distinction applies to the capped/floored cliquet Monte Carlo helper.
+When the product identity is ``cliquet_option`` and the route is
+``monte_carlo_paths``, a thin adapter that calls
+``price_equity_cliquet_option_monte_carlo(market_state, spec, ...)`` delegates
+reset-date GBM increments, local/global return clipping, antithetic sampling,
+and discounting to the checked helper. Ordinary Monte Carlo adapters still
+need to satisfy their compiled route-helper or primitive obligations directly.
+
+For vanilla American or Bermudan equity options, ``exercise_monte_carlo`` now
+has the same exact-helper shape. A comparison target such as ``lsm_mc`` may call
+``price_american_equity_option_lsm_monte_carlo(market_state, spec, ...)`` and
+let that helper own GBM path generation, Longstaff-Schwartz regression, exercise
+step construction, and notional scaling. Diagnostics should treat that as
+route-helper evidence, not as a failure to spell out ``GBM`` and
+``MonteCarloEngine`` inside the generated adapter.
+
+For CEV proof targets, diagnostics should check both the payoff family and the
+model family. ``cev_pde`` and ``cev_tree`` may delegate to
+``price_cev_option_pde(market_state, spec, ...)`` and
+``price_cev_option_tree(market_state, spec, ...)`` respectively, but a generic
+Black-vol vanilla-equity helper is not coherent evidence for a CEV target even
+when the terminal payoff is a European call.
 
 Lane obligations
 ----------------

@@ -17,6 +17,7 @@ from trellis.models.processes.heston import (
     Heston,
     HestonRuntimeBinding,
     build_heston_parameter_payload,
+    normalize_heston_parameter_payload,
     resolve_heston_runtime_binding,
 )
 from trellis.models.processes.jump_diffusion import MertonJumpDiffusion
@@ -329,6 +330,44 @@ class TestHeston:
         assert binding.model_parameters["model_family"] == "heston"
         assert binding.provenance["source_kind"] == "market_state"
         assert "discount curve" in binding.warnings[0].lower()
+
+    def test_resolve_heston_runtime_binding_accepts_legacy_parameter_aliases(self):
+        market_state = MarketState(
+            as_of=None,
+            settlement=None,
+            discount=YieldCurve.flat(0.05),
+            model_parameters={
+                "model_family": "heston",
+                "kappa": 2.0,
+                "theta_var": 0.04,
+                "sigma_v": 0.3,
+                "rho": -0.7,
+                "initial_variance": 0.05,
+            },
+        )
+
+        binding = resolve_heston_runtime_binding(market_state)
+
+        assert binding.process.theta == pytest.approx(0.04)
+        assert binding.process.xi == pytest.approx(0.3)
+        assert binding.process.v0 == pytest.approx(0.05)
+        assert set(binding.model_parameters) >= {"kappa", "theta", "xi", "rho", "v0"}
+        assert "theta_var" not in binding.model_parameters
+        assert "sigma_v" not in binding.model_parameters
+
+    def test_normalize_heston_parameter_payload_rejects_conflicting_aliases(self):
+        with pytest.raises(ValueError, match="Conflicting Heston parameter aliases"):
+            normalize_heston_parameter_payload(
+                {
+                    "model_family": "heston",
+                    "kappa": 2.0,
+                    "theta": 0.04,
+                    "theta_var": 0.05,
+                    "xi": 0.3,
+                    "rho": -0.7,
+                    "v0": 0.04,
+                }
+            )
 
     def test_resolve_heston_runtime_binding_prefers_explicit_over_market_defaults(self):
         market_state = MarketState(

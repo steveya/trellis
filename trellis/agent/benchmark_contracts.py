@@ -60,6 +60,9 @@ _DIRECT_OVERRIDE_KEYS: tuple[str, ...] = (
     "lookback_type",
     "payoff",
     "style",
+    "currency_pair",
+    "fx_pair",
+    "foreign_discount_key",
     "rebate",
     "call_strike",
     "put_strike",
@@ -123,6 +126,7 @@ _CALENDAR_MAP: dict[str, Calendar] = {
 _BENCHMARK_PRODUCT_INSTRUMENT_TYPES: dict[str, str] = {
     "equity_vanilla": "european_option",
     "fx_vanilla": "european_option",
+    "fx_barrier_option": "barrier_option",
     "swaption": "swaption",
     "cds": "cds",
     "barrier_option": "barrier_option",
@@ -191,7 +195,7 @@ def benchmark_request_description(
     root=None,
 ) -> str | None:
     """Render one deterministic contract-rich request description for a benchmark task."""
-    contract = benchmark_contract(task)
+    contract = _spec_override_contract(task)
     if not contract:
         return None
 
@@ -293,7 +297,7 @@ def benchmark_spec_overrides(
             overrides[spec_key] = parsed_dates
 
     product = str(contract.get("product") or "").strip().lower()
-    if product == "fx_vanilla":
+    if product in {"fx_vanilla", "fx_barrier_option"}:
         overrides.update(
             _fx_vanilla_overrides(
                 contract,
@@ -301,6 +305,8 @@ def benchmark_spec_overrides(
                 valuation_date=valuation_date,
             )
         )
+        if product == "fx_barrier_option":
+            overrides.update(_barrier_option_overrides(contract, valuation_date=valuation_date))
     elif product in {"period_rate_option_strip", "rate_cap_floor_collar"}:
         overrides.update(
             _rate_cap_floor_overrides(
@@ -633,10 +639,18 @@ def _benchmark_summary_line(contract: Mapping[str, Any]) -> str:
             f"Price a {contract.get('option_type', 'call')} FX vanilla option on "
             f"{contract.get('currency_pair', 'EURUSD')} under the analytical benchmark surface."
         )
+    if product == "fx_barrier_option":
+        return (
+            f"Price a {contract.get('barrier_type', 'barrier')} FX option on "
+            f"{contract.get('currency_pair', 'EURUSD')} with domestic/foreign discounting."
+        )
     if product == "period_rate_option_strip":
         kind = str(contract.get("cap_floor") or "cap").strip().lower()
         return f"Price a {kind} strip under the declared benchmark rates surface."
     if product == "swaption":
+        style = str(contract.get("style") or "european").strip().lower()
+        if style == "bermudan":
+            return "Price a Bermudan swaption under the declared benchmark rates surface."
         return "Price a European-style swaption under the declared Black benchmark surface."
     if product == "barrier_option":
         monitoring = str(contract.get("monitoring") or "").strip().lower()
@@ -679,6 +693,25 @@ def _benchmark_detail_lines(
         if scenario_contract is not None and scenario_contract.foreign_curve_name:
             lines.append(f"Foreign discount key: {scenario_contract.foreign_curve_name}.")
         return lines
+    if product == "fx_barrier_option":
+        expiry_date = _valuation_date(contract, scenario_contract) + timedelta(
+            days=round(float(contract.get("expiry_years") or 0.0) * 365.0)
+        )
+        lines.extend(
+            [
+                f"Currency pair: {contract.get('currency_pair', 'EURUSD')}.",
+                f"Option type: {contract.get('option_type', 'call')}.",
+                f"Strike: {contract.get('strike')}.",
+                f"Spot: {contract.get('spot')}.",
+                f"Barrier: {contract.get('barrier')}.",
+                f"Barrier type: {contract.get('barrier_type')}.",
+                f"Expiry date: {expiry_date.isoformat()}.",
+                f"Notional: {contract.get('notional')}.",
+            ]
+        )
+        if scenario_contract is not None and scenario_contract.foreign_curve_name:
+            lines.append(f"Foreign discount key: {scenario_contract.foreign_curve_name}.")
+        return lines
     if product == "period_rate_option_strip":
         start_date = _parse_date(contract.get("start_date"))
         end_date = _end_date_from_contract(contract, start_date=start_date)
@@ -713,21 +746,34 @@ def _benchmark_detail_lines(
             )
         return lines
     if product == "swaption":
+        style = str(contract.get("style") or "european").strip().lower()
         lines.extend(
             [
+                f"Style: {style}.",
                 f"Payer/receiver: {contract.get('payer_receiver', 'payer')}.",
                 f"Fixed coupon: {contract.get('fixed_coupon')}.",
                 f"Notional: {contract.get('notional')}.",
             ]
         )
+        exercise_dates = _parse_date_sequence(contract.get("exercise_dates"))
+        if exercise_dates:
+            lines.append(
+                "Exercise dates: "
+                + ", ".join(item.isoformat() for item in exercise_dates)
+                + "."
+            )
         for key in ("settle_date", "exercise_date", "maturity_date"):
             parsed = _parse_date(contract.get(key))
             if parsed is not None:
                 lines.append(f"{key.replace('_', ' ').capitalize()}: {parsed.isoformat()}.")
         if contract.get("fixed_frequency"):
             lines.append(f"Fixed frequency: {contract['fixed_frequency']}.")
+        if contract.get("float_frequency"):
+            lines.append(f"Floating frequency: {contract['float_frequency']}.")
         if contract.get("fixed_day_count"):
             lines.append(f"Fixed day count: {contract['fixed_day_count']}.")
+        if scenario_contract is not None and scenario_contract.forecast_curve_name:
+            lines.append(f"Rate index: {scenario_contract.forecast_curve_name}.")
         return lines
     if product == "barrier_option":
         expiry_date = _valuation_date(contract, scenario_contract) + timedelta(

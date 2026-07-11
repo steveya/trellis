@@ -119,6 +119,97 @@ assigns confidence by discovery mode:
 That path captures the lesson, runs the contract check, and can auto-validate
 or auto-promote immediately when the confidence threshold is met.
 
+Bounded Intra-Run Learning
+--------------------------
+
+Task runs can also use a bounded, ephemeral learning loop between a failed
+target build and final task classification.  The contract lives in
+``trellis.agent.intra_run_learning`` and uses
+``KnowledgePatchCandidate`` records.  These records are not canonical lessons
+or cookbooks.  They are one-shot prompt overlays derived from already-recorded
+failure evidence, deterministic contract evidence, reflection gaps, candidate
+lesson ids, and quant/model-validator observations when those observations
+exist.
+
+The mode boundary is explicit:
+
+- ``strict``: never builds or applies an intra-run knowledge overlay
+- ``assisted``: may retry one failed target once with a candidate overlay
+- ``remediation``: may produce the same retry overlay while preserving richer
+  repair evidence for branch/PR work
+
+The overlay is appended by the existing stage-aware knowledge retriever in
+``build_with_knowledge(...)``.  It is rendered with an explicit warning that
+the guidance is ephemeral and not canonical.  It does not mutate
+``canonical/cookbooks.yaml`` and it does not promote lessons.  If the retry
+succeeds and later cross-validation passes, the normal promotion-candidate
+pipeline may persist the successful generated route for deterministic review.
+
+Candidate construction is deliberately conservative.  It skips provider/noise
+failures, expected honest blocks, and repair-packet blockers.  For retryable
+failures it records structured evidence where possible:
+
+- callable signatures from the import registry and ``inspect.signature(...)``
+  when a helper or constructor rejects an argument
+- required primitive obligations, including import availability and signature
+  when a semantic validator reports ``assembly.required_primitive_missing``
+- comparison-contract evidence such as method prices, reference target,
+  tolerance, selected route or binding, validation bundle, and payoff identity
+
+Those records are persisted on the candidate as ``structured_evidence`` and
+``repair_obligations``.  Candidate construction also assigns a
+``contract_completeness`` score and ``retryable`` flag.  Assisted mode retries
+only when the candidate has concrete structured obligations above the retry
+threshold.  Prose-only candidates are retained as evidence with skip reasons
+such as ``missing_structured_repair_obligation`` but do not call the builder
+again.
+
+The plain-text overlay remains only the rendered form of that evidence.  Each
+task result records ``recovery_mode``, ``recovery_attempts``, and an
+``intra_run_learning`` summary so downstream diagnostics can distinguish an
+attempted candidate-knowledge retry from a skipped candidate.
+
+Retry attribution is part of that contract.  Every recorded recovery attempt
+now carries ``retry_attribution`` with the candidate id, patch type, structured
+evidence count, repair-obligation count, changed build-input fields, and a
+compact ``attribution_kind``.  ``contract_evidence_consumed`` is true only when
+the candidate had structured contract evidence and the retry actually changed
+deterministic build inputs such as ``knowledge_overlays`` or
+``request_metadata.intra_run_learning_retry``.  Skipped candidates are still
+recorded, but their attribution kind remains ``candidate_not_retryable`` or
+``candidate_not_applied`` and ``deterministic_input_changed`` stays false.
+
+Retry overlays also enter the deterministic request compiler.  When a retry
+candidate carries available ``required_primitive`` or ``callable_signature``
+obligations, ``compile_build_request(...)`` adds the corresponding module,
+symbol, reusable primitive ref, and helper ref to the ``GenerationPlan`` before
+validation and route-binding metadata are finalized.  The compiled request
+records ``intra_run_learning_overlay_consumption`` so operators can see which
+candidate ids were consumed and which generation-plan fields changed.  Binding,
+comparison, and market-binding obligations are recorded as structured compiler
+inputs; the compiler does not overwrite an existing checked backend binding
+from an overlay.
+
+For checked helper-backed routes, semantic validation now separates the helper
+surface from the helper internals.  A thin adapter that calls the admitted
+route helper with the exact ``(market_state, spec, *, config=...)`` style
+surface can satisfy lower-level primitive obligations owned inside that helper,
+such as grid assembly, barrier monitors, terminal payoff construction, and
+discounting.  The closure is deliberately narrow: if the adapter skips the
+required helper or invents unsupported helper keywords, validation still emits
+a blocking route-helper finding and the retry cannot be promoted as reusable
+learning.
+
+The July 2, 2026 no-LLM closeout pack is the current reference scorecard for
+this loop.  Running ``T20 T22 T105 T107 E27`` with
+``--offline-local-agents --recovery-mode assisted`` produced four
+``compare_ready`` pricing successes and one ``honest_block`` expectation pass,
+with zero token usage and zero actionable remediation failures.  That result is
+important because the repaired learning did not merely retry successfully; the
+formerly fragile targets built on the first deterministic pass from checked
+contracts, exact helper bindings, static specs, and helper-owned primitive
+closure.
+
 What Future Builds Actually Reuse
 ---------------------------------
 
@@ -235,9 +326,10 @@ Today the honest claim is:
 
 That is what ``scripts/run_task_learning_benchmark.py`` measures.
 
-The benchmark uses a non-canary cohort from the active pricing-task manifests and repeated passes
-at a fixed git revision. By default it also forces fresh builds so the score
-is not dominated by trivial adapter reuse. The report records:
+The benchmark uses a non-canary cohort from the active pricing-task manifests
+and repeated passes at a fixed git revision. By default it also forces fresh
+builds so the score is not dominated by trivial adapter reuse. The report
+records:
 
 - success and failure deltas across passes
 - task-level ``first_pass`` and ``attempts_to_success``
@@ -247,6 +339,9 @@ is not dominated by trivial adapter reuse. The report records:
 - attribution buckets for:
 
   * knowledge-assisted improvements
+  * retry-learned recoveries
+  * first-pass deterministic reuse
+  * failed or unvalidated retry evidence
   * residual knowledge gaps
   * residual implementation gaps
   * residual market/provider noise
@@ -254,6 +349,21 @@ is not dominated by trivial adapter reuse. The report records:
 That benchmark is the short-term learning milestone because it tests whether
 the platform gets better at rerunning broader tasks with knowledge it has
 already captured.
+
+For the narrower intra-run claim, use the seeded local fixture:
+
+.. code-block:: bash
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py \
+     --seeded-retry-fixture --passes 1 --knowledge-light \
+     --report-name seeded_retry_learning
+
+That mode does not select manifest tasks and does not call live LLM providers.
+It runs one deterministic fake builder through the real ``run_task(...)``
+assisted-retry path. The first build fails with a concrete callable-signature
+contract error, the retry receives a structured ``KnowledgePatchCandidate``,
+and the scorecard must label the result as a retry-learned recovery rather
+than first-pass deterministic reuse.
 
 Current Boundaries
 ------------------
@@ -265,6 +375,9 @@ still limits:
 - the executor retry path captures candidate lessons but does not auto-promote them
 - task reruns and human review are still needed to confirm whether a captured
   lesson should become stable guidance
+- intra-run overlays are bounded repair inputs, not canonical cookbook
+  updates; they become durable only through the existing validation and
+  promotion gates
 - the repeated-pass benchmark measures knowledge reuse only; it does not prove
   autonomous code authoring or autonomous primitive implementation
 

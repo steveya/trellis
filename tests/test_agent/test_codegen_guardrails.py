@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from trellis.agent.codegen_guardrails import (
+    GenerationPlan,
     PrimitiveRef,
     build_generation_plan,
     rank_primitive_routes,
@@ -213,6 +214,23 @@ def test_validate_generated_imports_rejects_invalid_symbol():
     assert any("not exported" in error for error in report.errors)
 
 
+def test_validate_generated_imports_guides_invalid_sobol_class_alias():
+    source = "from trellis.models.monte_carlo.schemes import SobolNormals\n"
+    plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="autocallable",
+        inspected_modules=("trellis.models.monte_carlo.schemes",),
+        approved_modules=("trellis.models.monte_carlo.schemes",),
+        symbols_to_reuse=(),
+        proposed_tests=(),
+    )
+
+    report = validate_generated_imports(source, plan)
+
+    assert not report.ok
+    assert any("sobol_normals" in error for error in report.errors)
+
+
 def test_validate_generated_imports_rejects_admitted_agent_from_import():
     report = validate_generated_imports(AGENT_IMPORT_SOURCE, _analytical_plan())
     assert not report.ok
@@ -244,6 +262,214 @@ def test_validate_generated_imports_accepts_control_timeline_facade_exports():
 
     report = validate_generated_imports(CONTROL_TIMELINE_SOURCE, plan)
 
+    assert report.ok
+
+
+def test_barrier_family_support_approves_shared_barrier_primitives():
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="barrier_option",
+            reasoning="test",
+        ),
+        instrument_type="barrier_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("double_barrier",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "trellis.models.analytical.support.barriers" in plan.approved_modules
+    assert "trellis.models.single_barrier_option" in plan.approved_modules
+    assert "trellis.models.double_barrier_option" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.single_barrier_option import "
+        "SingleBarrierPDEConfig, SingleBarrierMonteCarloConfig, "
+        "price_single_barrier_option_pde_result, "
+        "price_single_barrier_option_monte_carlo_result\n"
+        "from trellis.models.analytical.support.barriers import "
+        "terminal_double_barrier_payoff, double_barrier_state_payoff\n"
+        "from trellis.models.double_barrier_option import "
+        "DoubleBarrierPDEConfig, DoubleBarrierMonteCarloConfig, "
+        "price_double_barrier_option_pde_result, "
+        "price_double_barrier_option_monte_carlo_result\n",
+        plan,
+    )
+    assert report.ok
+
+
+def test_heston_family_support_approves_adi_diagnostics():
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=[],
+            required_market_data={"discount_curve", "model_parameters"},
+            model_to_build="heston_option",
+            reasoning="test",
+        ),
+        instrument_type="heston_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="heston_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="stochastic_volatility",
+        ),
+    )
+
+    assert "trellis.models.pde.heston_adi" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.pde.heston_adi import "
+        "HestonAdiPDEConfig, resolve_heston_adi_pde_inputs, "
+        "price_heston_option_adi_pde_result\n",
+        plan,
+    )
+    assert report.ok
+
+
+def test_american_put_family_support_approves_equity_helper_surfaces():
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="american_put",
+            reasoning="test",
+        ),
+        instrument_type="american_put",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="american_put",
+            payoff_family="vanilla_option",
+            exercise_style="american",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "trellis.models.equity_option_pde" in plan.approved_modules
+    assert "trellis.models.equity_option_tree" in plan.approved_modules
+    assert "trellis.models.equity_option_monte_carlo" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.equity_option_pde import price_event_aware_equity_option_pde\n"
+        "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree\n"
+        "from trellis.models.equity_option_monte_carlo import "
+        "price_american_equity_option_lsm_monte_carlo\n",
+        plan,
+    )
+    assert report.ok
+
+
+def test_european_option_family_support_approves_cev_helper_surfaces():
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="pde_solver",
+            method_modules=[],
+            required_market_data={"discount_curve"},
+            model_to_build="european_option",
+            reasoning="test",
+        ),
+        instrument_type="european_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "trellis.models.equity_option_pde" in plan.approved_modules
+    assert "trellis.models.equity_option_tree" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.equity_option_pde import price_cev_option_pde\n"
+        "from trellis.models.equity_option_tree import price_cev_option_tree\n",
+        plan,
+    )
+    assert report.ok
+
+
+def test_path_dependent_family_support_approves_asian_and_lookback_helpers():
+    asian_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="asian_option",
+            reasoning="test",
+        ),
+        instrument_type="asian_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="asian_option",
+            payoff_family="asian_option",
+            payoff_traits=("asian", "path_dependent"),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+    lookback_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="test",
+        ),
+        instrument_type="lookback_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=("lookback", "path_dependent"),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "trellis.models.asian_option" in asian_plan.approved_modules
+    assert "trellis.models.lookback_option" in lookback_plan.approved_modules
+    asian_report = validate_generated_imports(
+        "from trellis.models.asian_option import "
+        "price_arithmetic_asian_option_monte_carlo, "
+        "price_arithmetic_asian_option_analytical\n",
+        asian_plan,
+    )
+    lookback_report = validate_generated_imports(
+        "from trellis.models.lookback_option import "
+        "price_equity_fixed_lookback_option_monte_carlo\n",
+        lookback_plan,
+    )
+
+    assert asian_report.ok
+    assert lookback_report.ok
+
+
+def test_autocallable_generation_plan_approves_event_helper_surface():
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.autocallable"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="autocallable",
+        reasoning="test",
+    )
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="autocallable",
+        inspected_modules=("trellis.models.autocallable",),
+    )
+
+    assert "trellis.models.autocallable" in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.autocallable import "
+        "AutocallableMonteCarloConfig, price_autocallable_monte_carlo_result\n",
+        plan,
+    )
     assert report.ok
 
 

@@ -236,6 +236,82 @@ def test_build_with_knowledge_resets_deterministic_planning_caches(monkeypatch):
     assert observed["cache_reset_calls"] == 1
 
 
+def test_build_with_tracking_forwards_retry_overlays_to_build_payoff(monkeypatch):
+    from trellis.agent.knowledge.gap_check import GapReport
+    from trellis.agent.knowledge.schema import ProductDecomposition
+    from trellis.agent.knowledge.autonomous import _build_with_tracking
+
+    observed: dict[str, object] = {}
+    overlay = {
+        "candidate_id": "retry-autocall-001",
+        "target_id": "mc_autocall",
+        "patch_type": "cookbook_patch",
+        "retryable": True,
+        "repair_obligations": [
+            {
+                "kind": "required_primitive",
+                "primitive": "trellis.models.autocallable.price_autocallable_monte_carlo",
+                "module": "trellis.models.autocallable",
+                "symbol": "price_autocallable_monte_carlo",
+                "available": True,
+            }
+        ],
+    }
+    decomposition = ProductDecomposition(
+        instrument="autocallable",
+        features=("path_dependent",),
+        method="monte_carlo",
+        learned=False,
+    )
+
+    def fake_build_payoff(*args, **kwargs):
+        observed["knowledge_overlays"] = kwargs.get("knowledge_overlays")
+        observed["request_metadata"] = kwargs.get("request_metadata")
+        return type("FakeAutocallPayoff", (), {})
+
+    monkeypatch.setattr("trellis.agent.executor.build_payoff", fake_build_payoff)
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.retrieve_for_product_ir",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.build_shared_knowledge_payload",
+        lambda knowledge: {
+            "summary": {},
+            "builder_text_distilled": "",
+            "builder_text": "",
+            "builder_text_expanded": "",
+            "review_text_distilled": "",
+            "review_text_expanded": "",
+        },
+    )
+
+    payoff_cls, meta = _build_with_tracking(
+        description="Autocallable note",
+        build_description="Autocallable note",
+        instrument_type="autocallable",
+        decomposition=decomposition,
+        product_ir=SimpleNamespace(instrument="autocallable"),
+        gap_report=GapReport(confidence=0.8, retrieved_lesson_ids=[]),
+        model="test-model",
+        market_state=None,
+        max_retries=1,
+        validation="standard",
+        force_rebuild=True,
+        fresh_build=False,
+        preferred_method="monte_carlo",
+        request_metadata={"task_id": "T107"},
+        knowledge_overlays=[overlay],
+    )
+
+    assert payoff_cls.__name__ == "FakeAutocallPayoff"
+    assert observed["knowledge_overlays"] == [overlay]
+    assert observed["request_metadata"] == {"task_id": "T107"}
+    assert meta["intra_run_learning"]["overlay_candidate_ids"] == [
+        "retry-autocall-001"
+    ]
+
+
 def test_build_with_knowledge_preserves_platform_trace_metadata_on_failure(monkeypatch):
     from trellis.agent.knowledge.gap_check import GapReport
     from trellis.agent.knowledge.schema import ProductDecomposition

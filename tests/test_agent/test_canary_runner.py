@@ -5,6 +5,7 @@ All tests use mocked task execution — no LLM calls, no tokens spent.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from datetime import datetime, timezone
 
@@ -460,6 +461,106 @@ class TestRunCanaries:
         assert results[0]["skipped"] is True
         assert results[0]["reason"] == "replay_unsupported"
 
+    def test_run_canaries_deterministic_replay_uses_offline_local_scope_without_cassette(
+        self, monkeypatch, tmp_path
+    ):
+        seen: dict[str, object] = {}
+        deterministic_cassette = {
+            "mode": "deterministic_replay",
+            "name": "T13",
+            "path": str(tmp_path / "T13.yaml"),
+            "stale_policy": "error",
+            "used": False,
+        }
+
+        def fake_build_market_state():
+            return object()
+
+        def fake_load_tasks(*, status="pending", path=None):
+            return [{"id": "T13", "title": "European call: theta-method convergence order"}]
+
+        def fake_run_task(task, market_state, **kwargs):
+            seen["task_id"] = task["id"]
+            seen["force_rebuild"] = kwargs.get("force_rebuild")
+            seen["offline_env"] = os.environ.get("TRELLIS_OFFLINE_LOCAL_AGENTS")
+            seen["execution_mode_override"] = kwargs.get("execution_mode_override")
+            seen["llm_cassette_metadata"] = kwargs.get("llm_cassette_metadata")
+            return {
+                "task_id": task["id"],
+                "success": True,
+                "token_usage_summary": {"total_tokens": 0},
+            }
+
+        def fake_persist_canary_batch_record(
+            *,
+            canaries,
+            meta,
+            results,
+            model,
+            validation,
+            knowledge_light,
+            replay,
+            execution_mode,
+            requested_task_id,
+            requested_subset,
+            root,
+            started_at,
+            finished_at,
+        ):
+            seen["batch_execution_mode"] = execution_mode
+            seen["batch_result_execution_mode"] = results[0].get("execution_mode")
+            return {
+                "batch_id": "canary_20260410T120000Z",
+                "history_path": str(tmp_path / "task_runs" / "canary_batches" / "history" / "canary_20260410T120000Z.json"),
+                "latest_path": str(tmp_path / "task_runs" / "canary_batches" / "latest" / "deterministic_replay__task_T13__standard__default.json"),
+            }
+
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.build_market_state",
+            fake_build_market_state,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.load_tasks",
+            fake_load_tasks,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_runtime.run_task",
+            fake_run_task,
+        )
+        monkeypatch.setattr(
+            "trellis.agent.task_run_store.persist_canary_batch_record",
+            fake_persist_canary_batch_record,
+        )
+
+        results = run_canaries(
+            [
+                {
+                    "id": "T13",
+                    "engine_family": "pde",
+                    "complexity": "simple",
+                    "record_cassette": False,
+                    "replay_mode": "deterministic_exact_binding",
+                }
+            ],
+            {"total_budget_usd": 1.0},
+            replay=True,
+            cassette_dir=tmp_path,
+        )
+
+        assert seen == {
+            "task_id": "T13",
+            "force_rebuild": True,
+            "offline_env": "1",
+            "execution_mode_override": "deterministic_replay",
+            "llm_cassette_metadata": deterministic_cassette,
+            "batch_execution_mode": "deterministic_replay",
+            "batch_result_execution_mode": "deterministic_replay",
+        }
+        assert results[0]["success"] is True
+        assert results[0]["execution_mode"] == "deterministic_replay"
+        assert results[0]["offline_local_agents"] is True
+        assert results[0]["llm_cassette"] == deterministic_cassette
+
     def test_run_canaries_replay_mode_uses_full_task_cassette(self, monkeypatch, tmp_path):
         from trellis.agent.cassette import _prompt_hash
 
@@ -559,6 +660,7 @@ class TestRunCanaries:
             validation,
             knowledge_light,
             replay,
+            execution_mode,
             requested_task_id,
             requested_subset,
             root,
@@ -572,6 +674,7 @@ class TestRunCanaries:
             seen["validation"] = validation
             seen["knowledge_light"] = knowledge_light
             seen["replay"] = replay
+            seen["execution_mode"] = execution_mode
             seen["requested_task_id"] = requested_task_id
             seen["requested_subset"] = requested_subset
             seen["root"] = root
@@ -608,6 +711,7 @@ class TestRunCanaries:
         )
 
         assert seen["replay"] is False
+        assert seen["execution_mode"] == "live"
         assert seen["requested_task_id"] is None
         assert seen["requested_subset"] is None
         assert seen["knowledge_light"] is False
@@ -669,6 +773,7 @@ class TestCanaryFileValidity:
         assert "extension" in canary_kinds
         assert "negative" in canary_kinds
         assert "legacy_replay" in canary_kinds
+        assert "deterministic_replay" in canary_kinds
 
     def test_real_canary_ids_exist_in_active_task_manifests(self):
         from trellis.agent.task_manifests import load_active_task_lookup
@@ -691,8 +796,9 @@ class TestCanaryFileValidity:
         expected_ids = {"T13", "T38", "F001", "F002", "P003", "N001"}
         assert expected_ids <= set(canary_lookup)
 
-        assert canary_lookup["T13"]["canary_kind"] == "legacy_replay"
-        assert canary_lookup["T13"].get("record_cassette", True) is True
+        assert canary_lookup["T13"]["canary_kind"] == "deterministic_replay"
+        assert canary_lookup["T13"].get("record_cassette", True) is False
+        assert canary_lookup["T13"]["replay_mode"] == "deterministic_exact_binding"
         assert canary_lookup["T38"].get("record_cassette", True) is False
         assert canary_lookup["F001"]["canary_kind"] == "parity"
         assert canary_lookup["P003"]["canary_kind"] == "extension"

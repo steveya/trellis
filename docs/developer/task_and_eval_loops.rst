@@ -27,6 +27,55 @@ The runtime helpers cover:
 - benchmarking cached task payoffs
 - normalizing task descriptions into request/build inputs
 
+Agent Composition Guardrails
+----------------------------
+
+Task generation is intentionally assembly-first. Route and backend-binding
+catalogs should expose reusable primitives and binding surfaces; generated
+adapters still own product-specific payoff assembly unless a checked helper is
+explicitly selected as the exact backend binding.
+
+Current composition rules:
+
+- identity inference treats product names such as ``autocallable``,
+  ``autocall``, ``phoenix``, and ``snowball`` as stronger than barrier-trait
+  words. A terminal protection or autocall barrier is a trait of an
+  autocallable, not evidence that the product should be narrowed to
+  ``barrier_option``.
+- ordinary barrier-option requests add the ``single_barrier`` payoff trait
+  unless they explicitly name lower-and-upper or double-barrier structure. The
+  PDE lane prefers ``price_single_barrier_option_pde_result`` and the Monte
+  Carlo lane prefers ``price_single_barrier_option_monte_carlo_result`` from
+  ``trellis.models.single_barrier_option`` for zero-rebate single-barrier
+  comparison targets.
+- double-barrier requests add the ``double_barrier`` payoff trait. The PDE lane
+  prefers ``trellis.models.double_barrier_option``'s
+  ``price_double_barrier_option_pde_result`` and records the lower-level
+  ``resolve_double_barrier_inputs``, ``Grid``, ``BlackScholesOperator``,
+  ``theta_method_1d``, and ``terminal_double_barrier_payoff`` obligations. The
+  Monte Carlo lane prefers ``price_double_barrier_option_monte_carlo_result``
+  and records the ``GBM``, ``MonteCarloEngine``, and
+  ``double_barrier_state_payoff`` path-monitor obligations.
+- stochastic-volatility PDE requests with ``stochastic_vol`` traits can select
+  the ``heston_adi_2d`` route. That route is still a ``pde_solver`` family
+  route; the route id only supplies the Heston-specific ADI evidence signature
+  and model-parameter binding contract.
+- resolver primitives with role ``market_binding`` may satisfy deterministic
+  market-access review checks. Generated code can call the resolver instead of
+  duplicating every ``market_state`` lookup inline, as long as it uses the
+  selected primitive surface.
+- single-underlier autocallable MC proof routes select
+  ``trellis.models.autocallable.price_autocallable_monte_carlo_result`` as the
+  checked event contract. The pseudo target calls it with
+  ``sampling="pseudo"``; the QMC target calls it with ``sampling="sobol"``.
+  Sobol is therefore a QMC comparison-target obligation, not a base
+  autocallable MC primitive.
+- deterministic API guardrails reject known near-misses before runtime, such
+  as ``GBM(spot=...)`` and importing ``SobolNormals``. Use ``GBM(mu=...,
+  sigma=...)`` and pass the initial spot to simulation/path construction; use
+  the function ``sobol_normals`` from ``trellis.models.monte_carlo`` or
+  ``trellis.models.qmc``.
+
 The non-integration pytest surface is also grouped into explicit reviewable
 strata:
 
@@ -65,10 +114,68 @@ The repo ships a small task-operations toolchain:
 - ``scripts/run_financepy_benchmark.py``: run the FinancePy parity corpus with timestamped run-history persistence
 - ``scripts/run_negative_benchmark.py``: run the clarification / honest-block corpus with timestamped run-history persistence
 - ``scripts/run_benchmark_history_scorecard.py``: build a repeated-run scorecard from append-only FinancePy or negative benchmark history
-- ``scripts/remediate.py``: analyze failures from the latest canonical task-run surface by default, or inspect root-level ``task_results_*.json`` tranches with ``--source tranches``
+- ``scripts/remediate.py``: analyze actionable failures from the latest canonical task-run surface by default, inspect root-level ``task_results_*.json`` tranches with ``--source tranches``, or bound the scan to explicit result files with ``--results`` / ``--task-id`` / ``--skip-platform-traces``
 - ``scripts/evaluate_shared_memory.py``: compare two task-result tranches and render a shared-memory improvement report
 - ``scripts/should_run_canary.py``: decide whether current local changes justify the focused core canary gate
 - ``scripts/test_hygiene.py``: report stale skip/xfail/quarantine markers for local test-hygiene triage
+
+``run_task(...)`` defaults to ``recovery_mode="strict"`` for production-like
+callers.  Task-operation scripts default to ``assisted`` and expose
+``--recovery-mode strict|assisted|remediation``.  In assisted/remediation mode,
+a failed target may receive one bounded intra-run retry with an ephemeral
+``KnowledgePatchCandidate`` overlay derived from failure/reflection evidence
+and deterministic contract evidence.  The candidate can carry structured
+callable-signature records, required primitive obligations, and comparison
+contract metadata; the prompt overlay is only the rendered form of that bounded
+evidence.  The runtime scores ``contract_completeness`` before retrying.  A
+candidate with only prose guidance is persisted as a skipped recovery attempt
+with explicit ``skip_reasons`` and does not call the builder again.  The overlay
+is not canonical cookbook knowledge and cannot promote itself.  It is persisted
+as ``recovery_attempts`` / ``intra_run_learning`` evidence so diagnostics can
+distinguish recovered candidate-knowledge retries, skipped candidates, and
+ordinary build retries.
+
+Assisted retries also persist a retry-attribution record.  The runtime records
+whether the candidate was retryable, whether structured contract evidence was
+present, whether deterministic retry inputs changed, which fields changed, and
+whether the retry changed the observed result.  A retry is counted as
+``contract_evidence_consumed`` only when the candidate's structured obligations
+are carried into changed build inputs; this prevents task scorecards from
+treating a retry attempt itself as evidence that learning helped.
+
+The overlay is not only prompt text.  ``build_with_knowledge(...)`` forwards
+retry overlays into ``build_payoff(...)`` and ``compile_build_request(...)``.
+The compiler consumes available required-primitive and callable-signature
+obligations into ``GenerationPlan`` module, symbol, reusable-primitive, and
+helper-ref fields before validation contracts and route-binding authority are
+computed.  The compiled request records
+``intra_run_learning_overlay_consumption`` with candidate ids, target ids,
+obligation kinds, applied inputs, and unapplied obligations.
+
+Sparse proof rows may also bind directly to deterministic task-runtime
+targets when the reusable library primitive already exists and code generation
+would only create adapter noise.  The counterparty CVA proof rows use this path
+for ``T52`` and ``T54``: ``T52`` compares the bounded IRS exposure-CVA helper
+against its flat-hazard expected-exposure approximation, while ``T54`` declares
+``independent_cva`` as the reference target and checks ``correlated_cva`` with
+a directional ``>=`` relation.  Directional comparisons should be represented
+with ``cross_validate.reference_target`` plus per-target ``relations`` rather
+than forced through the median/equality harness.
+
+The same deterministic-proof pattern applies to ``T55``.  The credit-index
+option row binds ``black_on_spread`` and ``mc_credit_index`` to
+``trellis.models.credit_index_option`` over a shared
+``CreditIndexOptionSpec``.  Keep future spread-option tasks on that explicit
+contract surface instead of asking generated adapters to infer spread forward,
+spread volatility, annuity, and loss-convention fields from a sparse title.
+
+``T59`` and ``T60`` use the same sparse-proof boundary.  ``T59`` binds
+``dupire_pde`` and ``local_vol_mc`` to ``trellis.models.local_vol_option`` over
+one ``LocalVolVanillaOptionSpec``.  ``T60`` executes the ``heston_mc`` target
+through the checked Heston Monte Carlo helper but keeps ``slv_mc`` as a
+certified honest block unless the task supplies an explicit leverage-function
+contract.  The SLV/LSV blocker is expected evidence, not an actionable adapter
+failure.
 
 The repo root ``Makefile`` now exposes the explicit gate entrypoints:
 
@@ -151,13 +258,14 @@ That lets sparse manifest rows keep their normal task-inventory shape while
 the curated regression surface still carries the fuller descriptions or market
 blocks needed to exercise canonical comparison cases honestly.
 
-The same runner now also has a full-task replay mode for diagnosis-heavy
-canaries:
+The same runner now also has full-task replay modes for diagnosis-heavy
+canaries.  Cassette-backed replay is for canaries that still require recorded
+LLM calls:
 
 - record with
-  ``PYTHONHASHSEED=0 python3 scripts/record_cassettes.py --task T13``
+  ``PYTHONHASHSEED=0 python3 scripts/record_cassettes.py --task <task-id>``
 - replay with
-  ``PYTHONHASHSEED=0 python3 scripts/run_canary.py --task T13 --replay``
+  ``PYTHONHASHSEED=0 python3 scripts/run_canary.py --task <task-id> --replay``
 - full-task canary cassettes live under ``cassettes/full_task/``
 
 The hash seed matters because the replay contract hashes the full prompt text.
@@ -166,6 +274,14 @@ still depend on iteration order stay stable across processes.
 Run these commands with the repo-standard miniforge interpreter; if your shell
 ``python3`` resolves elsewhere, invoke the configured interpreter path from
 ``AGENTS.md`` directly.
+
+Canaries whose manifest entry sets
+``replay_mode: deterministic_exact_binding`` use a different zero-token replay
+lane.  The runner executes the real ``run_task(...)`` surface under the
+offline-local LLM guard and requires the task to complete through deterministic
+exact bindings.  No cassette calls are consumed, so prompt-hash drift in old
+recordings cannot block the replay.  If such a canary attempts a live LLM call,
+the offline guard fails the run.
 
 Unlike the older tier-2 pipeline cassettes, the full-task canary path replays
 the real ``run_task(...)`` surface. That means the replay still exercises the
@@ -338,6 +454,8 @@ The scorecard reports:
 - shared-knowledge reuse signals
 - attribution buckets separating knowledge-assisted improvements from residual
   knowledge gaps, implementation gaps, and market/provider noise
+- retry-learning attribution that separates genuine retry-learned recovery
+  from first-pass deterministic reuse
 
 Use it like this:
 
@@ -350,6 +468,20 @@ If you want to inspect the selected cohort first:
 .. code-block:: bash
 
    /Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py --list-tasks --limit 10
+
+To prove the bounded intra-run retry path itself without live model calls, use
+the seeded local fixture:
+
+.. code-block:: bash
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py \
+     --seeded-retry-fixture --passes 1 --knowledge-light \
+     --report-name seeded_retry_learning
+
+That fixture bypasses manifest selection and uses a local fake builder. The
+first attempt fails on a checked callable signature, then the assisted retry
+must consume structured contract evidence and recover. Its scorecard should
+show a retry-learned recovery, not only a first-pass deterministic route reuse.
 
 Task-run artifacts now preserve analytical trace paths alongside the existing
 platform traces. When a build loop emits an analytical route, the stored task
@@ -365,9 +497,47 @@ you need to understand a failure or confirm a success. The batch runner now
 surfaces those packet paths directly on the task result so you do not have to
 reconstruct them from traces or summary files.
 
+Task-result rows also mirror the diagnosis packet's compact outcome fields:
+``failure_bucket``, ``diagnosis_headline``, ``diagnosis_decision_stage``, and
+``diagnosis_next_action``. The older ``task_diagnosis_*`` path/status fields
+remain for compatibility, but remediation and batch summaries should prefer
+the canonical aliases when they are present. ``scripts/remediate.py
+--analyze-only`` uses those structured buckets before raw text heuristics, so
+proof-task failures stay grouped as ``blocked``,
+``comparator_build_failure``, or ``comparison_insufficient_results`` instead
+of collapsing into a generic validation-failure bucket.
+
+Sparse legacy proof rows can also carry a deterministic task-runtime contract
+bridge before generation. The bridge is intentionally small and auditable:
+``T25``, ``T26``, ``T31``, and ``T32`` default to a European SPX call
+semantic contract for Monte Carlo numerical-method proof work. ``T14`` uses an
+American SPX put contract for the PDE/tree/LSM comparison and resolves
+``lsm_mc`` through the exact
+``price_american_equity_option_lsm_monte_carlo(...)`` helper, so the task tests
+route-helper binding rather than generated early-exercise branching. ``T15``
+uses a bounded CEV European call contract for the CEVOperator PDE versus CEV
+tree comparison and binds ``cev_pde`` / ``cev_tree`` to deterministic local
+proof adapters. The PDE adapter must consume CEV parameters through
+``CEVOperator``; it should not silently reuse a Black-vol vanilla PDE helper
+just because the payoff is also European vanilla. Its validation bundle is
+``*:cev_option`` and intentionally skips Black-vol-surface sensitivity checks,
+because CEV proof routes use explicit CEV model parameters rather than a Black
+vol surface as the live model driver. ``T27`` defaults to an American SPX put
+contract for the LSM basis comparison and binds the comparison target ids
+``polynomial``, ``laguerre``,
+``hermite``, ``chebyshev``, and ``high_step_tree_2000`` to deterministic local
+proof adapters that compose the public Longstaff-Schwartz basis primitives and
+CRR tree reference. They are task-runner proof contracts, not promoted
+cookbooks or public pricing APIs. ``T18`` does not get a synthetic rate payoff;
+it is certified as an expected honest block because the legacy row names a
+log-space PDE transform for rate instruments without specifying the rate
+payoff, schedule, strike/coupon terms, or settlement rule. Those bridge
+decisions are task-runner contracts, not general natural-language parser
+behavior.
+
 Stochastic-volatility task runs also carry a ``computational_problem`` block
-when the task target is Heston, Bates, SLV/LSV, or a related unsupported
-path-dependent control shape. The block is copied into the task result,
+when the task target is Heston, Bates, SLV/LSV, or a related path-dependent
+control shape. The block is copied into the task result,
 ``runtime_contract``, comparison-target request metadata, and the diagnosis
 packet. It is meant for task triage and remediation: it records the
 computational bucket, model-parameter semantics, validation bundle, and any
@@ -379,16 +549,27 @@ stochastic-vol coupling abstractions directly.
 The developer-facing contract for those terms lives in
 :doc:`stochastic_vol_computational_ir`.
 
+Task results now distinguish fail-closed pricing success from expectation
+success. ``outcome_class="honest_block"`` plus ``passed_expectation=true``
+means the route did not produce a price, but it satisfied a negative or
+honest-block task by stopping with a concrete blocker. Batch summaries and
+``scripts/remediate.py --analyze-only`` exclude those rows from actionable
+failure counts while preserving the underlying ``success=false`` pricing
+semantics.
+
 That packet/checkpoint surface also now treats backend binding identity as the
 primary implementation provenance. Compatibility route aliases may still
 appear, but only as secondary metadata so replay, canary drift, and learning
 artifacts no longer rely on route-primary checkpoint joins.
 
-For cassette-backed canary replays, the task result and persisted task-run
-record now carry explicit execution metadata:
+For canary replays, the task result and persisted task-run record now carry
+explicit execution metadata:
 
 - ``execution_mode`` is ``cassette_replay`` instead of ``live``
-- ``llm_cassette`` records the cassette name, path, and replay policy
+- ``execution_mode`` is ``deterministic_replay`` for exact-binding replay
+  canaries that do not consume cassette calls
+- ``llm_cassette`` records the cassette name, path, replay policy, and
+  ``used=false`` for deterministic replay
 
 That keeps replay runs obvious to humans and downstream tooling without
 changing the packet or task-result schema that remediation and canary summary
@@ -506,6 +687,35 @@ comparators. That keeps canaries such as ``T65`` on the stable
 ``price_swaption_tree(...)`` surface instead of regenerating inline lattice
 exercise code for the comparison target.
 
+Semantic composition gaps versus helper gaps
+---------------------------------------------
+
+Task execution must preserve declared contract refinements before selecting a
+route. ``benchmark_contract`` and ``extension_contract`` payloads are rendered
+into the effective request description, including exercise style and explicit
+schedules. A broad instrument identity such as ``swaption`` cannot erase a
+narrower ``style=bermudan`` contract.
+
+If semantic compilation rejects a requested method, the executor must not fall
+back to broad text decomposition. It records a
+``semantic_method_composition_gap`` with:
+
+- the semantic family and requested method;
+- reusable capabilities already present in the repository;
+- the missing composition capabilities;
+- the methods that remain admitted for the contract.
+
+This classification is intentionally different from ``missing_helper``. The
+repair target is a reusable computational or API surface, not a new function
+named after the failing product and method. A product-method helper may remain
+as compatibility evidence, but it cannot turn an incompatible route green.
+
+``P005`` is the proving case. Its Bermudan exercise schedule is retained through
+semantic drafting. The rate-tree lane remains admitted. The Monte Carlo lane
+blocks before generation until the generic rates-MC composition surface can map
+the irregular exercise schedule, apply pathwise numeraire discounting, and feed
+pathwise swap values into the early-exercise controller.
+
 Transform proving now also distinguishes model families explicitly. The thin
 vanilla transform helper surface is only used for ``equity_diffusion`` claims;
 stochastic-volatility tasks such as the Heston smile canary stay on a checked
@@ -519,6 +729,47 @@ of falling back to a vanilla Black-vol adapter. T114-style targets also carry a
 Heston characteristic-function quadrature kernel, integration requirements,
 diagnostics, and validation bundle explicitly.
 
+Jump-diffusion transform targets follow that same separation. Merton comparison
+targets such as ``merton_fft`` and ``merton_cos`` now bind to
+``trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform``,
+and ``merton_mc`` binds to the sibling terminal Monte Carlo helper. The
+``ProductIR`` keeps the product shape as a European vanilla option, but adds
+``model_family=jump_diffusion`` and ``jump_parameters`` as required runtime
+evidence. Validation fixtures must include those jump parameters instead of
+trying to reinterpret the task as an ordinary Black-vol vanilla route.
+
+Variance Gamma, CGMY, and Kou targets use the same ProductIR discipline.
+Sparse task labels such as ``vg_cos``, ``vg_mc``,
+``madan_carr_chang_reference``, ``cgmy_cos``, ``cgmy_mc``,
+``cgmy_reference_values``, ``kou_fft``, ``kou_mc``, and
+``kou_reference_values`` remain European vanilla options, but their
+``model_family`` narrows to ``variance_gamma``, ``cgmy``, or ``kou`` and
+their market evidence narrows to explicit ``model_parameters``. The
+deterministic exact-binding wrappers should call the checked
+``trellis.models.levy_option`` helpers. Validation should not run generic
+Black-vol vega checks for these routes unless a separate calibration problem
+explicitly owns a Black-vol-to-Levy-parameter bridge.
+
+Bates comparison targets keep the same product-shape discipline. A task such
+as ``bates_fft`` versus ``bates_mc`` remains a European vanilla option in
+``ProductIR`` and narrows by ``model_family=bates`` plus both
+``model_parameters`` and ``jump_parameters``. The FFT target binds through
+``trellis.models.bates_option.price_bates_option_transform`` and the MC target
+binds through ``trellis.models.bates_option.price_bates_option_monte_carlo``.
+Generated wrappers should call those helpers rather than composing Heston
+paths and jump aggregation locally.
+
+SABR comparison targets keep the same product-shape discipline. A task such as
+``sabr_mc`` versus ``sabr_hagan_analytical`` remains a European vanilla
+forward-style option in ``ProductIR`` and narrows by ``model_family=sabr`` plus
+``model_parameters``. The Hagan target binds through
+``trellis.models.sabr_option.price_sabr_forward_option_hagan`` and the MC
+target binds through
+``trellis.models.sabr_option.price_sabr_forward_option_monte_carlo``. The
+generated wrapper must not inherit a ``black_vol_surface`` requirement from the
+generic Black76 skeleton; SABR parameters are the runtime evidence unless a
+separate calibration problem explicitly owns the Black-vol-to-SABR conversion.
+
 The Monte Carlo lane now follows the same model-family separation for European
 Heston vanilla options. ``euler_heston`` and ``heston_mc`` targets bind to
 ``trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo``
@@ -528,6 +779,89 @@ and reports the ``heston:monte_carlo`` validation bundle, so the task runtime no
 longer treats Andersen QE as a missing generated-adapter primitive. It still
 does not recalibrate Heston parameters from a bumped Black vol surface unless a
 separate calibration problem owns that conversion.
+
+The Heston ADI PDE target uses the same model-parameter boundary. The
+``heston_adi_pde`` comparison target should bind through
+``trellis.models.pde.heston_adi.resolve_heston_adi_pde_inputs`` and price with
+``price_heston_option_adi_pde_result``. Agents should not call
+``resolve_heston_transform_inputs`` with payoff arguments such as ``strike``;
+FFT/COS transform calls are optional diagnostics, not the ADI market-binding
+contract.
+
+Double-barrier PDE and Monte Carlo targets use the same helper-owned contract
+style. When the compiled primitive plan selects
+``price_double_barrier_option_pde_result`` or
+``price_double_barrier_option_monte_carlo_result`` as the required route
+helper, a generated adapter should stay thin and call that helper with
+``market_state`` plus the original spec-like object. Semantic validation treats
+the checked helper as owning its internal grid, operator, barrier monitor,
+terminal payoff, and discounting obligations, but it still rejects adapters
+that skip the helper or invent alternate raw inputs such as ``spot`` or barrier
+keywords.
+
+Single-barrier PDE and Monte Carlo targets follow the same helper-owned
+contract for the ordinary zero-rebate barrier cohort. When the compiled
+primitive plan selects ``price_single_barrier_option_pde_result`` or
+``price_single_barrier_option_monte_carlo_result``, a generated adapter should
+delegate directly to that helper with ``market_state`` plus the original spec.
+The helper owns the absorbing barrier boundary, far vanilla boundary,
+single ``BarrierMonitor``, notional convention, and deterministic discounting.
+Rebate-bearing barriers should remain on the analytical Rubinstein route until
+the PDE/MC rebate contract is implemented.
+
+Digital, Asian, and fixed-lookback proof targets use exact helper wrappers only
+for the retained comparison surfaces that have checked numerical contracts.
+Cash-or-asset digital Crank-Nicolson and Rannacher targets bind to
+``price_equity_digital_option_pde(...)``; arithmetic-Asian MC targets bind to
+``price_arithmetic_asian_option_monte_carlo(...)``; Turnbull-Wakeman targets
+are analytical comparison targets and bind to
+``price_arithmetic_asian_option_analytical(...)`` even when the broader task is
+a multi-method path-dependent option; and fixed-lookback MC targets bind to
+``price_equity_fixed_lookback_option_monte_carlo(...)``. Sparse legacy task
+text may use cross-validation target names to recover product identity, but the
+runtime still fails closed if the resolved contract and exact helper disagree.
+
+Capped/floored cliquet comparisons follow a bounded version of that contract.
+The analytical target can use the checked capped/floored reset-return
+quadrature path, and the Monte Carlo target should call
+``price_equity_cliquet_option_monte_carlo(market_state, spec, ...)`` instead of
+rebuilding reset-date GBM path generation inline. The generic volatility
+monotonicity invariant is not enforced for ``cliquet_option`` because
+local/global caps and floors can make the capped return value non-monotone in
+Black volatility; volatility sensitivity remains part of the validation pack.
+
+The ADI helper also owns its variance-grid domain. The grid upper bound is
+based on the CIR variance-process dispersion, not a raw ``xi * sqrt(T)`` move;
+otherwise high vol-of-vol fixtures place the initial variance too close to the
+lower boundary and bias the finite-difference price high. T20-style ADI
+comparisons should therefore use the checked helper instead of rebuilding the
+variance grid in generated code.
+
+Offline local-agent reruns can use ``--offline-local-agents`` on
+``scripts/run_tasks.py`` or ``scripts/rerun_ids.py``. That mode sets the
+post-build learning skips, disables LLM-backed critic/model-validator review
+through deterministic review policy, and leaves the LLM override guard active
+as a hard backstop. Batch summaries report expectation semantics separately
+from pricing success: an expected honest block remains fail-closed with no
+price, but prints as ``HONEST_BLOCK`` and counts toward
+``passed_expectation`` rather than actionable failure.
+
+The reference no-LLM closeout pack for the contract-backed task-learning work
+is:
+
+.. code-block:: bash
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+     --task-id T20 --task-id T22 --task-id T105 --task-id T107 --task-id E27 \
+     --status all --offline-local-agents --recovery-mode assisted \
+     --validation standard \
+     --output task_results_qua1143_offline_closeout_20260702.json
+
+That run reported ``5/5`` passed expectations in ``95s``: ``T20``, ``T22``,
+``T105``, and ``T107`` were ``compare_ready`` pricing successes; ``E27`` was an
+``honest_block``; token usage was zero; and bounded remediation reported zero
+failures.  The expected healthy shape is now first-pass deterministic reuse,
+not repeated retry recovery.
 
 That route family now also has its own lowered contract boundary. Transform
 tasks compile onto ``TransformPricingIR`` before admissibility, so the canaries
@@ -539,6 +873,15 @@ contract. In practice this is what keeps transform canaries such as ``T39`` and
 
 For the analytical benchmark side of those canaries, the runtime now also
 materializes a deterministic exact wrapper around the checked Black76 kernels.
+The same rule applies to sparse transform and credit comparison targets:
+``fft``/``cos`` GBM lanes delegate to
+``price_vanilla_equity_option_transform(...)``, digital ``fft``/``cos`` lanes
+delegate to ``price_equity_digital_option_transform(...)``, and
+``credit_default_swap`` analytical lanes reuse the static ``CDSSpec`` and
+``price_cds_analytical(...)`` binding.  These are task-runtime exact bindings,
+not cookbook-authored generated adapters; under ``--offline-local-agents`` they
+should complete without spec-design, code-generation, critic, or
+model-validator LLM calls.
 That wrapper binds ``year_fraction(...)``, discounting, and expiry-vol lookup
 through the actual runtime market-state protocols instead of asking the build
 loop to regenerate a tiny analytical adapter for every transform comparison.
@@ -669,6 +1012,7 @@ Useful commands:
    /Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py T13 T24
    /Users/steveyang/miniforge3/bin/python3 scripts/rerun_ids.py T54 T62
    /Users/steveyang/miniforge3/bin/python3 scripts/remediate.py --analyze-only
+   /Users/steveyang/miniforge3/bin/python3 scripts/remediate.py --analyze-only --results task_results_rerun_failed_pack_20260623.json --skip-platform-traces
    /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "crossval and not integration"
    /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "verification and not integration"
    /Users/steveyang/miniforge3/bin/python3 -m pytest tests -x -q -m "task_challenge and not integration"

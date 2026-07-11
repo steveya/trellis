@@ -718,6 +718,232 @@ def price(spec, market_state):
     assert "lite.vanilla_equity_theta_pde_black_vol_surface_access_missing" not in issue_codes
 
 
+def test_lite_review_rejects_double_barrier_shortcut_without_market_accesses():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff
+
+def price(self, market_state):
+    return terminal_double_barrier_payoff([self._spec.spot], self._spec)[0]
+"""
+
+    plan = GenerationPlan(
+        method="pde_solver",
+        instrument_type="barrier_option",
+        inspected_modules=("trellis.models.analytical.support.barriers",),
+        approved_modules=("trellis.models.analytical.support.barriers",),
+        symbols_to_reuse=("terminal_double_barrier_payoff",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="pde_theta_1d",
+            engine_family="pde_solver",
+            primitives=(),
+            adapters=(),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.analytical.support.barriers"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.pde_theta_1d_discount_curve_access_missing" in issue_codes
+    assert "lite.pde_theta_1d_black_vol_surface_access_missing" in issue_codes
+
+
+def test_lite_review_allows_double_barrier_resolver_to_satisfy_market_accesses():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.analytical.support.barriers import (
+    resolve_double_barrier_inputs,
+    terminal_double_barrier_payoff,
+)
+
+def price(self, market_state):
+    resolved = resolve_double_barrier_inputs(market_state, self._spec)
+    terminal = terminal_double_barrier_payoff([resolved.spot], resolved.spec)[0]
+    return terminal * resolved.discount_factor
+"""
+
+    plan = GenerationPlan(
+        method="pde_solver",
+        instrument_type="barrier_option",
+        inspected_modules=("trellis.models.analytical.support.barriers",),
+        approved_modules=("trellis.models.analytical.support.barriers",),
+        symbols_to_reuse=("resolve_double_barrier_inputs", "terminal_double_barrier_payoff"),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="pde_theta_1d",
+            engine_family="pde_solver",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.analytical.support.barriers",
+                    "resolve_double_barrier_inputs",
+                    "market_binding",
+                ),
+                PrimitiveRef(
+                    "trellis.models.analytical.support.barriers",
+                    "terminal_double_barrier_payoff",
+                    "terminal_payoff",
+                ),
+            ),
+            adapters=(),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.analytical.support.barriers"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.pde_theta_1d_discount_curve_access_missing" not in issue_codes
+    assert "lite.pde_theta_1d_black_vol_surface_access_missing" not in issue_codes
+
+
+def test_lite_review_rejects_gbm_spot_constructor_keyword():
+    from trellis.agent.lite_review import review_generated_code
+
+    source = """\
+from trellis.models.processes.gbm import GBM
+
+def price(self, market_state):
+    process = GBM(spot=self._spec.spot, mu=0.05, sigma=0.2)
+    return process.sigma
+"""
+
+    report = review_generated_code(source)
+
+    assert any(issue.code == "lite.gbm_spot_constructor_keyword" for issue in report.issues)
+
+
+def test_lite_review_rejects_autocallable_shortcut_without_required_route_helper():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.monte_carlo.variance_reduction import sobol_normals
+
+def price(self, market_state):
+    return 0.0
+"""
+
+    plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="barrier_option",
+        inspected_modules=("trellis.models.monte_carlo.variance_reduction",),
+        approved_modules=("trellis.models.monte_carlo.variance_reduction",),
+        symbols_to_reuse=("sobol_normals",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="monte_carlo_paths",
+            engine_family="monte_carlo",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.monte_carlo.event_aware",
+                    "price_event_aware_monte_carlo",
+                    "route_helper",
+                ),
+            ),
+            adapters=(),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.variance_reduction"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.monte_carlo_paths_route_helper_missing" in issue_codes
+
+
+def test_lite_review_accepts_checked_cliquet_helper_for_monte_carlo_paths():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
+
+def price(self, market_state):
+    return price_equity_cliquet_option_monte_carlo(market_state, self._spec)
+"""
+
+    plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="cliquet_option",
+        inspected_modules=("trellis.models.monte_carlo.event_aware",),
+        approved_modules=("trellis.models.monte_carlo.event_aware",),
+        symbols_to_reuse=("price_equity_cliquet_option_monte_carlo",),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="monte_carlo_paths",
+            engine_family="monte_carlo",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.monte_carlo.event_aware",
+                    "price_event_aware_monte_carlo",
+                    "route_helper",
+                ),
+            ),
+            adapters=(),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.event_aware"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="cliquet_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.monte_carlo_paths_route_helper_missing" not in issue_codes
+
+
 def test_builder_prompt_surface_uses_semantic_repair_for_lite_review():
     from trellis.agent.executor import _builder_prompt_surface_for_attempt
 

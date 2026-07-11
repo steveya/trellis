@@ -24,6 +24,26 @@ class TestSpecSchema:
         spec = STATIC_SPECS["cap"]
         assert spec.class_name == "AgentCapPayoff"
 
+    def test_period_rate_option_strip_static_spec_supports_collar_aliases(self):
+        spec = STATIC_SPECS["period_rate_option_strip"]
+        assert spec.class_name == "PeriodRateOptionStripPayoff"
+        field_names = [f.name for f in spec.fields]
+        assert "cap_strike" in field_names
+        assert "floor_strike" in field_names
+        assert "exercise_dates" in field_names
+        assert "accrual_dates" in field_names
+        assert "coupon_dates" in field_names
+
+    def test_heston_static_spec_avoids_llm_spec_design(self):
+        spec = STATIC_SPECS["heston_option"]
+        assert spec.class_name == "HestonOptionPayoff"
+        assert spec.spec_name == "HestonOptionSpec"
+        assert set(spec.requirements) == {"discount_curve", "model_parameters", "spot"}
+        field_names = [f.name for f in spec.fields]
+        assert "spot" in field_names
+        assert "strike" in field_names
+        assert "expiry_date" in field_names
+
     def test_schedule_dependent_static_specs_use_typed_date_tuples(self):
         callable_spec = STATIC_SPECS["callable_bond"]
         puttable_spec = STATIC_SPECS["puttable_bond"]
@@ -54,6 +74,19 @@ class TestPlanStatic:
         assert len(plan.steps) == 1
         assert "swaption" in plan.steps[0].module_path
 
+    def test_period_rate_option_strip_plan_has_static_spec(self):
+        plan = plan_build(
+            "Price a callable cap/floor collar with a non-standard accrual schedule.",
+            {"discount_curve", "forward_curve", "black_vol_surface"},
+            instrument_type="period_rate_option_strip",
+            preferred_method="analytical",
+        )
+
+        assert plan.payoff_class_name == "PeriodRateOptionStripPayoff"
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "PeriodRateOptionStripSpec"
+        assert "periodrateoptionstrip" in plan.steps[0].module_path
+
     def test_unknown_instrument_no_spec(self):
         plan = _plan_static(
             "weather derivative on cumulative rainfall",
@@ -71,6 +104,37 @@ class TestPlanStatic:
             set(),
         )
         assert plan.payoff_class_name == "WeatherDerivativePayoff"
+
+    def test_generic_module_path_uses_bounded_description_slug(self):
+        plan = _plan_static(
+            "Build a pricer for: Crank-Nicolson Rannacher smoothing for discontinuous payoffs\n\n"
+            "Construct methods: pde_solver\n"
+            "Comparison targets: cn_rannacher (pde_solver), cn_standard (pde_solver), "
+            "black_scholes_digital (analytical)\n",
+            {"discount_curve"},
+            {"discount_curve"},
+            set(),
+        )
+
+        module_path = plan.steps[0].module_path
+
+        assert module_path.startswith("instruments/_agent/")
+        assert "\n" not in module_path
+        assert ":" not in module_path
+        assert len(module_path) <= len("instruments/_agent/") + 72 + len(".py")
+        assert module_path.endswith(".py")
+        assert "crank_nicolson_rannacher" in module_path
+
+        compact_plan = _plan_static(
+            "BuildAPricerFor:CrankNicolsonRannacherSmoothingForDiscontinuousPayoffs\n\n"
+            "ConstructMethods:PDESolver",
+            {"discount_curve"},
+            {"discount_curve"},
+            set(),
+        )
+
+        assert "buildapricerfor" not in compact_plan.steps[0].module_path
+        assert "cranknicolsonrannacher" in compact_plan.steps[0].module_path
 
     def test_barrier_option_has_spec(self):
         plan = _plan_static(
@@ -151,6 +215,16 @@ class TestPlanStatic:
         assert plan.spec_schema.class_name == "CliquetOptionPayoff"
         assert plan.steps[0].module_path.endswith("cliquetoption.py")
         assert plan.spec_schema.spec_name == "CliquetOptionSpec"
+        field_names = {field.name for field in plan.spec_schema.fields}
+        assert {
+            "local_cap",
+            "local_floor",
+            "global_cap",
+            "global_floor",
+            "time_day_count",
+            "quadrature_order",
+            "max_quadrature_nodes",
+        } <= field_names
 
     @pytest.mark.parametrize(
         ("description", "requirements", "instrument_type", "expected_class"),
@@ -231,6 +305,19 @@ class TestPlanStatic:
         assert any(field.name == "valuation_date" for field in plan.spec_schema.fields)
         assert any(field.name == "pricing_method" for field in plan.spec_schema.fields)
 
+    def test_credit_default_swap_analytical_uses_cds_static_spec(self):
+        plan = _plan_static(
+            "Single-name CDS priced analytically",
+            {"discount_curve", "credit_curve"},
+            {"discount_curve", "credit_curve"},
+            set(),
+            instrument_type="credit_default_swap",
+            preferred_method="analytical",
+        )
+        assert plan.spec_schema is STATIC_SPECS["cds"]
+        assert plan.payoff_class_name == "CDSPayoff"
+        assert plan.steps[0].module_path.endswith("cds.py")
+
     def test_cds_analytical_static_spec_carries_time_origin_and_method_fields(self):
         spec = STATIC_SPECS["cds"]
         field_names = [field.name for field in spec.fields]
@@ -286,12 +373,57 @@ class TestPlanBuild:
         assert plan.spec_schema.spec_name == "AmericanPutTreeSpec"
         assert plan.payoff_class_name == "AmericanPutTreePayoff"
         assert [field.name for field in plan.spec_schema.fields] == [
+            "notional",
             "spot",
             "strike",
             "expiry_date",
             "option_type",
             "exercise_style",
             "day_count",
+            "tree_steps",
+            "n_paths",
+            "n_steps",
+            "seed",
+            "n_x",
+            "n_t",
+        ]
+
+    def test_american_put_pde_route_uses_deterministic_spec_schema(self):
+        plan = plan_build(
+            "American put: PSOR PDE vs LSM MC",
+            {"discount_curve", "black_vol_surface"},
+            instrument_type="american_put",
+            preferred_method="pde_solver",
+        )
+
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "AmericanPutTreeSpec"
+        assert plan.payoff_class_name == "AmericanPutTreePayoff"
+
+    def test_cev_route_uses_deterministic_spec_schema(self):
+        plan = plan_build(
+            "CEV model: CEVOperator PDE vs CEV tree",
+            {"discount_curve"},
+            instrument_type="european_option",
+            preferred_method="pde_solver",
+        )
+
+        assert plan.spec_schema is not None
+        assert plan.spec_schema.spec_name == "CEVOptionSpec"
+        assert plan.payoff_class_name == "CEVOptionPayoff"
+        assert [field.name for field in plan.spec_schema.fields] == [
+            "notional",
+            "spot",
+            "strike",
+            "expiry_date",
+            "option_type",
+            "day_count",
+            "cev_sigma",
+            "cev_beta",
+            "n_x",
+            "n_t",
+            "tree_steps",
+            "tree_grid_size",
         ]
 
     def test_infer_method_hint_does_not_match_tree_substrings_inside_other_words(self):

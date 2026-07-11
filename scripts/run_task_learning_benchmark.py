@@ -75,6 +75,14 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--list-tasks", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--seeded-retry-fixture",
+        action="store_true",
+        help=(
+            "Run a local deterministic fixture that fails the first build with a "
+            "structured contract error and recovers through one intra-run retry."
+        ),
+    )
     parser.add_argument("--output-root")
     parser.add_argument("--report-name", default="non_canary_task_learning")
     return parser.parse_args(argv)
@@ -124,6 +132,23 @@ def build_learning_tasks(
     return selected
 
 
+def build_seeded_retry_fixture_tasks() -> list[dict[str, Any]]:
+    """Return the local fixture task used to prove retry-learned recovery."""
+    return [
+        {
+            "id": "L001",
+            "title": "Seeded callable-signature retry fixture",
+            "status": "pending",
+            "task_kind": "learning_fixture",
+            "description": (
+                "Local deterministic benchmark fixture: first attempt violates an "
+                "existing Trellis callable signature, then a bounded retry consumes "
+                "the structured repair evidence and succeeds."
+            ),
+        }
+    ]
+
+
 def run_learning_benchmark(
     tasks: list[dict[str, Any]],
     *,
@@ -135,6 +160,7 @@ def run_learning_benchmark(
     validation: str,
     fresh_build: bool,
     knowledge_light: bool,
+    seeded_retry_fixture: bool = False,
 ) -> dict[str, Any]:
     """Run repeated passes for one non-canary task cohort and save the report."""
     output_root.mkdir(parents=True, exist_ok=True)
@@ -153,6 +179,7 @@ def run_learning_benchmark(
     print(f"# Passes: {passes}")
     print(f"# Fresh build: {fresh_build}")
     print(f"# Knowledge light: {knowledge_light}")
+    print(f"# Seeded retry fixture: {seeded_retry_fixture}")
     print(f"# Validation: {validation}")
     print(f"# Started: {datetime.now().isoformat()}")
     print(f"{'#' * 72}")
@@ -172,6 +199,7 @@ def run_learning_benchmark(
             fresh_build=fresh_build,
             knowledge_light=knowledge_light,
             task_run_storage_root=output_root / "task_run_records" / label,
+            seeded_retry_fixture=seeded_retry_fixture,
         )
         output_path.write_text(json.dumps(results, indent=2, default=str))
         summary = summarize_task_results(results)
@@ -204,10 +232,17 @@ def run_learning_benchmark(
         tasks=tasks,
         pass_runs=pass_runs,
         notes=[
-            "Fresh-build passes isolate knowledge carry-forward from adapter reuse."
-            if fresh_build
-            else "Reuse mode was enabled, so adapter reuse may contribute to improvements.",
-            "This benchmark measures short-term learning evidence, not autonomous code development.",
+            note
+            for note in (
+                "Fresh-build passes isolate knowledge carry-forward from adapter reuse."
+                if fresh_build
+                else "Reuse mode was enabled, so adapter reuse may contribute to improvements.",
+                "This benchmark measures short-term learning evidence, not autonomous code development.",
+                "Seeded retry fixture mode uses a local fake builder and zero live LLM calls."
+                if seeded_retry_fixture
+                else "",
+            )
+            if note
         ],
     )
     artifacts = save_task_learning_benchmark_report(
@@ -236,23 +271,33 @@ def _run_learning_pass(
     fresh_build: bool,
     knowledge_light: bool,
     task_run_storage_root: Path,
+    seeded_retry_fixture: bool,
 ) -> list[dict[str, Any]]:
-    market_state = build_market_state()
+    market_state = object() if seeded_retry_fixture else build_market_state()
     results: list[dict[str, Any]] = []
 
     for index, task in enumerate(tasks, start=1):
         print(f"  [{index}/{len(tasks)}] {task['id']}: {task['title']}", flush=True)
-        result = run_task(
-            task,
-            market_state,
-            model=model,
-            force_rebuild=fresh_build,
-            fresh_build=fresh_build,
-            knowledge_profile="knowledge_light" if knowledge_light else None,
-            validation=validation,
-            task_run_storage_root=task_run_storage_root,
-            task_run_storage_layout="standalone",
-        )
+        if seeded_retry_fixture:
+            result = _run_seeded_retry_fixture_task(
+                task,
+                market_state=market_state,
+                model=model,
+                validation=validation,
+                task_run_storage_root=task_run_storage_root,
+            )
+        else:
+            result = run_task(
+                task,
+                market_state,
+                model=model,
+                force_rebuild=fresh_build,
+                fresh_build=fresh_build,
+                knowledge_profile="knowledge_light" if knowledge_light else None,
+                validation=validation,
+                task_run_storage_root=task_run_storage_root,
+                task_run_storage_layout="standalone",
+            )
         payload = dict(result)
         payload["learning_benchmark_name"] = benchmark_name
         payload["learning_benchmark_pass"] = pass_number
@@ -271,6 +316,98 @@ def _run_learning_pass(
     return results
 
 
+def _run_seeded_retry_fixture_task(
+    task: dict[str, Any],
+    *,
+    market_state: object,
+    model: str,
+    validation: str,
+    task_run_storage_root: Path,
+) -> dict[str, Any]:
+    calls: list[dict[str, Any]] = []
+
+    class FailedSeededResult:
+        success = False
+        attempts = 1
+        gap_confidence = 0.7
+        knowledge_gaps: list[str] = []
+        payoff_cls = None
+        failures = [
+            "trellis.models.equity_option_pde.price_vanilla_equity_option_pde() "
+            "got an unexpected keyword argument 'spot'"
+        ]
+        reflection = {
+            "gaps_identified": [
+                "Use the exact helper signature for "
+                "price_vanilla_equity_option_pde and do not pass `spot`."
+            ],
+        }
+        token_usage_summary = {
+            "call_count": 0,
+            "calls_with_usage": 0,
+            "calls_without_usage": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "by_stage": {},
+            "by_provider": {},
+        }
+        knowledge_summary: dict[str, Any] = {}
+        agent_observations = [
+            {
+                "agent": "model_validator",
+                "kind": "contract",
+                "summary": (
+                    "The failed call violated the checked Trellis PDE helper "
+                    "signature; retry only with structured callable evidence."
+                ),
+            }
+        ]
+
+    class RecoveredSeededResult:
+        success = True
+        attempts = 1
+        gap_confidence = 1.0
+        knowledge_gaps: list[str] = []
+        payoff_cls = type("SeededRetryRecoveredPayoff", (), {})
+        failures: list[str] = []
+        reflection: dict[str, Any] = {}
+        token_usage_summary = {
+            "call_count": 0,
+            "calls_with_usage": 0,
+            "calls_without_usage": 0,
+            "prompt_tokens": 0,
+            "completion_tokens": 0,
+            "total_tokens": 0,
+            "by_stage": {},
+            "by_provider": {},
+        }
+        knowledge_summary: dict[str, Any] = {}
+        agent_observations: list[dict[str, Any]] = []
+
+    def seeded_build(**kwargs):
+        calls.append(dict(kwargs))
+        if len(calls) == 1:
+            return FailedSeededResult()
+        overlays = kwargs.get("knowledge_overlays") or []
+        if not overlays:
+            return FailedSeededResult()
+        return RecoveredSeededResult()
+
+    return run_task(
+        task,
+        market_state,
+        model=model,
+        force_rebuild=True,
+        fresh_build=True,
+        validation=validation,
+        build_fn=seeded_build,
+        task_run_storage_root=task_run_storage_root,
+        task_run_storage_layout="standalone",
+        recovery_mode="assisted",
+    )
+
+
 def _git_revision() -> str:
     completed = subprocess.run(
         ["git", "rev-parse", "--short", "HEAD"],
@@ -285,16 +422,22 @@ def _git_revision() -> str:
 
 def main(argv: list[str]) -> int:
     args = _parse_args(argv)
-    try:
-        tasks = build_learning_tasks(
-            requested_ids=args.task_ids or None,
-            include_done=args.include_done,
-            limit=args.limit,
-            corpora=args.corpora,
-        )
-    except ValueError as exc:
-        print(str(exc))
-        return 2
+    if args.seeded_retry_fixture:
+        if args.task_ids:
+            print("--seeded-retry-fixture does not accept task ids")
+            return 2
+        tasks = build_seeded_retry_fixture_tasks()
+    else:
+        try:
+            tasks = build_learning_tasks(
+                requested_ids=args.task_ids or None,
+                include_done=args.include_done,
+                limit=args.limit,
+                corpora=args.corpora,
+            )
+        except ValueError as exc:
+            print(str(exc))
+            return 2
 
     if args.list_tasks:
         for task in tasks:
@@ -306,15 +449,21 @@ def main(argv: list[str]) -> int:
     if args.dry_run:
         print(json.dumps(tasks, indent=2))
         return 0
-    if args.passes < 2:
+    if args.passes < 1:
+        print("Pass count must be at least 1.")
+        return 2
+    if args.passes < 2 and not args.seeded_retry_fixture:
         print("Pass count must be at least 2 for a learning benchmark.")
         return 2
 
-    cohort_name = (
-        "explicit_non_canary_selection"
-        if args.task_ids
-        else ("non_canary_pending_plus_done" if args.include_done else "non_canary_pending")
-    )
+    if args.seeded_retry_fixture:
+        cohort_name = "seeded_retry_fixture"
+    elif args.task_ids:
+        cohort_name = "explicit_non_canary_selection"
+    else:
+        cohort_name = (
+            "non_canary_pending_plus_done" if args.include_done else "non_canary_pending"
+        )
 
     output_root = Path(
         resolve_repo_path(args.output_root, DEFAULT_OUTPUT_ROOT)
@@ -329,6 +478,7 @@ def main(argv: list[str]) -> int:
         validation=args.validation,
         fresh_build=not args.reuse,
         knowledge_light=args.knowledge_light,
+        seeded_retry_fixture=args.seeded_retry_fixture,
     )
     return 0
 

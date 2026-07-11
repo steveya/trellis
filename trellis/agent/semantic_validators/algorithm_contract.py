@@ -30,6 +30,10 @@ _ENGINE_SIGNATURES = {
     "waterfall": ("Waterfall", "Tranche"),
 }
 
+_ROUTE_SIGNATURES = {
+    "heston_adi_2d": ("price_heston_option_adi_pde_result", "HestonAdiPDEConfig"),
+}
+
 # Discount patterns
 _DISCOUNT_PATTERNS = (
     "market_state.discount",
@@ -38,8 +42,57 @@ _DISCOUNT_PATTERNS = (
     "df(",
     ".discount(",
 )
+_CHECKED_ROUTE_HELPER_BINDINGS = {
+    "price_heston_option_monte_carlo": {
+        "routes": frozenset({"monte_carlo_paths"}),
+        "instruments": frozenset({"heston_option", "european_option", "vanilla_option"}),
+    },
+    "price_equity_cliquet_option_monte_carlo": {
+        "routes": frozenset({"monte_carlo_paths"}),
+        "instruments": frozenset({"cliquet_option"}),
+    },
+}
+_CHECKED_ROUTE_HELPER_SYMBOLS = frozenset(_CHECKED_ROUTE_HELPER_BINDINGS)
+_HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({
+    "price_double_barrier_option_pde_result",
+    "price_double_barrier_option_monte_carlo_result",
+})
 
 _EXACT_HELPER_SIGNATURES = {
+    "price_double_barrier_option_pde_result": {
+        "min_positional_args": 2,
+        "max_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec", "config"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_double_barrier_option_pde_result(...)` expects "
+            "`(market_state, spec, *, config=...)`. Pass the live market state "
+            "and original double-barrier spec-like object instead of rebuilding "
+            "barrier, grid, operator, payoff, or discounting internals inline."
+        ),
+    },
+    "price_double_barrier_option_monte_carlo_result": {
+        "min_positional_args": 2,
+        "max_positional_args": 2,
+        "required_parameters": ("market_state", "spec"),
+        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
+        "allowed_keywords": frozenset({"market_state", "spec", "config"}),
+        "required_positional_markers": (
+            frozenset({"market_state"}),
+            frozenset({"spec", "_spec"}),
+        ),
+        "message": (
+            "`price_double_barrier_option_monte_carlo_result(...)` expects "
+            "`(market_state, spec, *, config=...)`. Pass the live market state "
+            "and original double-barrier spec-like object instead of rebuilding "
+            "barrier monitors, GBM paths, payoff, or discounting internals inline."
+        ),
+    },
     "price_cds_analytical": {
         "min_positional_args": 0,
         "keyword_only": True,
@@ -488,6 +541,38 @@ def _calls_symbol(source: str, symbol: str) -> bool:
     return re.search(rf"\b{re.escape(symbol)}\s*\(", source) is not None
 
 
+def _calls_checked_route_helper(
+    source: str,
+    plan: GenerationPlan | None = None,
+    route_spec: RouteSpec | None = None,
+) -> bool:
+    """Return whether source delegates to a checked helper-owned route."""
+    route_id = str(getattr(route_spec, "id", "") or "").strip()
+    instrument_type = str(getattr(plan, "instrument_type", "") or "").strip()
+    for symbol, binding in _CHECKED_ROUTE_HELPER_BINDINGS.items():
+        if not _calls_symbol(source, symbol):
+            continue
+        routes = frozenset(binding.get("routes", frozenset()))
+        if routes and route_id and route_id not in routes:
+            continue
+        instruments = frozenset(binding.get("instruments", frozenset()))
+        if instruments and instrument_type and instrument_type not in instruments:
+            continue
+        return True
+    return False
+
+
+def _calls_helper_owned_required_route_helper(source: str, exact_surface_primitives) -> bool:
+    """Return whether source calls a helper that owns its route internals."""
+    return any(
+        prim.role == "route_helper"
+        and prim.required
+        and prim.symbol in _HELPER_OWNED_ROUTE_SYMBOLS
+        and _calls_symbol(source, prim.symbol)
+        for prim in exact_surface_primitives
+    )
+
+
 def _call_matches_symbol(node: ast.Call, symbol: str) -> bool:
     """Whether one AST call targets the requested symbol."""
     func = node.func
@@ -522,13 +607,30 @@ class AlgorithmContractValidator:
             return ()
 
         exact_surface_primitives = _exact_surface_primitives(plan, route_spec)
+        checked_route_helper_call = _calls_checked_route_helper(source, plan, route_spec)
+        helper_owned_route = (
+            _calls_helper_owned_required_route_helper(source, exact_surface_primitives)
+            or checked_route_helper_call
+        )
 
-        # 1. Engine family consistency
-        findings.extend(self._check_engine_family(source, route_spec, exact_surface_primitives))
-
-        # 2. Route helper usage
-        findings.extend(self._check_route_helper(source, route_spec, exact_surface_primitives))
+        # 1. Route helper usage and exact surface.
+        findings.extend(
+            self._check_route_helper(
+                source,
+                route_spec,
+                exact_surface_primitives,
+                helper_owned_route=checked_route_helper_call,
+            )
+        )
         findings.extend(self._check_exact_helper_surface(source, route_spec, exact_surface_primitives))
+
+        # Checked route helpers own internal engine, payoff, and discounting
+        # obligations, but only after the helper call surface itself validates.
+        if helper_owned_route:
+            return tuple(findings)
+
+        # 2. Engine family consistency
+        findings.extend(self._check_engine_family(source, route_spec, exact_surface_primitives))
 
         # 3. Discount application
         findings.extend(self._check_discount_application(source, route_spec))
@@ -546,7 +648,7 @@ class AlgorithmContractValidator:
     ) -> list[SemanticFinding]:
         """Verify code uses the expected engine family signatures."""
         engine = route_spec.engine_family
-        signatures = _ENGINE_SIGNATURES.get(engine, ())
+        signatures = _ROUTE_SIGNATURES.get(route_spec.id, _ENGINE_SIGNATURES.get(engine, ()))
         if not signatures:
             return []
 
@@ -577,8 +679,12 @@ class AlgorithmContractValidator:
         source: str,
         route_spec: RouteSpec,
         exact_surface_primitives,
+        *,
+        helper_owned_route: bool = False,
     ) -> list[SemanticFinding]:
         """Verify route_helper primitives are actually called."""
+        if helper_owned_route:
+            return []
         findings = []
         for prim in exact_surface_primitives:
             if prim.role == "route_helper" and prim.required:

@@ -95,6 +95,20 @@ class TestMethodFromDescription:
         assert "forward_curve" in plan.required_market_data
         assert "spot" in plan.required_market_data
 
+    def test_fx_barrier_description_enriches_market_requirements(self):
+        plan = select_pricing_method(
+            "Price an FX knock-in call with domestic/foreign discounting.",
+            "barrier_option",
+        )
+        assert plan.method == "monte_carlo"
+        assert plan.selection_reason.endswith("fx_context_override")
+        assert "fx_cross_currency_context" in plan.assumption_summary
+        assert "fx_barrier_context" in plan.assumption_summary
+        assert "garman_kohlhagen_or_equivalent_context" not in plan.assumption_summary
+        assert "fx_rates" in plan.required_market_data
+        assert "forward_curve" in plan.required_market_data
+        assert "spot" in plan.required_market_data
+
     def test_local_vol_description_switches_to_surface_driven_monte_carlo(self):
         plan = select_pricing_method(
             "European equity call under local vol: PDE vs MC",

@@ -49,6 +49,7 @@ from trellis.agent.golden_traces import (
 CORE_FAMILIES = {"lattice", "monte_carlo", "pde", "credit"}
 CANARY_MAX_RETRIES = 3
 OPTIONAL_REPLAY_STAGES = ("critic", "unscoped")
+DETERMINISTIC_EXACT_BINDING_REPLAY = "deterministic_exact_binding"
 
 
 # ---------------------------------------------------------------------------
@@ -84,6 +85,31 @@ def filter_canaries(
             return explicitly_curated
         return [c for c in canaries if c.get("engine_family") in CORE_FAMILIES]
     return canaries
+
+
+def _canary_replay_mode(canary: dict) -> str:
+    """Return the replay mode requested by a canary manifest entry."""
+    return str(canary.get("replay_mode") or "cassette").strip().lower()
+
+
+def _uses_deterministic_replay(canary: dict) -> bool:
+    """Return whether replay should use deterministic exact bindings, not cassettes."""
+    return _canary_replay_mode(canary) == DETERMINISTIC_EXACT_BINDING_REPLAY
+
+
+def _canary_batch_execution_mode(results: list[dict], *, replay: bool) -> str:
+    """Return the persisted execution-mode label for a canary batch."""
+    modes = {
+        str(item.get("execution_mode") or "").strip()
+        for item in results
+        if isinstance(item, dict)
+    }
+    modes.discard("")
+    if len(modes) == 1:
+        return next(iter(modes))
+    if modes:
+        return "mixed_replay" if replay else "mixed"
+    return "cassette_replay" if replay else "live"
 
 
 # ---------------------------------------------------------------------------
@@ -173,7 +199,13 @@ def run_canaries(
     print(f"  Model: {model}")
     print(f"  Budget: ${budget:.2f}")
     if replay:
-        print(f"  Replay: cassette-backed ({cassette_root})")
+        replay_modes = sorted({_canary_replay_mode(canary) for canary in canaries})
+        if replay_modes == [DETERMINISTIC_EXACT_BINDING_REPLAY]:
+            print("  Replay: deterministic exact-binding")
+        elif replay_modes == ["cassette"]:
+            print(f"  Replay: cassette-backed ({cassette_root})")
+        else:
+            print(f"  Replay: mixed ({', '.join(replay_modes)})")
     print(f"  Started: {started_at.isoformat()}")
     print(f"{'=' * 65}")
 
@@ -192,11 +224,12 @@ def run_canaries(
             continue
         task = merge_canary_task_payload(task, canary)
         cassette_path = cassette_root / f"{task_id}.yaml"
+        deterministic_replay = replay and _uses_deterministic_replay(canary)
 
         start = time.time()
         print(f"\n  [{idx}/{len(canaries)}] {task_id:6s}  {canary.get('engine_family', '?'):14s}", end="", flush=True)
 
-        if replay and not canary.get("record_cassette", True):
+        if replay and not deterministic_replay and not canary.get("record_cassette", True):
             print("  SKIP — replay unsupported")
             results.append({
                 "canary_id": task_id,
@@ -207,7 +240,7 @@ def run_canaries(
             })
             continue
 
-        if replay and not cassette_path.exists():
+        if replay and not deterministic_replay and not cassette_path.exists():
             error = (
                 f"Missing cassette for {task_id} at {cassette_path}. "
                 f"Record it with scripts/record_cassettes.py --task {task_id}"
@@ -231,7 +264,28 @@ def run_canaries(
                 "max_retries": CANARY_MAX_RETRIES,
                 "knowledge_profile": "knowledge_light" if knowledge_light else None,
             }
-            if replay:
+            if deterministic_replay:
+                from trellis.agent.offline_agents import offline_local_agent_run_scope
+
+                deterministic_cassette = {
+                    "mode": "deterministic_replay",
+                    "name": task_id,
+                    "path": str(cassette_path),
+                    "stale_policy": cassette_stale_policy,
+                    "used": False,
+                }
+                with offline_local_agent_run_scope():
+                    result = run_task(
+                        task,
+                        market_state,
+                        execution_mode_override="deterministic_replay",
+                        llm_cassette_metadata=deterministic_cassette,
+                        **run_kwargs,
+                    )
+                result["execution_mode"] = "deterministic_replay"
+                result["offline_local_agents"] = True
+                result["llm_cassette"] = deterministic_cassette
+            elif replay:
                 from trellis.agent.cassette import llm_cassette_session
 
                 with llm_cassette_session(
@@ -259,7 +313,17 @@ def run_canaries(
                 "error": str(exc),
                 "elapsed_seconds": time.time() - start,
             }
-            if replay:
+            if deterministic_replay:
+                result["execution_mode"] = "deterministic_replay"
+                result["offline_local_agents"] = True
+                result["llm_cassette"] = {
+                    "mode": "deterministic_replay",
+                    "name": task_id,
+                    "path": str(cassette_path),
+                    "stale_policy": cassette_stale_policy,
+                    "used": False,
+                }
+            elif replay:
                 result["execution_mode"] = "cassette_replay"
                 result["llm_cassette"] = {
                     "mode": "replay",
@@ -315,6 +379,7 @@ def run_canaries(
             validation=validation,
             knowledge_light=knowledge_light,
             replay=replay,
+            execution_mode=_canary_batch_execution_mode(results, replay=replay),
             requested_task_id=requested_task_id,
             requested_subset=requested_subset,
             root=ROOT,

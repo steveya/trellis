@@ -65,6 +65,21 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--validation", default="standard")
     parser.add_argument(
+        "--recovery-mode",
+        choices=("strict", "assisted", "remediation"),
+        default="assisted",
+        help="Bounded automatic recovery mode for task-script runs.",
+    )
+    parser.add_argument(
+        "--offline-local-agents",
+        action="store_true",
+        help=(
+            "Forbid live LLM API calls during task execution. Deterministic quant, "
+            "validation, exact bindings, and local/cassette paths may run; any "
+            "attempted text or JSON LLM call fails the task."
+        ),
+    )
+    parser.add_argument(
         "--status",
         choices=("pending", "all"),
         default="pending",
@@ -118,6 +133,8 @@ def run_block(
     fresh_build: bool = False,
     knowledge_light: bool = False,
     validation: str = "standard",
+    recovery_mode: str = "assisted",
+    offline_local_agents: bool = False,
 ):
     """Run a block of tasks and save results incrementally."""
     output_path = Path(output_file)
@@ -134,20 +151,39 @@ def run_block(
     print(f"# Fresh build: {fresh_build}")
     print(f"# Knowledge light: {knowledge_light}")
     print(f"# Validation: {validation}")
+    print(f"# Recovery mode: {recovery_mode}")
+    print(f"# Offline local agents: {offline_local_agents}")
     print(f"# Started: {datetime.now().isoformat()}")
     print(f"{'#' * 60}")
 
     for index, task in enumerate(tasks, start=1):
         print(f"\n[{index}/{len(tasks)}]", end="")
-        result = run_task(
-            task,
-            market_state,
-            model=model,
-            force_rebuild=(force_rebuild or fresh_build),
-            fresh_build=fresh_build,
-            knowledge_profile="knowledge_light" if knowledge_light else None,
-            validation=validation,
-        )
+        if offline_local_agents:
+            from trellis.agent.offline_agents import offline_local_agent_run_scope
+
+            with offline_local_agent_run_scope():
+                result = run_task(
+                    task,
+                    market_state,
+                    model=model,
+                    force_rebuild=(force_rebuild or fresh_build),
+                    fresh_build=fresh_build,
+                    knowledge_profile="knowledge_light" if knowledge_light else None,
+                    validation=validation,
+                    recovery_mode=recovery_mode,
+                )
+            result["offline_local_agents"] = True
+        else:
+            result = run_task(
+                task,
+                market_state,
+                model=model,
+                force_rebuild=(force_rebuild or fresh_build),
+                fresh_build=fresh_build,
+                knowledge_profile="knowledge_light" if knowledge_light else None,
+                validation=validation,
+                recovery_mode=recovery_mode,
+            )
         results.append(result)
         batch_token_total += int(
             ((result.get("token_usage_summary") or {}).get("total_tokens") or 0)
@@ -160,7 +196,6 @@ def run_block(
             )
             break
 
-    successes = sum(1 for result in results if result.get("success"))
     total_time = sum(result.get("elapsed_seconds", 0) for result in results)
     lessons = sum(
         1 for result in results if result.get("reflection", {}).get("lesson_captured")
@@ -172,12 +207,21 @@ def run_block(
     summary_path = output_path.with_name(f"{output_path.stem}_summary.json")
     with open(summary_path, "w") as f:
         json.dump(summary, f, indent=2, default=str)
+    totals = summary["totals"]
 
     print(f"\n{'=' * 60}")
-    print(f"SUMMARY: {successes}/{len(results)} succeeded in {total_time:.0f}s")
+    print(
+        "SUMMARY: "
+        f"{totals['expectation_passes']}/{len(results)} passed expectations "
+        f"in {total_time:.0f}s"
+    )
+    print(f"  Pricing successes: {totals['successes']}")
+    print(f"  Honest blocks: {totals['honest_blocks']}")
+    print(f"  Actionable failures: {totals['actionable_failures']}")
     print(f"  Lessons captured: {lessons}")
     print(f"  Cookbooks enriched: {cookbooks}")
     print(f"  Failure buckets: {summary['failure_buckets']}")
+    print(f"  Actionable failure buckets: {summary['actionable_failure_buckets']}")
     print(f"  Retry recovery: {summary['retry_recovery']}")
     print(f"  Reviewer signals: {summary['reviewer_signals']}")
     print(f"  Shared knowledge: {summary['shared_knowledge']}")
@@ -268,4 +312,6 @@ if __name__ == "__main__":
         fresh_build=args.fresh_build,
         knowledge_light=args.knowledge_light,
         validation=args.validation,
+        recovery_mode=args.recovery_mode,
+        offline_local_agents=args.offline_local_agents,
     )

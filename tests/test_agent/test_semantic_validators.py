@@ -204,6 +204,162 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("equity_quanto"), spec)
         assert any(f.category == "route_helper_not_called" for f in findings)
 
+    def test_rejects_autocallable_shortcut_for_monte_carlo_paths(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        source = '''
+from trellis.models.monte_carlo.variance_reduction import sobol_normals
+
+def evaluate(self, market_state):
+    return 0.0
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            source,
+            _make_plan(
+                "monte_carlo_paths",
+                "monte_carlo",
+                primitives=(
+                    PrimitiveRef(
+                        "trellis.models.monte_carlo.event_aware",
+                        "price_event_aware_monte_carlo",
+                        "route_helper",
+                    ),
+                ),
+            ),
+            spec,
+        )
+        assert any(f.category == "route_helper_not_called" for f in findings)
+
+    def test_accepts_checked_cliquet_helper_for_monte_carlo_paths(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        source = '''
+from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
+
+def evaluate(self, market_state):
+    return price_equity_cliquet_option_monte_carlo(market_state, self._spec)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            source,
+            _make_plan(
+                "monte_carlo_paths",
+                "monte_carlo",
+                instrument_type="cliquet_option",
+                primitives=(
+                    PrimitiveRef(
+                        "trellis.models.monte_carlo.event_aware",
+                        "price_event_aware_monte_carlo",
+                        "route_helper",
+                    ),
+                ),
+            ),
+            spec,
+        )
+        assert not any(f.category == "route_helper_not_called" for f in findings)
+        assert not any(f.category == "engine_family_mismatch" for f in findings)
+
+    def test_rejects_double_barrier_terminal_payoff_without_pde_engine(self, registry):
+        spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
+        source = '''
+from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff
+
+def evaluate(self, market_state):
+    return terminal_double_barrier_payoff([self._spec.spot], self._spec)[0]
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            source,
+            _make_plan("pde_theta_1d", "pde_solver"),
+            spec,
+        )
+        assert any(f.category == "engine_family_mismatch" for f in findings)
+
+    @pytest.mark.parametrize(
+        ("method", "source"),
+        [
+            (
+                "pde_solver",
+                '''
+from trellis.models.double_barrier_option import price_double_barrier_option_pde_result
+
+def evaluate(self, market_state):
+    return price_double_barrier_option_pde_result(market_state, self._spec).price
+''',
+            ),
+            (
+                "monte_carlo",
+                '''
+from trellis.models.double_barrier_option import price_double_barrier_option_monte_carlo_result
+
+def evaluate(self, market_state):
+    return price_double_barrier_option_monte_carlo_result(market_state, self._spec).price
+''',
+            ),
+        ],
+    )
+    def test_accepts_helper_backed_double_barrier_route_without_low_level_findings(
+        self,
+        registry,
+        method,
+        source,
+    ):
+        from trellis.agent.platform_requests import compile_build_request
+
+        compiled = compile_build_request(
+            "Double barrier option via checked helper",
+            instrument_type="barrier_option",
+            preferred_method=method,
+        )
+        route_id = compiled.generation_plan.primitive_plan.route
+        spec = [r for r in registry.routes if r.id == route_id][0]
+
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, compiled.generation_plan, spec)
+
+        assert findings == ()
+
+    def test_flags_double_barrier_helper_signature_mismatch(self, registry):
+        from trellis.agent.platform_requests import compile_build_request
+
+        compiled = compile_build_request(
+            "Double barrier option via checked helper",
+            instrument_type="barrier_option",
+            preferred_method="pde_solver",
+        )
+        route_id = compiled.generation_plan.primitive_plan.route
+        spec = [r for r in registry.routes if r.id == route_id][0]
+        source = '''
+from trellis.models.double_barrier_option import price_double_barrier_option_pde_result
+
+def evaluate(self, market_state):
+    return price_double_barrier_option_pde_result(
+        market_state=market_state,
+        spec=self._spec,
+        spot=self._spec.spot,
+    ).price
+'''
+
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, compiled.generation_plan, spec)
+
+        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+
+    def test_heston_adi_result_surface_satisfies_engine_signature(self, registry):
+        spec = [r for r in registry.routes if r.id == "heston_adi_2d"][0]
+        source = '''
+from trellis.models.pde.heston_adi import price_heston_option_adi_pde_result
+
+def evaluate(self, market_state):
+    return price_heston_option_adi_pde_result(market_state, self._spec).price
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            source,
+            _make_plan("heston_adi_2d", "pde_solver"),
+            spec,
+        )
+        assert not any(f.category == "engine_family_mismatch" for f in findings)
+
     def test_flags_missing_callable_bond_route_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         callable_ir = ProductIR(

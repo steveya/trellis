@@ -478,13 +478,34 @@ def test_summarize_task_results_reports_retry_recovery_and_reviewer_signals():
             "comparison_task": True,
             "task_diagnosis_failure_bucket": "comparator_build_failure",
         },
+        {
+            "task_id": "E27",
+            "success": False,
+            "title": "American Asian barrier under Heston should block honestly",
+            "task_diagnosis_failure_bucket": "blocked",
+            "blocker_details": {"blocker_codes": ["unsupported_path_dependent_control"]},
+            "computational_problem": {
+                "targets": [
+                    {
+                        "repair_packet": {
+                            "expected_honest_block": True,
+                        }
+                    }
+                ]
+            },
+        },
     ]
 
     summary = summarize_task_results(results)
 
-    assert summary["totals"]["tasks"] == 4
+    assert summary["totals"]["tasks"] == 5
     assert summary["totals"]["successes"] == 1
-    assert summary["failure_buckets"]["blocked"] == 1
+    assert summary["totals"]["expectation_passes"] == 2
+    assert summary["totals"]["actionable_failures"] == 3
+    assert summary["totals"]["honest_blocks"] == 1
+    assert summary["outcome_classes"]["honest_block"] == 1
+    assert summary["failure_buckets"]["blocked"] == 2
+    assert summary["actionable_failure_buckets"]["blocked"] == 1
     assert summary["failure_buckets"]["missing_market_data"] == 1
     assert summary["failure_buckets"]["comparator_build_failure"] == 1
     assert summary["retry_recovery"]["successful_after_retry"] == 1
@@ -590,6 +611,36 @@ def test_summarize_task_results_uses_attempts_to_success_for_comparison_tasks(tm
     assert summary["retry_taxonomy"]["by_stage"]["semantic_validation"]["count"] == 1
     assert summary["retry_taxonomy"]["by_stage"]["semantic_validation"]["task_ids"] == ["KL02"]
     assert summary["retry_taxonomy"]["by_task"]["KL02"] == ["semantic_validation"]
+
+
+def test_summarize_task_results_uses_intra_run_retry_attribution_without_trace():
+    from trellis.agent.evals import summarize_task_results
+
+    summary = summarize_task_results(
+        [
+            {
+                "task_id": "L001",
+                "success": True,
+                "attempts": 2,
+                "intra_run_learning": {
+                    "overlay_retry_count": 1,
+                    "retry_attribution_kind": "contract_evidence_consumed",
+                    "contract_evidence_consumed": True,
+                    "deterministic_input_changed": True,
+                },
+            }
+        ]
+    )
+
+    assert summary["retry_taxonomy"]["recovered_successes"] == 1
+    assert summary["retry_taxonomy"]["unattributed_recoveries"] == 0
+    assert summary["retry_taxonomy"]["by_stage"]["contract_evidence_consumed"] == {
+        "count": 1,
+        "task_ids": ["L001"],
+    }
+    assert summary["retry_taxonomy"]["by_task"]["L001"] == [
+        "contract_evidence_consumed"
+    ]
 
 
 def test_summarize_promotion_discipline_flags_success_without_reusable_artifacts():

@@ -8,6 +8,7 @@ correctness and timing.
 from __future__ import annotations
 
 import hashlib
+import inspect
 import json
 import logging
 import os
@@ -19,7 +20,7 @@ from pathlib import Path
 from statistics import mean, median
 from time import perf_counter, time
 from types import SimpleNamespace
-from typing import Any, Callable, Mapping, get_args, get_origin
+from typing import Any, Callable, Mapping, Sequence, get_args, get_origin
 
 _log = logging.getLogger(__name__)
 
@@ -43,6 +44,12 @@ from trellis.agent.instrument_identity import (
     resolve_authoritative_instrument_type,
     resolve_instrument_identity,
 )
+from trellis.agent.intra_run_learning import (
+    KnowledgePatchCandidate,
+    RecoveryMode,
+    build_knowledge_patch_candidate,
+    normalize_recovery_mode,
+)
 from trellis.agent.market_scenarios import (
     construct_market_state_for_scenario,
     market_scenario_contract_from_task,
@@ -59,6 +66,8 @@ from trellis.agent.task_manifests import (
     load_negative_tasks as load_negative_task_manifest,
     load_pricing_tasks as load_pricing_task_manifests,
 )
+from trellis.models.credit_index_option import CreditIndexOptionSpec
+from trellis.models.local_vol_option import LocalVolVanillaOptionSpec
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -349,6 +358,13 @@ class TaskContractError(ValueError):
         return " ".join(part.strip() for part in parts if part and part.strip())
 
 
+@dataclass(frozen=True)
+class ExpectedTaskHonestBlock(Exception):
+    """Raised when a sparse task row is intentionally certified as non-priceable."""
+
+    details: dict[str, Any]
+
+
 _FALLBACK_AGENT_MODULES: dict[str, tuple[str, str]] = {
     "american_option": ("trellis.instruments._agent.americanputpayoff", "AmericanOptionPayoff"),
     "american_put": ("trellis.instruments._agent.americanputpayoff", "AmericanOptionPayoff"),
@@ -361,6 +377,454 @@ _GENERIC_FALLBACK_AGENT_MODULES: tuple[tuple[tuple[str, ...], str, str], ...] = 
         "FFTvsCOSPricer",
     ),
 )
+
+
+@dataclass(frozen=True)
+class ProofAmericanLSMBasisSpec:
+    """Internal proof-task spec for American equity put LSM basis comparisons."""
+
+    notional: float = 1.0
+    spot: float = 100.0
+    strike: float = 100.0
+    expiry_date: date = date(2025, 11, 15)
+    n_paths: int = 32768
+    n_steps: int = 64
+    seed: int = 42
+    tree_steps: int = 2000
+    volatility: float | None = None
+
+
+class _ProofAmericanLSMBasePayoff:
+    """American equity option proof adapter using public LSM basis primitives."""
+
+    basis_name = "laguerre"
+
+    def __init__(self, spec: ProofAmericanLSMBasisSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> ProofAmericanLSMBasisSpec:
+        return self._spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"black_vol_surface", "discount_curve"}
+
+    def evaluate(self, market_state) -> float:
+        import numpy as raw_np
+
+        from trellis.core.date_utils import year_fraction
+        from trellis.models.monte_carlo.discretization import exact_simulation
+        from trellis.models.monte_carlo.lsm import longstaff_schwartz
+        from trellis.models.monte_carlo.schemes import BASIS_REGISTRY
+        from trellis.models.processes.gbm import GBM
+
+        spec = self._spec
+        maturity = year_fraction(market_state.settlement, spec.expiry_date)
+        if maturity <= 0:
+            return spec.notional * max(spec.strike - spec.spot, 0.0)
+
+        discount_curve = getattr(market_state, "discount", None)
+        vol_surface = getattr(market_state, "vol_surface", None)
+        rate = float(discount_curve.zero_rate(maturity)) if discount_curve is not None else 0.0
+        if spec.volatility is not None:
+            volatility = float(spec.volatility)
+        elif vol_surface is not None:
+            volatility = float(vol_surface.black_vol(maturity, spec.strike))
+        else:
+            volatility = 0.20
+
+        process = GBM(mu=rate, sigma=volatility)
+        rng = raw_np.random.default_rng(int(spec.seed))
+        paths = exact_simulation(
+            process,
+            float(spec.spot),
+            maturity,
+            int(spec.n_steps),
+            int(spec.n_paths),
+            rng,
+        )
+        dt = maturity / int(spec.n_steps)
+        exercise_steps = list(range(1, int(spec.n_steps) + 1))
+        basis_cls = BASIS_REGISTRY[self.basis_name]
+        basis = basis_cls()
+
+        def payoff_fn(spots):
+            return raw_np.maximum(float(spec.strike) - spots, 0.0)
+
+        price = longstaff_schwartz(
+            paths,
+            exercise_steps,
+            payoff_fn,
+            discount_rate=rate,
+            dt=dt,
+            basis_fn=basis,
+        )
+        return float(spec.notional) * float(price)
+
+
+class ProofAmericanLSMPolynomialPayoff(_ProofAmericanLSMBasePayoff):
+    """American equity option proof adapter using a polynomial LSM basis."""
+
+    basis_name = "polynomial"
+
+
+class ProofAmericanLSMLaguerrePayoff(_ProofAmericanLSMBasePayoff):
+    """American equity option proof adapter using a Laguerre LSM basis."""
+
+    basis_name = "laguerre"
+
+
+class ProofAmericanLSMHermitePayoff(_ProofAmericanLSMBasePayoff):
+    """American equity option proof adapter using a Hermite LSM basis."""
+
+    basis_name = "hermite"
+
+
+class ProofAmericanLSMChebyshevPayoff(_ProofAmericanLSMBasePayoff):
+    """American equity option proof adapter using a Chebyshev LSM basis."""
+
+    basis_name = "chebyshev"
+
+
+class ProofAmericanHighStepTreePayoff:
+    """American equity option proof reference adapter using a high-step CRR tree."""
+
+    def __init__(self, spec: ProofAmericanLSMBasisSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> ProofAmericanLSMBasisSpec:
+        return self._spec
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"black_vol_surface", "discount_curve"}
+
+    def evaluate(self, market_state) -> float:
+        from trellis.core.date_utils import year_fraction
+        from trellis.models.trees.backward_induction import backward_induction
+        from trellis.models.trees.binomial import BinomialTree
+
+        spec = self._spec
+        maturity = year_fraction(market_state.settlement, spec.expiry_date)
+        if maturity <= 0:
+            return spec.notional * max(spec.strike - spec.spot, 0.0)
+
+        discount_curve = getattr(market_state, "discount", None)
+        vol_surface = getattr(market_state, "vol_surface", None)
+        rate = float(discount_curve.zero_rate(maturity)) if discount_curve is not None else 0.0
+        if spec.volatility is not None:
+            volatility = float(spec.volatility)
+        elif vol_surface is not None:
+            volatility = float(vol_surface.black_vol(maturity, spec.strike))
+        else:
+            volatility = 0.20
+
+        tree = BinomialTree.crr(
+            float(spec.spot),
+            maturity,
+            int(spec.tree_steps),
+            rate,
+            volatility,
+        )
+
+        def payoff_at_node(step, node):
+            return float(spec.notional) * max(float(spec.strike) - tree.value_at(step, node), 0.0)
+
+        return float(
+            backward_induction(
+                tree,
+                payoff_at_node,
+                discount_rate=rate,
+                exercise_type="american",
+                exercise_value_fn=lambda step, node, current_tree: payoff_at_node(step, node),
+            )
+        )
+
+
+@dataclass(frozen=True)
+class ProofCounterpartyCVASpec:
+    """Internal proof-task spec for bounded IRS CVA comparison targets."""
+
+    notional: float = 1_000_000.0
+    fixed_rate: float = 0.045
+    maturity_years: int = 3
+    rate_index: str = "USD-SOFR-3M"
+    counterparty_hazard_rate: float = 0.02
+    counterparty_recovery_rate: float = 0.40
+    default_exposure_correlation: float = 0.35
+    n_paths: int = 1024
+    n_steps: int = 72
+    seed: int = 52
+
+
+class _ProofCounterpartyCVABasePayoff:
+    """Counterparty proof adapter over the shared IRS exposure/xVA stack."""
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve", "forward_curve", "credit_curve"}
+
+    def __init__(self, spec: ProofCounterpartyCVASpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> ProofCounterpartyCVASpec:
+        return self._spec
+
+    def _common_kwargs(self) -> dict[str, object]:
+        spec = self._spec
+        return {
+            "notional": float(spec.notional),
+            "fixed_rate": float(spec.fixed_rate),
+            "maturity_years": int(spec.maturity_years),
+            "rate_index": str(spec.rate_index),
+            "counterparty_hazard_rate": float(spec.counterparty_hazard_rate),
+            "counterparty_recovery_rate": float(spec.counterparty_recovery_rate),
+            "n_paths": int(spec.n_paths),
+            "n_steps": int(spec.n_steps),
+            "seed": int(spec.seed),
+        }
+
+
+class ProofInterestRateSwapMCVAPayoff(_ProofCounterpartyCVABasePayoff):
+    """CVA on interest rate swap: MC exposure simulation."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.analytics.counterparty import price_interest_rate_swap_cva_monte_carlo
+
+        return float(price_interest_rate_swap_cva_monte_carlo(market_state, **self._common_kwargs()))
+
+
+class ProofInterestRateSwapAnalyticalCVAApproxPayoff(_ProofCounterpartyCVABasePayoff):
+    """CVA on interest rate swap: analytical flat-hazard EPE approximation."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.analytics.counterparty import (
+            price_interest_rate_swap_cva_analytical_approx,
+        )
+
+        return float(
+            price_interest_rate_swap_cva_analytical_approx(
+                market_state,
+                **self._common_kwargs(),
+            )
+        )
+
+
+class ProofInterestRateSwapIndependentCVAPayoff(_ProofCounterpartyCVABasePayoff):
+    """Wrong-way risk reference target: independent default and exposure."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.analytics.counterparty import price_interest_rate_swap_independent_cva
+
+        kwargs = self._common_kwargs()
+        kwargs["seed"] = int(self._spec.seed) + 2
+        return float(price_interest_rate_swap_independent_cva(market_state, **kwargs))
+
+
+class ProofInterestRateSwapWrongWayCVAPayoff(_ProofCounterpartyCVABasePayoff):
+    """Wrong-way risk target: default intensity increases with exposure."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.analytics.counterparty import price_interest_rate_swap_wrong_way_cva
+
+        kwargs = self._common_kwargs()
+        kwargs["seed"] = int(self._spec.seed) + 2
+        kwargs["default_exposure_correlation"] = float(self._spec.default_exposure_correlation)
+        return float(price_interest_rate_swap_wrong_way_cva(market_state, **kwargs))
+
+
+class _ProofCreditIndexOptionBasePayoff:
+    """Credit-index proof adapter over bounded spread-option helpers."""
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve"}
+
+    def __init__(self, spec: CreditIndexOptionSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> CreditIndexOptionSpec:
+        return self._spec
+
+
+class ProofCreditIndexBlackOnSpreadPayoff(_ProofCreditIndexOptionBasePayoff):
+    """Credit index option target: Black-76 on quoted forward spread."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.credit_index_option import (
+            price_credit_index_option_black_on_spread,
+        )
+
+        return float(price_credit_index_option_black_on_spread(market_state, self._spec))
+
+
+class ProofCreditIndexMonteCarloPayoff(_ProofCreditIndexOptionBasePayoff):
+    """Credit index option target: antithetic lognormal spread MC."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.credit_index_option import price_credit_index_option_monte_carlo
+
+        return float(
+            price_credit_index_option_monte_carlo(
+                market_state,
+                self._spec,
+                n_paths=65_536,
+                seed=55,
+            )
+        )
+
+
+class _ProofLocalVolBasePayoff:
+    """Local-vol proof adapter over shared PDE and MC helpers."""
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve", "local_vol_surface", "spot"}
+
+    def __init__(self, spec: LocalVolVanillaOptionSpec):
+        if spec.local_vol_surface is None:
+            spec = replace(
+                spec,
+                local_vol_surface=_constant_local_vol_surface(spec.local_vol_level),
+            )
+        self._spec = spec
+
+    @property
+    def spec(self) -> LocalVolVanillaOptionSpec:
+        return self._spec
+
+
+class ProofLocalVolDupirePDEPayoff(_ProofLocalVolBasePayoff):
+    """Local volatility target: Dupire-style one-dimensional PDE."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.local_vol_option import price_local_vol_option_pde
+
+        return float(
+            price_local_vol_option_pde(
+                market_state,
+                self._spec,
+                n_x=161,
+                n_t=180,
+            )
+        )
+
+
+class ProofLocalVolMonteCarloPayoff(_ProofLocalVolBasePayoff):
+    """Local volatility target: terminal vanilla local-vol MC."""
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.local_vol_option import price_local_vol_option_monte_carlo
+
+        return float(
+            price_local_vol_option_monte_carlo(
+                market_state,
+                self._spec,
+                n_paths=80_000,
+                n_steps=120,
+                seed=59,
+            )
+        )
+
+
+@dataclass(frozen=True)
+class ProofHestonOptionSpec:
+    """Internal proof-task spec for bounded vanilla Heston MC targets."""
+
+    notional: float = 1.0
+    spot: float = 100.0
+    strike: float = 100.0
+    maturity_years: float = 1.0
+    option_type: str = "call"
+    kappa: float = 2.0
+    theta: float = 0.04
+    xi: float = 0.30
+    rho: float = -0.70
+    v0: float = 0.04
+    scheme: str = "heston_qe"
+    n_paths: int = 4096
+    n_steps: int = 64
+    seed: int = 60
+
+
+class ProofHestonMonteCarloPayoff:
+    """Heston target: bounded terminal vanilla Monte Carlo."""
+
+    @property
+    def requirements(self) -> set[str]:
+        return {"discount_curve", "model_parameters", "spot"}
+
+    def __init__(self, spec: ProofHestonOptionSpec):
+        self._spec = spec
+
+    @property
+    def spec(self) -> ProofHestonOptionSpec:
+        return self._spec
+
+    def evaluate(self, market_state) -> float:
+        from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo
+
+        return float(
+            price_heston_option_monte_carlo(
+                market_state,
+                self._spec,
+                scheme=self._spec.scheme,
+                n_paths=self._spec.n_paths,
+                n_steps=self._spec.n_steps,
+                seed=self._spec.seed,
+                parameter_set_name="heston_validation",
+            )
+        )
+
+
+def _constant_local_vol_surface(level: float):
+    """Return a vectorized flat local-vol surface for sparse proof rows."""
+    import numpy as raw_np
+
+    local_level = float(level)
+
+    def surface(spot, _time):
+        spot_array = raw_np.asarray(spot, dtype=float)
+        if spot_array.ndim == 0:
+            return local_level
+        return raw_np.full(spot_array.shape, local_level, dtype=float)
+
+    return surface
+
+
+_PROOF_AMERICAN_LSM_TARGETS: dict[str, type] = {
+    "polynomial": ProofAmericanLSMPolynomialPayoff,
+    "laguerre": ProofAmericanLSMLaguerrePayoff,
+    "hermite": ProofAmericanLSMHermitePayoff,
+    "chebyshev": ProofAmericanLSMChebyshevPayoff,
+    "high_step_tree_2000": ProofAmericanHighStepTreePayoff,
+}
+
+_PROOF_DETERMINISTIC_TARGETS: dict[str, dict[str, type]] = {
+    "T52": {
+        "mc_cva": ProofInterestRateSwapMCVAPayoff,
+        "analytical_cva_approx": ProofInterestRateSwapAnalyticalCVAApproxPayoff,
+    },
+    "T54": {
+        "correlated_cva": ProofInterestRateSwapWrongWayCVAPayoff,
+        "independent_cva": ProofInterestRateSwapIndependentCVAPayoff,
+    },
+    "T55": {
+        "black_on_spread": ProofCreditIndexBlackOnSpreadPayoff,
+        "mc_credit_index": ProofCreditIndexMonteCarloPayoff,
+    },
+    "T59": {
+        "dupire_pde": ProofLocalVolDupirePDEPayoff,
+        "local_vol_mc": ProofLocalVolMonteCarloPayoff,
+    },
+    "T60": {
+        "heston_mc": ProofHestonMonteCarloPayoff,
+    },
+}
 
 
 def load_tasks(
@@ -799,11 +1263,232 @@ def task_to_instrument_identity(task: dict) -> InstrumentIdentityResolution:
         )
         if part
     )
-    return resolve_instrument_identity(
+    resolution = resolve_instrument_identity(
         title,
         explicit_instrument_type=task.get("instrument_type"),
         explicit_source="task.instrument_type",
         inferred_source="task.title_or_description",
+    )
+    if resolution.instrument_type is not None:
+        return resolution
+
+    target_hint = _task_instrument_identity_target_hint(task)
+    if target_hint:
+        return resolve_instrument_identity(
+            " ".join(part for part in (title, target_hint) if part),
+            explicit_instrument_type=task.get("instrument_type"),
+            explicit_source="task.instrument_type",
+            inferred_source="task.title_description_or_targets",
+        )
+    return resolution
+
+
+def _task_instrument_identity_target_hint(task: Mapping[str, Any]) -> str:
+    """Return comparison-target text useful for sparse task identity inference."""
+    cross_validate = task.get("cross_validate")
+    if not isinstance(cross_validate, Mapping):
+        return ""
+
+    hints: list[str] = []
+
+    def add(value: Any) -> None:
+        if value is None:
+            return
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                hints.append(text)
+            return
+        if isinstance(value, Mapping):
+            for nested in value.values():
+                add(nested)
+            return
+        if isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray)):
+            for nested in value:
+                add(nested)
+
+    add(cross_validate)
+    return " ".join(hints)
+
+
+_PROOF_LEGACY_DEFAULT_UNDERLIER = "SPX"
+_PROOF_LEGACY_DEFAULT_EXPIRY = "2025-11-15"
+_PROOF_LEGACY_VANILLA_MC_CONTRACT_IDS = frozenset({"T25", "T26", "T31", "T32"})
+
+
+def _is_proof_legacy_task(task: Mapping[str, Any]) -> bool:
+    corpus = str(task.get("task_corpus") or "").strip().lower()
+    manifest = str(task.get("task_definition_manifest") or "").strip()
+    return corpus == "proof_legacy" or manifest == "TASKS_PROOF_LEGACY.yaml"
+
+
+def _proof_legacy_semantic_contract(task: dict, description: str):
+    """Return an explicit semantic contract for sparse legacy proof rows."""
+    if not _is_proof_legacy_task(task):
+        return None
+
+    task_id = str(task.get("id") or "").strip()
+    if task_id in _PROOF_LEGACY_VANILLA_MC_CONTRACT_IDS:
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        return make_vanilla_option_contract(
+            description=description,
+            underliers=(_PROOF_LEGACY_DEFAULT_UNDERLIER,),
+            observation_schedule=(_PROOF_LEGACY_DEFAULT_EXPIRY,),
+            preferred_method="monte_carlo",
+            underlying_asset_class="equity",
+            option_type="call",
+        )
+
+    if task_id == "T15":
+        from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+        contract = make_vanilla_option_contract(
+            description=description,
+            underliers=(_PROOF_LEGACY_DEFAULT_UNDERLIER,),
+            observation_schedule=(_PROOF_LEGACY_DEFAULT_EXPIRY,),
+            preferred_method="pde_solver",
+            underlying_asset_class="equity",
+            option_type="call",
+        )
+        product = replace(
+            contract.product,
+            model_family="cev_diffusion",
+            payoff_traits=tuple(
+                dict.fromkeys(
+                    (
+                        *tuple(contract.product.payoff_traits),
+                        "cev_process",
+                        "model_parameter_dependence",
+                    )
+                )
+            ),
+        )
+        blueprint = replace(
+            contract.blueprint,
+            primitive_families=("cev_theta_pde", "cev_spot_lattice"),
+        )
+        return replace(contract, product=product, blueprint=blueprint)
+
+    if task_id == "T27":
+        from trellis.agent.semantic_contracts import make_american_option_contract
+
+        return make_american_option_contract(
+            description=description,
+            underliers=(_PROOF_LEGACY_DEFAULT_UNDERLIER,),
+            observation_schedule=(_PROOF_LEGACY_DEFAULT_EXPIRY,),
+            preferred_method="monte_carlo",
+            exercise_style="american",
+            underlying_asset_class="equity",
+            option_type="put",
+        )
+
+    return None
+
+
+def _proof_legacy_expected_honest_block(task: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a deterministic honest-block packet for under-specified proof rows."""
+    if not _is_proof_legacy_task(task):
+        return None
+    task_id = str(task.get("id") or "").strip()
+    if task_id != "T18":
+        return None
+
+    summary = (
+        "T18 names a log-space PDE transform for rate instruments, but the legacy "
+        "proof row does not specify a concrete rate payoff, schedule, strike, or "
+        "settlement rule. Pricing must fail closed until the product contract is explicit."
+    )
+    return {
+        "reason": "proof_legacy_under_specified_rate_pde",
+        "summary": summary,
+        "blocker_report": {
+            "summary": summary,
+            "blockers": [
+                {
+                    "id": "missing_rate_product_payoff",
+                    "category": "manifest_contract_gap",
+                },
+                {
+                    "id": "missing_rate_product_schedule",
+                    "category": "manifest_contract_gap",
+                },
+            ],
+        },
+        "repair_packet": {
+            "packet_type": "manifest_contract_gap",
+            "task_id": task_id,
+            "missing_contract_fields": [
+                "rate_product_payoff",
+                "observation_or_exercise_schedule",
+                "strike_or_coupon_terms",
+                "settlement_rule",
+            ],
+            "suggested_action": (
+                "Rewrite T18 as a concrete cap/floor, swaption, callable bond, "
+                "or other named rate instrument before selecting a PDE transform."
+            ),
+        },
+    }
+
+
+def _proof_legacy_comparison_build_result(
+    task: Mapping[str, Any],
+    target: ComparisonBuildTarget,
+):
+    """Return deterministic local build results for sparse proof-only targets."""
+    if not _is_proof_legacy_task(task):
+        return None
+    task_id = str(task.get("id") or "").strip()
+    if task_id == "T27":
+        payoff_cls = _PROOF_AMERICAN_LSM_TARGETS.get(target.target_id)
+    else:
+        payoff_cls = _PROOF_DETERMINISTIC_TARGETS.get(task_id, {}).get(target.target_id)
+    if payoff_cls is None:
+        return None
+
+    return SimpleNamespace(
+        success=True,
+        attempts=0,
+        gap_confidence=1.0,
+        knowledge_gaps=[],
+        payoff_cls=payoff_cls,
+        failures=[],
+        reflection={},
+        agent_observations=[
+            {
+                "agent": "task_runtime",
+                "kind": "deterministic_proof_target",
+                "summary": (
+                    f"Resolved proof legacy {task_id} target `{target.target_id}` "
+                    f"to `{payoff_cls.__name__}` without generation."
+                ),
+            }
+        ],
+        knowledge_summary={
+            "deterministic_proof_target": target.target_id,
+            "deterministic_proof_payoff_class": payoff_cls.__name__,
+        },
+        token_usage_summary={},
+        intra_run_learning={},
+        platform_trace_path=None,
+        platform_request_id=None,
+        analytical_trace_path=None,
+        analytical_trace_text_path=None,
+        audit_record_path=None,
+        execution_module_name=payoff_cls.__module__,
+        execution_module_path=None,
+        execution_file_path=None,
+        admission_target_module_name=None,
+        admission_target_module_path=None,
+        admission_target_file_path=None,
+        blocker_details=None,
+        post_build_tracking={
+            "active_flags": [],
+            "events": [],
+            "latest_phase": "deterministic_proof_target",
+            "latest_status": "ok",
+        },
     )
 
 
@@ -811,13 +1496,26 @@ def task_to_semantic_contract(task: dict):
     """Draft the canonical semantic contract for a semantic basket request, if any."""
     from trellis.agent.semantic_contracts import draft_semantic_contract
 
+    description = _effective_task_description(task)
+    bridged = _proof_legacy_semantic_contract(task, description)
+    if bridged is not None:
+        return bridged
+
     try:
         return draft_semantic_contract(
-            _effective_task_description(task),
+            description,
             instrument_type=task_to_instrument_type(task),
         )
     except ValueError:
         return None
+
+
+def _semantic_contract_instrument_type(semantic_contract) -> str | None:
+    """Return the contract's instrument class when text identity is absent."""
+    product = getattr(semantic_contract, "product", None)
+    instrument_class = getattr(product, "instrument_class", None)
+    normalized = normalize_instrument_type(instrument_class)
+    return normalized or None
 
 
 def _runtime_snapshot_reference(market_context: dict[str, Any]) -> dict[str, Any]:
@@ -1087,9 +1785,16 @@ def run_task(
     price_fn: Callable[[Any, Any], float] | None = None,
     task_run_storage_root: Path | None = None,
     task_run_storage_layout: str = "repo",
+    recovery_mode: str | RecoveryMode = RecoveryMode.STRICT,
+    execution_mode_override: str | None = None,
+    llm_cassette_metadata: Mapping[str, Any] | None = None,
 ) -> dict:
     """Execute one task through the knowledge-aware build pipeline."""
     from trellis.agent.cassette import current_llm_cassette_context
+    from trellis.agent.evals import (
+        task_result_outcome_class,
+        task_result_passed_expectation,
+    )
     from trellis.agent.task_run_store import persist_task_run_record, summarize_task_learning
 
     if build_fn is None:
@@ -1097,11 +1802,19 @@ def run_task(
 
         build_fn = build_with_knowledge
 
+    recovery_mode_value = normalize_recovery_mode(recovery_mode)
     task_id = task["id"]
     description = _effective_task_description(task)
     instrument_identity = task_to_instrument_identity(task)
     instrument_type = instrument_identity.instrument_type
     semantic_contract = task_to_semantic_contract(task)
+    semantic_instrument_type = _semantic_contract_instrument_type(semantic_contract)
+    if instrument_type is None and semantic_instrument_type is not None:
+        instrument_type = semantic_instrument_type
+        instrument_identity = InstrumentIdentityResolution(
+            instrument_type=instrument_type,
+            source="semantic_contract.product.instrument_class",
+        )
     construct_methods = _task_construct_methods(task)
     comparison_targets = _task_comparison_targets(task, construct_methods)
     comparison_task = len(comparison_targets) > 1
@@ -1112,10 +1825,18 @@ def run_task(
         else None
     )
     cassette_context = current_llm_cassette_context()
-    execution_mode = (
-        f"cassette_{cassette_context['mode']}"
-        if cassette_context is not None
-        else "live"
+    execution_mode = str(
+        execution_mode_override
+        or (
+            f"cassette_{cassette_context['mode']}"
+            if cassette_context is not None
+            else "live"
+        )
+    ).strip() or "live"
+    llm_cassette_payload = (
+        dict(llm_cassette_metadata)
+        if llm_cassette_metadata is not None
+        else (dict(cassette_context) if cassette_context is not None else None)
     )
 
     print(f"\n{'=' * 60}")
@@ -1157,13 +1878,18 @@ def run_task(
         "task_definition_version": task.get("task_definition_version"),
         "task_definition_manifest": str(task.get("task_definition_manifest") or ""),
         "market_scenario_id": str(task.get("market_scenario_id") or ""),
+        "recovery_mode": recovery_mode_value.value,
+        "recovery_attempts": [],
     }
     if computational_problem_payload is not None:
         result_data["computational_problem"] = computational_problem_payload
-    if cassette_context is not None:
-        result_data["llm_cassette"] = cassette_context
+    if llm_cassette_payload is not None:
+        result_data["llm_cassette"] = llm_cassette_payload
 
     try:
+        expected_honest_block = _proof_legacy_expected_honest_block(task)
+        if expected_honest_block is not None:
+            raise ExpectedTaskHonestBlock(expected_honest_block)
         _validate_task_contract(task, instrument_type, construct_methods)
         market_state, market_context = build_market_state_for_task(task, market_state)
         runtime_contract = _runtime_contract_metadata(
@@ -1218,6 +1944,8 @@ def run_task(
                     "force_rebuild": force_rebuild,
                     "fresh_build": fresh_build,
                 }
+                if semantic_contract is not None:
+                    build_kwargs["semantic_contract"] = semantic_contract
                 if computational_problem_report is not None:
                     target_payload = computational_problem_report.target_payload(target.target_id)
                     if target_payload is not None:
@@ -1227,7 +1955,10 @@ def run_task(
                         repair_packet = None
                 else:
                     repair_packet = None
-                if repair_packet:
+                deterministic_result = _proof_legacy_comparison_build_result(task, target)
+                if deterministic_result is not None:
+                    result = deterministic_result
+                elif repair_packet:
                     result = _blocked_result_for_repair_packet(
                         target.target_id,
                         repair_packet,
@@ -1235,13 +1966,28 @@ def run_task(
                     )
                 else:
                     result = build_fn(**build_kwargs)
-                live_results[target.target_id] = result
-                method_results[target.target_id] = _build_result_payload(
+                payload = _build_result_payload(
                     result,
                     preferred_method=target.preferred_method,
                     reference_target=target.is_reference,
                     task_kind="pricing",
                 )
+                result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
+                    build_fn=build_fn,
+                    build_kwargs=build_kwargs,
+                    initial_result=result,
+                    initial_payload=payload,
+                    target_id=target.target_id,
+                    preferred_method=target.preferred_method,
+                    reference_target=target.is_reference,
+                    task_kind="pricing",
+                    instrument_type=instrument_type,
+                    recovery_mode=recovery_mode_value,
+                )
+                if recovery_record is not None:
+                    result_data.setdefault("recovery_attempts", []).append(recovery_record)
+                live_results[target.target_id] = result
+                method_results[target.target_id] = payload
 
             elapsed = timer() - t0
             successful_methods = [
@@ -1354,9 +2100,15 @@ def run_task(
                 "reflection": reflection_payload,
                 "cross_validation": cross_validation,
             })
+            if result_data.get("recovery_attempts"):
+                result_data["intra_run_learning"] = _aggregate_intra_run_learning(
+                    method_results
+                )
             aggregated_blockers = _aggregate_blocker_details(method_results)
             if aggregated_blockers is not None:
                 result_data["blocker_details"] = aggregated_blockers
+            if _only_certified_semantic_composition_failures(method_results):
+                result_data["expected_honest_block"] = True
             result_data["learning"] = summarize_task_learning(
                 result_data,
                 task_kind="pricing",
@@ -1382,6 +2134,8 @@ def run_task(
                 "force_rebuild": force_rebuild,
                 "fresh_build": fresh_build,
             }
+            if semantic_contract is not None:
+                build_kwargs["semantic_contract"] = semantic_contract
             if computational_problem_report is not None and comparison_targets:
                 target_payload = computational_problem_report.target_payload(
                     comparison_targets[0].target_id
@@ -1393,6 +2147,26 @@ def run_task(
             if task.get("cross_validate") and comparison_targets:
                 build_kwargs["comparison_target"] = comparison_targets[0].target_id
             result = build_fn(**build_kwargs)
+            payload = _build_result_payload(result, preferred_method=preferred_method)
+            target_id = (
+                comparison_targets[0].target_id
+                if comparison_targets
+                else str(task_id)
+            )
+            result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
+                build_fn=build_fn,
+                build_kwargs=build_kwargs,
+                initial_result=result,
+                initial_payload=payload,
+                target_id=target_id,
+                preferred_method=preferred_method,
+                reference_target=False,
+                task_kind="pricing",
+                instrument_type=instrument_type,
+                recovery_mode=recovery_mode_value,
+            )
+            if recovery_record is not None:
+                result_data.setdefault("recovery_attempts", []).append(recovery_record)
             elapsed = timer() - t0
             runtime_contract_result = dict(runtime_contract)
             runtime_contract_result["trace_identifier"] = getattr(result, "platform_request_id", None)
@@ -1400,11 +2174,15 @@ def run_task(
             runtime_contract_result["analytical_trace_path"] = getattr(result, "analytical_trace_path", None)
             runtime_contract_result["analytical_trace_text_path"] = getattr(result, "analytical_trace_text_path", None)
             result_data.update({
-                **_build_result_payload(result, preferred_method=preferred_method),
+                **payload,
                 "elapsed_seconds": round(elapsed, 1),
                 "preferred_method": preferred_method,
                 "runtime_contract": runtime_contract_result,
             })
+            if _only_certified_semantic_composition_failures(
+                {target_id: payload}
+            ):
+                result_data["expected_honest_block"] = True
             if result_data.get("success"):
                 try:
                     result_data.update(
@@ -1425,9 +2203,52 @@ def run_task(
                 task_kind="pricing",
             )
             result_data["failures"] = _aggregate_failures(result_data)
-        status = "OK" if result_data.get("success") else "FAIL"
+        display_outcome_class = task_result_outcome_class(result_data)
+        display_passed_expectation = task_result_passed_expectation(
+            {**result_data, "outcome_class": display_outcome_class}
+        )
+        if result_data.get("success"):
+            status = "OK"
+        elif display_passed_expectation and display_outcome_class == "honest_block":
+            status = "HONEST_BLOCK"
+        elif display_passed_expectation:
+            status = "EXPECTATION_OK"
+        else:
+            status = "FAIL"
         print(
             f"  [{status}] {elapsed:.1f}s, llm_generation_attempts={result_data.get('attempts', 0)}, "
+            f"confidence={result_data.get('gap_confidence', 0):.0%}"
+        )
+    except ExpectedTaskHonestBlock as exc:
+        elapsed = timer() - t0
+        details = dict(exc.details)
+        summary = str(details.get("summary") or details.get("reason") or "Expected honest block.")
+        result_data.update({
+            "success": False,
+            "elapsed_seconds": round(elapsed, 1),
+            "attempts": 0,
+            "gap_confidence": 1.0,
+            "expected_honest_block": True,
+            "blocker_details": details,
+            "error": summary,
+            "failures": [summary],
+        })
+        result_data["learning"] = summarize_task_learning(
+            result_data,
+            task_kind="pricing",
+        )
+        display_outcome_class = task_result_outcome_class(result_data)
+        display_passed_expectation = task_result_passed_expectation(
+            {**result_data, "outcome_class": display_outcome_class}
+        )
+        if display_passed_expectation and display_outcome_class == "honest_block":
+            status = "HONEST_BLOCK"
+        elif display_passed_expectation:
+            status = "EXPECTATION_OK"
+        else:
+            status = "FAIL"
+        print(
+            f"  [{status}] {elapsed:.1f}s, llm_generation_attempts=0, "
             f"confidence={result_data.get('gap_confidence', 0):.0%}"
         )
     except TaskContractError as exc:
@@ -1455,6 +2276,8 @@ def run_task(
         print(f"  [ERROR] {elapsed:.1f}s: {type(exc).__name__}: {str(exc)[:100]}")
 
     result_data["run_completed_at"] = now_fn().isoformat()
+    result_data["outcome_class"] = task_result_outcome_class(result_data)
+    result_data["passed_expectation"] = task_result_passed_expectation(result_data)
 
     try:
         persist_root = task_run_storage_root or ROOT
@@ -1478,6 +2301,14 @@ def run_task(
         result_data["task_diagnosis_next_action"] = persisted.get("diagnosis_next_action")
         result_data["task_diagnosis_persist_error"] = persisted.get("diagnosis_persist_error")
         result_data["task_diagnosis_persist_skipped"] = persisted.get("diagnosis_persist_skipped")
+        if persisted.get("diagnosis_failure_bucket"):
+            result_data["failure_bucket"] = persisted.get("diagnosis_failure_bucket")
+        if persisted.get("diagnosis_headline"):
+            result_data["diagnosis_headline"] = persisted.get("diagnosis_headline")
+        if persisted.get("diagnosis_decision_stage"):
+            result_data["diagnosis_decision_stage"] = persisted.get("diagnosis_decision_stage")
+        if persisted.get("diagnosis_next_action"):
+            result_data["diagnosis_next_action"] = persisted.get("diagnosis_next_action")
     except Exception as exc:
         result_data["task_run_persist_error"] = str(exc)[:200]
 
@@ -1640,6 +2471,8 @@ def _preferred_method_for_target(target_id: str, construct_methods: list[str]) -
         ("cos", "fft_pricing"),
         ("garman", "analytical"),
         ("gk", "analytical"),
+        ("turnbull", "analytical"),
+        ("wakeman", "analytical"),
         ("black", "analytical"),
         ("jamshidian", "analytical"),
         ("rubinstein", "analytical"),
@@ -1723,6 +2556,330 @@ def _description_for_comparison_target(
     )
 
 
+def _maybe_retry_with_intra_run_learning(
+    *,
+    build_fn: Callable[..., Any],
+    build_kwargs: Mapping[str, Any],
+    initial_result: Any,
+    initial_payload: dict[str, Any],
+    target_id: str,
+    preferred_method: str | None,
+    reference_target: bool,
+    task_kind: str,
+    instrument_type: str | None,
+    recovery_mode: RecoveryMode,
+) -> tuple[Any, dict[str, Any], dict[str, Any] | None]:
+    """Retry one failed target with an ephemeral candidate-knowledge overlay."""
+    candidate = build_knowledge_patch_candidate(
+        target_id=target_id,
+        preferred_method=preferred_method,
+        instrument_type=instrument_type,
+        recovery_mode=recovery_mode,
+        payload=initial_payload,
+    )
+    if candidate is None:
+        return initial_result, initial_payload, None
+    if not candidate.retryable:
+        record = _recovery_attempt_record(
+            candidate,
+            source_payload=initial_payload,
+            decision="candidate_overlay_insufficient_contract",
+            recovered=False,
+            initial_build_kwargs=build_kwargs,
+            error="candidate lacks enough structured repair evidence for retry",
+        )
+        initial_payload["recovery_attempts"] = [record]
+        initial_payload["intra_run_learning"] = _payload_intra_run_learning(
+            initial_payload,
+            candidate=candidate,
+            recovered=False,
+            attempted=False,
+            retry_attribution=record.get("retry_attribution"),
+        )
+        return initial_result, initial_payload, record
+    if not _callable_accepts_keyword(build_fn, "knowledge_overlays"):
+        record = _recovery_attempt_record(
+            candidate,
+            source_payload=initial_payload,
+            decision="candidate_overlay_unavailable",
+            recovered=False,
+            initial_build_kwargs=build_kwargs,
+            error="build function does not accept knowledge_overlays",
+        )
+        initial_payload["recovery_attempts"] = [record]
+        initial_payload["intra_run_learning"] = _payload_intra_run_learning(
+            initial_payload,
+            candidate=candidate,
+            recovered=False,
+            attempted=False,
+            retry_attribution=record.get("retry_attribution"),
+        )
+        return initial_result, initial_payload, record
+
+    retry_kwargs = dict(build_kwargs)
+    retry_metadata = dict(retry_kwargs.get("request_metadata") or {})
+    retry_metadata["intra_run_learning_retry"] = {
+        "attempt": 1,
+        "target_id": target_id,
+        "candidate_id": candidate.candidate_id,
+        "patch_type": candidate.patch_type,
+        "recovery_mode": recovery_mode.value,
+        "contract_completeness": candidate.contract_completeness,
+        "repair_obligation_count": len(candidate.repair_obligations),
+    }
+    retry_kwargs["request_metadata"] = retry_metadata
+    retry_kwargs["knowledge_overlays"] = [candidate.to_payload()]
+
+    record = _recovery_attempt_record(
+        candidate,
+        source_payload=initial_payload,
+        decision="retry_with_candidate_knowledge",
+        recovered=False,
+        initial_build_kwargs=build_kwargs,
+        retry_build_kwargs=retry_kwargs,
+    )
+    retry_metadata["intra_run_learning_retry"]["retry_attribution"] = dict(
+        record.get("retry_attribution") or {}
+    )
+    try:
+        retry_result = build_fn(**retry_kwargs)
+    except Exception as exc:
+        record["error"] = str(exc)[:300]
+        initial_payload["recovery_attempts"] = [record]
+        initial_payload["intra_run_learning"] = _payload_intra_run_learning(
+            initial_payload,
+            candidate=candidate,
+            recovered=False,
+            attempted=True,
+            retry_attribution=record.get("retry_attribution"),
+        )
+        return initial_result, initial_payload, record
+
+    retry_payload = _build_result_payload(
+        retry_result,
+        preferred_method=preferred_method,
+        reference_target=reference_target,
+        task_kind=task_kind,
+    )
+    retry_payload["attempts"] = int(initial_payload.get("attempts") or 0) + int(
+        retry_payload.get("attempts") or 0
+    )
+    recovered = bool(retry_payload.get("success"))
+    record["recovered"] = recovered
+    _attach_retry_outcome_attribution(
+        record,
+        initial_payload=initial_payload,
+        retry_payload=retry_payload,
+    )
+    retry_payload["recovery_attempts"] = [record]
+    retry_payload["failures_before_recovery"] = list(initial_payload.get("failures") or [])
+    retry_payload["reflection_before_recovery"] = dict(initial_payload.get("reflection") or {})
+    retry_payload["intra_run_learning"] = _payload_intra_run_learning(
+        retry_payload,
+        candidate=candidate,
+        recovered=recovered,
+        attempted=True,
+        retry_attribution=record.get("retry_attribution"),
+    )
+    return retry_result, retry_payload, record
+
+
+def _callable_accepts_keyword(fn: Callable[..., Any], name: str) -> bool:
+    """Return whether a callable can accept a named keyword argument."""
+    try:
+        signature = inspect.signature(fn)
+    except (TypeError, ValueError):
+        return True
+    for parameter in signature.parameters.values():
+        if parameter.kind == inspect.Parameter.VAR_KEYWORD:
+            return True
+        if parameter.kind in {
+            inspect.Parameter.KEYWORD_ONLY,
+            inspect.Parameter.POSITIONAL_OR_KEYWORD,
+        } and parameter.name == name:
+            return True
+    return False
+
+
+def _recovery_attempt_record(
+    candidate: KnowledgePatchCandidate,
+    *,
+    source_payload: Mapping[str, Any],
+    decision: str,
+    recovered: bool,
+    initial_build_kwargs: Mapping[str, Any] | None = None,
+    retry_build_kwargs: Mapping[str, Any] | None = None,
+    error: str | None = None,
+) -> dict[str, Any]:
+    """Build one serializable recovery-attempt record."""
+    record = {
+        "decision": decision,
+        "candidate": candidate.to_payload(),
+        "target_id": candidate.target_id,
+        "recovery_mode": candidate.recovery_mode.value,
+        "recovered": recovered,
+        "retryable": candidate.retryable,
+        "contract_completeness": candidate.contract_completeness,
+        "skip_reasons": list(candidate.skip_reasons),
+        "repair_obligations": list(candidate.repair_obligations),
+        "source_failures": list(source_payload.get("failures") or []),
+        "source_reflection": dict(source_payload.get("reflection") or {}),
+        "retry_attribution": _retry_attribution_record(
+            candidate,
+            decision=decision,
+            initial_build_kwargs=initial_build_kwargs,
+            retry_build_kwargs=retry_build_kwargs,
+        ),
+    }
+    if error:
+        record["error"] = error
+    return record
+
+
+def _retry_attribution_record(
+    candidate: KnowledgePatchCandidate,
+    *,
+    decision: str,
+    initial_build_kwargs: Mapping[str, Any] | None,
+    retry_build_kwargs: Mapping[str, Any] | None,
+) -> dict[str, Any]:
+    """Return machine-readable evidence that explains whether a retry learned."""
+    changed_fields = _changed_retry_input_fields(
+        initial_build_kwargs,
+        retry_build_kwargs,
+    )
+    deterministic_input_changed = bool(changed_fields)
+    has_contract_evidence = bool(candidate.structured_evidence or candidate.repair_obligations)
+    contract_evidence_consumed = bool(
+        decision == "retry_with_candidate_knowledge"
+        and candidate.retryable
+        and has_contract_evidence
+        and deterministic_input_changed
+    )
+    if contract_evidence_consumed:
+        attribution_kind = "contract_evidence_consumed"
+    elif decision == "retry_with_candidate_knowledge":
+        attribution_kind = "retry_without_contract_evidence"
+    elif not candidate.retryable:
+        attribution_kind = "candidate_not_retryable"
+    else:
+        attribution_kind = "candidate_not_applied"
+
+    return {
+        "attribution_kind": attribution_kind,
+        "candidate_id": candidate.candidate_id,
+        "target_id": candidate.target_id,
+        "patch_type": candidate.patch_type,
+        "decision": decision,
+        "retryable": candidate.retryable,
+        "deterministic_input_changed": deterministic_input_changed,
+        "changed_input_fields": changed_fields,
+        "contract_evidence_consumed": contract_evidence_consumed,
+        "structured_evidence_count": len(candidate.structured_evidence),
+        "repair_obligation_count": len(candidate.repair_obligations),
+        "contract_completeness": candidate.contract_completeness,
+        "source_roles": list(candidate.source_roles),
+        "skip_reasons": list(candidate.skip_reasons),
+    }
+
+
+def _changed_retry_input_fields(
+    initial_build_kwargs: Mapping[str, Any] | None,
+    retry_build_kwargs: Mapping[str, Any] | None,
+) -> list[str]:
+    """Return stable names of build inputs changed by an assisted retry."""
+    if retry_build_kwargs is None:
+        return []
+
+    initial = dict(initial_build_kwargs or {})
+    retry = dict(retry_build_kwargs or {})
+    changed: list[str] = []
+
+    if retry.get("knowledge_overlays"):
+        changed.append("knowledge_overlays")
+
+    initial_metadata = dict(initial.get("request_metadata") or {})
+    retry_metadata = dict(retry.get("request_metadata") or {})
+    if initial_metadata != retry_metadata:
+        if (
+            "intra_run_learning_retry" in retry_metadata
+            and "intra_run_learning_retry" not in initial_metadata
+        ):
+            changed.append("request_metadata.intra_run_learning_retry")
+        else:
+            changed.append("request_metadata")
+
+    ignored = {"knowledge_overlays", "request_metadata"}
+    for key in sorted((set(initial) | set(retry)) - ignored):
+        if initial.get(key) is retry.get(key):
+            continue
+        if initial.get(key) != retry.get(key):
+            changed.append(str(key))
+    return _unique_strings(changed)
+
+
+def _attach_retry_outcome_attribution(
+    record: dict[str, Any],
+    *,
+    initial_payload: Mapping[str, Any],
+    retry_payload: Mapping[str, Any],
+) -> None:
+    """Attach the observed effect of the retry to an existing attempt record."""
+    retry_attribution = dict(record.get("retry_attribution") or {})
+    retry_attribution["outcome_change"] = {
+        "success_changed": bool(initial_payload.get("success")) != bool(
+            retry_payload.get("success")
+        ),
+        "failures_changed": list(initial_payload.get("failures") or []) != list(
+            retry_payload.get("failures") or []
+        ),
+        "payoff_class_changed": str(initial_payload.get("payoff_class") or "") != str(
+            retry_payload.get("payoff_class") or ""
+        ),
+        "initial_success": bool(initial_payload.get("success")),
+        "retry_success": bool(retry_payload.get("success")),
+        "initial_attempts": int(initial_payload.get("attempts") or 0),
+        "attempts_after_retry": int(retry_payload.get("attempts") or 0),
+    }
+    record["retry_attribution"] = retry_attribution
+
+
+def _payload_intra_run_learning(
+    payload: Mapping[str, Any],
+    *,
+    candidate: KnowledgePatchCandidate,
+    recovered: bool,
+    attempted: bool,
+    retry_attribution: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Merge retry candidate metadata into a payload-local learning summary."""
+    existing = dict(payload.get("intra_run_learning") or {})
+    attribution = dict(retry_attribution or {})
+    existing.update(
+        {
+            "overlay_retry_count": 1 if attempted else 0,
+            "overlay_candidate_count": 1,
+            "candidate_id": candidate.candidate_id,
+            "patch_type": candidate.patch_type,
+            "target_id": candidate.target_id,
+            "retryable": candidate.retryable,
+            "contract_completeness": candidate.contract_completeness,
+            "skip_reasons": list(candidate.skip_reasons),
+            "repair_obligation_count": len(candidate.repair_obligations),
+            "recovered": recovered,
+            "retry_attribution": attribution,
+            "retry_attribution_kind": str(attribution.get("attribution_kind") or ""),
+            "contract_evidence_consumed": bool(
+                attribution.get("contract_evidence_consumed")
+            ),
+            "deterministic_input_changed": bool(
+                attribution.get("deterministic_input_changed")
+            ),
+        }
+    )
+    return existing
+
+
 def _build_result_payload(
     result: Any,
     *,
@@ -1749,6 +2906,7 @@ def _build_result_payload(
         "agent_observations": list(getattr(result, "agent_observations", []) or []),
         "knowledge_summary": dict(getattr(result, "knowledge_summary", {}) or {}),
         "token_usage_summary": dict(getattr(result, "token_usage_summary", {}) or {}),
+        "intra_run_learning": dict(getattr(result, "intra_run_learning", {}) or {}),
         "platform_trace_path": getattr(result, "platform_trace_path", None),
         "platform_request_id": getattr(result, "platform_request_id", None),
         "analytical_trace_path": getattr(result, "analytical_trace_path", None),
@@ -1909,6 +3067,60 @@ def _aggregate_artifacts(method_payloads: dict[str, dict[str, Any]]) -> dict[str
     }
 
 
+def _aggregate_intra_run_learning(
+    method_payloads: Mapping[str, Mapping[str, Any]],
+) -> dict[str, Any]:
+    """Merge intra-run learning summaries across comparison targets."""
+    retry_targets: list[str] = []
+    candidate_targets: list[str] = []
+    candidate_ids: list[str] = []
+    patch_types: list[str] = []
+    recovered_targets: list[str] = []
+    attribution_kinds: list[str] = []
+    evidence_consumed_targets: list[str] = []
+    input_changed_targets: list[str] = []
+    for target_id, payload in method_payloads.items():
+        if not isinstance(payload, Mapping):
+            continue
+        learning = payload.get("intra_run_learning")
+        if not isinstance(learning, Mapping):
+            continue
+        target = str(learning.get("target_id") or target_id)
+        candidate_targets.append(target)
+        candidate_id = str(learning.get("candidate_id") or "").strip()
+        if candidate_id:
+            candidate_ids.append(candidate_id)
+        patch_type = str(learning.get("patch_type") or "").strip()
+        if patch_type:
+            patch_types.append(patch_type)
+        attribution_kind = str(learning.get("retry_attribution_kind") or "").strip()
+        if attribution_kind:
+            attribution_kinds.append(attribution_kind)
+        if bool(learning.get("contract_evidence_consumed")):
+            evidence_consumed_targets.append(target)
+        if bool(learning.get("deterministic_input_changed")):
+            input_changed_targets.append(target)
+        if int(learning.get("overlay_retry_count") or 0) <= 0:
+            continue
+        retry_targets.append(target)
+        if bool(learning.get("recovered")):
+            recovered_targets.append(target)
+    return {
+        "overlay_retry_count": len(retry_targets),
+        "overlay_candidate_count": len(_unique_strings(candidate_targets)),
+        "retry_targets": _unique_strings(retry_targets),
+        "candidate_targets": _unique_strings(candidate_targets),
+        "candidate_ids": _unique_strings(candidate_ids),
+        "patch_types": _unique_strings(patch_types),
+        "retry_attribution_kinds": _unique_strings(attribution_kinds),
+        "contract_evidence_consumed_targets": _unique_strings(evidence_consumed_targets),
+        "deterministic_input_changed_targets": _unique_strings(input_changed_targets),
+        "recovered_targets": _unique_strings(recovered_targets),
+        "contract_evidence_consumed": bool(evidence_consumed_targets),
+        "deterministic_input_changed": bool(input_changed_targets),
+    }
+
+
 def _select_generated_artifact(
     method_payloads: Mapping[str, Mapping[str, Any]],
     *,
@@ -2062,6 +3274,10 @@ def _aggregate_blocker_details(
     workflow_items: list[dict[str, Any]] = []
     seen_workflow_items: set[str] = set()
     reasons: list[str] = []
+    semantic_families: list[str] = []
+    requested_methods: list[str] = []
+    available_capabilities: list[str] = []
+    missing_capabilities: list[str] = []
 
     for method, payload in method_payloads.items():
         details = payload.get("blocker_details")
@@ -2107,6 +3323,22 @@ def _aggregate_blocker_details(
         reason = str(details.get("reason") or "").strip()
         if reason:
             reasons.append(reason)
+        semantic_family = str(details.get("semantic_family") or "").strip()
+        if semantic_family:
+            semantic_families.append(semantic_family)
+        requested_method = str(details.get("requested_method") or "").strip()
+        if requested_method:
+            requested_methods.append(requested_method)
+        available_capabilities.extend(
+            str(capability).strip()
+            for capability in (details.get("available_capabilities") or ())
+            if str(capability).strip()
+        )
+        missing_capabilities.extend(
+            str(capability).strip()
+            for capability in (details.get("missing_capabilities") or ())
+            if str(capability).strip()
+        )
 
     if not method_targets:
         return None
@@ -2131,7 +3363,39 @@ def _aggregate_blocker_details(
         }
     if reasons:
         aggregated["reasons"] = _unique_strings(reasons)
+    if semantic_families:
+        aggregated["semantic_families"] = _unique_strings(semantic_families)
+    if requested_methods:
+        aggregated["requested_methods"] = _unique_strings(requested_methods)
+    if available_capabilities:
+        aggregated["available_capabilities"] = _unique_strings(
+            available_capabilities
+        )
+    if missing_capabilities:
+        aggregated["missing_capabilities"] = _unique_strings(
+            missing_capabilities
+        )
     return aggregated
+
+
+def _only_certified_semantic_composition_failures(
+    method_payloads: Mapping[str, Mapping[str, Any]],
+) -> bool:
+    """Return whether every failed lane is a deterministic composition gap."""
+    failed_payloads = [
+        payload
+        for payload in method_payloads.values()
+        if not bool(payload.get("success"))
+    ]
+    if not failed_payloads:
+        return False
+    for payload in failed_payloads:
+        details = payload.get("blocker_details")
+        if not isinstance(details, Mapping):
+            return False
+        if details.get("reason") != "semantic_method_composition_gap":
+            return False
+    return True
 
 
 def _write_benchmark_sidecars(
@@ -3012,8 +4276,10 @@ def _module_matches_task(module, task_title: str) -> bool:
 
 def _infer_spec_schema_from_module(module, payoff_cls: type) -> SpecSchema | None:
     """Infer a planner-compatible spec schema from a cached module dataclass."""
-    spec_cls = None
+    spec_cls = _infer_spec_cls_from_payoff_signature(payoff_cls)
     for value in module.__dict__.values():
+        if spec_cls is not None:
+            break
         if isinstance(value, type) and is_dataclass(value) and value.__name__.endswith("Spec"):
             spec_cls = value
             break
@@ -3040,6 +4306,31 @@ def _infer_spec_schema_from_module(module, payoff_cls: type) -> SpecSchema | Non
         requirements=[],
         fields=field_defs,
     )
+
+
+def _infer_spec_cls_from_payoff_signature(payoff_cls: type) -> type | None:
+    """Infer a spec dataclass from a payoff constructor annotation."""
+    try:
+        signature = inspect.signature(payoff_cls.__init__)
+    except (TypeError, ValueError):
+        return None
+    for parameter in signature.parameters.values():
+        if parameter.name == "self":
+            continue
+        annotation = parameter.annotation
+        if isinstance(annotation, str):
+            annotation = getattr(
+                sys.modules.get(getattr(payoff_cls, "__module__", "")),
+                annotation,
+                None,
+            )
+        if (
+            isinstance(annotation, type)
+            and is_dataclass(annotation)
+            and annotation.__name__.endswith("Spec")
+        ):
+            return annotation
+    return None
 
 
 def _find_cached_payoff_class(module) -> type | None:

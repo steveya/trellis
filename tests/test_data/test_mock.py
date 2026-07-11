@@ -129,6 +129,8 @@ class TestMockDataProvider:
         assert "spx_local_vol" in snapshot.local_vol_surfaces
         assert "merton_equity" in snapshot.jump_parameter_sets
         assert "heston_equity" in snapshot.model_parameter_sets
+        assert "variance_gamma_equity" in snapshot.model_parameter_sets
+        assert "cgmy_equity" in snapshot.model_parameter_sets
         assert "spx_heston_implied_vol" in snapshot.vol_surfaces
         assert snapshot.provenance["source_kind"] == "synthetic_snapshot"
         assert snapshot.provenance["prior_family"] == "embedded_market_regime"

@@ -17,39 +17,98 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
 from trellis.agent.task_run_store import load_latest_task_run_records
+from trellis.agent.evals import task_result_passed_expectation
 
 
 def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--analyze-only", action="store_true")
     parser.add_argument(
+        "--results",
+        action="append",
+        default=[],
+        help="Analyze one concrete task-results JSON file. May be repeated.",
+    )
+    parser.add_argument(
+        "--task-id",
+        action="append",
+        dest="task_ids",
+        default=[],
+        help="Analyze one task id. May be repeated.",
+    )
+    parser.add_argument(
         "--source",
         choices=("latest", "tranches"),
         default="latest",
         help="Select canonical latest task runs or root-level task_results tranches.",
     )
+    parser.add_argument(
+        "--skip-platform-traces",
+        action="store_true",
+        help="Do not scan platform traces while analyzing failures.",
+    )
+    parser.add_argument(
+        "--platform-trace-limit",
+        type=int,
+        default=100,
+        help=(
+            "Maximum platform trace summaries to read. Defaults to 100 and is "
+            "applied after narrowing to traces referenced by failed results."
+        ),
+    )
     return parser.parse_args(argv)
 
 
-def load_all_results(*, source: str = "latest") -> list[dict]:
+def load_all_results(
+    *,
+    source: str = "latest",
+    result_paths: list[str] | None = None,
+    task_ids: list[str] | None = None,
+) -> list[dict]:
     """Load concrete task results from the selected evidence source."""
-    if source == "latest":
+    if result_paths:
+        results: list[dict] = []
+        for raw_path in result_paths:
+            path = _resolve_results_path(raw_path)
+            with open(path) as fh:
+                results.extend(_extract_result_records(json.load(fh)))
+    elif source == "latest":
         results = []
         for record in load_latest_task_run_records(root=ROOT):
             payload = record.get("result")
             if _is_result_record(payload):
                 results.append(dict(payload))
-        return results
+    else:
+        if source != "tranches":
+            raise ValueError(f"Unsupported remediation results source: {source}")
 
-    if source != "tranches":
-        raise ValueError(f"Unsupported remediation results source: {source}")
+        results = []
+        for f in sorted(ROOT.glob("task_results_*.json")):
+            with open(f) as fh:
+                payload = json.load(fh)
+            results.extend(_extract_result_records(payload))
 
-    results = []
-    for f in sorted(ROOT.glob("task_results_*.json")):
-        with open(f) as fh:
-            payload = json.load(fh)
-        results.extend(_extract_result_records(payload))
+    selected_ids = {
+        str(task_id).strip()
+        for task_id in (task_ids or ())
+        if str(task_id).strip()
+    }
+    if selected_ids:
+        results = [
+            result
+            for result in results
+            if str(result.get("task_id") or "").strip() in selected_ids
+        ]
     return results
+
+
+def _resolve_results_path(raw_path: str) -> Path:
+    path = Path(str(raw_path).strip())
+    if not path.is_absolute():
+        path = ROOT / path
+    if not path.exists():
+        raise FileNotFoundError(f"Results file not found: {path}")
+    return path
 
 
 def _extract_result_records(payload) -> list[dict]:
@@ -148,9 +207,15 @@ def _failure_text(result: dict) -> str:
 
 def analyze_failures(results: list[dict]) -> dict:
     """Categorize failures into actionable groups."""
-    failures = [r for r in results if not r.get("success")]
+    failures = [
+        r for r in results
+        if not r.get("success") and not task_result_passed_expectation(r)
+    ]
 
     categories = {
+        "blocked": [],                 # Deterministic blocker / honest implementation gap
+        "comparator_build_failure": [],  # One or more comparison lanes failed to build
+        "comparison_insufficient_results": [],  # Not enough method results to compare
         "import_hallucination": [],    # Wrong import paths
         "missing_market_data": [],      # Missing task or market-data capability
         "missing_cookbook": [],         # No cookbook for method
@@ -165,6 +230,11 @@ def analyze_failures(results: list[dict]) -> dict:
     }
 
     for r in failures:
+        structured_bucket = _structured_failure_bucket(r)
+        if structured_bucket:
+            categories.setdefault(structured_bucket, []).append(r)
+            continue
+
         err = _failure_text(r)
         gaps = r.get("knowledge_gaps", [])
         conf = r.get("gap_confidence", 1.0)
@@ -235,15 +305,86 @@ def analyze_failures(results: list[dict]) -> dict:
     return categories
 
 
-def analyze_platform_traces() -> dict[str, int]:
+def _structured_failure_bucket(result: dict) -> str:
+    """Return a trusted task-diagnosis bucket when one is present."""
+    bucket = str(
+        result.get("failure_bucket")
+        or result.get("task_diagnosis_failure_bucket")
+        or result.get("diagnosis_failure_bucket")
+        or ""
+    ).strip()
+    if not bucket or bucket in {"success", "unknown"}:
+        return ""
+    return bucket
+
+
+def _result_trace_paths(results: list[dict]) -> list[Path]:
+    paths: list[Path] = []
+
+    def add(value) -> None:
+        text = str(value or "").strip()
+        if not text:
+            return
+        path = Path(text)
+        if not path.is_absolute():
+            path = ROOT / path
+        if path.exists():
+            paths.append(path)
+
+    for result in results:
+        if task_result_passed_expectation(result):
+            continue
+        add(result.get("platform_trace_path"))
+        for payload in dict(result.get("method_results") or {}).values():
+            if isinstance(payload, dict):
+                add(payload.get("platform_trace_path"))
+    deduped: list[Path] = []
+    seen: set[str] = set()
+    for path in paths:
+        key = str(path)
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(path)
+    return deduped
+
+
+def analyze_platform_traces(
+    *,
+    results: list[dict],
+    skip: bool = False,
+    limit: int | None = 100,
+) -> dict[str, int]:
     """Summarize unified platform traces by execution action."""
+    if skip:
+        return {}
     try:
         from trellis.agent.platform_traces import (
-            load_platform_traces,
+            load_platform_trace_boundary,
             summarize_platform_traces,
+            PlatformTrace,
         )
 
-        traces = load_platform_traces()
+        paths = _result_trace_paths(results)
+        if limit is not None and limit >= 0:
+            paths = paths[:limit]
+        traces = []
+        for path in paths:
+            data = load_platform_trace_boundary(path)
+            traces.append(
+                PlatformTrace(
+                    request_id=data.get("request_id", path.stem),
+                    request_type=data.get("request_type", "unknown"),
+                    entry_point=data.get("entry_point", "unknown"),
+                    action=data.get("action", "unknown"),
+                    success=data.get("success"),
+                    outcome=data.get("outcome", ""),
+                    status=data.get("status", "unknown"),
+                    timestamp=data.get("timestamp", ""),
+                    updated_at=data.get("updated_at", data.get("timestamp", "")),
+                    trace_path=str(path),
+                )
+            )
         return summarize_platform_traces(traces)
     except Exception:
         return {}
@@ -498,7 +639,13 @@ def fix_data_contracts():
         yaml.dump(data, f, default_flow_style=False, sort_keys=False, allow_unicode=True)
 
 
-def print_analysis(categories: dict):
+def print_analysis(
+    categories: dict,
+    *,
+    results: list[dict],
+    skip_platform_traces: bool = False,
+    platform_trace_limit: int | None = 100,
+):
     """Print failure analysis."""
     total = sum(len(v) for v in categories.values())
     print(f"\n{'='*60}")
@@ -513,7 +660,11 @@ def print_analysis(categories: dict):
             err = r.get("failures", [""])[0][:80]
             print(f"  {r['task_id']}: {err}")
 
-    platform_summary = analyze_platform_traces()
+    platform_summary = analyze_platform_traces(
+        results=results,
+        skip=skip_platform_traces,
+        limit=platform_trace_limit,
+    )
     if platform_summary:
         print(f"\nPLATFORM TRACE SUMMARY ({sum(platform_summary.values())}):")
         for action, count in sorted(platform_summary.items()):
@@ -553,16 +704,29 @@ def main():
     args = _parse_args(sys.argv[1:])
 
     print("Loading results...")
-    results = load_all_results(source=args.source)
+    results = load_all_results(
+        source=args.source,
+        result_paths=args.results,
+        task_ids=args.task_ids,
+    )
     if not results:
         print("No results found. Run tasks first.")
         return
 
     ok = sum(1 for r in results if r.get("success"))
-    print(f"Loaded {len(results)} results: {ok} success, {len(results)-ok} failures")
+    expectation_ok = sum(1 for r in results if task_result_passed_expectation(r))
+    print(
+        f"Loaded {len(results)} results: {ok} success, "
+        f"{len(results)-ok} fail-closed, {expectation_ok} passed expectation"
+    )
 
     categories = analyze_failures(results)
-    print_analysis(categories)
+    print_analysis(
+        categories,
+        results=results,
+        skip_platform_traces=args.skip_platform_traces,
+        platform_trace_limit=args.platform_trace_limit,
+    )
 
     if args.analyze_only:
         return

@@ -8,7 +8,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from trellis.agent.evals import classify_task_result, summarize_task_results
+from trellis.agent.evals import (
+    classify_task_result,
+    summarize_task_results,
+    task_result_outcome_class,
+    task_result_passed_expectation,
+)
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -38,7 +43,7 @@ def build_task_batch_report(
         _build_task_row(result, root=root)
         for result in normalized_results
     ]
-    failed_tasks = [row for row in task_rows if not row["success"]]
+    failed_tasks = [row for row in task_rows if not row["passed_expectation"]]
     successful_tasks = [row for row in task_rows if row["success"]]
 
     corpus_summary: dict[str, dict[str, int]] = {}
@@ -52,7 +57,7 @@ def build_task_batch_report(
         entry["tasks"] += 1
         if row["success"]:
             entry["successes"] += 1
-        else:
+        if not row["passed_expectation"]:
             entry["failures"] += 1
         entry[bucket] = int(entry.get(bucket) or 0) + 1
 
@@ -99,9 +104,14 @@ def render_task_batch_markdown(
     summary = dict(report.get("summary") or {})
     totals = dict(summary.get("totals") or {})
     corpus_summary = dict(report.get("corpus_summary") or {})
+    failure_buckets_source = (
+        summary.get("actionable_failure_buckets")
+        or summary.get("failure_buckets")
+        or {}
+    )
     failure_buckets = {
         str(bucket): count
-        for bucket, count in dict(summary.get("failure_buckets") or {}).items()
+        for bucket, count in dict(failure_buckets_source).items()
         if str(bucket) != "success"
     }
     reviewer_signals = dict(summary.get("reviewer_signals") or {})
@@ -160,6 +170,8 @@ def render_task_batch_markdown(
             f"| Tasks | {totals.get('tasks', 0)} |",
             f"| Successes | {totals.get('successes', 0)} |",
             f"| Failures | {totals.get('failures', 0)} |",
+            f"| Expectation passes | {totals.get('expectation_passes', totals.get('successes', 0))} |",
+            f"| Actionable failures | {totals.get('actionable_failures', totals.get('failures', 0))} |",
             f"| Avg attempts | {totals.get('avg_attempts', 0.0)} |",
             f"| Successful after retry | {retry_recovery.get('successful_after_retry', 0)} |",
             f"| First-attempt successes | {retry_recovery.get('first_attempt_successes', 0)} |",
@@ -253,11 +265,15 @@ def render_task_batch_markdown(
 
 def _build_task_row(result: Mapping[str, Any], *, root: Path) -> dict[str, Any]:
     bucket = classify_task_result(result)
+    outcome_class = task_result_outcome_class(result)
+    passed_expectation = task_result_passed_expectation(result)
     return {
         "task_id": str(result.get("task_id") or "").strip(),
         "title": str(result.get("title") or "").strip(),
         "task_corpus": str(result.get("task_corpus") or "").strip(),
         "success": bool(result.get("success")),
+        "outcome_class": outcome_class,
+        "passed_expectation": passed_expectation,
         "status_bucket": bucket,
         "comparison_task": bool(result.get("comparison_task")),
         "preferred_method": str(result.get("preferred_method") or "").strip(),

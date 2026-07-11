@@ -115,6 +115,53 @@ class TestRegistryValidation:
             "short_rate_bond_option",
         } <= route_ids
 
+    def test_exercise_monte_carlo_resolves_american_equity_lsm_composition(self, registry):
+        route = find_route_by_id("exercise_monte_carlo", registry)
+        assert route is not None
+
+        product_ir = ProductIR(
+            instrument="american_put",
+            payoff_family="vanilla_option",
+            exercise_style="american",
+            model_family="equity_diffusion",
+        )
+
+        primitives = resolve_route_primitives(
+            route,
+            product_ir,
+            method="monte_carlo",
+        )
+
+        assert _prim_set(primitives) == {
+            (
+                "trellis.models.processes.gbm",
+                "GBM",
+                "state_process",
+            ),
+            (
+                "trellis.models.monte_carlo.engine",
+                "MonteCarloEngine",
+                "path_simulation",
+            ),
+            (
+                "trellis.models.monte_carlo.lsm",
+                "longstaff_schwartz",
+                "exercise_control",
+            ),
+            (
+                "trellis.models.equity_option_monte_carlo",
+                "price_american_equity_option_lsm_monte_carlo",
+                "route_helper",
+            )
+        }
+        helper = next(primitive for primitive in primitives if primitive.role == "route_helper")
+        assert helper.required is False
+        assert all(
+            primitive.required
+            for primitive in primitives
+            if primitive.role != "route_helper"
+        )
+
     def test_all_routes_promoted(self, registry):
         candidate_ids = {route.id for route in registry.routes if route.status == "candidate"}
         non_promoted = {route.id: route.status for route in registry.routes if route.status not in {"promoted", "candidate"}}
@@ -766,6 +813,26 @@ class TestMonteCarloPathsRoutes:
         exercise_style="european",
         model_family="stochastic_volatility",
     )
+    SABR_IR = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("sabr",),
+        exercise_style="european",
+        model_family="sabr",
+    )
+    VARIANCE_SWAP_IR = ProductIR(
+        instrument="variance_swap",
+        payoff_family="variance_swap",
+        payoff_traits=(
+            "discounting",
+            "path_dependent",
+            "vol_surface_dependence",
+        ),
+        exercise_style="none",
+        state_dependence="path_dependent",
+        schedule_dependence=False,
+        model_family="generic",
+    )
     GENERIC_IR = ProductIR(
         instrument="path_dependent_note",
         payoff_family="path_dependent_generic",
@@ -801,6 +868,23 @@ class TestMonteCarloPathsRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_variance_swap_primitives_use_realized_variance_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        new_prims = resolve_route_primitives(spec, self.VARIANCE_SWAP_IR)
+        expected_prims = {
+            (
+                "trellis.models.variance_swap",
+                "price_equity_variance_swap_monte_carlo",
+                "route_helper",
+            ),
+            (
+                "trellis.models.variance_swap",
+                "equity_variance_swap_outputs_monte_carlo",
+                "pricing_kernel",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_heston_primitives_use_stochastic_vol_monte_carlo_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         new_prims = resolve_route_primitives(spec, self.HESTON_IR)
@@ -808,6 +892,74 @@ class TestMonteCarloPathsRoutes:
             (
                 "trellis.models.monte_carlo.stochastic_vol",
                 "price_heston_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_merton_primitives_use_jump_diffusion_monte_carlo_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("jump_diffusion",),
+            exercise_style="european",
+            model_family="jump_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.merton_jump_diffusion_option",
+                "price_merton_jump_diffusion_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_sabr_primitives_use_forward_option_monte_carlo_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        new_prims = resolve_route_primitives(spec, self.SABR_IR)
+        expected_prims = {
+            (
+                "trellis.models.sabr_option",
+                "price_sabr_forward_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    @pytest.mark.parametrize(
+        ("model_family", "expected_module", "expected_symbol"),
+        [
+            (
+                "variance_gamma",
+                "trellis.models.levy_option",
+                "price_variance_gamma_option_monte_carlo",
+            ),
+            ("cgmy", "trellis.models.levy_option", "price_cgmy_option_monte_carlo"),
+            ("bates", "trellis.models.bates_option", "price_bates_option_monte_carlo"),
+        ],
+    )
+    def test_levy_primitives_use_model_specific_monte_carlo_helpers(
+        self,
+        registry,
+        model_family,
+        expected_module,
+        expected_symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=(model_family,),
+            exercise_style="european",
+            model_family=model_family,
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                expected_module,
+                expected_symbol,
                 "route_helper",
             ),
         }
@@ -1179,6 +1331,38 @@ class TestRateTreeRoutes:
         notes = resolve_route_notes(spec, self.EUROPEAN_SWAPTION_IR)
         assert notes == ()
 
+    def test_cev_spot_lattice_candidate_prefers_cev_route(self, registry):
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("cev_process",),
+            exercise_style="european",
+            model_family="cev_diffusion",
+            candidate_engine_families=("lattice",),
+            route_families=("pde_solver", "equity_tree"),
+        )
+
+        new = _new_routes(registry, "rate_tree", ir)
+
+        assert new == ("cev_spot_lattice",)
+
+    def test_cev_spot_lattice_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "cev_spot_lattice"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("cev_process",),
+            exercise_style="european",
+            model_family="cev_diffusion",
+            candidate_engine_families=("lattice",),
+            route_families=("pde_solver", "equity_tree"),
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.equity_option_tree", "price_cev_option_tree", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_backward_induction_engine_family(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
         assert spec.engine_family == "lattice"
@@ -1202,6 +1386,30 @@ class TestAnalyticalRoutes:
         model_family="interest_rate",
     )
     VANILLA_IR = ProductIR(instrument="european_option", payoff_family="vanilla_option", exercise_style="european")
+    SABR_IR = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("sabr",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="sabr",
+    )
+    VARIANCE_GAMMA_IR = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("variance_gamma",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="variance_gamma",
+    )
+    CGMY_IR = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("cgmy",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="cgmy",
+    )
     BARRIER_IR = ProductIR(
         instrument="barrier_option",
         payoff_family="barrier_option",
@@ -1269,6 +1477,14 @@ class TestAnalyticalRoutes:
         "analytical",
         market_data={"discount_curve", "black_vol_surface"},
     )
+    SABR_PLAN = _make_plan(
+        "analytical",
+        market_data={"discount_curve", "model_parameters", "spot"},
+    )
+    SABR_PLAN_WITH_BLACK_SURFACE = _make_plan(
+        "analytical",
+        market_data={"black_vol_surface", "discount_curve", "model_parameters", "spot"},
+    )
 
     def test_analytical_black76_absorbed_exotics_do_not_match_by_instrument(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
@@ -1286,6 +1502,58 @@ class TestAnalyticalRoutes:
             registry, "analytical", self.SWAPTION_IR, pricing_plan=self.BLACK76_PLAN,
         )
         assert new == ("analytical_black76",)
+
+    def test_sabr_candidate_uses_hagan_route_without_black_vol_surface(self, registry):
+        new = _new_routes(
+            registry, "analytical", self.SABR_IR, pricing_plan=self.SABR_PLAN,
+        )
+        assert "sabr_hagan_analytical" in new
+        assert "analytical_black76" not in new
+
+    def test_sabr_candidate_excludes_black76_when_black_surface_is_ambient(self, registry):
+        new = _new_routes(
+            registry,
+            "analytical",
+            self.SABR_IR,
+            pricing_plan=self.SABR_PLAN_WITH_BLACK_SURFACE,
+        )
+        assert "sabr_hagan_analytical" in new
+        assert "analytical_black76" not in new
+
+    @pytest.mark.parametrize("product_ir", [VARIANCE_GAMMA_IR, CGMY_IR])
+    def test_levy_reference_candidate_excludes_black76(self, registry, product_ir):
+        new = _new_routes(
+            registry,
+            "analytical",
+            product_ir,
+            pricing_plan=self.SABR_PLAN,
+        )
+        assert "levy_reference_analytical" in new
+        assert "analytical_black76" not in new
+
+    @pytest.mark.parametrize(
+        ("product_ir", "expected_symbol"),
+        [
+            (VARIANCE_GAMMA_IR, "price_variance_gamma_option_reference"),
+            (CGMY_IR, "price_cgmy_option_reference"),
+        ],
+    )
+    def test_levy_reference_primitives_use_model_specific_helpers(
+        self,
+        registry,
+        product_ir,
+        expected_symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "levy_reference_analytical"][0]
+        new_prims = resolve_route_primitives(spec, product_ir)
+        expected_prims = {
+            (
+                "trellis.models.levy_option",
+                expected_symbol,
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
 
     def test_barrier_candidate(self, registry):
         new = _new_routes(
@@ -1364,6 +1632,22 @@ class TestAnalyticalRoutes:
         assert "black76_call" in prim_symbols
         assert "black76_put" in prim_symbols
         assert "year_fraction" in prim_symbols
+
+    def test_sabr_hagan_primitives_with_product_ir(self, registry):
+        spec = [r for r in registry.routes if r.id == "sabr_hagan_analytical"][0]
+        new_prims = resolve_route_primitives(spec, self.SABR_IR)
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.sabr_option",
+                "price_sabr_forward_option_hagan",
+                "route_helper",
+            ),
+            (
+                "trellis.models.sabr_option",
+                "resolve_sabr_forward_option_inputs",
+                "market_binding",
+            ),
+        }
 
     def test_default_primitives_without_vanilla(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
@@ -1722,6 +2006,59 @@ class TestFXAnalyticalRoutes:
         assert _prim_set(new_prims) == expected_prims
 
 
+class TestFXBarrierRoutes:
+    FX_BARRIER_IR = ProductIR(
+        instrument="barrier_option",
+        payoff_family="barrier_option",
+        payoff_traits=("barrier", "single_barrier"),
+        exercise_style="european",
+        model_family="fx",
+    )
+    FX_BARRIER_PLAN = _make_plan(
+        "analytical",
+        market_data={"fx_rates", "forward_curve", "discount_curve", "black_vol_surface", "spot"},
+    )
+
+    def test_fx_barrier_analytical_candidate(self, registry):
+        new = _new_routes(
+            registry,
+            "analytical",
+            self.FX_BARRIER_IR,
+            pricing_plan=self.FX_BARRIER_PLAN,
+        )
+        assert new == ("analytical_fx_barrier",)
+
+    def test_fx_barrier_analytical_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_fx_barrier"][0]
+        new_prims = resolve_route_primitives(spec, self.FX_BARRIER_IR)
+        expected_prims = {
+            ("trellis.models.fx_barrier_option", "price_fx_barrier_option_analytical", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_fx_barrier_monte_carlo_candidate(self, registry):
+        plan = _make_plan(
+            "monte_carlo",
+            market_data={"fx_rates", "forward_curve", "discount_curve", "black_vol_surface", "spot"},
+        )
+        new = _new_routes(
+            registry,
+            "monte_carlo",
+            self.FX_BARRIER_IR,
+            pricing_plan=plan,
+        )
+        assert "monte_carlo_fx_barrier" in new
+        assert "monte_carlo_fx_vanilla" not in new
+
+    def test_fx_barrier_monte_carlo_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_fx_barrier"][0]
+        new_prims = resolve_route_primitives(spec, self.FX_BARRIER_IR)
+        expected_prims = {
+            ("trellis.models.fx_barrier_option", "price_fx_barrier_option_monte_carlo", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+
 class TestFXMonteCarloRoutes:
     FX_IR = ProductIR(instrument="fx_option", payoff_family="vanilla_option", exercise_style="european")
     FX_PLAN = _make_plan(
@@ -1776,6 +2113,21 @@ class TestFallbackRoutes:
         new = _new_routes(registry, "pde_solver", ir)
         assert new == ("vanilla_equity_theta_pde", "pde_theta_1d")
 
+    def test_cev_pde_candidate_prefers_cev_route(self, registry):
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("cev_process",),
+            exercise_style="european",
+            model_family="cev_diffusion",
+            candidate_engine_families=("pde",),
+            route_families=("pde_solver", "equity_tree"),
+        )
+
+        new = _new_routes(registry, "pde_solver", ir)
+
+        assert new == ("cev_theta_pde", "pde_theta_1d")
+
     def test_vanilla_equity_pde_minimal_ir_still_matches_for_gap_audits(self, registry):
         ir = ProductIR(
             instrument="european_option",
@@ -1822,6 +2174,25 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_digital_transform_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        ir = ProductIR(
+            instrument="digital_option",
+            payoff_family="digital_option",
+            payoff_traits=("digital_payoff",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.equity_option_transforms",
+                "price_equity_digital_option_transform",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_vanilla_equity_transform_helper_route_is_thin(self, registry):
         spec = [r for r in registry.routes if r.id == "transform_fft"][0]
         ir = ProductIR(
@@ -1851,6 +2222,62 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
+    def test_jump_diffusion_transform_primitives_use_merton_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("jump_diffusion",),
+            exercise_style="european",
+            model_family="jump_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.merton_jump_diffusion_option",
+                "price_merton_jump_diffusion_option_transform",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    @pytest.mark.parametrize(
+        ("model_family", "expected_module", "expected_symbol"),
+        [
+            (
+                "variance_gamma",
+                "trellis.models.levy_option",
+                "price_variance_gamma_option_transform",
+            ),
+            ("cgmy", "trellis.models.levy_option", "price_cgmy_option_transform"),
+            ("bates", "trellis.models.bates_option", "price_bates_option_transform"),
+        ],
+    )
+    def test_levy_transform_primitives_use_model_specific_helpers(
+        self,
+        registry,
+        model_family,
+        expected_module,
+        expected_symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "transform_fft"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=(model_family,),
+            exercise_style="european",
+            model_family=model_family,
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                expected_module,
+                expected_symbol,
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
     def test_pde_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
         new_prims = resolve_route_primitives(spec, None)
@@ -1872,6 +2299,110 @@ class TestFallbackRoutes:
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
             ("trellis.models.equity_option_pde", "price_vanilla_equity_option_pde", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_digital_pde_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]
+        ir = ProductIR(
+            instrument="digital_option",
+            payoff_family="digital_option",
+            payoff_traits=("digital_payoff",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.equity_option_pde", "price_equity_digital_option_pde", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_local_vol_pde_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "local_vol_pde"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="local_vol",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.local_vol_option", "price_local_vol_option_pde", "route_helper"),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_asian_monte_carlo_primitives_use_checked_helpers(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        ir = ProductIR(
+            instrument="asian_option",
+            payoff_family="asian_option",
+            payoff_traits=("asian",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+            state_dependence="path_dependent",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.asian_option",
+                "price_arithmetic_asian_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_asian_analytical_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        ir = ProductIR(
+            instrument="asian_option",
+            payoff_family="asian_option",
+            payoff_traits=("asian",),
+            exercise_style="european",
+            model_family="equity_diffusion",
+            state_dependence="path_dependent",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.asian_option",
+                "price_arithmetic_asian_option_analytical",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_lookback_monte_carlo_primitives_use_checked_helper(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        ir = ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=("lookback", "path_dependent"),
+            exercise_style="european",
+            model_family="equity_diffusion",
+            state_dependence="path_dependent",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            (
+                "trellis.models.lookback_option",
+                "price_equity_fixed_lookback_option_monte_carlo",
+                "route_helper",
+            ),
+        }
+        assert _prim_set(new_prims) == expected_prims
+
+    def test_cev_pde_primitives(self, registry):
+        spec = [r for r in registry.routes if r.id == "cev_theta_pde"][0]
+        ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("cev_process",),
+            exercise_style="european",
+            model_family="cev_diffusion",
+        )
+        new_prims = resolve_route_primitives(spec, ir)
+        expected_prims = {
+            ("trellis.models.equity_option_pde", "price_cev_option_pde", "route_helper"),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -1954,7 +2485,11 @@ class TestFallbackRoutes:
         assert vanilla.admissibility.supported_event_transform_kinds == ()
         assert generic is not None
         assert generic.admissibility.supported_control_styles == ("identity", "holder_max", "issuer_min")
-        assert generic.admissibility.supported_operator_families == ("black_scholes_1d", "hull_white_1f")
+        assert generic.admissibility.supported_operator_families == (
+            "black_scholes_1d",
+            "local_vol_1d",
+            "hull_white_1f",
+        )
         assert generic.admissibility.supported_event_transform_kinds == (
             "add_cashflow",
             "project_max",
@@ -1966,6 +2501,11 @@ class TestFallbackRoutes:
         assert transform.admissibility.supported_characteristic_families == (
             "gbm_log_spot",
             "heston_log_spot",
+            "merton_log_spot",
+            "variance_gamma_log_spot",
+            "cgmy_log_spot",
+            "kou_log_spot",
+            "bates_log_spot",
         )
 
     def test_transform_route_admissibility_accepts_european_holder_control_surface(self, registry):
@@ -2188,20 +2728,29 @@ class TestEngineFamilyCoverage:
         "correlated_basket_monte_carlo": "monte_carlo",
         "exercise_monte_carlo": "exercise",
         "monte_carlo_paths": "monte_carlo",
+        "monte_carlo_fx_barrier": "monte_carlo",
         "monte_carlo_fx_vanilla": "monte_carlo",
         "local_vol_monte_carlo": "monte_carlo",
+        "local_vol_pde": "pde_solver",
         "qmc_sobol_paths": "qmc",
         "exercise_lattice": "lattice",
         "rate_tree_backward_induction": "lattice",
+        "cev_spot_lattice": "lattice",
+        "sabr_hagan_analytical": "analytical",
+        "levy_reference_analytical": "analytical",
         "analytical_black76": "analytical",
         # QUA-915: collapsed ZCB-option family takes analytical as its
         # umbrella engine_family; the lattice helper is reached through
         # the rate_tree when-clause and resolve_route_family's
         # conditional_route_family override.
         "short_rate_bond_option": "analytical",
+        "short_rate_zero_coupon_bond": "analytical",
+        "analytical_fx_barrier": "analytical",
         "analytical_garman_kohlhagen": "analytical",
         "transform_fft": "fft_pricing",
         "vanilla_equity_theta_pde": "pde_solver",
+        "cev_theta_pde": "pde_solver",
+        "heston_adi_2d": "pde_solver",
         "pde_theta_1d": "pde_solver",
         "copula_loss_distribution": "copula",
         "waterfall_cashflows": "waterfall",

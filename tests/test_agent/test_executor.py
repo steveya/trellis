@@ -3,10 +3,24 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 from contextlib import contextmanager
+from pathlib import Path
 from types import ModuleType, SimpleNamespace
 import sys
 
 import pytest
+
+
+def test_comparison_target_prefers_per_build_metadata():
+    from trellis.agent.executor import _comparison_target_from_build_metadata
+
+    compiled_request = SimpleNamespace(
+        request=SimpleNamespace(metadata={"comparison_target": "compiled_target"})
+    )
+
+    assert _comparison_target_from_build_metadata(
+        compiled_request,
+        {"comparison_target": "task_target"},
+    ) == "task_target"
 
 
 def test_build_payoff_reuse_branch_attaches_analytical_trace(monkeypatch, tmp_path):
@@ -253,6 +267,59 @@ def test_build_payoff_persists_structured_blockers_when_pre_generation_gate_bloc
     assert blocker_details["new_primitive_workflow"]["items"][0]["title"] == "exercise primitive"
 
 
+def test_explicit_semantic_method_gap_does_not_fall_back_to_broad_route(monkeypatch):
+    from importlib import import_module
+
+    from trellis.agent.executor import build_payoff
+    from trellis.agent.semantic_contracts import (
+        UnsupportedSemanticMethodError,
+        make_rate_style_swaption_contract,
+    )
+
+    contract = make_rate_style_swaption_contract(
+        description="Bermudan payer swaption with an irregular exercise schedule",
+        observation_schedule=("2025-11-15", "2026-05-15", "2026-11-15"),
+        preferred_method="rate_tree",
+        exercise_style="bermudan",
+    )
+    build_meta: dict[str, object] = {}
+
+    def _forbid_fallback(*args, **kwargs):
+        raise AssertionError("explicit semantic compilation must not use broad fallback")
+
+    decompose_module = import_module("trellis.agent.knowledge.decompose")
+    monkeypatch.setattr(decompose_module, "decompose_to_ir", _forbid_fallback)
+    monkeypatch.setattr("trellis.agent.planner.plan_build", _forbid_fallback)
+
+    with pytest.raises(
+        UnsupportedSemanticMethodError,
+        match="Bermudan swaption Monte Carlo",
+    ):
+        build_payoff(
+            "Bermudan payer swaption with an irregular exercise schedule",
+            instrument_type="swaption",
+            preferred_method="monte_carlo",
+            semantic_contract=contract,
+            build_meta=build_meta,
+        )
+
+    blocker_details = build_meta["blocker_details"]
+    assert blocker_details["reason"] == "semantic_method_composition_gap"
+    assert blocker_details["semantic_family"] == "rate_style_swaption:bermudan"
+    assert blocker_details["requested_method"] == "monte_carlo"
+    assert blocker_details["available_capabilities"] == [
+        "hull_white_factor_simulation",
+        "irregular_exercise_schedule",
+        "longstaff_schwartz_continuation",
+        "pathwise_swap_value_projection",
+    ]
+    assert blocker_details["missing_capabilities"] == [
+        "exercise_schedule_to_simulation_grid",
+        "pathwise_numeraire_discounting",
+        "swap_value_paths_to_early_exercise_control",
+    ]
+
+
 def test_record_lesson_maps_fields_into_canonical_payload(monkeypatch):
     from trellis.agent.test_resolution import Lesson, record_lesson
 
@@ -495,6 +562,38 @@ def test_deterministic_exact_binding_module_materializes_swaption_helper_wrapper
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_deterministic_exact_binding_module_materializes_bermudan_tree_compat_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree",
+        ),
+        primitive_plan=SimpleNamespace(route="exercise_lattice"),
+        method="rate_tree",
+        instrument_type="swaption",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["bermudan_swaption"],
+        "Bermudan payer swaption",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "return price_bermudan_swaption_tree(market_state, spec)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_deterministic_exact_binding_module_materializes_cap_strip_helper_wrapper():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
@@ -579,6 +678,135 @@ def test_deterministic_exact_binding_module_materializes_cap_strip_comparison_wr
     assert 'coupon_dates=getattr(spec, "coupon_dates", None)' in generated.code
     assert 'cap_strike=getattr(spec, "cap_strike", None)' in generated.code
     assert 'floor_strike=getattr(spec, "floor_strike", None)' in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_exact_binding_refs_collect_backend_helper_refs_from_route_authority():
+    from trellis.agent.executor import _exact_binding_refs
+
+    refs = _exact_binding_refs(
+        SimpleNamespace(
+            lane_exact_binding_refs=(),
+            backend_helper_refs=(),
+            primitive_plan=None,
+            route_binding_authority={
+                "backend_binding": {
+                    "binding_id": "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",
+                    "helper_refs": [
+                        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+                    ],
+                }
+            },
+        )
+    )
+
+    assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical" in refs
+    assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo" in refs
+
+
+def test_exact_binding_refs_collect_backend_helper_refs_from_mapping_plan():
+    from trellis.agent.executor import _exact_binding_refs
+
+    refs = _exact_binding_refs(
+        {
+            "instrument_type": "period_rate_option_strip",
+            "route_binding_authority": {
+                "backend_binding": {
+                    "binding_id": "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical",
+                    "helper_refs": [
+                        "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+                    ],
+                    "target_bindings": [
+                        {
+                            "module": "trellis.models.black",
+                            "symbol": "black76_call",
+                            "role": "pricing_kernel",
+                        }
+                    ],
+                }
+            },
+        }
+    )
+
+    assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical" in refs
+    assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo" in refs
+    assert "trellis.models.black.black76_call" in refs
+
+
+def test_deterministic_exact_binding_module_materializes_period_rate_strip_from_backend_refs():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        backend_helper_refs=(),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="period_rate_option_strip",
+        route_binding_authority={
+            "backend_binding": {
+                "helper_refs": [
+                    "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical"
+                ],
+            }
+        },
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cap"],
+        "Callable cap/floor collar comparison exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="analytical",
+    )
+
+    assert generated is not None
+    assert "price_rate_cap_floor_strip_analytical(" in generated.code
+    assert 'instrument_class=getattr(spec, "instrument_class", None) or "cap"' in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_period_rate_strip_from_mapping_refs():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = {
+        "method": "monte_carlo",
+        "instrument_type": "period_rate_option_strip",
+        "route_binding_authority": {
+            "backend_binding": {
+                "helper_refs": [
+                    "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo"
+                ],
+            }
+        },
+    }
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cap"],
+        "Callable cap/floor collar comparison exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="monte_carlo",
+    )
+
+    assert generated is not None
+    assert "price_rate_cap_floor_strip_monte_carlo(" in generated.code
+    assert 'instrument_class=getattr(spec, "instrument_class", None) or "cap"' in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -768,7 +996,166 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_mc_helpe
 @pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
-        ("heston_mc", 'scheme="euler"'),
+        ("theta_0.5", "price_vanilla_equity_option_pde(market_state, spec, theta=0.5)"),
+        ("theta_1.0", "price_vanilla_equity_option_pde(market_state, spec, theta=1.0)"),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_helper_wrapper(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.equity_option_pde.price_vanilla_equity_option_pde",
+        ),
+        primitive_plan=SimpleNamespace(route="vanilla_equity_theta_pde"),
+        method="pde_solver",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European call: theta-method convergence order measurement",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde" in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment", "expected_import"),
+    [
+        (
+            "psor_pde",
+            "price_event_aware_equity_option_pde(",
+            "from trellis.models.equity_option_pde import price_event_aware_equity_option_pde",
+        ),
+        (
+            "crr_tree",
+            'float(getattr(spec, "notional", 1.0) or 1.0) * price_vanilla_equity_option_tree(',
+            "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree",
+        ),
+        (
+            "high_step_tree_2000",
+            'float(getattr(spec, "notional", 1.0) or 1.0) * price_vanilla_equity_option_tree(',
+            "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree",
+        ),
+        (
+            "lsm_mc",
+            "price_american_equity_option_lsm_monte_carlo(",
+            "from trellis.models.equity_option_monte_carlo import "
+            "price_american_equity_option_lsm_monte_carlo",
+        ),
+    ],
+)
+@pytest.mark.parametrize("instrument_type", ["american_put", "american_option"])
+def test_deterministic_exact_binding_module_materializes_american_put_targets_without_refs(
+    instrument_type,
+    comparison_target,
+    expected_fragment,
+    expected_import,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type=instrument_type,
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["american_put_tree"],
+        "American put: PSOR vs tree vs LSM three-way",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_import in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment", "expected_import"),
+    [
+        (
+            "cev_pde",
+            "price_cev_option_pde(",
+            "from trellis.models.equity_option_pde import price_cev_option_pde",
+        ),
+        (
+            "cev_tree",
+            "price_cev_option_tree(",
+            "from trellis.models.equity_option_tree import price_cev_option_tree",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_cev_targets_without_refs(
+    comparison_target,
+    expected_fragment,
+    expected_import,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["cev_option"],
+        "CEV model: CEVOperator PDE vs CEV tree",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_import in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
+        ("heston_mc", 'scheme="heston_qe"'),
         ("euler_heston", 'scheme="euler"'),
         ("qe_heston", 'scheme="heston_qe"'),
     ],
@@ -807,6 +1194,314 @@ def test_deterministic_exact_binding_module_materializes_heston_mc_helper_wrappe
     assert generated is not None
     assert "price_heston_option_monte_carlo(market_state, spec" in generated.code
     assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_heston_adi_helper():
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(
+            route="heston_adi_2d",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.pde.heston_adi",
+                    "price_heston_option_adi_pde_result",
+                    "route_helper",
+                ),
+            ),
+        ),
+        method="pde_solver",
+        instrument_type="heston_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["heston_option"],
+        "Heston ADI checked helper",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="heston_adi_pde",
+    )
+
+    assert generated is not None
+    assert (
+        "from trellis.models.pde.heston_adi import price_heston_option_adi_pde_result"
+        in generated.code
+    )
+    assert "price_heston_option_adi_pde_result(market_state, spec).price" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_rannacher"),
+    [
+        ("cn_rannacher", 'rannacher_timesteps=getattr(spec, "rannacher_timesteps", 2)'),
+        ("cn_standard", 'rannacher_timesteps=getattr(spec, "rannacher_timesteps", 0)'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_digital_pde_targets(
+    comparison_target,
+    expected_rannacher,
+):
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(
+            route="pde_theta_1d",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.equity_option_pde",
+                    "price_equity_digital_option_pde",
+                    "route_helper",
+                ),
+            ),
+        ),
+        method="pde_solver",
+        instrument_type="digital_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["digital_option"],
+        "Digital PDE proof target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.equity_option_pde import price_equity_digital_option_pde" in generated.code
+    assert "price_equity_digital_option_pde(" in generated.code
+    assert 'theta=getattr(spec, "theta", 0.5)' in generated.code
+    assert expected_rannacher in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "helper_ref", "expected_call"),
+    [
+        (
+            "mc_asian",
+            "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo",
+            "price_arithmetic_asian_option_monte_carlo(market_state, spec)",
+        ),
+        (
+            "turnbull_wakeman_approx",
+            "trellis.models.asian_option.price_arithmetic_asian_option_analytical",
+            "price_arithmetic_asian_option_analytical(market_state, spec)",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_asian_targets(
+    comparison_target,
+    helper_ref,
+    expected_call,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper_ref,),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="asian_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["asian_option"],
+        "Asian option proof target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_lookback_mc_target():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    helper_ref = "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo"
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper_ref,),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="lookback_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["lookback_option"],
+        "Lookback option MC proof target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="mc_lookback",
+    )
+
+    assert generated is not None
+    assert "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo" in generated.code
+    assert "price_equity_fixed_lookback_option_monte_carlo(market_state, spec)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    "comparison_target",
+    [
+        "heston_adi_pde",
+        "pde_double_barrier",
+        "mc_double_barrier",
+        "mc_autocall",
+        "mc_autocall_qmc",
+    ],
+)
+def test_deterministic_exact_binding_module_does_not_materialize_learning_targets(comparison_target):
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(route="target_helper"),
+        method="pde_solver" if comparison_target in {"heston_adi_pde", "pde_double_barrier"} else "monte_carlo",
+        instrument_type="barrier_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["barrier_option"],
+        "Failed pack helper target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is None
+
+
+def test_deterministic_exact_binding_module_materializes_cliquet_monte_carlo_helper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="cliquet_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cliquet_option"],
+        "Capped and floored cliquet comparison target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="monte_carlo",
+    )
+
+    assert generated is not None
+    assert "from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo" in generated.code
+    assert "price_equity_cliquet_option_monte_carlo(" in generated.code
+    assert 'n_paths=getattr(spec, "n_paths", 120000)' in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_sampling"),
+    [
+        ("mc_autocall", "pseudo"),
+        ("mc_autocall_qmc", "sobol"),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_autocallable_helper(
+    comparison_target,
+    expected_sampling,
+):
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=SimpleNamespace(
+            route="monte_carlo_paths",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.autocallable",
+                    "price_autocallable_monte_carlo_result",
+                    "route_helper",
+                ),
+            ),
+        ),
+        method="monte_carlo",
+        instrument_type="autocallable",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["autocallable"],
+        "Autocallable helper target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.autocallable import price_autocallable_monte_carlo_result" in generated.code
+    assert (
+        f'price_autocallable_monte_carlo_result(market_state, spec, sampling="{expected_sampling}").price'
+        in generated.code
+    )
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -897,6 +1592,335 @@ def test_deterministic_exact_binding_module_materializes_heston_transform_helper
     assert EVALUATE_SENTINEL not in generated.code
 
 
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
+        ("merton_fft", 'method="fft"'),
+        ("merton_cos", 'method="cos"'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_merton_transform_helper_wrapper(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "Merton jump-diffusion option transforms",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert (
+        "from trellis.models.merton_jump_diffusion_option import "
+        "price_merton_jump_diffusion_option_transform"
+    ) in generated.code
+    assert 'return {"black_vol_surface", "discount_curve", "jump_parameters"}' in generated.code
+    assert "price_merton_jump_diffusion_option_transform(market_state, spec" in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_merton_monte_carlo_helper_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_monte_carlo",
+        ),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_monte_carlo"],
+        "Merton jump-diffusion option MC",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="merton_mc",
+    )
+
+    assert generated is not None
+    assert (
+        "from trellis.models.merton_jump_diffusion_option import "
+        "price_merton_jump_diffusion_option_monte_carlo"
+    ) in generated.code
+    assert 'return {"black_vol_surface", "discount_curve", "jump_parameters"}' in generated.code
+    assert "price_merton_jump_diffusion_option_monte_carlo(market_state, spec" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "helper", "expected_fragment"),
+    [
+        (
+            "vg_cos",
+            "price_variance_gamma_option_transform",
+            'method="cos"',
+        ),
+        (
+            "madan_carr_chang_reference",
+            "price_variance_gamma_option_reference",
+            "price_variance_gamma_option_reference(market_state, spec)",
+        ),
+        (
+            "cgmy_cos",
+            "price_cgmy_option_transform",
+            'method="cos"',
+        ),
+        (
+            "cgmy_reference_values",
+            "price_cgmy_option_reference",
+            "price_cgmy_option_reference(market_state, spec)",
+        ),
+        (
+            "kou_fft",
+            "price_kou_option_transform",
+            'method="fft"',
+        ),
+        (
+            "kou_reference_values",
+            "price_kou_option_reference",
+            "price_kou_option_reference(market_state, spec)",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_levy_transform_helper_wrapper(
+    comparison_target,
+    helper,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            f"trellis.models.levy_option.{helper}",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "Levy option transform",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert f"from trellis.models.levy_option import {helper}" in generated.code
+    assert 'return {"discount_curve", "model_parameters"}' in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "helper"),
+    [
+        ("vg_mc", "price_variance_gamma_option_monte_carlo"),
+        ("cgmy_mc", "price_cgmy_option_monte_carlo"),
+        ("kou_mc", "price_kou_option_monte_carlo"),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_levy_monte_carlo_helper_wrapper(
+    comparison_target,
+    helper,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            f"trellis.models.levy_option.{helper}",
+        ),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_monte_carlo"],
+        "Levy option MC",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert f"from trellis.models.levy_option import {helper}" in generated.code
+    assert 'return {"discount_curve", "model_parameters"}' in generated.code
+    assert f"{helper}(market_state, spec" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
+        ("bates_fft", 'price_bates_option_transform(market_state, spec, method="fft")'),
+        ("bates_mc", "price_bates_option_monte_carlo("),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_bates_helper_wrapper(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.bates_option.price_bates_option_transform",
+            "trellis.models.bates_option.price_bates_option_monte_carlo",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "Bates option",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.bates_option import" in generated.code
+    assert 'return {"discount_curve", "jump_parameters", "model_parameters"}' in generated.code
+    assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_sabr_hagan_helper_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.sabr_option.price_sabr_forward_option_hagan",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "SABR Hagan forward option",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="sabr_hagan_analytical",
+    )
+
+    assert generated is not None
+    assert (
+        "from trellis.models.sabr_option import "
+        "price_sabr_forward_option_hagan"
+    ) in generated.code
+    assert 'return {"discount_curve", "model_parameters"}' in generated.code
+    assert "price_sabr_forward_option_hagan(market_state, spec)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_sabr_monte_carlo_helper_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.sabr_option.price_sabr_forward_option_monte_carlo",
+        ),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_monte_carlo"],
+        "SABR MC forward option",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="sabr_mc",
+    )
+
+    assert generated is not None
+    assert (
+        "from trellis.models.sabr_option import "
+        "price_sabr_forward_option_monte_carlo"
+    ) in generated.code
+    assert 'return {"discount_curve", "model_parameters"}' in generated.code
+    assert "price_sabr_forward_option_monte_carlo(market_state, spec" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_validate_build_uses_heston_model_payload_for_heston_transform(monkeypatch):
     from trellis.agent.executor import _validate_build
     from trellis.agent.planner import FieldDef, SpecSchema
@@ -969,6 +1993,99 @@ def test_validate_build_uses_heston_model_payload_for_heston_transform(monkeypat
         HestonExactPayoffForValidation,
         code="",
         description="Heston option transform route",
+        spec_schema=spec_schema,
+        validation="smoke",
+        compiled_request=compiled_request,
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+    )
+
+    assert not failures
+
+
+def test_validate_build_uses_merton_jump_payload_for_jump_diffusion_routes(monkeypatch):
+    from trellis.agent.executor import _validate_build
+    from trellis.agent.planner import FieldDef, SpecSchema
+    from trellis.core.types import DayCountConvention
+    from trellis.models.merton_jump_diffusion_option import (
+        price_merton_jump_diffusion_option_transform,
+    )
+
+    monkeypatch.setattr("trellis.agent.executor._record_platform_event", lambda *args, **kwargs: None)
+
+    @dataclass(frozen=True)
+    class MertonExactSpecForValidation:
+        notional: float
+        spot: float
+        strike: float
+        expiry_date: date
+        option_type: str = "call"
+        day_count: DayCountConvention = DayCountConvention.ACT_365
+
+    monkeypatch.setattr(
+        sys.modules[__name__],
+        "MertonExactSpecForValidation",
+        MertonExactSpecForValidation,
+        raising=False,
+    )
+
+    class MertonExactPayoffForValidation:
+        def __init__(self, spec: MertonExactSpecForValidation):
+            self._spec = spec
+
+        @property
+        def spec(self) -> MertonExactSpecForValidation:
+            return self._spec
+
+        @property
+        def requirements(self) -> set[str]:
+            return {"discount_curve", "black_vol_surface"}
+
+        def evaluate(self, market_state):
+            return price_merton_jump_diffusion_option_transform(
+                market_state,
+                self._spec,
+                method="fft",
+            )
+
+    spec_schema = SpecSchema(
+        class_name="MertonExactPayoffForValidation",
+        spec_name="MertonExactSpecForValidation",
+        requirements=["discount_curve", "black_vol_surface"],
+        fields=[
+            FieldDef("notional", "float", "Notional"),
+            FieldDef("spot", "float", "Spot"),
+            FieldDef("strike", "float", "Strike"),
+            FieldDef("expiry_date", "date", "Expiry"),
+            FieldDef("option_type", "str", "Option type", '"call"'),
+            FieldDef("day_count", "DayCountConvention", "Day count", "DayCountConvention.ACT_365"),
+        ],
+    )
+    pricing_plan = SimpleNamespace(
+        method="fft_pricing",
+        required_market_data={"discount_curve", "black_vol_surface"},
+    )
+    product_ir = SimpleNamespace(
+        instrument="european_option",
+        model_family="jump_diffusion",
+    )
+    compiled_request = SimpleNamespace(
+        request=SimpleNamespace(metadata={}),
+        validation_contract=None,
+        semantic_blueprint=None,
+        generation_plan=SimpleNamespace(
+            lane_exact_binding_refs=(
+                "trellis.models.merton_jump_diffusion_option.price_merton_jump_diffusion_option_transform",
+            ),
+            route_binding_authority=None,
+        ),
+        execution_plan=SimpleNamespace(route_method="fft_pricing"),
+    )
+
+    failures = _validate_build(
+        MertonExactPayoffForValidation,
+        code="",
+        description="Merton jump-diffusion option transform route",
         spec_schema=spec_schema,
         validation="smoke",
         compiled_request=compiled_request,
@@ -1136,6 +2253,204 @@ def test_deterministic_exact_binding_module_materializes_black_scholes_comparato
     )
 
 
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_method"),
+    [
+        ("fft", 'method="fft"'),
+        ("cos", 'method="cos"'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_transform_comparators(
+    comparison_target,
+    expected_method,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.equity_option_transforms.price_vanilla_equity_option_transform",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European option transform comparator",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "price_vanilla_equity_option_transform(" in generated.code
+    assert expected_method in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_method"),
+    [
+        ("digital_fft", 'method="fft"'),
+        ("digital_cos", 'method="cos"'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_digital_transform_targets(
+    comparison_target,
+    expected_method,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.equity_option_transforms.price_equity_digital_option_transform",
+        ),
+        primitive_plan=None,
+        method="fft_pricing",
+        instrument_type="digital_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["digital_option"],
+        "Digital option transform comparator",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert "price_equity_digital_option_transform(" in generated.code
+    assert expected_method in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_call"),
+    [
+        ("mc_cds", "price_cds_monte_carlo("),
+        ("analytical_cds", "price_cds_analytical("),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_cds_target_aliases(
+    comparison_target,
+    expected_call,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="monte_carlo" if comparison_target == "mc_cds" else "analytical",
+        instrument_type="credit_default_swap",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cds"],
+        "CDS comparison target",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
+    assert "build_cds_schedule(" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_uses_metadata_for_cds_target_alias():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="analytical",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cds"],
+        "CDS comparison target with sparse exact plan",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        request_metadata={
+            "instrument_type": "credit_default_swap",
+            "comparison_target": "analytical_cds",
+        },
+    )
+
+    assert generated is not None
+    assert "price_cds_analytical(" in generated.code
+    assert "build_cds_schedule(" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_variance_swap_mc_target():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo",
+        ),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="variance_swap",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["variance_swap"],
+        "Variance swap MC exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="mc_variance_swap",
+    )
+
+    assert generated is not None
+    assert "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo" in generated.code
+    assert "price_equity_variance_swap_monte_carlo(" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_deterministic_exact_binding_module_materializes_route_free_vanilla_black76_body():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
@@ -1170,6 +2485,43 @@ def test_deterministic_exact_binding_module_materializes_route_free_vanilla_blac
     assert "black76_put(forward, strike, sigma, T)" in generated.code
     assert "year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)" in generated.code
     assert "return spec.notional * df * undiscounted" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_treats_analytical_black76_target_as_exact():
+    """F001-style offline harness lanes must not call the LLM for the generic analytical target."""
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+        ),
+        primitive_plan=SimpleNamespace(route="analytical_black76"),
+        method="analytical",
+        instrument_type="european_option",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["european_option_analytical"],
+        "European option analytical exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="analytical",
+    )
+
+    assert generated is not None
+    assert "black76_call(forward, strike, sigma, T)" in generated.code
+    assert "black76_put(forward, strike, sigma, T)" in generated.code
+    assert "equity_vanilla_bs_outputs(market_state, self._spec)" in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -1447,6 +2799,60 @@ def test_deterministic_exact_binding_module_materializes_barrier_helper_with_tim
     assert EVALUATE_SENTINEL not in generated.code
 
 
+@pytest.mark.parametrize(
+    ("helper_ref", "expected_call"),
+    [
+        (
+            "trellis.models.single_barrier_option.price_single_barrier_option_pde_result",
+            "price_single_barrier_option_pde_result(market_state, spec).price",
+        ),
+        (
+            "trellis.models.single_barrier_option.price_single_barrier_option_monte_carlo_result",
+            "price_single_barrier_option_monte_carlo_result(market_state, spec).price",
+        ),
+        (
+            "trellis.models.double_barrier_option.price_double_barrier_option_pde_result",
+            "price_double_barrier_option_pde_result(market_state, spec).price",
+        ),
+        (
+            "trellis.models.double_barrier_option.price_double_barrier_option_monte_carlo_result",
+            "price_double_barrier_option_monte_carlo_result(market_state, spec).price",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_barrier_helpers(
+    helper_ref,
+    expected_call,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper_ref,),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type="barrier_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["barrier_option"],
+        "Double barrier checked helper",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_deterministic_black_scholes_comparator_satisfies_required_primitive_validation():
     from trellis.agent.executor import (
         _generate_skeleton,
@@ -1557,6 +2963,55 @@ def test_deterministic_exact_binding_module_materializes_zcb_option_tree_helper_
     assert generated is not None
     assert "price_zcb_option_tree(market_state, spec" in generated.code
     assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "expected_fragment"),
+    [
+        ("vasicek_tree", 'model="vasicek"'),
+        ("cir_tree", 'model="cir"'),
+        ("vasicek_analytical", 'model="vasicek"'),
+        ("cir_analytical", 'model="cir"'),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_short_rate_bond_helper_wrappers(
+    comparison_target,
+    expected_fragment,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    helper = (
+        "trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_tree"
+        if comparison_target.endswith("_tree")
+        else "trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_analytical"
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(helper,),
+        primitive_plan=None,
+        method="rate_tree" if comparison_target.endswith("_tree") else "analytical",
+        instrument_type="short_rate_bond",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["short_rate_bond"],
+        "Short-rate zero-coupon bond",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    assert expected_fragment in generated.code
+    assert "price_short_rate_zero_coupon_bond_" in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -1908,6 +3363,148 @@ def test_generate_skeleton_prefills_cds_exact_bindings_from_compiler_plan():
     assert "from trellis.core.types import DayCountConvention, Frequency" in skeleton
     assert "from trellis.core.date_utils import generate_schedule, year_fraction" not in skeleton
     assert "from trellis.models.black import black76_call, black76_put" not in skeleton
+
+
+def test_deterministic_exact_binding_module_materializes_cds_analytical_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.credit_default_swap.price_cds_analytical",),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="credit_default_swap",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["cds"],
+        "Single-name CDS analytical exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.credit_default_swap import build_cds_schedule" in generated.code
+    assert "schedule = build_cds_schedule(" in generated.code
+    assert 'time_origin=getattr(spec, "valuation_date", None) or spec.start_date' in generated.code
+    assert "return price_cds_analytical(" in generated.code
+    assert "credit_curve=market_state.credit_curve" in generated.code
+    assert "discount_curve=market_state.discount" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.credit_default_swap.price_cds_monte_carlo",),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="credit_default_swap",
+    )
+
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["cds_monte_carlo"],
+        "Single-name CDS Monte Carlo exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "from trellis.models.credit_default_swap import build_cds_schedule" in generated.code
+    assert "schedule = build_cds_schedule(" in generated.code
+    assert "return price_cds_monte_carlo(" in generated.code
+    assert 'n_paths=getattr(spec, "n_paths", 250000)' in generated.code
+    assert "seed=42" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_ranked_basket_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.resolution.basket_semantics.resolve_basket_semantics",
+            "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
+        ),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="rainbow_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["rainbow_option"],
+        "Asian rainbow average-best-of exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "RankedObservationBasketSpec(" in generated.code
+    assert 'constituents=getattr(spec, "constituents", None) or spec.underliers' in generated.code
+    assert (
+        'aggregation_rule=getattr(spec, "aggregation_rule", None) or "average_locked_levels"'
+        in generated.code
+    )
+    assert "resolved = resolve_basket_semantics(market_state, helper_spec)" in generated.code
+    assert "return price_ranked_observation_basket_monte_carlo(helper_spec, resolved)" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_nth_to_default_wrapper():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.instruments.nth_to_default.price_nth_to_default_basket",),
+        primitive_plan=None,
+        method="copula",
+        instrument_type="nth_to_default",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["nth_to_default"],
+        "Nth-to-default exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)" in generated.code
+    assert "return price_nth_to_default_basket(" in generated.code
+    assert "credit_curve=market_state.credit_curve" in generated.code
+    assert "discount_curve=market_state.discount" in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
 
 
 def test_extract_fragment_body_repairs_orphan_indentation():
@@ -2388,6 +3985,30 @@ def test_resolve_output_target_uses_benchmark_generated_root_for_financepy_tasks
     ).replace("\\", "/")
     assert output_module_path == "task_runs/financepy_benchmarks/generated/f009/analytical/barrieroption.py"
     assert module_name == "trellis_benchmarks._fresh.f009.analytical.barrieroption"
+
+
+def test_resolve_output_target_sanitizes_agent_prompt_filename():
+    from trellis.agent.executor import _resolve_output_target
+
+    bad_module_path = (
+        "instruments/_agent/buildapricerfor:cranknicolsonrannachersmoothingfordiscontinuouss\n\n"
+        "constructmethods:pdesolver\n"
+        "comparisontargets:cnrannacher(pdesolver),cnstandard(pdesolver).py"
+    )
+
+    _, output_module_path, module_name = _resolve_output_target(
+        bad_module_path,
+        fresh_build=False,
+        request_metadata={"task_id": "T23", "comparison_target": "cn_rannacher"},
+    )
+
+    assert output_module_path.startswith("instruments/_agent/")
+    assert output_module_path.endswith(".py")
+    assert "\n" not in output_module_path
+    assert ":" not in output_module_path
+    assert "buildapricerfor" not in output_module_path
+    assert len(Path(output_module_path).name) <= 75
+    assert module_name.startswith("trellis.instruments._agent.")
 
 
 def test_knowledge_retrieval_stage_maps_builder_retry_reasons():

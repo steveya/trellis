@@ -239,6 +239,7 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
 
     include_prefixes = (
         "trellis.models.",
+        "trellis.analytics.",
         "trellis.core.",
         "trellis.curves.",
         "trellis.execution",
@@ -451,13 +452,16 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
         "Models — Cashflow Engine": [],
         "Models — Vol Surface": [],
         "Models — Quoted Observable": [],
+        "Analytics": [],
         "Instruments (reference)": [],
     }
 
     for mod, symbols in sorted(registry.items()):
         line = f"from {mod} import {', '.join(symbols)}"
 
-        if "trellis.core." in mod:
+        if "trellis.analytics." in mod:
+            groups["Analytics"].append(line)
+        elif "trellis.core." in mod:
             groups["Core"].append(line)
         elif "trellis.curves." in mod:
             groups["Curves"].append(line)
@@ -467,6 +471,30 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — Analytical"].append(line)
         elif "trellis.models.resolution" in mod:
             groups["Models — Analytical"].append(line)
+        elif mod == "trellis.models.sabr_option":
+            groups["Models — Analytical"].append(line)
+        elif mod == "trellis.models.short_rate_bond":
+            groups["Models — Analytical"].append(line)
+        elif mod == "trellis.models.credit_index_option":
+            groups["Models — Analytical"].append(line)
+        elif mod == "trellis.models.fx_barrier_option":
+            groups["Models — Analytical"].append(line)
+        elif mod == "trellis.models.equity_option_tree":
+            groups["Models — Trees"].append(line)
+        elif mod == "trellis.models.equity_option_monte_carlo":
+            groups["Models — Monte Carlo"].append(line)
+        elif mod == "trellis.models.equity_option_pde":
+            groups["Models — PDE"].append(line)
+        elif mod == "trellis.models.local_vol_option":
+            groups["Models — PDE"].append(line)
+        elif mod == "trellis.models.asian_option":
+            groups["Models — Monte Carlo"].append(line)
+        elif mod == "trellis.models.lookback_option":
+            groups["Models — Monte Carlo"].append(line)
+        elif mod == "trellis.models.variance_swap":
+            groups["Models — Monte Carlo"].append(line)
+        elif mod == "trellis.models.single_barrier_option":
+            groups["Models — Monte Carlo"].append(line)
         elif "trellis.models.trees" in mod:
             groups["Models — Trees"].append(line)
         elif "trellis.models.monte_carlo" in mod:
@@ -475,7 +503,13 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Models — QMC"].append(line)
         elif "trellis.models.pde" in mod:
             groups["Models — PDE"].append(line)
-        elif "trellis.models.transforms" in mod:
+        elif (
+            "trellis.models.transforms" in mod
+            or mod == "trellis.models.equity_option_transforms"
+            or mod == "trellis.models.merton_jump_diffusion_option"
+            or mod == "trellis.models.levy_option"
+            or mod == "trellis.models.bates_option"
+        ):
             groups["Models — Transforms (FFT/COS)"].append(line)
         elif "trellis.models.processes" in mod:
             groups["Models — Processes"].append(line)
@@ -522,11 +556,21 @@ from trellis.models.black import black76_call, black76_put, black76_asset_or_not
 from trellis.models.analytical import terminal_vanilla_from_basis
 from trellis.models.analytical.jamshidian import zcb_option_hw
 from trellis.models.analytical.barrier import barrier_option_price, down_and_out_call, down_and_in_call
+from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_hit_mask, double_barrier_path_payoff, double_barrier_state_payoff, resolve_double_barrier_inputs, terminal_double_barrier_payoff
+from trellis.models.autocallable import AutocallableMonteCarloConfig, AutocallableMonteCarloResult, AutocallableRuntimeSpec, autocallable_observation_steps, autocallable_path_payoffs, price_autocallable_monte_carlo, price_autocallable_monte_carlo_result, resolve_autocallable_inputs
+from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, DoubleBarrierMonteCarloResult, DoubleBarrierPDEConfig, DoubleBarrierPDEResult, price_double_barrier_option_monte_carlo, price_double_barrier_option_monte_carlo_result, price_double_barrier_option_pde, price_double_barrier_option_pde_result
+from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, SingleBarrierMonteCarloResult, SingleBarrierPDEConfig, SingleBarrierPDEResult, SingleBarrierSpec, price_single_barrier_option_monte_carlo, price_single_barrier_option_monte_carlo_result, price_single_barrier_option_pde, price_single_barrier_option_pde_result, resolve_single_barrier_inputs, single_barrier_state_payoff
+from trellis.models.fx_barrier_option import FXBarrierMonteCarloResult, FXBarrierOptionSpec, ResolvedFXBarrierInputs, price_fx_barrier_option_analytical, price_fx_barrier_option_monte_carlo, price_fx_barrier_option_monte_carlo_result, resolve_fx_barrier_inputs
+from trellis.models.credit_index_option import CreditIndexOptionSpec, price_credit_index_option_black_on_spread, price_credit_index_option_monte_carlo
+from trellis.models.local_vol_option import LocalVolPDEResult, LocalVolVanillaOptionSpec, price_local_vol_option_monte_carlo, price_local_vol_option_pde, price_local_vol_option_pde_result
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
+from trellis.models.short_rate_bond import ResolvedShortRateBondInputs, price_cir_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_tree, price_vasicek_zero_coupon_bond_analytical, resolve_short_rate_bond_inputs
+from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
 
 ### Models — Trees
+from trellis.models.equity_option_tree import build_vanilla_equity_lattice, compile_vanilla_equity_contract_spec, price_cev_option_tree, price_vanilla_equity_option_on_lattice, price_vanilla_equity_option_tree, resolve_vanilla_equity_tree_inputs
 from trellis.models.trees.lattice import build_rate_lattice, build_spot_lattice, lattice_backward_induction, build_generic_lattice, calibrate_lattice
 from trellis.models.trees.binomial import BinomialTree
 from trellis.models.trees.backward_induction import backward_induction
@@ -544,7 +588,11 @@ from trellis.models.monte_carlo.schemes import Euler, Milstein, Exact, LogEuler,
 from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_observation_basket_initial_state, build_ranked_observation_basket_process, build_ranked_observation_basket_state_payoff, price_ranked_observation_basket_monte_carlo, recommended_ranked_observation_basket_mc_engine_kwargs, terminal_ranked_observation_basket_payoff
 from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketMonteCarloPayoff, RankedObservationBasketSpec
 from trellis.models.monte_carlo.stochastic_vol import HestonMonteCarloProblem, HestonMonteCarloResult, ResolvedHestonMonteCarloInputs, build_heston_monte_carlo_problem, price_heston_option_monte_carlo, price_heston_option_monte_carlo_result, resolve_heston_monte_carlo_inputs
-from trellis.models.equity_option_monte_carlo import build_vanilla_equity_monte_carlo_problem, price_single_state_terminal_claim_monte_carlo_result, price_vanilla_equity_option_monte_carlo, price_vanilla_equity_option_monte_carlo_result, resolve_single_state_terminal_claim_monte_carlo_inputs, resolve_vanilla_equity_monte_carlo_inputs
+from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
+from trellis.models.asian_option import ArithmeticAsianOptionAnalyticalResult, ArithmeticAsianOptionMonteCarloResult, AsianOptionMonteCarloResult, price_arithmetic_asian_option_analytical, price_arithmetic_asian_option_analytical_result, price_arithmetic_asian_option_monte_carlo, price_arithmetic_asian_option_monte_carlo_result, price_asian_option_monte_carlo, price_asian_option_monte_carlo_result
+from trellis.models.lookback_option import FixedLookbackMonteCarloResult, price_equity_fixed_lookback_option_monte_carlo, price_equity_fixed_lookback_option_monte_carlo_result
+from trellis.models.variance_swap import EquityVarianceSwapMonteCarloResult, ResolvedEquityVarianceSwapMonteCarloInputs, equity_variance_swap_outputs_monte_carlo, price_equity_variance_swap_monte_carlo, price_equity_variance_swap_monte_carlo_result, resolve_equity_variance_swap_monte_carlo_inputs
+from trellis.models.equity_option_monte_carlo import build_vanilla_equity_monte_carlo_problem, price_american_equity_option_lsm_monte_carlo, price_single_state_terminal_claim_monte_carlo_result, price_vanilla_equity_option_monte_carlo, price_vanilla_equity_option_monte_carlo_result, resolve_single_state_terminal_claim_monte_carlo_inputs, resolve_vanilla_equity_monte_carlo_inputs
 
 ### Models — QMC
 from trellis.models.qmc import brownian_bridge, sobol_normals
@@ -556,14 +604,18 @@ from trellis.models.pde.rate_operator import HullWhitePDEOperator
 from trellis.models.pde.psor import psor_1d
 from trellis.models.pde.grid import Grid
 from trellis.models.pde.thomas import thomas_solve
-from trellis.models.equity_option_pde import build_event_aware_equity_pde_problem, build_event_aware_pde_problem, build_vanilla_equity_pde_problem, interpolate_pde_values, price_event_aware_equity_option_pde, price_vanilla_equity_option_pde, resolve_vanilla_equity_pde_inputs, solve_event_aware_equity_option_pde_surface, solve_event_aware_pde, solve_vanilla_equity_option_pde_surface
+from trellis.models.pde.heston_adi import HestonAdiPDEConfig, HestonAdiPDEResult, ResolvedHestonAdiPDEInputs, price_heston_option_adi_pde_result, resolve_heston_adi_pde_inputs
+from trellis.models.equity_option_pde import build_event_aware_equity_pde_problem, build_event_aware_pde_problem, build_vanilla_equity_pde_problem, interpolate_pde_values, price_cev_option_pde, price_equity_digital_option_pde, price_event_aware_equity_option_pde, price_vanilla_equity_option_pde, resolve_vanilla_equity_pde_inputs, solve_event_aware_equity_option_pde_surface, solve_event_aware_pde, solve_vanilla_equity_option_pde_surface
 
 ### Models — Transforms (FFT/COS)
 from trellis.models.transforms.cos_method import cos_price
 from trellis.models.transforms.fft_pricer import fft_price
 from trellis.models.transforms.heston import HestonTransformResult, ResolvedHestonTransformInputs, UnsupportedHestonTransformMethod, heston_transform_capability_packet, price_heston_option_transform, price_heston_option_transform_result, resolve_heston_transform_inputs
 from trellis.models.transforms.single_state_diffusion import price_single_state_terminal_claim_transform_result, resolve_single_state_diffusion_inputs, resolve_single_state_terminal_claim_transform_inputs
-from trellis.models.equity_option_transforms import gbm_log_ratio_char_fn, gbm_log_spot_char_fn, price_vanilla_equity_option_transform, price_vanilla_equity_option_transform_result, put_from_call_parity, resolve_single_state_terminal_claim_transform_inputs, resolve_vanilla_equity_transform_inputs, terminal_intrinsic_from_resolved
+from trellis.models.equity_option_transforms import DigitalEquityTransformResult, gbm_log_ratio_char_fn, gbm_log_spot_char_fn, price_equity_digital_option_transform, price_equity_digital_option_transform_result, price_vanilla_equity_option_transform, price_vanilla_equity_option_transform_result, put_from_call_parity, resolve_single_state_terminal_claim_transform_inputs, resolve_vanilla_equity_transform_inputs, terminal_intrinsic_from_resolved
+from trellis.models.merton_jump_diffusion_option import MertonJumpDiffusionOptionMonteCarloResult, MertonJumpDiffusionOptionTransformResult, ResolvedMertonJumpDiffusionOptionInputs, merton_log_ratio_char_fn, merton_log_spot_char_fn, price_merton_jump_diffusion_option_monte_carlo, price_merton_jump_diffusion_option_monte_carlo_result, price_merton_jump_diffusion_option_poisson_series, price_merton_jump_diffusion_option_transform, price_merton_jump_diffusion_option_transform_result, resolve_merton_jump_diffusion_option_inputs
+from trellis.models.levy_option import LevyOptionMonteCarloResult, LevyOptionTransformResult, ResolvedLevyOptionInputs, cgmy_log_ratio_char_fn, cgmy_log_spot_char_fn, kou_log_ratio_char_fn, kou_log_spot_char_fn, price_cgmy_option_monte_carlo, price_cgmy_option_monte_carlo_result, price_cgmy_option_reference, price_cgmy_option_transform, price_kou_option_monte_carlo, price_kou_option_monte_carlo_result, price_kou_option_reference, price_kou_option_transform, price_variance_gamma_option_monte_carlo, price_variance_gamma_option_monte_carlo_result, price_variance_gamma_option_reference, price_variance_gamma_option_transform, resolve_levy_option_inputs, variance_gamma_log_ratio_char_fn, variance_gamma_log_spot_char_fn
+from trellis.models.bates_option import BatesOptionMonteCarloResult, BatesOptionTransformResult, ResolvedBatesOptionInputs, bates_log_ratio_char_fn, bates_log_spot_char_fn, price_bates_option_monte_carlo, price_bates_option_monte_carlo_result, price_bates_option_transform, price_bates_option_transform_result, resolve_bates_option_inputs
 
 ### Models — Processes
 from trellis.models.processes.gbm import GBM
@@ -594,4 +646,7 @@ from trellis.models.cashflow_engine.amortization import level_pay, scheduled
 
 ### Models — Vol Surface
 from trellis.models.vol_surface import FlatVol, VolSurface
+
+### Analytics
+from trellis.analytics.counterparty import CollateralAgreement, CollateralStateProjection, CounterpartySemanticContract, CounterpartySemanticValidationReport, ExposureMetricResult, NettingSet, NettingSetExposureCube, XVAAssumptionSet, XVAResult, aggregate_netting_set_exposures, compute_exposure_metrics, compute_xva_from_exposure_cube, price_counterparty_xva, price_interest_rate_swap_cva_analytical_approx, price_interest_rate_swap_cva_monte_carlo, price_interest_rate_swap_independent_cva, price_interest_rate_swap_wrong_way_cva, project_collateral_state, validate_counterparty_semantic_contract
 """

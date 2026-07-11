@@ -30,14 +30,25 @@ def test_builds_primitive_plan_for_american_put():
     assert plan.primitive_plan.route == "exercise_monte_carlo"
     assert plan.primitive_plan.engine_family == "exercise"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert {
+    assert primitive_symbols == {
         "GBM",
         "MonteCarloEngine",
         "longstaff_schwartz",
-        "tsitsiklis_van_roy",
-        "primal_dual_mc",
-        "stochastic_mesh",
-    } <= primitive_symbols
+        "price_american_equity_option_lsm_monte_carlo",
+    }
+    primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
+    assert primitive_modules == {
+        "trellis.models.equity_option_monte_carlo",
+        "trellis.models.monte_carlo.engine",
+        "trellis.models.monte_carlo.lsm",
+        "trellis.models.processes.gbm",
+    }
+    route_helper = next(
+        primitive
+        for primitive in plan.primitive_plan.primitives
+        if primitive.role == "route_helper"
+    )
+    assert route_helper.required is False
     assert "LaguerreBasis" not in primitive_symbols
     assert plan.primitive_plan.blockers == ()
 
@@ -103,13 +114,227 @@ def test_builds_pde_plan_for_barrier_option_uses_grid_and_operator():
     assert plan.primitive_plan.route == "pde_theta_1d"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
-    assert {"Grid", "BlackScholesOperator", "theta_method_1d"} <= primitive_symbols
     assert {
-        "trellis.models.pde.grid",
-        "trellis.models.pde.operator",
-        "trellis.models.pde.theta_method",
-    } <= primitive_modules
-    assert any("rannacher_timesteps" in note for note in plan.primitive_plan.notes)
+        "price_single_barrier_option_pde_result",
+        "SingleBarrierPDEConfig",
+        "resolve_single_barrier_inputs",
+    } <= primitive_symbols
+    assert "trellis.models.single_barrier_option" in primitive_modules
+    assert any("absorbing boundary" in note for note in plan.primitive_plan.notes)
+
+
+def test_builds_mc_plan_for_barrier_option_uses_single_barrier_helper():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=(
+            "trellis.models.single_barrier_option",
+            "trellis.models.monte_carlo.engine",
+            "trellis.models.processes.gbm",
+        ),
+        product_ir=decompose_to_ir(
+            "Barrier call: PDE absorbing BC vs MC discrete monitoring",
+            instrument_type="barrier_option",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "monte_carlo_paths"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "price_single_barrier_option_monte_carlo_result",
+        "SingleBarrierMonteCarloConfig",
+        "resolve_single_barrier_inputs",
+        "single_barrier_state_payoff",
+    } <= primitive_symbols
+    assert "price_double_barrier_option_monte_carlo_result" not in primitive_symbols
+
+
+def test_double_barrier_text_emits_trait_for_route_conditions():
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    ir = decompose_to_ir("Double barrier option via PDE", instrument_type="barrier_option")
+
+    assert "double_barrier" in ir.payoff_traits
+
+
+def test_builds_pde_plan_for_double_barrier_uses_absorbing_grid_primitives():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.pde.theta_method"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=(
+            "trellis.models.analytical.support.barriers",
+            "trellis.models.pde.grid",
+            "trellis.models.pde.operator",
+            "trellis.models.pde.theta_method",
+        ),
+        product_ir=decompose_to_ir(
+            "Double barrier option via PDE",
+            instrument_type="barrier_option",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "pde_theta_1d"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "price_double_barrier_option_pde_result",
+        "DoubleBarrierPDEConfig",
+        "resolve_double_barrier_inputs",
+        "terminal_double_barrier_payoff",
+        "Grid",
+        "BlackScholesOperator",
+        "theta_method_1d",
+    } <= primitive_symbols
+
+
+def test_builds_mc_plan_for_double_barrier_uses_process_engine_and_payoff_primitives():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=(
+            "trellis.models.analytical.support.barriers",
+            "trellis.models.monte_carlo.engine",
+            "trellis.models.processes.gbm",
+        ),
+        product_ir=decompose_to_ir(
+            "Double barrier option via PDE",
+            instrument_type="barrier_option",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "monte_carlo_paths"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "price_double_barrier_option_monte_carlo_result",
+        "DoubleBarrierMonteCarloConfig",
+        "resolve_double_barrier_inputs",
+        "double_barrier_state_payoff",
+        "GBM",
+        "MonteCarloEngine",
+    } <= primitive_symbols
+    assert "price_event_aware_monte_carlo" not in primitive_symbols
+
+
+def test_builds_mc_plan_for_autocallable_uses_event_contract_helper_without_qmc_requirement():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.autocallable"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="autocallable",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="autocallable",
+        inspected_modules=("trellis.models.autocallable",),
+        product_ir=decompose_to_ir(
+            "Autocallable note with coupon, autocall barrier, terminal protection",
+            instrument_type="autocallable",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "monte_carlo_paths"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "AutocallableMonteCarloConfig",
+        "price_autocallable_monte_carlo_result",
+        "resolve_autocallable_inputs",
+    } <= primitive_symbols
+    assert "sobol_normals" not in primitive_symbols
+
+
+def test_plan_build_uses_static_autocallable_spec_under_offline_guard():
+    from trellis.agent.offline_agents import offline_local_agent_llm_guard
+    from trellis.agent.planner import plan_build
+
+    with offline_local_agent_llm_guard():
+        plan = plan_build(
+            "Autocallable note with quarterly observations, coupon, and terminal protection",
+            {"discount_curve", "black_vol_surface"},
+            instrument_type="autocallable",
+            preferred_method="monte_carlo",
+        )
+
+    assert plan.spec_schema is not None
+    assert plan.spec_schema.spec_name == "AutocallableSpec"
+    field_names = {field.name for field in plan.spec_schema.fields}
+    assert {
+        "observation_times",
+        "autocall_barrier",
+        "protection_barrier",
+        "coupon_rate",
+    } <= field_names
+
+
+def test_builds_heston_adi_plan_for_pde_method():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.pde.heston_adi"],
+        required_market_data={"discount_curve", "spot", "model_parameters"},
+        model_to_build="heston_option",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="heston_option",
+        inspected_modules=("trellis.models.pde.heston_adi", "trellis.models.transforms.heston"),
+        product_ir=decompose_to_ir(
+            "2D PDE: Heston (S, V) via ADI splitting",
+            instrument_type="heston_option",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "heston_adi_2d"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert {
+        "resolve_heston_adi_pde_inputs",
+        "price_heston_option_adi_pde_result",
+    } <= primitive_symbols
 
 
 def test_builds_pde_plan_for_european_option_uses_helper_route():
@@ -140,6 +365,82 @@ def test_builds_pde_plan_for_european_option_uses_helper_route():
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_vanilla_equity_option_pde"}
     assert primitive_modules == {"trellis.models.equity_option_pde"}
+    assert plan.primitive_plan.adapters == ()
+    assert plan.primitive_plan.notes == ()
+
+
+def test_builds_primitive_plan_for_cev_pde():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.schema import ProductIR
+
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.equity_option_pde"],
+        required_market_data={"discount_curve"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("cev_process",),
+        exercise_style="european",
+        model_family="cev_diffusion",
+        candidate_engine_families=("pde",),
+        route_families=("pde_solver", "equity_tree"),
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.equity_option_pde",),
+        product_ir=product_ir,
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "cev_theta_pde"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_cev_option_pde"}
+    assert primitive_modules == {"trellis.models.equity_option_pde"}
+    assert plan.primitive_plan.adapters == ()
+    assert plan.primitive_plan.notes == ()
+
+
+def test_builds_primitive_plan_for_cev_spot_lattice():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.schema import ProductIR
+
+    pricing_plan = PricingPlan(
+        method="rate_tree",
+        method_modules=["trellis.models.equity_option_tree"],
+        required_market_data={"discount_curve"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+    product_ir = ProductIR(
+        instrument="european_option",
+        payoff_family="vanilla_option",
+        payoff_traits=("cev_process",),
+        exercise_style="european",
+        model_family="cev_diffusion",
+        candidate_engine_families=("lattice",),
+        route_families=("pde_solver", "equity_tree"),
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.equity_option_tree",),
+        product_ir=product_ir,
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "cev_spot_lattice"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_cev_option_tree"}
+    assert primitive_modules == {"trellis.models.equity_option_tree"}
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.notes == ()
 
@@ -258,6 +559,39 @@ def test_builds_fx_analytical_plan_for_fx_option_context():
     assert plan.primitive_plan.route == "analytical_garman_kohlhagen"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_fx_vanilla_analytical"}
+    assert plan.primitive_plan.adapters == ()
+    assert plan.primitive_plan.blockers == ()
+
+
+def test_builds_fx_barrier_plan_for_knock_in_fx_context():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+    from trellis.agent.quant import PricingPlan
+
+    description = "Price an FX knock-in call with domestic/foreign discounting."
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.fx_barrier_option"],
+        required_market_data={"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"},
+        model_to_build="barrier_option",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(description, instrument_type="barrier_option")
+
+    assert product_ir.model_family == "fx"
+    assert {"fx_rates", "forward_curve", "spot"} <= product_ir.required_market_data
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="barrier_option",
+        inspected_modules=("trellis.models.fx_barrier_option",),
+        product_ir=product_ir,
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "analytical_fx_barrier"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_fx_barrier_option_analytical"}
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.blockers == ()
 
@@ -382,6 +716,64 @@ def test_builds_zcb_option_rate_tree_plan():
     assert plan.primitive_plan.route == "short_rate_bond_option"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert primitive_symbols == {"price_zcb_option_tree"}
+    assert plan.primitive_plan.adapters == ()
+
+
+def test_builds_short_rate_bond_rate_tree_plan():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="rate_tree",
+        method_modules=["trellis.models.short_rate_bond"],
+        required_market_data={"discount_curve", "model_parameters"},
+        model_to_build="short_rate_bond",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="short_rate_bond",
+        inspected_modules=("trellis.models.short_rate_bond",),
+        product_ir=decompose_to_ir(
+            "Vasicek bond pricing: tree vs analytical",
+            instrument_type="short_rate_bond",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "short_rate_zero_coupon_bond"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_short_rate_zero_coupon_bond_tree"}
+    assert plan.primitive_plan.adapters == ()
+
+
+def test_builds_short_rate_bond_analytical_plan():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.short_rate_bond"],
+        required_market_data={"discount_curve", "model_parameters"},
+        model_to_build="short_rate_bond",
+        reasoning="test",
+    )
+
+    plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="short_rate_bond",
+        inspected_modules=("trellis.models.short_rate_bond",),
+        product_ir=decompose_to_ir(
+            "CIR bond pricing: tree vs analytical",
+            instrument_type="short_rate_bond",
+        ),
+    )
+
+    assert plan.primitive_plan is not None
+    assert plan.primitive_plan.route == "short_rate_zero_coupon_bond"
+    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
+    assert primitive_symbols == {"price_short_rate_zero_coupon_bond_analytical"}
     assert plan.primitive_plan.adapters == ()
 
 
@@ -558,9 +950,7 @@ def test_render_generation_plan_includes_primitive_plan_section():
     assert "Backend binding" in text
     assert "exercise_monte_carlo" in text
     assert "Route score" in text
-    assert "longstaff_schwartz" in text
-    assert "tsitsiklis_van_roy" in text
-    assert "primal_dual_mc" in text
+    assert "price_american_equity_option_lsm_monte_carlo" in text
 
 
 def test_build_generation_plan_uses_deterministic_cache():

@@ -59,10 +59,12 @@ payoff:
 equity_tree:
   module: trellis.models.equity_option_tree
   key_imports:
+    - "from trellis.models.equity_option_tree import price_cev_option_tree"
     - "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
     - "from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction"
   notes:
     - "American/Bermudan equity options should prefer the checked-in helper `price_vanilla_equity_option_tree(...)`"
+    - "CEV tree comparison targets should prefer the checked-in spot-lattice helper `price_cev_option_tree(...)`"
     - "If you need the lower-level path, import the lattice builder/backward induction submodules directly"
 
 rate_lattice:
@@ -83,16 +85,40 @@ monte_carlo:
   key_imports:
     - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
     - "from trellis.models.monte_carlo.lsm import longstaff_schwartz, longstaff_schwartz_result"
+    - "from trellis.models.equity_option_monte_carlo import price_american_equity_option_lsm_monte_carlo"
     - "from trellis.models.monte_carlo.early_exercise import EarlyExercisePolicyResult, LeastSquaresContinuationEstimator"
     - "from trellis.models.monte_carlo.schemes import HestonQuadraticExponential, LaguerreBasis"
     - "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo, price_heston_option_monte_carlo_result"
+    - "from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff"
+    - "from trellis.models.autocallable import AutocallableMonteCarloConfig, price_autocallable_monte_carlo_result, resolve_autocallable_inputs"
+    - "from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, price_single_barrier_option_monte_carlo_result, resolve_single_barrier_inputs"
+    - "from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_state_payoff, resolve_double_barrier_inputs"
+    - "from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, price_double_barrier_option_monte_carlo_result"
+    - "from trellis.models.asian_option import price_arithmetic_asian_option_monte_carlo, price_arithmetic_asian_option_analytical"
+    - "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
+    - "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo, price_equity_variance_swap_monte_carlo_result, equity_variance_swap_outputs_monte_carlo"
     - "from trellis.models.monte_carlo import euler_maruyama, milstein, brownian_bridge"
-    - "from trellis.models.monte_carlo import antithetic, control_variate"
+    - "from trellis.models.monte_carlo import antithetic, control_variate, sobol_normals"
     - "from trellis.models.processes.gbm import GBM"
   notes:
-    - "For American/Bermudan Monte Carlo, simulate paths then call an approved early-exercise control primitive; Trellis currently implements longstaff_schwartz"
+    - "For American/Bermudan vanilla equity Monte Carlo, compose `GBM`, `MonteCarloEngine`, and `longstaff_schwartz` explicitly when writing a derivative adapter; `price_american_equity_option_lsm_monte_carlo(...)` is an optional compatibility/reference surface"
+    - "Autocallable MC routes should prefer `price_autocallable_monte_carlo_result(...)`; use `sampling='sobol'` only for QMC comparison targets"
+    - "Double-barrier MC routes should use two barrier monitors or `double_barrier_state_payoff(...)` instead of adapting a one-barrier analytical formula"
     - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"
     - "Do not invent method='lsm' on MonteCarloEngine"
+
+rate_monte_carlo_composition:
+  module: trellis.models.monte_carlo.simulation_substrate
+  key_imports:
+    - "from trellis.models.monte_carlo.event_aware import build_event_aware_monte_carlo_process, resolve_hull_white_monte_carlo_process_inputs"
+    - "from trellis.models.monte_carlo.simulation_substrate import FactorStateSimulationResult, HullWhiteRateProjection, HullWhiteSwapFutureValueModel, SwapFloatResetProgram"
+    - "from trellis.models.monte_carlo.simulation_substrate import evaluate_conditional_valuation_paths, simulate_factor_state_observations"
+    - "from trellis.models.monte_carlo.lsm import longstaff_schwartz_result"
+  notes:
+    - "Use this section to inspect reusable Hull-White factor simulation, projected rate-market views, pathwise swap values, and continuation regression before considering any product helper"
+    - "The current generic composition surface does not yet map an arbitrary exercise schedule onto the simulation grid, pass pathwise numeraire discounts into Longstaff-Schwartz, or bind swap-value paths into the early-exercise controller"
+    - "Until those three capabilities are admitted, Bermudan swaption Monte Carlo must block as a semantic_method_composition_gap instead of falling back to the European swaption helper"
+    - "A task-shaped pricing helper is not a substitute for a missing reusable composition capability"
 
 qmc:
   module: trellis.models.qmc
@@ -109,7 +135,13 @@ qmc:
 pde:
   module: trellis.models.pde
   key_imports:
+    - "from trellis.models.equity_option_pde import price_cev_option_pde"
     - "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde"
+    - "from trellis.models.equity_option_pde import price_equity_digital_option_pde"
+    - "from trellis.models.pde.heston_adi import HestonAdiPDEConfig, resolve_heston_adi_pde_inputs, price_heston_option_adi_pde_result"
+    - "from trellis.models.single_barrier_option import SingleBarrierPDEConfig, price_single_barrier_option_pde_result, resolve_single_barrier_inputs"
+    - "from trellis.models.analytical.support.barriers import terminal_double_barrier_payoff, resolve_double_barrier_inputs"
+    - "from trellis.models.double_barrier_option import DoubleBarrierPDEConfig, price_double_barrier_option_pde_result"
     - "from trellis.models.pde.grid import Grid"
     - "from trellis.models.pde.theta_method import theta_method_1d"
     - "from trellis.models.pde.operator import BlackScholesOperator"
@@ -117,6 +149,11 @@ pde:
     - "from trellis.models.pde import HullWhitePDEOperator"
   notes:
     - "Vanilla European equity PDE routes should prefer the checked-in helper `price_vanilla_equity_option_pde(...)`"
+    - "CEV PDE comparison targets should prefer the checked-in helper `price_cev_option_pde(...)`"
+    - "Digital equity PDE comparison targets should prefer `price_equity_digital_option_pde(...)`; use Rannacher timesteps for discontinuous terminal payoffs"
+    - "European Heston PDE routes should bind explicit Heston parameters and may use the Heston ADI result object as numerical evidence; a Black vol surface is not a live Heston parameter source"
+    - "Single-barrier PDE routes should prefer `price_single_barrier_option_pde_result(...)` for zero-rebate absorbing-boundary comparisons"
+    - "Double-barrier PDE routes should build a bounded `[lower_barrier, upper_barrier]` grid with absorbing boundary functions and a terminal payoff from `terminal_double_barrier_payoff(...)`"
     - "Use theta_method_1d, NOT legacy crank_nicolson_1d or implicit_fd_1d"
     - "theta=0.5 for Crank-Nicolson, theta=1.0 for fully implicit"
     - "Grid constructor: Grid(x_min, x_max, n_x, T, n_t, log_spacing=False); never omit x_min or n_t"
@@ -130,8 +167,10 @@ fft:
   key_imports:
     - "from trellis.models.transforms.fft_pricer import fft_price"
     - "from trellis.models.transforms.cos_method import cos_price"
+    - "from trellis.models.equity_option_transforms import price_vanilla_equity_option_transform, price_equity_digital_option_transform"
   notes:
     - "Concrete transform helpers live in submodules; do not import `trellis.models.transforms` directly."
+    - "Equity vanilla and digital FFT/COS comparison targets should prefer the semantic-facing helpers in `trellis.models.equity_option_transforms`."
     - "fft_price expects CF of log(S_T) — include log(S0)"
     - "cos_price expects CF of log(S_T/S0) — log-return only"
 
