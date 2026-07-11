@@ -701,8 +701,8 @@ def _canonical_parameters(payload: Mapping[str, object], family: str) -> dict[st
             raise ValueError(f"CGMY payload is missing {', '.join(missing)}")
         if not 0.0 < float(y_value) < 2.0:
             raise ValueError(f"CGMY Y must be in (0, 2), got {y_value}")
-        if float(g_value) <= 1.0:
-            raise ValueError("CGMY G must exceed 1.0 for the stock-price martingale")
+        if float(m_value) <= 1.0:
+            raise ValueError("CGMY M must exceed 1.0 for the stock-price martingale")
         return {
             "C": float(c_value),
             "G": float(g_value),

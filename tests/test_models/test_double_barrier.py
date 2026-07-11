@@ -80,6 +80,27 @@ def test_double_barrier_path_payoff_tracks_lower_and_upper_hits():
     assert double_barrier_path_payoff(paths, spec).tolist() == [25.0, 0.0, 0.0]
 
 
+def test_double_barrier_knock_out_aliases_preserve_knock_out_semantics():
+    class BarrierStyleSpec:
+        strike = 100.0
+        lower_barrier = 80.0
+        upper_barrier = 130.0
+        barrier_style = "knock_out"
+
+    direct = DoubleBarrierSpec(
+        strike=100.0,
+        lower_barrier=80.0,
+        upper_barrier=130.0,
+        knock="knock_out",
+    )
+    aliased = DoubleBarrierSpec.from_spec(BarrierStyleSpec())
+    paths = np.asarray([[100.0, 131.0, 125.0]])
+
+    assert direct.knock == aliased.knock == "out"
+    assert double_barrier_path_payoff(paths, direct).tolist() == [0.0]
+    assert double_barrier_path_payoff(paths, aliased).tolist() == [0.0]
+
+
 def test_double_barrier_state_payoff_declares_two_monitors():
     spec = DoubleBarrierSpec(
         notional=1.0,

@@ -61,6 +61,26 @@ class _CgmySpec(_Spec):
     model_parameter_set = "cgmy_equity"
 
 
+class _InvalidCgmyMartingaleSpec(_Spec):
+    model_parameters = {
+        "family": "cgmy",
+        "C": 0.40,
+        "G": 5.0,
+        "M": 1.0,
+        "Y": 0.55,
+    }
+
+
+class _LowGCgmySpec(_Spec):
+    model_parameters = {
+        "family": "cgmy",
+        "C": 0.40,
+        "G": 0.50,
+        "M": 6.0,
+        "Y": 0.55,
+    }
+
+
 class _KouSpec(_Spec):
     model_parameter_set = "kou_equity"
 
@@ -134,6 +154,28 @@ def test_cgmy_cos_and_terminal_distribution_monte_carlo_agree():
 
     assert mc_result.price == pytest.approx(transform_price, rel=0.05)
     assert mc_result.standard_error > 0.0
+
+
+def test_cgmy_requires_positive_jump_decay_above_one_for_martingale():
+    from trellis.models.levy_option import resolve_levy_option_inputs
+
+    with pytest.raises(
+        ValueError,
+        match="CGMY M must exceed 1.0 for the stock-price martingale",
+    ):
+        resolve_levy_option_inputs(
+            _market_state(),
+            _InvalidCgmyMartingaleSpec(),
+            model_family="cgmy",
+        )
+
+    resolved = resolve_levy_option_inputs(
+        _market_state(),
+        _LowGCgmySpec(),
+        model_family="cgmy",
+    )
+    assert resolved.parameters["G"] == pytest.approx(0.50)
+    assert resolved.parameters["M"] == pytest.approx(6.0)
 
 
 def test_resolve_kou_inputs_reads_named_model_parameter_set():
