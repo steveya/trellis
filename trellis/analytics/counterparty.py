@@ -1029,6 +1029,260 @@ def price_counterparty_xva(
     )
 
 
+def price_interest_rate_swap_cva_monte_carlo(
+    market_state,
+    *,
+    notional: float = 1_000_000.0,
+    fixed_rate: float = 0.045,
+    maturity_years: int = 3,
+    rate_index: str = "USD-SOFR-3M",
+    counterparty_hazard_rate: float = 0.02,
+    counterparty_recovery_rate: float = 0.40,
+    n_paths: int = 1024,
+    n_steps: int = 72,
+    seed: int | None = 52,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
+) -> float:
+    """Price bounded IRS CVA from a simulated swap future-value cube."""
+    exposure_cube, assumptions = _interest_rate_swap_cva_exposure_stack(
+        market_state,
+        notional=notional,
+        fixed_rate=fixed_rate,
+        maturity_years=maturity_years,
+        rate_index=rate_index,
+        counterparty_hazard_rate=counterparty_hazard_rate,
+        counterparty_recovery_rate=counterparty_recovery_rate,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        seed=seed,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+    )
+    return float(compute_xva_from_exposure_cube(exposure_cube, assumptions=assumptions).cva)
+
+
+def price_interest_rate_swap_cva_analytical_approx(
+    market_state,
+    *,
+    notional: float = 1_000_000.0,
+    fixed_rate: float = 0.045,
+    maturity_years: int = 3,
+    rate_index: str = "USD-SOFR-3M",
+    counterparty_hazard_rate: float = 0.02,
+    counterparty_recovery_rate: float = 0.40,
+    n_paths: int = 1024,
+    n_steps: int = 72,
+    seed: int | None = 52,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
+) -> float:
+    """Approximate IRS CVA by integrating expected exposure under flat hazard."""
+    return price_interest_rate_swap_cva_monte_carlo(
+        market_state,
+        notional=notional,
+        fixed_rate=fixed_rate,
+        maturity_years=maturity_years,
+        rate_index=rate_index,
+        counterparty_hazard_rate=counterparty_hazard_rate,
+        counterparty_recovery_rate=counterparty_recovery_rate,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        seed=seed,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+    )
+
+
+def price_interest_rate_swap_independent_cva(
+    market_state,
+    *,
+    notional: float = 1_000_000.0,
+    fixed_rate: float = 0.045,
+    maturity_years: int = 3,
+    rate_index: str = "USD-SOFR-3M",
+    counterparty_hazard_rate: float = 0.02,
+    counterparty_recovery_rate: float = 0.40,
+    n_paths: int = 1024,
+    n_steps: int = 72,
+    seed: int | None = 54,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
+) -> float:
+    """Price independent-default IRS CVA on the bounded task fixture."""
+    return price_interest_rate_swap_cva_monte_carlo(
+        market_state,
+        notional=notional,
+        fixed_rate=fixed_rate,
+        maturity_years=maturity_years,
+        rate_index=rate_index,
+        counterparty_hazard_rate=counterparty_hazard_rate,
+        counterparty_recovery_rate=counterparty_recovery_rate,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        seed=seed,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+    )
+
+
+def price_interest_rate_swap_wrong_way_cva(
+    market_state,
+    *,
+    notional: float = 1_000_000.0,
+    fixed_rate: float = 0.045,
+    maturity_years: int = 3,
+    rate_index: str = "USD-SOFR-3M",
+    counterparty_hazard_rate: float = 0.02,
+    counterparty_recovery_rate: float = 0.40,
+    default_exposure_correlation: float = 0.35,
+    n_paths: int = 1024,
+    n_steps: int = 72,
+    seed: int | None = 54,
+    mean_reversion: float | None = None,
+    sigma: float | None = None,
+) -> float:
+    """Price bounded IRS CVA with pathwise default intensity tilted by exposure."""
+    if not -1.0 <= float(default_exposure_correlation) <= 1.0:
+        raise ValueError("default_exposure_correlation must satisfy -1 <= rho <= 1")
+    exposure_cube, assumptions = _interest_rate_swap_cva_exposure_stack(
+        market_state,
+        notional=notional,
+        fixed_rate=fixed_rate,
+        maturity_years=maturity_years,
+        rate_index=rate_index,
+        counterparty_hazard_rate=counterparty_hazard_rate,
+        counterparty_recovery_rate=counterparty_recovery_rate,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        seed=seed,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+    )
+    weighted_expected_exposure = _wrong_way_expected_exposure(
+        exposure_cube.portfolio_exposure_values(),
+        default_exposure_correlation=float(default_exposure_correlation),
+    )
+    positive_integral = _discounted_time_integral(
+        weighted_expected_exposure,
+        observation_times=exposure_cube.observation_times,
+        discount_rate=assumptions.discount_rate,
+    )
+    return float(
+        assumptions.counterparty_loss_given_default
+        * assumptions.counterparty_hazard_rate
+        * positive_integral
+    )
+
+
+def _interest_rate_swap_cva_exposure_stack(
+    market_state,
+    *,
+    notional: float,
+    fixed_rate: float,
+    maturity_years: int,
+    rate_index: str,
+    counterparty_hazard_rate: float,
+    counterparty_recovery_rate: float,
+    n_paths: int,
+    n_steps: int,
+    seed: int | None,
+    mean_reversion: float | None,
+    sigma: float | None,
+) -> tuple[NettingSetExposureCube, XVAAssumptionSet]:
+    """Build the supported IRS exposure stack used by task-facing CVA helpers."""
+    from trellis.instruments.swap import SwapSpec
+    from trellis.models.monte_carlo.simulation_substrate import (
+        price_interest_rate_swap_future_value_cube,
+    )
+    from trellis.core.types import DayCountConvention, Frequency
+
+    settlement = market_state.settlement
+    end_date = _same_month_day_year_offset(settlement, int(maturity_years))
+    swap_spec = SwapSpec(
+        notional=float(notional),
+        fixed_rate=float(fixed_rate),
+        start_date=settlement,
+        end_date=end_date,
+        fixed_frequency=Frequency.SEMI_ANNUAL,
+        float_frequency=Frequency.QUARTERLY,
+        fixed_day_count=DayCountConvention.THIRTY_360,
+        float_day_count=DayCountConvention.ACT_360,
+        rate_index=str(rate_index or "USD-SOFR-3M"),
+        is_payer=True,
+    )
+    future_value_cube = price_interest_rate_swap_future_value_cube(
+        name="payer_swap",
+        spec=swap_spec,
+        market_state=market_state,
+        n_paths=max(int(n_paths), 1),
+        n_steps=max(int(n_steps), 1),
+        seed=seed,
+        mean_reversion=mean_reversion,
+        sigma=sigma,
+    )
+    netting_set = NettingSet(
+        netting_set_id="ns_irs_cva",
+        counterparty_id="counterparty_alpha",
+        position_names=("payer_swap",),
+        exposure_currency="USD",
+    )
+    exposure_cube = aggregate_netting_set_exposures(
+        future_value_cube,
+        netting_sets=(netting_set,),
+    )
+    assumptions = XVAAssumptionSet(
+        counterparty_hazard_rate=float(counterparty_hazard_rate),
+        counterparty_recovery_rate=float(counterparty_recovery_rate),
+        discount_rate=_discount_rate_from_market_state(market_state),
+        currency="USD",
+    )
+    return exposure_cube, assumptions
+
+
+def _wrong_way_expected_exposure(
+    exposure_values,
+    *,
+    default_exposure_correlation: float,
+) -> tuple[float, ...]:
+    """Return exposure expectations tilted by a bounded default-intensity proxy."""
+    matrix = _coerce_path_matrix(exposure_values, field_name="exposure_values")
+    rho = float(default_exposure_correlation)
+    weighted: list[float] = []
+    for row in matrix:
+        row = np.asarray(row, dtype=float)
+        row_mean = float(np.mean(row))
+        row_std = float(np.std(row))
+        if row_std <= 1e-12 or abs(rho) <= 1e-12:
+            weighted.append(row_mean)
+            continue
+        z_score = (row - row_mean) / row_std
+        intensity_multiplier = np.maximum(0.05, 1.0 + rho * z_score)
+        intensity_multiplier = intensity_multiplier / float(np.mean(intensity_multiplier))
+        weighted.append(float(np.mean(row * intensity_multiplier)))
+    return tuple(weighted)
+
+
+def _discount_rate_from_market_state(market_state) -> float:
+    """Return a stable short discount rate from a market state."""
+    discount = getattr(market_state, "discount", None)
+    if discount is None or not hasattr(discount, "zero_rate"):
+        return 0.0
+    try:
+        return float(discount.zero_rate(1.0))
+    except Exception:
+        return 0.0
+
+
+def _same_month_day_year_offset(start: date, years: int) -> date:
+    """Return a same-month/day date, falling back for leap-day style dates."""
+    target_year = int(start.year) + max(int(years), 1)
+    try:
+        return date(target_year, start.month, start.day)
+    except ValueError:
+        return date(target_year, start.month, 28)
+
+
 def _coerce_path_matrix(values, *, field_name: str):
     """Return a defensive two-dimensional path matrix."""
     matrix = np.asarray(values, dtype=float)
@@ -1243,6 +1497,10 @@ __all__ = [
     "NettingSetExposureCube",
     "project_collateral_state",
     "price_counterparty_xva",
+    "price_interest_rate_swap_cva_analytical_approx",
+    "price_interest_rate_swap_cva_monte_carlo",
+    "price_interest_rate_swap_independent_cva",
+    "price_interest_rate_swap_wrong_way_cva",
     "validate_counterparty_semantic_contract",
     "XVAAssumptionSet",
     "XVAResult",

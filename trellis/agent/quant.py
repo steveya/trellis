@@ -828,13 +828,26 @@ def _apply_contextual_overrides(
         | {"discount_curve", "forward_curve", "black_vol_surface", "fx_rates", "spot"}
     )
     reasoning = plan.reasoning
-    fx_reason = "fx_vanilla_context_requires_garman_kohlhagen_inputs"
+    is_fx_barrier = _looks_like_fx_barrier_option(
+        description,
+        instrument_type=instrument_type,
+    )
+    fx_reason = (
+        "fx_barrier_context_requires_domestic_foreign_inputs"
+        if is_fx_barrier
+        else "fx_vanilla_context_requires_garman_kohlhagen_inputs"
+    )
     if fx_reason not in reasoning:
         reasoning = f"{reasoning}; {fx_reason}" if reasoning else fx_reason
     selection_reason = _append_selection_reason(plan.selection_reason, "fx_context_override")
+    fx_assumptions = (
+        ("fx_cross_currency_context", "fx_barrier_context")
+        if is_fx_barrier
+        else ("fx_cross_currency_context", "garman_kohlhagen_or_equivalent_context")
+    )
     assumption_summary = _merge_unique_strings(
         plan.assumption_summary,
-        ("fx_cross_currency_context", "garman_kohlhagen_or_equivalent_context"),
+        fx_assumptions,
     )
     return _attach_challenger_packet(
         replace(
@@ -1000,7 +1013,7 @@ def _looks_like_fx_option(
     *,
     instrument_type: str | None = None,
 ) -> bool:
-    """Detect a vanilla FX-option context from the user-facing request text."""
+    """Detect an FX option context from the user-facing request text."""
     if instrument_type == "fx_option":
         return True
     if not description:
@@ -1008,7 +1021,50 @@ def _looks_like_fx_option(
     lower = description.lower()
     if any(token in lower for token in ("fx option", "fx vanilla", "forex option", "garman-kohlhagen", "gk analytical")):
         return True
+    has_fx_context = any(
+        token in lower
+        for token in (
+            " fx ",
+            "fx ",
+            "forex",
+            "foreign exchange",
+            "foreign discount",
+            "domestic/foreign",
+            "foreign/domestic",
+        )
+    )
+    option_like = any(
+        token in lower
+        for token in (
+            " option",
+            " call",
+            " put",
+            "barrier",
+            "knock-in",
+            "knock-out",
+            "knock in",
+            "knock out",
+        )
+    )
+    if has_fx_context and option_like:
+        return True
     return re.search(r"\b[A-Z]{6}\b", description) is not None
+
+
+def _looks_like_fx_barrier_option(
+    description: str | None,
+    *,
+    instrument_type: str | None = None,
+) -> bool:
+    if str(instrument_type or "").strip().lower() == "barrier_option":
+        return _looks_like_fx_option(description, instrument_type=instrument_type)
+    if not description:
+        return False
+    lower = description.lower()
+    return _looks_like_fx_option(description, instrument_type=instrument_type) and any(
+        token in lower
+        for token in ("barrier", "knock-in", "knock-out", "knock in", "knock out")
+    )
 
 
 def _looks_like_heston_context(

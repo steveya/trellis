@@ -85,6 +85,69 @@ def test_ranked_observation_event_state_tracks_selection_and_settlement():
     np.testing.assert_array_equal(state.selected_indices["observation_2"], np.array([1]))
 
 
+def test_ranked_observation_event_state_can_settle_locked_levels():
+    from trellis.models.monte_carlo.event_state import (
+        PathEventSpec,
+        PathEventTimeline,
+        replay_path_event_timeline,
+    )
+
+    paths = np.array(
+        [
+            [
+                [100.0, 100.0],
+                [110.0, 105.0],
+                [120.0, 112.0],
+            ]
+        ],
+        dtype=float,
+    )
+    timeline = PathEventTimeline(
+        (
+            PathEventSpec(
+                name="basket_settlement",
+                kind="settlement",
+                step=2,
+                priority=1,
+                payload={"rule": "average_locked_levels"},
+            ),
+            PathEventSpec(
+                name="observation_1",
+                kind="observation",
+                step=1,
+                payload={
+                    "selection_rule": "best_of_remaining",
+                    "lock_rule": "remove_selected",
+                    "selection_count": 1,
+                },
+            ),
+            PathEventSpec(
+                name="observation_2",
+                kind="observation",
+                step=2,
+                payload={
+                    "selection_rule": "best_of_remaining",
+                    "lock_rule": "remove_selected",
+                    "selection_count": 1,
+                },
+            ),
+        )
+    )
+
+    state = replay_path_event_timeline(
+        (
+            paths[:, 1, :],
+            paths[:, 2, :],
+            paths[:, 2, :],
+        ),
+        initial_values=np.array([100.0, 100.0], dtype=float),
+        event_timeline=timeline,
+    )
+
+    np.testing.assert_allclose(state.locked_levels, np.array([222.0]))
+    np.testing.assert_allclose(state.settlement_value("basket_settlement"), np.array([111.0]))
+
+
 def test_barrier_event_state_tracks_hit_and_knock_out_settlement():
     from trellis.models.monte_carlo.event_state import (
         PathEventSpec,

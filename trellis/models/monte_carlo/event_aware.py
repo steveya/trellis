@@ -18,7 +18,7 @@ import numpy as raw_np
 from trellis.analytics.derivative_methods import derivative_method_payload
 from trellis.core.date_utils import build_payment_timeline, year_fraction
 from trellis.core.differentiable import get_numpy
-from trellis.core.types import SchedulePeriod
+from trellis.core.types import DayCountConvention, SchedulePeriod
 from trellis.models.hull_white_parameters import resolve_hull_white_parameters
 from trellis.models.monte_carlo.engine import MonteCarloEngine
 from trellis.models.monte_carlo.event_state import (
@@ -54,6 +54,113 @@ def _normalize_payload(payload: Mapping[str, object] | None) -> Mapping[str, obj
         payload = {}
     normalized = {str(key): value for key, value in dict(payload).items()}
     return MappingProxyType(dict(sorted(normalized.items(), key=lambda item: item[0])))
+
+
+def _optional_float_attr(spec, name: str) -> float | None:
+    value = getattr(spec, name, None)
+    if value is None:
+        return None
+    return float(value)
+
+
+def _carry_rate_from_market_state(market_state, spec) -> float:
+    if getattr(spec, "dividend_yield", None) is not None:
+        return float(spec.dividend_yield)
+    if getattr(spec, "dividend_rate", None) is not None:
+        return float(spec.dividend_rate)
+    params = dict(getattr(market_state, "model_parameters", None) or {})
+    carry_rates = dict(params.get("underlier_carry_rates") or {})
+    if carry_rates:
+        return float(next(iter(carry_rates.values())))
+    return 0.0
+
+
+def _cliquet_observation_times(market_state, spec) -> tuple[float, ...]:
+    raw_times = getattr(spec, "observation_times", None)
+    if raw_times:
+        return tuple(sorted(float(time) for time in raw_times if float(time) > 0.0))
+    settlement = getattr(market_state, "settlement", None)
+    if settlement is None:
+        raise ValueError("cliquet Monte Carlo requires market_state.settlement")
+    day_count = getattr(spec, "time_day_count", None) or getattr(spec, "day_count", DayCountConvention.ACT_365)
+    observation_dates = tuple(sorted(getattr(spec, "observation_dates", ()) or ()))
+    return tuple(
+        sorted(
+            max(float(year_fraction(settlement, observation_date, day_count)), 0.0)
+            for observation_date in observation_dates
+        )
+    )
+
+
+def _validated_cliquet_bounds(spec, *, option_type: str) -> tuple[float, float, float, float]:
+    local_floor = _optional_float_attr(spec, "local_floor")
+    local_cap = _optional_float_attr(spec, "local_cap")
+    global_floor = _optional_float_attr(spec, "global_floor")
+    global_cap = _optional_float_attr(spec, "global_cap")
+    local_lower = 0.0 if local_floor is None and option_type in {"call", "put"} else float(local_floor)
+    local_upper = float("inf") if local_cap is None else float(local_cap)
+    global_lower = float("-inf") if global_floor is None else float(global_floor)
+    global_upper = float("inf") if global_cap is None else float(global_cap)
+    if local_upper < local_lower:
+        raise ValueError("local_cap must be greater than or equal to local_floor")
+    if global_upper < global_lower:
+        raise ValueError("global_cap must be greater than or equal to global_floor")
+    return local_lower, local_upper, global_lower, global_upper
+
+
+def price_equity_cliquet_option_monte_carlo(
+    market_state,
+    spec,
+    *,
+    n_paths: int | None = None,
+    seed: int | None = None,
+) -> float:
+    """Price a capped/floored equity cliquet from exact reset-date GBM increments."""
+    if getattr(market_state, "discount", None) is None:
+        raise ValueError("Cliquet Monte Carlo pricing requires market_state.discount")
+    if getattr(market_state, "vol_surface", None) is None:
+        raise ValueError("Cliquet Monte Carlo pricing requires market_state.vol_surface")
+    spot = float(getattr(spec, "spot"))
+    notional = float(getattr(spec, "notional", 1.0) or 1.0)
+    option_type = str(getattr(spec, "option_type", "call") or "call").strip().lower()
+    if option_type not in {"call", "put"}:
+        raise ValueError(f"Unsupported cliquet option_type {option_type!r}")
+    observation_times = _cliquet_observation_times(market_state, spec)
+    if not observation_times:
+        raise ValueError("Cliquet Monte Carlo pricing requires non-empty observation_dates")
+    local_floor, local_cap, global_floor, global_cap = _validated_cliquet_bounds(
+        spec,
+        option_type=option_type,
+    )
+    path_count = max(int(n_paths or getattr(spec, "n_paths", 120000) or 120000), 2)
+    if path_count % 2:
+        path_count += 1
+    seed_value = seed if seed is not None else getattr(spec, "seed", 42)
+    if seed_value is None:
+        seed_value = 42
+    rng = raw_np.random.default_rng(seed_value)
+    half = path_count // 2
+    cumulative = raw_np.zeros(path_count, dtype=float)
+    carry = _carry_rate_from_market_state(market_state, spec)
+    previous_time = 0.0
+    for observation_time in observation_times:
+        if observation_time <= previous_time + 1e-12:
+            continue
+        tau = observation_time - previous_time
+        rate = float(market_state.discount.zero_rate(max(observation_time, 1e-6)))
+        sigma = float(market_state.vol_surface.black_vol(max(tau, 1e-6), spot))
+        normals = rng.standard_normal(half)
+        shocks = raw_np.concatenate([normals, -normals])
+        gross_return = raw_np.exp(
+            (rate - carry - 0.5 * sigma * sigma) * tau
+            + sigma * raw_np.sqrt(max(tau, 0.0)) * shocks
+        )
+        period_return = gross_return - 1.0 if option_type == "call" else 1.0 - gross_return
+        cumulative += raw_np.clip(period_return, local_floor, local_cap)
+        previous_time = observation_time
+    payoff_return = raw_np.clip(cumulative, global_floor, global_cap)
+    discount_factor = float(market_state.discount.discount(observation_times[-1]))
+    return float(notional * spot * discount_factor * raw_np.mean(payoff_return))
 
 
 def _coerce_time(value: float) -> float:

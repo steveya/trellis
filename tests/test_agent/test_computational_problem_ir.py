@@ -128,10 +128,22 @@ def test_repair_packets_name_missing_primitives_not_generated_text():
     assert qe_target["solver_target"] == "monte_carlo_qe"
     assert qe_target["validation_bundle"] == "heston:monte_carlo"
 
-    bates_packet = _target_payload(classify_stochastic_vol_task(tasks["T44"]), "bates_fft")[
-        "repair_packet"
-    ]
-    assert bates_packet["missing_primitive"] == "bates_affine_jump_stochastic_vol_kernel"
+    bates_target = _target_payload(classify_stochastic_vol_task(tasks["T44"]), "bates_fft")
+    assert bates_target["repair_packet"] is None
+
+    bates_barrier_packet = _target_payload(
+        classify_stochastic_vol_task(
+            {
+                "id": "TBATESBARRIER",
+                "title": "Bates barrier option: MC",
+                "cross_validate": {"internal": ["bates_barrier_mc"]},
+            }
+        ),
+        "bates_barrier_mc",
+    )["repair_packet"]
+    assert bates_barrier_packet["missing_primitive"] == (
+        "bates_nonvanilla_route_contract"
+    )
 
     slv_packet = _target_payload(classify_stochastic_vol_task(tasks["T117"]), "lsv_pde")[
         "repair_packet"
@@ -242,10 +254,10 @@ def test_bates_targets_expose_affine_jump_process_contract():
         ]
         assert contract["transform_capability"] == "bates_characteristic_function"
         assert contract["monte_carlo_capability"] == "bates_jump_stochastic_vol_process"
-        assert contract["supported_now"] is False
-        assert contract["missing_primitives"] == [
-            "bates_affine_jump_stochastic_vol_kernel",
-        ]
+        assert target["repair_packet"] is None
+        assert target["unsupported_features"] == []
+        assert contract["supported_now"] is True
+        assert contract["missing_primitives"] == []
         assert "consume_jump_parameters" in contract["validation_requirements"]
 
 

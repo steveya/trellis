@@ -150,6 +150,23 @@ def _aggregate_locked_returns(
     )
 
 
+def _aggregate_locked_levels(
+    accumulated: np.ndarray,
+    selected_counts: np.ndarray,
+    aggregation_rule: str,
+) -> np.ndarray:
+    """Aggregate locked selected price levels into the maturity settlement payoff."""
+    normalized_rule = _normalize_rule(aggregation_rule, "average_locked_levels")
+    if normalized_rule in {"average_locked_levels", "average_selected_levels"}:
+        denominator = np.where(selected_counts > 0, selected_counts, 1.0)
+        return accumulated / denominator
+    if normalized_rule == "sum_locked_levels":
+        return accumulated
+    raise ValueError(
+        f"Unsupported aggregation_rule {aggregation_rule!r}; expected average_locked_levels or sum_locked_levels"
+    )
+
+
 def _validate_selection_rule(selection_rule: str) -> bool:
     normalized = _normalize_rule(selection_rule, "best_of_remaining")
     if normalized in {"best_of_remaining", "best_of", "best", "max_remaining", "max"}:
@@ -261,6 +278,7 @@ class PathEventState:
     records: tuple[PathEventRecord, ...] = ()
     remaining_mask: np.ndarray | None = None
     locked_returns: np.ndarray | None = None
+    locked_levels: np.ndarray | None = None
     selected_counts: np.ndarray | None = None
     selected_indices: Mapping[str, np.ndarray] = field(default_factory=dict)
     selected_values: Mapping[str, np.ndarray] = field(default_factory=dict)
@@ -391,6 +409,11 @@ def _apply_observation_event(
         if state.locked_returns is None
         else np.asarray(state.locked_returns, dtype=float).copy()
     )
+    locked_levels = (
+        np.zeros(n_paths, dtype=float)
+        if state.locked_levels is None
+        else np.asarray(state.locked_levels, dtype=float).copy()
+    )
     selected_counts = (
         np.zeros(n_paths, dtype=float)
         if state.selected_counts is None
@@ -418,8 +441,11 @@ def _apply_observation_event(
             remaining_mask,
             worst_rule=worst_rule,
         )
+        selected_levels = step_values[np.arange(step_values.shape[0]), selected_indices]
         selected_values = np.where(active, selected_values, 0.0)
+        selected_levels = np.where(active, selected_levels, 0.0)
         locked_returns += selected_values
+        locked_levels += selected_levels
         selected_counts += active.astype(float)
         rows = np.where(active)[0]
         remaining_mask[rows, selected_indices[active]] = False
@@ -448,6 +474,7 @@ def _apply_observation_event(
         records=records,
         remaining_mask=remaining_mask,
         locked_returns=locked_returns,
+        locked_levels=locked_levels,
         selected_counts=selected_counts,
         selected_indices=selected_indices_map,
         selected_values=selected_values_map,
@@ -493,6 +520,7 @@ def _apply_barrier_event(
         records=records,
         remaining_mask=state.remaining_mask,
         locked_returns=state.locked_returns,
+        locked_levels=state.locked_levels,
         selected_counts=state.selected_counts,
         selected_indices=dict(state.selected_indices),
         selected_values=dict(state.selected_values),
@@ -542,6 +570,7 @@ def _apply_coupon_event(
         records=records,
         remaining_mask=state.remaining_mask,
         locked_returns=state.locked_returns,
+        locked_levels=state.locked_levels,
         selected_counts=state.selected_counts,
         selected_indices=dict(state.selected_indices),
         selected_values=dict(state.selected_values),
@@ -600,6 +629,7 @@ def _apply_exercise_event(
         records=records,
         remaining_mask=state.remaining_mask,
         locked_returns=state.locked_returns,
+        locked_levels=state.locked_levels,
         selected_counts=state.selected_counts,
         selected_indices=dict(state.selected_indices),
         selected_values=dict(state.selected_values),
@@ -619,7 +649,17 @@ def _apply_settlement_event(
 ) -> PathEventState:
     rule = _normalize_rule(spec.payload.get("rule"), "terminal_value")
     terminal_values = None
-    if rule not in {"average_locked_returns", "average_selected_returns", "sum_locked_returns"}:
+    locked_return_rules = {
+        "average_locked_returns",
+        "average_selected_returns",
+        "sum_locked_returns",
+    }
+    locked_level_rules = {
+        "average_locked_levels",
+        "average_selected_levels",
+        "sum_locked_levels",
+    }
+    if rule not in locked_return_rules | locked_level_rules:
         terminal_values = _coerce_event_vector(cross_section)
 
     if rule in {"average_locked_returns", "average_selected_returns"}:
@@ -639,6 +679,24 @@ def _apply_settlement_event(
             np.zeros(state.n_paths, dtype=float)
             if state.locked_returns is None
             else np.asarray(state.locked_returns, dtype=float)
+        )
+    elif rule in {"average_locked_levels", "average_selected_levels"}:
+        locked_levels = (
+            np.zeros(state.n_paths, dtype=float)
+            if state.locked_levels is None
+            else _to_backend_array(state.locked_levels)
+        )
+        selected_counts = (
+            np.zeros(state.n_paths, dtype=float)
+            if state.selected_counts is None
+            else _to_backend_array(state.selected_counts)
+        )
+        settlement = _aggregate_locked_levels(locked_levels, selected_counts, rule)
+    elif rule == "sum_locked_levels":
+        settlement = (
+            np.zeros(state.n_paths, dtype=float)
+            if state.locked_levels is None
+            else np.asarray(state.locked_levels, dtype=float)
         )
     elif rule == "knock_out_terminal":
         barrier_event = str(spec.payload.get("barrier_event", spec.name))
@@ -667,7 +725,9 @@ def _apply_settlement_event(
         settlement = terminal_values
     else:
         raise ValueError(
-            f"Unsupported settlement rule {rule!r}; expected average_locked_returns, sum_locked_returns, terminal_value, knock_out_terminal, exercise_or_terminal, or discounted_swap_pv"
+            f"Unsupported settlement rule {rule!r}; expected average_locked_returns, "
+            "sum_locked_returns, average_locked_levels, sum_locked_levels, terminal_value, "
+            "knock_out_terminal, exercise_or_terminal, or discounted_swap_pv"
         )
 
     coupon_events = spec.payload.get("coupon_events")
@@ -708,6 +768,7 @@ def _apply_settlement_event(
         records=records,
         remaining_mask=state.remaining_mask,
         locked_returns=state.locked_returns,
+        locked_levels=state.locked_levels,
         selected_counts=state.selected_counts,
         selected_indices=dict(state.selected_indices),
         selected_values=dict(state.selected_values),

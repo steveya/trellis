@@ -895,6 +895,27 @@ def _build_synthetic_volatility_model_pack(
                 "rho": round(float(model_params["rho"]), 6),
                 "v0": round(float(model_params["v0"]) * model_scale, 6),
             },
+            "variance_gamma_equity": {
+                "family": "variance_gamma",
+                "sigma": round(float(jump_params["sigma"]) * jump_scale, 6),
+                "theta": -0.08,
+                "nu": 0.20,
+            },
+            "cgmy_equity": {
+                "family": "cgmy",
+                "C": 0.40,
+                "G": 5.0,
+                "M": 6.0,
+                "Y": 0.55,
+            },
+            "kou_equity": {
+                "family": "kou",
+                "sigma": round(float(jump_params["sigma"]) * jump_scale, 6),
+                "jump_intensity": round(float(jump_params["lam"]) * jump_scale, 6),
+                "up_probability": 0.35,
+                "eta_up": 8.0,
+                "eta_down": 6.0,
+            },
         },
     )
 
@@ -931,8 +952,19 @@ def _build_model_parameter_sets(
                 },
             )
         else:
-            parameter_sets[str(name)] = {str(key): float(value) for key, value in params.items()}
+            parameter_sets[str(name)] = {
+                str(key): _float_or_original(value)
+                for key, value in params.items()
+            }
     return parameter_sets
+
+
+def _float_or_original(value: object) -> object:
+    """Return numeric values as floats while preserving string metadata."""
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return value
 
 
 def _build_synthetic_quote_bundles(

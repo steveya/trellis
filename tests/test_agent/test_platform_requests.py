@@ -443,6 +443,24 @@ def test_compile_build_request_emits_fallback_lane_plan_for_fx_monte_carlo_route
     assert any("FXRate" in step for step in compiled.generation_plan.lane_construction_steps)
 
 
+def test_compile_build_request_selects_fx_barrier_monte_carlo_route():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Price an FX knock-in call with domestic/foreign discounting.",
+        instrument_type="barrier_option",
+        preferred_method="monte_carlo",
+        knowledge_profile="knowledge_light",
+    )
+
+    assert compiled.semantic_blueprint is None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "monte_carlo_fx_barrier"
+    assert compiled.generation_plan.lane_exact_binding_refs == (
+        "trellis.models.fx_barrier_option.price_fx_barrier_option_monte_carlo",
+    )
+
+
 def test_compile_build_request_respects_quanto_preferred_monte_carlo_route():
     from trellis.agent.platform_requests import compile_build_request
 
@@ -571,6 +589,57 @@ def test_compile_comparison_request_keeps_semantic_swaption_method_plans():
     assert mc_plan.semantic_blueprint.valuation_context.engine_model_spec.model_name == "hull_white_1f"
     assert tree_plan.semantic_blueprint.calibration_step is not None
     assert mc_plan.semantic_blueprint.calibration_step is not None
+
+
+def test_compile_build_request_preserves_cev_task_contract_bindings():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import _effective_task_description, task_to_semantic_contract
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T15"
+    )
+    contract = task_to_semantic_contract(task)
+
+    pde_compiled = compile_build_request(
+        _effective_task_description(task),
+        instrument_type="european_option",
+        preferred_method="pde_solver",
+        semantic_contract=contract,
+    )
+    tree_compiled = compile_build_request(
+        _effective_task_description(task),
+        instrument_type="european_option",
+        preferred_method="rate_tree",
+        semantic_contract=contract,
+    )
+
+    assert pde_compiled.product_ir.model_family == "cev_diffusion"
+    assert pde_compiled.generation_plan.primitive_plan.route == "cev_theta_pde"
+    assert pde_compiled.generation_plan.backend_binding_id == (
+        "trellis.models.equity_option_pde.price_cev_option_pde"
+    )
+    assert pde_compiled.generation_plan.backend_exact_target_refs == (
+        "trellis.models.equity_option_pde.price_cev_option_pde",
+    )
+    assert pde_compiled.validation_contract.bundle_id == "pde_solver:cev_option"
+    assert "check_vol_sensitivity" not in {
+        check.check_id for check in pde_compiled.validation_contract.deterministic_checks
+    }
+    assert tree_compiled.product_ir.model_family == "cev_diffusion"
+    assert tree_compiled.generation_plan.primitive_plan.route == "cev_spot_lattice"
+    assert tree_compiled.generation_plan.backend_binding_id == (
+        "trellis.models.equity_option_tree.price_cev_option_tree"
+    )
+    assert tree_compiled.generation_plan.backend_exact_target_refs == (
+        "trellis.models.equity_option_tree.price_cev_option_tree",
+    )
+    assert tree_compiled.validation_contract.bundle_id == "rate_tree:cev_option"
+    assert "check_vol_sensitivity" not in {
+        check.check_id for check in tree_compiled.validation_contract.deterministic_checks
+    }
 
 
 def test_compile_comparison_request_preserves_explicit_swaption_comparison_regime_for_all_methods():
@@ -809,6 +878,46 @@ def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_fina
 
     if task_id == "F009":
         assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
+
+
+@pytest.mark.parametrize(
+    "preferred_method,expected_route,expected_ref",
+    [
+        (
+            "pde_solver",
+            "pde_theta_1d",
+            "trellis.models.single_barrier_option.price_single_barrier_option_pde_result",
+        ),
+        (
+            "monte_carlo",
+            "monte_carlo_paths",
+            "trellis.models.single_barrier_option.price_single_barrier_option_monte_carlo_result",
+        ),
+    ],
+)
+def test_compile_build_request_preserves_single_barrier_exact_binding_for_t16_targets(
+    preferred_method,
+    expected_route,
+    expected_ref,
+):
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Barrier call: PDE absorbing BC vs MC discrete monitoring",
+        instrument_type="barrier_option",
+        preferred_method=preferred_method,
+    )
+
+    assert compiled.product_ir is not None
+    assert "single_barrier" in compiled.product_ir.payoff_traits
+    assert "double_barrier" not in compiled.product_ir.payoff_traits
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == expected_route
+    assert expected_ref in compiled.generation_plan.backend_exact_target_refs
+    authority = compiled.request.metadata["route_binding_authority"]
+    assert authority["authority_kind"] == "exact_backend_fit"
+    assert expected_ref in authority["backend_binding"]["exact_target_refs"]
 
 
 def test_compile_term_sheet_request_uses_quanto_semantic_contract():
@@ -1167,9 +1276,14 @@ def test_compile_build_request_routes_cap_strip_benchmarks_through_route_free_st
             "nth_to_default",
             "nth_to_default",
         ),
+        (
+            "Variance swap: MC replication vs analytical log contract",
+            "variance_swap",
+            "variance_swap",
+        ),
     ],
 )
-def test_compile_build_request_does_not_block_title_only_credit_builder_requests(
+def test_compile_build_request_does_not_block_title_only_known_builder_requests(
     description: str,
     instrument_type: str,
     expected_instrument: str,

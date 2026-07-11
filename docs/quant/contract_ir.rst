@@ -470,8 +470,10 @@ The current bounded structural-solver wave covers:
    ``trellis.models.rate_style_swaption.price_swaption_black76``
 4. Two-asset analytical basket / spread call / put payoffs through
    ``trellis.models.basket_option.price_basket_option_analytical``
-5. Equity variance swaps through
+5. Equity variance swaps through the analytical log-contract helper
    ``trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical``
+   and the bounded realised-variance Monte Carlo helper
+   ``trellis.models.variance_swap.price_equity_variance_swap_monte_carlo``
 6. Bounded arithmetic Asians through
    ``trellis.models.asian_option.price_arithmetic_asian_option_analytical`` and
    ``trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo``

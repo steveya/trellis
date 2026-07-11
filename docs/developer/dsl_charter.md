@@ -79,7 +79,9 @@ combination into a new product family. For example, an American equity put can
 remain `payoff_family="vanilla_option"` while carrying
 `derivative_family="option"`, `underlying_asset_class="equity"`,
 `exercise_style="american"`, and `option_type="put"`. FX vanilla options,
-rate options, futures options, and equity options differ through the same axes.
+FX barrier options, rate options, futures options, and equity options differ
+through the same axes; the payoff family distinguishes vanilla versus barrier
+shape while the underlying axis keeps FX discounting and spot binding explicit.
 
 ### Layer 2 — Deterministic Validation
 

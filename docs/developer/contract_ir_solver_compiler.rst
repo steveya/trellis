@@ -81,7 +81,8 @@ The default Phase 3 registry admits:
 2. Cash-or-nothing and asset-or-nothing digitals
 3. European payer / receiver swaptions via ``price_swaption_black76``
 4. Two-asset analytical basket / spread call / put helpers
-5. Equity variance swaps via ``price_equity_variance_swap_analytical``
+5. Equity variance swaps via ``price_equity_variance_swap_analytical`` and
+   ``price_equity_variance_swap_monte_carlo``
 6. Bounded arithmetic-Asian analytical call / put helpers via
    ``price_arithmetic_asian_option_analytical``
 7. Expiry-aligned arithmetic-Asian call Monte Carlo via

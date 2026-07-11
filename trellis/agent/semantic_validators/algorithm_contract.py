@@ -42,9 +42,17 @@ _DISCOUNT_PATTERNS = (
     "df(",
     ".discount(",
 )
-_CHECKED_ROUTE_HELPER_SYMBOLS = frozenset({
-    "price_heston_option_monte_carlo",
-})
+_CHECKED_ROUTE_HELPER_BINDINGS = {
+    "price_heston_option_monte_carlo": {
+        "routes": frozenset({"monte_carlo_paths"}),
+        "instruments": frozenset({"heston_option", "european_option", "vanilla_option"}),
+    },
+    "price_equity_cliquet_option_monte_carlo": {
+        "routes": frozenset({"monte_carlo_paths"}),
+        "instruments": frozenset({"cliquet_option"}),
+    },
+}
+_CHECKED_ROUTE_HELPER_SYMBOLS = frozenset(_CHECKED_ROUTE_HELPER_BINDINGS)
 _HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({
     "price_double_barrier_option_pde_result",
     "price_double_barrier_option_monte_carlo_result",
@@ -533,6 +541,33 @@ def _calls_symbol(source: str, symbol: str) -> bool:
     return re.search(rf"\b{re.escape(symbol)}\s*\(", source) is not None
 
 
+def _calls_checked_route_helper(
+    source: str,
+    plan: GenerationPlan | None = None,
+    route_spec: RouteSpec | None = None,
+    exact_surface_primitives=(),
+) -> bool:
+    """Return whether source delegates to a checked wrapper for a required route helper."""
+    if not any(
+        prim.role == "route_helper" and prim.required
+        for prim in exact_surface_primitives
+    ):
+        return False
+    route_id = str(getattr(route_spec, "id", "") or "").strip()
+    instrument_type = str(getattr(plan, "instrument_type", "") or "").strip()
+    for symbol, binding in _CHECKED_ROUTE_HELPER_BINDINGS.items():
+        if not _calls_symbol(source, symbol):
+            continue
+        routes = frozenset(binding.get("routes", frozenset()))
+        if routes and route_id and route_id not in routes:
+            continue
+        instruments = frozenset(binding.get("instruments", frozenset()))
+        if instruments and instrument_type and instrument_type not in instruments:
+            continue
+        return True
+    return False
+
+
 def _calls_helper_owned_required_route_helper(source: str, exact_surface_primitives) -> bool:
     """Return whether source calls a helper that owns its route internals."""
     return any(
@@ -578,13 +613,26 @@ class AlgorithmContractValidator:
             return ()
 
         exact_surface_primitives = _exact_surface_primitives(plan, route_spec)
-        helper_owned_route = _calls_helper_owned_required_route_helper(
+        checked_route_helper_call = _calls_checked_route_helper(
             source,
+            plan,
+            route_spec,
             exact_surface_primitives,
+        )
+        helper_owned_route = (
+            _calls_helper_owned_required_route_helper(source, exact_surface_primitives)
+            or checked_route_helper_call
         )
 
         # 1. Route helper usage and exact surface.
-        findings.extend(self._check_route_helper(source, route_spec, exact_surface_primitives))
+        findings.extend(
+            self._check_route_helper(
+                source,
+                route_spec,
+                exact_surface_primitives,
+                helper_owned_route=helper_owned_route,
+            )
+        )
         findings.extend(self._check_exact_helper_surface(source, route_spec, exact_surface_primitives))
 
         # Checked route helpers own internal engine, payoff, and discounting
@@ -642,8 +690,12 @@ class AlgorithmContractValidator:
         source: str,
         route_spec: RouteSpec,
         exact_surface_primitives,
+        *,
+        helper_owned_route: bool = False,
     ) -> list[SemanticFinding]:
         """Verify route_helper primitives are actually called."""
+        if helper_owned_route:
+            return []
         findings = []
         for prim in exact_surface_primitives:
             if prim.role == "route_helper" and prim.required:

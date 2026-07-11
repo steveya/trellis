@@ -48,6 +48,14 @@ def _sample_record(root: Path) -> dict[str, object]:
             "prices": {"psor": 1.01, "black_scholes": 1.0},
             "deviations_pct": {"psor": 1.0},
         },
+        "execution": {
+            "mode": "deterministic_replay",
+            "llm_cassette": {
+                "mode": "deterministic_replay",
+                "name": "T999",
+                "used": False,
+            },
+        },
         "learning": {
             "task_kind": "pricing",
             "retrieved_lesson_ids": [],
@@ -311,6 +319,8 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert packet["telemetry"]["binding_observations"][0]["primary_label"] == "EventAwarePDEIR"
     assert packet["telemetry"]["binding_observations"][0]["task_ids"] == ["T02"]
     assert packet["trace_index"][0]["construction_label"] == "EventAwarePDEIR"
+    assert packet["execution"]["mode"] == "deterministic_replay"
+    assert packet["execution"]["llm_cassette"]["used"] is False
 
     rendered = render_task_diagnosis_dossier(packet)
     assert "## Primary Diagnosis" in rendered
@@ -320,6 +330,7 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert "## Post-build" in rendered
     assert "## Storage" in rendered
     assert "comparison_insufficient_results" in rendered
+    assert "Execution mode: `deterministic_replay`" in rendered
     assert "semantic_validation_failed" in rendered
     assert "route_hint:callable_bond_tree" in rendered
     assert "EventAwarePDEIR" in rendered

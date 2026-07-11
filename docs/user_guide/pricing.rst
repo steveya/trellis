@@ -102,9 +102,10 @@ The key user-facing rule is that a blocked stochastic-vol task can be the
 correct result. Heston pricing consumes explicit Heston model parameters; a
 Black implied-vol surface is market evidence or a calibration target unless a
 recorded calibration problem produces model parameters from it. Unsupported
-Gauss-Laguerre Heston, Bates, SLV/LSV, or path-dependent Heston control shapes
-therefore fail closed with structured blockers instead of falling back to a
-nearby vanilla adapter. See
+Gauss-Laguerre Heston, Bates shapes outside the checked European vanilla
+FFT/MC boundary, SLV/LSV, or path-dependent Heston control shapes therefore
+fail closed with structured blockers instead of falling back to a nearby
+vanilla adapter. See
 :doc:`../developer/stochastic_vol_computational_ir` for the developer-facing
 notation and triage lifecycle.
 
@@ -181,6 +182,34 @@ The same MarketState handoff now exists for the local-vol workflow as well.
 result and can project the named local-vol surface back onto
 ``MarketState.local_vol_surface`` / ``local_vol_surfaces`` for later runtime
 consumers.
+
+European vanilla local-vol pricing has a bounded comparison helper as well:
+
+.. code-block:: python
+
+   from trellis.models.local_vol_option import (
+       LocalVolVanillaOptionSpec,
+       price_local_vol_option_monte_carlo,
+       price_local_vol_option_pde,
+   )
+
+   spec = LocalVolVanillaOptionSpec(
+       spot=100.0,
+       strike=100.0,
+       maturity_years=1.0,
+       discount_rate=0.04,
+       local_vol_level=0.20,
+       option_type="call",
+   )
+
+   pde = price_local_vol_option_pde(market_state, spec)
+   mc = price_local_vol_option_monte_carlo(market_state, spec, seed=59)
+
+The helper consumes ``spec.local_vol_surface`` first, then
+``MarketState.local_vol_surface`` / ``local_vol_surfaces``, and finally the
+flat ``local_vol_level`` fallback.  The PDE side is intentionally limited to
+zero dividend yield until the one-factor operator has separate carry and
+discount-rate terms.
 
 Those migrated calibration workflows now share one typed runtime binding
 surface as well. ``apply_to_market_state(...)`` still keeps the compatibility
@@ -556,6 +585,14 @@ straight-bond reference PV, and generic lattice/PDE event assembly. That keeps
 the callable-bond user surface stable while letting later short-rate claim
 families reuse the same helper substrate instead of copying callable-bond-local
 glue code.
+
+Plain Vasicek/CIR zero-coupon bond proof tasks use
+``trellis.models.short_rate_bond`` instead of callable-bond or ZCB-option
+helpers. The analytical and tree wrappers share the same short-rate
+``model_parameters`` contract, and the task exact-binding path can provide
+bounded benchmark defaults only for sparse legacy proof manifests. User code
+should provide explicit Vasicek/CIR parameters or a short-rate comparison
+regime rather than relying on those internal defaults.
 
 The execution layer now also exposes that callable structure directly for the
 bounded proving slice. ``trellis.execution.compile_dynamic_execution_ir(...)``
@@ -1023,6 +1060,9 @@ those later aggregation workflows run:
        aggregate_netting_set_exposures,
        compute_exposure_metrics,
        price_counterparty_xva,
+       price_interest_rate_swap_cva_monte_carlo,
+       price_interest_rate_swap_independent_cva,
+       price_interest_rate_swap_wrong_way_cva,
        project_collateral_state,
        validate_counterparty_semantic_contract,
    )
@@ -1088,14 +1128,30 @@ those later aggregation workflows run:
    xva.fva
    xva.total_xva
 
+   swap_cva = price_interest_rate_swap_cva_monte_carlo(
+       market_state,
+       n_paths=1024,
+       n_steps=72,
+       seed=52,
+   )
+   independent = price_interest_rate_swap_independent_cva(market_state)
+   wrong_way = price_interest_rate_swap_wrong_way_cva(
+       market_state,
+       default_exposure_correlation=0.35,
+   )
+
 The projection is deliberately explicit: held collateral is computed from
 valuation-lagged netted values, and closeout values come from the margin-period
 observation horizon. The netting-set exposure cube turns those per-set
 projections into closeout-ready packets. The first metric output reports
 portfolio and per-netting-set ``EE``/``EPE``/``PFE`` curves. The xVA workflow is
 bounded to scalar flat-hazard ``CVA``/``DVA``/``FVA`` assumptions over that same
-exposure stack; it is not a replacement for an enterprise counterparty-risk,
-capital, margin, or funding platform.
+exposure stack. The IRS convenience helpers use the supported vanilla
+fixed-float swap future-value cube and the same bounded xVA stack; the
+wrong-way helper tilts default intensity pathwise from exposure and is intended
+for controlled comparisons against the independent helper. It is not a
+replacement for an enterprise counterparty-risk, capital, margin, or funding
+platform.
 
 The runtime analytics surface now also exposes spot ``delta`` and ``gamma``
 plus roll-down ``theta`` through ``Session.analyze(...)``. Delta and gamma use
@@ -1344,6 +1400,39 @@ provide an explicit correlation. Explicit contract-level correlation still
 wins; the materialized surface is the bounded fallback for exact
 maturity/attachment/detachment nodes produced by the homogeneous calibration
 workflow.
+
+Credit-index spread options have a bounded helper surface for task/eval
+comparisons:
+
+.. code-block:: python
+
+   from trellis.models.credit_index_option import (
+       CreditIndexOptionSpec,
+       price_credit_index_option_black_on_spread,
+       price_credit_index_option_monte_carlo,
+   )
+
+   spec = CreditIndexOptionSpec(
+       notional=10_000_000.0,
+       forward_spread=0.0125,
+       strike_spread=0.0100,
+       spread_volatility=0.30,
+       maturity_years=1.25,
+       index_annuity=4.2,
+       option_type="call",
+   )
+
+   black = price_credit_index_option_black_on_spread(market_state, spec)
+   mc = price_credit_index_option_monte_carlo(
+       market_state,
+       spec,
+       n_paths=65_536,
+       seed=55,
+   )
+
+This helper treats the credit index option as an option on quoted forward
+spread times an explicit index annuity. It is not a replacement for index
+curve calibration, tranche-loss modeling, or base-correlation workflows.
 
 Missing Data Errors
 -------------------
