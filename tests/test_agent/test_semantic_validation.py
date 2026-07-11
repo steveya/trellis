@@ -168,6 +168,17 @@ def build_price(self, market_state):
 """
 
 
+CLIQUET_MC_HELPER_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
+
+
+def build_price(self, market_state):
+    return float(price_equity_cliquet_option_monte_carlo(market_state, self._spec))
+"""
+
+
 DOUBLE_BARRIER_PDE_HELPER_SOURCE = """\
 from __future__ import annotations
 
@@ -581,6 +592,88 @@ def test_classify_semantic_gap_treats_cds_as_credit_request():
     assert "credit_curve" in report.missing_market_inputs
 
 
+def test_classify_semantic_gap_treats_variance_swap_as_known_shape():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "Variance swap: MC replication vs analytical log contract",
+        instrument_type="variance_swap",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+
+
+def test_classify_semantic_gap_treats_merton_jump_diffusion_as_known_vanilla_shape():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "Build a pricer for Merton jump-diffusion MC vs FFT.",
+        instrument_type="european_option",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+
+
+def test_classify_semantic_gap_treats_kou_as_known_vanilla_shape():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "Kou double-exponential jump: FFT vs MC",
+        instrument_type="european_option",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+
+
+def test_classify_semantic_gap_treats_cva_as_counterparty_exposure_shape():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "CVA on interest rate swap: MC exposure simulation",
+        instrument_type="counterparty_cva",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+    assert "counterparty_exposure_driver" in report.missing_contract_fields
+    assert "underlying_trade_contract" in report.missing_contract_fields
+    assert "credit_curve" in report.missing_market_inputs
+    assert "exposure_cube_builder" in report.missing_binding_helpers
+
+
+def test_classify_semantic_gap_treats_wrong_way_cva_as_correlated_default_shape():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "Wrong-way risk: correlated default and exposure",
+        instrument_type="counterparty_cva",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+    assert "default_exposure_correlation" in report.missing_contract_fields
+    assert "pathwise_default_intensity_rule" in report.missing_contract_fields
+    assert "wrong_way_cva_binding_helper" in report.missing_binding_helpers
+
+
+def test_classify_semantic_gap_treats_credit_index_option_as_spread_contract():
+    from trellis.agent.semantic_contract_validation import classify_semantic_gap
+
+    report = classify_semantic_gap(
+        "Credit index option: Black on spread vs MC",
+        instrument_type="credit_index_option",
+    )
+
+    assert report.requires_clarification is False
+    assert "semantic_product_shape" not in report.missing_contract_fields
+    assert "forward_spread" in report.missing_contract_fields
+    assert "spread_volatility" in report.missing_contract_fields
+    assert "credit_index_option_binding_helper" in report.missing_binding_helpers
+
+
 @pytest.mark.parametrize(
     ("description", "instrument_type", "semantic_id"),
     [
@@ -884,6 +977,38 @@ def test_accepts_helper_backed_autocallable_route():
     assert report.ok
 
 
+def test_accepts_helper_backed_cliquet_monte_carlo_route():
+    from trellis.agent.semantic_validation import validate_semantics
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="cliquet_option",
+        reasoning="test",
+    )
+    product_ir = decompose_to_ir(
+        "Capped and floored cliquet option with reset-date Monte Carlo",
+        instrument_type="cliquet_option",
+    )
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="cliquet_option",
+        inspected_modules=("trellis.models.monte_carlo.engine", "trellis.models.monte_carlo.event_aware"),
+        product_ir=product_ir,
+    )
+
+    report = validate_semantics(
+        CLIQUET_MC_HELPER_SOURCE,
+        product_ir=product_ir,
+        generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.required_primitive_missing" not in issue_codes
+    assert report.ok
+
+
 @pytest.mark.parametrize(
     ("source", "method", "method_modules", "inspected_modules"),
     [
@@ -1085,7 +1210,13 @@ def test_requires_selected_primitives_from_generation_plan():
 
     issue_codes = {issue.code for issue in report.issues}
     assert "exercise.missing_control_primitive" in issue_codes
-    assert "assembly.required_primitive_missing" not in issue_codes
+    assert "assembly.required_primitive_missing" in issue_codes
+    assembly_issue = next(
+        issue
+        for issue in report.issues
+        if issue.code == "assembly.required_primitive_missing"
+    )
+    assert "trellis.models.monte_carlo.lsm.longstaff_schwartz" in assembly_issue.message
 
 
 def test_rejects_generation_plan_with_blockers():

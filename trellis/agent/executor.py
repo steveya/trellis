@@ -874,6 +874,7 @@ def build_payoff(
     )
     from trellis.agent.knowledge.decompose import decompose_to_ir
     from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.semantic_contracts import UnsupportedSemanticMethodError
     from trellis.core.market_state import MissingCapabilityError
 
     model = model or get_default_model()
@@ -892,7 +893,14 @@ def build_payoff(
                 knowledge_overlays=knowledge_overlays,
             )
             product_ir = compiled_request.product_ir
+        except UnsupportedSemanticMethodError as exc:
+            blocker_details = exc.to_blocker_details()
+            if build_meta is not None:
+                build_meta["blocker_details"] = blocker_details
+            raise
         except Exception:
+            if semantic_contract is not None:
+                raise
             try:
                 product_ir = decompose_to_ir(
                     payoff_description,
@@ -1437,6 +1445,7 @@ def build_payoff(
                         if compiled_request is not None
                         else None
                     ),
+                    request_metadata=request_metadata,
                     comparison_target=comparison_target,
                 )
             if generated_module is None:
@@ -1913,6 +1922,50 @@ def _validate_build(
     review_prompt_surface = "none"
     benchmark_spec_overrides = _benchmark_spec_overrides_from_compiled_request(compiled_request)
     runtime_spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
+    generation_plan = getattr(compiled_request, "generation_plan", None)
+    exact_binding_refs = tuple(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
+    requires_merton_jump_parameters = (
+        str(getattr(product_ir, "model_family", "") or "").strip().lower() == "jump_diffusion"
+        or any("merton_jump_diffusion_option" in str(ref) for ref in exact_binding_refs)
+    )
+    requires_sabr_model_parameters = (
+        str(getattr(product_ir, "model_family", "") or "").strip().lower() == "sabr"
+        or any("sabr_option" in str(ref) for ref in exact_binding_refs)
+        or str(getattr(getattr(compiled_request, "comparison_spec", None), "target_name", "") or "")
+        .strip()
+        .lower()
+        .replace("-", "_")
+        in {"sabr_mc", "sabr_hagan_analytical"}
+    )
+    requires_levy_model_parameters = (
+        str(getattr(product_ir, "model_family", "") or "").strip().lower()
+        in {"variance_gamma", "cgmy", "kou"}
+        or any("levy_option" in str(ref) for ref in exact_binding_refs)
+        or str(getattr(getattr(compiled_request, "comparison_spec", None), "target_name", "") or "")
+        .strip()
+        .lower()
+        .replace("-", "_")
+        in {
+            "vg_cos",
+            "vg_mc",
+            "madan_carr_chang_reference",
+            "cgmy_cos",
+            "cgmy_mc",
+            "cgmy_reference_values",
+            "kou_fft",
+            "kou_mc",
+            "kou_reference_values",
+        }
+    )
+    requires_bates_model_parameters = (
+        str(getattr(product_ir, "model_family", "") or "").strip().lower() == "bates"
+        or any("bates_option" in str(ref) for ref in exact_binding_refs)
+        or str(getattr(getattr(compiled_request, "comparison_spec", None), "target_name", "") or "")
+        .strip()
+        .lower()
+        .replace("-", "_")
+        in {"bates_fft", "bates_mc"}
+    )
 
     # Try to instantiate the payoff with default test parameters
     try:
@@ -2008,9 +2061,56 @@ def _validate_build(
             from trellis.curves.credit_curve import CreditCurve
 
             payload["credit_curve"] = CreditCurve.flat(0.02)
-        if "model_parameters" in effective_requirements:
+        if (
+            "model_parameters" in effective_requirements
+            or requires_sabr_model_parameters
+            or requires_levy_model_parameters
+            or requires_bates_model_parameters
+        ):
             product_model_family = str(getattr(product_ir, "model_family", "") or "").lower()
-            if "heston" in itype or product_model_family == "stochastic_volatility":
+            if itype == "short_rate_bond":
+                vasicek_payload = {
+                    "family": "vasicek",
+                    "r0": rate,
+                    "a": 0.10,
+                    "b": rate,
+                    "sigma": 0.01,
+                }
+                cir_payload = {
+                    "family": "cir",
+                    "r0": rate,
+                    "kappa": 0.10,
+                    "theta": rate,
+                    "sigma": 0.01,
+                }
+                payload["model_parameters"] = {
+                    "vasicek": vasicek_payload,
+                    "cir": cir_payload,
+                }
+                payload["model_parameter_sets"] = {
+                    "vasicek_validation": vasicek_payload,
+                    "cir_validation": cir_payload,
+                }
+            elif product_model_family == "bates" or requires_bates_model_parameters:
+                from trellis.models.processes.heston import build_heston_parameter_payload
+
+                bates_payload = build_heston_parameter_payload(
+                    kappa=2.0,
+                    theta=0.04,
+                    xi=0.30,
+                    rho=-0.55,
+                    v0=0.04,
+                    mu=rate,
+                    parameter_set_name="bates_validation",
+                    source_kind="validation_fixture",
+                    metadata={"model_family": "bates"},
+                )
+                payload["model_parameters"] = bates_payload
+                payload["model_parameter_sets"] = {
+                    "bates_validation": bates_payload,
+                    "heston_validation": bates_payload,
+                }
+            elif "heston" in itype or product_model_family == "stochastic_volatility":
                 from trellis.models.processes.heston import build_heston_parameter_payload
 
                 heston_payload = build_heston_parameter_payload(
@@ -2025,8 +2125,73 @@ def _validate_build(
                 )
                 payload["model_parameters"] = heston_payload
                 payload["model_parameter_sets"] = {"heston_validation": heston_payload}
+            elif product_model_family == "sabr" or requires_sabr_model_parameters:
+                sabr_payload = {
+                    "family": "sabr",
+                    "alpha": vol,
+                    "beta": 0.5,
+                    "rho": -0.2,
+                    "nu": 0.35,
+                }
+                payload["model_parameters"] = {"sabr": sabr_payload}
+                payload["model_parameter_sets"] = {"sabr_validation": sabr_payload}
+            elif product_model_family == "variance_gamma" or any(
+                "variance_gamma_option" in str(ref) for ref in exact_binding_refs
+            ):
+                vg_payload = {
+                    "family": "variance_gamma",
+                    "sigma": vol,
+                    "theta": -0.08,
+                    "nu": 0.20,
+                }
+                payload["model_parameters"] = {"variance_gamma": vg_payload}
+                payload["model_parameter_sets"] = {
+                    "variance_gamma_validation": vg_payload,
+                }
+            elif product_model_family == "cgmy" or any(
+                "cgmy_option" in str(ref) for ref in exact_binding_refs
+            ):
+                cgmy_payload = {
+                    "family": "cgmy",
+                    "C": 0.40,
+                    "G": 5.0,
+                    "M": 6.0,
+                    "Y": 0.55,
+                }
+                payload["model_parameters"] = {"cgmy": cgmy_payload}
+                payload["model_parameter_sets"] = {"cgmy_validation": cgmy_payload}
+            elif product_model_family == "kou" or any(
+                "kou_option" in str(ref) for ref in exact_binding_refs
+            ):
+                kou_payload = {
+                    "family": "kou",
+                    "sigma": vol,
+                    "jump_intensity": 0.35,
+                    "up_probability": 0.35,
+                    "eta_up": 8.0,
+                    "eta_down": 6.0,
+                }
+                payload["model_parameters"] = {"kou": kou_payload}
+                payload["model_parameter_sets"] = {"kou_validation": kou_payload}
             else:
                 payload["model_parameters"] = {"quanto_correlation": corr}
+        if (
+            "jump_parameters" in effective_requirements
+            or requires_merton_jump_parameters
+            or requires_bates_model_parameters
+        ):
+            jump_payload = {
+                "mu": rate,
+                "sigma": vol,
+                "lam": 0.35,
+                "jump_mean": -0.08,
+                "jump_vol": 0.18,
+            }
+            payload["jump_parameters"] = jump_payload
+            payload["jump_parameter_sets"] = {
+                "merton_validation": jump_payload,
+                "bates_validation": jump_payload,
+            }
         return MarketState(**payload)
 
     # Build the initial market state from the plan's required_market_data.
@@ -3315,13 +3480,21 @@ def _skeleton_semantic_helper_hints(
     return helper_hints.get((instrument_type, method), ((), ()))
 
 
+def _generation_plan_field(generation_plan, name: str, default=None):
+    if generation_plan is None:
+        return default
+    if isinstance(generation_plan, Mapping):
+        return generation_plan.get(name, default)
+    return getattr(generation_plan, name, default)
+
+
 def _skeleton_exact_binding_import_lines(generation_plan) -> tuple[str, ...]:
     """Return import lines for compiler-selected exact bindings."""
     if generation_plan is None:
         return ()
 
     refs: list[str] = list(_exact_binding_refs(generation_plan))
-    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
     if primitive_plan is not None:
         refs.extend(
             f"{primitive.module}.{primitive.symbol}"
@@ -3353,16 +3526,82 @@ def _exact_binding_refs(generation_plan) -> tuple[str, ...]:
     """Return the normalized exact/helper binding refs declared by the generation plan."""
     if generation_plan is None:
         return ()
-    refs: list[str] = list(getattr(generation_plan, "lane_exact_binding_refs", ()) or ())
-    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    refs: list[str] = []
+
+    def add_ref(value) -> None:
+        if value is None:
+            return
+        if isinstance(value, str):
+            text = value.strip()
+            if text and text not in refs:
+                refs.append(text)
+            return
+        if isinstance(value, Mapping):
+            module = value.get("module")
+            symbol = value.get("symbol")
+            if module and symbol:
+                add_ref(f"{module}.{symbol}")
+            for key in (
+                "binding_id",
+                "backend_binding_id",
+                "exact_target_refs",
+                "backend_exact_target_refs",
+                "helper_refs",
+                "backend_helper_refs",
+                "primitive_ref",
+                "primitive_refs",
+                "pricing_kernel_refs",
+                "schedule_builder_refs",
+                "cashflow_engine_refs",
+                "dsl_helper_refs",
+                "dsl_target_bindings",
+                "target_bindings",
+                "reusable_bindings",
+                "lowering",
+                "construction_identity",
+                "route_binding_authority",
+            ):
+                add_ref(value.get(key))
+            add_ref(value.get("backend_binding"))
+            add_ref(value.get("primitive_plan"))
+            return
+        if isinstance(value, Sequence):
+            for item in value:
+                add_ref(item)
+
+    add_ref(generation_plan)
+
+    for attr in (
+        "lane_exact_binding_refs",
+        "backend_binding_id",
+        "backend_exact_target_refs",
+        "backend_helper_refs",
+        "lowering_helper_refs",
+    ):
+        add_ref(_generation_plan_field(generation_plan, attr))
+
+    primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
     if primitive_plan is not None:
-        refs.extend(
+        for attr in (
+            "backend_binding_id",
+            "backend_exact_target_refs",
+            "backend_helper_refs",
+        ):
+            add_ref(_generation_plan_field(primitive_plan, attr))
+        add_ref(tuple(
             f"{primitive.module}.{primitive.symbol}"
             for primitive in getattr(primitive_plan, "primitives", ()) or ()
             if getattr(primitive, "role", "") == "route_helper"
             and getattr(primitive, "module", "")
             and getattr(primitive, "symbol", "")
-        )
+        ))
+
+    authority = _generation_plan_field(generation_plan, "route_binding_authority")
+    if authority is not None:
+        if isinstance(authority, Mapping):
+            add_ref(authority)
+        else:
+            add_ref(getattr(authority, "backend_binding", None))
 
     normalized: list[str] = []
     for ref in refs:
@@ -3459,10 +3698,10 @@ def _heston_monte_carlo_helper_kwargs(comparison_target: str | None) -> str:
 
 def _vanilla_equity_transform_helper_kwargs(comparison_target: str | None) -> str:
     """Return deterministic helper kwargs for transform comparison targets."""
-    target = str(comparison_target or "").strip().lower()
-    if target == "fft":
+    target = str(comparison_target or "").strip().lower().replace("-", "_")
+    if target in {"fft", "digital_fft"}:
         return ', method="fft"'
-    if target == "cos":
+    if target in {"cos", "digital_cos", "cos_adaptive", "cos_fixed"}:
         return ', method="cos"'
     return ""
 
@@ -3520,13 +3759,118 @@ def _basket_option_helper_kwargs(comparison_target: str | None) -> str:
     return f', comparison_target="{target}"'
 
 
+def _credit_default_swap_helper_body(refs: set[str]) -> str | None:
+    """Return a thin deterministic CDS wrapper for analytical or MC exact bindings."""
+    analytical_ref = "trellis.models.credit_default_swap.price_cds_analytical"
+    monte_carlo_ref = "trellis.models.credit_default_swap.price_cds_monte_carlo"
+    if monte_carlo_ref in refs:
+        helper = "price_cds_monte_carlo"
+        helper_extra = ',\n        n_paths=getattr(spec, "n_paths", 250000) or 250000,\n        seed=42'
+    elif analytical_ref in refs:
+        helper = "price_cds_analytical"
+        helper_extra = ""
+    else:
+        return None
+
+    return textwrap.dedent(
+        f"""\
+spec = self._spec
+if market_state.credit_curve is None:
+    raise ValueError("market_state.credit_curve is required for CDS pricing")
+if market_state.discount is None:
+    raise ValueError("market_state.discount is required for CDS pricing")
+schedule = build_cds_schedule(
+    spec.start_date,
+    spec.end_date,
+    spec.frequency,
+    spec.day_count,
+    time_origin=getattr(spec, "valuation_date", None) or spec.start_date,
+)
+return {helper}(
+    notional=spec.notional,
+    spread_quote=spec.spread,
+    recovery=spec.recovery,
+    schedule=schedule,
+    credit_curve=market_state.credit_curve,
+    discount_curve=market_state.discount{helper_extra},
+)
+"""
+    ).rstrip()
+
+
+def _ranked_observation_basket_helper_body(refs: set[str]) -> str | None:
+    """Return a thin deterministic wrapper for ranked-observation basket MC."""
+    helper_ref = (
+        "trellis.models.monte_carlo.semantic_basket."
+        "price_ranked_observation_basket_monte_carlo"
+    )
+    if helper_ref not in refs:
+        return None
+
+    return textwrap.dedent(
+        """\
+        spec = self._spec
+        helper_spec = RankedObservationBasketSpec(
+            notional=spec.notional,
+            strike=spec.strike,
+            expiry_date=spec.expiry_date,
+            constituents=getattr(spec, "constituents", None) or spec.underliers,
+            observation_dates=getattr(spec, "observation_dates", None),
+            selection_rule=getattr(spec, "selection_rule", None) or "best_of_remaining",
+            lock_rule=getattr(spec, "lock_rule", None) or "remove_selected",
+            aggregation_rule=getattr(spec, "aggregation_rule", None) or "average_locked_levels",
+            option_type=getattr(spec, "option_type", "call"),
+            selection_count=getattr(spec, "selection_count", None) or 1,
+            day_count=spec.day_count,
+            n_paths=getattr(spec, "n_paths", 50000),
+            n_steps=getattr(spec, "n_steps", 252),
+            seed=getattr(spec, "seed", None) or 42,
+            mc_method=getattr(spec, "mc_method", None) or "exact",
+            correlation_matrix_key=getattr(spec, "correlation_matrix_key", None),
+        )
+        resolved = resolve_basket_semantics(market_state, helper_spec)
+        return price_ranked_observation_basket_monte_carlo(helper_spec, resolved)
+        """
+    ).rstrip()
+
+
+def _nth_to_default_helper_body(refs: set[str]) -> str | None:
+    """Return a thin deterministic wrapper for nth-to-default exact bindings."""
+    helper_ref = "trellis.instruments.nth_to_default.price_nth_to_default_basket"
+    if helper_ref not in refs:
+        return None
+
+    return textwrap.dedent(
+        """\
+        spec = self._spec
+        if market_state.credit_curve is None:
+            raise ValueError("market_state.credit_curve is required for nth-to-default pricing")
+        if market_state.discount is None:
+            raise ValueError("market_state.discount is required for nth-to-default pricing")
+        T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
+        return price_nth_to_default_basket(
+            notional=spec.notional,
+            n_names=spec.n_names,
+            n_th=spec.n_th,
+            horizon=T,
+            correlation=spec.correlation,
+            recovery=spec.recovery,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+        )
+        """
+    ).rstrip()
+
+
 def _deterministic_exact_binding_evaluate_body(
     generation_plan,
     *,
     semantic_blueprint=None,
+    request_metadata: Mapping[str, object] | None = None,
     comparison_target: str | None = None,
 ) -> str | None:
     """Return a deterministic evaluate body for supported exact helper-backed routes."""
+    metadata = dict(request_metadata or {})
     refs = set(_exact_binding_refs(generation_plan))
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
     vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
@@ -3537,18 +3881,253 @@ def _deterministic_exact_binding_evaluate_body(
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
     basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
-    instrument_type = str(getattr(generation_plan, "instrument_type", "") or "").strip().lower()
-    route_free_exact_binding = getattr(generation_plan, "primitive_plan", None) is None
-    normalized_target = str(comparison_target or "").strip().lower().replace("-", "_")
+    runtime_contract = metadata.get("runtime_contract")
+    if not isinstance(runtime_contract, Mapping):
+        runtime_contract = {}
+    instrument_type = str(
+        _generation_plan_field(generation_plan, "instrument_type", "")
+        or metadata.get("instrument_type")
+        or runtime_contract.get("instrument_type")
+        or runtime_contract.get("product_family")
+        or ""
+    ).strip().lower()
+    route_free_exact_binding = _generation_plan_field(generation_plan, "primitive_plan") is None
+    normalized_target = str(
+        comparison_target or metadata.get("comparison_target") or ""
+    ).strip().lower().replace("-", "_")
+    is_american_equity_option = instrument_type in {"american_put", "american_option"}
+    black_scholes_vanilla_exact_binding = _is_black_scholes_vanilla_exact_binding(
+        generation_plan,
+        refs,
+        instrument_type=instrument_type,
+        normalized_target=normalized_target,
+        route_free_exact_binding=route_free_exact_binding,
+    )
+
+    if instrument_type in {"credit_default_swap", "cds"} and normalized_target in {"mc_cds", "cds_mc"}:
+        cds_body = _credit_default_swap_helper_body(
+            {"trellis.models.credit_default_swap.price_cds_monte_carlo"}
+        )
+        if cds_body is not None:
+            return cds_body
+    if instrument_type in {"credit_default_swap", "cds"} and normalized_target in {
+        "analytical_cds",
+        "cds_analytical",
+    }:
+        cds_body = _credit_default_swap_helper_body(
+            {"trellis.models.credit_default_swap.price_cds_analytical"}
+        )
+        if cds_body is not None:
+            return cds_body
 
     target_helper_bodies = {
+        "vasicek_tree": (
+            "return price_short_rate_zero_coupon_bond_tree("
+            'market_state, spec, model="vasicek", '
+            'n_steps=getattr(spec, "tree_steps", 360), '
+            "allow_benchmark_defaults=True)"
+        ),
+        "cir_tree": (
+            "return price_short_rate_zero_coupon_bond_tree("
+            'market_state, spec, model="cir", '
+            'n_steps=getattr(spec, "tree_steps", 360), '
+            "allow_benchmark_defaults=True)"
+        ),
+        "vasicek_analytical": (
+            "return price_short_rate_zero_coupon_bond_analytical("
+            'market_state, spec, model="vasicek", allow_benchmark_defaults=True)'
+        ),
+        "cir_analytical": (
+            "return price_short_rate_zero_coupon_bond_analytical("
+            'market_state, spec, model="cir", allow_benchmark_defaults=True)'
+        ),
         "heston_mc": (
             "return price_heston_option_monte_carlo("
             f"market_state, spec{heston_mc_kwargs})"
         ),
+        "merton_mc": (
+            "return price_merton_jump_diffusion_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 100000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "merton_fft": (
+            "return price_merton_jump_diffusion_option_transform("
+            'market_state, spec, method="fft")'
+        ),
+        "merton_cos": (
+            "return price_merton_jump_diffusion_option_transform("
+            'market_state, spec, method="cos")'
+        ),
+        "sabr_mc": (
+            "return price_sabr_forward_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'n_steps=getattr(spec, "n_steps", 96), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "sabr_hagan_analytical": (
+            "return price_sabr_forward_option_hagan(market_state, spec)"
+        ),
+        "vg_cos": (
+            "return price_variance_gamma_option_transform("
+            'market_state, spec, method="cos")'
+        ),
+        "vg_mc": (
+            "return price_variance_gamma_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "madan_carr_chang_reference": (
+            "return price_variance_gamma_option_reference(market_state, spec)"
+        ),
+        "cgmy_cos": (
+            "return price_cgmy_option_transform("
+            'market_state, spec, method="cos")'
+        ),
+        "cgmy_mc": (
+            "return price_cgmy_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "cgmy_reference_values": (
+            "return price_cgmy_option_reference(market_state, spec)"
+        ),
+        "kou_fft": (
+            "return price_kou_option_transform("
+            'market_state, spec, method="fft")'
+        ),
+        "kou_mc": (
+            "return price_kou_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "kou_reference_values": (
+            "return price_kou_option_reference(market_state, spec)"
+        ),
+        "bates_fft": (
+            "return price_bates_option_transform("
+            'market_state, spec, method="fft")'
+        ),
+        "bates_mc": (
+            "return price_bates_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 80000), '
+            'n_steps=getattr(spec, "n_steps", 96), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "mc_variance_swap": (
+            "return price_equity_variance_swap_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 60000), '
+            'n_steps=getattr(spec, "n_steps", 252), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
     }
     if normalized_target in target_helper_bodies:
         return target_helper_bodies[normalized_target]
+
+    if is_american_equity_option and normalized_target == "psor_pde":
+        return (
+            "return price_event_aware_equity_option_pde("
+            "market_state, spec, theta=1.0, "
+            'n_x=getattr(spec, "n_x", 301), '
+            'n_t=getattr(spec, "n_t", 400))'
+        )
+    if is_american_equity_option and normalized_target == "crr_tree":
+        return (
+            'return float(getattr(spec, "notional", 1.0) or 1.0) * '
+            "price_vanilla_equity_option_tree("
+            'market_state, spec, model="crr", '
+            'n_steps=getattr(spec, "tree_steps", 800))'
+        )
+    if is_american_equity_option and normalized_target == "high_step_tree_2000":
+        return (
+            'return float(getattr(spec, "notional", 1.0) or 1.0) * '
+            "price_vanilla_equity_option_tree("
+            'market_state, spec, model="crr", n_steps=2000)'
+        )
+    if is_american_equity_option and normalized_target == "lsm_mc":
+        return (
+            "return price_american_equity_option_lsm_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 50000), '
+            'n_steps=getattr(spec, "n_steps", 96), '
+            'seed=getattr(spec, "seed", 42))'
+        )
+    if normalized_target == "cev_pde":
+        return (
+            "return price_cev_option_pde("
+            "market_state, spec, "
+            'n_x=getattr(spec, "n_x", 401), '
+            'n_t=getattr(spec, "n_t", 501))'
+        )
+    if normalized_target == "cev_tree":
+        return (
+            "return price_cev_option_tree("
+            "market_state, spec, "
+            'n_steps=getattr(spec, "tree_steps", 2000), '
+            'n_x=getattr(spec, "tree_grid_size", 301))'
+        )
+
+    if comparison_target == "monte_carlo" and instrument_type == "cliquet_option":
+        return (
+            "return price_equity_cliquet_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        )
+    if (
+        normalized_target in {"cn_rannacher", "cn_standard"}
+        and "trellis.models.equity_option_pde.price_equity_digital_option_pde" in refs
+    ):
+        rannacher_default = 2 if normalized_target == "cn_rannacher" else 0
+        return (
+            "return price_equity_digital_option_pde("
+            "market_state, spec, "
+            'theta=getattr(spec, "theta", 0.5), '
+            f'rannacher_timesteps=getattr(spec, "rannacher_timesteps", {rannacher_default}), '
+            'n_x=getattr(spec, "n_x", 401), '
+            'n_t=getattr(spec, "n_t", 401))'
+        )
+    if (
+        normalized_target == "mc_asian"
+        and "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo" in refs
+    ):
+        return "return price_arithmetic_asian_option_monte_carlo(market_state, spec)"
+    if (
+        normalized_target == "turnbull_wakeman_approx"
+        and "trellis.models.asian_option.price_arithmetic_asian_option_analytical" in refs
+    ):
+        return "return price_arithmetic_asian_option_analytical(market_state, spec)"
+    if (
+        normalized_target == "mc_lookback"
+        and "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo" in refs
+    ):
+        return "return price_equity_fixed_lookback_option_monte_carlo(market_state, spec)"
+    if (
+        normalized_target in {"digital_fft", "digital_cos"}
+        and "trellis.models.equity_option_transforms.price_equity_digital_option_transform" in refs
+    ):
+        return (
+            "return price_equity_digital_option_transform("
+            f"market_state, spec{vanilla_equity_transform_kwargs})"
+        )
+
+    cds_body = _credit_default_swap_helper_body(refs)
+    if cds_body is not None:
+        return cds_body
+
+    ranked_basket_body = _ranked_observation_basket_helper_body(refs)
+    if ranked_basket_body is not None:
+        return ranked_basket_body
+
+    nth_to_default_body = _nth_to_default_helper_body(refs)
+    if nth_to_default_body is not None:
+        return nth_to_default_body
 
     if (
         comparison_target == "analytical"
@@ -3674,44 +4253,7 @@ def _deterministic_exact_binding_evaluate_body(
             )
             """
         ).rstrip()
-    if (
-        comparison_target == "black_scholes"
-        and "trellis.models.black.black76_call" in refs
-        and "trellis.models.black.black76_put" in refs
-    ):
-        return textwrap.dedent(
-            """\
-            spec = self._spec
-            if market_state.discount is None:
-                raise ValueError("market_state.discount is required for Black-Scholes comparison")
-            if market_state.vol_surface is None:
-                raise ValueError("market_state.vol_surface is required for Black-Scholes comparison")
-            T = max(float(year_fraction(market_state.settlement, spec.expiry_date, spec.day_count)), 0.0)
-            spot = spec.spot
-            strike = spec.strike
-            option_type = str(spec.option_type or "call").strip().lower()
-            if T <= 0.0:
-                intrinsic = max(spot - strike, 0.0) if option_type == "call" else max(strike - spot, 0.0)
-                return spec.notional * intrinsic
-            df = market_state.discount.discount(T)
-            sigma = market_state.vol_surface.black_vol(max(T, 1e-6), strike)
-            forward = spot / max(df, 1e-12)
-            if option_type == "call":
-                undiscounted = black76_call(forward, strike, sigma, T)
-            elif option_type == "put":
-                undiscounted = black76_put(forward, strike, sigma, T)
-            else:
-                raise ValueError(f"Unsupported option_type {spec.option_type!r}")
-            return spec.notional * df * undiscounted
-            """
-        ).rstrip()
-    if (
-        comparison_target is None
-        and route_free_exact_binding
-        and instrument_type == "european_option"
-        and "trellis.models.black.black76_call" in refs
-        and "trellis.models.black.black76_put" in refs
-    ):
+    if black_scholes_vanilla_exact_binding:
         return textwrap.dedent(
             """\
             spec = self._spec
@@ -3796,6 +4338,12 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.fx_vanilla.price_fx_vanilla_analytical": (
             "return price_fx_vanilla_analytical(market_state, spec)"
         ),
+        "trellis.models.fx_barrier_option.price_fx_barrier_option_analytical": (
+            "return price_fx_barrier_option_analytical(market_state, spec)"
+        ),
+        "trellis.models.fx_barrier_option.price_fx_barrier_option_monte_carlo": (
+            "return price_fx_barrier_option_monte_carlo(market_state, spec)"
+        ),
         "trellis.models.callable_bond_pde.price_callable_bond_pde": (
             "return price_callable_bond_pde(market_state, spec)"
         ),
@@ -3809,6 +4357,9 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.rate_style_swaption_tree.price_swaption_tree": (
             "return price_swaption_tree(market_state, spec"
             f"{swaption_comparison_kwargs})"
+        ),
+        "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree": (
+            "return price_bermudan_swaption_tree(market_state, spec)"
         ),
         "trellis.models.rate_style_swaption.price_swaption_monte_carlo": (
             "return price_swaption_monte_carlo("
@@ -3831,13 +4382,48 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_vanilla_equity_option_transform("
             f"market_state, spec{vanilla_equity_transform_kwargs})"
         ),
+        "trellis.models.equity_option_transforms.price_equity_digital_option_transform": (
+            "return price_equity_digital_option_transform("
+            f"market_state, spec{vanilla_equity_transform_kwargs})"
+        ),
         "trellis.models.transforms.heston.price_heston_option_transform": (
             "return price_heston_option_transform("
             f"market_state, spec{heston_transform_kwargs})"
         ),
+        "trellis.models.bates_option.price_bates_option_transform": (
+            'return price_bates_option_transform(market_state, spec, method="fft")'
+        ),
+        "trellis.models.bates_option.price_bates_option_monte_carlo": (
+            "return price_bates_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 80000), '
+            'n_steps=getattr(spec, "n_steps", 96), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "trellis.models.levy_option.price_kou_option_transform": (
+            'return price_kou_option_transform(market_state, spec, method="fft")'
+        ),
+        "trellis.models.levy_option.price_kou_option_monte_carlo": (
+            "return price_kou_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
+        "trellis.models.levy_option.price_kou_option_reference": (
+            "return price_kou_option_reference(market_state, spec)"
+        ),
         "trellis.models.zcb_option_tree.price_zcb_option_tree": (
             "return price_zcb_option_tree("
             f"market_state, spec{zcb_option_tree_kwargs})"
+        ),
+        "trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_analytical": (
+            "return price_short_rate_zero_coupon_bond_analytical("
+            "market_state, spec, allow_benchmark_defaults=True)"
+        ),
+        "trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_tree": (
+            "return price_short_rate_zero_coupon_bond_tree("
+            'market_state, spec, n_steps=getattr(spec, "tree_steps", 360), '
+            "allow_benchmark_defaults=True)"
         ),
         "trellis.models.credit_basket_copula.price_credit_basket_tranche": (
             "return price_credit_basket_tranche("
@@ -3873,6 +4459,18 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical": (
             "return price_equity_fixed_lookback_option_analytical(market_state, spec)"
         ),
+        "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo": (
+            "return price_equity_fixed_lookback_option_monte_carlo(market_state, spec)"
+        ),
+        "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo": (
+            "return price_arithmetic_asian_option_monte_carlo(market_state, spec)"
+        ),
+        "trellis.models.asian_option.price_arithmetic_asian_option_analytical": (
+            "return price_arithmetic_asian_option_analytical(market_state, spec)"
+        ),
+        "trellis.models.equity_option_pde.price_equity_digital_option_pde": (
+            "return price_equity_digital_option_pde(market_state, spec)"
+        ),
         "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical": (
             "return price_equity_chooser_option_analytical(market_state, spec)"
         ),
@@ -3882,8 +4480,21 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical": (
             "return price_equity_cliquet_option_analytical(market_state, spec)"
         ),
+        "trellis.models.monte_carlo.event_aware.price_equity_cliquet_option_monte_carlo": (
+            "return price_equity_cliquet_option_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 120000), '
+            'seed=getattr(spec, "seed", 42))'
+        ),
         "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical": (
             "return price_equity_variance_swap_analytical(market_state, spec)"
+        ),
+        "trellis.models.variance_swap.price_equity_variance_swap_monte_carlo": (
+            "return price_equity_variance_swap_monte_carlo("
+            "market_state, spec, "
+            'n_paths=getattr(spec, "n_paths", 60000), '
+            'n_steps=getattr(spec, "n_steps", 252), '
+            'seed=getattr(spec, "seed", 42))'
         ),
         "trellis.models.analytical.barrier.barrier_option_price": (
             "if market_state.discount is None:\n"
@@ -3913,6 +4524,12 @@ def _deterministic_exact_binding_evaluate_body(
             "    observations_per_year=getattr(spec, 'observations_per_year', None),\n"
             ")\n"
             "return spec.notional * price"
+        ),
+        "trellis.models.single_barrier_option.price_single_barrier_option_pde_result": (
+            "return price_single_barrier_option_pde_result(market_state, spec).price"
+        ),
+        "trellis.models.single_barrier_option.price_single_barrier_option_monte_carlo_result": (
+            "return price_single_barrier_option_monte_carlo_result(market_state, spec).price"
         ),
         "trellis.models.double_barrier_option.price_double_barrier_option_pde_result": (
             "return price_double_barrier_option_pde_result(market_state, spec).price"
@@ -3949,10 +4566,17 @@ def _deterministic_exact_binding_benchmark_outputs_block(
     route does not have a native Greek helper available (QUA-862).
     """
     refs = set(_exact_binding_refs(generation_plan))
-    if (
-        comparison_target == "black_scholes"
-        and "trellis.models.black.black76_call" in refs
-        and "trellis.models.black.black76_put" in refs
+    normalized_target = str(comparison_target or "").strip().lower().replace("-", "_")
+    route_free_exact_binding = _generation_plan_field(generation_plan, "primitive_plan") is None
+    instrument_type = str(
+        _generation_plan_field(generation_plan, "instrument_type", "") or ""
+    ).strip().lower()
+    if _is_black_scholes_vanilla_exact_binding(
+        generation_plan,
+        refs,
+        instrument_type=instrument_type,
+        normalized_target=normalized_target,
+        route_free_exact_binding=route_free_exact_binding,
     ):
         return textwrap.dedent(
             """\
@@ -3972,6 +4596,38 @@ def _deterministic_exact_binding_benchmark_outputs_block(
             """
         )
     return None
+
+
+def _is_black_scholes_vanilla_exact_binding(
+    generation_plan,
+    refs: set[str],
+    *,
+    instrument_type: str,
+    normalized_target: str,
+    route_free_exact_binding: bool,
+) -> bool:
+    """Return whether an exact Black-76 equity vanilla adapter can be materialized."""
+    if "trellis.models.black.black76_call" not in refs:
+        return False
+    if "trellis.models.black.black76_put" not in refs:
+        return False
+
+    primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
+    route = ""
+    if isinstance(primitive_plan, Mapping):
+        route = str(primitive_plan.get("route") or "").strip().lower()
+    elif primitive_plan is not None:
+        route = str(getattr(primitive_plan, "route", "") or "").strip().lower()
+
+    if normalized_target == "black_scholes":
+        return True
+
+    if normalized_target not in {"", "analytical"}:
+        return False
+
+    return instrument_type == "european_option" and (
+        route_free_exact_binding or route == "analytical_black76"
+    )
 
 
 def _materialize_semantic_execution_shim_module(
@@ -4056,12 +4712,14 @@ def _materialize_deterministic_exact_binding_module(
     generation_plan,
     *,
     semantic_blueprint=None,
+    request_metadata: Mapping[str, object] | None = None,
     comparison_target: str | None = None,
 ) -> GeneratedModuleResult | None:
     """Build a thin helper-backed module without invoking the LLM when the route is exact."""
     body = _deterministic_exact_binding_evaluate_body(
         generation_plan,
         semantic_blueprint=semantic_blueprint,
+        request_metadata=request_metadata,
         comparison_target=comparison_target,
     )
     if body is None:
@@ -4082,6 +4740,27 @@ def _materialize_deterministic_exact_binding_module(
         EVALUATE_SENTINEL,
         textwrap.indent(body, "        "),
     )
+    if "price_merton_jump_diffusion_option_" in body:
+        rendered = _merge_generated_requirements(rendered, ("jump_parameters",))
+    if "price_bates_option_" in body:
+        rendered = _set_generated_requirements(
+            rendered,
+            ("discount_curve", "jump_parameters", "model_parameters"),
+        )
+    if "price_sabr_forward_option_" in body:
+        rendered = _set_generated_requirements(
+            rendered,
+            ("discount_curve", "model_parameters"),
+        )
+    if (
+        "price_variance_gamma_option_" in body
+        or "price_cgmy_option_" in body
+        or "price_kou_option_" in body
+    ):
+        rendered = _set_generated_requirements(
+            rendered,
+            ("discount_curve", "model_parameters"),
+        )
     if benchmark_outputs_block is not None:
         rendered = (
             rendered.rstrip("\n")
@@ -4098,6 +4777,38 @@ def _materialize_deterministic_exact_binding_module(
     )
 
 
+def _merge_generated_requirements(source: str, extra_requirements: Sequence[str]) -> str:
+    """Add route-owned market requirements to a deterministic skeleton."""
+    extras = {str(requirement) for requirement in extra_requirements if str(requirement)}
+    if not extras:
+        return source
+
+    pattern = (
+        r"(    def requirements\(self\) -> set\[str\]:\n"
+        r"        return \{)([^}]*)"
+        r"(\})"
+    )
+
+    def _replace(match: re.Match[str]) -> str:
+        existing = set(re.findall(r'"([^"]+)"', match.group(2)))
+        merged = ", ".join(f'"{item}"' for item in sorted(existing | extras))
+        return f"{match.group(1)}{merged}{match.group(3)}"
+
+    return re.sub(pattern, _replace, source, count=1)
+
+
+def _set_generated_requirements(source: str, requirements: Sequence[str]) -> str:
+    """Replace deterministic skeleton market requirements with a route contract."""
+    required = {str(requirement) for requirement in requirements if str(requirement)}
+    pattern = (
+        r"(    def requirements\(self\) -> set\[str\]:\n"
+        r"        return \{)([^}]*)"
+        r"(\})"
+    )
+    rendered = ", ".join(f'"{item}"' for item in sorted(required))
+    return re.sub(pattern, rf"\1{rendered}\3", source, count=1)
+
+
 def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     """Return extra imports required by deterministic exact-binding bodies.
 
@@ -4112,6 +4823,157 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_heston_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo"
+        )
+    if "price_merton_jump_diffusion_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.merton_jump_diffusion_option import "
+            "price_merton_jump_diffusion_option_monte_carlo"
+        )
+    if "price_merton_jump_diffusion_option_transform(" in body:
+        imports.append(
+            "from trellis.models.merton_jump_diffusion_option import "
+            "price_merton_jump_diffusion_option_transform"
+        )
+    if "price_sabr_forward_option_hagan(" in body:
+        imports.append(
+            "from trellis.models.sabr_option import price_sabr_forward_option_hagan"
+        )
+    if "price_sabr_forward_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.sabr_option import "
+            "price_sabr_forward_option_monte_carlo"
+        )
+    if "price_variance_gamma_option_transform(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_variance_gamma_option_transform"
+        )
+    if "price_variance_gamma_option_reference(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_variance_gamma_option_reference"
+        )
+    if "price_variance_gamma_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_variance_gamma_option_monte_carlo"
+        )
+    if "price_cgmy_option_transform(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_cgmy_option_transform"
+        )
+    if "price_cgmy_option_reference(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_cgmy_option_reference"
+        )
+    if "price_cgmy_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_cgmy_option_monte_carlo"
+        )
+    if "price_kou_option_transform(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_kou_option_transform"
+        )
+    if "price_kou_option_reference(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_kou_option_reference"
+        )
+    if "price_kou_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.levy_option import price_kou_option_monte_carlo"
+        )
+    if "price_bates_option_transform(" in body:
+        imports.append(
+            "from trellis.models.bates_option import price_bates_option_transform"
+        )
+    if "price_bates_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.bates_option import price_bates_option_monte_carlo"
+        )
+    if "price_short_rate_zero_coupon_bond_analytical(" in body:
+        imports.append(
+            "from trellis.models.short_rate_bond import "
+            "price_short_rate_zero_coupon_bond_analytical"
+        )
+    if "price_short_rate_zero_coupon_bond_tree(" in body:
+        imports.append(
+            "from trellis.models.short_rate_bond import "
+            "price_short_rate_zero_coupon_bond_tree"
+        )
+    if "price_cds_analytical(" in body:
+        imports.append(
+            "from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical"
+        )
+    if "price_cds_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo"
+        )
+    if "price_ranked_observation_basket_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.semantic_basket import "
+            "RankedObservationBasketSpec, price_ranked_observation_basket_monte_carlo"
+        )
+        imports.append(
+            "from trellis.models.resolution.basket_semantics import resolve_basket_semantics"
+        )
+    if "price_nth_to_default_basket(" in body:
+        imports.append(
+            "from trellis.instruments.nth_to_default import price_nth_to_default_basket"
+        )
+    if "price_equity_cliquet_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.event_aware import "
+            "price_equity_cliquet_option_monte_carlo"
+        )
+    if "price_event_aware_equity_option_pde(" in body:
+        imports.append(
+            "from trellis.models.equity_option_pde import price_event_aware_equity_option_pde"
+        )
+    if "price_cev_option_pde(" in body:
+        imports.append(
+            "from trellis.models.equity_option_pde import price_cev_option_pde"
+        )
+    if "price_equity_digital_option_pde(" in body:
+        imports.append(
+            "from trellis.models.equity_option_pde import price_equity_digital_option_pde"
+        )
+    if "price_equity_digital_option_transform(" in body:
+        imports.append(
+            "from trellis.models.equity_option_transforms import price_equity_digital_option_transform"
+        )
+    if "price_arithmetic_asian_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.asian_option import price_arithmetic_asian_option_monte_carlo"
+        )
+    if "price_arithmetic_asian_option_analytical(" in body:
+        imports.append(
+            "from trellis.models.asian_option import price_arithmetic_asian_option_analytical"
+        )
+    if "price_equity_fixed_lookback_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
+        )
+    if "price_equity_variance_swap_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo"
+        )
+    if "price_fx_barrier_option_analytical(" in body:
+        imports.append(
+            "from trellis.models.fx_barrier_option import price_fx_barrier_option_analytical"
+        )
+    if "price_fx_barrier_option_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.fx_barrier_option import price_fx_barrier_option_monte_carlo"
+        )
+    if "price_vanilla_equity_option_tree(" in body:
+        imports.append(
+            "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
+        )
+    if "price_cev_option_tree(" in body:
+        imports.append(
+            "from trellis.models.equity_option_tree import price_cev_option_tree"
+        )
+    if "price_american_equity_option_lsm_monte_carlo(" in body:
+        imports.append(
+            "from trellis.models.equity_option_monte_carlo import "
+            "price_american_equity_option_lsm_monte_carlo"
         )
     return tuple(imports)
 

@@ -46,6 +46,30 @@ Use ``scheme="heston_qe"`` for ``qe_heston`` targets and ``scheme="euler"`` for
 ``theta`` as variances. It does not infer Heston parameters from a Black
 volatility surface; that bridge belongs to an explicit calibration problem.
 
+**Bates Heston-plus-jump terminal Monte Carlo**:
+
+``trellis.models.bates_option.price_bates_option_monte_carlo`` prices
+European vanilla Bates options by simulating the Heston spot/variance state
+with an explicit Heston parameter pack and then applying independent
+compound-Poisson lognormal terminal jumps. The helper resolves
+``jump_parameters`` / ``jump_parameter_sets`` with canonical keys
+``jump_intensity`` (or ``lam`` / ``lambda``), ``jump_mean``, and ``jump_vol``
+(or ``jump_variance``). It is a terminal European comparator for the checked
+Bates transform route, not a path-state contract for barrier, Asian, or early
+exercise claims under Bates.
+
+**Levy terminal sampling** for European vanilla proof comparisons:
+
+``trellis.models.levy_option`` exposes bounded Monte Carlo helpers for
+Variance Gamma, CGMY, and Kou European vanilla options. Variance Gamma uses
+direct gamma-subordination terminal sampling. CGMY uses a deterministic
+terminal distribution built from its characteristic function and samples that
+distribution for comparison against the transform/reference routes. Kou uses
+direct compound-Poisson terminal sampling of asymmetric double-exponential
+jump sums. These helpers are terminal-payoff comparators; they are not path
+simulators and should not be reused for barrier, Asian, or event-monitored
+Levy claims.
+
 Brownian Bridge
 ---------------
 
@@ -87,6 +111,10 @@ Implementation
 .. autofunction:: trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo
    :no-index:
 .. autofunction:: trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo_result
+   :no-index:
+.. autofunction:: trellis.models.bates_option.price_bates_option_monte_carlo
+   :no-index:
+.. autofunction:: trellis.models.bates_option.price_bates_option_monte_carlo_result
    :no-index:
 .. autofunction:: trellis.models.qmc.sobol_normals
    :no-index:

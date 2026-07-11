@@ -1013,6 +1013,46 @@ def test_load_canary_task_history_excludes_replay_runs_from_benchmark_view(tmp_p
     assert benchmark_history[0]["benchmark_eligible"] is True
 
 
+def test_persist_canary_batch_record_accepts_deterministic_replay_mode(tmp_path):
+    from trellis.agent.task_run_store import persist_canary_batch_record
+
+    persisted = persist_canary_batch_record(
+        canaries=[{"id": "T13", "engine_family": "pde", "complexity": "simple"}],
+        meta={"version": 3},
+        results=[
+            {
+                "task_id": "T13",
+                "canary_id": "T13",
+                "success": True,
+                "elapsed_seconds": 0.1,
+                "attempts": 1,
+                "token_usage_summary": {"total_tokens": 0},
+                "execution_mode": "deterministic_replay",
+            }
+        ],
+        model="gpt-5.4-mini",
+        validation="standard",
+        knowledge_light=False,
+        replay=True,
+        execution_mode="deterministic_replay",
+        requested_task_id="T13",
+        requested_subset=None,
+        root=tmp_path,
+        started_at=datetime(2026, 4, 10, 13, 0, tzinfo=timezone.utc),
+        finished_at=datetime(2026, 4, 10, 13, 1, tzinfo=timezone.utc),
+    )
+
+    record = json.loads(Path(persisted["history_path"]).read_text())
+
+    assert record["summary"]["execution_mode"] == "deterministic_replay"
+    assert record["config"]["execution_mode"] == "deterministic_replay"
+    assert record["canaries"][0]["execution_mode"] == "deterministic_replay"
+    assert record["summary"]["benchmark_eligible"] is False
+    assert persisted["latest_path"].endswith(
+        "/task_runs/canary_batches/latest/deterministic_replay__single_task_T13__standard__default__gpt-5.4-mini.json"
+    )
+
+
 def test_persist_canary_batch_record_skips_latest_view_for_synthetic_batches(monkeypatch, tmp_path):
     from trellis.agent.task_run_store import persist_canary_batch_record
 

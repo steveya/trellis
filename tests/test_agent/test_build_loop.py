@@ -1057,13 +1057,24 @@ class SmokePayoff:
         raise TypeError("synthetic smoke failure")
 '''
 
-    with pytest.raises(RuntimeError, match="Failed to build payoff after 2 attempts"):
+    with (
+        patch(
+            "trellis.agent.executor._materialize_semantic_execution_shim_module",
+            return_value=None,
+        ),
+        patch(
+            "trellis.agent.executor._materialize_deterministic_exact_binding_module",
+            return_value=None,
+        ),
+        pytest.raises(RuntimeError, match="Failed to build payoff after 2 attempts"),
+    ):
         build_payoff(
             "Synthetic smoke payoff",
             {"discount_curve"},
             market_state=TestBuildLoop()._quanto_market_state(),
             instrument_type="european_option",
             force_rebuild=True,
+            fresh_build=True,
             max_retries=2,
         )
 

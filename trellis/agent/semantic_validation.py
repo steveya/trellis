@@ -51,6 +51,7 @@ _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES = frozenset({
 })
 _CHECKED_ROUTE_HELPER_CALLS = frozenset({
     "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo",
+    "trellis.models.monte_carlo.event_aware.price_equity_cliquet_option_monte_carlo",
 })
 
 

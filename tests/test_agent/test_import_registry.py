@@ -48,6 +48,327 @@ def test_quoted_observable_helpers_are_visible_to_import_registry():
     assert "price_curve_quote_spread_analytical" in registry_text
 
 
+def test_cliquet_monte_carlo_helper_is_visible_to_import_registry():
+    module = "trellis.models.monte_carlo.event_aware"
+    symbol = "price_equity_cliquet_option_monte_carlo"
+
+    assert module_exists(module)
+    assert symbol in list_module_exports(module)
+    assert find_symbol_modules(symbol) == (module,)
+    assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    assert symbol in registry_text
+
+
+def test_american_lsm_helper_is_visible_to_import_registry():
+    module = "trellis.models.equity_option_monte_carlo"
+    symbol = "price_american_equity_option_lsm_monte_carlo"
+
+    assert module_exists(module)
+    assert symbol in list_module_exports(module)
+    assert find_symbol_modules(symbol) == (module,)
+    assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    assert symbol in registry_text
+
+
+def test_counterparty_cva_helpers_are_visible_to_import_registry():
+    module = "trellis.analytics.counterparty"
+    symbols = {
+        "price_interest_rate_swap_cva_analytical_approx",
+        "price_interest_rate_swap_cva_monte_carlo",
+        "price_interest_rate_swap_independent_cva",
+        "price_interest_rate_swap_wrong_way_cva",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
+def test_credit_index_option_helpers_are_visible_to_import_registry():
+    module = "trellis.models.credit_index_option"
+    symbols = {
+        "CreditIndexOptionSpec",
+        "price_credit_index_option_black_on_spread",
+        "price_credit_index_option_monte_carlo",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
+def test_local_vol_option_helpers_are_visible_to_import_registry():
+    module = "trellis.models.local_vol_option"
+    symbols = {
+        "LocalVolPDEResult",
+        "LocalVolVanillaOptionSpec",
+        "price_local_vol_option_monte_carlo",
+        "price_local_vol_option_pde",
+        "price_local_vol_option_pde_result",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
+def test_variance_swap_monte_carlo_helper_is_visible_to_import_registry():
+    module = "trellis.models.variance_swap"
+    symbols = {
+        "price_equity_variance_swap_monte_carlo",
+        "price_equity_variance_swap_monte_carlo_result",
+        "equity_variance_swap_outputs_monte_carlo",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
+def test_merton_jump_diffusion_helpers_are_visible_to_import_registry():
+    module = "trellis.models.merton_jump_diffusion_option"
+    symbols = {
+        "price_merton_jump_diffusion_option_monte_carlo",
+        "price_merton_jump_diffusion_option_monte_carlo_result",
+        "price_merton_jump_diffusion_option_poisson_series",
+        "price_merton_jump_diffusion_option_transform",
+        "resolve_merton_jump_diffusion_option_inputs",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
+def test_sabr_forward_option_helpers_are_visible_to_import_registry():
+    module = "trellis.models.sabr_option"
+    symbols = {
+        "price_sabr_forward_option_hagan",
+        "price_sabr_forward_option_monte_carlo",
+        "price_sabr_forward_option_monte_carlo_result",
+        "resolve_sabr_forward_option_inputs",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
+def test_levy_option_helpers_are_visible_to_import_registry():
+    module = "trellis.models.levy_option"
+    symbols = {
+        "price_cgmy_option_monte_carlo",
+        "price_cgmy_option_monte_carlo_result",
+        "price_cgmy_option_reference",
+        "price_cgmy_option_transform",
+        "price_kou_option_monte_carlo",
+        "price_kou_option_monte_carlo_result",
+        "price_kou_option_reference",
+        "price_kou_option_transform",
+        "price_variance_gamma_option_monte_carlo",
+        "price_variance_gamma_option_monte_carlo_result",
+        "price_variance_gamma_option_reference",
+        "price_variance_gamma_option_transform",
+        "resolve_levy_option_inputs",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
+def test_bates_option_helpers_are_visible_to_import_registry():
+    module = "trellis.models.bates_option"
+    symbols = {
+        "bates_log_ratio_char_fn",
+        "bates_log_spot_char_fn",
+        "price_bates_option_monte_carlo",
+        "price_bates_option_monte_carlo_result",
+        "price_bates_option_transform",
+        "price_bates_option_transform_result",
+        "resolve_bates_option_inputs",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
+def test_short_rate_bond_helpers_are_visible_to_import_registry():
+    module = "trellis.models.short_rate_bond"
+    symbols = {
+        "price_cir_zero_coupon_bond_analytical",
+        "price_short_rate_zero_coupon_bond_analytical",
+        "price_short_rate_zero_coupon_bond_tree",
+        "price_vasicek_zero_coupon_bond_analytical",
+        "resolve_short_rate_bond_inputs",
+    }
+
+    assert module_exists(module)
+    exports = set(list_module_exports(module))
+    assert symbols <= exports
+    for symbol in symbols:
+        assert find_symbol_modules(symbol) == (module,)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
+def test_cev_helpers_are_visible_to_import_registry():
+    pde_module = "trellis.models.equity_option_pde"
+    tree_module = "trellis.models.equity_option_tree"
+
+    assert module_exists(pde_module)
+    assert module_exists(tree_module)
+    assert "price_cev_option_pde" in list_module_exports(pde_module)
+    assert "price_cev_option_tree" in list_module_exports(tree_module)
+    assert find_symbol_modules("price_cev_option_pde") == (pde_module,)
+    assert find_symbol_modules("price_cev_option_tree") == (tree_module,)
+    assert is_valid_import(pde_module, "price_cev_option_pde")
+    assert is_valid_import(tree_module, "price_cev_option_tree")
+
+    registry_text = get_import_registry()
+    assert f"from {pde_module} import" in registry_text
+    assert f"from {tree_module} import" in registry_text
+    assert "price_cev_option_pde" in registry_text
+    assert "price_cev_option_tree" in registry_text
+
+
+def test_digital_pde_and_asian_helpers_are_visible_to_import_registry():
+    pde_module = "trellis.models.equity_option_pde"
+    transform_module = "trellis.models.equity_option_transforms"
+    asian_module = "trellis.models.asian_option"
+
+    assert module_exists(pde_module)
+    assert module_exists(transform_module)
+    assert module_exists(asian_module)
+    assert "price_equity_digital_option_pde" in list_module_exports(pde_module)
+    assert "price_equity_digital_option_transform" in list_module_exports(transform_module)
+    assert "price_arithmetic_asian_option_analytical" in list_module_exports(asian_module)
+    assert "price_arithmetic_asian_option_monte_carlo" in list_module_exports(asian_module)
+    assert find_symbol_modules("price_equity_digital_option_pde") == (pde_module,)
+    assert find_symbol_modules("price_equity_digital_option_transform") == (transform_module,)
+    assert find_symbol_modules("price_arithmetic_asian_option_analytical") == (asian_module,)
+    assert find_symbol_modules("price_arithmetic_asian_option_monte_carlo") == (asian_module,)
+    assert is_valid_import(pde_module, "price_equity_digital_option_pde")
+    assert is_valid_import(transform_module, "price_equity_digital_option_transform")
+    assert is_valid_import(asian_module, "price_arithmetic_asian_option_analytical")
+    assert is_valid_import(asian_module, "price_arithmetic_asian_option_monte_carlo")
+
+    registry_text = get_import_registry()
+    assert f"from {pde_module} import" in registry_text
+    assert f"from {transform_module} import" in registry_text
+    assert f"from {asian_module} import" in registry_text
+    assert "price_equity_digital_option_pde" in registry_text
+    assert "price_equity_digital_option_transform" in registry_text
+    assert "price_arithmetic_asian_option_analytical" in registry_text
+    assert "price_arithmetic_asian_option_monte_carlo" in registry_text
+
+
+def test_single_barrier_helpers_are_visible_to_import_registry():
+    module = "trellis.models.single_barrier_option"
+
+    assert module_exists(module)
+    assert "price_single_barrier_option_pde_result" in list_module_exports(module)
+    assert "price_single_barrier_option_monte_carlo_result" in list_module_exports(module)
+    assert find_symbol_modules("price_single_barrier_option_pde_result") == (module,)
+    assert find_symbol_modules("price_single_barrier_option_monte_carlo_result") == (module,)
+    assert is_valid_import(module, "SingleBarrierPDEConfig")
+    assert is_valid_import(module, "SingleBarrierMonteCarloConfig")
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    assert "price_single_barrier_option_pde_result" in registry_text
+
+
+def test_fx_barrier_helpers_are_visible_to_import_registry():
+    module = "trellis.models.fx_barrier_option"
+
+    assert module_exists(module)
+    assert "price_fx_barrier_option_analytical" in list_module_exports(module)
+    assert "price_fx_barrier_option_monte_carlo" in list_module_exports(module)
+    assert find_symbol_modules("price_fx_barrier_option_analytical") == (module,)
+    assert find_symbol_modules("price_fx_barrier_option_monte_carlo") == (module,)
+    assert is_valid_import(module, "FXBarrierOptionSpec")
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    assert "price_fx_barrier_option_analytical" in registry_text
+
+
 def test_resolve_import_candidates_handles_known_and_unknown_symbols():
     candidates = resolve_import_candidates(["theta_method_1d", "definitely_not_real"])
     assert "trellis.models.pde.theta_method" in candidates["theta_method_1d"]

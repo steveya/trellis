@@ -1420,24 +1420,53 @@ def _result_retry_taxonomy_reasons(result: Mapping[str, Any]) -> tuple[str, ...]
 def _payload_retry_taxonomy_reasons(payload: Mapping[str, Any]) -> tuple[str, ...]:
     """Load ordered distinct builder retry reasons from one payload trace."""
     trace_path = str(payload.get("platform_trace_path") or "").strip()
-    if not trace_path:
-        return ()
-
-    try:
-        from trellis.agent.platform_traces import load_platform_trace_events
-
-        events = load_platform_trace_events(trace_path)
-    except Exception:
-        return ()
-
     reasons: list[str] = []
-    for event in events:
-        if event.event != "builder_attempt_failed":
-            continue
-        reason = str((event.details or {}).get("reason") or "").strip()
-        if reason:
-            reasons.append(reason)
+    if trace_path:
+        try:
+            from trellis.agent.platform_traces import load_platform_trace_events
+
+            events = load_platform_trace_events(trace_path)
+        except Exception:
+            events = ()
+
+        for event in events:
+            if event.event != "builder_attempt_failed":
+                continue
+            reason = str((event.details or {}).get("reason") or "").strip()
+            if reason:
+                reasons.append(reason)
+    intra_run_reason = _payload_intra_run_retry_taxonomy_reason(payload)
+    if intra_run_reason:
+        reasons.append(intra_run_reason)
     return tuple(dict.fromkeys(reasons))
+
+
+def _payload_intra_run_retry_taxonomy_reason(payload: Mapping[str, Any]) -> str:
+    learning = payload.get("intra_run_learning")
+    if not isinstance(learning, Mapping):
+        nested = payload.get("learning")
+        if isinstance(nested, Mapping):
+            learning = nested.get("intra_run_learning")
+    if not isinstance(learning, Mapping):
+        return ""
+
+    kind = str(learning.get("retry_attribution_kind") or "").strip()
+    if not kind:
+        attribution = learning.get("retry_attribution")
+        if isinstance(attribution, Mapping):
+            kind = str(attribution.get("attribution_kind") or "").strip()
+    if kind:
+        return kind
+
+    kinds = learning.get("retry_attribution_kinds")
+    if isinstance(kinds, str) and kinds.strip():
+        return kinds.strip()
+    if isinstance(kinds, list):
+        for item in kinds:
+            text = str(item or "").strip()
+            if text:
+                return text
+    return ""
 
 
 def summarize_promotion_discipline(results: list[Mapping[str, Any]]) -> dict[str, Any]:

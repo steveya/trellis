@@ -18,11 +18,21 @@ def test_api_map_contains_expected_core_entries():
     assert api_map["market_state"]["module"] == "trellis.core.market_state"
     assert api_map["payoff"]["module"] == "trellis.core.payoff"
     assert api_map["monte_carlo"]["module"] == "trellis.models.monte_carlo"
+    assert (
+        api_map["rate_monte_carlo_composition"]["module"]
+        == "trellis.models.monte_carlo.simulation_substrate"
+    )
     assert api_map["equity_tree"]["module"] == "trellis.models.equity_option_tree"
     assert api_map["rate_lattice"]["module"] == "trellis.models.trees.lattice"
     assert "utilities" in api_map
 
-    for section_name in ("market_state", "payoff", "equity_tree", "rate_lattice"):
+    for section_name in (
+        "market_state",
+        "payoff",
+        "equity_tree",
+        "rate_lattice",
+        "rate_monte_carlo_composition",
+    ):
         assert module_exists(api_map[section_name]["module"])
 
 
@@ -33,6 +43,7 @@ def test_api_map_key_imports_are_registry_valid():
         "equity_tree",
         "rate_lattice",
         "monte_carlo",
+        "rate_monte_carlo_composition",
         "qmc",
         "pde",
         "fft",

@@ -32,6 +32,7 @@ _SUSPICIOUS_LITERAL_NAMES = {
 }
 _CHECKED_ROUTE_HELPER_SYMBOLS = frozenset({
     "price_heston_option_monte_carlo",
+    "price_equity_cliquet_option_monte_carlo",
 })
 
 # Legacy _ROUTE_REQUIRED_ACCESSES and _ROUTE_ACCESS_ERROR_CODES removed.

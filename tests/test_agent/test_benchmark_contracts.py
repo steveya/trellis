@@ -84,6 +84,26 @@ def test_benchmark_request_description_surfaces_cap_model_specific_terms():
     assert "SABR parameters: alpha=0.025, beta=0.5, nu=0.35, rho=-0.2." in sabr_description
 
 
+def test_extension_request_description_surfaces_bermudan_swaption_contract():
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml", root=ROOT)
+    }
+
+    description = benchmark_request_description(tasks["P005"], root=ROOT)
+
+    assert description is not None
+    assert "Price a Bermudan swaption" in description
+    assert "Style: bermudan." in description
+    assert (
+        "Exercise dates: 2025-11-15, 2026-05-15, 2026-11-15."
+        in description
+    )
+    assert "Maturity date: 2030-11-15." in description
+    assert "Fixed frequency: semi_annual." in description
+    assert "Floating frequency: quarterly." in description
+
+
 def test_extension_rainbow_overrides_keep_expiry_after_final_exercise_date():
     tasks = {
         task["id"]: task
