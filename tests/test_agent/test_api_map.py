@@ -22,7 +22,7 @@ def test_api_map_contains_expected_core_entries():
         api_map["rate_monte_carlo_composition"]["module"]
         == "trellis.models.monte_carlo.simulation_substrate"
     )
-    assert api_map["equity_tree"]["module"] == "trellis.models.equity_option_tree"
+    assert api_map["equity_tree"]["module"] == "trellis.models.trees.algebra"
     assert api_map["rate_lattice"]["module"] == "trellis.models.trees.lattice"
     assert "utilities" in api_map
 
@@ -97,6 +97,22 @@ def test_monte_carlo_api_map_prioritizes_american_lsm_primitives():
     assert "terminal_intrinsic_from_resolved" in text
     assert "longstaff_schwartz" in text
     assert "price_american_equity_option_lsm_monte_carlo" not in text
+
+
+def test_equity_tree_api_map_prioritizes_lattice_algebra_primitives():
+    section = get_api_map()["equity_tree"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "resolve_single_state_diffusion_inputs",
+        "equity_tree",
+        "with_control",
+        "compile_lattice_recipe",
+        "build_lattice",
+        "price_on_lattice",
+    ):
+        assert symbol in text
+    assert "price_vanilla_equity_option_tree" not in text
 
 
 def _assert_import_statements_valid(import_statements: list[str]) -> None:

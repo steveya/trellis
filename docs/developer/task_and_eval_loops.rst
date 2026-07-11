@@ -516,7 +516,12 @@ must compose the admitted single-state market resolver, GBM process, Monte Carlo
 engine, intrinsic payoff primitive, and Longstaff-Schwartz exercise control.
 The compatibility American LSM helper is excluded from generated target
 evidence, so the task tests the agent's composition rather than product-helper
-delegation. ``T15``
+delegation. Its ``crr_tree`` and ``high_step_tree_2000`` targets follow the same
+rule: generated code composes the neutral diffusion resolver with
+``equity_tree``, ``with_control``, ``compile_lattice_recipe``, ``build_lattice``,
+and ``price_on_lattice``. Bermudan variants map contract dates to exercise
+steps before attaching control. The product-level tree helper remains a
+compatibility/reference surface and is not admitted route evidence. ``T15``
 uses a bounded CEV European call contract for the CEVOperator PDE versus CEV
 tree comparison and binds ``cev_pde`` / ``cev_tree`` to deterministic local
 proof adapters. The PDE adapter must consume CEV parameters through

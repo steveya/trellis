@@ -78,10 +78,21 @@ def test_builds_primitive_plan_for_american_put_tree_route():
     assert plan.primitive_plan.route_family == "equity_tree"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_vanilla_equity_option_tree"}
-    assert primitive_modules == {"trellis.models.equity_option_tree"}
+    assert primitive_symbols == {
+        "resolve_single_state_diffusion_inputs",
+        "terminal_intrinsic_from_resolved",
+        "equity_tree",
+        "with_control",
+        "compile_lattice_recipe",
+        "build_lattice",
+        "price_on_lattice",
+    }
+    assert primitive_modules == {
+        "trellis.models.resolution.single_state_diffusion",
+        "trellis.models.trees.algebra",
+    }
     assert "build_rate_lattice" not in primitive_symbols
-    assert any("price_vanilla_equity_option_tree" in note for note in plan.primitive_plan.notes)
+    assert all("price_vanilla_equity_option_tree" not in note for note in plan.primitive_plan.notes)
 
 
 def test_builds_pde_plan_for_barrier_option_uses_grid_and_operator():

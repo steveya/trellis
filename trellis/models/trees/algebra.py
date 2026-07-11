@@ -125,14 +125,16 @@ def _uniform_additive_step_size(step: int, params: Mapping[str, object]) -> floa
 def _log_spot_coordinate(step: int, node: int, params: Mapping[str, object]) -> float:
     spot = float(params.get("spot", params.get("S0", 1.0)))
     rate = float(params.get("rate", params.get("r", 0.0)))
+    dividend_yield = float(params.get("dividend_yield", 0.0))
     sigma = float(params.get("sigma", 0.0))
     maturity = float(params.get("maturity", params.get("T", 0.0)))
     n_steps = max(int(params.get("n_steps", 1)), 1)
     dt = maturity / n_steps
     model = str(params.get("model", "crr")).strip().lower()
     if model in {"jarrow_rudd", "jr"}:
-        u = exp((rate - 0.5 * sigma * sigma) * dt + sigma * sqrt(dt))
-        d = exp((rate - 0.5 * sigma * sigma) * dt - sigma * sqrt(dt))
+        carry_rate = rate - dividend_yield
+        u = exp((carry_rate - 0.5 * sigma * sigma) * dt + sigma * sqrt(dt))
+        d = exp((carry_rate - 0.5 * sigma * sigma) * dt - sigma * sqrt(dt))
     else:
         u = exp(sigma * sqrt(dt))
         d = 1.0 / max(u, 1e-12)
@@ -610,6 +612,7 @@ class AnalyticalCalibration:
             maturity,
             int(params["n_steps"]),
             model=model.name,
+            dividend_yield=float(params.get("dividend_yield", 0.0)),
         )
         diagnostics = CalibrationDiagnostics(
             residuals={},

@@ -407,11 +407,62 @@ bindings:
     conditional_primitives:
       - when:
           payoff_family: vanilla_option
-          exercise_style: [american, bermudan]
+          exercise_style: american
+          model_family: equity_diffusion
         primitives:
-          - module: trellis.models.equity_option_tree
-            symbol: price_vanilla_equity_option_tree
-            role: route_helper
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: resolve_single_state_diffusion_inputs
+            role: market_binding
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: terminal_intrinsic_from_resolved
+            role: payoff_primitive
+          - module: trellis.models.trees.algebra
+            symbol: equity_tree
+            role: contract_recipe
+          - module: trellis.models.trees.algebra
+            symbol: with_control
+            role: exercise_control
+          - module: trellis.models.trees.algebra
+            symbol: compile_lattice_recipe
+            role: contract_compiler
+          - module: trellis.models.trees.algebra
+            symbol: build_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.algebra
+            symbol: price_on_lattice
+            role: backward_induction
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: bermudan
+          model_family: equity_diffusion
+        primitives:
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: resolve_single_state_diffusion_inputs
+            role: market_binding
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: terminal_intrinsic_from_resolved
+            role: payoff_primitive
+          - module: trellis.models.trees.algebra
+            symbol: equity_tree
+            role: contract_recipe
+          - module: trellis.models.trees.algebra
+            symbol: with_control
+            role: exercise_control
+          - module: trellis.models.trees.algebra
+            symbol: compile_lattice_recipe
+            role: contract_compiler
+          - module: trellis.models.trees.algebra
+            symbol: build_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.algebra
+            symbol: price_on_lattice
+            role: backward_induction
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: timeline_mapping
+          - module: trellis.models.monte_carlo.event_state
+            symbol: event_step_indices
+            role: schedule_mapping
       - when:
           payoff_family: [bond, callable_bond, callable_fixed_income]
           exercise_style: [issuer_call, holder_put, bermudan]

@@ -1592,16 +1592,40 @@ def test_evaluate_prompt_american_tree_surface_mentions_equity_tree_helper_and_l
             route_family="equity_tree",
             primitives=(
                 PrimitiveRef(
-                    "trellis.models.equity_option_tree",
-                    "price_vanilla_equity_option_tree",
-                    "route_helper",
+                    "trellis.models.resolution.single_state_diffusion",
+                    "resolve_single_state_diffusion_inputs",
+                    "market_binding",
+                ),
+                PrimitiveRef(
+                    "trellis.models.trees.algebra",
+                    "equity_tree",
+                    "contract_recipe",
+                ),
+                PrimitiveRef(
+                    "trellis.models.trees.algebra",
+                    "with_control",
+                    "exercise_control",
+                ),
+                PrimitiveRef(
+                    "trellis.models.trees.algebra",
+                    "compile_lattice_recipe",
+                    "contract_compiler",
+                ),
+                PrimitiveRef(
+                    "trellis.models.trees.algebra",
+                    "build_lattice",
+                    "lattice_builder",
+                ),
+                PrimitiveRef(
+                    "trellis.models.trees.algebra",
+                    "price_on_lattice",
+                    "backward_induction",
                 ),
             ),
             adapters=(),
             blockers=(),
             notes=(
-                "For American and Bermudan equity options, prefer `price_vanilla_equity_option_tree(...)` from `trellis.models.equity_option_tree`.",
-                "If you need the lower-level lattice path, use `build_spot_lattice(..., model=\"crr\"|\"jarrow_rudd\")` with `lattice_backward_induction(...)`.",
+                "Compose the neutral market resolver with the declarative lattice algebra.",
             ),
         ),
     )
@@ -1613,8 +1637,8 @@ def test_evaluate_prompt_american_tree_surface_mentions_equity_tree_helper_and_l
         pricing_plan=PricingPlan(
             method="rate_tree",
             method_modules=[
-                "trellis.models.equity_option_tree",
-                "trellis.models.trees.lattice",
+                "trellis.models.resolution.single_state_diffusion",
+                "trellis.models.trees.algebra",
             ],
             required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build="american_option",
@@ -1625,12 +1649,15 @@ def test_evaluate_prompt_american_tree_surface_mentions_equity_tree_helper_and_l
         prompt_surface="compact",
     )
 
-    assert "price_vanilla_equity_option_tree" in prompt
-    assert "build_spot_lattice" in prompt
-    assert "lattice_backward_induction" in prompt
-    assert "trellis.models.equity_option_tree" in prompt
+    assert "resolve_single_state_diffusion_inputs" in prompt
+    assert "equity_tree" in prompt
+    assert "with_control" in prompt
+    assert "compile_lattice_recipe" in prompt
+    assert "build_lattice" in prompt
+    assert "price_on_lattice" in prompt
+    assert "price_vanilla_equity_option_tree" not in prompt
+    assert "trellis.models.trees.algebra" in prompt
     assert "Route family: `equity_tree`" in prompt
-    assert 'model="crr"' in prompt
     assert "longstaff_schwartz" in prompt
 
 

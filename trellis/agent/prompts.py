@@ -335,7 +335,7 @@ defined in the skeleton.
 - Black76: `black76_call(F, K, sigma, T)`, `black76_put(F, K, sigma, T)` — undiscounted
 - Black76 digital: `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F, K, sigma, T)` — undiscounted cash-or-nothing digitals
 - For CDS / nth-to-default: use `market_state.credit_curve.survival_probability(t)` and `market_state.credit_curve.hazard_rate(t)` on an explicit payment/default schedule; do not route credit-default pricing through Black76 call/put primitives.
-- For equity trees: prefer `from trellis.models.equity_option_tree import price_vanilla_equity_option_tree`; the lower-level lattice path is `from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction`
+- For equity trees: resolve scalar inputs with `resolve_single_state_diffusion_inputs`, declare the claim with `equity_tree`, attach `with_control`, then use `compile_lattice_recipe`, `build_lattice`, and `price_on_lattice`
 - For vanilla European PDE routes: prefer `from trellis.models.equity_option_pde import price_vanilla_equity_option_pde`; the lower-level fallback is `from trellis.models.pde.grid import Grid`, `from trellis.models.pde.operator import BlackScholesOperator`, and `from trellis.models.pde.theta_method import theta_method_1d`
 - For rate lattices: prefer helper surfaces such as `price_callable_bond_tree(...)`, `price_bermudan_swaption_tree(...)`, or `price_zcb_option_tree(...)`; the lower-level fallback is `from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction`
 - For schedule-dependent rate lattices: `from trellis.models.trees.control import lattice_steps_from_timeline, resolve_lattice_exercise_policy`
@@ -448,10 +448,10 @@ def _render_family_route_guidance(
         lines.append("## Family Route Guidance")
         if method == "rate_tree":
             lines.extend([
-                "- For American/Bermudan equity tree routes, prefer `price_vanilla_equity_option_tree(market_state, self._spec, model=\"crr\")` from `trellis.models.equity_option_tree`.",
-                "- If you need the lower-level lattice path, build `build_spot_lattice(..., model=\"crr\"|\"jarrow_rudd\")` and then call `lattice_backward_induction(..., exercise_policy=resolve_lattice_exercise_policy(\"american\"|\"bermudan\"))`.",
+                "- For American/Bermudan equity tree routes, compose `resolve_single_state_diffusion_inputs`, `equity_tree`, `with_control`, `compile_lattice_recipe`, `build_lattice`, and `price_on_lattice`.",
+                "- Map Bermudan exercise dates to lattice steps before passing `exercise_steps` to `with_control`; American control remains open at every rollback step.",
                 "- Do not invent a `crr_tree` symbol, an `AMERICAN` constant, or a `method=\"lsm\"` fallback on the tree route.",
-                "- Keep the early-exercise logic on the tree side and treat the checked-in helper as the default adapter surface.",
+                "- Use the lattice algebra for transition probabilities and backward induction; keep the generated adapter focused on contract and market composition.",
             ])
         elif method == "pde_solver":
             lines.extend([

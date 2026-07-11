@@ -388,7 +388,11 @@ def test_compile_build_request_emits_fallback_lane_plan_for_american_tree_route(
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "exercise_lattice"
     assert compiled.generation_plan.lane_family == "lattice"
-    assert "price_vanilla_equity_option_tree" in " ".join(compiled.generation_plan.lane_construction_steps)
+    construction = " ".join(compiled.generation_plan.lane_construction_steps)
+    assert "equity_tree" in construction
+    assert "build_lattice" in construction
+    assert "price_on_lattice" in construction
+    assert "price_vanilla_equity_option_tree" not in construction
 
 
 def test_compile_build_request_keeps_explicit_zcb_option_off_generic_vanilla_semantics():

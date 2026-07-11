@@ -118,11 +118,15 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.equity_option_pde",
         "trellis.models.equity_option_tree",
         "trellis.models.equity_option_monte_carlo",
+        "trellis.models.resolution.single_state_diffusion",
+        "trellis.models.trees.algebra",
     ),
     "american_option": (
         "trellis.models.equity_option_pde",
         "trellis.models.equity_option_tree",
         "trellis.models.equity_option_monte_carlo",
+        "trellis.models.resolution.single_state_diffusion",
+        "trellis.models.trees.algebra",
     ),
     "european_option": (
         "trellis.models.equity_option_pde",

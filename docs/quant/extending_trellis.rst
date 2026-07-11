@@ -77,13 +77,17 @@ products where routes otherwise drift on:
 The DSL and agent surfaces should map to these stable objects, not to raw
 ``generate_schedule(...)`` plus hand-built ``prev_date`` logic.
 
-When a route family has enough repeated structure, go one step further and
-expose a checked-in helper surface in ``trellis/models/``. For example,
-single-name CDS routes should prefer shared schedule and leg-pricing helpers
-over open-coded premium/protection loops inside generated adapters. The same
-pattern now applies to:
+When a route family has enough repeated structure, expose the smallest stable
+computational surface that carries the repeated mathematics. Prefer neutral
+resolvers, contract recipes, numerical kernels, and solver entry points over a
+product-and-method wrapper. Product helpers remain appropriate when the whole
+operation is itself a stable domain abstraction, as with CDS leg pricing.
+Current route guidance includes:
 
-- vanilla equity tree routes via ``trellis.models.equity_option_tree``
+- vanilla American/Bermudan equity trees via
+  ``resolve_single_state_diffusion_inputs(...)``, ``equity_tree(...)``,
+  ``with_control(...)``, ``compile_lattice_recipe(...)``,
+  ``build_lattice(...)``, and ``price_on_lattice(...)``
 - vanilla European equity PDE routes via ``trellis.models.equity_option_pde``
 - rate-style swaption analytics via ``trellis.models.rate_style_swaption``
 - zero-coupon bond option tree routes via ``trellis.models.zcb_option_tree``

@@ -812,17 +812,71 @@ routes:
     conditional_primitives:
       - when:
           payoff_family: vanilla_option
-          exercise_style: [american, bermudan]
+          exercise_style: american
+          model_family: equity_diffusion
         primitives:
-          - module: trellis.models.equity_option_tree
-            symbol: price_vanilla_equity_option_tree
-            role: route_helper
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: resolve_single_state_diffusion_inputs
+            role: market_binding
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: terminal_intrinsic_from_resolved
+            role: payoff_primitive
+          - module: trellis.models.trees.algebra
+            symbol: equity_tree
+            role: contract_recipe
+          - module: trellis.models.trees.algebra
+            symbol: with_control
+            role: exercise_control
+          - module: trellis.models.trees.algebra
+            symbol: compile_lattice_recipe
+            role: contract_compiler
+          - module: trellis.models.trees.algebra
+            symbol: build_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.algebra
+            symbol: price_on_lattice
+            role: backward_induction
         adapters: []
         notes:
-          - "Use `trellis.models.equity_option_tree.price_vanilla_equity_option_tree(...)` directly inside `evaluate()` for vanilla American or Bermudan equity tree routes."
-          - "Treat equity-tree generation as a thin adapter over the checked-in helper; do not rebuild CRR step math, intrinsic payoff maps, or backward induction inline unless the shared helper is missing required functionality."
-          - "When you need a lower-level lattice entry point, call `build_spot_lattice(..., model=\"crr\"|\"jarrow_rudd\")` and `lattice_backward_induction(...)` from `trellis.models.trees.lattice`."
+          - "Resolve scalar market inputs, declare the vanilla claim with `equity_tree(...)`, attach American holder control with `with_control(...)`, then compile, build, and price through the lattice algebra."
+          - "Use the shipped recipe/compiler/builder/rollback primitives; do not reimplement CRR probabilities or backward induction inside the adapter."
           - "Do not invent `crr_tree`, `AMERICAN`, or a `method=\"lsm\"` fallback on the tree route."
+      - when:
+          payoff_family: vanilla_option
+          exercise_style: bermudan
+          model_family: equity_diffusion
+        primitives:
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: resolve_single_state_diffusion_inputs
+            role: market_binding
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: terminal_intrinsic_from_resolved
+            role: payoff_primitive
+          - module: trellis.models.trees.algebra
+            symbol: equity_tree
+            role: contract_recipe
+          - module: trellis.models.trees.algebra
+            symbol: with_control
+            role: exercise_control
+          - module: trellis.models.trees.algebra
+            symbol: compile_lattice_recipe
+            role: contract_compiler
+          - module: trellis.models.trees.algebra
+            symbol: build_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.algebra
+            symbol: price_on_lattice
+            role: backward_induction
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: timeline_mapping
+          - module: trellis.models.monte_carlo.event_state
+            symbol: event_step_indices
+            role: schedule_mapping
+        adapters: []
+        notes:
+          - "Map the contractual Bermudan exercise dates to lattice steps, then pass those steps to `with_control(..., control_kind=\"bermudan\", exercise_steps=...)`."
+          - "Resolve, compile, build, and price through the same generic lattice algebra used by the American route."
       - when:
           payoff_family: [bond, callable_bond, callable_fixed_income]
           exercise_style: [issuer_call, holder_put, bermudan]
