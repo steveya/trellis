@@ -3358,6 +3358,76 @@ def test_deterministic_exact_binding_module_black_scholes_benchmark_outputs_runs
     assert outputs["vega"] == pytest.approx(37.842, abs=1e-2)
 
 
+def test_generated_black_scholes_evaluate_and_outputs_honor_dividend_yield():
+    from datetime import date as _date
+    from math import exp as _exp
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.models.black import black76_call
+
+    class _FlatDiscount:
+        def discount(self, t: float) -> float:
+            return _exp(-0.05 * float(t))
+
+    class _FlatBlackVol:
+        def black_vol(self, _t: float, _strike: float) -> float:
+            return 0.25
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="european_option",
+    )
+    schema = SPECIALIZED_SPECS["european_option_analytical"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Dividend-paying European option analytical comparator",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="black_scholes",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1170_review>", "exec"), namespace)  # noqa: S102
+    payoff = namespace[schema.class_name](
+        namespace[schema.spec_name](
+            notional=1.0,
+            spot=100.0,
+            strike=100.0,
+            expiry_date=_date(2024, 12, 31),
+            option_type="call",
+            dividend_yield=0.02,
+        )
+    )
+    market = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=_FlatDiscount(),
+        vol_surface=_FlatBlackVol(),
+    )
+    expected = _exp(-0.05) * black76_call(
+        100.0 * _exp(0.03),
+        100.0,
+        0.25,
+        1.0,
+    )
+
+    assert float(payoff.evaluate(market)) == pytest.approx(expected)
+    assert payoff.benchmark_outputs(market)["price"] == pytest.approx(expected)
+
+
 def test_deterministic_exact_binding_module_fx_vanilla_gk_injects_benchmark_outputs():
     """QUA-878: GK deterministic route injects a native ``benchmark_outputs`` method.
 

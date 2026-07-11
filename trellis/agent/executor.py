@@ -4416,7 +4416,8 @@ def _deterministic_exact_binding_evaluate_body(
                 return spec.notional * intrinsic
             df = market_state.discount.discount(T)
             sigma = market_state.vol_surface.black_vol(max(T, 1e-6), strike)
-            forward = spot / max(df, 1e-12)
+            dividend_yield = float(getattr(spec, "dividend_yield", 0.0) or 0.0)
+            forward = spot * exp(-dividend_yield * T) / max(df, 1e-12)
             if option_type == "call":
                 undiscounted = black76_call(forward, strike, sigma, T)
             elif option_type == "put":
@@ -7279,7 +7280,7 @@ def _route_specific_retry_lines(
     ):
         return (
             "This retry is only for the plain Black-Scholes / Black76 comparator lane, not a general analytical decomposition route.",
-            "Keep the module minimal: compute `T`, `df`, `sigma`, and `forward = spec.spot / max(df, 1e-12)`, then call `black76_call` or `black76_put`.",
+            "Keep the module minimal: compute `T`, `df`, `sigma`, `dividend_yield`, and `forward = spec.spot * exp(-dividend_yield * T) / max(df, 1e-12)`, then call `black76_call` or `black76_put`.",
             "Do not import or call `terminal_vanilla_from_basis`, `black76_asset_or_nothing_*`, or `black76_cash_or_nothing_*` for this comparator.",
             "Return a full Python module with the spec class and payoff class. Do not emit only an `evaluate()` fragment, markdown bullets, or an indented class body snippet.",
         )
