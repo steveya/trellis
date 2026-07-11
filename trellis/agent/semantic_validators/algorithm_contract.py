@@ -533,11 +533,6 @@ def _calls_symbol(source: str, symbol: str) -> bool:
     return re.search(rf"\b{re.escape(symbol)}\s*\(", source) is not None
 
 
-def _calls_checked_route_helper(source: str) -> bool:
-    """Return whether source delegates to a checked helper-owned route."""
-    return any(_calls_symbol(source, symbol) for symbol in _CHECKED_ROUTE_HELPER_SYMBOLS)
-
-
 def _calls_helper_owned_required_route_helper(source: str, exact_surface_primitives) -> bool:
     """Return whether source calls a helper that owns its route internals."""
     return any(
@@ -583,9 +578,9 @@ class AlgorithmContractValidator:
             return ()
 
         exact_surface_primitives = _exact_surface_primitives(plan, route_spec)
-        helper_owned_route = (
-            _calls_helper_owned_required_route_helper(source, exact_surface_primitives)
-            or _calls_checked_route_helper(source)
+        helper_owned_route = _calls_helper_owned_required_route_helper(
+            source,
+            exact_surface_primitives,
         )
 
         # 1. Route helper usage and exact surface.
@@ -852,6 +847,8 @@ def _call_satisfies_required_surface(
     if required_parameters:
         for index, parameter in enumerate(required_parameters):
             if index < len(call.args):
+                if parameter in keyword_names:
+                    return False
                 if index < len(positional_markers):
                     markers = tuple(str(marker) for marker in positional_markers[index])
                     if markers and not _argument_matches_markers(call.args[index], markers):
