@@ -141,6 +141,65 @@ def test_compile_build_request_consumes_retry_overlay_required_primitive():
     assert "price_autocallable_monte_carlo" in compiled.generation_plan.symbols_to_reuse
 
 
+def test_compile_build_request_keeps_record_only_comparison_contract_out_of_plan():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Autocallable note with barrier, coupon, and early redemption",
+        instrument_type="autocallable",
+        preferred_method="monte_carlo",
+        metadata={
+            "intra_run_learning_overlays": [
+                {
+                    "candidate_id": "retry-comparison-001",
+                    "repair_obligations": [
+                        {
+                            "kind": "comparison_contract",
+                            "binding": "backend_binding_id:autocallable_mc",
+                            "selected_route": "autocallable:monte_carlo",
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    consumption = compiled.request.metadata["intra_run_learning_overlay_consumption"]
+    assert consumption["consumed"] is False
+    assert "backend_binding_id:autocallable_mc" not in (
+        compiled.generation_plan.backend_helper_refs
+    )
+    assert "generation_plan.backend_helper_refs" not in consumption["applied_inputs"]
+    assert "request.metadata.selected_route_evidence" not in consumption["applied_inputs"]
+    assert consumption["unapplied_obligations"] == [
+        {
+            "candidate_id": "retry-comparison-001",
+            "kind": "comparison_contract",
+            "field": "binding",
+            "reason": "record_only_non_trellis_binding",
+        },
+        {
+            "candidate_id": "retry-comparison-001",
+            "kind": "comparison_contract",
+            "field": "selected_route",
+            "reason": "record_only_route_evidence",
+        },
+    ]
+
+
+def test_compile_build_request_ignores_non_iterable_knowledge_overlays():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Autocallable note with barrier, coupon, and early redemption",
+        instrument_type="autocallable",
+        preferred_method="monte_carlo",
+        knowledge_overlays=17,
+    )
+
+    assert compiled.request.metadata["intra_run_learning_overlays"] == []
+
+
 def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     from trellis.agent.platform_requests import compile_build_request
 

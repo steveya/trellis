@@ -533,12 +533,28 @@ def _apply_intra_run_overlay_consumption(generation_plan, metadata: Mapping[str,
                 binding = str(obligation.get("binding") or "").strip()
                 selected_route = str(obligation.get("selected_route") or "").strip()
                 if binding:
-                    backend_helper_refs.append(binding)
-                    applied_inputs.append("generation_plan.backend_helper_refs")
-                    consumed_this_candidate = True
+                    if binding.startswith("trellis."):
+                        backend_helper_refs.append(binding)
+                        applied_inputs.append("generation_plan.backend_helper_refs")
+                        consumed_this_candidate = True
+                    else:
+                        unapplied_obligations.append(
+                            {
+                                "candidate_id": candidate_id,
+                                "kind": kind,
+                                "field": "binding",
+                                "reason": "record_only_non_trellis_binding",
+                            }
+                        )
                 if selected_route:
-                    applied_inputs.append("request.metadata.selected_route_evidence")
-                    consumed_this_candidate = True
+                    unapplied_obligations.append(
+                        {
+                            "candidate_id": candidate_id,
+                            "kind": kind,
+                            "field": "selected_route",
+                            "reason": "record_only_route_evidence",
+                        }
+                    )
             elif kind == "market_binding":
                 binding_ref = str(
                     obligation.get("binding")
@@ -1680,9 +1696,14 @@ def compile_build_request(
         if isinstance(knowledge_overlays, Mapping):
             overlay_payloads = [dict(knowledge_overlays)]
         else:
-            overlay_payloads = [
-                dict(item) for item in knowledge_overlays if isinstance(item, Mapping)
-            ]
+            try:
+                overlay_iter = iter(knowledge_overlays)
+            except TypeError:
+                overlay_payloads = []
+            else:
+                overlay_payloads = [
+                    dict(item) for item in overlay_iter if isinstance(item, Mapping)
+                ]
         request_metadata["intra_run_learning_overlays"] = overlay_payloads
     request = PlatformRequest(
         request_id=_new_request_id("executor", "build"),
