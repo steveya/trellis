@@ -71,6 +71,11 @@ def test_current_american_artifact_is_thin_lsm_adapter():
 
     assert "longstaff_schwartz" in source
     assert "LaguerreBasis" in source
+    assert "resolve_single_state_monte_carlo_inputs" in source
+    assert "terminal_intrinsic_from_resolved" in source
+    assert "event_step_indices" in source
+    assert 'exercise_style == "bermudan"' in source
+    assert "price_american_equity_option_lsm_monte_carlo" not in source
     assert 'method="lsm"' not in source
     assert "engine.price(" not in source
     assert "engine.simulate(" in source

@@ -1055,12 +1055,6 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_help
             'float(getattr(spec, "notional", 1.0) or 1.0) * price_vanilla_equity_option_tree(',
             "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree",
         ),
-        (
-            "lsm_mc",
-            "price_american_equity_option_lsm_monte_carlo(",
-            "from trellis.models.equity_option_monte_carlo import "
-            "price_american_equity_option_lsm_monte_carlo",
-        ),
     ],
 )
 @pytest.mark.parametrize("instrument_type", ["american_put", "american_option"])
@@ -1099,6 +1093,199 @@ def test_deterministic_exact_binding_module_materializes_american_put_targets_wi
     assert expected_import in generated.code
     assert expected_fragment in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize("instrument_type", ["american_put", "american_option"])
+def test_deterministic_exact_binding_materializes_american_lsm_from_primitives(
+    instrument_type,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type=instrument_type,
+    )
+    skeleton = _generate_skeleton(
+        SPECIALIZED_SPECS["american_put_tree"],
+        "American put: PSOR vs tree vs LSM three-way",
+        generation_plan=generation_plan,
+    )
+
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="lsm_mc",
+    )
+
+    assert generated is not None
+    for fragment in (
+        "from trellis.models.processes.gbm import GBM",
+        "from trellis.models.monte_carlo.engine import MonteCarloEngine",
+        "from trellis.models.monte_carlo.lsm import longstaff_schwartz",
+        "from trellis.models.monte_carlo.single_state_diffusion import resolve_single_state_monte_carlo_inputs",
+        "from trellis.models.resolution.single_state_diffusion import terminal_intrinsic_from_resolved",
+        "resolve_single_state_monte_carlo_inputs(",
+        "MonteCarloEngine(",
+        "longstaff_schwartz(",
+        "event_step_indices(",
+        'exercise_style == "bermudan"',
+        "spec.exercise_dates",
+    ):
+        assert fragment in generated.code
+    assert "price_american_equity_option_lsm_monte_carlo" not in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_american_lsm_maps_bermudan_dates_to_exercise_steps():
+    from datetime import date as _date
+
+    import numpy as _np
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.date_utils import year_fraction
+    from trellis.core.market_state import MarketState
+    from trellis.models.monte_carlo.event_state import event_step_indices
+
+    class _FlatDiscount:
+        def zero_rate(self, _t: float) -> float:
+            return 0.05
+
+        def discount(self, t: float) -> float:
+            return float(_np.exp(-0.05 * float(t)))
+
+    class _FlatBlackVol:
+        def black_vol(self, _t: float, _strike: float) -> float:
+            return 0.20
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="american_option",
+    )
+    schema = SPECIALIZED_SPECS["american_put_tree"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Bermudan put primitive-composed LSM",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="lsm_mc",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1167_bermudan>", "exec"), namespace)  # noqa: S102
+    settle = _date(2024, 1, 1)
+    expiry = _date(2025, 1, 1)
+    exercise_dates = (_date(2024, 4, 1), _date(2024, 10, 1), expiry)
+    payoff = namespace[schema.class_name](
+        namespace[schema.spec_name](
+            spot=100.0,
+            strike=100.0,
+            expiry_date=expiry,
+            exercise_style="bermudan",
+            exercise_dates=exercise_dates,
+            n_paths=32,
+            n_steps=12,
+            seed=42,
+        )
+    )
+    captured: dict[str, list[int]] = {}
+
+    def _capture_lsm(_paths, steps, _payoff_fn, **_kwargs):
+        captured["steps"] = list(steps)
+        return 6.0
+
+    namespace["longstaff_schwartz"] = _capture_lsm
+    market = MarketState(
+        as_of=settle,
+        settlement=settle,
+        discount=_FlatDiscount(),
+        vol_surface=_FlatBlackVol(),
+    )
+
+    assert payoff.evaluate(market) == 6.0
+    maturity = year_fraction(settle, expiry)
+    event_times = tuple(year_fraction(settle, item) for item in exercise_dates)
+    assert captured["steps"] == list(event_step_indices(event_times, maturity, 12))
+
+
+def test_deterministic_american_lsm_primitive_composition_executes():
+    from datetime import date as _date
+
+    import numpy as _np
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.market_state import MarketState
+
+    class _FlatDiscount:
+        def zero_rate(self, _t: float) -> float:
+            return 0.05
+
+        def discount(self, t: float) -> float:
+            return float(_np.exp(-0.05 * float(t)))
+
+    class _FlatBlackVol:
+        def black_vol(self, _t: float, _strike: float) -> float:
+            return 0.20
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="american_option",
+    )
+    schema = SPECIALIZED_SPECS["american_put_tree"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "American put primitive-composed LSM",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="lsm_mc",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1167>", "exec"), namespace)  # noqa: S102
+    payoff_cls = namespace[schema.class_name]
+    spec_cls = namespace[schema.spec_name]
+    payoff = payoff_cls(
+        spec_cls(
+            spot=100.0,
+            strike=100.0,
+            expiry_date=_date(2025, 1, 1),
+            n_paths=8_000,
+            n_steps=48,
+            seed=42,
+        )
+    )
+    market = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=_FlatDiscount(),
+        vol_surface=_FlatBlackVol(),
+    )
+
+    assert float(payoff.evaluate(market)) == pytest.approx(6.08, abs=0.75)
 
 
 @pytest.mark.parametrize(

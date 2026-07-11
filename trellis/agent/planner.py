@@ -575,6 +575,12 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("expiry_date", "date", "Option expiry date"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'put'"),
             FieldDef("exercise_style", "str", "Exercise style for the checked lattice helper", "'american'"),
+            FieldDef(
+                "exercise_dates",
+                "tuple[date, ...] | None",
+                "Bermudan exercise dates",
+                "None",
+            ),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
             FieldDef("tree_steps", "int", "Tree steps for lattice comparison targets", "800"),
             FieldDef("n_paths", "int", "Monte Carlo paths for LSM comparison targets", "50000"),

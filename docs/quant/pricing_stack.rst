@@ -184,10 +184,12 @@ The first migrated vanilla cases now use that boundary directly:
   ``trellis.models.resolution`` for settlement, maturity, spot, dividend,
   discount, vol, and characteristic-function binding
 - vanilla American/Bermudan equity Monte Carlo now resolves the
-  ``exercise_monte_carlo`` route to the exact helper
-  ``price_american_equity_option_lsm_monte_carlo(...)``. Thin adapters may
-  delegate to that helper for Longstaff-Schwartz path simulation and exercise
-  control instead of reimplementing GBM path construction in generated code.
+  ``exercise_monte_carlo`` route to a primitive composition. Generated adapters
+  use ``resolve_single_state_monte_carlo_inputs(...)`` for market and numerical
+  controls, build ``GBM`` and ``MonteCarloEngine`` paths, evaluate
+  ``terminal_intrinsic_from_resolved(...)``, and pass the paths and exercise
+  schedule to ``longstaff_schwartz(...)``. The product-level American LSM helper
+  remains a compatibility/reference surface, not route authority.
 - FX single-barrier options now have dedicated analytical and Monte Carlo
   helper-backed routes in ``trellis.models.fx_barrier_option``. These routes
   bind spot FX, domestic discounting, foreign discounting, and Black volatility

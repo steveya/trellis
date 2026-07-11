@@ -15,6 +15,7 @@ from trellis.models.monte_carlo.single_state_diffusion import (
     SingleStateMonteCarloResult as VanillaEquityMonteCarloResult,
     build_single_state_terminal_claim_monte_carlo_problem,
     price_single_state_terminal_claim_monte_carlo_result,
+    resolve_single_state_monte_carlo_inputs,
     resolve_single_state_terminal_claim_monte_carlo_inputs,
 )
 from trellis.models.monte_carlo.event_aware import EventAwareMonteCarloProblem
@@ -41,7 +42,7 @@ def resolve_vanilla_equity_monte_carlo_inputs(
     seed: int | None = None,
 ) -> ResolvedEquityMonteCarloInputs:
     """Resolve vanilla-equity MC inputs from market state and a product spec."""
-    return resolve_single_state_terminal_claim_monte_carlo_inputs(
+    return resolve_single_state_monte_carlo_inputs(
         market_state,
         spec,
         scheme=scheme,
@@ -243,4 +244,5 @@ __all__ = [
     "price_vanilla_equity_option_monte_carlo",
     "price_vanilla_equity_option_monte_carlo_result",
     "resolve_vanilla_equity_monte_carlo_inputs",
+    "resolve_single_state_terminal_claim_monte_carlo_inputs",
 ]

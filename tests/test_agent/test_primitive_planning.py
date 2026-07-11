@@ -34,21 +34,21 @@ def test_builds_primitive_plan_for_american_put():
         "GBM",
         "MonteCarloEngine",
         "longstaff_schwartz",
-        "price_american_equity_option_lsm_monte_carlo",
+        "resolve_single_state_monte_carlo_inputs",
+        "terminal_intrinsic_from_resolved",
     }
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
     assert primitive_modules == {
-        "trellis.models.equity_option_monte_carlo",
         "trellis.models.monte_carlo.engine",
         "trellis.models.monte_carlo.lsm",
+        "trellis.models.monte_carlo.single_state_diffusion",
         "trellis.models.processes.gbm",
+        "trellis.models.resolution.single_state_diffusion",
     }
-    route_helper = next(
-        primitive
+    assert all(
+        primitive.role != "route_helper"
         for primitive in plan.primitive_plan.primitives
-        if primitive.role == "route_helper"
     )
-    assert route_helper.required is False
     assert "LaguerreBasis" not in primitive_symbols
     assert plan.primitive_plan.blockers == ()
 
@@ -950,7 +950,9 @@ def test_render_generation_plan_includes_primitive_plan_section():
     assert "Backend binding" in text
     assert "exercise_monte_carlo" in text
     assert "Route score" in text
-    assert "price_american_equity_option_lsm_monte_carlo" in text
+    assert "resolve_single_state_monte_carlo_inputs" in text
+    assert "terminal_intrinsic_from_resolved" in text
+    assert "price_american_equity_option_lsm_monte_carlo" not in text
 
 
 def test_build_generation_plan_uses_deterministic_cache():

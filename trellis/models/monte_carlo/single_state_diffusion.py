@@ -48,7 +48,7 @@ class SingleStateMonteCarloResult:
     control_variate_beta: float | None = None
 
 
-def resolve_single_state_terminal_claim_monte_carlo_inputs(
+def resolve_single_state_monte_carlo_inputs(
     market_state: SingleStateDiffusionMarketStateLike,
     spec: SingleStateDiffusionSpecLike,
     *,
@@ -58,7 +58,13 @@ def resolve_single_state_terminal_claim_monte_carlo_inputs(
     n_steps: int | None = None,
     seed: int | None = None,
 ) -> ResolvedSingleStateMonteCarloInputs:
-    """Resolve one bounded single-state Monte Carlo contract from semantics."""
+    """Resolve one bounded single-state Monte Carlo contract from semantics.
+
+    The resolved process and numerical controls are useful for terminal,
+    path-dependent, and early-exercise claims. Product-specific code should
+    compose the appropriate process, engine, and payoff/control primitives
+    from this neutral boundary.
+    """
     resolved_base = resolve_single_state_diffusion_inputs(market_state, spec)
     resolved_scheme = _normalized_scheme(
         scheme if scheme is not None else getattr(spec, "scheme", "exact")
@@ -76,6 +82,28 @@ def resolve_single_state_terminal_claim_monte_carlo_inputs(
         seed=seed if seed is not None else getattr(spec, "seed", 42),
         scheme=resolved_scheme,
         variance_reduction=resolved_variance_reduction,
+    )
+
+
+def resolve_single_state_terminal_claim_monte_carlo_inputs(
+    market_state: SingleStateDiffusionMarketStateLike,
+    spec: SingleStateDiffusionSpecLike,
+    *,
+    scheme: str | None = None,
+    variance_reduction: str | None = None,
+    n_paths: int | None = None,
+    n_steps: int | None = None,
+    seed: int | None = None,
+) -> ResolvedSingleStateMonteCarloInputs:
+    """Compatibility name for the product-neutral single-state MC resolver."""
+    return resolve_single_state_monte_carlo_inputs(
+        market_state,
+        spec,
+        scheme=scheme,
+        variance_reduction=variance_reduction,
+        n_paths=n_paths,
+        n_steps=n_steps,
+        seed=seed,
     )
 
 
@@ -127,7 +155,7 @@ def build_single_state_terminal_claim_monte_carlo_problem(
     local_vol_surface: Callable | None = None,
 ) -> tuple[ResolvedSingleStateMonteCarloInputs, EventAwareMonteCarloProblem]:
     """Resolve one single-state terminal claim and build its event-aware MC problem."""
-    resolved = resolve_single_state_terminal_claim_monte_carlo_inputs(
+    resolved = resolve_single_state_monte_carlo_inputs(
         market_state,
         spec,
         scheme=scheme,
@@ -336,5 +364,6 @@ __all__ = [
     "build_single_state_terminal_claim_monte_carlo_problem",
     "build_single_state_terminal_claim_monte_carlo_problem_from_resolved",
     "price_single_state_terminal_claim_monte_carlo_result",
+    "resolve_single_state_monte_carlo_inputs",
     "resolve_single_state_terminal_claim_monte_carlo_inputs",
 ]
