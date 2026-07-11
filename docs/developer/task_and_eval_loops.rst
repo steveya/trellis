@@ -511,10 +511,12 @@ Sparse legacy proof rows can also carry a deterministic task-runtime contract
 bridge before generation. The bridge is intentionally small and auditable:
 ``T25``, ``T26``, ``T31``, and ``T32`` default to a European SPX call
 semantic contract for Monte Carlo numerical-method proof work. ``T14`` uses an
-American SPX put contract for the PDE/tree/LSM comparison and resolves
-``lsm_mc`` through the exact
-``price_american_equity_option_lsm_monte_carlo(...)`` helper, so the task tests
-route-helper binding rather than generated early-exercise branching. ``T15``
+American SPX put contract for the PDE/tree/LSM comparison. Its ``lsm_mc`` target
+must compose the admitted single-state market resolver, GBM process, Monte Carlo
+engine, intrinsic payoff primitive, and Longstaff-Schwartz exercise control.
+The compatibility American LSM helper is excluded from generated target
+evidence, so the task tests the agent's composition rather than product-helper
+delegation. ``T15``
 uses a bounded CEV European call contract for the CEVOperator PDE versus CEV
 tree comparison and binds ``cev_pde`` / ``cev_tree`` to deterministic local
 proof adapters. The PDE adapter must consume CEV parameters through

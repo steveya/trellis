@@ -4052,11 +4052,33 @@ def _deterministic_exact_binding_evaluate_body(
         )
     if is_american_equity_option and normalized_target == "lsm_mc":
         return (
-            "return price_american_equity_option_lsm_monte_carlo("
-            "market_state, spec, "
-            'n_paths=getattr(spec, "n_paths", 50000), '
-            'n_steps=getattr(spec, "n_steps", 96), '
-            'seed=getattr(spec, "seed", 42))'
+            "resolved = resolve_single_state_monte_carlo_inputs(\n"
+            "    market_state, spec, scheme=\"exact\", variance_reduction=\"none\",\n"
+            '    n_paths=getattr(spec, "n_paths", 50000),\n'
+            '    n_steps=getattr(spec, "n_steps", 96),\n'
+            '    seed=getattr(spec, "seed", 42),\n'
+            ")\n"
+            "if resolved.maturity <= 0.0:\n"
+            "    return float(resolved.notional * terminal_intrinsic_from_resolved(\n"
+            "        resolved.spot, resolved\n"
+            "    ))\n"
+            "process = GBM(\n"
+            "    mu=resolved.rate - resolved.dividend_yield, sigma=resolved.sigma\n"
+            ")\n"
+            "engine = MonteCarloEngine(\n"
+            "    process, n_paths=resolved.n_paths, n_steps=resolved.n_steps,\n"
+            "    seed=resolved.seed, method=\"exact\",\n"
+            ")\n"
+            "paths = engine.simulate(resolved.spot, resolved.maturity)\n"
+            "exercise_steps = list(range(1, resolved.n_steps + 1))\n"
+            "basis = LaguerreBasis(degree=2)\n"
+            "payoff_fn = lambda spots: terminal_intrinsic_from_resolved(spots, resolved)\n"
+            "price = longstaff_schwartz(\n"
+            "    paths, exercise_steps, payoff_fn, discount_rate=resolved.rate,\n"
+            "    dt=resolved.maturity / resolved.n_steps,\n"
+            "    basis_fn=lambda spots: basis(spots / max(resolved.strike, 1e-12)),\n"
+            ")\n"
+            "return float(resolved.notional * price)"
         )
     if normalized_target == "cev_pde":
         return (
@@ -4970,11 +4992,24 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.equity_option_tree import price_cev_option_tree"
         )
-    if "price_american_equity_option_lsm_monte_carlo(" in body:
+    if "resolve_single_state_monte_carlo_inputs(" in body:
         imports.append(
-            "from trellis.models.equity_option_monte_carlo import "
-            "price_american_equity_option_lsm_monte_carlo"
+            "from trellis.models.monte_carlo.single_state_diffusion import "
+            "resolve_single_state_monte_carlo_inputs"
         )
+    if "terminal_intrinsic_from_resolved(" in body:
+        imports.append(
+            "from trellis.models.resolution.single_state_diffusion import "
+            "terminal_intrinsic_from_resolved"
+        )
+    if "GBM(" in body:
+        imports.append("from trellis.models.processes.gbm import GBM")
+    if "MonteCarloEngine(" in body:
+        imports.append("from trellis.models.monte_carlo.engine import MonteCarloEngine")
+    if "longstaff_schwartz(" in body:
+        imports.append("from trellis.models.monte_carlo.lsm import longstaff_schwartz")
+    if "LaguerreBasis(" in body:
+        imports.append("from trellis.models.monte_carlo.schemes import LaguerreBasis")
     return tuple(imports)
 
 

@@ -57,6 +57,30 @@ def test_resolve_single_state_terminal_claim_monte_carlo_inputs_reads_market_and
     assert resolved.seed == 11
 
 
+def test_product_neutral_single_state_resolver_preserves_legacy_contract():
+    from trellis.models.monte_carlo.single_state_diffusion import (
+        resolve_single_state_monte_carlo_inputs,
+        resolve_single_state_terminal_claim_monte_carlo_inputs,
+    )
+
+    canonical = resolve_single_state_monte_carlo_inputs(
+        _market_state(vol=0.25, rate=0.03),
+        _Spec(),
+        n_paths=4000,
+        n_steps=48,
+        seed=13,
+    )
+    legacy = resolve_single_state_terminal_claim_monte_carlo_inputs(
+        _market_state(vol=0.25, rate=0.03),
+        _Spec(),
+        n_paths=4000,
+        n_steps=48,
+        seed=13,
+    )
+
+    assert canonical == legacy
+
+
 def test_build_single_state_terminal_claim_monte_carlo_problem_uses_terminal_only_event_aware_shape():
     from trellis.models.monte_carlo.single_state_diffusion import (
         build_single_state_terminal_claim_monte_carlo_problem_from_resolved,

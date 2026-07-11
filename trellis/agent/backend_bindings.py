@@ -607,7 +607,6 @@ def _exact_target_refs_for(
         "numerical_evidence",
         "payoff_kernel",
         "engine",
-        "market_binding",
         "cashflow_engine",
     )
     refs_by_role = {
@@ -636,7 +635,6 @@ def _binding_id_for(
         "numerical_evidence",
         "payoff_kernel",
         "engine",
-        "market_binding",
         "cashflow_engine",
     )
     source_primitives = tuple(getattr(primitive_plan, "primitives", ()) or ()) or primitives

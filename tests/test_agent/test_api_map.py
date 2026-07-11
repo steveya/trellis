@@ -89,6 +89,16 @@ def test_api_map_formatter_includes_all_canonical_utilities():
     assert "credit_curve" in text
 
 
+def test_monte_carlo_api_map_prioritizes_american_lsm_primitives():
+    section = get_api_map()["monte_carlo"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    assert "resolve_single_state_monte_carlo_inputs" in text
+    assert "terminal_intrinsic_from_resolved" in text
+    assert "longstaff_schwartz" in text
+    assert "price_american_equity_option_lsm_monte_carlo" not in text
+
+
 def _assert_import_statements_valid(import_statements: list[str]) -> None:
     for statement in import_statements:
         cleaned = statement.split("#", 1)[0].strip()

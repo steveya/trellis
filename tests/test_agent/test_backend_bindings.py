@@ -851,7 +851,7 @@ def test_resolve_backend_binding_spec_uses_credit_loss_distribution_exact_helper
     )
 
 
-def test_exercise_monte_carlo_binding_resolves_american_equity_lsm_helper():
+def test_exercise_monte_carlo_binding_resolves_american_equity_lsm_primitives():
     catalog = load_backend_binding_catalog()
     binding = find_backend_binding_by_route_id("exercise_monte_carlo", catalog)
     assert binding is not None
@@ -865,15 +865,16 @@ def test_exercise_monte_carlo_binding_resolves_american_equity_lsm_helper():
 
     resolved = resolve_backend_binding_spec(binding, product_ir=product_ir)
 
-    assert resolved.binding_id == (
-        "trellis.models.equity_option_monte_carlo."
-        "price_american_equity_option_lsm_monte_carlo"
-    )
-    assert resolved.helper_refs == (
-        "trellis.models.equity_option_monte_carlo."
-        "price_american_equity_option_lsm_monte_carlo",
-    )
-    assert resolved.exact_target_refs == resolved.helper_refs
+    assert resolved.binding_id == "exercise:exercise:fallback"
+    assert resolved.helper_refs == ()
+    assert resolved.exact_target_refs == ()
+    assert set(resolved.primitive_refs) == {
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.lsm.longstaff_schwartz",
+        "trellis.models.monte_carlo.single_state_diffusion.resolve_single_state_monte_carlo_inputs",
+        "trellis.models.resolution.single_state_diffusion.terminal_intrinsic_from_resolved",
+    }
 
 
 def test_binding_catalog_cache_tracks_binding_catalog_freshness(monkeypatch):

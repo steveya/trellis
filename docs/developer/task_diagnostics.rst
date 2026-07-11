@@ -415,13 +415,15 @@ reset-date GBM increments, local/global return clipping, antithetic sampling,
 and discounting to the checked helper. Ordinary Monte Carlo adapters still
 need to satisfy their compiled route-helper or primitive obligations directly.
 
-For vanilla American or Bermudan equity options, ``exercise_monte_carlo`` now
-has the same exact-helper shape. A comparison target such as ``lsm_mc`` may call
-``price_american_equity_option_lsm_monte_carlo(market_state, spec, ...)`` and
-let that helper own GBM path generation, Longstaff-Schwartz regression, exercise
-step construction, and notional scaling. Diagnostics should treat that as
-route-helper evidence, not as a failure to spell out ``GBM`` and
-``MonteCarloEngine`` inside the generated adapter.
+Vanilla American or Bermudan equity options are intentionally different. The
+``exercise_monte_carlo`` route is primitive-composed: an adapter resolves inputs
+with ``resolve_single_state_monte_carlo_inputs(...)``, constructs ``GBM`` and
+``MonteCarloEngine``, defines exercise steps and intrinsic payoff semantics, and
+calls ``longstaff_schwartz(...)``. Diagnostics must require evidence for those
+route primitives. A market-binding resolver is input evidence, not an exact
+pricing target, and a call to the compatibility helper
+``price_american_equity_option_lsm_monte_carlo(...)`` is not sufficient route
+evidence for generated task code.
 
 For CEV proof targets, diagnostics should check both the payoff family and the
 model family. ``cev_pde`` and ``cev_tree`` may delegate to

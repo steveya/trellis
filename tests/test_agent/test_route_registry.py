@@ -149,18 +149,18 @@ class TestRegistryValidation:
                 "exercise_control",
             ),
             (
-                "trellis.models.equity_option_monte_carlo",
-                "price_american_equity_option_lsm_monte_carlo",
-                "route_helper",
-            )
+                "trellis.models.monte_carlo.single_state_diffusion",
+                "resolve_single_state_monte_carlo_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.resolution.single_state_diffusion",
+                "terminal_intrinsic_from_resolved",
+                "payoff_primitive",
+            ),
         }
-        helper = next(primitive for primitive in primitives if primitive.role == "route_helper")
-        assert helper.required is False
-        assert all(
-            primitive.required
-            for primitive in primitives
-            if primitive.role != "route_helper"
-        )
+        assert all(primitive.required for primitive in primitives)
+        assert all(primitive.role != "route_helper" for primitive in primitives)
 
     def test_all_routes_promoted(self, registry):
         candidate_ids = {route.id for route in registry.routes if route.status == "candidate"}
