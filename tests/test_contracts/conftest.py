@@ -121,7 +121,7 @@ def full_task_cassette_skip_reason(task_id: str) -> str:
 
 
 def full_task_cassette_available(task_id: str) -> bool:
-    """Check whether a full-task cassette exists for *task_id*."""
+    """Return whether full-task replay can run for *task_id*."""
     if deterministic_full_task_replay_supported(task_id):
         return True
     return (
