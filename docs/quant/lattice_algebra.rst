@@ -328,8 +328,28 @@ The lattice checks cover:
 - Numba-compatibility of compiled rollback shape
 - reporting and multicurrency limits
 
+Primitive-Composed Equity Exercise Routes
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Generated American and Bermudan vanilla equity adapters use the general
+lattice algebra directly. The composition boundary is:
+
+#. resolve scalar spot, discount rate, dividend carry, volatility, maturity,
+   strike, and option type
+   with ``resolve_single_state_diffusion_inputs(...)``;
+#. declare ``equity_tree(...)`` and attach holder exercise through
+   ``with_control(...)``;
+#. map contractual Bermudan dates to explicit lattice steps when applicable;
+#. call ``compile_lattice_recipe(...)``, ``build_lattice(...)``, and
+   ``price_on_lattice(...)``.
+
+The generated adapter owns contract and market composition. The library owns
+tree probabilities, topology, and backward induction. The compatibility
+``price_vanilla_equity_option_tree(...)`` wrapper remains useful as a reference
+and migration surface, but it is not route authority for generated adapters.
+
 Current Helper-Backed Routes
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The checked helper-backed lattice routes remain:
 

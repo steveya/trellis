@@ -3759,6 +3759,80 @@ def _basket_option_helper_kwargs(comparison_target: str | None) -> str:
     return f', comparison_target="{target}"'
 
 
+def _american_equity_tree_primitive_body(
+    comparison_target: str,
+    *,
+    include_bermudan_schedule: bool,
+) -> str:
+    """Return explicit lattice-algebra composition for an early-exercise equity option."""
+    steps_expression = (
+        "2000"
+        if comparison_target == "high_step_tree_2000"
+        else 'max(int(getattr(spec, "tree_steps", 800)), 1)'
+    )
+    prefix = textwrap.dedent(
+        f"""\
+        resolved = resolve_single_state_diffusion_inputs(market_state, spec)
+        if resolved.maturity <= 0.0:
+            return float(resolved.notional * terminal_intrinsic_from_resolved(
+                resolved.spot, resolved
+            ))
+        tree_steps = {steps_expression}
+        recipe = equity_tree(
+            model_family="crr",
+            strike=resolved.strike,
+            option_type=resolved.option_type,
+        )
+        exercise_style = str(getattr(spec, "exercise_style", "american")).strip().lower()
+        if exercise_style == "american":
+            recipe = with_control(recipe, "american")
+        """
+    ).rstrip()
+    control_branches: list[str] = []
+    if include_bermudan_schedule:
+        control_branches.append(textwrap.dedent(
+            """\
+            elif exercise_style == "bermudan":
+                if not spec.exercise_dates:
+                    raise ValueError("Bermudan tree pricing requires spec.exercise_dates")
+                settlement = market_state.settlement or market_state.as_of
+                if settlement is None:
+                    raise ValueError("Bermudan tree pricing requires market settlement or as_of")
+                event_times = []
+                for exercise_date in spec.exercise_dates:
+                    exercise_time = float(year_fraction(settlement, exercise_date, spec.day_count))
+                    if 0.0 <= exercise_time <= resolved.maturity:
+                        event_times.append(exercise_time)
+                exercise_steps = event_step_indices(
+                    event_times, resolved.maturity, tree_steps
+                )
+                recipe = with_control(
+                    recipe, "bermudan", exercise_steps=exercise_steps
+                )
+            """
+        ).rstrip())
+    suffix = textwrap.dedent(
+        """\
+        elif exercise_style != "european":
+            raise ValueError(f"Unsupported exercise_style {exercise_style!r}")
+        topology, mesh, model, contract = compile_lattice_recipe(recipe)
+        lattice = build_lattice(
+            topology,
+            mesh,
+            model,
+            spot=resolved.spot,
+            rate=resolved.rate,
+            dividend_yield=resolved.dividend_yield,
+            sigma=resolved.sigma,
+            maturity=resolved.maturity,
+            n_steps=tree_steps,
+        )
+        return float(resolved.notional * price_on_lattice(lattice, contract))
+        """
+    ).rstrip()
+    return "\n".join((prefix, *control_branches, suffix))
+
+
 def _credit_default_swap_helper_body(refs: set[str]) -> str | None:
     """Return a thin deterministic CDS wrapper for analytical or MC exact bindings."""
     analytical_ref = "trellis.models.credit_default_swap.price_cds_analytical"
@@ -4038,17 +4112,20 @@ def _deterministic_exact_binding_evaluate_body(
             'n_t=getattr(spec, "n_t", 400))'
         )
     if is_american_equity_option and normalized_target == "crr_tree":
-        return (
-            'return float(getattr(spec, "notional", 1.0) or 1.0) * '
-            "price_vanilla_equity_option_tree("
-            'market_state, spec, model="crr", '
-            'n_steps=getattr(spec, "tree_steps", 800))'
+        control_obligations = tuple(
+            _generation_plan_field(generation_plan, "lane_control_obligations", ()) or ()
+        )
+        return _american_equity_tree_primitive_body(
+            normalized_target,
+            include_bermudan_schedule="exercise_style:bermudan" in control_obligations,
         )
     if is_american_equity_option and normalized_target == "high_step_tree_2000":
-        return (
-            'return float(getattr(spec, "notional", 1.0) or 1.0) * '
-            "price_vanilla_equity_option_tree("
-            'market_state, spec, model="crr", n_steps=2000)'
+        control_obligations = tuple(
+            _generation_plan_field(generation_plan, "lane_control_obligations", ()) or ()
+        )
+        return _american_equity_tree_primitive_body(
+            normalized_target,
+            include_bermudan_schedule="exercise_style:bermudan" in control_obligations,
         )
     if is_american_equity_option and normalized_target == "lsm_mc":
         return (
@@ -5020,10 +5097,27 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             "from trellis.models.monte_carlo.single_state_diffusion import "
             "resolve_single_state_monte_carlo_inputs"
         )
-    if "terminal_intrinsic_from_resolved(" in body:
+    if "resolve_single_state_diffusion_inputs(" in body:
+        imports.append(
+            "from trellis.models.resolution.single_state_diffusion import (\n"
+            "    resolve_single_state_diffusion_inputs,\n"
+            "    terminal_intrinsic_from_resolved,\n"
+            ")"
+        )
+    elif "terminal_intrinsic_from_resolved(" in body:
         imports.append(
             "from trellis.models.resolution.single_state_diffusion import "
             "terminal_intrinsic_from_resolved"
+        )
+    if "equity_tree(" in body and "compile_lattice_recipe(" in body:
+        imports.append(
+            "from trellis.models.trees.algebra import (\n"
+            "    build_lattice,\n"
+            "    compile_lattice_recipe,\n"
+            "    equity_tree,\n"
+            "    price_on_lattice,\n"
+            "    with_control,\n"
+            ")"
         )
     if "GBM(" in body:
         imports.append("from trellis.models.processes.gbm import GBM")

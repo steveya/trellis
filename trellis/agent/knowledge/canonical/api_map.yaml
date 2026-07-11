@@ -57,15 +57,15 @@ payoff:
 # Model imports — trees
 # ---------------------------------------------------------------------------
 equity_tree:
-  module: trellis.models.equity_option_tree
+  module: trellis.models.trees.algebra
   key_imports:
+    - "from trellis.models.resolution.single_state_diffusion import resolve_single_state_diffusion_inputs, terminal_intrinsic_from_resolved"
+    - "from trellis.models.trees.algebra import equity_tree, with_control, compile_lattice_recipe, build_lattice, price_on_lattice"
     - "from trellis.models.equity_option_tree import price_cev_option_tree"
-    - "from trellis.models.equity_option_tree import price_vanilla_equity_option_tree"
-    - "from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction"
   notes:
-    - "American/Bermudan equity options should prefer the checked-in helper `price_vanilla_equity_option_tree(...)`"
+    - "American/Bermudan vanilla equity adapters should compose the neutral market resolver with the declarative lattice recipe, control, compiler, builder, and pricing primitives"
+    - "Bermudan adapters map contractual exercise dates to lattice steps before attaching control"
     - "CEV tree comparison targets should prefer the checked-in spot-lattice helper `price_cev_option_tree(...)`"
-    - "If you need the lower-level path, import the lattice builder/backward induction submodules directly"
 
 rate_lattice:
   module: trellis.models.trees.lattice

@@ -465,7 +465,7 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("analytical_black76"), spec)
         assert any(f.category == "missing_discount_application" for f in findings)
 
-    def test_flags_exact_helper_signature_mismatch(self, registry):
+    def test_equity_tree_compatibility_helper_is_not_exact_route_authority(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         callable_ir = ProductIR(
             instrument="american_option",
@@ -489,7 +489,8 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert all(primitive.role != "route_helper" for primitive in spec.primitives)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_fx_exact_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]

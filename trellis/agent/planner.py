@@ -574,7 +574,7 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("strike", "float", "Option strike price"),
             FieldDef("expiry_date", "date", "Option expiry date"),
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'put'"),
-            FieldDef("exercise_style", "str", "Exercise style for the checked lattice helper", "'american'"),
+            FieldDef("exercise_style", "str", "Exercise style for lattice control", "'american'"),
             FieldDef(
                 "exercise_dates",
                 "tuple[date, ...] | None",

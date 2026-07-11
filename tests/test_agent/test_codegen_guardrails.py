@@ -856,7 +856,7 @@ def test_pde_route_card_mentions_terminal_array_contract():
     assert "rannacher_timesteps" in card
 
 
-def test_american_option_route_card_mentions_equity_tree_helper():
+def test_american_option_route_card_describes_lattice_algebra_composition():
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
     pricing_plan = PricingPlan(
@@ -881,14 +881,26 @@ def test_american_option_route_card_mentions_equity_tree_helper():
     assert plan.primitive_plan.route_family == "equity_tree"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_vanilla_equity_option_tree"}
-    assert primitive_modules == {"trellis.models.equity_option_tree"}
+    assert primitive_symbols == {
+        "resolve_single_state_diffusion_inputs",
+        "terminal_intrinsic_from_resolved",
+        "equity_tree",
+        "with_control",
+        "compile_lattice_recipe",
+        "build_lattice",
+        "price_on_lattice",
+    }
+    assert primitive_modules == {
+        "trellis.models.resolution.single_state_diffusion",
+        "trellis.models.trees.algebra",
+    }
     assert "Lane obligations:" in card
-    assert "Resolve a spec-like contract with `spot`, `strike`, `expiry_date`" in card
-    assert "price_vanilla_equity_option_tree(market_state, spec_like, model=\"crr\"|\"jarrow_rudd\", n_steps=...)" in card
+    assert "Resolve spot, strike, expiry, option type, and exercise style" in card
+    assert "Compile `equity_tree(...)`" in card
+    assert "Build the lattice with `build_lattice(...)`" in card
+    assert "price the compiled contract with `price_on_lattice(...)`" in card
     assert "build_rate_lattice" not in primitive_symbols
-    assert "price_vanilla_equity_option_tree" in card
-    assert "build_spot_lattice" in card
+    assert "price_vanilla_equity_option_tree" not in card
     assert "lsm_mc" not in card
 
 

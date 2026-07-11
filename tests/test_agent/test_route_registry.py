@@ -1280,7 +1280,13 @@ class TestRateTreeRoutes:
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         new_prims = resolve_route_primitives(spec, self.EQUITY_AMERICAN_IR)
         expected_prims = {
-            ("trellis.models.equity_option_tree", "price_vanilla_equity_option_tree", "route_helper"),
+            ("trellis.models.resolution.single_state_diffusion", "resolve_single_state_diffusion_inputs", "market_binding"),
+            ("trellis.models.resolution.single_state_diffusion", "terminal_intrinsic_from_resolved", "payoff_primitive"),
+            ("trellis.models.trees.algebra", "equity_tree", "contract_recipe"),
+            ("trellis.models.trees.algebra", "with_control", "exercise_control"),
+            ("trellis.models.trees.algebra", "compile_lattice_recipe", "contract_compiler"),
+            ("trellis.models.trees.algebra", "build_lattice", "lattice_builder"),
+            ("trellis.models.trees.algebra", "price_on_lattice", "backward_induction"),
         }
         assert _prim_set(new_prims) == expected_prims
 

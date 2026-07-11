@@ -26,6 +26,25 @@ def _bs_call(spot: float, strike: float, rate: float, sigma: float, maturity: fl
     return spot * norm.cdf(d1) - strike * exp(-rate * maturity) * norm.cdf(d2)
 
 
+def _bs_call_with_dividend(
+    spot: float,
+    strike: float,
+    rate: float,
+    dividend_yield: float,
+    sigma: float,
+    maturity: float,
+) -> float:
+    d1 = (
+        log(spot / strike)
+        + (rate - dividend_yield + 0.5 * sigma * sigma) * maturity
+    ) / (sigma * sqrt(maturity))
+    d2 = d1 - sigma * sqrt(maturity)
+    return (
+        spot * exp(-dividend_yield * maturity) * norm.cdf(d1)
+        - strike * exp(-rate * maturity) * norm.cdf(d2)
+    )
+
+
 def test_tree_model_round_trips_to_lattice_model_spec():
     spec = MODEL_REGISTRY["hull_white"].as_lattice_model_spec()
 
@@ -110,6 +129,36 @@ def test_build_lattice_equity_matches_spot_builder_and_prices_call():
     assert lattice_backward_induction(built, payoff) == pytest.approx(
         _bs_call(100.0, 100.0, 0.05, 0.20, 1.0),
         rel=0.02,
+    )
+
+
+def test_build_lattice_equity_separates_dividend_carry_from_discounting():
+    from trellis.models.trees.algebra import (
+        BINOMIAL_1F_TOPOLOGY,
+        LATTICE_MODEL_REGISTRY,
+        LOG_SPOT_MESH,
+        NO_CALIBRATION_TARGET,
+    )
+
+    lattice = build_lattice(
+        BINOMIAL_1F_TOPOLOGY,
+        LOG_SPOT_MESH,
+        LATTICE_MODEL_REGISTRY["crr"],
+        calibration_target=NO_CALIBRATION_TARGET(),
+        spot=100.0,
+        rate=0.05,
+        dividend_yield=0.03,
+        sigma=0.20,
+        maturity=1.0,
+        n_steps=500,
+    )
+
+    def payoff(step, node, lattice_):
+        return max(float(lattice_.get_state(step, node)) - 100.0, 0.0)
+
+    assert lattice_backward_induction(lattice, payoff) == pytest.approx(
+        _bs_call_with_dividend(100.0, 100.0, 0.05, 0.03, 0.20, 1.0),
+        rel=0.01,
     )
 
 

@@ -822,6 +822,7 @@ def _build_spot_lattice_impl(
     n_steps: int,
     *,
     model: str = "crr",
+    dividend_yield: float = 0.0,
 ) -> RecombiningLattice:
     """Build a recombining spot-price lattice for low-dimensional equity trees.
 
@@ -836,14 +837,15 @@ def _build_spot_lattice_impl(
         - ``"jarrow_rudd"`` / ``"jr"``
     """
     dt = T / n_steps
+    carry_rate = float(r) - float(dividend_yield)
     model_key = str(model).strip().lower()
     if model_key in {"crr", "cox_ross_rubinstein"}:
         u = raw_np.exp(sigma * raw_np.sqrt(dt))
         d = 1.0 / u
-        p = (raw_np.exp(r * dt) - d) / (u - d)
+        p = (raw_np.exp(carry_rate * dt) - d) / (u - d)
     elif model_key in {"jarrow_rudd", "jr"}:
-        u = raw_np.exp((r - 0.5 * sigma ** 2) * dt + sigma * raw_np.sqrt(dt))
-        d = raw_np.exp((r - 0.5 * sigma ** 2) * dt - sigma * raw_np.sqrt(dt))
+        u = raw_np.exp((carry_rate - 0.5 * sigma ** 2) * dt + sigma * raw_np.sqrt(dt))
+        d = raw_np.exp((carry_rate - 0.5 * sigma ** 2) * dt - sigma * raw_np.sqrt(dt))
         p = 0.5
     else:
         raise ValueError(

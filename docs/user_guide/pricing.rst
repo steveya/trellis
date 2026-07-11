@@ -275,9 +275,12 @@ product lattices. Legacy helpers such as ``build_rate_lattice(...)`` and
 ``build_spot_lattice(...)`` still work, but they are compatibility shims and
 emit deprecation warnings.
 
-For plain equity/rate pricing, prefer the helper routes or recipe compilers.
-For new lattice integrations, target ``LatticeRecipe`` and the unified builder
-instead of hand-assembling route-local tree logic.
+For American or Bermudan vanilla equity pricing, compose an ``equity_tree``
+recipe with ``with_control(...)``, compile it, and use the unified builder and
+pricing entry point. Map Bermudan dates to explicit lattice steps before
+attaching control. Product-level equity-tree helpers remain compatibility and
+reference surfaces; new integrations should target ``LatticeRecipe`` rather
+than hand-assembling route-local tree logic.
 
 Semantic Request Compilation
 ----------------------------

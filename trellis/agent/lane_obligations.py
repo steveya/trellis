@@ -675,18 +675,24 @@ def _fallback_construction_steps(
     primitive_plan: PrimitivePlan | None,
 ) -> tuple[str, ...]:
     """Emit constructive fallback steps for non-semantic builds."""
-    helper_symbols = {
+    required_symbols = {
         str(primitive.symbol)
         for primitive in (getattr(primitive_plan, "primitives", ()) or ())
         if bool(getattr(primitive, "required", True))
     }
     instrument = str(getattr(product_ir, "instrument", "") or instrument_type or "").strip().lower()
 
-    if "price_vanilla_equity_option_tree" in helper_symbols:
+    if {
+        "equity_tree",
+        "with_control",
+        "compile_lattice_recipe",
+        "build_lattice",
+        "price_on_lattice",
+    }.issubset(required_symbols):
         return (
-            "Resolve a spec-like contract with `spot`, `strike`, `expiry_date`, and the optional fields `option_type`, `exercise_style`, and `day_count`.",
-            "Call `price_vanilla_equity_option_tree(market_state, spec_like, model=\"crr\"|\"jarrow_rudd\", n_steps=...)`; do not invent `underlying=`, `exercise=`, or other bespoke helper keywords.",
-            "Let the checked equity-tree helper own rate, discounting, and vol resolution; keep the adapter thin and market-state explicit.",
+            "Resolve spot, strike, expiry, option type, and exercise style through `resolve_single_state_diffusion_inputs(...)`.",
+            "Compile `equity_tree(...)` and attach `with_control(...)`; for Bermudan exercise, map contractual dates to explicit lattice steps.",
+            "Build the lattice with `build_lattice(...)` using the compiled topology, mesh, model, and resolved inputs; price the compiled contract with `price_on_lattice(...)` without reimplementing transition probabilities or backward induction.",
         )
 
     if lane_family == "monte_carlo" and "fx_rates" in required_market_data:
@@ -700,7 +706,7 @@ def _fallback_construction_steps(
         return (
             "Resolve spot, strike, expiry, and exercise style explicitly before building the early-exercise contract.",
             "Keep discounting and volatility on the market-state side; do not invent alternate curve or vol accessors.",
-            "Prefer the smallest exact helper-backed adapter when a stable lattice backend exists; otherwise keep the rollback and early-exercise contract explicit.",
+            "Compose the declarative lattice recipe, exercise control, compiler, lattice builder, and pricing primitive explicitly.",
         )
 
     if lane_family == "monte_carlo":

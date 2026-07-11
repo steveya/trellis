@@ -1,6 +1,6 @@
 """Agent-generated payoff: Build a pricer for: American put: equity tree knowledge-light proving
 
-Build a thin adapter for a vanilla American put on an equity underlier. Use the checked lattice helper for the pricing engine rather than open-coding the rollback.
+Build a thin adapter for a vanilla American put on an equity underlier by composing the shared lattice algebra.
 
 Construct methods: rate_tree
 Comparison targets: rate_tree (rate_tree)."""
@@ -12,8 +12,17 @@ from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.equity_option_tree import price_vanilla_equity_option_tree
-from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_induction
+from trellis.models.resolution.single_state_diffusion import (
+    resolve_single_state_diffusion_inputs,
+    terminal_intrinsic_from_resolved,
+)
+from trellis.models.trees.algebra import (
+    build_lattice,
+    compile_lattice_recipe,
+    equity_tree,
+    price_on_lattice,
+    with_control,
+)
 
 
 
@@ -21,7 +30,7 @@ from trellis.models.trees.lattice import build_spot_lattice, lattice_backward_in
 class AmericanPutEquityTreeSpec:
     """Specification for Build a pricer for: American put: equity tree knowledge-light proving
 
-Build a thin adapter for a vanilla American put on an equity underlier. Use the checked lattice helper for the pricing engine rather than open-coding the rollback.
+Build a thin adapter for a vanilla American put on an equity underlier by composing the shared lattice algebra.
 
 Construct methods: rate_tree
 Comparison targets: rate_tree (rate_tree)."""
@@ -32,13 +41,14 @@ Comparison targets: rate_tree (rate_tree)."""
     notional: float
     rate_index: str | None
     num_steps: int = 100
+    option_type: str = "put"
     day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
 class AmericanPutEquityTreePayoff:
     """Build a pricer for: American put: equity tree knowledge-light proving
 
-Build a thin adapter for a vanilla American put on an equity underlier. Use the checked lattice helper for the pricing engine rather than open-coding the rollback.
+Build a thin adapter for a vanilla American put on an equity underlier by composing the shared lattice algebra.
 
 Construct methods: rate_tree
 Comparison targets: rate_tree (rate_tree)."""
@@ -56,12 +66,31 @@ Comparison targets: rate_tree (rate_tree)."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
+        resolved = resolve_single_state_diffusion_inputs(market_state, spec)
+        if resolved.maturity <= 0.0:
+            return float(
+                resolved.notional
+                * terminal_intrinsic_from_resolved(resolved.spot, resolved)
+            )
 
-        raw_price = price_vanilla_equity_option_tree(
-            market_state,
-            spec,
-            model="crr",
-            n_steps=spec.num_steps,
+        recipe = with_control(
+            equity_tree(
+                model_family="crr",
+                strike=resolved.strike,
+                option_type=resolved.option_type,
+            ),
+            "american",
         )
-
-        return float(spec.notional * raw_price)
+        topology, mesh, model, contract = compile_lattice_recipe(recipe)
+        lattice = build_lattice(
+            topology,
+            mesh,
+            model,
+            spot=resolved.spot,
+            rate=resolved.rate,
+            dividend_yield=resolved.dividend_yield,
+            sigma=resolved.sigma,
+            maturity=resolved.maturity,
+            n_steps=max(int(spec.num_steps), 1),
+        )
+        return float(resolved.notional * price_on_lattice(lattice, contract))

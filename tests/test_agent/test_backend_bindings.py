@@ -877,6 +877,57 @@ def test_exercise_monte_carlo_binding_resolves_american_equity_lsm_primitives():
     }
 
 
+def test_exercise_lattice_binding_resolves_american_equity_algebra_primitives():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("exercise_lattice", catalog)
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="american_put",
+            payoff_family="vanilla_option",
+            exercise_style="american",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert resolved.exact_target_refs == ()
+    assert set(resolved.primitive_refs) == {
+        "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+        "trellis.models.resolution.single_state_diffusion.terminal_intrinsic_from_resolved",
+        "trellis.models.trees.algebra.equity_tree",
+        "trellis.models.trees.algebra.with_control",
+        "trellis.models.trees.algebra.compile_lattice_recipe",
+        "trellis.models.trees.algebra.build_lattice",
+        "trellis.models.trees.algebra.price_on_lattice",
+    }
+
+
+def test_exercise_lattice_binding_adds_bermudan_schedule_mapping_primitives():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("exercise_lattice", catalog)
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="american_put",
+            payoff_family="vanilla_option",
+            exercise_style="bermudan",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert resolved.exact_target_refs == ()
+    assert {
+        "trellis.core.date_utils.year_fraction",
+        "trellis.models.monte_carlo.event_state.event_step_indices",
+    }.issubset(resolved.primitive_refs)
+
+
 def test_binding_catalog_cache_tracks_binding_catalog_freshness(monkeypatch):
     clear_backend_binding_catalog_cache()
 
