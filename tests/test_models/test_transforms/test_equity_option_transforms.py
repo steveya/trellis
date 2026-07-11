@@ -6,7 +6,7 @@ import pytest
 
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
-from trellis.models.black import black76_call, black76_put
+from trellis.models.black import black76_call, black76_cash_or_nothing_call, black76_put
 from trellis.models.vol_surface import FlatVol
 
 
@@ -91,3 +91,28 @@ def test_price_vanilla_equity_option_transform_matches_black76_for_puts(method: 
 
     reference = _black76_equity_price(spec)
     assert price == pytest.approx(reference, rel=0.03)
+
+
+@pytest.mark.parametrize("method", ["fft", "cos"])
+def test_price_digital_equity_option_transform_matches_black76_cash_call(method: str):
+    from trellis.models.equity_option_transforms import price_equity_digital_option_transform
+
+    spec = _Spec()
+    spec.cash_payoff = 2.0
+    spec.payout_type = "cash_or_nothing"
+    price = price_equity_digital_option_transform(
+        _market_state(),
+        spec,
+        method=method,
+    )
+
+    maturity = 1.0
+    df = float(YieldCurve.flat(0.05, max_tenor=5.0).discount(maturity))
+    forward = float(spec.spot) / max(df, 1e-12)
+    reference = (
+        float(spec.notional)
+        * float(spec.cash_payoff)
+        * df
+        * black76_cash_or_nothing_call(forward, float(spec.strike), 0.20, maturity)
+    )
+    assert price == pytest.approx(reference, rel=0.06)

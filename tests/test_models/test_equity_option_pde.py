@@ -11,16 +11,21 @@ from scipy.stats import norm
 
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
-from trellis.models.black import black76_call
+from trellis.models.black import black76_call, black76_cash_or_nothing_call
 from trellis.models.equity_option_pde import (
     build_event_aware_equity_pde_problem,
     build_vanilla_equity_pde_problem,
+    price_cev_option_pde,
+    price_equity_digital_option_pde,
     price_event_aware_equity_option_pde,
     price_vanilla_equity_option_pde,
     resolve_vanilla_equity_pde_inputs,
     solve_vanilla_equity_option_pde_surface,
 )
-from trellis.models.equity_option_tree import price_vanilla_equity_option_tree
+from trellis.models.equity_option_tree import (
+    price_cev_option_tree,
+    price_vanilla_equity_option_tree,
+)
 from trellis.models.vol_surface import FlatVol
 
 
@@ -37,6 +42,10 @@ class VanillaEquitySpec:
     strike: float
     expiry_date: date
     option_type: str = "call"
+    cev_sigma: float = 3.0
+    cev_beta: float = 0.5
+    tree_steps: int = 2000
+    tree_grid_size: int = 301
 
 
 @dataclass(frozen=True)
@@ -153,6 +162,75 @@ def test_price_vanilla_equity_option_pde_agrees_with_discounted_black76_call():
     analytical = discount * black76_call(forward, spec.strike, sigma, maturity)
 
     assert price == pytest.approx(analytical, rel=0.02)
+
+
+def test_price_equity_digital_option_pde_matches_cash_digital_with_rannacher():
+    spec = VanillaEquitySpec(
+        notional=10.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="call",
+    )
+
+    price = price_equity_digital_option_pde(
+        _market_state(),
+        spec,
+        theta=0.5,
+        rannacher_timesteps=2,
+        n_x=401,
+        n_t=401,
+    )
+
+    maturity = 1.0
+    rate = 0.05
+    sigma = 0.20
+    discount = exp(-rate * maturity)
+    forward = spec.spot / discount
+    analytical = spec.notional * discount * black76_cash_or_nothing_call(
+        forward,
+        spec.strike,
+        sigma,
+        maturity,
+    )
+
+    assert price == pytest.approx(analytical, rel=0.025)
+
+
+def test_price_cev_option_pde_reduces_to_black_scholes_when_beta_one():
+    spec = VanillaEquitySpec(
+        notional=1.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="call",
+        cev_sigma=0.20,
+        cev_beta=1.0,
+    )
+
+    price = price_cev_option_pde(_market_state(), spec, n_x=401, n_t=401)
+
+    assert price == pytest.approx(_bs_call(100.0, 100.0, 0.05, 0.20, 1.0), rel=0.025)
+
+
+def test_price_cev_option_tree_agrees_with_cev_pde_on_bounded_fixture():
+    spec = VanillaEquitySpec(
+        notional=1.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="call",
+        cev_sigma=3.0,
+        cev_beta=0.5,
+        tree_steps=2000,
+        tree_grid_size=301,
+    )
+
+    pde_price = price_cev_option_pde(_market_state(), spec, n_x=401, n_t=501)
+    tree_price = price_cev_option_tree(_market_state(), spec)
+
+    assert pde_price > 0.0
+    assert tree_price == pytest.approx(pde_price, rel=0.08)
 
 
 def test_solve_vanilla_equity_option_pde_surface_returns_grid_aligned_values():

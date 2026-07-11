@@ -24,6 +24,18 @@ class _Spec:
     seed = 7
 
 
+class _AmericanPutSpec:
+    notional = 1.0
+    spot = 100.0
+    strike = 100.0
+    expiry_date = date(2025, 11, 15)
+    option_type = "put"
+    exercise_style = "american"
+    n_paths = 30_000
+    n_steps = 64
+    seed = 19
+
+
 def _market_state(vol: float = 0.20, rate: float = 0.05) -> MarketState:
     return MarketState(
         as_of=SETTLE,
@@ -120,3 +132,25 @@ def test_antithetic_and_control_variate_reduce_standard_error():
 
     assert antithetic.std_error < plain.std_error
     assert control_variate.std_error < plain.std_error
+
+
+def test_price_american_equity_option_lsm_monte_carlo_matches_tree():
+    from trellis.models.equity_option_monte_carlo import (
+        price_american_equity_option_lsm_monte_carlo,
+    )
+    from trellis.models.equity_option_tree import price_vanilla_equity_option_tree
+
+    market_state = _market_state()
+    spec = _AmericanPutSpec()
+
+    lsm = price_american_equity_option_lsm_monte_carlo(
+        market_state,
+        spec,
+        n_paths=30_000,
+        n_steps=64,
+        seed=19,
+    )
+    tree = price_vanilla_equity_option_tree(market_state, spec, model="crr", n_steps=800)
+
+    assert lsm > 0.0
+    assert lsm == pytest.approx(tree, rel=0.12)

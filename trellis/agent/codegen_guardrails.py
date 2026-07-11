@@ -114,8 +114,35 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.pde.heston_adi",
         "trellis.models.monte_carlo.stochastic_vol",
     ),
+    "american_put": (
+        "trellis.models.equity_option_pde",
+        "trellis.models.equity_option_tree",
+        "trellis.models.equity_option_monte_carlo",
+    ),
+    "american_option": (
+        "trellis.models.equity_option_pde",
+        "trellis.models.equity_option_tree",
+        "trellis.models.equity_option_monte_carlo",
+    ),
+    "european_option": (
+        "trellis.models.equity_option_pde",
+        "trellis.models.equity_option_tree",
+    ),
+    "digital_option": (
+        "trellis.models.analytical.equity_exotics",
+        "trellis.models.equity_option_pde",
+        "trellis.models.equity_option_transforms",
+    ),
+    "asian_option": (
+        "trellis.models.asian_option",
+    ),
+    "lookback_option": (
+        "trellis.models.analytical.equity_exotics",
+        "trellis.models.lookback_option",
+    ),
     "barrier_option": (
         "trellis.models.analytical.support.barriers",
+        "trellis.models.single_barrier_option",
     ),
     "autocallable": (
         "trellis.models.autocallable",
@@ -1898,6 +1925,14 @@ def _route_score(
         pf_bonuses = hints.get("payoff_family_bonus", {})
         if isinstance(pf_bonuses, dict) and product_ir.payoff_family in pf_bonuses:
             score += pf_bonuses[product_ir.payoff_family]
+
+        # payoff_trait_bonus: dict mapping payoff_trait -> bonus
+        trait_bonuses = hints.get("payoff_trait_bonus", {})
+        if isinstance(trait_bonuses, dict):
+            payoff_traits = set(getattr(product_ir, "payoff_traits", ()) or ())
+            for trait, trait_bonus in trait_bonuses.items():
+                if trait in payoff_traits:
+                    score += trait_bonus
 
         # non_european_penalty: penalty when exercise is not european/none
         non_euro_penalty = hints.get("non_european_penalty", 0.0)

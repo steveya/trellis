@@ -46,6 +46,7 @@ _OPTION_LIKE_INSTRUMENTS = {
     "barrier_option",
     "bermudan_swaption",
     "cap",
+    "cliquet_option",
     "european_option",
     "floor",
     "swaption",
@@ -75,10 +76,15 @@ _SIGNED_VALUE_INSTRUMENTS = {
 
 _VOL_MONOTONICITY_EXCLUDED_INSTRUMENTS = {
     "barrier_option",
+    "cliquet_option",
 }
 
 _VOL_MONOTONICITY_EXCLUDED_TRAITS = {
     "barrier",
+}
+
+_GENERIC_VOL_CHECK_EXCLUDED_INSTRUMENTS = {
+    "variance_swap",
 }
 
 
@@ -350,6 +356,7 @@ def select_invariant_pack(
 
     if (
         normalized_instrument not in _CREDIT_INSTRUMENTS
+        and normalized_instrument not in _GENERIC_VOL_CHECK_EXCLUDED_INSTRUMENTS
         and not analytical_swaption_helper_regime
         and (
             normalized_instrument in _OPTION_LIKE_INSTRUMENTS
@@ -413,22 +420,34 @@ def build_comparison_harness_plan(task: Mapping[str, Any]) -> ComparisonHarnessP
     relation_overrides = cross_validate.get("relations") or {}
     internal_targets = list(cross_validate.get("internal") or ())
     analytical_target = cross_validate.get("analytical")
+    reference_target_override = str(
+        cross_validate.get("reference_target")
+        or cross_validate.get("reference")
+        or ""
+    ).strip()
 
     targets: list[ComparisonHarnessTarget] = []
     if internal_targets:
         for target_id in internal_targets:
             relation = None
             normalized_target_id = str(target_id).strip()
+            is_reference = bool(
+                reference_target_override
+                and normalized_target_id == reference_target_override
+            )
             if normalized_target_id:
                 relation = normalize_comparison_relation(
                     relation_overrides.get(normalized_target_id)
                     if isinstance(relation_overrides, Mapping)
                     else None
                 )
+            if is_reference:
+                relation = None
             targets.append(
                 ComparisonHarnessTarget(
                     target_id=normalized_target_id,
                     preferred_method=_preferred_method_for_target(normalized_target_id, construct_methods),
+                    is_reference=is_reference,
                     relation=relation,
                 )
             )
@@ -510,6 +529,8 @@ def _preferred_method_for_target(target_id: str, construct_methods: list[str]) -
         ("stochastic", "monte_carlo"),
         ("fft", "fft_pricing"),
         ("cos", "fft_pricing"),
+        ("turnbull", "analytical"),
+        ("wakeman", "analytical"),
         ("black", "analytical"),
         ("jamshidian", "analytical"),
         ("rubinstein", "analytical"),

@@ -118,6 +118,32 @@ def test_build_comparison_harness_plan_resolves_targets_and_reference():
     }
 
 
+def test_build_comparison_harness_plan_marks_internal_reference_target():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    plan = build_comparison_harness_plan(
+        {
+            "construct": ["credit", "monte_carlo"],
+            "cross_validate": {
+                "internal": ["correlated_cva", "independent_cva"],
+                "reference_target": "independent_cva",
+                "relations": {"correlated_cva": ">="},
+            },
+        }
+    )
+
+    assert [target.target_id for target in plan.targets] == [
+        "correlated_cva",
+        "independent_cva",
+    ]
+    assert plan.reference_target == "independent_cva"
+    assert [target.is_reference for target in plan.targets] == [False, True]
+    assert {target.target_id: target.relation for target in plan.targets} == {
+        "correlated_cva": ">=",
+        "independent_cva": None,
+    }
+
+
 def test_build_comparison_harness_plan_ignores_non_method_credit_construct_labels():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 
@@ -178,6 +204,19 @@ def test_select_invariant_pack_skips_vol_checks_for_credit_loss_distribution():
     assert "check_vol_monotonicity" not in pack.checks
 
 
+def test_select_invariant_pack_skips_generic_vol_checks_for_variance_swap():
+    from trellis.agent.assembly_tools import select_invariant_pack
+
+    pack = select_invariant_pack(
+        instrument_type="variance_swap",
+        method="analytical",
+    )
+
+    assert "check_price_sanity" in pack.checks
+    assert "check_vol_sensitivity" not in pack.checks
+    assert "check_vol_monotonicity" not in pack.checks
+
+
 def test_select_invariant_pack_keeps_vol_sensitivity_but_skips_monotonicity_for_barrier():
     from trellis.agent.assembly_tools import select_invariant_pack
 
@@ -185,6 +224,21 @@ def test_select_invariant_pack_keeps_vol_sensitivity_but_skips_monotonicity_for_
         instrument_type="barrier_option",
         method="analytical",
         product_ir=SimpleNamespace(payoff_traits=("barrier",)),
+    )
+
+    assert "check_non_negativity" in pack.checks
+    assert "check_price_sanity" in pack.checks
+    assert "check_vol_sensitivity" in pack.checks
+    assert "check_vol_monotonicity" not in pack.checks
+
+
+def test_select_invariant_pack_keeps_vol_sensitivity_but_skips_monotonicity_for_cliquet():
+    from trellis.agent.assembly_tools import select_invariant_pack
+
+    pack = select_invariant_pack(
+        instrument_type="cliquet_option",
+        method="analytical",
+        product_ir=SimpleNamespace(payoff_traits=("resetting", "capped", "floored")),
     )
 
     assert "check_non_negativity" in pack.checks

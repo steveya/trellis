@@ -63,15 +63,15 @@ contracts for the agent to write derivative-specific code correctly.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-02`
+Status mirror last synced: `2026-07-03`
 
 ### Parent
 
 | Ticket | Title | Status |
 | --- | --- | --- |
-| `QUA-1131` | Agent learning: contract-backed intra-run repair | Todo |
+| `QUA-1131` | Agent learning: contract-backed intra-run repair | In Progress |
 | `QUA-1138` | Agent learning: deterministic promotion loop | In Progress |
-| `QUA-1151` | Task learning: replay-safe self-learning closure | Todo |
+| `QUA-1151` | Task learning: replay-safe self-learning closure | In Progress |
 
 ### Ordered Implementation Queue
 
@@ -88,8 +88,9 @@ Status mirror last synced: `2026-07-02`
 | `QUA-1141` | Semantic validation: helper-backed primitive closure | In Progress | `QUA-1135` |
 | `QUA-1142` | Semantic contract: static exotic spec catalog | In Progress | `QUA-1134`, `QUA-1136` |
 | `QUA-1143` | Task learning: no-LLM scorecard and docs closeout | In Progress | `QUA-1139`, `QUA-1140`, `QUA-1141`, `QUA-1142` |
-| `QUA-1152` | Canary replay: deterministic exact-binding contract lane | In Progress | `QUA-1138` |
-| `QUA-1153` | Task learning: failure-seeded retry benchmark | Todo | `QUA-1152` |
+| `QUA-1152` | Canary replay: deterministic exact-binding contract lane | Done | `QUA-1138` |
+| `QUA-1153` | Task learning: failure-seeded retry benchmark | In Progress | `QUA-1152` |
+| `QUA-1154` | Semantic route materialization: pack-2 offline closure | In Progress | `QUA-1131` |
 
 ## Validation Plan
 
@@ -331,3 +332,479 @@ make gate-tier2-contracts PYTHON=/Users/steveyang/miniforge3/bin/python3
 The focused unit/manifest/contract-helper set reports `10 passed`; full
 canary replay reports `1 passed, 1 skipped`; and the local tier-2 contract
 shard reports `32 passed, 15 skipped, 7 deselected`.
+
+### 2026-07-03 QUA-1153 failure-seeded retry benchmark
+
+Started `QUA-1153` after `QUA-1152` landed. The goal of this slice is to
+prove actual intra-run learned recovery, not just first-pass deterministic
+reuse from checked exact bindings.
+
+The benchmark runner now supports a local seeded retry fixture:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py \
+  --seeded-retry-fixture --passes 1 --knowledge-light \
+  --report-name qua1153_seeded_retry_20260703
+```
+
+The fixture bypasses manifest task selection and uses a local fake builder. Its
+first build fails with a concrete callable-signature contract error against
+`trellis.models.equity_option_pde.price_vanilla_equity_option_pde`; the
+assisted retry receives the structured `KnowledgePatchCandidate` and succeeds
+only after `knowledge_overlays` is present. The saved scorecard reports
+`retry_learned_recoveries=["L001"]`, `first_pass_deterministic_reuse=[]`,
+`retry_taxonomy.by_stage.contract_evidence_consumed.count=1`, and token usage
+`0`.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_task_learning_benchmark.py \
+  tests/test_agent/test_task_learning_benchmark_runner.py \
+  tests/test_agent/test_evals.py
+/Users/steveyang/miniforge3/bin/python3 scripts/run_task_learning_benchmark.py \
+  --seeded-retry-fixture --passes 1 --knowledge-light \
+  --report-name qua1153_seeded_retry_20260703
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T20 --task-id T22 --task-id T105 --task-id T107 --task-id E27 \
+  --status all --offline-local-agents --recovery-mode assisted \
+  --validation standard \
+  --output task_results_qua1153_offline_closeout_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1153_offline_closeout_20260703.json \
+  --skip-platform-traces
+```
+
+The focused unit files report `28 passed`; the seeded fixture reports `1/1`
+success, attempts-to-success `2.0`, and zero token usage; the failed-pack
+closeout remains `5/5` passed expectations with `4` pricing successes, `1`
+honest block, `0` actionable failures, and zero token usage; bounded
+remediation reports `0` failures. PR creation for this slice is intentionally
+deferred under the current commits-only goal constraint.
+
+### 2026-07-03 F007 CDS exact-binding offline closure
+
+The next pending offline pack found one actionable failure:
+`F007` selected the single-name CDS analytical route and exact CDS helper
+surface, but offline execution still fell through to live LLM generation
+instead of materializing a thin deterministic helper-backed wrapper.
+
+The fix adds deterministic exact-binding materialization for CDS analytical and
+Monte Carlo route helpers. The generated adapter builds the CDS schedule from
+`CDSSpec`, requires `market_state.credit_curve` and `market_state.discount`,
+and delegates to `price_cds_analytical(...)` or `price_cds_monte_carlo(...)`.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_analytical_wrapper \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_executor.py \
+  -k "deterministic_exact_binding_module or generate_skeleton_prefills_cds"
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id F007 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1131_f007_exact_binding_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id F004 --task-id F005 --task-id F007 --task-id F009 \
+  --task-id F010 --task-id F011 --task-id F012 --task-id F013 \
+  --task-id F014 --task-id F015 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1131_pending_pack1_fixed_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1131_pending_pack1_fixed_20260703.json \
+  --skip-platform-traces
+```
+
+The focused CDS wrapper tests report `2 passed`; the exact-binding executor
+slice reports `57 passed`; isolated `F007` reports `1/1` pricing success with
+zero LLM calls; the full pending pack reports `10/10` passed expectations,
+all first-attempt offline successes, zero actionable failures, and zero token
+usage; bounded remediation reports `0` failures.
+
+### 2026-07-03 QUA-1154 pack-2 route-materialization slice
+
+Started `QUA-1154` after the next offline local-agent pack reported actionable
+failures for `P002`, `P004`, `P006`, `P007`, `T14`, `T15`, and `T16`; `T18`
+remained an honest manifest block and is excluded from pricing remediation.
+
+The first implementation slice closes `P002` and `P006` without LLM calls.
+`P006` now materializes a deterministic thin wrapper over
+`price_nth_to_default_basket(...)` when the route compiler selects that exact
+binding. `P002` now materializes a deterministic ranked-observation basket
+wrapper over `price_ranked_observation_basket_monte_carlo(...)` and the shared
+basket event-state substrate supports locked selected price levels for
+level-based average-best-of contracts.
+
+This slice also fixed a reduced-state MC bug: the ranked-observation
+state-aware payoff now applies the option payoff transform to the replayed
+basket aggregate instead of returning the raw aggregate level. That restores
+the expected volatility sensitivity for `P002`.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_monte_carlo/test_basket_substrate.py \
+  tests/test_models/test_monte_carlo/test_event_state.py
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_executor.py \
+  -k "ranked_basket_wrapper or nth_to_default_wrapper or deterministic_exact_binding_module"
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P002 --task-id P006 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_p002_p006_payoff_20260703.json
+```
+
+The basket/event substrate tests report `13 passed`; the exact-binding
+executor slice reports `58 passed`; the offline `P002/P006` replay reports
+`2/2` passed expectations, first-attempt successes, zero actionable failures,
+and zero token usage. Remaining `QUA-1154` targets are `P004`, `P007`, `T14`,
+`T15`, and `T16`.
+
+The second implementation slice closes `P004` without LLM calls. The executor
+now reads exact backend/helper refs from both object-shaped and mapping-shaped
+generation plans, including nested `route_binding_authority` payloads emitted by
+the compiler. The planner now has a deterministic
+`period_rate_option_strip` spec schema that exposes cap/floor collar aliases,
+call dates, and schedule tweaks, so offline-local runs do not need LLM spec
+design before exact helper materialization.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_planner.py tests/test_agent/test_executor.py \
+  -k "period_rate_option_strip or cap_strip or exact_binding_refs_collect_backend_helper_refs or deterministic_exact_binding_module"
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P004 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_p004_static_spec_20260703.json
+```
+
+The planner/executor regression slice reports `64 passed`; the offline `P004`
+replay reports `1/1` passed expectations, first-attempt success, zero actionable
+failures, and zero token usage. Remaining `QUA-1154` targets are `P007`, `T14`,
+`T15`, and `T16`.
+
+The third implementation slice closes `P007` without LLM calls. The static
+`cliquet_option` spec now carries local/global cap and floor fields, reset-time
+day-count control, quadrature order, path count, and seed. Analytical cliquet
+pricing preserves the existing uncapped FinancePy-parity path and adds a
+bounded Gauss-Hermite reset-return integrator for capped/floored cliquets. The
+Monte Carlo layer now exposes a checked reset-date GBM cliquet helper, and the
+deterministic exact-binding materializer can emit a thin adapter over that
+helper for the MC comparison target.
+
+The validation gates were tightened to match cliquet semantics: volatility
+sensitivity remains active, but generic volatility monotonicity is not enforced
+for cliquet options because local/global caps and floors can make the capped
+return value non-monotone in Black volatility. The semantic and lite-review
+route-helper gates now recognize the checked cliquet MC helper as satisfying
+the lower-level `monte_carlo_paths` route obligation for `cliquet_option`,
+without relaxing ordinary missing-helper checks.
+
+Validation:
+
+```bash
+NUMBA_CACHE_DIR=/tmp/numba_cache \
+  /Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_assembly_tools.py \
+  tests/test_agent/test_validation_bundles.py \
+  tests/test_agent/test_semantic_validation.py \
+  tests/test_agent/test_semantic_validators.py \
+  tests/test_agent/test_lite_review.py \
+  tests/test_agent/test_planner.py \
+  tests/test_agent/test_executor.py \
+  tests/test_models/test_equity_exotics_analytical.py
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P007 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_p007_cliquet_final_20260703.json
+```
+
+The local regression pass reports `293 passed`; the offline `P007` replay
+reports `1/1` passed expectations, first-attempt success, zero actionable
+failures, and zero token usage. Remaining `QUA-1154` targets are `T14`, `T15`,
+and `T16`.
+
+The fourth implementation slice closes `T14` without LLM calls. Sparse legacy
+American-put text now compiles to the American-option route contract, and the
+deterministic adapter delegates the LSM comparison target to
+`price_american_equity_option_lsm_monte_carlo(...)` instead of trying to
+assemble raw GBM, regression, and exercise logic inside generated code.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_primitive_planning.py \
+  tests/test_agent/test_platform_requests.py \
+  tests/test_agent/test_task_runtime.py \
+  tests/test_agent/test_executor.py
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T14 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_t14_american_lsm_v4_20260703.json
+```
+
+The focused regression pass and offline replay were green, with first-attempt
+task success and zero token usage. Remaining `QUA-1154` targets are `T15` and
+`T16`.
+
+The fifth implementation slice closes `T15` without LLM calls. Sparse CEV proof
+text now bridges to a `vanilla_option` contract with `model_family=cev_diffusion`
+and a `cev_process` trait. The PDE and tree comparison lanes bind to
+`price_cev_option_pde(...)` and `price_cev_option_tree(...)`; validation uses
+the `*:cev_option` bundle so Black-vol-surface monotonicity checks do not
+misclassify explicit CEV-parameter helpers.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_equity_option_pde.py \
+  tests/test_models/test_equity_option_tree.py \
+  tests/test_agent/test_backend_bindings.py \
+  tests/test_agent/test_route_registry.py \
+  tests/test_agent/test_primitive_planning.py \
+  tests/test_agent/test_validation_bundles.py \
+  tests/test_agent/test_validation_contract.py \
+  tests/test_agent/test_platform_requests.py \
+  tests/test_agent/test_task_runtime.py \
+  tests/test_agent/test_planner.py \
+  tests/test_agent/test_executor.py \
+  tests/test_agent/test_codegen_guardrails.py \
+  tests/test_agent/test_import_registry.py \
+  tests/test_agent/test_knowledge_store.py -x
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  T14 T15 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_t14_t15_v1_20260703.json
+```
+
+The broad touched-suite pass reports `724 passed`; the offline `T14/T15` replay
+reports `2/2` passed expectations, first-attempt successes, zero actionable
+failures, and zero token usage. Remaining `QUA-1154` target is `T16`.
+
+The sixth implementation slice closes `T16` without LLM calls. Ordinary
+barrier-option text now receives a `single_barrier` payoff trait, distinct from
+`double_barrier`. The PDE and MC comparison lanes bind to
+`price_single_barrier_option_pde_result(...)` and
+`price_single_barrier_option_monte_carlo_result(...)`; the helper owns the
+absorbing barrier boundary, far vanilla boundary, single `BarrierMonitor`,
+notional convention, and deterministic discounting.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_single_barrier_option.py \
+  tests/test_agent/test_decomposition_ir.py::TestProductIR::test_ir_for_barrier_option_includes_promoted_analytical_support \
+  tests/test_agent/test_primitive_planning.py::test_builds_pde_plan_for_barrier_option_uses_grid_and_operator \
+  tests/test_agent/test_primitive_planning.py::test_builds_mc_plan_for_barrier_option_uses_single_barrier_helper \
+  tests/test_agent/test_backend_bindings.py::test_resolve_backend_binding_spec_uses_single_barrier_exact_helpers \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_barrier_helpers \
+  tests/test_agent/test_platform_requests.py::test_compile_build_request_preserves_single_barrier_exact_binding_for_t16_targets \
+  tests/test_agent/test_import_registry.py::test_single_barrier_helpers_are_visible_to_import_registry \
+  tests/test_agent/test_codegen_guardrails.py::test_barrier_family_support_approves_shared_barrier_primitives
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T16 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_t16_single_barrier_20260703.json
+```
+
+The focused regression pass reports `17 passed`; the offline `T16` replay
+reports `1/1` passed expectations, first-attempt success, zero actionable
+failures, and zero token usage. `T16` prices were `pde_barrier=23418.55`,
+`mc_barrier=23700.11`, and `rubinstein=23463.24`, with both comparison lanes
+within tolerance. All named `QUA-1154` pack-2 targets are now green and ready
+for a final pack replay.
+
+Final `QUA-1154` pack replay:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P002 --task-id P004 --task-id P006 --task-id P007 \
+  --task-id T14 --task-id T15 --task-id T16 \
+  --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_final_pack_20260703.json
+```
+
+The final replay reports `7/7` passed expectations in `200s`, all
+first-attempt successes, zero actionable failures, zero lessons/cookbooks
+captured, and zero token usage. The successful tasks are `P002`, `P004`,
+`P006`, `P007`, `T14`, `T15`, and `T16`.
+
+Full pending-pack replay including previously green and expected-block targets:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id P001 --task-id P002 --task-id P004 --task-id P006 \
+  --task-id P007 --task-id T14 --task-id T15 --task-id T16 \
+  --task-id T17 --task-id T18 \
+  --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1154_full_pending_pack_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1154_full_pending_pack_20260703.json \
+  --skip-platform-traces
+```
+
+The full replay reports `10/10` passed expectations in `248s`, with `9`
+pricing successes, `1` honest block (`T18`), `0` actionable failures, all
+pricing tasks succeeding on the first attempt, and zero token usage. Bounded
+remediation reports `0` total failures.
+
+### 2026-07-03 T19-T32 proof-route exact bindings
+
+The next proof tranche exposed three reusable exact-binding gaps rather than
+new cookbook-learning needs. `T23` needed a checked digital-option PDE wrapper
+for Crank-Nicolson/Rannacher comparison targets; `T29` needed arithmetic-Asian
+MC and Turnbull-Wakeman analytical targets to bind through their method-correct
+helpers; and `T30` needed fixed-lookback MC to delegate to a checked helper
+with continuous-extrema semantics.
+
+The fix adds the bounded digital PDE helper
+`price_equity_digital_option_pde(...)`, a fixed-lookback MC helper
+`price_equity_fixed_lookback_option_monte_carlo(...)`, exact wrapper
+materialization for the digital/Asian/lookback targets, comparison-target
+method mapping for `turnbull_wakeman_approx`, and sparse legacy task identity
+recovery from cross-validation target names. The route and backend-binding
+catalogs now expose these helpers as exact proof surfaces, while generated
+adapters remain thin wrappers over checked runtime code.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_equity_option_pde.py::test_price_equity_digital_option_pde_matches_cash_digital_with_rannacher \
+  tests/test_models/test_lookback_option.py \
+  tests/test_agent/test_import_registry.py::test_digital_pde_and_asian_helpers_are_visible_to_import_registry \
+  tests/test_agent/test_route_registry.py \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_digital_pde_targets \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_asian_targets \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_lookback_mc_target \
+  tests/test_agent/test_codegen_guardrails.py::test_path_dependent_family_support_approves_asian_and_lookback_helpers \
+  tests/test_agent/test_task_runtime.py::test_task_to_instrument_type_uses_cross_validation_target_hints \
+  tests/test_agent/test_task_runtime.py::test_comparison_harness_maps_turnbull_wakeman_target_to_analytical
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T23 --task-id T29 --task-id T30 \
+  --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1155_t23_t29_t30_clean_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  T19 T32 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1155_t19_t32_clean_20260703.json
+/Users/steveyang/miniforge3/bin/python3 scripts/remediate.py \
+  --analyze-only \
+  --results task_results_qua1155_t19_t32_clean_20260703.json \
+  --skip-platform-traces
+```
+
+The focused proof-route suite reports `172 passed`; the clean `T23/T29/T30`
+rerun reports `3/3` passed expectations; the full `T19` through `T32` replay
+reports `14/14` passed expectations in `401s`, all with zero token usage; and
+bounded remediation reports `0` total failures. A broader source/metadata
+regression shard excluding dirty generated-adapter imports reports `356`
+passed. The excluded cold-benchmark task-runtime test imported a locally dirty
+generated `trellis/instruments/_agent/barrieroption.py` replay artifact, so it
+is not part of this source commit.
+
+### 2026-07-03 T38/T39/T46 exact-binding closure
+
+The next legacy proof shard (`T33` through `T46`) exposed three avoidable
+offline-local failures where checked runtime code already existed but the
+task-runtime boundary still fell through to generated or live-LLM surfaces:
+
+- `T38`: `credit_default_swap` analytical comparison used the existing CDS
+  helper binding but the planner did not alias `credit_default_swap` to the
+  static `cds` spec for analytical targets, so offline execution stopped at
+  spec design.
+- `T39`: sparse GBM transform comparison tasks needed deterministic
+  `fft`/`cos` exact wrappers over the checked equity transform helper.
+- `T46`: digital `fft`/`cos` targets needed a checked digital transform helper
+  and route/backend metadata so adapters could stay thin.
+
+The fix keeps the learning surface deterministic: `credit_default_swap` now
+uses the existing `CDSSpec` analytical schema, exact CDS comparison aliases
+materialize thin helper wrappers, vanilla transform aliases thread `fft`/`cos`
+method names into `price_vanilla_equity_option_transform(...)`, and digital
+transform targets delegate to `price_equity_digital_option_transform(...)`
+rather than hand-writing payoff branch code.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_agent/test_planner.py \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_target_aliases \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_uses_metadata_for_cds_target_alias \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_analytical_wrapper \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_transforms/test_equity_option_transforms.py::test_price_digital_equity_option_transform_matches_black76_cash_call \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_transform_comparators \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_digital_transform_targets \
+  tests/test_agent/test_route_registry.py::TestFallbackRoutes::test_digital_transform_primitives_use_checked_helper \
+  tests/test_agent/test_backend_bindings.py::test_resolve_backend_binding_spec_uses_digital_transform_helper \
+  tests/test_agent/test_import_registry.py::test_digital_pde_and_asian_helpers_are_visible_to_import_registry \
+  tests/test_agent/test_task_runtime.py::test_task_to_instrument_type_uses_black_scholes_target_hint_for_vanilla
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T38 --task-id T39 --task-id T46 \
+  --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1156_t38_t39_t46_exact_v2_20260703.json
+```
+
+The focused planner/executor pass reports `40 passed`; the transform/CDS
+focused pass reports `16 passed`; and the offline `T38/T39/T46` replay reports
+`3/3` passed expectations with zero token usage.
+
+### 2026-07-09 T37 variance-swap MC/log-contract closure
+
+The remaining `T33` through `T46` shard showed that `T37` had two avoidable
+runtime-contract gaps rather than a missing task definition:
+
+- semantic gap classification still treated a known `variance_swap` task as
+  missing `semantic_product_shape`, even though the task identity, ProductIR,
+  analytical helper binding, and validation bundle were already known
+- the MC comparison target selected the generic event-aware MC route instead
+  of a variance-swap realised-variance helper, while the analytical target was
+  rejected by the generic embedded-option flat-vega invariant
+
+The fix adds a bounded reusable variance-swap MC helper at
+`trellis.models.variance_swap`. It simulates annualised realised log variance
+under the market state's GBM surface binding and reports price, fair strike
+variance, and standard error. Backend binding metadata now maps
+`monte_carlo:variance_swap` to that helper instead of the generic event-aware
+route. Variance swaps are also excluded from the generic option-vega invariant;
+their standard proof contract is price sanity plus cross-method comparison.
+
+Validation:
+
+```bash
+/Users/steveyang/miniforge3/bin/python3 -m pytest -q \
+  tests/test_models/test_monte_carlo/test_variance_swap.py \
+  tests/test_agent/test_assembly_tools.py::test_select_invariant_pack_skips_generic_vol_checks_for_variance_swap \
+  tests/test_agent/test_validation_bundles.py::test_select_validation_bundle_for_variance_swap_skips_generic_vol_checks \
+  tests/test_agent/test_executor.py::test_deterministic_exact_binding_module_materializes_variance_swap_mc_target \
+  tests/test_agent/test_backend_bindings.py::test_resolve_backend_binding_spec_uses_variance_swap_monte_carlo_helper \
+  tests/test_agent/test_import_registry.py::test_variance_swap_monte_carlo_helper_is_visible_to_import_registry
+/Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+  --task-id T37 --status all --offline-local-agents \
+  --recovery-mode assisted --validation standard \
+  --output task_results_qua1156_t37_variance_mc_20260703.json
+```
+
+The focused suite reports `7 passed`; the offline `T37` replay reports `1/1`
+passed expectations in `18s`, with zero LLM token usage and
+`llm_generation_attempts=0`.

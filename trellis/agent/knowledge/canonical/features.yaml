@@ -142,6 +142,16 @@
   description: "Underlying has jump component (e.g. Merton, Kou)"
   method_hint: fft_pricing
 
+- id: kou
+  description: "Kou double-exponential jump-diffusion model"
+  implies: [jump_diffusion]
+  method_hint: fft_pricing
+
+- id: double_exponential_jump
+  description: "Asymmetric upward/downward exponential jump-size law"
+  implies: [kou]
+  method_hint: fft_pricing
+
 - id: local_vol
   description: "Volatility is a deterministic function of spot and time (Dupire)"
   method_hint: pde_solver

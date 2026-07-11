@@ -670,6 +670,9 @@ tasks:
     internal:
     - correlated_cva
     - independent_cva
+    reference_target: independent_cva
+    relations:
+      correlated_cva: '>='
     external:
     - quantlib
   status: pending
