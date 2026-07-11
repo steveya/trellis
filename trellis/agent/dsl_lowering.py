@@ -674,29 +674,108 @@ def _build_event_aware_pde_expr_from_family_ir(
     family_ir: EventAwarePDEIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
-    """Build a helper-backed event-aware PDE lowering from typed family IR."""
-    if not family_ir.helper_symbol:
-        return None, (_missing_helper_target_message(route_id, binding_id),)
-    route_helper = next(
-        (
-            binding
-            for binding in bindings
-            if binding.role == "route_helper" and binding.symbol == family_ir.helper_symbol
-        ),
-        None,
+    """Build an event-aware PDE lowering from typed family IR."""
+    market_signature = _market_signature_from_family_ir(family_ir)
+    if family_ir.helper_symbol:
+        route_helper = next(
+            (
+                binding
+                for binding in bindings
+                if binding.role == "route_helper" and binding.symbol == family_ir.helper_symbol
+            ),
+            None,
+        )
+        if route_helper is None:
+            return None, (
+                _missing_primitive_message(
+                    route_id,
+                    binding_id,
+                    "helper",
+                    family_ir.helper_symbol,
+                ),
+            )
+        helper_atom = ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
+            primitive_ref=route_helper.primitive_ref,
+            description=_event_aware_pde_helper_description(family_ir),
+            signature=market_signature,
+        )
+        return helper_atom, ()
+
+    required_bindings = {
+        symbol: next(
+            (binding for binding in bindings if binding.symbol == symbol),
+            None,
+        )
+        for symbol in (
+            "resolve_single_state_diffusion_inputs",
+            "terminal_intrinsic_from_resolved",
+            "build_event_aware_pde_problem",
+            "solve_event_aware_pde",
+            "interpolate_pde_values",
+        )
+    }
+    missing = tuple(
+        symbol for symbol, binding in required_bindings.items() if binding is None
     )
-    if route_helper is None:
-        return None, (
-            _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
+    if missing:
+        return None, tuple(
+            _missing_primitive_message(route_id, binding_id, "PDE", symbol)
+            for symbol in missing
         )
 
-    helper_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
-        primitive_ref=route_helper.primitive_ref,
-        description=_event_aware_pde_helper_description(family_ir),
-        signature=_market_signature_from_family_ir(family_ir),
+    stages = (
+        (
+            "market_binding",
+            "resolve_single_state_diffusion_inputs",
+            market_signature.inputs,
+            ("resolved_state:state",),
+            "Resolve the single-state diffusion market and contract inputs.",
+        ),
+        (
+            "payoff_primitive",
+            "terminal_intrinsic_from_resolved",
+            ("resolved_state:state",),
+            ("terminal_contract:state",),
+            "Bind terminal payoff and boundary semantics to resolved state.",
+        ),
+        (
+            "problem_builder",
+            "build_event_aware_pde_problem",
+            ("terminal_contract:state",),
+            ("pde_problem:state",),
+            "Assemble the typed grid, operator, boundary, and theta-method problem.",
+        ),
+        (
+            "pricing_kernel",
+            "solve_event_aware_pde",
+            ("pde_problem:state",),
+            ("pde_surface:state",),
+            "Run the generic event-aware backward rollback.",
+        ),
+        (
+            "interpolation",
+            "interpolate_pde_values",
+            ("pde_surface:state",),
+            ("price:scalar",),
+            "Interpolate the solved surface at the resolved spot.",
+        ),
     )
-    return helper_atom, ()
+    atoms = tuple(
+        ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, role),
+            primitive_ref=required_bindings[symbol].primitive_ref,
+            description=description,
+            signature=ContractSignature(
+                inputs=inputs,
+                outputs=outputs,
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        for role, symbol, inputs, outputs, description in stages
+    )
+    return ThenExpr(terms=atoms), ()
 
 
 def _build_event_aware_monte_carlo_expr_from_family_ir(

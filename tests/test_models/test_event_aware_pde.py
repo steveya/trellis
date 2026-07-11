@@ -80,6 +80,27 @@ class TestEventAwarePDEAssembly:
         assert problem.grid.n_t == 40
         assert problem.terminal_condition.shape == (61,)
 
+    def test_black_scholes_operator_binds_dividend_yield_to_carry(self):
+        from trellis.models.pde.event_aware import (
+            EventAwarePDEOperatorSpec,
+            build_event_aware_pde_operator,
+        )
+
+        operator = build_event_aware_pde_operator(
+            EventAwarePDEOperatorSpec(
+                family="black_scholes_1d",
+                sigma=0.0,
+                r=0.05,
+                dividend_yield=0.02,
+            )
+        )
+        spots = raw_np.asarray([0.0, 100.0, 200.0])
+        lower, diagonal, upper = operator.coefficients(spots, 0.0, 1.0)
+
+        assert lower == pytest.approx([-0.015])
+        assert diagonal == pytest.approx([-0.05])
+        assert upper == pytest.approx([0.015])
+
     def test_build_problem_rejects_unsupported_operator_family(self):
         from trellis.models.pde.event_aware import (
             EventAwarePDEBoundarySpec,

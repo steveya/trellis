@@ -110,6 +110,12 @@ The runtime authority packet underneath those hints is now split as well:
 approved modules, and admissibility live in a nested backend-binding record.
 Discovered routes remain available to analysis code paths, but they no longer
 perturb ordinary prompt skill projection unless a caller opts in explicitly.
+When the compiler supplies an exact route id, a route-tagged skill must match
+that id exactly. Shared instrument or method-family metadata cannot admit a
+sibling route hint; untagged principles and genuinely family-level guidance
+remain eligible. This prevents, for example, CEV or Heston helper instructions
+from entering a vanilla theta-method PDE prompt merely because all three use a
+PDE method family.
 Migrated exact-helper routes may also mark that alias as internal-only, which
 suppresses it from operator-facing prompts while retaining the raw id for
 replay and canary history. Once a migrated exact-helper route has first-class

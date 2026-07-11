@@ -601,7 +601,7 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("monte_carlo_paths", "monte_carlo"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
-    def test_flags_vanilla_equity_pde_helper_signature_mismatch(self, registry):
+    def test_legacy_vanilla_pde_helper_is_not_route_helper_authority(self, registry):
         spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
         source = '''
 from trellis.models.equity_option_pde import price_vanilla_equity_option_pde
@@ -615,9 +615,10 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("vanilla_equity_theta_pde", "pde_solver"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(f.category == "engine_family_mismatch" for f in findings)
 
-    def test_accepts_vanilla_equity_pde_helper_surface(self, registry):
+    def test_rejects_legacy_vanilla_equity_pde_helper_surface(self, registry):
         spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
         source = '''
 from trellis.models.equity_option_pde import price_vanilla_equity_option_pde
@@ -628,6 +629,7 @@ def evaluate(self, market_state):
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("vanilla_equity_theta_pde", "pde_solver"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(f.category == "engine_family_mismatch" for f in findings)
 
     def test_flags_quanto_exact_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
@@ -1064,7 +1066,7 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("copula_loss_distribution", "copula"), spec)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
-    def test_helper_backed_pde_route_does_not_require_low_level_engine_signatures(self, registry):
+    def test_helper_backed_pde_route_does_not_satisfy_engine_contract(self, registry):
         spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]
         source = '''
 from trellis.models.equity_option_pde import price_vanilla_equity_option_pde
@@ -1074,7 +1076,7 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("vanilla_equity_theta_pde", "pde_solver"), spec)
-        assert not any(f.category == "engine_family_mismatch" for f in findings)
+        assert any(f.category == "engine_family_mismatch" for f in findings)
 
     def test_treats_lattice_policy_helper_as_exercise_logic(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]

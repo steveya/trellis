@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from math import exp
 
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
@@ -48,6 +49,7 @@ Implementation target: black_scholes."""
     strike: float
     expiry_date: date
     option_type: str = 'call'
+    dividend_yield: float = 0.0
     day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
@@ -94,7 +96,7 @@ Implementation target: black_scholes."""
             return spec.notional * intrinsic
         df = market_state.discount.discount(T)
         sigma = market_state.vol_surface.black_vol(max(T, 1e-6), strike)
-        forward = spot / max(df, 1e-12)
+        forward = spot * exp(-float(spec.dividend_yield) * T) / max(df, 1e-12)
         if option_type == "call":
             undiscounted = black76_call(forward, strike, sigma, T)
         elif option_type == "put":

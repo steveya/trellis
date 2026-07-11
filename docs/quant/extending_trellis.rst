@@ -88,7 +88,10 @@ Current route guidance includes:
   ``resolve_single_state_diffusion_inputs(...)``, ``equity_tree(...)``,
   ``with_control(...)``, ``compile_lattice_recipe(...)``,
   ``build_lattice(...)``, and ``price_on_lattice(...)``
-- vanilla European equity PDE routes via ``trellis.models.equity_option_pde``
+- vanilla European equity PDE routes by composing
+  ``resolve_single_state_diffusion_inputs(...)``, the event-aware PDE problem
+  specifications and builder, ``solve_event_aware_pde(...)``, and
+  ``interpolate_pde_values(...)``
 - rate-style swaption analytics via ``trellis.models.rate_style_swaption``
 - zero-coupon bond option tree routes via ``trellis.models.zcb_option_tree``
 - Jamshidian analytical ZCB option routes via ``trellis.models.zcb_option``

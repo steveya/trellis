@@ -759,7 +759,7 @@ def test_generation_route_card_for_zcb_option_tree_stays_helper_only():
     assert "MODEL_REGISTRY" not in text
 
 
-def test_generation_route_card_for_vanilla_equity_pde_stays_helper_only():
+def test_generation_route_card_for_vanilla_equity_pde_requires_primitive_composition():
     compiled = compile_build_request(
         "European equity call on AAPL",
         instrument_type="european_option",
@@ -768,10 +768,11 @@ def test_generation_route_card_for_vanilla_equity_pde_stays_helper_only():
 
     text = render_generation_route_card(compiled.generation_plan)
 
-    assert "price_vanilla_equity_option_pde" in text
-    assert "reuse_checked_in_vanilla_equity_pde_helper" not in text
-    assert "Grid + BlackScholesOperator + theta_method_1d" not in text
-    assert "Backend notes:" not in text
+    assert "price_vanilla_equity_option_pde" not in text
+    assert "resolve_single_state_diffusion_inputs" in text
+    assert "build_event_aware_pde_problem" in text
+    assert "solve_event_aware_pde" in text
+    assert "interpolate_pde_values" in text
 
 
 def test_generation_route_card_for_vanilla_equity_fft_stays_helper_only():
@@ -789,7 +790,7 @@ def test_generation_route_card_for_vanilla_equity_fft_stays_helper_only():
     assert "Backend notes:" not in text
 
 
-def test_semantic_repair_card_for_helper_backed_pde_route_omits_route_notes_and_adapters():
+def test_semantic_repair_card_for_vanilla_pde_requires_primitive_composition():
     compiled = compile_build_request(
         "European equity call on AAPL",
         instrument_type="european_option",
@@ -798,9 +799,11 @@ def test_semantic_repair_card_for_helper_backed_pde_route_omits_route_notes_and_
 
     text = render_semantic_repair_card(compiled.generation_plan)
 
-    assert "price_vanilla_equity_option_pde" in text
+    assert "price_vanilla_equity_option_pde" not in text
+    assert "resolve_single_state_diffusion_inputs" in text
+    assert "build_event_aware_pde_problem" in text
+    assert "solve_event_aware_pde" in text
     assert "Required adapters:" not in text
-    assert "Route notes:" not in text
 
 
 def test_review_contract_card_renders_wrapper_route_and_validation_scope():

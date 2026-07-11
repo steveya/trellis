@@ -142,7 +142,7 @@ def test_vanilla_option_compiles_to_pde_family_ir():
     assert family_ir.payoff_family == "vanilla_option"
     assert family_ir.option_type == "put"
     assert family_ir.theta == 0.5
-    assert family_ir.helper_symbol == "price_vanilla_equity_option_pde"
+    assert family_ir.helper_symbol == ""
     assert family_ir.market_mapping == "equity_spot_discount_black_vol"
     assert family_ir.state_spec.state_variable == "spot"
     assert family_ir.state_spec.dimension == 1

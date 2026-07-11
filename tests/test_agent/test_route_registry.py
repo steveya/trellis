@@ -2309,7 +2309,47 @@ class TestFallbackRoutes:
         )
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
-            ("trellis.models.equity_option_pde", "price_vanilla_equity_option_pde", "route_helper"),
+            (
+                "trellis.models.resolution.single_state_diffusion",
+                "resolve_single_state_diffusion_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.resolution.single_state_diffusion",
+                "terminal_intrinsic_from_resolved",
+                "payoff_primitive",
+            ),
+            ("trellis.models.pde.event_aware", "EventAwarePDEGridSpec", "grid"),
+            (
+                "trellis.models.pde.event_aware",
+                "EventAwarePDEOperatorSpec",
+                "spatial_operator",
+            ),
+            (
+                "trellis.models.pde.event_aware",
+                "EventAwarePDEBoundarySpec",
+                "boundary_condition",
+            ),
+            (
+                "trellis.models.pde.event_aware",
+                "EventAwarePDEProblemSpec",
+                "problem_spec",
+            ),
+            (
+                "trellis.models.pde.event_aware",
+                "build_event_aware_pde_problem",
+                "problem_builder",
+            ),
+            (
+                "trellis.models.pde.event_aware",
+                "solve_event_aware_pde",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.pde.event_aware",
+                "interpolate_pde_values",
+                "interpolation",
+            ),
         }
         assert _prim_set(new_prims) == expected_prims
 

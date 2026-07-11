@@ -816,6 +816,11 @@ def _skill_record_matches_scope(
     route_id_tags = {f"route:{route_id}" for route_id in route_ids if route_id}
 
     if record.kind == "route_hint":
+        record_route_tags = {
+            tag for tag in record_tags if tag.startswith("route:")
+        }
+        if route_id_tags and record_route_tags:
+            return bool(route_id_tags & record_route_tags)
         if route_id_tags & record_tags:
             return True
         if route_families and record_route_families and set(route_families) & record_route_families:

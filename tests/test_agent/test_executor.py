@@ -1090,11 +1090,11 @@ def test_admitted_vanilla_equity_mc_adapter_uses_terminal_claim_primitives():
 @pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
-        ("theta_0.5", "price_vanilla_equity_option_pde(market_state, spec, theta=0.5)"),
-        ("theta_1.0", "price_vanilla_equity_option_pde(market_state, spec, theta=1.0)"),
+        ("theta_0.5", "theta=0.5"),
+        ("theta_1.0", "theta=1.0"),
     ],
 )
-def test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_helper_wrapper(
+def test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_from_primitives(
     comparison_target,
     expected_fragment,
 ):
@@ -1107,7 +1107,7 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_help
 
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(
-            "trellis.models.equity_option_pde.price_vanilla_equity_option_pde",
+            "trellis.models.pde.event_aware.solve_event_aware_pde",
         ),
         primitive_plan=SimpleNamespace(route="vanilla_equity_theta_pde"),
         method="pde_solver",
@@ -1126,9 +1126,140 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_pde_help
     )
 
     assert generated is not None
-    assert "from trellis.models.equity_option_pde import price_vanilla_equity_option_pde" in generated.code
+    assert "resolve_single_state_diffusion_inputs(" in generated.code
+    assert "terminal_intrinsic_from_resolved(" in generated.code
+    assert "EventAwarePDEGridSpec(" in generated.code
+    assert "EventAwarePDEOperatorSpec(" in generated.code
+    assert "EventAwarePDEBoundarySpec(" in generated.code
+    assert "EventAwarePDEProblemSpec(" in generated.code
+    assert "build_event_aware_pde_problem(" in generated.code
+    assert "solve_event_aware_pde(" in generated.code
+    assert "interpolate_pde_values(" in generated.code
+    assert "price_vanilla_equity_option_pde" not in generated.code
     assert expected_fragment in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize("comparison_target", ["theta_0.5", "theta_1.0"])
+def test_deterministic_vanilla_equity_pde_primitive_composition_executes_with_dividends(
+    comparison_target,
+):
+    from datetime import date as _date
+    from math import exp as _exp
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.models.black import black76_call
+
+    class _FlatDiscount:
+        def zero_rate(self, _t: float) -> float:
+            return 0.05
+
+        def discount(self, t: float) -> float:
+            return _exp(-0.05 * float(t))
+
+    class _FlatBlackVol:
+        def black_vol(self, _t: float, _strike: float) -> float:
+            return 0.20
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.pde.event_aware.solve_event_aware_pde",
+        ),
+        primitive_plan=SimpleNamespace(route="vanilla_equity_theta_pde"),
+        method="pde_solver",
+        instrument_type="european_option",
+    )
+    schema = SPECIALIZED_SPECS["european_option_analytical"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "European dividend-paying call primitive-composed PDE",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1170>", "exec"), namespace)  # noqa: S102
+    payoff = namespace[schema.class_name](
+        namespace[schema.spec_name](
+            notional=1.0,
+            spot=100.0,
+            strike=100.0,
+            expiry_date=_date(2024, 12, 31),
+            option_type="call",
+            dividend_yield=0.02,
+        )
+    )
+    market = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=_FlatDiscount(),
+        vol_surface=_FlatBlackVol(),
+    )
+    expected = _exp(-0.05) * black76_call(
+        100.0 * _exp(0.03),
+        100.0,
+        0.20,
+        1.0,
+    )
+
+    assert float(payoff.evaluate(market)) == pytest.approx(expected, abs=0.08)
+
+
+def test_admitted_european_analytical_adapter_honors_dividend_yield():
+    from datetime import date as _date
+    from math import exp as _exp
+
+    from trellis.core.market_state import MarketState
+    from trellis.instruments._agent.europeanoptionanalytical import (
+        EuropeanOptionAnalyticalPayoff,
+        EuropeanOptionSpec,
+    )
+    from trellis.models.black import black76_call
+
+    class _FlatDiscount:
+        def zero_rate(self, _t: float) -> float:
+            return 0.05
+
+        def discount(self, t: float) -> float:
+            return _exp(-0.05 * float(t))
+
+    class _FlatBlackVol:
+        def black_vol(self, _t: float, _strike: float) -> float:
+            return 0.20
+
+    payoff = EuropeanOptionAnalyticalPayoff(
+        EuropeanOptionSpec(
+            notional=1.0,
+            spot=100.0,
+            strike=100.0,
+            expiry_date=_date(2024, 12, 31),
+            option_type="call",
+            dividend_yield=0.02,
+        )
+    )
+    market = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=_FlatDiscount(),
+        vol_surface=_FlatBlackVol(),
+    )
+    expected = _exp(-0.05) * black76_call(
+        100.0 * _exp(0.03),
+        100.0,
+        0.20,
+        1.0,
+    )
+
+    assert float(payoff.evaluate(market)) == pytest.approx(expected)
 
 
 @pytest.mark.parametrize(
@@ -3225,6 +3356,76 @@ def test_deterministic_exact_binding_module_black_scholes_benchmark_outputs_runs
     # ATM call spot-check against classical BS numerics at r=5%, σ=25%, T=1.
     assert outputs["delta"] == pytest.approx(0.6274, abs=1e-3)
     assert outputs["vega"] == pytest.approx(37.842, abs=1e-2)
+
+
+def test_generated_black_scholes_evaluate_and_outputs_honor_dividend_yield():
+    from datetime import date as _date
+    from math import exp as _exp
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.models.black import black76_call
+
+    class _FlatDiscount:
+        def discount(self, t: float) -> float:
+            return _exp(-0.05 * float(t))
+
+    class _FlatBlackVol:
+        def black_vol(self, _t: float, _strike: float) -> float:
+            return 0.25
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="european_option",
+    )
+    schema = SPECIALIZED_SPECS["european_option_analytical"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Dividend-paying European option analytical comparator",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="black_scholes",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1170_review>", "exec"), namespace)  # noqa: S102
+    payoff = namespace[schema.class_name](
+        namespace[schema.spec_name](
+            notional=1.0,
+            spot=100.0,
+            strike=100.0,
+            expiry_date=_date(2024, 12, 31),
+            option_type="call",
+            dividend_yield=0.02,
+        )
+    )
+    market = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=_FlatDiscount(),
+        vol_surface=_FlatBlackVol(),
+    )
+    expected = _exp(-0.05) * black76_call(
+        100.0 * _exp(0.03),
+        100.0,
+        0.25,
+        1.0,
+    )
+
+    assert float(payoff.evaluate(market)) == pytest.approx(expected)
+    assert payoff.benchmark_outputs(market)["price"] == pytest.approx(expected)
 
 
 def test_deterministic_exact_binding_module_fx_vanilla_gk_injects_benchmark_outputs():

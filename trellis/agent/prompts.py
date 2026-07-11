@@ -336,7 +336,7 @@ defined in the skeleton.
 - Black76 digital: `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F, K, sigma, T)` — undiscounted cash-or-nothing digitals
 - For CDS / nth-to-default: use `market_state.credit_curve.survival_probability(t)` and `market_state.credit_curve.hazard_rate(t)` on an explicit payment/default schedule; do not route credit-default pricing through Black76 call/put primitives.
 - For equity trees: resolve scalar inputs with `resolve_single_state_diffusion_inputs`, declare the claim with `equity_tree`, attach `with_control`, then use `compile_lattice_recipe`, `build_lattice`, and `price_on_lattice`
-- For vanilla European PDE routes: prefer `from trellis.models.equity_option_pde import price_vanilla_equity_option_pde`; the lower-level fallback is `from trellis.models.pde.grid import Grid`, `from trellis.models.pde.operator import BlackScholesOperator`, and `from trellis.models.pde.theta_method import theta_method_1d`
+- For vanilla European PDE routes: compose `resolve_single_state_diffusion_inputs`, `terminal_intrinsic_from_resolved`, `EventAwarePDEProblemSpec`, `build_event_aware_pde_problem`, `solve_event_aware_pde`, and `interpolate_pde_values`
 - For rate lattices: prefer helper surfaces such as `price_callable_bond_tree(...)`, `price_bermudan_swaption_tree(...)`, or `price_zcb_option_tree(...)`; the lower-level fallback is `from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction`
 - For schedule-dependent rate lattices: `from trellis.models.trees.control import lattice_steps_from_timeline, resolve_lattice_exercise_policy`
 - For MC: `from trellis.models.monte_carlo import MonteCarloEngine`
@@ -471,10 +471,10 @@ def _render_family_route_guidance(
         if method == "pde_solver":
             lines.append("## Family Route Guidance")
             lines.extend([
-                "- For vanilla European PDE routes, prefer `price_vanilla_equity_option_pde(market_state, self._spec, theta=...)` from `trellis.models.equity_option_pde`.",
+                "- For vanilla European PDE routes, resolve market inputs with `resolve_single_state_diffusion_inputs` and declare terminal intrinsic with `terminal_intrinsic_from_resolved`.",
                 "- Map `implementation_target=theta_0.5` to `theta=0.5` and `implementation_target=theta_1.0` to `theta=1.0`.",
-                "- Keep the wrapper thin: delegate grid sizing, boundary conditions, terminal payoff assembly, theta-method solve, and interpolation back to spot to the checked-in helper.",
-                "- Only fall back to direct `Grid + BlackScholesOperator + theta_method_1d` assembly when the payoff or boundary contract genuinely differs from plain vanilla European call/put.",
+                "- Build `EventAwarePDEProblemSpec` from grid, Black-Scholes operator, terminal payoff, and boundary specs; then call `build_event_aware_pde_problem`, `solve_event_aware_pde`, and `interpolate_pde_values`.",
+                "- Keep product terms and market binding in the adapter while delegating only reusable numerical mechanics to the event-aware PDE substrate.",
             ])
 
     if instrument_type in {"cds", "credit_default_swap"}:

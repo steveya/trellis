@@ -39,6 +39,7 @@ class _VanillaSpec:
     strike: float
     expiry_date: date
     option_type: str = "call"
+    dividend_yield: float = 0.0
     day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
@@ -100,6 +101,46 @@ def test_put_call_parity_holds_on_delta_and_price():
     # Gamma/vega identical for call and put
     assert call["gamma"] == pytest.approx(put["gamma"], abs=1e-12)
     assert call["vega"] == pytest.approx(put["vega"], abs=1e-12)
+
+
+def test_dividend_yield_adjusts_price_and_delta_parity():
+    from trellis.models.black import black76_call
+
+    rate = 0.05
+    dividend_yield = 0.02
+    df = float(np.exp(-rate))
+    dividend_df = float(np.exp(-dividend_yield))
+    forward = 100.0 * dividend_df / df
+    ms = _make_market(rate=rate, vol=0.25)
+    call_spec = _VanillaSpec(
+        notional=1.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="call",
+        dividend_yield=dividend_yield,
+    )
+    put_spec = _VanillaSpec(
+        notional=1.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        option_type="put",
+        dividend_yield=dividend_yield,
+    )
+
+    call = equity_vanilla_bs_outputs(ms, call_spec)
+    put = equity_vanilla_bs_outputs(ms, put_spec)
+
+    assert call["price"] == pytest.approx(
+        df * black76_call(forward, 100.0, 0.25, 1.0),
+        abs=1e-10,
+    )
+    assert call["price"] - put["price"] == pytest.approx(
+        100.0 * dividend_df - 100.0 * df,
+        abs=1e-10,
+    )
+    assert call["delta"] - put["delta"] == pytest.approx(dividend_df, abs=1e-10)
 
 
 def test_notional_scales_price_only():

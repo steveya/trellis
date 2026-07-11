@@ -565,7 +565,7 @@ class VanillaEquityPDEIR(EventAwarePDEIR):
     )
     option_type: str = "call"
     theta: float = 0.5
-    helper_symbol: str = "price_vanilla_equity_option_pde"
+    helper_symbol: str = ""
     market_mapping: str = "equity_spot_discount_black_vol"
     compatibility_wrapper: str = "VanillaEquityPDEIR"
 
@@ -1050,8 +1050,16 @@ def _binding_supports_vanilla_equity_pde(
     del route_id
     return _binding_has_symbol(
         binding_spec,
-        "route_helper",
-        "price_vanilla_equity_option_pde",
+        "market_binding",
+        "resolve_single_state_diffusion_inputs",
+    ) and _binding_has_symbol(
+        binding_spec,
+        "problem_builder",
+        "build_event_aware_pde_problem",
+    ) and _binding_has_symbol(
+        binding_spec,
+        "pricing_kernel",
+        "solve_event_aware_pde",
     )
 
 

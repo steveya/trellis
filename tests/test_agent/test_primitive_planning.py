@@ -348,7 +348,7 @@ def test_builds_heston_adi_plan_for_pde_method():
     } <= primitive_symbols
 
 
-def test_builds_pde_plan_for_european_option_uses_helper_route():
+def test_builds_pde_plan_for_european_option_uses_event_aware_primitives():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
@@ -373,9 +373,18 @@ def test_builds_pde_plan_for_european_option_uses_helper_route():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "vanilla_equity_theta_pde"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    primitive_modules = {primitive.module for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_vanilla_equity_option_pde"}
-    assert primitive_modules == {"trellis.models.equity_option_pde"}
+    assert primitive_symbols == {
+        "EventAwarePDEBoundarySpec",
+        "EventAwarePDEGridSpec",
+        "EventAwarePDEOperatorSpec",
+        "EventAwarePDEProblemSpec",
+        "build_event_aware_pde_problem",
+        "interpolate_pde_values",
+        "resolve_single_state_diffusion_inputs",
+        "solve_event_aware_pde",
+        "terminal_intrinsic_from_resolved",
+    }
+    assert "price_vanilla_equity_option_pde" not in primitive_symbols
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.notes == ()
 

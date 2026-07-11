@@ -45,6 +45,8 @@ class EventAwarePDEOperatorSpec:
     sigma_fn: Callable | None = None
     r: float | None = None
     r_fn: Callable[[float], float] | None = None
+    dividend_yield: float = 0.0
+    dividend_yield_fn: Callable[[float], float] | None = None
     mean_reversion: float | None = None
     theta_fn: Callable[[float], float] | None = None
     r0: float | None = None
@@ -151,11 +153,21 @@ def build_event_aware_pde_operator(spec: EventAwarePDEOperatorSpec) -> PDEOperat
     if family == "black_scholes_1d":
         sigma_fn = _resolve_sigma_fn(spec)
         r_fn = _resolve_rate_fn(spec)
-        return BlackScholesOperator(sigma_fn=sigma_fn, r_fn=r_fn)
+        dividend_yield_fn = _resolve_dividend_yield_fn(spec)
+        return BlackScholesOperator(
+            sigma_fn=sigma_fn,
+            r_fn=r_fn,
+            dividend_yield_fn=dividend_yield_fn,
+        )
     if family == "local_vol_1d":
         sigma_fn = _resolve_sigma_fn(spec)
         r_fn = _resolve_rate_fn(spec)
-        return BlackScholesOperator(sigma_fn=sigma_fn, r_fn=r_fn)
+        dividend_yield_fn = _resolve_dividend_yield_fn(spec)
+        return BlackScholesOperator(
+            sigma_fn=sigma_fn,
+            r_fn=r_fn,
+            dividend_yield_fn=dividend_yield_fn,
+        )
     if family == "hull_white_1f":
         if spec.sigma is None:
             raise ValueError("hull_white_1f operator requires sigma")
@@ -312,6 +324,15 @@ def _resolve_rate_fn(spec: EventAwarePDEOperatorSpec) -> Callable[[float], float
         raise ValueError(f"{spec.family} operator requires r or r_fn")
     rate = float(spec.r)
     return lambda _t: rate
+
+
+def _resolve_dividend_yield_fn(
+    spec: EventAwarePDEOperatorSpec,
+) -> Callable[[float], float]:
+    if spec.dividend_yield_fn is not None:
+        return spec.dividend_yield_fn
+    dividend_yield = float(spec.dividend_yield)
+    return lambda _t: dividend_yield
 
 
 def _resolve_sigma_fn(spec: EventAwarePDEOperatorSpec) -> Callable:

@@ -5,12 +5,12 @@ from closed-form Black-Scholes formulae so the FinancePy parity harness can
 report Greeks without post-hoc bump-and-reprice (see QUA-863 for the
 fallback path that this replaces for exact-binding analytical routes).
 
-Assumes the same contract the deterministic Black-Scholes ``evaluate`` body
-assumes: continuous dividend yield ``q == 0``.  The effective rate ``r`` is
-recovered from ``market_state.discount``; ``sigma`` is queried from the
-Black vol surface at ``(T, K)``.  Notional scales ``price`` only; per-unit
-Greeks are returned to match FinancePy's ``EquityVanillaOption.delta``
-etc., which themselves do not multiply by ``num_options``.
+The effective rate ``r`` is recovered from ``market_state.discount``;
+continuous dividend yield ``q`` is read from the spec with a zero default;
+``sigma`` is queried from the Black vol surface at ``(T, K)``. Notional scales
+``price`` only; per-unit Greeks are returned to match FinancePy's
+``EquityVanillaOption.delta`` etc., which themselves do not multiply by
+``num_options``.
 """
 
 from __future__ import annotations
@@ -50,21 +50,23 @@ def _zero_vol_outputs(
     spot: float,
     strike: float,
     df: float,
+    dividend_df: float,
     option_type: str,
     notional: float,
 ) -> dict[str, float]:
     """Return the zero-vol, T > 0 Black-Scholes limit.
 
-    The forward equals ``spot / df`` deterministically at σ == 0, so the
-    payoff reduces to ``df * max(F - K, 0)`` (call) / ``df * max(K - F, 0)``
-    (put), i.e. ``max(S - K*df, 0)`` / ``max(K*df - S, 0)``.  Using plain
-    ``max(S - K, 0)`` here would silently misprice parity in any non-zero
-    rate market and diverge from the deterministic ``evaluate`` body --
+    The forward equals ``spot * dividend_df / df`` deterministically at
+    σ == 0, so the payoff reduces to ``df * max(F - K, 0)`` (call) /
+    ``df * max(K - F, 0)`` (put), i.e.
+    ``max(S*dividend_df - K*df, 0)`` /
+    ``max(K*df - S*dividend_df, 0)``. Using plain ``max(S - K, 0)`` here
+    would silently misprice parity and diverge from the deterministic body --
     ``black76_call``/``black76_put`` also collapse to the discounted
     forward intrinsic at σ == 0.  (PR #595 Codex P1 round 1.)
     """
     df_safe = max(df, 1e-12)
-    forward = spot / df_safe
+    forward = spot * dividend_df / df_safe
     forward_intrinsic = (
         max(forward - strike, 0.0)
         if option_type == "call"
@@ -100,22 +102,31 @@ def equity_vanilla_bs_outputs(
     if option_type not in {"call", "put"}:
         raise ValueError(f"Unsupported option_type {spec.option_type!r}; expected 'call' or 'put'")
     notional = float(spec.notional)
+    dividend_yield = float(getattr(spec, "dividend_yield", 0.0) or 0.0)
 
     if T <= 0.0:
         return _zero_time_outputs(spot, strike, option_type, notional)
 
     df = float(market_state.discount.discount(T))
+    dividend_df = float(np.exp(-dividend_yield * T))
     sigma = float(market_state.vol_surface.black_vol(max(T, 1e-6), strike))
     sqrt_T = float(np.sqrt(T))
     sigma_sqrt_T = sigma * sqrt_T
     if sigma_sqrt_T <= 0.0:
-        return _zero_vol_outputs(spot, strike, df, option_type, notional)
+        return _zero_vol_outputs(
+            spot,
+            strike,
+            df,
+            dividend_df,
+            option_type,
+            notional,
+        )
 
     df_safe = max(df, 1e-12)
-    forward = spot / df_safe
+    forward = spot * dividend_df / df_safe
     # Continuous-compounding rate implied by ``df``; consistent with the
     # deterministic Black-Scholes evaluate body in executor._deterministic
-    # _exact_binding_evaluate_body that uses ``forward = spot / df``.
+    # _exact_binding_evaluate_body.
     r = -float(np.log(df_safe)) / max(T, 1e-12)
 
     d1 = (float(np.log(forward / strike)) + 0.5 * sigma * sigma * T) / sigma_sqrt_T
@@ -128,15 +139,23 @@ def equity_vanilla_bs_outputs(
 
     if option_type == "call":
         price_per_unit = df * (forward * nd1 - strike * nd2)
-        delta = nd1
-        theta = -(spot * pdf_d1 * sigma) / (2.0 * sqrt_T) - r * strike * df * nd2
+        delta = dividend_df * nd1
+        theta = (
+            -(spot * dividend_df * pdf_d1 * sigma) / (2.0 * sqrt_T)
+            - r * strike * df * nd2
+            + dividend_yield * spot * dividend_df * nd1
+        )
     else:
         price_per_unit = df * (strike * nd2_neg - forward * nd1_neg)
-        delta = nd1 - 1.0
-        theta = -(spot * pdf_d1 * sigma) / (2.0 * sqrt_T) + r * strike * df * nd2_neg
+        delta = dividend_df * (nd1 - 1.0)
+        theta = (
+            -(spot * dividend_df * pdf_d1 * sigma) / (2.0 * sqrt_T)
+            + r * strike * df * nd2_neg
+            - dividend_yield * spot * dividend_df * nd1_neg
+        )
 
-    gamma = pdf_d1 / (spot * sigma_sqrt_T)
-    vega = spot * pdf_d1 * sqrt_T
+    gamma = dividend_df * pdf_d1 / (spot * sigma_sqrt_T)
+    vega = spot * dividend_df * pdf_d1 * sqrt_T
 
     return {
         "price": notional * price_per_unit,

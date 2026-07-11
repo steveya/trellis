@@ -528,9 +528,9 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
         return tuple(steps)
     if isinstance(family_ir, VanillaEquityPDEIR):
         return (
-            "Assemble a one-dimensional terminal payoff on the expiry timeline.",
-            f"Build the PDE operator through `{family_ir.helper_symbol}` with theta={family_ir.theta:.1f}.",
-            "Apply backward stepping and boundary conditions on the pricing grid before interpolating back to spot.",
+            "Resolve spot, strike, maturity, rate, dividend yield, volatility, notional, and option type through `resolve_single_state_diffusion_inputs(...)`.",
+            "Assemble explicit terminal payoff and call/put boundary functions into `EventAwarePDEProblemSpec(...)` with the requested theta control.",
+            "Build and solve the generic event-aware PDE problem, then interpolate the solved surface at resolved spot and apply notional.",
         )
     if isinstance(family_ir, EventAwarePDEIR):
         operator_family = family_ir.operator_spec.operator_family or "generic_1d"

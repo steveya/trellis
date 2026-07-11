@@ -466,6 +466,62 @@ def test_prompt_skill_selection_skips_historical_route_notes_even_on_exact_route
     ]
 
 
+def test_prompt_skill_selection_rejects_route_tagged_sibling_hints(monkeypatch):
+    from trellis.agent.knowledge.skills import select_prompt_skill_artifacts
+
+    def record(route_id: str):
+        return SimpleNamespace(
+            skill_id=f"route_hint:{route_id}:route-helper",
+            kind="route_hint",
+            title=f"{route_id} route helper",
+            summary="Use the selected route contract.",
+            source_artifact=route_id,
+            source_path="",
+            instrument_types=("european_option",),
+            method_families=("pde_solver",),
+            route_families=("pde_solver",),
+            failure_buckets=(),
+            concepts=(),
+            tags=(f"route:{route_id}",),
+            origin="canonical",
+            parents=(),
+            supersedes=(),
+            status="promoted",
+            confidence=1.0,
+            updated_at="",
+            precedence_rank=100,
+            instruction_type="hard_constraint",
+            source_kind="route_card",
+            lineage_status="derived",
+            lineage_evidence=(),
+        )
+
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.skills.load_skill_index",
+        lambda: SimpleNamespace(
+            records=(
+                record("vanilla_equity_theta_pde"),
+                record("cev_theta_pde"),
+                record("heston_adi_2d"),
+            )
+        ),
+    )
+
+    artifacts = select_prompt_skill_artifacts(
+        "European option PDE",
+        audience="builder",
+        stage="initial_build",
+        instrument_type="european_option",
+        pricing_method="pde_solver",
+        route_ids=("vanilla_equity_theta_pde",),
+        route_families=("pde_solver",),
+    )
+
+    assert [artifact["id"] for artifact in artifacts] == [
+        "route_hint:vanilla_equity_theta_pde:route-helper",
+    ]
+
+
 def test_prompt_skill_selection_prefers_hard_constraints_over_exact_route_note_matches(monkeypatch):
     from trellis.agent.knowledge.skills import select_prompt_skill_artifacts
 
@@ -1138,10 +1194,11 @@ def test_evaluate_prompt_compact_surface_mentions_current_pde_contract():
     )
 
     assert "## Structured Lane Card" in prompt
-    assert "trellis.models.equity_option_pde" in prompt
-    assert "price_vanilla_equity_option_pde" in prompt
+    assert "price_vanilla_equity_option_pde" not in prompt
+    assert "resolve_single_state_diffusion_inputs" in prompt
+    assert "solve_event_aware_pde" in prompt
     assert "Map `implementation_target=theta_0.5` to `theta=0.5`" in prompt
-    assert "Grid + BlackScholesOperator + theta_method_1d" in prompt
+    assert "EventAwarePDEProblemSpec" in prompt
     assert "Import Repair Card" not in prompt
 
 
@@ -1883,7 +1940,7 @@ def test_evaluate_prompt_barrier_pde_surface_mentions_grid_operator_and_rannache
     assert "upper_bc_fn" in prompt
 
 
-def test_executor_european_option_pde_retry_pins_helper_surface_and_theta_mapping():
+def test_executor_european_option_pde_retry_pins_primitive_composition_and_theta_mapping():
     from types import SimpleNamespace
 
     from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
@@ -1902,10 +1959,13 @@ def test_executor_european_option_pde_retry_pins_helper_surface_and_theta_mappin
 
     text = "\n".join(_route_specific_retry_lines(request))
 
-    assert "price_vanilla_equity_option_pde" in text
+    assert "do not route through `price_vanilla_equity_option_pde`" in text
+    assert "resolve_single_state_diffusion_inputs" in text
+    assert "build_event_aware_pde_problem" in text
+    assert "solve_event_aware_pde" in text
     assert "theta_0.5" in text
     assert "theta_1.0" in text
-    assert "Grid" in text
+    assert "EventAwarePDEOperatorSpec" in text
 
 
 def test_evaluate_prompt_import_repair_surface_uses_import_card_without_references():
