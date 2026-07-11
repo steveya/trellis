@@ -958,7 +958,7 @@ def test_deterministic_exact_binding_module_materializes_callable_bond_pde_wrapp
         ("control_variate_mc", 'variance_reduction="control_variate"'),
     ],
 )
-def test_deterministic_exact_binding_module_materializes_vanilla_equity_mc_helper_wrapper(
+def test_deterministic_exact_binding_module_materializes_vanilla_equity_mc_from_primitives(
     comparison_target,
     expected_fragment,
 ):
@@ -970,7 +970,10 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_mc_helpe
     from trellis.agent.planner import SPECIALIZED_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=("trellis.models.equity_option_monte_carlo.price_vanilla_equity_option_monte_carlo",),
+        lane_exact_binding_refs=(
+            "trellis.models.monte_carlo.single_state_diffusion."
+            "price_single_state_terminal_claim_monte_carlo_result",
+        ),
         primitive_plan=None,
         method="monte_carlo",
         instrument_type="european_option",
@@ -988,9 +991,100 @@ def test_deterministic_exact_binding_module_materializes_vanilla_equity_mc_helpe
     )
 
     assert generated is not None
-    assert "price_vanilla_equity_option_monte_carlo(market_state, spec" in generated.code
+    assert "price_single_state_terminal_claim_monte_carlo_result(" in generated.code
+    assert "terminal_intrinsic_from_resolved(terminal, resolved)" in generated.code
+    assert "price_vanilla_equity_option_monte_carlo" not in generated.code
     assert expected_fragment in generated.code
+    if comparison_target == "control_variate_mc":
+        assert "control_variate_values=" in generated.code
+        assert "control_variate_expected=" in generated.code
+        assert "from math import exp" in generated.code
+    else:
+        assert "control_variate_values=" not in generated.code
+        assert "control_variate_expected=" not in generated.code
+        assert "from math import exp" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize("comparison_target", ["exact", "control_variate_mc"])
+def test_deterministic_vanilla_equity_mc_primitive_composition_executes(
+    comparison_target,
+):
+    from datetime import date as _date
+
+    import numpy as _np
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.market_state import MarketState
+
+    class _FlatDiscount:
+        def zero_rate(self, _t: float) -> float:
+            return 0.05
+
+        def discount(self, t: float) -> float:
+            return float(_np.exp(-0.05 * float(t)))
+
+    class _FlatBlackVol:
+        def black_vol(self, _t: float, _strike: float) -> float:
+            return 0.20
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.monte_carlo.single_state_diffusion."
+            "price_single_state_terminal_claim_monte_carlo_result",
+        ),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="european_option",
+    )
+    schema = SPECIALIZED_SPECS["european_option_monte_carlo"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "European option primitive-composed Monte Carlo",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1169>", "exec"), namespace)  # noqa: S102
+    payoff = namespace[schema.class_name](
+        namespace[schema.spec_name](
+            notional=1.0,
+            spot=100.0,
+            strike=100.0,
+            expiry_date=_date(2025, 1, 1),
+            option_type="call",
+            n_paths=30_000,
+            n_steps=64,
+        )
+    )
+    market = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=_FlatDiscount(),
+        vol_surface=_FlatBlackVol(),
+    )
+
+    assert float(payoff.evaluate(market)) == pytest.approx(10.45, abs=0.25)
+
+
+def test_admitted_vanilla_equity_mc_adapter_uses_terminal_claim_primitives():
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "trellis/instruments/_agent/europeanoptionmontecarlo.py"
+    ).read_text()
+
+    assert "price_single_state_terminal_claim_monte_carlo_result(" in source
+    assert "terminal_intrinsic_from_resolved(" in source
+    assert "price_vanilla_equity_option_monte_carlo" not in source
 
 
 @pytest.mark.parametrize(

@@ -261,6 +261,29 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
     )
 
 
+def test_monte_carlo_binding_resolves_vanilla_terminal_claim_primitives():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert resolved.exact_target_refs == ()
+    assert set(resolved.primitive_refs) == {
+        "trellis.models.monte_carlo.single_state_diffusion.price_single_state_terminal_claim_monte_carlo_result",
+        "trellis.models.resolution.single_state_diffusion.terminal_intrinsic_from_resolved",
+    }
+
+
 def test_resolve_backend_binding_spec_uses_heston_transform_helper():
     catalog = load_backend_binding_catalog()
     transform = find_backend_binding_by_route_id("transform_fft", catalog)

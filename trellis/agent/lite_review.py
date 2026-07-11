@@ -34,6 +34,9 @@ _CHECKED_ROUTE_HELPER_SYMBOLS = frozenset({
     "price_heston_option_monte_carlo",
     "price_equity_cliquet_option_monte_carlo",
 })
+_CHECKED_MARKET_BINDING_OWNER_SYMBOLS = frozenset({
+    "price_single_state_terminal_claim_monte_carlo_result",
+})
 
 # Legacy _ROUTE_REQUIRED_ACCESSES and _ROUTE_ACCESS_ERROR_CODES removed.
 # Market-data access requirements are now sourced from the route registry
@@ -386,11 +389,13 @@ def _has_market_binding_primitive_call(signals: LiteReviewSignals, primitive_pla
     for primitive in getattr(primitive_plan, "primitives", ()) or ():
         if not getattr(primitive, "required", True):
             continue
-        if str(getattr(primitive, "role", "") or "").strip() not in binding_roles:
+        symbol = str(getattr(primitive, "symbol", "") or "")
+        role = str(getattr(primitive, "role", "") or "").strip()
+        if role not in binding_roles and symbol not in _CHECKED_MARKET_BINDING_OWNER_SYMBOLS:
             continue
         if _call_names_include_symbol(
             signals.call_names,
-            str(getattr(primitive, "symbol", "") or ""),
+            symbol,
             module=str(getattr(primitive, "module", "") or "") or None,
         ):
             return True

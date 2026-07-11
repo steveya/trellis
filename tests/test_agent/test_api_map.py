@@ -99,6 +99,15 @@ def test_monte_carlo_api_map_prioritizes_american_lsm_primitives():
     assert "price_american_equity_option_lsm_monte_carlo" not in text
 
 
+def test_monte_carlo_api_map_prioritizes_terminal_claim_composition():
+    section = get_api_map()["monte_carlo"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    assert "price_single_state_terminal_claim_monte_carlo_result" in text
+    assert "terminal_intrinsic_from_resolved" in text
+    assert "price_vanilla_equity_option_monte_carlo" not in text
+
+
 def test_equity_tree_api_map_prioritizes_lattice_algebra_primitives():
     section = get_api_map()["equity_tree"]
     text = "\n".join((*section["key_imports"], *section["notes"]))

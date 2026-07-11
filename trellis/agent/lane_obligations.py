@@ -97,7 +97,13 @@ def compile_lane_construction_plan(
     exact_target_refs = tuple(
         binding.primitive_ref
         for binding in reusable_bindings
-        if binding.role in {"route_helper", "pricing_kernel", "schedule_builder"}
+        if binding.role
+        in {
+            "monte_carlo_estimator",
+            "route_helper",
+            "pricing_kernel",
+            "schedule_builder",
+        }
     )
     timeline_roles = _timeline_roles_for(family_ir)
     state_obligations = _state_obligations_for(family_ir)
@@ -160,7 +166,13 @@ def compile_fallback_lane_construction_plan(
     exact_target_refs = tuple(
         binding.primitive_ref
         for binding in reusable_bindings
-        if binding.role in {"route_helper", "pricing_kernel", "schedule_builder"}
+        if binding.role
+        in {
+            "monte_carlo_estimator",
+            "route_helper",
+            "pricing_kernel",
+            "schedule_builder",
+        }
     )
     timeline_roles = _fallback_timeline_roles(product_ir)
     state_obligations = _fallback_state_obligations(
@@ -487,11 +499,18 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
         process_family = family_ir.process_spec.process_family or "generic_state_process"
         path_kind = family_ir.path_requirement_spec.requirement_kind or "terminal_only"
         reducer_kind = family_ir.payoff_reducer_spec.reducer_kind or "path_payoff"
-        steps = [
-            f"Assemble a one-factor `{process_family}` simulation over `{family_ir.state_spec.state_variable or 'state'}`.",
-            f"Bind the reduced-state requirement `{path_kind}` and event kinds `{', '.join(family_ir.event_kinds) or 'none'}` before path generation.",
-            f"Aggregate the payoff through `{reducer_kind}` under the `{family_ir.measure_spec.measure_family}` measure before discount-consistent readout.",
-        ]
+        if path_kind == "terminal_only" and not family_ir.event_kinds:
+            steps = [
+                "Bind the derivative-specific terminal payoff as an explicit payoff callback over resolved state.",
+                f"Evaluate the one-factor `{process_family}` terminal claim with the selected Monte Carlo estimator; bind the requested scheme and variance-reduction controls explicitly.",
+                f"Return the discounted `{reducer_kind}` result under the `{family_ir.measure_spec.measure_family}` measure without delegating to a product-level pricing wrapper.",
+            ]
+        else:
+            steps = [
+                f"Assemble a one-factor `{process_family}` simulation over `{family_ir.state_spec.state_variable or 'state'}`.",
+                f"Bind the reduced-state requirement `{path_kind}` and event kinds `{', '.join(family_ir.event_kinds) or 'none'}` before path generation.",
+                f"Aggregate the payoff through `{reducer_kind}` under the `{family_ir.measure_spec.measure_family}` measure before discount-consistent readout.",
+            ]
         # QUA-880: early-exercise MC routes (control_style == holder_max /
         # issuer_min) used to carry three adapters on the route card --
         # exercise-date derivation, spot-to-exercise-payoff callback, and
@@ -693,6 +712,16 @@ def _fallback_construction_steps(
             "Resolve spot, strike, expiry, option type, and exercise style through `resolve_single_state_diffusion_inputs(...)`.",
             "Compile `equity_tree(...)` and attach `with_control(...)`; for Bermudan exercise, map contractual dates to explicit lattice steps.",
             "Build the lattice with `build_lattice(...)` using the compiled topology, mesh, model, and resolved inputs; price the compiled contract with `price_on_lattice(...)` without reimplementing transition probabilities or backward induction.",
+        )
+
+    if {
+        "price_single_state_terminal_claim_monte_carlo_result",
+        "terminal_intrinsic_from_resolved",
+    }.issubset(required_symbols):
+        return (
+            "Bind `terminal_intrinsic_from_resolved(...)` as the derivative-specific terminal payoff callback over resolved state.",
+            "Call `price_single_state_terminal_claim_monte_carlo_result(...)` with the requested simulation scheme and variance-reduction controls explicitly selected.",
+            "For control variates, provide both the pathwise control value and its model-consistent expectation; otherwise leave control callbacks absent.",
         )
 
     if lane_family == "monte_carlo" and "fx_rates" in required_market_data:

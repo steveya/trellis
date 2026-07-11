@@ -561,6 +561,80 @@ def price(spec, market_state):
     assert "lite.monte_carlo_paths_black_vol_surface_access_missing" in issue_codes
 
 
+def test_lite_review_accepts_checked_terminal_claim_estimator_market_binding():
+    from trellis.agent.codegen_guardrails import (
+        GenerationPlan,
+        PrimitivePlan,
+        PrimitiveRef,
+    )
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.monte_carlo.single_state_diffusion import price_single_state_terminal_claim_monte_carlo_result
+from trellis.models.resolution.single_state_diffusion import terminal_intrinsic_from_resolved
+
+def price(spec, market_state):
+    result = price_single_state_terminal_claim_monte_carlo_result(
+        market_state,
+        spec,
+        terminal_payoff=lambda terminal, resolved: terminal_intrinsic_from_resolved(terminal, resolved),
+        scheme="exact",
+        variance_reduction="none",
+    )
+    return float(result.price)
+"""
+    plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="european_option",
+        inspected_modules=("trellis.models.monte_carlo.single_state_diffusion",),
+        approved_modules=(
+            "trellis.models.monte_carlo.single_state_diffusion",
+            "trellis.models.resolution.single_state_diffusion",
+        ),
+        symbols_to_reuse=(
+            "price_single_state_terminal_claim_monte_carlo_result",
+            "terminal_intrinsic_from_resolved",
+        ),
+        proposed_tests=("tests/test_agent/test_build_loop.py",),
+        primitive_plan=PrimitivePlan(
+            route="monte_carlo_paths",
+            engine_family="monte_carlo",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.monte_carlo.single_state_diffusion",
+                    "price_single_state_terminal_claim_monte_carlo_result",
+                    "monte_carlo_estimator",
+                ),
+                PrimitiveRef(
+                    "trellis.models.resolution.single_state_diffusion",
+                    "terminal_intrinsic_from_resolved",
+                    "payoff_primitive",
+                ),
+            ),
+            adapters=(),
+            blockers=(),
+        ),
+    )
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.single_state_diffusion"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="european_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lite.monte_carlo_paths_discount_curve_access_missing" not in issue_codes
+    assert "lite.monte_carlo_paths_black_vol_surface_access_missing" not in issue_codes
+
+
 def test_lite_review_rejects_rate_tree_route_without_market_access():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
     from trellis.agent.lite_review import review_generated_code

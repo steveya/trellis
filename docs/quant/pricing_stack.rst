@@ -179,7 +179,13 @@ The first migrated vanilla cases now use that boundary directly:
 - vanilla European Monte Carlo lowers onto ``EventAwareMonteCarloIR`` as a
   terminal-only ``gbm_1d`` family instance rather than a synthetic event-replay
   instance
-- the vanilla Monte Carlo and transform wrappers now both compose a shared
+- vanilla European Monte Carlo route authority is the product-neutral
+  ``price_single_state_terminal_claim_monte_carlo_result(...)`` estimator plus
+  an explicit terminal-payoff callback. Generated call/put adapters bind
+  ``terminal_intrinsic_from_resolved(...)`` and choose the requested scheme and
+  variance-reduction controls; the product-level wrapper is retained only for
+  compatibility and reference use
+- the vanilla Monte Carlo estimator and transform wrappers share the
   single-state diffusion resolver/GBM-support layer under
   ``trellis.models.resolution`` for settlement, maturity, spot, dividend,
   discount, vol, and characteristic-function binding

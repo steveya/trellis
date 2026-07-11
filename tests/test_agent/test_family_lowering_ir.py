@@ -356,7 +356,7 @@ def test_vanilla_option_monte_carlo_compiles_to_terminal_only_event_aware_family
     assert family_ir.route_id == "monte_carlo_paths"
     assert family_ir.product_instrument == "european_option"
     assert family_ir.payoff_family == "vanilla_option"
-    assert family_ir.helper_symbol == "price_vanilla_equity_option_monte_carlo"
+    assert family_ir.helper_symbol == ""
     assert family_ir.state_spec.state_variable == "spot"
     assert family_ir.process_spec.process_family == "gbm_1d"
     assert family_ir.path_requirement_spec.requirement_kind == "terminal_only"

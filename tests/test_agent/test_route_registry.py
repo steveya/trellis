@@ -861,9 +861,14 @@ class TestMonteCarloPathsRoutes:
         new_prims = resolve_route_primitives(spec, self.EUROPEAN_IR)
         expected_prims = {
             (
-                "trellis.models.equity_option_monte_carlo",
-                "price_vanilla_equity_option_monte_carlo",
-                "route_helper",
+                "trellis.models.monte_carlo.single_state_diffusion",
+                "price_single_state_terminal_claim_monte_carlo_result",
+                "monte_carlo_estimator",
+            ),
+            (
+                "trellis.models.resolution.single_state_diffusion",
+                "terminal_intrinsic_from_resolved",
+                "payoff_primitive",
             ),
         }
         assert _prim_set(new_prims) == expected_prims

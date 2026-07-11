@@ -85,7 +85,7 @@ monte_carlo:
   key_imports:
     - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
     - "from trellis.models.monte_carlo.lsm import longstaff_schwartz, longstaff_schwartz_result"
-    - "from trellis.models.monte_carlo.single_state_diffusion import resolve_single_state_monte_carlo_inputs"
+    - "from trellis.models.monte_carlo.single_state_diffusion import resolve_single_state_monte_carlo_inputs, price_single_state_terminal_claim_monte_carlo_result"
     - "from trellis.models.resolution.single_state_diffusion import terminal_intrinsic_from_resolved"
     - "from trellis.models.monte_carlo.early_exercise import EarlyExercisePolicyResult, LeastSquaresContinuationEstimator"
     - "from trellis.models.monte_carlo.schemes import HestonQuadraticExponential, LaguerreBasis"
@@ -102,6 +102,7 @@ monte_carlo:
     - "from trellis.models.monte_carlo import antithetic, control_variate, sobol_normals"
     - "from trellis.models.processes.gbm import GBM"
   notes:
+    - "For European single-state terminal claims, supply an explicit payoff callback to `price_single_state_terminal_claim_monte_carlo_result(...)` and bind scheme/variance-reduction controls at the adapter boundary"
     - "For American/Bermudan vanilla equity Monte Carlo, resolve the market contract with `resolve_single_state_monte_carlo_inputs(...)`, then compose `GBM`, `MonteCarloEngine`, `terminal_intrinsic_from_resolved(...)`, and `longstaff_schwartz(...)` explicitly"
     - "Autocallable MC routes should prefer `price_autocallable_monte_carlo_result(...)`; use `sampling='sobol'` only for QMC comparison targets"
     - "Double-barrier MC routes should use two barrier monitors or `double_barrier_state_payoff(...)` instead of adapting a one-barrier analytical formula"

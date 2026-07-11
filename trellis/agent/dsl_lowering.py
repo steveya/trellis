@@ -733,6 +733,64 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
         )
         return helper_atom, ()
 
+    terminal_estimator = next(
+        (
+            binding
+            for binding in bindings
+            if binding.role == "monte_carlo_estimator"
+        ),
+        None,
+    )
+    terminal_payoff = next(
+        (
+            binding
+            for binding in bindings
+            if binding.role in {"payoff_primitive", "terminal_payoff"}
+        ),
+        None,
+    )
+    path_requirement = str(
+        family_ir.path_requirement_spec.requirement_kind or ""
+    ).strip().lower()
+    if path_requirement == "terminal_only" and terminal_estimator is not None:
+        if terminal_payoff is None:
+            return None, (
+                _missing_primitive_message(
+                    route_id,
+                    binding_id,
+                    "terminal payoff",
+                ),
+            )
+        payoff_atom = ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, "payoff_primitive"),
+            primitive_ref=terminal_payoff.primitive_ref,
+            description=(
+                "Bind the derivative-specific terminal payoff as a callback over "
+                "resolved single-state diffusion inputs."
+            ),
+            signature=ContractSignature(
+                inputs=market_signature.inputs,
+                outputs=("terminal_payoff_callback:state",),
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        estimator_atom = ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, "monte_carlo_estimator"),
+            primitive_ref=terminal_estimator.primitive_ref,
+            description=(
+                "Evaluate the terminal claim with explicit simulation scheme and "
+                "variance-reduction controls."
+            ),
+            signature=ContractSignature(
+                inputs=("terminal_payoff_callback:state",),
+                outputs=("price:scalar",),
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        return ThenExpr(terms=(payoff_atom, estimator_atom)), ()
+
     process_binding = next(
         (
             binding

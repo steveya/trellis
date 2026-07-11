@@ -804,7 +804,6 @@ _MC_MARKET_MAPPINGS = {
 
 
 _MC_HELPER_BINDINGS = {
-    ("gbm_1d", "vanilla_option", "european"): "price_vanilla_equity_option_monte_carlo",
     ("heston", "vanilla_option", "european"): "price_heston_option_monte_carlo",
     ("hull_white_1f", "period_rate_option_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
     ("hull_white_1f", "swaption", ""): "price_swaption_monte_carlo",
@@ -1098,6 +1097,11 @@ def _binding_supports_event_aware_monte_carlo(
     binding_spec is None` fallback has been retired.
     """
     del route_id
+    if _binding_has_role(binding_spec, "monte_carlo_estimator") and _binding_has_role(
+        binding_spec,
+        "payoff_primitive",
+    ):
+        return True
     if _binding_has_role(binding_spec, "path_simulation") and _binding_has_role(binding_spec, "state_process"):
         return True
     if _binding_has_any_symbol(
