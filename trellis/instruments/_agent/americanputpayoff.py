@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention
 
 
 @dataclass(frozen=True)
@@ -17,6 +19,8 @@ class AmericanPutEquitySpec:
     notional: float = 1.0
     option_type: str = "put"
     exercise_style: str = "american"
+    exercise_dates: tuple[date, ...] | None = None
+    day_count: DayCountConvention = DayCountConvention.ACT_365
 
 
 class AmericanOptionPayoff:
@@ -38,6 +42,7 @@ class AmericanOptionPayoff:
     def evaluate(self, market_state: MarketState) -> float:
         """Price the generated American put with Longstaff-Schwartz regression."""
         from trellis.models.monte_carlo.engine import MonteCarloEngine
+        from trellis.models.monte_carlo.event_state import event_step_indices
         from trellis.models.monte_carlo.lsm import longstaff_schwartz
         from trellis.models.monte_carlo.schemes import LaguerreBasis
         from trellis.models.monte_carlo.single_state_diffusion import (
@@ -77,7 +82,36 @@ class AmericanOptionPayoff:
         )
         paths = engine.simulate(resolved.spot, resolved.maturity)
         dt = resolved.maturity / engine.n_steps
-        exercise_dates = list(range(1, engine.n_steps + 1))
+        exercise_style = str(spec.exercise_style).strip().lower()
+        if exercise_style == "american":
+            exercise_steps = list(range(1, engine.n_steps + 1))
+        elif exercise_style == "bermudan":
+            if not spec.exercise_dates:
+                raise ValueError("Bermudan LSM requires spec.exercise_dates")
+            settlement = market_state.settlement or market_state.as_of
+            if settlement is None:
+                raise ValueError("Bermudan LSM requires market settlement or as_of")
+            event_times = []
+            for exercise_date in spec.exercise_dates:
+                exercise_time = float(
+                    year_fraction(settlement, exercise_date, spec.day_count)
+                )
+                if 0.0 <= exercise_time <= resolved.maturity:
+                    event_times.append(exercise_time)
+            if not event_times:
+                raise ValueError("Bermudan LSM resolved no valid exercise dates")
+            exercise_steps = list(
+                event_step_indices(
+                    tuple(event_times), resolved.maturity, resolved.n_steps
+                )
+            )
+            exercise_steps = sorted(
+                {max(int(step), 1) for step in exercise_steps}
+            )
+        elif exercise_style == "european":
+            exercise_steps = [resolved.n_steps]
+        else:
+            raise ValueError(f"Unsupported exercise_style {exercise_style!r}")
         basis = LaguerreBasis(degree=2)
 
         def payoff_fn(spots):
@@ -87,7 +121,7 @@ class AmericanOptionPayoff:
         return float(resolved.notional) * float(
             longstaff_schwartz(
                 paths,
-                exercise_dates,
+                exercise_steps,
                 payoff_fn,
                 discount_rate=resolved.rate,
                 dt=dt,

@@ -379,6 +379,7 @@ class TestPlanBuild:
             "expiry_date",
             "option_type",
             "exercise_style",
+            "exercise_dates",
             "day_count",
             "tree_steps",
             "n_paths",

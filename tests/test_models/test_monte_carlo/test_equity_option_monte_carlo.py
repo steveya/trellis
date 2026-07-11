@@ -3,7 +3,6 @@ from __future__ import annotations
 from datetime import date
 
 import pytest
-
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.black import black76_call, black76_put
@@ -11,6 +10,17 @@ from trellis.models.vol_surface import FlatVol
 
 
 SETTLE = date(2024, 11, 15)
+
+
+def test_equity_monte_carlo_preserves_legacy_single_state_resolver_reexport():
+    from trellis.models.equity_option_monte_carlo import (
+        resolve_single_state_terminal_claim_monte_carlo_inputs as product_legacy,
+    )
+    from trellis.models.monte_carlo.single_state_diffusion import (
+        resolve_single_state_terminal_claim_monte_carlo_inputs as core_legacy,
+    )
+
+    assert product_legacy is core_legacy
 
 
 class _Spec:
