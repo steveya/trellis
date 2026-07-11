@@ -1216,6 +1216,71 @@ def test_deterministic_american_tree_maps_bermudan_dates_to_exercise_steps():
     assert captured["steps"] == event_step_indices(event_times, maturity, 12)
 
 
+def test_deterministic_american_tree_rejects_empty_bermudan_schedule_window():
+    from datetime import date as _date
+
+    import numpy as _np
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.market_state import MarketState
+
+    class _FlatDiscount:
+        def zero_rate(self, _t: float) -> float:
+            return 0.05
+
+        def discount(self, t: float) -> float:
+            return float(_np.exp(-0.05 * float(t)))
+
+    class _FlatBlackVol:
+        def black_vol(self, _t: float, _strike: float) -> float:
+            return 0.20
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(),
+        primitive_plan=None,
+        method="rate_tree",
+        instrument_type="american_option",
+        lane_control_obligations=("exercise_style:bermudan",),
+    )
+    schema = SPECIALIZED_SPECS["american_put_tree"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Bermudan put primitive-composed tree",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="crr_tree",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1168_empty_bermudan>", "exec"), namespace)  # noqa: S102
+    payoff = namespace[schema.class_name](
+        namespace[schema.spec_name](
+            spot=100.0,
+            strike=100.0,
+            expiry_date=_date(2025, 1, 1),
+            exercise_style="bermudan",
+            exercise_dates=(_date(2023, 12, 1), _date(2025, 2, 1)),
+            tree_steps=12,
+        )
+    )
+    market = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=_FlatDiscount(),
+        vol_surface=_FlatBlackVol(),
+    )
+
+    with pytest.raises(ValueError, match="within the pricing horizon"):
+        payoff.evaluate(market)
+
+
 def test_deterministic_american_tree_primitive_composition_executes():
     from datetime import date as _date
 

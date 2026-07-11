@@ -3803,6 +3803,10 @@ def _american_equity_tree_primitive_body(
                     exercise_time = float(year_fraction(settlement, exercise_date, spec.day_count))
                     if 0.0 <= exercise_time <= resolved.maturity:
                         event_times.append(exercise_time)
+                if not event_times:
+                    raise ValueError(
+                        "Bermudan tree pricing requires an exercise date within the pricing horizon"
+                    )
                 exercise_steps = event_step_indices(
                     event_times, resolved.maturity, tree_steps
                 )
