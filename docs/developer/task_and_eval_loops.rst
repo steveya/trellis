@@ -536,9 +536,9 @@ Garman-Kohlhagen kernel; Monte Carlo targets must construct GBM, the generic
 Monte Carlo engine, and a terminal-only payoff explicitly. Product-level FX
 vanilla wrappers cannot count as method evidence. ``fx_vanilla_gk_outputs``
 remains independent benchmark-reporting evidence for native FinancePy Greeks,
-not route pricing authority. ``T94`` keeps its explicit named-market
-assertions, while both legacy rows declare nondegenerate payoff terms and
-``T108`` selects the shared ``flat_fx_gk`` scenario. ``P003``
+not route pricing authority. Both legacy rows declare nondegenerate payoff
+terms and select the shared ``flat_fx_gk`` scenario; ``T94`` additionally
+keeps its explicit named-market and model-parameter bridge assertions. ``P003``
 and legacy ``T109`` apply the same artifact-coherence
 rule to FX single-barrier comparison: the analytical target resolves the FX
 market contract and calls the scalar barrier kernel, while the Monte Carlo

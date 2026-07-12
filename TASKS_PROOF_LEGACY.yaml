@@ -1151,6 +1151,7 @@ tasks:
   new_component:
   - garman_kohlhagen_formula
   - fx_market_bridge
+  market_scenario_id: flat_fx_gk
   extension_contract:
     product: fx_vanilla
     option_type: call

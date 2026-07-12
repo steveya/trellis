@@ -1756,10 +1756,9 @@ def test_fx_vanilla_proof_rows_declare_non_degenerate_runtime_contracts():
     assert set(tasks) == {"T94", "T108"}
     for task in tasks.values():
         assert task["instrument_type"] == "european_option"
+        assert task["market_scenario_id"] == "flat_fx_gk"
         assert task["extension_contract"] == expected_contract
         assert benchmark_spec_overrides(task) == expected_overrides
-    assert tasks["T108"]["market_scenario_id"] == "flat_fx_gk"
-    assert "market_scenario_id" not in tasks["T94"]
     assert tasks["T94"]["market_assertions"]["selected"]["model_parameters"] == (
         "heston_equity"
     )
