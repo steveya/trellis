@@ -2043,7 +2043,8 @@ class TestFXBarrierRoutes:
         spec = [r for r in registry.routes if r.id == "analytical_fx_barrier"][0]
         new_prims = resolve_route_primitives(spec, self.FX_BARRIER_IR)
         expected_prims = {
-            ("trellis.models.fx_barrier_option", "price_fx_barrier_option_analytical", "route_helper"),
+            ("trellis.models.fx_barrier_option", "resolve_fx_barrier_inputs", "market_binding"),
+            ("trellis.models.analytical.barrier", "barrier_option_price", "pricing_kernel"),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -2065,7 +2066,13 @@ class TestFXBarrierRoutes:
         spec = [r for r in registry.routes if r.id == "monte_carlo_fx_barrier"][0]
         new_prims = resolve_route_primitives(spec, self.FX_BARRIER_IR)
         expected_prims = {
-            ("trellis.models.fx_barrier_option", "price_fx_barrier_option_monte_carlo", "route_helper"),
+            ("trellis.models.fx_barrier_option", "resolve_fx_barrier_inputs", "market_binding"),
+            ("trellis.models.processes.gbm", "GBM", "state_process"),
+            ("trellis.models.monte_carlo.engine", "MonteCarloEngine", "engine"),
+            ("trellis.models.monte_carlo.path_state", "BarrierMonitor", "event_monitor"),
+            ("trellis.models.monte_carlo.path_state", "MonteCarloPathRequirement", "path_requirement"),
+            ("trellis.models.monte_carlo.path_state", "StateAwarePayoff", "payoff_primitive"),
+            ("trellis.models.analytical", "terminal_intrinsic", "terminal_payoff"),
         }
         assert _prim_set(new_prims) == expected_prims
 

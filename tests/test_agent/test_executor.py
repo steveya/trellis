@@ -1263,6 +1263,218 @@ def test_admitted_european_analytical_adapter_honors_dividend_yield():
 
 
 @pytest.mark.parametrize(
+    ("schema_id", "method", "exact_ref", "required_fragments", "excluded_fragments"),
+    [
+        (
+            "fx_barrier_option_analytical",
+            "analytical",
+            "trellis.models.analytical.barrier.barrier_option_price",
+            (
+                "resolve_fx_barrier_inputs(",
+                "barrier_option_price(",
+                "q=resolved.foreign_rate",
+            ),
+            ("price_fx_barrier_option_analytical(",),
+        ),
+        (
+            "fx_barrier_option_monte_carlo",
+            "monte_carlo",
+            "trellis.models.monte_carlo.engine.MonteCarloEngine",
+            (
+                "resolve_fx_barrier_inputs(",
+                "GBM(",
+                "MonteCarloEngine(",
+                "BarrierMonitor(",
+                "MonteCarloPathRequirement(",
+                "StateAwarePayoff(",
+                "terminal_intrinsic(",
+                "return_paths=False",
+            ),
+            (
+                "price_fx_barrier_option_monte_carlo(",
+                "price_fx_barrier_option_monte_carlo_result(",
+            ),
+        ),
+    ],
+)
+def test_deterministic_fx_barrier_targets_use_primitive_composition(
+    schema_id,
+    method,
+    exact_ref,
+    required_fragments,
+    excluded_fragments,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    route_primitives = ()
+    if method == "monte_carlo":
+        route_primitives = (
+            SimpleNamespace(
+                module="trellis.models.monte_carlo.path_state",
+                symbol="BarrierMonitor",
+                role="event_monitor",
+                required=True,
+            ),
+            SimpleNamespace(
+                module="trellis.models.monte_carlo.path_state",
+                symbol="MonteCarloPathRequirement",
+                role="path_requirement",
+                required=True,
+            ),
+            SimpleNamespace(
+                module="trellis.models.monte_carlo.path_state",
+                symbol="StateAwarePayoff",
+                role="payoff_primitive",
+                required=True,
+            ),
+        )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(exact_ref,),
+        primitive_plan=SimpleNamespace(
+            route=f"{method}_fx_barrier" if method == "analytical" else "monte_carlo_fx_barrier",
+            primitives=route_primitives,
+        ),
+        method=method,
+        instrument_type="barrier_option",
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            SPECIALIZED_SPECS[schema_id],
+            "FX barrier primitive composition",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target=method,
+    )
+
+    assert generated is not None
+    compile(generated.code, "<qua_1171_source>", "exec")
+    for fragment in required_fragments:
+        assert fragment in generated.code
+    for fragment in excluded_fragments:
+        assert fragment not in generated.code
+    if method == "monte_carlo":
+        assert generated.code.count(
+            "from trellis.models.monte_carlo.path_state import"
+        ) == 1
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_generated_fx_barrier_analytical_and_mc_agree():
+    from datetime import date as _date
+    from math import exp
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.instruments.fx import FXRate
+    from trellis.models.vol_surface import FlatVol
+
+    def materialize(schema_id, method, exact_ref, route):
+        plan = SimpleNamespace(
+            lane_exact_binding_refs=(exact_ref,),
+            primitive_plan=SimpleNamespace(route=route),
+            method=method,
+            instrument_type="barrier_option",
+        )
+        schema = SPECIALIZED_SPECS[schema_id]
+        generated = _materialize_deterministic_exact_binding_module(
+            _generate_skeleton(
+                schema,
+                "FX barrier generated parity",
+                generation_plan=plan,
+            ),
+            plan,
+            comparison_target=method,
+        )
+        assert generated is not None
+        namespace: dict = {}
+        exec(compile(generated.code, f"<qua_1171_{method}>", "exec"), namespace)  # noqa: S102
+        return schema, namespace
+
+    analytical_schema, analytical_ns = materialize(
+        "fx_barrier_option_analytical",
+        "analytical",
+        "trellis.models.analytical.barrier.barrier_option_price",
+        "analytical_fx_barrier",
+    )
+    mc_schema, mc_ns = materialize(
+        "fx_barrier_option_monte_carlo",
+        "monte_carlo",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "monte_carlo_fx_barrier",
+    )
+    terms = dict(
+        notional=1_000_000.0,
+        strike=1.10,
+        barrier=1.02,
+        expiry_date=_date(2025, 11, 15),
+        fx_pair="EURUSD",
+        foreign_discount_key="EUR-DISC",
+        option_type="call",
+        barrier_type="down_and_in",
+    )
+    analytical = analytical_ns[analytical_schema.class_name](
+        analytical_ns[analytical_schema.spec_name](**terms)
+    )
+    mc = mc_ns[mc_schema.class_name](
+        mc_ns[mc_schema.spec_name](**terms, n_paths=20_000, n_steps=252)
+    )
+    market = MarketState(
+        as_of=_date(2024, 11, 15),
+        settlement=_date(2024, 11, 15),
+        discount=YieldCurve.flat(0.045),
+        forecast_curves={"EUR-DISC": YieldCurve.flat(0.025)},
+        fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+        vol_surface=FlatVol(0.14),
+    )
+
+    analytical_price = float(analytical.evaluate(market))
+    mc_price = float(mc.evaluate(market))
+
+    assert analytical_price > 0.0
+    assert mc_price == pytest.approx(analytical_price, rel=0.08, abs=2_000.0)
+
+    immediate_knock_in = mc_ns[mc_schema.class_name](
+        mc_ns[mc_schema.spec_name](
+            **{
+                **terms,
+                "strike": 1.0,
+                "barrier": 1.11,
+            },
+            observations_per_year=1,
+            n_paths=1_000,
+            n_steps=4,
+        )
+    )
+    deterministic_market = MarketState(
+        as_of=_date(2024, 11, 15),
+        settlement=_date(2024, 11, 15),
+        discount=YieldCurve.flat(0.02),
+        forecast_curves={"EUR-DISC": YieldCurve.flat(0.0)},
+        fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+        vol_surface=FlatVol(0.0),
+    )
+
+    expected_vanilla = 1_000_000.0 * (
+        1.10 - exp(-0.02) * 1.0
+    )
+    assert immediate_knock_in.evaluate(deterministic_market) == pytest.approx(
+        expected_vanilla,
+        rel=1e-12,
+    )
+
+
+@pytest.mark.parametrize(
     ("comparison_target", "expected_fragment", "expected_import"),
     [
         (

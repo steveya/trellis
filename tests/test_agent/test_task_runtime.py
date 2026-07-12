@@ -1720,6 +1720,47 @@ def test_task_runtime_bridges_sparse_proof_mc_rows_to_vanilla_option_contract():
         assert summary["methods"]["preferred_method"] == "monte_carlo"
 
 
+def test_t109_declares_non_degenerate_fx_barrier_runtime_contract():
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import benchmark_spec_overrides
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T109"
+    )
+
+    assert task["market_scenario_id"] == "fx_barrier_smile"
+    assert task["instrument_type"] == "barrier_option"
+    assert task["extension_contract"] == {
+        "product": "fx_barrier_option",
+        "option_type": "call",
+        "barrier_type": "down_and_in",
+        "strike": pytest.approx(1.10),
+        "barrier": pytest.approx(1.02),
+        "spot": pytest.approx(1.10),
+        "expiry_years": pytest.approx(1.0),
+        "domestic_rate": pytest.approx(0.045),
+        "foreign_rate": pytest.approx(0.025),
+        "volatility": pytest.approx(0.14),
+        "notional": pytest.approx(1_000_000.0),
+        "currency_pair": "EURUSD",
+    }
+    assert benchmark_spec_overrides(task) == {
+        "notional": pytest.approx(1_000_000.0),
+        "spot": pytest.approx(1.10),
+        "strike": pytest.approx(1.10),
+        "option_type": "call",
+        "barrier": pytest.approx(1.02),
+        "barrier_type": "down_and_in",
+        "currency_pair": "EURUSD",
+        "fx_pair": "EURUSD",
+        "expiry_date": date(2025, 11, 15),
+        "foreign_discount_key": "EUR-DISC",
+        "rebate": pytest.approx(0.0),
+    }
+
+
 def test_task_runtime_bridges_sparse_cev_row_to_cev_route_contract():
     from trellis.agent.semantic_contracts import semantic_contract_summary
     from trellis.agent.task_manifests import load_task_manifest

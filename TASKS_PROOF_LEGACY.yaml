@@ -1415,10 +1415,26 @@ tasks:
   status: pending
 - id: T109
   title: 'FX barrier option: analytical vs MC'
+  instrument_type: barrier_option
   construct:
   - analytical
   - monte_carlo
   new_component: fx_barrier_analytical
+  market_scenario_id: fx_barrier_smile
+  validation_policy: invariants_and_cross_method
+  extension_contract:
+    product: fx_barrier_option
+    option_type: call
+    barrier_type: down_and_in
+    strike: 1.1
+    barrier: 1.02
+    spot: 1.1
+    expiry_years: 1.0
+    domestic_rate: 0.045
+    foreign_rate: 0.025
+    volatility: 0.14
+    notional: 1000000.0
+    currency_pair: EURUSD
   cross_validate:
     internal:
     - fx_barrier_analytical

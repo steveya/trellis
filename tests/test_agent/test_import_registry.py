@@ -369,6 +369,21 @@ def test_fx_barrier_helpers_are_visible_to_import_registry():
     assert "price_fx_barrier_option_analytical" in registry_text
 
 
+def test_fx_barrier_path_state_primitives_are_in_static_import_registry():
+    module = "trellis.models.monte_carlo.path_state"
+    symbols = {
+        "BarrierMonitor",
+        "MonteCarloPathRequirement",
+        "StateAwarePayoff",
+    }
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+
+    assert symbols <= set(static_registry[module])
+
+
 def test_resolve_import_candidates_handles_known_and_unknown_symbols():
     candidates = resolve_import_candidates(["theta_method_1d", "definitely_not_real"])
     assert "trellis.models.pde.theta_method" in candidates["theta_method_1d"]

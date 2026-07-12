@@ -439,24 +439,27 @@ def test_resolve_backend_binding_spec_uses_single_barrier_exact_helpers(
 
 
 @pytest.mark.parametrize(
-    "route_id,method,expected_ref",
+    "route_id,method,expected_ref,expected_market_binding",
     [
         (
             "analytical_fx_barrier",
             "analytical",
-            "trellis.models.fx_barrier_option.price_fx_barrier_option_analytical",
+            "trellis.models.analytical.barrier.barrier_option_price",
+            "trellis.models.fx_barrier_option.resolve_fx_barrier_inputs",
         ),
         (
             "monte_carlo_fx_barrier",
             "monte_carlo",
-            "trellis.models.fx_barrier_option.price_fx_barrier_option_monte_carlo",
+            "trellis.models.monte_carlo.engine.MonteCarloEngine",
+            "trellis.models.fx_barrier_option.resolve_fx_barrier_inputs",
         ),
     ],
 )
-def test_resolve_backend_binding_spec_uses_fx_barrier_exact_helpers(
+def test_resolve_backend_binding_spec_uses_fx_barrier_primitive_composition(
     route_id,
     method,
     expected_ref,
+    expected_market_binding,
 ):
     catalog = load_backend_binding_catalog()
     binding = find_backend_binding_by_route_id(route_id, catalog)
@@ -478,7 +481,8 @@ def test_resolve_backend_binding_spec_uses_fx_barrier_exact_helpers(
 
     assert resolved.binding_id == expected_ref
     assert resolved.exact_target_refs == (expected_ref,)
-    assert resolved.helper_refs == (expected_ref,)
+    assert resolved.market_binding_refs == (expected_market_binding,)
+    assert resolved.helper_refs == ()
 
 
 @pytest.mark.parametrize(

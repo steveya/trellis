@@ -196,13 +196,17 @@ The first migrated vanilla cases now use that boundary directly:
   ``terminal_intrinsic_from_resolved(...)``, and pass the paths and exercise
   schedule to ``longstaff_schwartz(...)``. The product-level American LSM helper
   remains a compatibility/reference surface, not route authority.
-- FX single-barrier options now have dedicated analytical and Monte Carlo
-  helper-backed routes in ``trellis.models.fx_barrier_option``. These routes
-  bind spot FX, domestic discounting, foreign discounting, and Black volatility
-  explicitly instead of passing FX barrier tasks through the vanilla
-  Garman-Kohlhagen adapters. When an observation frequency is not supplied, the
-  FX analytical helper uses the Monte Carlo grid's effective monitoring
-  frequency for task-level cross-method parity.
+- FX single-barrier analytical routes now compose
+  ``resolve_fx_barrier_inputs(...)`` with the scalar
+  ``barrier_option_price(...)`` kernel. Monte Carlo routes compose the same
+  resolved contract with ``GBM``, ``MonteCarloEngine``, ``BarrierMonitor``,
+  ``MonteCarloPathRequirement``, ``StateAwarePayoff``, and
+  ``terminal_intrinsic(...)``. The MC path contract stores terminal state and a
+  barrier-hit flag rather than retaining full paths. Product-level FX barrier
+  wrappers remain compatibility/reference surfaces, not route authority.
+  When an observation frequency is not supplied, resolution derives it from
+  the Monte Carlo grid so analytical and MC monitoring contracts remain
+  aligned for task-level comparison.
 - equity variance-swap comparison targets now have a checked Monte Carlo
   realised-variance route in ``trellis.models.variance_swap``. The MC helper
   simulates annualised log-return variance under the market state's GBM

@@ -475,8 +475,21 @@ def test_compile_build_request_selects_fx_barrier_monte_carlo_route():
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "monte_carlo_fx_barrier"
     assert compiled.generation_plan.lane_exact_binding_refs == (
-        "trellis.models.fx_barrier_option.price_fx_barrier_option_monte_carlo",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
     )
+    primitive_symbols = {
+        primitive.symbol
+        for primitive in compiled.generation_plan.primitive_plan.primitives
+    }
+    assert {
+        "resolve_fx_barrier_inputs",
+        "GBM",
+        "MonteCarloEngine",
+        "BarrierMonitor",
+        "MonteCarloPathRequirement",
+        "StateAwarePayoff",
+        "terminal_intrinsic",
+    } <= primitive_symbols
 
 
 def test_compile_build_request_respects_quanto_preferred_monte_carlo_route():

@@ -611,7 +611,7 @@ def test_builds_fx_barrier_plan_for_knock_in_fx_context():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "analytical_fx_barrier"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_fx_barrier_option_analytical"}
+    assert primitive_symbols == {"resolve_fx_barrier_inputs", "barrier_option_price"}
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.blockers == ()
 
