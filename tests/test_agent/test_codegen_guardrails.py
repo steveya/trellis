@@ -588,7 +588,7 @@ def test_generation_route_card_keeps_lane_obligations_ahead_of_route_authority()
     assert "Treat route authority as backend-fit evidence, not as permission to invent a different synthesis plan." in text
 
 
-def test_generation_route_card_for_fx_exact_helper_stays_helper_only():
+def test_generation_route_card_for_fx_analytical_composes_resolver_and_kernel():
     compiled = compile_build_request(
         "FX vanilla option: Garman-Kohlhagen vs MC",
         instrument_type="european_option",
@@ -597,8 +597,9 @@ def test_generation_route_card_for_fx_exact_helper_stays_helper_only():
 
     text = render_generation_route_card(compiled.generation_plan)
 
-    assert "price_fx_vanilla_analytical" in text
-    assert "garman_kohlhagen_price_raw" not in text
+    assert "resolve_fx_vanilla_inputs" in text
+    assert "garman_kohlhagen_price_raw" in text
+    assert "price_fx_vanilla_analytical" not in text
     assert "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" not in text
 
 
@@ -937,9 +938,16 @@ def test_fx_monte_carlo_route_card_mentions_fx_rate_scalar_extraction():
         f"{primitive.module}.{primitive.symbol}"
         for primitive in plan.primitive_plan.primitives
     }
-    assert "trellis.models.fx_vanilla.price_fx_vanilla_monte_carlo" in primitive_refs
+    assert {
+        "trellis.models.fx_vanilla.resolve_fx_vanilla_inputs",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.terminal_value_payoff",
+        "trellis.models.analytical.terminal_intrinsic",
+    } <= primitive_refs
     assert "Resolve scalar FX spot from `market_state.fx_rates[spec.fx_pair].spot`" in card
-    assert "price_fx_vanilla_monte_carlo" in card
+    assert "price_fx_vanilla_monte_carlo" not in card
+    assert "terminal_value_payoff" in card
     assert "FXRate` wrapper" in card
 
 

@@ -458,6 +458,20 @@ def test_compile_build_request_emits_fallback_lane_plan_for_fx_monte_carlo_route
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "monte_carlo_fx_vanilla"
     assert compiled.generation_plan.lane_family == "monte_carlo"
+    assert compiled.generation_plan.lane_exact_binding_refs == (
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+    )
+    primitive_symbols = {
+        primitive.symbol
+        for primitive in compiled.generation_plan.primitive_plan.primitives
+    }
+    assert {
+        "resolve_fx_vanilla_inputs",
+        "GBM",
+        "MonteCarloEngine",
+        "terminal_value_payoff",
+        "terminal_intrinsic",
+    } <= primitive_symbols
     assert any("FXRate" in step for step in compiled.generation_plan.lane_construction_steps)
 
 

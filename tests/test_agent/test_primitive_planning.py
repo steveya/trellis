@@ -578,7 +578,10 @@ def test_builds_fx_analytical_plan_for_fx_option_context():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "analytical_garman_kohlhagen"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_fx_vanilla_analytical"}
+    assert primitive_symbols == {
+        "resolve_fx_vanilla_inputs",
+        "garman_kohlhagen_price_raw",
+    }
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.blockers == ()
 

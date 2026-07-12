@@ -382,8 +382,20 @@ bindings:
     route_family: monte_carlo
     primitives:
       - module: trellis.models.fx_vanilla
-        symbol: price_fx_vanilla_monte_carlo
-        role: route_helper
+        symbol: resolve_fx_vanilla_inputs
+        role: market_binding
+      - module: trellis.models.processes.gbm
+        symbol: GBM
+        role: state_process
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: engine
+      - module: trellis.models.monte_carlo.path_state
+        symbol: terminal_value_payoff
+        role: payoff_adapter
+      - module: trellis.models.analytical
+        symbol: terminal_intrinsic
+        role: terminal_payoff
 
   - route_id: local_vol_monte_carlo
     engine_family: monte_carlo
@@ -880,8 +892,11 @@ bindings:
     route_family: analytical
     primitives:
       - module: trellis.models.fx_vanilla
-        symbol: price_fx_vanilla_analytical
-        role: route_helper
+        symbol: resolve_fx_vanilla_inputs
+        role: market_binding
+      - module: trellis.models.analytical.fx
+        symbol: garman_kohlhagen_price_raw
+        role: pricing_kernel
 
   - route_id: sabr_hagan_analytical
     engine_family: analytical

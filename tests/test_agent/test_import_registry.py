@@ -384,6 +384,22 @@ def test_fx_barrier_path_state_primitives_are_in_static_import_registry():
     assert symbols <= set(static_registry[module])
 
 
+def test_fx_vanilla_composition_primitives_are_in_static_import_registry():
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+
+    assert "resolve_fx_vanilla_inputs" in static_registry[
+        "trellis.models.fx_vanilla"
+    ]
+    assert "garman_kohlhagen_price_raw" in static_registry[
+        "trellis.models.analytical.fx"
+    ]
+    assert "terminal_value_payoff" in static_registry[
+        "trellis.models.monte_carlo.path_state"
+    ]
+
+
 def test_resolve_import_candidates_handles_known_and_unknown_symbols():
     candidates = resolve_import_candidates(["theta_method_1d", "definitely_not_real"])
     assert "trellis.models.pde.theta_method" in candidates["theta_method_1d"]

@@ -1720,6 +1720,51 @@ def test_task_runtime_bridges_sparse_proof_mc_rows_to_vanilla_option_contract():
         assert summary["methods"]["preferred_method"] == "monte_carlo"
 
 
+def test_fx_vanilla_proof_rows_declare_non_degenerate_runtime_contracts():
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import benchmark_spec_overrides
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] in {"T94", "T108"}
+    }
+    expected_contract = {
+        "product": "fx_vanilla",
+        "option_type": "call",
+        "strike": pytest.approx(1.10),
+        "spot": pytest.approx(1.10),
+        "expiry_years": pytest.approx(1.0),
+        "domestic_rate": pytest.approx(0.045),
+        "foreign_rate": pytest.approx(0.025),
+        "volatility": pytest.approx(0.12),
+        "notional": pytest.approx(1_000_000.0),
+        "currency_pair": "EURUSD",
+        "premium_currency": "USD",
+    }
+    expected_overrides = {
+        "notional": pytest.approx(1_000_000.0),
+        "spot": pytest.approx(1.10),
+        "strike": pytest.approx(1.10),
+        "option_type": "call",
+        "currency_pair": "EURUSD",
+        "fx_pair": "EURUSD",
+        "expiry_date": date(2025, 11, 15),
+        "foreign_discount_key": "EUR-DISC",
+    }
+
+    assert set(tasks) == {"T94", "T108"}
+    for task in tasks.values():
+        assert task["instrument_type"] == "european_option"
+        assert task["extension_contract"] == expected_contract
+        assert benchmark_spec_overrides(task) == expected_overrides
+    assert tasks["T108"]["market_scenario_id"] == "flat_fx_gk"
+    assert "market_scenario_id" not in tasks["T94"]
+    assert tasks["T94"]["market_assertions"]["selected"]["model_parameters"] == (
+        "heston_equity"
+    )
+
+
 def test_t109_declares_non_degenerate_fx_barrier_runtime_contract():
     from trellis.agent.task_manifests import load_task_manifest
     from trellis.agent.task_runtime import benchmark_spec_overrides

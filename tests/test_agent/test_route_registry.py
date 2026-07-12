@@ -2012,7 +2012,8 @@ class TestFXAnalyticalRoutes:
         spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
         new_prims = resolve_route_primitives(spec, self.FX_IR)
         expected_prims = {
-            ("trellis.models.fx_vanilla", "price_fx_vanilla_analytical", "route_helper"),
+            ("trellis.models.fx_vanilla", "resolve_fx_vanilla_inputs", "market_binding"),
+            ("trellis.models.analytical.fx", "garman_kohlhagen_price_raw", "pricing_kernel"),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -2092,7 +2093,11 @@ class TestFXMonteCarloRoutes:
         spec = [r for r in registry.routes if r.id == "monte_carlo_fx_vanilla"][0]
         new_prims = resolve_route_primitives(spec, self.FX_IR)
         expected_prims = {
-            ("trellis.models.fx_vanilla", "price_fx_vanilla_monte_carlo", "route_helper"),
+            ("trellis.models.fx_vanilla", "resolve_fx_vanilla_inputs", "market_binding"),
+            ("trellis.models.processes.gbm", "GBM", "state_process"),
+            ("trellis.models.monte_carlo.engine", "MonteCarloEngine", "engine"),
+            ("trellis.models.monte_carlo.path_state", "terminal_value_payoff", "payoff_adapter"),
+            ("trellis.models.analytical", "terminal_intrinsic", "terminal_payoff"),
         }
         assert _prim_set(new_prims) == expected_prims
 

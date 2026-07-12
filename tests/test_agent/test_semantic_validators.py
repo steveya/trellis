@@ -492,7 +492,7 @@ def evaluate(self, market_state):
         assert all(primitive.role != "route_helper" for primitive in spec.primitives)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
-    def test_flags_fx_exact_helper_signature_mismatch(self, registry):
+    def test_fx_product_helper_is_not_exact_route_authority(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
         source = '''
 from trellis.models.fx_vanilla import price_fx_vanilla_analytical
@@ -502,18 +502,26 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("analytical_garman_kohlhagen"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert all(primitive.role != "route_helper" for primitive in spec.primitives)
+        assert any(f.category == "engine_family_mismatch" for f in findings)
+        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
-    def test_accepts_fx_exact_helper_with_mixed_positional_and_keyword_args(self, registry):
+    def test_accepts_fx_raw_garman_kohlhagen_kernel(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
         source = '''
-from trellis.models.fx_vanilla import price_fx_vanilla_analytical
+from trellis.models.analytical.fx import garman_kohlhagen_price_raw
+from trellis.models.fx_vanilla import resolve_fx_vanilla_inputs
 
 def evaluate(self, market_state):
-    return price_fx_vanilla_analytical(market_state, spec=self._spec)
+    resolved = resolve_fx_vanilla_inputs(market_state, self._spec)
+    return resolved.notional * garman_kohlhagen_price_raw(
+        resolved.option_type,
+        resolved.garman_kohlhagen,
+    )
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("analytical_garman_kohlhagen"), spec)
+        assert not any(f.category == "engine_family_mismatch" for f in findings)
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
 
     def test_flags_vanilla_equity_transform_helper_signature_mismatch(self, registry):

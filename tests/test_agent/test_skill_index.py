@@ -79,7 +79,7 @@ def test_route_hint_projection_includes_instruction_lifecycle_records():
 
 
 def test_route_hint_lineage_links_back_to_matching_cookbook():
-    record = get_skill_record("route_hint:analytical_garman_kohlhagen:route-helper")
+    record = get_skill_record("route_hint:sabr_hagan_analytical:route-helper")
 
     assert record is not None
     assert record.kind == "route_hint"
@@ -92,14 +92,21 @@ def test_skill_lineage_query_surfaces_children_and_same_source_records():
     lineage = get_skill_lineage("cookbook:analytical")
 
     assert lineage is not None
-    assert "route_hint:analytical_garman_kohlhagen:route-helper" in lineage["children"]
+    assert "route_hint:sabr_hagan_analytical:route-helper" in lineage["children"]
 
-    route_lineage = get_skill_lineage("route_hint:analytical_garman_kohlhagen:route-helper")
+    route_lineage = get_skill_lineage("route_hint:sabr_hagan_analytical:route-helper")
     assert route_lineage is not None
-    assert route_lineage["same_source"] == ()
+    assert route_lineage["same_source"] == ("route_hint:sabr_hagan_analytical:note:1",)
 
     lineage_index = load_skill_lineage_index()
     assert lineage_index["cookbook:analytical"]["children"] == lineage["children"]
+
+
+def test_fx_vanilla_primitive_route_does_not_project_helper_skill():
+    assert get_skill_record("route_hint:analytical_garman_kohlhagen:route-helper") is None
+    note = get_skill_record("route_hint:analytical_garman_kohlhagen:note:1")
+    assert note is not None
+    assert note.kind == "historical_note"
 
 
 def test_nth_to_default_no_longer_projects_schedule_builder_route_hint():
@@ -119,11 +126,8 @@ def test_route_notes_are_not_projected_as_live_route_hints():
     assert "route_hint:analytical_garman_kohlhagen:note:1" not in route_hint_ids
 
 
-def test_migrated_exact_helper_routes_do_not_project_duplicate_note_records():
-    assert get_skill_record("route_hint:analytical_garman_kohlhagen:note:1") is None
+def test_exact_helper_route_without_notes_does_not_project_note_records():
     assert get_skill_record("route_hint:equity_quanto:note:1") is None
-    assert get_skill_record("route_hint:equity_quanto:note:1") is None
-    assert get_skill_record("route_hint:monte_carlo_fx_vanilla:note:1") is None
 
 
 def test_skill_index_generation_is_deterministic():

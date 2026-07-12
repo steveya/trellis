@@ -94,3 +94,33 @@ def test_fx_vanilla_helpers_match_adapter_prices():
         FXVanillaMonteCarloPayoff(mc_spec).evaluate(market_state),
         rel=1e-12,
     )
+
+
+def test_checked_in_fx_vanilla_adapters_compose_primitives_not_product_helpers():
+    import inspect
+
+    from trellis.instruments._agent import (
+        fxvanillaanalytical,
+        fxvanillamontecarlo,
+    )
+    from trellis.instruments._agent._fresh import (
+        fxvanillaanalytical as fresh_fxvanillaanalytical,
+        fxvanillamontecarlo as fresh_fxvanillamontecarlo,
+    )
+
+    for module in (fxvanillaanalytical, fresh_fxvanillaanalytical):
+        analytical_source = inspect.getsource(module)
+        assert "price_fx_vanilla_analytical" not in analytical_source
+        assert "resolve_fx_vanilla_inputs" in analytical_source
+        assert "garman_kohlhagen_price_raw" in analytical_source
+    for module in (fxvanillamontecarlo, fresh_fxvanillamontecarlo):
+        monte_carlo_source = inspect.getsource(module)
+        assert "price_fx_vanilla_monte_carlo" not in monte_carlo_source
+        for symbol in (
+            "resolve_fx_vanilla_inputs",
+            "GBM",
+            "MonteCarloEngine",
+            "terminal_value_payoff",
+            "terminal_intrinsic",
+        ):
+            assert symbol in monte_carlo_source

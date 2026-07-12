@@ -1144,12 +1144,25 @@ tasks:
 - id: T94
   title: 'FX market bridge: Garman-Kohlhagen vs MC with explicit domestic/foreign
     curve selection'
+  instrument_type: european_option
   construct:
   - analytical
   - monte_carlo
   new_component:
   - garman_kohlhagen_formula
   - fx_market_bridge
+  extension_contract:
+    product: fx_vanilla
+    option_type: call
+    strike: 1.1
+    spot: 1.1
+    expiry_years: 1.0
+    domestic_rate: 0.045
+    foreign_rate: 0.025
+    volatility: 0.12
+    notional: 1000000.0
+    currency_pair: EURUSD
+    premium_currency: USD
   market:
     source: mock
     as_of: 2024-11-15
@@ -1385,10 +1398,24 @@ tasks:
   status: pending
 - id: T108
   title: 'FX vanilla option: Garman-Kohlhagen vs MC'
+  instrument_type: european_option
   construct:
   - analytical
   - monte_carlo
   new_component: garman_kohlhagen_formula
+  market_scenario_id: flat_fx_gk
+  extension_contract:
+    product: fx_vanilla
+    option_type: call
+    strike: 1.1
+    spot: 1.1
+    expiry_years: 1.0
+    domestic_rate: 0.045
+    foreign_rate: 0.025
+    volatility: 0.12
+    notional: 1000000.0
+    currency_pair: EURUSD
+    premium_currency: USD
   market:
     source: mock
     as_of: 2024-11-15

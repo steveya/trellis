@@ -529,7 +529,16 @@ rule: generated code composes the neutral diffusion resolver with
 ``equity_tree``, ``with_control``, ``compile_lattice_recipe``, ``build_lattice``,
 and ``price_on_lattice``. Bermudan variants map contract dates to exercise
 steps before attaching control. The product-level tree helper remains a
-compatibility/reference surface and is not admitted route evidence. ``P003``
+compatibility/reference surface and is not admitted route evidence. ``F002``,
+``T94``, and ``T108`` apply the same artifact-coherence rule to FX vanilla
+pricing. Analytical targets must resolve the FX contract and call the raw
+Garman-Kohlhagen kernel; Monte Carlo targets must construct GBM, the generic
+Monte Carlo engine, and a terminal-only payoff explicitly. Product-level FX
+vanilla wrappers cannot count as method evidence. ``fx_vanilla_gk_outputs``
+remains independent benchmark-reporting evidence for native FinancePy Greeks,
+not route pricing authority. ``T94`` keeps its explicit named-market
+assertions, while both legacy rows declare nondegenerate payoff terms and
+``T108`` selects the shared ``flat_fx_gk`` scenario. ``P003``
 and legacy ``T109`` apply the same artifact-coherence
 rule to FX single-barrier comparison: the analytical target resolves the FX
 market contract and calls the scalar barrier kernel, while the Monte Carlo

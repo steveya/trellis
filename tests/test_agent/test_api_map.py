@@ -108,6 +108,29 @@ def test_monte_carlo_api_map_prioritizes_terminal_claim_composition():
     assert "price_vanilla_equity_option_monte_carlo" not in text
 
 
+def test_api_map_prioritizes_fx_vanilla_primitive_composition():
+    api_map = get_api_map()
+    monte_carlo_text = "\n".join(
+        (*api_map["monte_carlo"]["key_imports"], *api_map["monte_carlo"]["notes"])
+    )
+    analytical_text = "\n".join(
+        (*api_map["analytical"]["key_imports"], *api_map["analytical"]["notes"])
+    )
+
+    for symbol in (
+        "resolve_fx_vanilla_inputs",
+        "GBM",
+        "MonteCarloEngine",
+        "terminal_value_payoff",
+        "terminal_intrinsic",
+    ):
+        assert symbol in monte_carlo_text
+    assert "price_fx_vanilla_monte_carlo" not in monte_carlo_text
+    assert "resolve_fx_vanilla_inputs" in analytical_text
+    assert "garman_kohlhagen_price_raw" in analytical_text
+    assert "price_fx_vanilla_analytical" not in analytical_text
+
+
 def test_equity_tree_api_map_prioritizes_lattice_algebra_primitives():
     section = get_api_map()["equity_tree"]
     text = "\n".join((*section["key_imports"], *section["notes"]))
