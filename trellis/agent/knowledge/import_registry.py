@@ -577,6 +577,7 @@ from trellis.models.trees.backward_induction import backward_induction
 
 ### Models — Monte Carlo
 from trellis.models.monte_carlo.engine import MonteCarloEngine
+from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff
 from trellis.models.monte_carlo.basket_state import build_basket_path_requirement, evaluate_ranked_observation_basket_paths, evaluate_ranked_observation_basket_state, observation_step_indices
 from trellis.models.monte_carlo.profiling import MonteCarloPathKernelBenchmark, benchmark_path_kernel
 from trellis.models.monte_carlo.lsm import longstaff_schwartz, laguerre_basis
