@@ -22,7 +22,12 @@ _ENGINE_SIGNATURES = {
     "monte_carlo": ("MonteCarloEngine", "monte_carlo"),
     "exercise": ("MonteCarloEngine", "longstaff_schwartz", "tsitsiklis_van_roy"),
     "lattice": ("build_rate_lattice", "BinomialTree", "backward_induction", "lattice_backward_induction"),
-    "analytical": ("black76_call", "black76_put", "price_quanto_option_analytical"),
+    "analytical": (
+        "black76_call",
+        "black76_put",
+        "garman_kohlhagen_price_raw",
+        "price_quanto_option_analytical",
+    ),
     "fft_pricing": ("fft_price", "cos_price"),
     "pde_solver": ("theta_method_1d", "Grid", "BlackScholesOperator"),
     "qmc": ("sobol_normals", "GBM"),

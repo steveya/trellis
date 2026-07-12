@@ -486,6 +486,51 @@ def test_resolve_backend_binding_spec_uses_fx_barrier_primitive_composition(
 
 
 @pytest.mark.parametrize(
+    "route_id,method,expected_ref",
+    [
+        (
+            "analytical_garman_kohlhagen",
+            "analytical",
+            "trellis.models.analytical.fx.garman_kohlhagen_price_raw",
+        ),
+        (
+            "monte_carlo_fx_vanilla",
+            "monte_carlo",
+            "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_fx_vanilla_primitive_composition(
+    route_id,
+    method,
+    expected_ref,
+):
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id(route_id, catalog)
+
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="fx_option",
+            payoff_family="vanilla_option",
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="fx",
+        ),
+        method=method,
+    )
+
+    assert resolved.binding_id == expected_ref
+    assert resolved.exact_target_refs == (expected_ref,)
+    assert resolved.market_binding_refs == (
+        "trellis.models.fx_vanilla.resolve_fx_vanilla_inputs",
+    )
+    assert resolved.helper_refs == ()
+
+
+@pytest.mark.parametrize(
     "product_ir,expected_route_family,expected_helper_refs,expected_kernel_refs",
     [
         pytest.param(

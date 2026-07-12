@@ -112,20 +112,21 @@ notation and triage lifecycle.
 FX Vanilla Options
 ------------------
 
-FX vanillas are priced by resolving spot FX, domestic discounting, foreign
-discounting, and Black volatility into a resolved-input helper surface, then
-delegating to the checked analytical Garman-Kohlhagen helper. The route keeps
-the Black76 basis decomposition explicit inside the helper, so the same pricing
-math can be reused for both valuation and Greeks without rebuilding it in each
-adapter.
+FX vanilla routes first resolve spot FX, domestic discounting, foreign
+discounting, Black volatility, and contract terms. Analytical adapters pass
+that resolved basis to the raw Garman-Kohlhagen kernel. Monte Carlo adapters
+construct GBM with domestic-minus-foreign drift, a generic Monte Carlo engine,
+and a terminal-only call/put payoff, then discount domestically. Product-level
+FX vanilla pricing helpers remain available for compatibility and reference,
+but generated task adapters do not use them as route authority.
 
 The corresponding quanto routes now follow the same shape. The supported
 analytical and Monte Carlo slices bind through
-``trellis.models.quanto_option`` while the FX vanilla analytical slice binds
-through ``trellis.models.fx_vanilla``. The checked-in adapters under
-``trellis.instruments._agent`` are intentionally thin compatibility shells
-over those semantic-facing helpers rather than separate pricing
-implementations.
+``trellis.models.quanto_option``. FX vanilla adapters instead compose the
+resolved-input surface in ``trellis.models.fx_vanilla`` with lower-level
+analytical or Monte Carlo primitives. Checked-in adapters under
+``trellis.instruments._agent`` remain compatibility artifacts rather than the
+authoritative construction contract.
 
 The P001 Bermudan best-of-two rainbow proof is also exposed this way for
 task compatibility. Its checked-in ``_agent`` adapter delegates to the

@@ -90,7 +90,8 @@ monte_carlo:
     - "from trellis.models.monte_carlo.early_exercise import EarlyExercisePolicyResult, LeastSquaresContinuationEstimator"
     - "from trellis.models.monte_carlo.schemes import HestonQuadraticExponential, LaguerreBasis"
     - "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo, price_heston_option_monte_carlo_result"
-    - "from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff"
+    - "from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff, terminal_value_payoff"
+    - "from trellis.models.fx_vanilla import resolve_fx_vanilla_inputs"
     - "from trellis.models.fx_barrier_option import resolve_fx_barrier_inputs"
     - "from trellis.models.analytical import terminal_intrinsic"
     - "from trellis.models.autocallable import AutocallableMonteCarloConfig, price_autocallable_monte_carlo_result, resolve_autocallable_inputs"
@@ -106,6 +107,7 @@ monte_carlo:
   notes:
     - "For European single-state terminal claims, supply an explicit payoff callback to `price_single_state_terminal_claim_monte_carlo_result(...)` and bind scheme/variance-reduction controls at the adapter boundary"
     - "For American/Bermudan vanilla equity Monte Carlo, resolve the market contract with `resolve_single_state_monte_carlo_inputs(...)`, then compose `GBM`, `MonteCarloEngine`, `terminal_intrinsic_from_resolved(...)`, and `longstaff_schwartz(...)` explicitly"
+    - "For FX vanilla Monte Carlo, compose `resolve_fx_vanilla_inputs(...)`, `GBM`, `MonteCarloEngine`, `terminal_value_payoff(...)`, and `terminal_intrinsic(...)`; derive drift from domestic minus foreign rates and discount domestically"
     - "For FX single-barrier Monte Carlo, compose `resolve_fx_barrier_inputs(...)`, `GBM`, `MonteCarloEngine`, `BarrierMonitor`, `MonteCarloPathRequirement`, `StateAwarePayoff`, and `terminal_intrinsic(...)`; use reduced barrier-hit state and domestic discounting"
     - "Autocallable MC routes should prefer `price_autocallable_monte_carlo_result(...)`; use `sampling='sobol'` only for QMC comparison targets"
     - "Double-barrier MC routes should use two barrier monitors or `double_barrier_state_payoff(...)` instead of adapting a one-barrier analytical formula"
@@ -200,10 +202,13 @@ analytical:
     - "from trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw_raw"
     - "from trellis.models.analytical import zcb_option_hw"
     - "from trellis.models.analytical import terminal_vanilla_from_basis"
+    - "from trellis.models.fx_vanilla import resolve_fx_vanilla_inputs"
+    - "from trellis.models.analytical.fx import garman_kohlhagen_price_raw"
     - "from trellis.models.fx_barrier_option import resolve_fx_barrier_inputs"
     - "from trellis.models.analytical.barrier import barrier_option_price"
     - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw, price_bermudan_swaption_black76_lower_bound"
   notes:
+    - "For FX vanilla analytics, resolve spot, domestic/foreign discount factors, volatility, and contract terms, then call `garman_kohlhagen_price_raw(...)` on the resolved basis and apply notional"
     - "For FX single-barrier analytics, resolve FX spot, domestic/foreign rates, volatility, monitoring, and payoff terms, then call `barrier_option_price(...)` with foreign rate as `q` and apply notional"
 
 # ---------------------------------------------------------------------------

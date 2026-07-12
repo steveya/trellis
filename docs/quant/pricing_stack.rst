@@ -196,6 +196,15 @@ The first migrated vanilla cases now use that boundary directly:
   ``terminal_intrinsic_from_resolved(...)``, and pass the paths and exercise
   schedule to ``longstaff_schwartz(...)``. The product-level American LSM helper
   remains a compatibility/reference surface, not route authority.
+- FX vanilla analytical routes now compose
+  ``resolve_fx_vanilla_inputs(...)`` with
+  ``garman_kohlhagen_price_raw(...)`` and apply notional at the adapter
+  boundary. Monte Carlo routes compose the same resolved contract with
+  ``GBM``, ``MonteCarloEngine``, ``terminal_value_payoff(...)``, and
+  ``terminal_intrinsic(...)``. The terminal-only payoff contract avoids full
+  path storage, uses domestic-minus-foreign drift, and discounts with the
+  domestic rate. Product-level FX vanilla wrappers remain
+  compatibility/reference surfaces, not route authority.
 - FX single-barrier analytical routes now compose
   ``resolve_fx_barrier_inputs(...)`` with the scalar
   ``barrier_option_price(...)`` kernel. Monte Carlo routes compose the same
@@ -328,11 +337,12 @@ The first migrated vanilla cases now use that boundary directly:
   ``trellis.models.monte_carlo.local_vol``.  This is a bounded European
   vanilla local-vol route and intentionally rejects nonzero dividend yield on
   the PDE side until the operator separates carry from discounting.
-- FX vanilla and quanto routes now expose semantic-facing helper kits in
-  ``trellis.models.fx_vanilla`` and ``trellis.models.quanto_option`` so the
-  checked analytical and Monte Carlo adapters can stay as thin shells over
-  shared market-binding and execution helpers rather than separate product
-  implementations
+- FX vanilla market resolution remains in ``trellis.models.fx_vanilla``, but
+  generated pricing adapters bind its resolved inputs directly to analytical
+  kernels or generic Monte Carlo primitives. The product-level FX vanilla
+  helpers remain compatibility/reference APIs. Quanto routes still expose the
+  bounded semantic-facing helper kit in ``trellis.models.quanto_option`` until
+  that family receives its own primitive-composition migration
 - the copula basket-credit slice now also exposes a semantic-facing helper
   layer in ``trellis.models.credit_basket_copula`` so tranche-style CDO,
   nth-to-default, and portfolio loss-distribution requests can bind

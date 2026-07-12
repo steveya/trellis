@@ -184,6 +184,22 @@ def build_price(self, market_state, method="analytical"):
 """
 
 
+HELPER_ONLY_FX_VANILLA_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.fx_vanilla import (
+    price_fx_vanilla_analytical,
+    price_fx_vanilla_monte_carlo,
+)
+
+
+def build_price(self, market_state, method="analytical"):
+    if method == "monte_carlo":
+        return float(price_fx_vanilla_monte_carlo(market_state, self._spec))
+    return float(price_fx_vanilla_analytical(market_state, self._spec))
+"""
+
+
 AUTOCALLABLE_HELPER_SOURCE = """\
 from __future__ import annotations
 
@@ -1037,6 +1053,49 @@ def test_rejects_helper_only_fx_barrier_without_required_composition(method):
 
     report = validate_semantics(
         HELPER_ONLY_FX_BARRIER_SOURCE,
+        product_ir=product_ir,
+        generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.required_primitive_missing" in issue_codes
+    assert not report.ok
+
+
+@pytest.mark.parametrize("method", ["analytical", "monte_carlo"])
+def test_rejects_helper_only_fx_vanilla_without_required_composition(method):
+    from trellis.agent.semantic_validation import validate_semantics
+
+    product_ir = decompose_to_ir(
+        "FX vanilla option: Garman-Kohlhagen vs MC",
+        instrument_type="european_option",
+    )
+    pricing_plan = PricingPlan(
+        method=method,
+        method_modules=[
+            "trellis.models.fx_vanilla",
+            "trellis.models.analytical.fx",
+            "trellis.models.monte_carlo.engine",
+        ],
+        required_market_data={
+            "discount_curve",
+            "forward_curve",
+            "black_vol_surface",
+            "fx_rates",
+            "spot",
+        },
+        model_to_build="european_option",
+        reasoning="test",
+    )
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="european_option",
+        inspected_modules=tuple(pricing_plan.method_modules),
+        product_ir=product_ir,
+    )
+
+    report = validate_semantics(
+        HELPER_ONLY_FX_VANILLA_SOURCE,
         product_ir=product_ir,
         generation_plan=generation_plan,
     )

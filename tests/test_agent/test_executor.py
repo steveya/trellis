@@ -3679,9 +3679,9 @@ def test_deterministic_exact_binding_module_fx_vanilla_gk_injects_benchmark_outp
     )
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(
-            "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
+            "trellis.models.analytical.fx.garman_kohlhagen_price_raw",
         ),
-        primitive_plan=None,
+        primitive_plan=SimpleNamespace(route="analytical_garman_kohlhagen"),
         method="analytical",
         instrument_type="fx_vanilla",
     )
@@ -3696,6 +3696,9 @@ def test_deterministic_exact_binding_module_fx_vanilla_gk_injects_benchmark_outp
         comparison_target="black_scholes",
     )
     assert generated is not None
+    assert "resolve_fx_vanilla_inputs(market_state, self._spec)" in generated.code
+    assert "garman_kohlhagen_price_raw(" in generated.code
+    assert "price_fx_vanilla_analytical(" not in generated.code
     assert "def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:" in generated.code
     assert "fx_vanilla_gk_outputs(market_state, self._spec)" in generated.code
     assert (
@@ -3704,6 +3707,94 @@ def test_deterministic_exact_binding_module_fx_vanilla_gk_injects_benchmark_outp
     )
     # Black-Scholes helper must NOT leak into the FX route.
     assert "equity_vanilla_bs_outputs" not in generated.code
+
+
+def test_generated_fx_vanilla_analytical_and_mc_agree_without_product_helpers():
+    from datetime import date as _date
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.instruments.fx import FXRate
+    from trellis.models.vol_surface import FlatVol
+
+    def materialize(schema_id, method, exact_ref, route):
+        generation_plan = SimpleNamespace(
+            lane_exact_binding_refs=(exact_ref,),
+            primitive_plan=SimpleNamespace(route=route),
+            method=method,
+            instrument_type="european_option",
+        )
+        schema = SPECIALIZED_SPECS[schema_id]
+        generated = _materialize_deterministic_exact_binding_module(
+            _generate_skeleton(
+                schema,
+                "FX vanilla primitive composition",
+                generation_plan=generation_plan,
+            ),
+            generation_plan,
+            comparison_target=method,
+        )
+        assert generated is not None
+        compile(generated.code, f"<qua_1172_{method}>", "exec")
+        namespace: dict = {}
+        exec(compile(generated.code, f"<qua_1172_{method}>", "exec"), namespace)  # noqa: S102
+        return schema, namespace, generated.code
+
+    analytical_schema, analytical_ns, analytical_source = materialize(
+        "fx_vanilla_analytical",
+        "analytical",
+        "trellis.models.analytical.fx.garman_kohlhagen_price_raw",
+        "analytical_garman_kohlhagen",
+    )
+    mc_schema, mc_ns, mc_source = materialize(
+        "fx_vanilla_monte_carlo",
+        "monte_carlo",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "monte_carlo_fx_vanilla",
+    )
+    terms = dict(
+        notional=1_000_000.0,
+        strike=1.10,
+        expiry_date=_date(2025, 11, 15),
+        fx_pair="EURUSD",
+        foreign_discount_key="EUR-DISC",
+        option_type="call",
+    )
+    analytical = analytical_ns[analytical_schema.class_name](
+        analytical_ns[analytical_schema.spec_name](**terms)
+    )
+    mc = mc_ns[mc_schema.class_name](
+        mc_ns[mc_schema.spec_name](**terms, n_paths=20_000, n_steps=252)
+    )
+    market = MarketState(
+        as_of=_date(2024, 11, 15),
+        settlement=_date(2024, 11, 15),
+        discount=YieldCurve.flat(0.045),
+        forecast_curves={"EUR-DISC": YieldCurve.flat(0.025)},
+        fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+        vol_surface=FlatVol(0.12),
+    )
+
+    analytical_price = float(analytical.evaluate(market))
+    mc_price = float(mc.evaluate(market))
+
+    assert "price_fx_vanilla_analytical(" not in analytical_source
+    assert "resolve_fx_vanilla_inputs(" in analytical_source
+    assert "garman_kohlhagen_price_raw(" in analytical_source
+    assert "price_fx_vanilla_monte_carlo(" not in mc_source
+    assert "resolve_fx_vanilla_inputs(" in mc_source
+    assert "GBM(" in mc_source
+    assert "MonteCarloEngine(" in mc_source
+    assert "terminal_value_payoff(" in mc_source
+    assert "terminal_intrinsic(" in mc_source
+    assert "return_paths=False" in mc_source
+    assert analytical_price > 0.0
+    assert mc_price == pytest.approx(analytical_price, rel=0.05, abs=1_000.0)
 
 
 def test_deterministic_exact_binding_module_materializes_barrier_helper_with_time_import():

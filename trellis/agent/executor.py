@@ -3624,9 +3624,6 @@ def _semantic_exact_binding_refs(refs: tuple[str, ...]) -> tuple[str, ...]:
         "trellis.models.monte_carlo.quanto.price_quanto_option_monte_carlo": (
             "trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state"
         ),
-        "trellis.models.analytical.fx.garman_kohlhagen_price_raw": (
-            "trellis.models.fx_vanilla.price_fx_vanilla_analytical"
-        ),
     }
     for ref in refs:
         semantic = raw_to_semantic.get(ref)
@@ -4003,6 +4000,67 @@ def _deterministic_exact_binding_evaluate_body(
     )
     primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
     primitive_route = str(getattr(primitive_plan, "route", "") or "").strip()
+    if (
+        primitive_route == "analytical_garman_kohlhagen"
+        and "trellis.models.analytical.fx.garman_kohlhagen_price_raw" in refs
+    ):
+        return textwrap.dedent(
+            """\
+            resolved = resolve_fx_vanilla_inputs(market_state, self._spec)
+            return float(resolved.notional) * float(
+                garman_kohlhagen_price_raw(
+                    resolved.option_type,
+                    resolved.garman_kohlhagen,
+                )
+            )
+            """
+        ).rstrip()
+    if (
+        primitive_route == "monte_carlo_fx_vanilla"
+        and "trellis.models.monte_carlo.engine.MonteCarloEngine" in refs
+    ):
+        return textwrap.dedent(
+            """\
+            resolved = resolve_fx_vanilla_inputs(market_state, self._spec)
+            gk = resolved.garman_kohlhagen
+            if gk.T <= 0.0:
+                return float(resolved.notional) * float(
+                    terminal_intrinsic(
+                        resolved.option_type,
+                        spot=gk.spot,
+                        strike=gk.strike,
+                    )
+                )
+
+            payoff = terminal_value_payoff(
+                lambda terminal: resolved.notional * terminal_intrinsic(
+                    resolved.option_type,
+                    spot=terminal,
+                    strike=gk.strike,
+                ),
+                name="fx_vanilla_terminal",
+            )
+            process = GBM(
+                mu=resolved.domestic_rate - resolved.foreign_rate,
+                sigma=float(gk.sigma),
+            )
+            engine = MonteCarloEngine(
+                process,
+                n_paths=max(int(getattr(self._spec, "n_paths", 50000)), 1),
+                n_steps=max(int(getattr(self._spec, "n_steps", 252)), 1),
+                seed=int(getattr(self._spec, "seed", 42)),
+                method="exact",
+            )
+            result = engine.price(
+                float(gk.spot),
+                float(gk.T),
+                payoff,
+                discount_rate=float(resolved.domestic_rate),
+                return_paths=False,
+            )
+            return float(result["price"])
+            """
+        ).rstrip()
     if (
         primitive_route == "analytical_fx_barrier"
         and "trellis.models.analytical.barrier.barrier_option_price" in refs
@@ -4941,7 +4999,10 @@ def _deterministic_exact_binding_benchmark_outputs_block(
     # price + delta (and gamma/vega/theta) via the shared helper, so parity
     # scorecards no longer rely on the bump-and-reprice fallback (QUA-863)
     # for F002-style FX vanilla tasks.
-    if "trellis.models.fx_vanilla.price_fx_vanilla_analytical" in refs:
+    if (
+        "trellis.models.fx_vanilla.price_fx_vanilla_analytical" in refs
+        or "trellis.models.analytical.fx.garman_kohlhagen_price_raw" in refs
+    ):
         return textwrap.dedent(
             """\
             def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:
@@ -5316,6 +5377,24 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_fx_barrier_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.fx_barrier_option import price_fx_barrier_option_monte_carlo"
+        )
+    if "resolve_fx_vanilla_inputs(" in body:
+        imports.append(
+            "from trellis.models.fx_vanilla import resolve_fx_vanilla_inputs"
+        )
+    if "garman_kohlhagen_price_raw(" in body:
+        imports.append(
+            "from trellis.models.analytical.fx import garman_kohlhagen_price_raw"
+        )
+    if "terminal_value_payoff(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.path_state import terminal_value_payoff"
+        )
+    if "GBM(" in body:
+        imports.append("from trellis.models.processes.gbm import GBM")
+    if "MonteCarloEngine(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.engine import MonteCarloEngine"
         )
     if "resolve_fx_barrier_inputs(" in body:
         imports.append(
