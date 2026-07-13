@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-12`
+Status mirror last synced: `2026-07-13`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
@@ -34,15 +34,15 @@ Status mirror last synced: `2026-07-12`
 | `QUA-1171` | FX barrier: primitive-composed analytical and MC lanes | Done |
 | `QUA-1172` | FX vanilla: primitive-composed analytical and MC lanes | Done |
 | `QUA-1174` | Hybrid market binding: named underlier and volatility surfaces | Done |
-| `QUA-1173` | Quanto option: primitive-composed analytical and MC lanes | Backlog |
+| `QUA-1173` | Quanto option: primitive-composed analytical and MC lanes | Done |
 | `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | Done |
 
 ## Current Sequence
 
-1. Complete `QUA-1173` by composing analytical and Monte Carlo pricing from
-   those bindings and generic numerical primitives without quanto helpers.
-2. Re-run the helper-authority audit and choose the next coherent product
-   family by remaining authority count and semantic risk.
+1. Re-run the helper-authority audit against merged `main` after the QUA-1173
+   quanto milestone.
+2. Choose the next coherent product family by remaining authority count and
+   semantic risk.
 
 ## Completion Evidence
 
