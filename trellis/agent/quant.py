@@ -16,6 +16,7 @@ import re
 from trellis.agent.knowledge import get_store
 from trellis.agent.knowledge.decompose import decompose, decompose_to_ir
 from trellis.agent.knowledge.methods import CANONICAL_METHODS, normalize_method
+from trellis.agent.role_orientation import role_orientation_summary
 from trellis.agent.sensitivity_support import (
     SensitivitySupport,
     normalize_requested_measures,
@@ -467,6 +468,7 @@ def quant_challenger_packet_summary(
         )
     if validation_contract_id:
         payload["validation_contract_id"] = validation_contract_id
+    payload["orientation_contract"] = role_orientation_summary("quant")
     return payload
 
 

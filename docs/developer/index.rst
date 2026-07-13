@@ -19,6 +19,7 @@ Core Developer Topics
    overview
    hosting_and_configuration
    audit_and_observability
+   runtime_agent_orientation
    contract_ir_solver_compiler
    stochastic_vol_computational_ir
    task_and_eval_loops
@@ -47,6 +48,7 @@ Agent Architecture Reference
 
    ../agent/architecture
    ../agent/quant_agent
+   ../agent/model_validator_agent
    ../agent/builder_agent
    ../agent/critic_agent
 

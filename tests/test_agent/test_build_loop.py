@@ -1351,10 +1351,24 @@ class TestBuildLoop:
                     max_retries=1,
                 )
 
-        failure_events = [details for event, details in events if event == "builder_attempt_failed"]
+        failure_events = [
+            details
+            for event, details in events
+            if event == "builder_attempt_failed"
+        ]
         assert failure_events
         assert failure_events[-1]["reason"] == "code_generation"
         assert failure_events[-1]["failure_count"] == 1
+        quant_event = next(
+            details
+            for event, details in events
+            if event == "quant_selected_method"
+        )
+        assert quant_event["orientation_contract"] == {
+            "role": "quant",
+            "contract_id": "quant-runtime-navigation",
+            "version": 1,
+        }
 
     @patch(
         "trellis.agent.executor._materialize_deterministic_exact_binding_module",

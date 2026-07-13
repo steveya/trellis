@@ -216,6 +216,8 @@ The cycle report records:
 - stable stage statuses such as ``passed``, ``failed``, and ``skipped``
 - compact stage summaries and low-cardinality details suitable for replay,
   dashboards, and later promotion/adoption checks
+- the versioned runtime orientation identity for quant and model-validator
+  stages, without duplicating either role's full prompt card
 
 Use ``load_platform_trace_cycle_report(...)`` when code needs the typed
 ``CycleReport`` object for one trace. Use ``load_platform_traces(...)`` when a
@@ -227,6 +229,11 @@ the deterministic validation contract, executable checks, arbiter verdicts, and
 model-validator findings. The cycle report makes those stage outcomes stable
 and inspectable so downstream tooling no longer has to infer governance state
 from ad hoc event strings.
+
+The ``orientation_contract`` field contains only ``role``, ``contract_id``,
+and ``version``. Use it to establish which navigation and ownership contract
+governed a runtime role. See :doc:`runtime_agent_orientation` for the canonical
+manifest and the distinction from repository-level ``AGENTS.md`` guidance.
 
 Agent Cycle Result Surface
 --------------------------

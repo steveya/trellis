@@ -159,6 +159,7 @@ def _llm_conceptual_review(
 ) -> list[ValidationFinding]:
     """LLM-based model validation — conceptual soundness review."""
     from trellis.agent.config import llm_generate_json, get_default_model
+    from trellis.agent.role_orientation import render_role_orientation_card
 
     model = model or get_default_model()
 
@@ -199,7 +200,10 @@ def _llm_conceptual_review(
 
         route_contract_section = "\n" + render_review_contract_card(generation_plan) + "\n"
 
-    prompt = f"""You are a model validation analyst at a quantitative finance firm.
+    orientation_card = render_role_orientation_card("model_validator")
+    prompt = f"""{orientation_card}
+
+You are a model validation analyst at a quantitative finance firm.
 Your role is to independently assess whether a pricing model is conceptually
 sound, correctly calibrated, and produces reasonable risk measures.
 

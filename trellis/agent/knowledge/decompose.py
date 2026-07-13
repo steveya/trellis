@@ -3837,6 +3837,7 @@ def _decompose_via_llm(
     from trellis.agent.knowledge.retrieval import (
         format_decomposition_knowledge_for_prompt,
     )
+    from trellis.agent.role_orientation import render_role_orientation_card
     load_env()
 
     # Build feature taxonomy context
@@ -3863,8 +3864,11 @@ def _decompose_via_llm(
     knowledge_section = ""
     if knowledge_text:
         knowledge_section = f"\n\n## Shared Knowledge\n{knowledge_text}"
+    orientation_card = render_role_orientation_card("quant")
 
-    prompt = f"""You are a quantitative finance expert decomposing a financial instrument
+    prompt = f"""{orientation_card}
+
+You are a quantitative finance expert decomposing a financial instrument
 into its constituent features for a pricing library.
 
 ## Available Features
@@ -3886,7 +3890,6 @@ Return JSON:
 {{
     "features": ["feature1", "feature2", ...],
     "method": "pricing_method",
-    "method_modules": ["trellis.models.module1", ...],
     "required_market_data": ["discount_curve", "black_vol_surface", ...],
     "reasoning": "Brief explanation of why this decomposition and method",
     "notes": "Any known complexities or edge cases"

@@ -35,6 +35,14 @@ catalogs should expose reusable primitives and binding surfaces; generated
 adapters still own product-specific payoff assembly unless a checked helper is
 explicitly selected as the exact backend binding.
 
+Runtime quant and model-validator calls are oriented by the versioned contracts
+described in :doc:`runtime_agent_orientation`. Repository ``AGENTS.md`` files
+govern coding-agent workflows; they are not assumed to be visible to hosted
+runtime calls. The quant contract points to semantic and method-selection
+indexes, while the model-validator contract starts from executed validation
+evidence. Both expose cookbook entries as read-only evidence and explicitly
+exclude runtime promotion authority.
+
 Current composition rules:
 
 - identity inference treats product names such as ``autocallable``,
