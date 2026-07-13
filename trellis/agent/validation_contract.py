@@ -168,6 +168,10 @@ def compile_validation_contract(
         product_ir=product_ir,
         semantic_blueprint=semantic_blueprint,
     )
+    validation_market_data = _validation_market_data_for(
+        required_market_data=required_market_data,
+        semantic_blueprint=semantic_blueprint,
+    )
     deterministic_checks = tuple(
         ValidationCheckSpec(
             check_id=check_id,
@@ -180,7 +184,7 @@ def compile_validation_contract(
             ),
         )
         for check_id in bundle.checks
-        if _check_supported_by_market_data(check_id, required_market_data)
+        if _check_supported_by_market_data(check_id, validation_market_data)
     )
     contract_id = f"{method}:{resolved_instrument}"
     quant_challenger_packet = quant_challenger_packet_summary(
@@ -480,6 +484,17 @@ def _required_market_data_for(*, pricing_plan=None, product_ir=None, semantic_bl
     if pricing_plan is not None and getattr(pricing_plan, "required_market_data", None):
         return _tuple_strings(sorted(getattr(pricing_plan, "required_market_data", ()) or ()))
     return _tuple_strings(sorted(getattr(product_ir, "required_market_data", ()) or ()))
+
+
+def _validation_market_data_for(
+    *,
+    required_market_data: tuple[str, ...],
+    semantic_blueprint=None,
+) -> tuple[str, ...]:
+    """Add semantic capabilities to the role-specific validation data view."""
+    required_data_spec = getattr(semantic_blueprint, "required_data_spec", None)
+    capabilities = getattr(required_data_spec, "required_capabilities", ())
+    return _tuple_strings((*required_market_data, *capabilities))
 
 
 def _category_for_check(categories: Mapping[str, tuple[str, ...]], check_id: str) -> str:

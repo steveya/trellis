@@ -454,6 +454,9 @@ named underlier spot and FX quote independently and attach distinct underlier
 and FX surfaces. The quanto resolver treats explicit object keys as contracts:
 missing named spots, surfaces, or correlations fail with binding-specific
 diagnostics, and task provenance records the exact objects used.
+Deterministic validation gates evaluate both those role-specific input ids and
+their compiled capabilities, so separate underlier/FX surface names still
+admit the standard volatility sensitivity and monotonicity checks.
 
 That imported-snapshot path now feeds three checked desk routes as well.
 ``PricingService`` recognizes the approved ``range_accrual_discounted``,

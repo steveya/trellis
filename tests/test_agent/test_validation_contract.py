@@ -41,6 +41,8 @@ def test_compile_build_request_attaches_validation_contract_summary():
     assert {check.check_id for check in contract.deterministic_checks} >= {
         "check_non_negativity",
         "check_price_sanity",
+        "check_vol_sensitivity",
+        "check_vol_monotonicity",
         "quanto_adjustment_applied",
         "fx_conversion_applied_before_settlement",
     }
