@@ -23,6 +23,7 @@ _FAMILY_ORDER = (
     "equity_tree",
     "rate_lattice",
     "monte_carlo",
+    "observation_return_composition",
     "qmc",
     "pde",
     "fft",

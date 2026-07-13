@@ -141,6 +141,19 @@ monte_carlo:
     - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"
     - "Do not invent method='lsm' on MonteCarloEngine"
 
+observation_return_composition:
+  module: trellis.models.observation_returns
+  key_imports:
+    - "from trellis.models.observation_returns import ObservationReturnContract, bounded_observation_return_sum, build_observation_return_reducer, observation_return_payoff, simple_observation_returns"
+    - "from trellis.models.analytical.support.expectations import gauss_hermite_product_expectation"
+    - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+    - "from trellis.models.processes.gbm import GBM"
+  notes:
+    - "Start with ObservationReturnContract: declare ordered positive observation times, up/down return direction, local bounds, global bounds, and payoff scale; its observation_steps(...) method fails closed when the uniform simulation grid aliases or cannot exactly represent contractual observations"
+    - "Analytical lane: map independent standard normals to interval gross returns, evaluate bounded_observation_return_sum(...) inside gauss_hermite_product_expectation(...), then apply the declared settlement discount outside the expectation"
+    - "Monte Carlo lane: pass observation_return_payoff(...) to MonteCarloEngine with return_paths=False; the payoff declares a PathReducer that stores only previous level and accumulated locally bounded return"
+    - "The analytical expectation assumes independent normal interval drivers; the Monte Carlo reducer accepts any scalar positive-level process on an exact uniform observation grid; vector state and nonpositive levels require a different admitted substrate"
+
 rate_monte_carlo_composition:
   module: trellis.models.monte_carlo.simulation_substrate
   key_imports:

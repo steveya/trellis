@@ -33,6 +33,28 @@ def test_find_symbol_modules_returns_garman_kohlhagen_kernel_module():
     assert "trellis.models.black" in modules
 
 
+def test_observation_return_primitives_are_visible_to_import_registry():
+    module = "trellis.models.observation_returns"
+    symbols = {
+        "ObservationReturnContract",
+        "bounded_observation_return_sum",
+        "build_observation_return_reducer",
+        "observation_return_payoff",
+        "simple_observation_returns",
+    }
+
+    assert module_exists(module)
+    assert symbols <= set(list_module_exports(module))
+    for symbol in symbols:
+        assert module in find_symbol_modules(symbol)
+        assert is_valid_import(module, symbol)
+
+    expectation_module = "trellis.models.analytical.support.expectations"
+    expectation_symbol = "gauss_hermite_product_expectation"
+    assert expectation_symbol in list_module_exports(expectation_module)
+    assert expectation_module in find_symbol_modules(expectation_symbol)
+
+
 def test_quoted_observable_helpers_are_visible_to_import_registry():
     module = "trellis.models.quoted_observable"
 

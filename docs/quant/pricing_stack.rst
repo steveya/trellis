@@ -174,6 +174,39 @@ schedule-driven proof routes are still separate follow-on slices, but the
 compiler no longer points at an event-aware family without a checked runtime
 problem-spec boundary underneath it.
 
+Scheduled Observation Returns
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``trellis.models.observation_returns`` provides the product-neutral algebra for
+a bounded sum of consecutive simple returns. ``ObservationReturnContract``
+declares ordered positive observation times, up/down return direction, local
+bounds, global bounds, and payoff scale. It does not resolve a product or market
+state and it does not price anything by itself.
+
+The same contract has two reusable execution paths:
+
+- ``bounded_observation_return_sum(...)`` evaluates gross interval returns
+  directly. An analytical adapter can map independent standard-normal nodes to
+  lognormal gross returns and evaluate that function inside
+  ``gauss_hermite_product_expectation(...)``.
+- ``observation_return_payoff(...)`` produces a ``StateAwarePayoff`` whose
+  ``PathReducer`` stores only the previous observed level and the accumulated
+  locally bounded return. ``MonteCarloEngine`` can therefore run with
+  ``return_paths=False`` and apply the global bounds at settlement.
+
+Observation times must map exactly to distinct positive simulation steps. The
+contract fails closed when the chosen uniform grid aliases two contractual
+observations, cannot represent an observation time, or ends before the final
+observation. The Gaussian tensor expectation also fails closed when ``order **
+dimension`` exceeds its explicit node budget. The Monte Carlo reducer accepts a
+scalar positive-level process; the analytical expectation separately assumes
+independent normal interval drivers. Vector state and nonpositive observables
+need a different admitted substrate.
+
+This layer is construction infrastructure, not a replacement product helper.
+Existing product-route authority is migrated separately only after fresh task
+artifacts prove that they can compose these primitives.
+
 The first migrated vanilla cases now use that boundary directly:
 
 - vanilla European Monte Carlo lowers onto ``EventAwareMonteCarloIR`` as a
