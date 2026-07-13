@@ -54,7 +54,10 @@ class MarketState:
     forward_curve : ForwardCurve or None
         Default forward rate curve. Auto-constructed from *discount* if not provided.
     vol_surface : VolSurface or None
-        Volatility surface for option pricing.
+        Default implied-volatility surface for option pricing.
+    vol_surfaces : dict[str, VolSurface] or None
+        Named implied-volatility surfaces. A single entry becomes the default
+        ``vol_surface`` when no explicit default is supplied.
     state_space : StateSpace or None
         Discrete states with probabilities for scenario-weighted pricing.
     credit_curve : CreditCurve or None
@@ -101,6 +104,7 @@ class MarketState:
     discount: DiscountCurve | None = None
     forward_curve: ForwardCurve | None = None
     vol_surface: VolSurface | None = None
+    vol_surfaces: dict[str, VolSurface] | None = None
     state_space: StateSpace | None = None
     credit_curve: CreditCurve | None = None
     fixing_histories: dict[str, dict[date, float]] | None = None
@@ -133,6 +137,13 @@ class MarketState:
         if self.spot is None and self.underlier_spots:
             if len(self.underlier_spots) == 1:
                 object.__setattr__(self, "spot", next(iter(self.underlier_spots.values())))
+        if self.vol_surface is None and self.vol_surfaces:
+            if len(self.vol_surfaces) == 1:
+                object.__setattr__(
+                    self,
+                    "vol_surface",
+                    next(iter(self.vol_surfaces.values())),
+                )
         if self.local_vol_surface is None and self.local_vol_surfaces:
             if len(self.local_vol_surfaces) == 1:
                 object.__setattr__(
@@ -229,7 +240,7 @@ class MarketState:
             caps.add("forward_curve")
         if self.forward_curve is not None or self.forecast_curves:
             caps.add("forward_curve")
-        if self.vol_surface is not None:
+        if self.vol_surface is not None or self.vol_surfaces:
             caps.add("black_vol_surface")
         if self.state_space is not None:
             caps.add("state_space")
@@ -266,6 +277,7 @@ class MarketState:
             "market_provenance": {
                 k: str(v) for k, v in (self.market_provenance or {}).items()
             },
+            "vol_surface_names": sorted((self.vol_surfaces or {}).keys()),
         }
         selected_calibrated = (
             dict(self.market_provenance.get("selected_calibrated_objects", {}))

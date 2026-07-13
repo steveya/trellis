@@ -74,6 +74,7 @@ class ScenarioUnderlier:
     volatility: float | None = None
     carry_rate: float = 0.0
     carry_curve_name: str | None = None
+    vol_surface_name: str | None = None
 
     def to_payload(self) -> dict[str, object]:
         payload: dict[str, object] = {
@@ -85,6 +86,8 @@ class ScenarioUnderlier:
             payload["volatility"] = float(self.volatility)
         if self.carry_curve_name:
             payload["carry_curve_name"] = self.carry_curve_name
+        if self.vol_surface_name:
+            payload["vol_surface_name"] = self.vol_surface_name
         return payload
 
 
@@ -106,6 +109,9 @@ class MarketScenarioContract:
     foreign_rate: float | None = None
     foreign_curve_name: str | None = None
     fx_pair: str | None = None
+    fx_spot: float | None = None
+    fx_volatility: float | None = None
+    fx_vol_surface_name: str | None = None
     hazard_rate: float | None = None
     recovery_rate: float | None = None
     black_vol: float | None = None
@@ -136,6 +142,9 @@ class MarketScenarioContract:
             "foreign_rate": self.foreign_rate,
             "foreign_curve_name": self.foreign_curve_name,
             "fx_pair": self.fx_pair,
+            "fx_spot": self.fx_spot,
+            "fx_volatility": self.fx_volatility,
+            "fx_vol_surface_name": self.fx_vol_surface_name,
             "hazard_rate": self.hazard_rate,
             "recovery_rate": self.recovery_rate,
             "black_vol": self.black_vol,
@@ -199,11 +208,18 @@ class MarketScenarioContract:
             payload["recovery_rate"] = float(self.recovery_rate)
         if self.fx_pair:
             payload["currency_pair"] = self.fx_pair
+        if self.fx_spot is not None:
+            payload["fx_spot"] = float(self.fx_spot)
+        if self.fx_volatility is not None:
+            payload["fx_volatility"] = float(self.fx_volatility)
 
         if len(self.underliers) == 1:
             underlier = self.underliers[0]
             payload["stock_price"] = float(underlier.spot)
-            payload["spot_fx"] = float(underlier.spot)
+            if self.constructor_kind == "single_asset_fx":
+                payload["spot_fx"] = float(underlier.spot)
+            elif self.fx_spot is not None:
+                payload["spot_fx"] = float(self.fx_spot)
             payload["volatility"] = (
                 float(underlier.volatility)
                 if underlier.volatility is not None
@@ -327,6 +343,7 @@ def construct_market_state_for_scenario(
     forecast_curves = dict(getattr(market_state, "forecast_curves", None) or {})
     fx_rates = dict(getattr(market_state, "fx_rates", None) or {})
     underlier_spots = dict(getattr(market_state, "underlier_spots", None) or {})
+    vol_surfaces = dict(getattr(market_state, "vol_surfaces", None) or {})
     model_parameters = dict(getattr(market_state, "model_parameters", None) or {})
     spot = market_state.spot
     vol_surface = market_state.vol_surface
@@ -337,7 +354,13 @@ def construct_market_state_for_scenario(
         vol_surface = FlatVol(float(contract.black_vol))
         applied_inputs["black_vol"] = float(contract.black_vol)
 
-    if contract.constructor_kind in {"single_asset_equity", "multi_asset_equity"}:
+    if contract.constructor_kind in {
+        "single_asset_equity",
+        "multi_asset_equity",
+        "hybrid_equity_fx",
+    }:
+        if contract.constructor_kind == "hybrid_equity_fx":
+            model_parameters = {}
         underlier_carry_rates: dict[str, float] = {}
         for underlier in contract.underliers:
             underlier_spots[underlier.name] = float(underlier.spot)
@@ -353,23 +376,55 @@ def construct_market_state_for_scenario(
         }
         if per_underlier_vols:
             model_parameters["underlier_vols"] = per_underlier_vols
-            if vol_surface is None and len(set(per_underlier_vols.values())) == 1:
+            has_named_underlier_surface = any(
+                underlier.vol_surface_name and underlier.volatility is not None
+                for underlier in contract.underliers
+            )
+            if (
+                vol_surface is None
+                and len(set(per_underlier_vols.values())) == 1
+                and not (
+                    contract.constructor_kind == "hybrid_equity_fx"
+                    and has_named_underlier_surface
+                )
+            ):
                 vol_surface = FlatVol(next(iter(per_underlier_vols.values())))
             applied_inputs["underlier_vols"] = sorted(per_underlier_vols)
+        for underlier in contract.underliers:
+            if underlier.vol_surface_name and underlier.volatility is not None:
+                named_surface = FlatVol(float(underlier.volatility))
+                vol_surfaces[underlier.vol_surface_name] = named_surface
+                if contract.constructor_kind == "hybrid_equity_fx":
+                    vol_surface = named_surface
+                applied_inputs.setdefault("vol_surfaces", []).append(
+                    underlier.vol_surface_name
+                )
         if underlier_carry_rates:
             model_parameters["underlier_carry_rates"] = underlier_carry_rates
 
-    if contract.constructor_kind == "single_asset_fx":
+    if contract.constructor_kind in {"single_asset_fx", "hybrid_equity_fx"}:
         if contract.underliers:
-            spot = float(contract.underliers[0].spot)
-        if contract.fx_pair and spot is not None and len(contract.fx_pair) == 6:
+            if contract.constructor_kind == "single_asset_fx":
+                spot = float(contract.underliers[0].spot)
+        fx_spot = contract.fx_spot
+        if fx_spot is None and contract.constructor_kind == "single_asset_fx":
+            fx_spot = spot
+        if contract.fx_pair and fx_spot is not None and len(contract.fx_pair) == 6:
             fx_rates[contract.fx_pair] = FXRate(
-                spot=float(spot),
+                spot=float(fx_spot),
                 domestic=contract.fx_pair[3:],
                 foreign=contract.fx_pair[:3],
             )
-            underlier_spots[contract.fx_pair] = float(spot)
+            underlier_spots[contract.fx_pair] = float(fx_spot)
             applied_inputs["fx_pair"] = contract.fx_pair
+            applied_inputs["fx_spot"] = float(fx_spot)
+        if contract.fx_vol_surface_name and contract.fx_volatility is not None:
+            vol_surfaces[contract.fx_vol_surface_name] = FlatVol(
+                float(contract.fx_volatility)
+            )
+            applied_inputs.setdefault("vol_surfaces", []).append(
+                contract.fx_vol_surface_name
+            )
         foreign_curve_name = contract.foreign_curve_name or contract.forecast_curve_name
         foreign_rate = contract.foreign_rate if contract.foreign_rate is not None else contract.forecast_rate
         if foreign_curve_name and foreign_rate is not None:
@@ -428,6 +483,7 @@ def construct_market_state_for_scenario(
         credit_curve=credit_curve,
         forecast_curves=forecast_curves or None,
         vol_surface=vol_surface,
+        vol_surfaces=vol_surfaces or None,
         fx_rates=fx_rates or None,
         spot=spot,
         underlier_spots=underlier_spots or None,
@@ -653,6 +709,19 @@ def _parse_market_scenario_contract(
             or None
         ),
         fx_pair=str(constructor.get("fx_pair") or legacy_inputs.get("currency_pair") or _string_mapping(raw.get("selected_components")).get("fx_rate") or "").strip() or None,
+        fx_spot=_float_or_none(
+            constructor.get("fx_spot")
+            if constructor
+            else legacy_inputs.get("fx_spot")
+        ),
+        fx_volatility=_float_or_none(
+            constructor.get("fx_volatility")
+            if constructor
+            else legacy_inputs.get("fx_volatility")
+        ),
+        fx_vol_surface_name=(
+            str(constructor.get("fx_vol_surface_name") or "").strip() or None
+        ),
         hazard_rate=_float_or_none(
             constructor.get("hazard_rate")
             if constructor
@@ -724,6 +793,9 @@ def _parse_underliers(
                     volatility=_float_or_none(raw.get("volatility")),
                     carry_rate=float(carry.get("rate") or raw.get("carry_rate") or 0.0),
                     carry_curve_name=str(carry.get("curve_name") or raw.get("carry_curve_name") or "").strip() or None,
+                    vol_surface_name=(
+                        str(raw.get("vol_surface_name") or "").strip() or None
+                    ),
                 )
             )
         return tuple(item for item in parsed if item.name)

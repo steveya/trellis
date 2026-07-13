@@ -310,7 +310,8 @@ def test_compile_build_request_preserves_quanto_semantic_binding_hints():
         "discount_curve",
         "forward_curve",
         "underlier_spot",
-        "black_vol_surface",
+        "underlier_vol_surface",
+        "fx_vol_surface",
         "fx_rates",
         "model_parameters",
     )

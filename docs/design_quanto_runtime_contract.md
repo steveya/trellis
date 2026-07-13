@@ -50,6 +50,13 @@ Required market inputs:
 - FX volatility
 - underlier/FX correlation
 
+The checked runtime representation keeps factor identity separate from
+currency identity. ``underlier_id`` selects the named spot, while
+``underlier_currency`` selects the foreign carry convention. Optional
+``underlier_vol_surface_key`` and ``fx_vol_surface_key`` fields select distinct
+entries from ``MarketState.vol_surfaces``; when present they are exact,
+fail-closed bindings rather than hints.
+
 Optional or later-extension inputs:
 
 - dividend or convenience yield
@@ -62,6 +69,11 @@ Optional or later-extension inputs:
 - foreign discounting may be bridged only when the connector policy makes that
   mapping explicit
 - the runtime must not fabricate `fx_vol` or `underlier_fx_correlation`
+- the runtime must not use a generic model `rho` when an exact quanto
+  correlation key or descriptor is declared
+- when ``quanto_correlation_key`` is present, ``model_parameters`` must either
+  contain that exact key or provide a ``correlation_source.source_key`` with
+  the same value; the resolver does not continue through legacy aliases
 - missing required quanto inputs should fail with family-specific wording rather
   than degrade into generic vanilla semantics
 - calibration-derived correlation must remain an explicit
@@ -104,7 +116,8 @@ The useful checked-in surfaces are:
 
 ## Current Design Implications
 
-- use resolver-backed route helpers rather than open-coded market binding
+- use the shared resolver for exact market binding rather than open-coded key
+  guesses
 - keep the analytical and Monte Carlo helpers as stable route surfaces
 - preserve the narrow proving slice explicitly rather than implying broad quanto
   support
@@ -115,9 +128,11 @@ The useful checked-in surfaces are:
 
 ## Related Linear Tickets
 
-Status snapshot as of 2026-04-02:
+Status snapshot as of 2026-07-12:
 
-- No dedicated quanto-only issue was identified from the source plan set.
+- `QUA-1174` owns named hybrid market binding and the coherent `T105` fixture.
+- `QUA-1173` owns retirement of quanto product-helper construction authority
+  after `QUA-1174` lands.
 - Nearest related follow-on issues found in Linear:
   - `QUA-289` Analytical support: `Done`
   - `QUA-291` Reusable analytical kernels: `Done`

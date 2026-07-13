@@ -1070,6 +1070,46 @@ def test_non_migrated_contract_still_requires_settlement_rule_mirror():
     assert any("settlement" in error.lower() for error in report.errors)
 
 
+def test_quanto_semantic_contract_preserves_exact_hybrid_binding_terms():
+    from trellis.agent.semantic_contracts import (
+        make_quanto_option_contract,
+        specialize_semantic_contract_for_method,
+    )
+
+    contract = make_quanto_option_contract(
+        description="USD-settled call on SX5E",
+        underliers=("SX5E",),
+        observation_schedule=("2025-11-15",),
+        underlier_currency="EUR",
+        domestic_currency="USD",
+        fx_pair="EURUSD",
+        underlier_vol_surface_key="sx5e_implied_vol",
+        fx_vol_surface_key="eurusd_implied_vol",
+        quanto_correlation_key="sx5e_eurusd",
+    )
+
+    expected = {
+        "underlier_id": "SX5E",
+        "underlier_currency": "EUR",
+        "domestic_currency": "USD",
+        "fx_pair": "EURUSD",
+        "underlier_vol_surface_key": "sx5e_implied_vol",
+        "fx_vol_surface_key": "eurusd_implied_vol",
+        "quanto_correlation_key": "sx5e_eurusd",
+    }
+    assert dict(contract.product.term_fields) == expected
+    assert {
+        item.input_id for item in contract.market_data.required_inputs
+    } >= {"underlier_vol_surface", "fx_vol_surface"}
+
+    monte_carlo_contract = specialize_semantic_contract_for_method(
+        contract,
+        preferred_method="monte_carlo",
+    )
+
+    assert dict(monte_carlo_contract.product.term_fields) == expected
+
+
 def test_contract_rejects_unsupported_structure_combination():
     from trellis.agent.semantic_contract_validation import validate_semantic_contract
 

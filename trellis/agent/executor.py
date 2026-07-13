@@ -2938,6 +2938,9 @@ def _make_test_payoff(
         name_defaults["underlier_currency"] = "EUR"
         name_defaults["domestic_currency"] = "USD"
         name_defaults["fx_pair"] = "EURUSD"
+        name_defaults["underlier_id"] = None
+        name_defaults["underlier_vol_surface_key"] = None
+        name_defaults["fx_vol_surface_key"] = None
         name_defaults["quanto_correlation_key"] = None
     elif spec_schema.spec_name == "BasketOptionSpec":
         is_spread_basket = any(

@@ -43,6 +43,7 @@ def test_market_snapshot_to_market_state_uses_named_defaults():
     assert market_state.settlement == SETTLE
     assert market_state.discount is discount
     assert market_state.vol_surface is snapshot.vol_surface()
+    assert market_state.vol_surfaces == {"usd_atm": snapshot.vol_surface()}
     assert market_state.credit_curve is snapshot.credit_curve()
     assert market_state.forecast_curves == {"USD-SOFR-3M": forecast}
     assert market_state.selected_curve_names == {
@@ -97,6 +98,32 @@ def test_market_snapshot_selected_forecast_curve_becomes_runtime_forward_curve()
     assert market_state.spot == pytest.approx(1.10)
     assert market_state.underlier_spots["EURUSD"] == pytest.approx(1.10)
     assert market_state.available_capabilities >= {"forward_curve", "fx_rates", "spot"}
+
+
+def test_market_snapshot_preserves_named_vol_surfaces_with_one_selected_default():
+    from trellis.data.schema import MarketSnapshot
+
+    underlier_surface = FlatVol(0.20)
+    fx_surface = FlatVol(0.12)
+    snapshot = MarketSnapshot(
+        as_of=SETTLE,
+        source="unit",
+        discount_curves={"usd_ois": YieldCurve.flat(0.05)},
+        vol_surfaces={
+            "sx5e_implied_vol": underlier_surface,
+            "eurusd_implied_vol": fx_surface,
+        },
+        default_discount_curve="usd_ois",
+        default_vol_surface="sx5e_implied_vol",
+    )
+
+    market_state = snapshot.to_market_state(settlement=SETTLE)
+
+    assert market_state.vol_surface is underlier_surface
+    assert market_state.vol_surfaces == {
+        "sx5e_implied_vol": underlier_surface,
+        "eurusd_implied_vol": fx_surface,
+    }
 
 
 def test_market_snapshot_requires_named_default_when_multiple_discount_curves():

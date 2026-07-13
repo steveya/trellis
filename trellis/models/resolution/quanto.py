@@ -25,7 +25,13 @@ np = get_numpy()
 
 
 class QuantoSpecLike(Protocol):
-    """Minimal spec surface required by the shared quanto resolvers."""
+    """Minimal spec surface required by the shared quanto resolvers.
+
+    Specs may additionally expose ``underlier_id``,
+    ``underlier_vol_surface_key``, and ``fx_vol_surface_key``. The resolver
+    discovers those exact-binding extensions with ``getattr`` so legacy specs
+    remain structurally compatible.
+    """
 
     strike: float
     expiry_date: date
@@ -583,7 +589,7 @@ def _correlation_node(
     provenance = _provenance_for(resolved, "correlation")
     object_name = str(
         provenance.get("source_key")
-        or spec.quanto_correlation_key
+        or getattr(spec, "quanto_correlation_key", None)
         or "quanto_correlation"
     )
     coordinate = RiskFactorRegistry().discover_scalar_correlation(
@@ -700,18 +706,36 @@ def build_quanto_hybrid_factor_graph(
         )
     )
 
-    vol_surface_name = str(
-        selected_curve_names.get("vol_surface")
-        or _source_key_for(resolved_inputs, "underlier_vol", "default_vol_surface")
+    named_vol_surfaces = dict(getattr(market_state, "vol_surfaces", None) or {})
+    underlier_vol_surface_name = _source_key_for(
+        resolved_inputs,
+        "underlier_vol",
+        "default_vol_surface",
     )
-    vol_surface = getattr(market_state, "vol_surface", None)
+    fx_vol_surface_name = _source_key_for(
+        resolved_inputs,
+        "fx_vol",
+        underlier_vol_surface_name,
+    )
+    underlier_vol_surface = named_vol_surfaces.get(
+        underlier_vol_surface_name,
+        getattr(market_state, "vol_surface", None),
+    )
+    fx_vol_surface = named_vol_surfaces.get(
+        fx_vol_surface_name,
+        getattr(market_state, "vol_surface", None),
+    )
     nodes.append(
         _vol_node(
             role="underlier_vol",
-            surface=vol_surface,
-            object_name=vol_surface_name,
+            surface=underlier_vol_surface,
+            object_name=underlier_vol_surface_name,
             currency=spec.underlier_currency,
-            object_path="market_state.vol_surface",
+            object_path=(
+                f"market_state.vol_surfaces[{underlier_vol_surface_name}]"
+                if underlier_vol_surface_name in named_vol_surfaces
+                else "market_state.vol_surface"
+            ),
             coordinate_values={
                 "expiry": float(resolved_inputs.T),
                 "strike": float(spec.strike),
@@ -724,10 +748,14 @@ def build_quanto_hybrid_factor_graph(
     nodes.append(
         _vol_node(
             role="fx_vol",
-            surface=vol_surface,
-            object_name=vol_surface_name,
+            surface=fx_vol_surface,
+            object_name=fx_vol_surface_name,
             currency=spec.domestic_currency,
-            object_path="market_state.vol_surface",
+            object_path=(
+                f"market_state.vol_surfaces[{fx_vol_surface_name}]"
+                if fx_vol_surface_name in named_vol_surfaces
+                else "market_state.vol_surface"
+            ),
             coordinate_values={
                 "expiry": float(resolved_inputs.T),
                 "strike": float(resolved_inputs.fx_spot),
@@ -787,6 +815,26 @@ def _resolve_quanto_underlier_spot_details(
 ) -> tuple[float, dict[str, object]]:
     """Resolve the underlier spot plus traceable binding provenance."""
     base_family = _market_input_source_family(market_state)
+    underlier_id = str(getattr(spec, "underlier_id", None) or "").strip()
+    if underlier_id:
+        underlier_spots = market_state.underlier_spots or {}
+        if underlier_id not in underlier_spots:
+            raise ValueError(
+                "Quanto pricing requires exact named underlier spot "
+                f"market_state.underlier_spots[{underlier_id!r}]. Available keys: "
+                f"{sorted(underlier_spots)}"
+            )
+        return underlier_spots[underlier_id], _build_quanto_input_provenance(
+            market_state,
+            source_family=base_family,
+            source_kind="underlier_spot",
+            source_key=underlier_id,
+            source_parameters={
+                "binding_kind": "exact_named_underlier_spot",
+                "underlier_id": underlier_id,
+                "underlier_currency": spec.underlier_currency,
+            },
+        )
     if market_state.underlier_spots:
         for key in (
             spec.underlier_currency,
@@ -819,6 +867,47 @@ def _resolve_quanto_underlier_spot_details(
     raise ValueError(
         f"Quanto pricing requires spot or underlier_spots for {spec.underlier_currency!r}"
     )
+
+
+def _resolve_quanto_vol_surface_details(
+    market_state: MarketState,
+    spec: QuantoSpecLike,
+    *,
+    role: str,
+) -> tuple[object, str]:
+    """Resolve one exact or default implied-vol surface for a quanto factor."""
+    if role not in {"underlier", "fx"}:
+        raise ValueError(f"Unsupported quanto volatility role {role!r}")
+    key_attr = (
+        "underlier_vol_surface_key" if role == "underlier" else "fx_vol_surface_key"
+    )
+    explicit_key = str(getattr(spec, key_attr, None) or "").strip()
+    named_surfaces = market_state.vol_surfaces or {}
+    if explicit_key:
+        if explicit_key not in named_surfaces:
+            raise ValueError(
+                f"Quanto pricing requires market_state.vol_surfaces[{explicit_key!r}] "
+                f"for {role} volatility. Available keys: {sorted(named_surfaces)}"
+            )
+        return named_surfaces[explicit_key], explicit_key
+
+    if market_state.vol_surface is None:
+        if len(named_surfaces) == 1:
+            key, surface = next(iter(named_surfaces.items()))
+            return surface, str(key)
+        raise ValueError(
+            f"Quanto pricing requires a default or exact named {role} "
+            f"implied-vol surface ({len(named_surfaces)} named surfaces available: "
+            f"{sorted(named_surfaces)})"
+        )
+
+    matching_names = [
+        str(key)
+        for key, surface in named_surfaces.items()
+        if surface is market_state.vol_surface
+    ]
+    source_key = matching_names[0] if len(matching_names) == 1 else "vol_surface"
+    return market_state.vol_surface, source_key
 
 
 def resolve_quanto_foreign_curve(
@@ -1029,75 +1118,81 @@ def _resolve_quanto_correlation_details(
 ) -> tuple[float, dict[str, object]]:
     """Resolve the quanto correlation value plus traceable provenance."""
     params = market_state.model_parameters or {}
+
+    def _descriptor_details(
+        value: object,
+        *,
+        source_key: str,
+    ) -> tuple[float, dict[str, object]]:
+        if not isinstance(value, dict):
+            scalar = float(value)
+            return scalar, {
+                "source_family": "explicit",
+                "source_kind": "explicit_scalar",
+                "source_key": source_key,
+                "source_estimator": "explicit_input",
+                "source_parameters": {"value": scalar},
+            }
+        kind = str(value.get("kind") or value.get("source_kind") or "explicit")
+        corr_value = value.get("value", value.get("rho"))
+        if corr_value is None:
+            raise ValueError(
+                f"Quanto correlation descriptor `{source_key}` requires a scalar `value`."
+            )
+        source_parameters = dict(value.get("parameters") or {})
+        if value.get("source_ref") is not None:
+            source_parameters.setdefault("source_ref", value["source_ref"])
+        if value.get("seed") is not None:
+            source_parameters.setdefault("seed", int(value["seed"]))
+        if value.get("sample_size") is not None:
+            source_parameters.setdefault("sample_size", int(value["sample_size"]))
+        if value.get("estimator") is not None:
+            source_parameters.setdefault("estimator", value["estimator"])
+        return float(corr_value), {
+            "source_family": _normalize_quanto_source_family(kind),
+            "source_kind": _normalize_quanto_source_kind(kind),
+            "source_key": str(value.get("source_key") or source_key),
+            "source_estimator": value.get("estimator"),
+            "source_seed": value.get("seed"),
+            "source_parameters": source_parameters,
+        }
+
+    correlation_source = params.get("correlation_source")
+    if isinstance(correlation_source, str):
+        correlation_source = {"kind": correlation_source}
+    if correlation_source is not None and not isinstance(correlation_source, dict):
+        raise ValueError("correlation_source must be a mapping or string")
+
+    explicit_key = str(getattr(spec, "quanto_correlation_key", None) or "").strip()
+    if explicit_key:
+        if explicit_key in params:
+            return _descriptor_details(params[explicit_key], source_key=explicit_key)
+        if (
+            correlation_source is not None
+            and str(correlation_source.get("source_key") or "").strip() == explicit_key
+        ):
+            return _descriptor_details(correlation_source, source_key=explicit_key)
+        raise ValueError(
+            "Quanto pricing requires exact correlation key "
+            f"{explicit_key!r} in market_state.model_parameters or its "
+            "correlation_source descriptor."
+        )
+
     candidate_keys = [
-        spec.quanto_correlation_key,
         "quanto_correlation",
         f"{spec.underlier_currency}_{spec.domestic_currency}_correlation",
         f"{spec.underlier_currency}{spec.domestic_currency}_correlation",
         "underlier_fx_correlation",
-        "rho",
     ]
     for key in candidate_keys:
-        if key and key in params:
-            value = params[key]
-            if isinstance(value, dict):
-                kind = str(value.get("kind") or value.get("source_kind") or "explicit")
-                corr_value = value.get("value", value.get("rho"))
-                if corr_value is None:
-                    raise ValueError(
-                        f"Quanto correlation descriptor `{key}` requires a scalar `value`."
-                    )
-                source_parameters = dict(value.get("parameters") or {})
-                if value.get("source_ref") is not None:
-                    source_parameters.setdefault("source_ref", value["source_ref"])
-                if value.get("seed") is not None:
-                    source_parameters.setdefault("seed", int(value["seed"]))
-                if value.get("sample_size") is not None:
-                    source_parameters.setdefault("sample_size", int(value["sample_size"]))
-                if value.get("estimator") is not None:
-                    source_parameters.setdefault("estimator", value["estimator"])
-                return float(corr_value), {
-                    "source_family": _normalize_quanto_source_family(kind),
-                    "source_kind": _normalize_quanto_source_kind(kind),
-                    "source_key": key,
-                    "source_estimator": value.get("estimator"),
-                    "source_seed": value.get("seed"),
-                    "source_parameters": source_parameters,
-                }
-            return float(value), {
-                "source_family": "explicit",
-                "source_kind": "explicit_scalar",
-                "source_key": key,
-                "source_estimator": "explicit_input",
-                "source_parameters": {"value": float(value)},
-            }
-    source_source = params.get("correlation_source")
-    if source_source is not None:
-        if isinstance(source_source, str):
-            source_source = {"kind": source_source}
-        if not isinstance(source_source, dict):
-            raise ValueError("correlation_source must be a mapping or string")
-        kind = str(source_source.get("kind") or source_source.get("source_kind") or "").strip()
-        corr_value = source_source.get("value", source_source.get("rho"))
-        if corr_value is None:
-            raise ValueError("correlation_source requires a scalar value for quanto pricing")
-        source_parameters = dict(source_source.get("parameters") or {})
-        if source_source.get("source_ref") is not None:
-            source_parameters.setdefault("source_ref", source_source["source_ref"])
-        if source_source.get("seed") is not None:
-            source_parameters.setdefault("seed", int(source_source["seed"]))
-        if source_source.get("sample_size") is not None:
-            source_parameters.setdefault("sample_size", int(source_source["sample_size"]))
-        if source_source.get("estimator") is not None:
-            source_parameters.setdefault("estimator", source_source["estimator"])
-        return float(corr_value), {
-            "source_family": _normalize_quanto_source_family(kind),
-            "source_kind": _normalize_quanto_source_kind(kind),
-            "source_key": source_source.get("source_key", "correlation_source"),
-            "source_estimator": source_source.get("estimator"),
-            "source_seed": source_source.get("seed"),
-            "source_parameters": source_parameters,
-        }
+        if key in params:
+            return _descriptor_details(params[key], source_key=key)
+    if correlation_source is not None:
+        return _descriptor_details(correlation_source, source_key="correlation_source")
+
+    model_family = str(params.get("model_family") or "").strip().lower()
+    if "rho" in params and model_family in {"", "quanto", "quanto_option", "hybrid"}:
+        return _descriptor_details(params["rho"], source_key="rho")
     raise ValueError(
         "Quanto pricing requires an underlier/FX correlation in "
         "`market_state.model_parameters`."
@@ -1113,8 +1208,11 @@ def resolve_quanto_inputs(
     """Resolve the deterministic market inputs needed by quanto routes."""
     if market_state.discount is None:
         raise ValueError("market_state.discount is required for quanto pricing")
-    if market_state.vol_surface is None:
-        raise ValueError("market_state.vol_surface is required for quanto pricing")
+    if market_state.vol_surface is None and not market_state.vol_surfaces:
+        raise ValueError(
+            "market_state.vol_surface or market_state.vol_surfaces is required "
+            "for quanto pricing"
+        )
 
     fx_quote = (market_state.fx_rates or {}).get(spec.fx_pair)
     if fx_quote is None:
@@ -1168,8 +1266,18 @@ def resolve_quanto_inputs(
     )
     domestic_df = market_state.discount.discount(T)
     foreign_df = foreign_curve.discount(T)
-    sigma_underlier = market_state.vol_surface.black_vol(T, spec.strike)
-    sigma_fx = market_state.vol_surface.black_vol(T, fx_spot)
+    underlier_vol_surface, underlier_vol_surface_key = _resolve_quanto_vol_surface_details(
+        market_state,
+        spec,
+        role="underlier",
+    )
+    fx_vol_surface, fx_vol_surface_key = _resolve_quanto_vol_surface_details(
+        market_state,
+        spec,
+        role="fx",
+    )
+    sigma_underlier = underlier_vol_surface.black_vol(T, spec.strike)
+    sigma_fx = fx_vol_surface.black_vol(T, fx_spot)
     corr, correlation_provenance = _resolve_quanto_correlation_details(market_state, spec)
     corr = np.clip(corr, -0.999, 0.999)
     market_provenance = dict(getattr(market_state, "market_provenance", None) or {})
@@ -1215,7 +1323,7 @@ def resolve_quanto_inputs(
                 market_state,
                 source_family="derived",
                 source_kind="surface_lookup",
-                source_key="vol_surface",
+                source_key=underlier_vol_surface_key,
                 source_parameters={
                     "binding_kind": "underlier_vol_lookup",
                     "time_to_expiry": float(T),
@@ -1228,7 +1336,7 @@ def resolve_quanto_inputs(
                 market_state,
                 source_family="derived",
                 source_kind="surface_lookup",
-                source_key="vol_surface",
+                source_key=fx_vol_surface_key,
                 source_parameters={
                     "binding_kind": "fx_vol_lookup",
                     "time_to_expiry": float(T),

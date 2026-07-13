@@ -25,8 +25,11 @@ class _QuantoSpec:
     strike: float = 100.0
     expiry_date: date = date(2025, 11, 15)
     fx_pair: str = "EURUSD"
+    underlier_id: str | None = None
     underlier_currency: str = "EUR"
     domestic_currency: str = "USD"
+    underlier_vol_surface_key: str | None = None
+    fx_vol_surface_key: str | None = None
     day_count: object = DayCountConvention.ACT_365
     quanto_correlation_key: str | None = "sx5e_eurusd"
 
@@ -168,6 +171,45 @@ def test_quanto_hybrid_factor_graph_grid_vol_chart_carries_node_grid():
     assert values["strikes"] == (90.0, 110.0)
     assert values["vols"] == ((0.18, 0.20), (0.22, 0.24))
     assert values["resolved_vol"] == pytest.approx(surface.black_vol(resolved.T, 100.0))
+
+
+def test_quanto_hybrid_factor_graph_keeps_underlier_and_fx_surfaces_distinct():
+    market_state = _market_state(FlatVol(0.99))
+    market_state = MarketState(
+        **{
+            **market_state.__dict__,
+            "underlier_spots": {"SX5E": 100.0},
+            "vol_surfaces": {
+                "sx5e_implied_vol": FlatVol(0.20),
+                "eurusd_implied_vol": FlatVol(0.12),
+            },
+        }
+    )
+    spec = _QuantoSpec(
+        underlier_id="SX5E",
+        underlier_vol_surface_key="sx5e_implied_vol",
+        fx_vol_surface_key="eurusd_implied_vol",
+    )
+
+    resolved = resolve_quanto_inputs(
+        market_state,
+        spec,
+        include_hybrid_factor_graph=True,
+    )
+    graph = resolved.hybrid_factor_graph.validate()
+    underlier_vol = _node_by_role(graph, "underlier_vol")
+    fx_vol = _node_by_role(graph, "fx_vol")
+
+    assert underlier_vol.object_name == "sx5e_implied_vol"
+    assert fx_vol.object_name == "eurusd_implied_vol"
+    assert underlier_vol.coordinate_chart.coordinate_values["resolved_vol"] == pytest.approx(0.20)
+    assert fx_vol.coordinate_chart.coordinate_values["resolved_vol"] == pytest.approx(0.12)
+    assert underlier_vol.coordinate_chart.coordinates[0].object_path.startswith(
+        "market_state.vol_surfaces"
+    )
+    assert fx_vol.coordinate_chart.coordinates[0].object_path.startswith(
+        "market_state.vol_surfaces"
+    )
 
 
 def test_quanto_hybrid_factor_graph_builder_marks_missing_foreign_curve_unsupported():

@@ -31,8 +31,11 @@ class QuantoOptionSpec:
     strike: float
     expiry_date: date
     fx_pair: str
+    underlier_id: str | None = None
     underlier_currency: str = "EUR"
     domestic_currency: str = "USD"
+    underlier_vol_surface_key: str | None = None
+    fx_vol_surface_key: str | None = None
     option_type: str = "call"
     quanto_correlation_key: str | None = None
     day_count: DayCountConvention = DayCountConvention.ACT_365

@@ -718,6 +718,7 @@ def replace_market_state_vol_surface(market_state: MarketState, vol_surface: obj
         discount=market_state.discount,
         forward_curve=market_state.forward_curve,
         vol_surface=vol_surface,
+        vol_surfaces=market_state.vol_surfaces,
         state_space=market_state.state_space,
         credit_curve=market_state.credit_curve,
         fixing_histories=market_state.fixing_histories,

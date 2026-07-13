@@ -342,7 +342,13 @@ The first migrated vanilla cases now use that boundary directly:
   kernels or generic Monte Carlo primitives. The product-level FX vanilla
   helpers remain compatibility/reference APIs. Quanto routes still expose the
   bounded semantic-facing helper kit in ``trellis.models.quanto_option`` until
-  that family receives its own primitive-composition migration
+  that family receives its own primitive-composition migration. Their market
+  boundary is no longer single-surface: ``MarketState.vol_surfaces`` preserves
+  named implied-volatility objects, and the quanto spec can bind an exact
+  underlier id plus independent underlier/FX surface keys. The resolver records
+  those object names in provenance and refuses missing exact keys. Explicit
+  quanto correlation descriptors also take precedence over legacy ``rho`` so
+  an ambient Heston pack cannot silently define cross-asset dependence
 - the copula basket-credit slice now also exposes a semantic-facing helper
   layer in ``trellis.models.credit_basket_copula`` so tranche-style CDO,
   nth-to-default, and portfolio loss-distribution requests can bind

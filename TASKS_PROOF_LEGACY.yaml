@@ -1343,28 +1343,48 @@ tasks:
   status: pending
 - id: T105
   title: 'Quanto option: quanto-adjusted BS vs MC cross-currency'
+  instrument_type: quanto_option
   construct:
   - analytical
   - monte_carlo
   new_component:
   - quanto_adjustment
   - cross_currency_mc
+  market_scenario_id: eur_equity_usd_quanto
+  extension_contract:
+    product: quanto_option
+    option_type: call
+    strike: 100.0
+    spot: 100.0
+    expiry_years: 1.0
+    notional: 1000000.0
+    underlier_id: SX5E
+    underlier_currency: EUR
+    domestic_currency: USD
+    currency_pair: EURUSD
+    underlier_vol_surface_key: sx5e_implied_vol
+    fx_vol_surface_key: eurusd_implied_vol
+    quanto_correlation_key: sx5e_eurusd
   market:
     source: mock
     as_of: 2024-11-15
     discount_curve: usd_ois
     forecast_curve: EUR-DISC
     fx_rate: EURUSD
+    vol_surface: spx_heston_implied_vol
   market_assertions:
     requires:
     - discount_curve
     - forward_curve
     - fx_rates
     - spot
+    - black_vol_surface
+    - model_parameters
     selected:
       discount_curve: usd_ois
       forecast_curve: EUR-DISC
       fx_rate: EURUSD
+      vol_surface: spx_heston_implied_vol
   cross_validate:
     internal:
     - quanto_bs

@@ -45,6 +45,37 @@ def test_construct_market_state_for_scenario_populates_multi_asset_support():
     assert market_state.market_provenance["market_scenario"]["scenario_id"] == "equity_rainbow_two_asset"
 
 
+def test_construct_hybrid_equity_fx_scenario_keeps_named_factors_distinct():
+    from trellis.agent.market_scenarios import (
+        construct_market_state_for_scenario,
+        load_market_scenario_contracts,
+    )
+    from trellis.agent.task_runtime import build_market_state
+
+    contract = load_market_scenario_contracts(root=ROOT)["eur_equity_usd_quanto"]
+    market_state, metadata = construct_market_state_for_scenario(
+        contract,
+        build_market_state(),
+        task_id="T105",
+    )
+
+    assert contract.constructor_kind == "hybrid_equity_fx"
+    assert contract.financepy_inputs()["stock_price"] == 100.0
+    assert contract.financepy_inputs()["spot_fx"] == 1.10
+    assert metadata["scenario_construction_kind"] == "hybrid_equity_fx"
+    assert market_state.underlier_spots["SX5E"] == 100.0
+    assert market_state.fx_rates["EURUSD"].spot == 1.10
+    assert market_state.vol_surfaces["sx5e_implied_vol"].black_vol(1.0, 100.0) == 0.20
+    assert market_state.vol_surfaces["eurusd_implied_vol"].black_vol(1.0, 1.10) == 0.12
+    assert market_state.vol_surface is market_state.vol_surfaces["sx5e_implied_vol"]
+    assert market_state.model_parameters["correlation_source"]["value"] == 0.25
+    assert "rho" not in market_state.model_parameters
+    assert "model_family" not in market_state.model_parameters
+    assert market_state.market_provenance["market_scenario"]["scenario_id"] == (
+        "eur_equity_usd_quanto"
+    )
+
+
 def test_build_market_scenario_coverage_report_counts_usage_and_unknown_refs():
     from trellis.agent.market_scenarios import (
         build_market_scenario_coverage_report,

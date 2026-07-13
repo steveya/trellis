@@ -161,13 +161,19 @@ def materialize_black_vol_surface(
     metadata: Mapping[str, object] | None = None,
 ) -> MarketState:
     """Materialize a calibrated Black-vol surface onto ``MarketState``."""
-    updated_state = replace(market_state, vol_surface=vol_surface)
+    surface_map = dict(market_state.vol_surfaces or {})
+    surface_map[surface_name] = vol_surface
+    updated_state = replace(
+        market_state,
+        vol_surface=vol_surface,
+        vol_surfaces=surface_map,
+    )
     return _record_materialization(
         updated_state,
         CalibratedObjectMaterialization(
             object_kind="black_vol_surface",
             object_name=surface_name,
-            target_fields=("vol_surface",),
+            target_fields=("vol_surface", "vol_surfaces"),
             source_kind=source_kind,
             source_ref=source_ref,
             selected_curve_roles=selected_curve_roles or {},
