@@ -51,6 +51,7 @@ from trellis.agent.contract_ir import (
     ZeroRateTenor,
     canonicalize,
 )
+from trellis.agent.knowledge.methods import default_method_modules
 from trellis.agent.dynamic_contract_ir import (
     ActionSpec,
     AutomaticTerminationEvent,
@@ -3903,15 +3904,17 @@ Return JSON:
             instrument=key,
             features=("discounting",),
             method=normalize_method("analytical"),
+            method_modules=default_method_modules("analytical"),
             reasoning="LLM decomposition failed — falling back to analytical.",
             learned=True,
         )
 
+    method = normalize_method(data.get("method", "analytical"))
     return ProductDecomposition(
         instrument=key,
         features=tuple(data.get("features", ["discounting"])),
-        method=normalize_method(data.get("method", "analytical")),
-        method_modules=tuple(data.get("method_modules", [])),
+        method=method,
+        method_modules=default_method_modules(method),
         required_market_data=frozenset(data.get("required_market_data", ["discount_curve"])),
         reasoning=data.get("reasoning", ""),
         notes=data.get("notes", ""),

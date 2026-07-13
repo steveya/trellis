@@ -36,6 +36,8 @@ data, exercise style, state dependence, and model family become ``ProductIR``.
 The quant layer ranks the admitted candidates and emits a ``PricingPlan`` plus
 a ``QuantChallengerPacket``. Genuinely novel products may use bounded LLM
 decomposition, and that prompt receives the same orientation card.
+The selected method family is mapped to deterministic default construction
+modules in runtime code; the LLM is not asked to emit module or import paths.
 
 PricingPlan
 -----------

@@ -19,6 +19,17 @@ CANONICAL_METHODS = frozenset({
     "waterfall",
 })
 
+_DEFAULT_METHOD_MODULES = {
+    "analytical": ("trellis.models.black",),
+    "rate_tree": ("trellis.models.trees.lattice",),
+    "monte_carlo": ("trellis.models.monte_carlo.engine",),
+    "qmc": ("trellis.models.qmc",),
+    "fft_pricing": ("trellis.models.transforms.fft_pricer",),
+    "pde_solver": ("trellis.models.pde.theta_method",),
+    "copula": ("trellis.models.copulas.gaussian",),
+    "waterfall": ("trellis.models.cashflow_engine.waterfall",),
+}
+
 _METHOD_ALIASES = {
     "analytic": "analytical",
     "analytics": "analytical",
@@ -79,3 +90,8 @@ def aliases_for_method(method: str | None) -> tuple[str, ...]:
 def is_known_method(method: str | None) -> bool:
     """Return whether *method* resolves to a known canonical method family."""
     return normalize_method(method) in CANONICAL_METHODS
+
+
+def default_method_modules(method: str | None) -> tuple[str, ...]:
+    """Return deterministic construction modules for a canonical method family."""
+    return _DEFAULT_METHOD_MODULES.get(normalize_method(method), ())

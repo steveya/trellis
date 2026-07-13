@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cache
 from pathlib import Path
 from types import MappingProxyType
 from typing import Mapping
@@ -58,6 +59,8 @@ def _required_text(payload: Mapping[str, object], key: str, *, context: str) -> 
 
 
 def _string_tuple(values: object, *, context: str) -> tuple[str, ...]:
+    if values is None:
+        raise ValueError(f"{context} is missing")
     if not isinstance(values, list) or not values:
         raise ValueError(f"{context} requires a non-empty list")
     normalized = tuple(str(value or "").strip() for value in values)
@@ -100,7 +103,7 @@ def _parse_orientation(role: str, payload: object) -> RoleOrientation:
     max_render_chars = int(payload.get("max_render_chars") or 0)
     if version <= 0 or max_render_chars <= 0:
         raise ValueError(f"{context} requires positive version and max_render_chars")
-    return RoleOrientation(
+    orientation = RoleOrientation(
         role=role,
         contract_id=_required_text(payload, "contract_id", context=context),
         version=version,
@@ -114,13 +117,13 @@ def _parse_orientation(role: str, payload: object) -> RoleOrientation:
         ),
         navigation=tuple(navigation),
     )
+    _render_orientation_card(orientation)
+    return orientation
 
 
-def load_role_orientations(
-    path: str | Path | None = None,
+def _load_role_orientations_from_path(
+    manifest_path: Path,
 ) -> Mapping[str, RoleOrientation]:
-    """Load and validate the canonical runtime role-orientation manifest."""
-    manifest_path = Path(path) if path is not None else _MANIFEST_PATH
     payload = yaml.safe_load(manifest_path.read_text())
     if not isinstance(payload, Mapping) or int(payload.get("schema_version") or 0) != 1:
         raise ValueError("Agent orientation manifest requires schema_version 1")
@@ -137,6 +140,20 @@ def load_role_orientations(
         for role in sorted(_REQUIRED_ROLES)
     }
     return MappingProxyType(orientations)
+
+
+@cache
+def _load_default_role_orientations() -> Mapping[str, RoleOrientation]:
+    return _load_role_orientations_from_path(_MANIFEST_PATH)
+
+
+def load_role_orientations(
+    path: str | Path | None = None,
+) -> Mapping[str, RoleOrientation]:
+    """Load and validate canonical or explicitly supplied role orientations."""
+    if path is None:
+        return _load_default_role_orientations()
+    return _load_role_orientations_from_path(Path(path))
 
 
 def get_role_orientation(role: str) -> RoleOrientation:
@@ -157,9 +174,7 @@ def role_orientation_summary(role: str) -> dict[str, object]:
     }
 
 
-def render_role_orientation_card(role: str) -> str:
-    """Render one compact role card without loading referenced documents."""
-    orientation = get_role_orientation(role)
+def _render_orientation_card(orientation: RoleOrientation) -> str:
     lines = [
         f"## {orientation.title}",
         f"- Contract: `{orientation.identity}`",
@@ -181,3 +196,8 @@ def render_role_orientation_card(role: str) -> str:
             f"above its {orientation.max_render_chars}-char budget"
         )
     return card
+
+
+def render_role_orientation_card(role: str) -> str:
+    """Render one compact role card without loading referenced documents."""
+    return _render_orientation_card(get_role_orientation(role))

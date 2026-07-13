@@ -68,6 +68,30 @@ def test_role_orientation_summary_is_trace_safe():
     }
 
 
+def test_default_role_orientation_manifest_is_cached():
+    from trellis.agent.role_orientation import load_role_orientations
+
+    assert load_role_orientations() is load_role_orientations()
+
+
+def test_custom_role_orientation_manifest_is_reloaded(tmp_path):
+    from trellis.agent.role_orientation import load_role_orientations
+
+    canonical = yaml.safe_load(
+        (ROOT / "trellis/agent/knowledge/canonical/agent_orientations.yaml").read_text()
+    )
+    path = tmp_path / "agent_orientations.yaml"
+    path.write_text(yaml.safe_dump(canonical, sort_keys=False))
+    first = load_role_orientations(path)
+
+    canonical["orientations"]["quant"]["version"] = 2
+    path.write_text(yaml.safe_dump(canonical, sort_keys=False))
+    second = load_role_orientations(path)
+
+    assert first["quant"].version == 1
+    assert second["quant"].version == 2
+
+
 def test_role_orientation_file_navigation_targets_exist():
     from trellis.agent.role_orientation import load_role_orientations
 
@@ -94,6 +118,20 @@ def test_load_role_orientations_rejects_incomplete_manifest(tmp_path):
         load_role_orientations(path)
 
 
+def test_load_role_orientations_rejects_card_over_budget(tmp_path):
+    from trellis.agent.role_orientation import load_role_orientations
+
+    canonical = yaml.safe_load(
+        (ROOT / "trellis/agent/knowledge/canonical/agent_orientations.yaml").read_text()
+    )
+    canonical["orientations"]["quant"]["max_render_chars"] = 10
+    path = tmp_path / "agent_orientations.yaml"
+    path.write_text(yaml.safe_dump(canonical, sort_keys=False))
+
+    with pytest.raises(ValueError, match="above its 10-char budget"):
+        load_role_orientations(path)
+
+
 def test_unknown_runtime_role_fails_closed():
     from trellis.agent.role_orientation import get_role_orientation
 
@@ -102,8 +140,10 @@ def test_unknown_runtime_role_fails_closed():
 
 
 def test_quant_llm_decomposition_prompt_includes_only_quant_orientation(monkeypatch):
+    from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge import get_store
     from trellis.agent.knowledge.decompose import _decompose_via_llm
+    from trellis.agent.quant import _plan_from_decomposition
 
     captured: dict[str, str] = {}
 
@@ -113,8 +153,7 @@ def test_quant_llm_decomposition_prompt_includes_only_quant_orientation(monkeypa
         captured["prompt"] = prompt
         return {
             "features": ["discounting"],
-            "method": "analytical",
-            "method_modules": [],
+            "method": "monte_carlo",
             "required_market_data": ["discount_curve"],
             "reasoning": "bounded test",
         }
@@ -128,8 +167,43 @@ def test_quant_llm_decomposition_prompt_includes_only_quant_orientation(monkeypa
         "fake-model",
     )
 
-    assert result.method == "analytical"
+    assert result.method == "monte_carlo"
+    assert result.method_modules == ("trellis.models.monte_carlo.engine",)
     assert "quant-runtime-navigation@1" in captured["prompt"]
     assert "canonical/decompositions.yaml" in captured["prompt"]
     assert "model-validator-runtime-navigation" not in captured["prompt"]
     assert '"method_modules"' not in captured["prompt"]
+
+    pricing_plan = _plan_from_decomposition(result)
+    generation_plan = build_generation_plan(
+        pricing_plan=pricing_plan,
+        instrument_type="novel_bounded_derivative",
+        inspected_modules=tuple(pricing_plan.method_modules),
+        primitive_plan_override=None,
+    )
+    assert pricing_plan.method_modules == ["trellis.models.monte_carlo.engine"]
+    assert "quant_plan_has_no_explicit_method_modules" not in (
+        generation_plan.uncertainty_flags
+    )
+
+
+def test_quant_llm_decomposition_failure_uses_deterministic_modules(monkeypatch):
+    from trellis.agent.knowledge import get_store
+    from trellis.agent.knowledge.decompose import _decompose_via_llm
+
+    monkeypatch.setattr("trellis.agent.config.load_env", lambda: None)
+
+    def fail_generate(*args, **kwargs):
+        raise RuntimeError("provider down")
+
+    monkeypatch.setattr("trellis.agent.config.llm_generate_json", fail_generate)
+
+    result = _decompose_via_llm(
+        "Novel bounded derivative",
+        "novel_bounded_derivative",
+        get_store(),
+        "fake-model",
+    )
+
+    assert result.method == "analytical"
+    assert result.method_modules == ("trellis.models.black",)

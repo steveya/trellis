@@ -961,6 +961,7 @@ def build_payoff(
         )
     )
     quant_challenger_packet = quant_challenger_packet_summary(pricing_plan)
+    # Keep identity queryable without decoding the nested challenger packet.
     quant_orientation = role_orientation_summary("quant")
     _record_platform_event(
         compiled_request,
