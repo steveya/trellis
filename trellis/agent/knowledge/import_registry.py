@@ -440,6 +440,7 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
     groups = {
         "Core": [],
         "Curves": [],
+        "Models — Payoff Composition": [],
         "Models — Analytical": [],
         "Models — Trees": [],
         "Models — Monte Carlo": [],
@@ -465,6 +466,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Core"].append(line)
         elif "trellis.curves." in mod:
             groups["Curves"].append(line)
+        elif mod == "trellis.models.observation_returns":
+            groups["Models — Payoff Composition"].append(line)
         elif "trellis.models.black" in mod:
             groups["Models — Analytical"].append(line)
         elif "trellis.models.analytical" in mod:
@@ -555,7 +558,8 @@ from trellis.curves.credit_curve import CreditCurve
 ### Models — Analytical
 from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put
 from trellis.models.analytical import terminal_intrinsic, terminal_vanilla_from_basis
-from trellis.models.analytical.support import discounted_value, implied_zero_rate, normalized_option_type, quanto_adjusted_forward, terminal_intrinsic
+from trellis.models.analytical.support import discounted_value, gauss_hermite_product_expectation, implied_zero_rate, normalized_option_type, quanto_adjusted_forward, terminal_intrinsic
+from trellis.models.analytical.support.expectations import gauss_hermite_product_expectation
 from trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs, garman_kohlhagen_call_raw, garman_kohlhagen_price_raw, garman_kohlhagen_put_raw
 from trellis.models.analytical.jamshidian import zcb_option_hw
 from trellis.models.analytical.barrier import barrier_option_price, down_and_out_call, down_and_in_call
@@ -567,6 +571,7 @@ from trellis.models.fx_vanilla import FXVanillaSpecLike, ResolvedFXVanillaInputs
 from trellis.models.fx_barrier_option import FXBarrierMonteCarloResult, FXBarrierOptionSpec, ResolvedFXBarrierInputs, price_fx_barrier_option_analytical, price_fx_barrier_option_monte_carlo, price_fx_barrier_option_monte_carlo_result, resolve_fx_barrier_inputs
 from trellis.models.credit_index_option import CreditIndexOptionSpec, price_credit_index_option_black_on_spread, price_credit_index_option_monte_carlo
 from trellis.models.local_vol_option import LocalVolPDEResult, LocalVolVanillaOptionSpec, price_local_vol_option_monte_carlo, price_local_vol_option_pde, price_local_vol_option_pde_result
+from trellis.models.observation_returns import ObservationReturnContract, bounded_observation_return_sum, build_observation_return_reducer, observation_return_payoff, simple_observation_returns
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics

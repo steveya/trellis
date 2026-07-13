@@ -15,6 +15,9 @@ from trellis.models.analytical.support.discounting import (
     safe_time_fraction,
     simple_rate_from_discount_factor,
 )
+from trellis.models.analytical.support.expectations import (
+    gauss_hermite_product_expectation,
+)
 from trellis.models.analytical.support.forwards import (
     forward_from_carry_rate,
     forward_from_discount_factors,
@@ -43,6 +46,7 @@ __all__ = [
     "forward_from_carry_rate",
     "forward_from_discount_factors",
     "forward_from_dividend_yield",
+    "gauss_hermite_product_expectation",
     "implied_zero_rate",
     "normalized_option_type",
     "quanto_adjusted_forward",

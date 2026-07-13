@@ -131,6 +131,59 @@ seeded two-factor Sobol shocks. Checked-in adapters under
 ``trellis.instruments._agent`` remain compatibility artifacts and examples;
 the primitive contract, not a product-pricing wrapper, is authoritative.
 
+Scheduled Observation Returns
+-----------------------------
+
+For a payoff that sums returns between consecutive observation dates, use the
+generic observation-return contract instead of writing a full-path loop. The
+contract keeps local and global bounds explicit, while the payoff tells the
+Monte Carlo engine to retain only the previous observed level and accumulated
+return:
+
+.. code-block:: python
+
+   from trellis.models.monte_carlo.engine import MonteCarloEngine
+   from trellis.models.observation_returns import (
+       ObservationReturnContract,
+       observation_return_payoff,
+   )
+   from trellis.models.processes.gbm import GBM
+
+   terms = ObservationReturnContract(
+       observation_times=(0.25, 0.5, 0.75, 1.0),
+       direction="up",
+       local_floor=0.0,
+       local_cap=0.08,
+       global_floor=0.0,
+       global_cap=0.20,
+       payoff_scale=100.0,
+   )
+   payoff = observation_return_payoff(
+       terms,
+       maturity=1.0,
+       n_steps=252,
+   )
+   result = MonteCarloEngine(
+       GBM(mu=0.03, sigma=0.20),
+       n_paths=100_000,
+       n_steps=252,
+       seed=42,
+       method="exact",
+   ).price(
+       100.0,
+       1.0,
+       payoff,
+       discount_rate=0.03,
+       return_paths=False,
+   )
+
+The observation times must map exactly to distinct simulation steps. Analytical code
+can reuse the same ``ObservationReturnContract`` and
+``bounded_observation_return_sum(...)`` inside
+``gauss_hermite_product_expectation(...)`` when interval shocks are independent
+standard normals. Correlated returns, stochastic-volatility state, or
+nonpositive observables require a different model-specific composition.
+
 The P001 Bermudan best-of-two rainbow proof is also exposed this way for
 task compatibility. Its checked-in ``_agent`` adapter delegates to the
 ``trellis.execution`` Bermudan best-of basket shim, which reuses the route-free

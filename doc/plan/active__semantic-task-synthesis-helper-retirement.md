@@ -36,13 +36,17 @@ Status mirror last synced: `2026-07-13`
 | `QUA-1174` | Hybrid market binding: named underlier and volatility surfaces | Done |
 | `QUA-1173` | Quanto option: primitive-composed analytical and MC lanes | Done |
 | `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | Done |
+| `QUA-1176` | Observation returns: reusable bounded accumulation primitives | In Progress |
+| `QUA-1177` | Cliquet pricing: primitive-composed analytical and Monte Carlo lanes | Backlog |
 
 ## Current Sequence
 
-1. Re-run the helper-authority audit against merged `main` after the QUA-1173
-   quanto milestone.
-2. Choose the next coherent product family by remaining authority count and
-   semantic risk.
+1. Land `QUA-1176`, the product-neutral observation-return algebra, reduced
+   Monte Carlo state, bounded Gaussian expectation, and agent navigation.
+2. Land `QUA-1177`, then prove F014/P007 without cliquet pricing-helper
+   authority under strict fresh-build replay.
+3. Re-run the helper-authority audit and choose the next coherent product
+   family by remaining authority count and semantic risk.
 
 ## Completion Evidence
 

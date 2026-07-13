@@ -5,6 +5,61 @@ import math
 import pytest
 
 
+def test_gauss_hermite_product_expectation_integrates_independent_normals():
+    from trellis.models.analytical.support import gauss_hermite_product_expectation
+
+    expectation = gauss_hermite_product_expectation(
+        lambda normals: normals[0] ** 2 + normals[1] ** 2,
+        dimension=2,
+        order=7,
+        max_nodes=100,
+    )
+
+    assert expectation == pytest.approx(2.0)
+
+
+def test_gauss_hermite_product_expectation_enforces_node_budget():
+    from trellis.models.analytical.support import gauss_hermite_product_expectation
+
+    with pytest.raises(ValueError, match="node budget"):
+        gauss_hermite_product_expectation(
+            lambda normals: normals[0],
+            dimension=4,
+            order=9,
+            max_nodes=100,
+        )
+
+
+def test_observation_return_algebra_can_be_evaluated_under_gaussian_product_quadrature():
+    import numpy as np
+
+    from trellis.models.analytical.support import gauss_hermite_product_expectation
+    from trellis.models.observation_returns import (
+        ObservationReturnContract,
+        bounded_observation_return_sum,
+    )
+
+    sigma = 0.20
+    contract = ObservationReturnContract(
+        observation_times=(1.0,),
+        local_floor=-math.inf,
+        local_cap=math.inf,
+        global_floor=-math.inf,
+        global_cap=math.inf,
+    )
+    expectation = gauss_hermite_product_expectation(
+        lambda normals: bounded_observation_return_sum(
+            np.exp(sigma * normals - 0.5 * sigma * sigma),
+            contract,
+        ),
+        dimension=1,
+        order=15,
+        max_nodes=100,
+    )
+
+    assert expectation == pytest.approx(0.0, abs=1e-12)
+
+
 def test_terminal_intrinsic_handles_call_and_put():
     from trellis.models.analytical.support import (
         normalized_option_type,

@@ -578,6 +578,25 @@ payoff, schedule, strike/coupon terms, or settlement rule. Those bridge
 decisions are task-runner contracts, not general natural-language parser
 behavior.
 
+For schedule-based consecutive returns, agents now have a compact API-map entry
+named ``observation_return_composition``. The required construction order is:
+
+#. declare an ``ObservationReturnContract`` from typed schedule/payoff terms
+#. bind model-specific interval distributions or a scalar-state process
+#. use ``bounded_observation_return_sum(...)`` under the bounded Gaussian
+   expectation for an independent-normal analytical lane, or build
+   ``observation_return_payoff(...)`` for reduced-state Monte Carlo
+#. apply the task's discount and market-binding conventions explicitly
+
+The contract refuses observation times that alias or are not represented
+exactly on the selected uniform simulation grid, and the Gaussian expectation
+refuses a tensor grid above its node budget.
+Those failures are concrete numerical-composition evidence; they are not a
+signal to generate a product helper or promote a cookbook entry. This
+foundational surface does not itself change product route authority. A route is
+migrated only when fresh generated source visibly composes these APIs and the
+task remains green under strict replay.
+
 Stochastic-volatility task runs also carry a ``computational_problem`` block
 when the task target is Heston, Bates, SLV/LSV, or a related path-dependent
 control shape. The block is copied into the task result,
