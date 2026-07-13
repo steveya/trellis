@@ -947,7 +947,7 @@ def test_platform_trace_records_checked_range_accrual_static_leg_binding(tmp_pat
             "equity_quanto",
             None,
             "trellis.models.resolution.quanto",
-            "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+            None,
         ),
         (
             "Himalaya-style ranked observation basket on AAPL, MSFT, NVDA with observation dates "
@@ -1023,7 +1023,17 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
     assert trace.generation_boundary["route_binding_authority"]["authority_kind"] == "exact_backend_fit"
     assert operator_metadata is not None
     if expected_route_id == "equity_quanto":
-        assert operator_metadata["display_name"] == "Quanto option analytical binding"
+        assert operator_metadata["display_name"] == "Black-76 analytical binding"
+        assert trace.generation_boundary["lowering"]["helper_refs"] == []
+        assert (
+            "trellis.models.resolution.quanto.resolve_quanto_inputs"
+            in trace.generation_boundary["lowering"]["target_refs"]
+        )
+        assert (
+            trace.generation_boundary["route_binding_authority"]
+            ["backend_binding"]["helper_refs"]
+            == []
+        )
     if expected_route_id is None:
         assert trace.generation_boundary["primitive_plan"] == {}
         assert boundary["generation_boundary"]["primitive_plan"] == {}

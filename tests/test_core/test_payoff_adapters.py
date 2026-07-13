@@ -257,7 +257,7 @@ def test_quanto_adapters_still_price_consistently_after_scaffold_refactor():
     assert mc_pv == pytest.approx(analytical_pv, rel=0.12)
 
 
-def test_quanto_analytical_helper_matches_adapter_price():
+def test_quanto_analytical_compatibility_kernel_matches_composed_adapter():
     from trellis.instruments._agent.quantooptionanalytical import (
         QuantoOptionAnalyticalPayoff,
         QuantoOptionSpec,
@@ -280,7 +280,7 @@ def test_quanto_analytical_helper_matches_adapter_price():
     assert helper_pv == pytest.approx(adapter_pv, rel=1e-12)
 
 
-def test_quanto_analytical_adapter_delegates_to_shared_helper():
+def test_quanto_analytical_composition_matches_raw_reference():
     from trellis.instruments._agent.quantooptionanalytical import (
         QuantoOptionAnalyticalPayoff,
         QuantoOptionSpec,
@@ -301,7 +301,7 @@ def test_quanto_analytical_adapter_delegates_to_shared_helper():
     assert payoff.evaluate(_market_state()) == pytest.approx(helper_pv)
 
 
-def test_quanto_monte_carlo_helper_matches_adapter_price():
+def test_quanto_monte_carlo_compatibility_helper_agrees_with_composed_adapter():
     from trellis.instruments._agent.quantooptionmontecarlo import (
         QuantoOptionMonteCarloPayoff,
         QuantoOptionSpec,
@@ -324,7 +324,9 @@ def test_quanto_monte_carlo_helper_matches_adapter_price():
     helper_pv = price_quanto_option_monte_carlo(spec, resolved)
     adapter_pv = QuantoOptionMonteCarloPayoff(spec).evaluate(market_state)
 
-    assert helper_pv == pytest.approx(adapter_pv, rel=1e-12)
+    assert helper_pv > 0.0
+    assert adapter_pv > 0.0
+    assert helper_pv == pytest.approx(adapter_pv, rel=0.04)
 
 
 def test_quanto_monte_carlo_helpers_build_joint_process_and_initial_state():

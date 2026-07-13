@@ -194,7 +194,7 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("monte_carlo_paths", "monte_carlo"), spec)
         assert any(f.category == "engine_family_mismatch" for f in findings)
 
-    def test_flags_missing_route_helper(self, registry):
+    def test_flags_incomplete_quanto_primitive_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         source = '''
 def evaluate(self, market_state):
@@ -202,7 +202,7 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("equity_quanto"), spec)
-        assert any(f.category == "route_helper_not_called" for f in findings)
+        assert any(f.category == "required_primitive_not_called" for f in findings)
 
     def test_rejects_autocallable_shortcut_for_monte_carlo_paths(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
@@ -421,7 +421,7 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
         assert any(f.category == "route_helper_not_called" for f in findings)
 
-    def test_importing_route_helper_without_calling_it_still_fails(self, registry):
+    def test_importing_retired_quanto_wrapper_does_not_satisfy_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         source = '''
 from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
@@ -431,7 +431,7 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("equity_quanto"), spec)
-        assert any(f.category == "route_helper_not_called" for f in findings)
+        assert any(f.category == "required_primitive_not_called" for f in findings)
 
     def test_prefers_plan_primitives_over_route_card_for_route_helper_checks(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_garman_kohlhagen"][0]
@@ -639,7 +639,7 @@ def evaluate(self, market_state):
         assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
         assert any(f.category == "engine_family_mismatch" for f in findings)
 
-    def test_flags_quanto_exact_helper_signature_mismatch(self, registry):
+    def test_rejects_quanto_product_wrapper_as_route_implementation(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         source = '''
 from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
@@ -652,7 +652,71 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("equity_quanto"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(f.category == "required_primitive_not_called" for f in findings)
+
+    def test_accepts_complete_quanto_analytical_primitive_surface(self, registry):
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
+        source = '''
+def evaluate(self, market_state):
+    resolved = resolve_quanto_inputs(market_state, self._spec)
+    option_type = normalized_option_type(self._spec.option_type)
+    if resolved.T <= 0.0:
+        return terminal_intrinsic(option_type, spot=resolved.spot, strike=self._spec.strike)
+    forward = quanto_adjusted_forward(
+        spot=resolved.spot,
+        domestic_df=resolved.domestic_df,
+        foreign_df=resolved.foreign_df,
+        corr=resolved.corr,
+        sigma_underlier=resolved.sigma_underlier,
+        sigma_fx=resolved.sigma_fx,
+        T=resolved.T,
+    )
+    call = black76_call(forward, self._spec.strike, resolved.sigma_underlier, resolved.T)
+    put = black76_put(forward, self._spec.strike, resolved.sigma_underlier, resolved.T)
+    return discounted_value(call if option_type == "call" else put, resolved.domestic_df)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("equity_quanto"), spec)
+        assert not any(f.category == "required_primitive_not_called" for f in findings)
+
+    @pytest.mark.parametrize(
+        ("method", "source"),
+        [
+            (
+                "monte_carlo",
+                '''
+def evaluate(self, market_state):
+    resolved = resolve_quanto_inputs(market_state, self._spec)
+    option_type = normalized_option_type(self._spec.option_type)
+    forward = quanto_adjusted_forward(resolved.spot, resolved.foreign_df, resolved.domestic_df, resolved.corr, resolved.sigma_underlier, resolved.sigma_fx, resolved.T)
+    call = black76_call(forward, resolved.strike, resolved.sigma_underlier, resolved.T)
+    put = black76_put(forward, resolved.strike, resolved.sigma_underlier, resolved.T)
+    return discounted_value(call if option_type == "call" else put, resolved.domestic_df)
+''',
+            ),
+            (
+                "analytical",
+                '''
+def evaluate(self, market_state):
+    resolved = resolve_quanto_inputs(market_state, self._spec)
+    rate = implied_zero_rate(resolved.domestic_df, resolved.T)
+    process = CorrelatedGBM(mu=[rate, rate], sigma=[0.2, 0.1], corr=[[1.0, 0.0], [0.0, 1.0]])
+    engine = MonteCarloEngine(process)
+    payoff = terminal_value_payoff(lambda terminal: terminal_intrinsic(terminal[..., 0], resolved.strike, "call"))
+    return engine.price(get_numpy().array([resolved.spot, resolved.fx_spot]), resolved.T, 4, payoff)
+''',
+            ),
+        ],
+    )
+    def test_rejects_quanto_method_substitution(self, registry, method, source):
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            source,
+            _make_plan("equity_quanto", method),
+            spec,
+        )
+        assert any(f.category == "required_primitive_not_called" for f in findings)
 
     def test_flags_callable_bond_tree_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
@@ -1114,7 +1178,7 @@ class TestIntegratedValidation:
         source = "def evaluate(self, market_state): return 42.0"
         plan = _make_plan("equity_quanto")
         report = validate_generated_semantics(source, plan, route_spec=spec, mode="blocking")
-        # Should have errors (missing route helper, missing market data, etc.)
+        # Should have errors (missing required primitives, market data, etc.)
         assert len(report.findings) > 0
 
     def test_returns_report_with_findings(self, registry):

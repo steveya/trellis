@@ -280,6 +280,7 @@ class GenerationPlan:
     lowering_route_id: str = ""
     lowering_expr_kind: str = ""
     lowering_family_ir_type: str = ""
+    lowering_target_refs: tuple[str, ...] = ()
     lowering_helper_refs: tuple[str, ...] = ()
     validation_bundle_id: str = ""
     validation_check_ids: tuple[str, ...] = ()
@@ -1176,7 +1177,8 @@ def enrich_generation_plan(
             "" if lowering is None or getattr(lowering, "family_ir", None) is None
             else type(lowering.family_ir).__name__
         ),
-        lowering_helper_refs=tuple(getattr(lowering, "helper_refs", ()) or ()),
+        lowering_target_refs=tuple(getattr(lowering, "target_refs", ()) or ()),
+        lowering_helper_refs=tuple(getattr(lowering, "route_helper_refs", ()) or ()),
         validation_bundle_id=str(getattr(validation_contract, "bundle_id", "") or ""),
         validation_check_ids=tuple(
             str(check.check_id)
@@ -1311,12 +1313,12 @@ def _render_compiled_boundary_lines(plan: GenerationPlan, *, compact: bool) -> l
         lowering_bits.append(f"family_ir=`{plan.lowering_family_ir_type}`")
     if plan.lowering_expr_kind:
         lowering_bits.append(f"expr=`{plan.lowering_expr_kind}`")
-    if plan.lowering_helper_refs:
-        helper_limit = 2 if compact else 4
-        helper_refs = ", ".join(
-            f"`{helper}`" for helper in plan.lowering_helper_refs[:helper_limit]
+    if plan.lowering_target_refs:
+        target_limit = 2 if compact else 4
+        target_refs = ", ".join(
+            f"`{target}`" for target in plan.lowering_target_refs[:target_limit]
         )
-        lowering_bits.append(f"helpers={helper_refs}")
+        lowering_bits.append(f"targets={target_refs}")
     authority = route_binding_authority_summary(plan.route_binding_authority)
     if plan.lowering_route_id and should_surface_route_alias(authority):
         lowering_bits.append(f"route_alias=`{plan.lowering_route_id}`")

@@ -52,12 +52,12 @@ _CANONICAL_BINDING_OPERATOR_METADATA: dict[str, BindingOperatorMetadata] = {
     ),
     "trellis.models.black.black76_call": BindingOperatorMetadata(
         display_name="Black-76 analytical binding",
-        short_description="Exact Black-76 helper binding for analytical vanilla and swaption pricing.",
+        short_description="Exact Black-76 kernel binding for analytical option composition.",
         diagnostic_label="black76_analytical_binding",
     ),
     "trellis.models.black.black76_put": BindingOperatorMetadata(
         display_name="Black-76 analytical put binding",
-        short_description="Exact Black-76 put helper binding for analytical vanilla and swaption pricing.",
+        short_description="Exact Black-76 put-kernel binding for analytical option composition.",
         diagnostic_label="black76_put_analytical_binding",
     ),
     # Fallback binding ids intentionally use the shared `engine:route:fallback`

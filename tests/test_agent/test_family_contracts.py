@@ -52,11 +52,13 @@ def test_quanto_family_template_bridges_to_semantic_contract():
     assert contract.product.instrument_class == "quanto_option"
     assert contract.product.payoff_family == "vanilla_option"
     assert contract.methods.preferred_method == "analytical"
-    assert contract.methods.candidate_methods == ("analytical", "monte_carlo")
+    assert contract.methods.candidate_methods == ("analytical", "monte_carlo", "qmc")
     required_inputs = {item.input_id for item in contract.market_data.required_inputs}
     assert "underlier_fx_correlation" in required_inputs
     assert "fx_vol" in required_inputs
     assert "trellis.models.processes.correlated_gbm" in contract.blueprint.target_modules
+    assert "trellis.models.analytical.quanto" not in contract.blueprint.target_modules
+    assert "trellis.models.monte_carlo.quanto" not in contract.blueprint.target_modules
     assert "equity_quanto" in contract.blueprint.primitive_families
     assert contract.validation.semantic_checks == (
         "check_quanto_required_inputs",

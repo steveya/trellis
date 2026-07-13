@@ -431,11 +431,12 @@ runtime reporting must not overstate.
        reports finite-difference residual Jacobian provenance with no
        ``backend_operator``; this is not a claim of hybrid AD, ``jvp``, or
        broad ``portfolio_aad``
-   * - ``quanto_generated_helper``
-     - route-generated quanto analytical helper route
+   * - ``quanto_primitive_composition``
+     - generated quanto analytical primitive-composition route
      - ``autodiff_scalar_gradient``
-     - supported through the semantic helper-facing raw pricing path, not a
-       claim that every generated adapter preserves traced values
+     - supported through the reusable adjusted-forward and Black pricing
+       primitives; the retained raw quanto kernel is a verification reference,
+       not generated-route authority
    * - ``barrier_mc_discontinuous_policy``
      - barrier Monte Carlo discontinuous policy route
      - ``unsupported_discontinuous_pathwise``

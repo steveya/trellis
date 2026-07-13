@@ -794,7 +794,7 @@ _DECLARATIONS = (
             "trellis.models.contingent_cashflows.coupon_cashflow_pv",
             "trellis.models.contingent_cashflows.principal_payment_pv",
         ),
-        helper_refs=("trellis.models.range_accrual.RangeAccrualSpec",),
+        helper_refs=("trellis.models.range_accrual.price_range_accrual",),
         supported_methods=("analytical",),
         precedence=35,
     ),

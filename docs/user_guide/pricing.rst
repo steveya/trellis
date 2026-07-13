@@ -120,13 +120,16 @@ and a terminal-only call/put payoff, then discount domestically. Product-level
 FX vanilla pricing helpers remain available for compatibility and reference,
 but generated task adapters do not use them as route authority.
 
-The corresponding quanto routes now follow the same shape. The supported
-analytical and Monte Carlo slices bind through
-``trellis.models.quanto_option``. FX vanilla adapters instead compose the
-resolved-input surface in ``trellis.models.fx_vanilla`` with lower-level
-analytical or Monte Carlo primitives. Checked-in adapters under
-``trellis.instruments._agent`` remain compatibility artifacts rather than the
-authoritative construction contract.
+The corresponding quanto routes now follow the same composition rule. Both
+methods start with ``resolve_quanto_inputs`` so the exact underlier, FX pair,
+curves, volatility surfaces, and correlation source remain visible. The
+analytical adapter forms the quanto-adjusted forward and calls the Black-76
+call or put kernel before domestic discounting. The Monte Carlo adapter builds
+the two-factor correlated process, generic engine, joint initial state, and
+terminal-only payoff explicitly. QMC uses that same simulation lane with
+seeded two-factor Sobol shocks. Checked-in adapters under
+``trellis.instruments._agent`` remain compatibility artifacts and examples;
+the primitive contract, not a product-pricing wrapper, is authoritative.
 
 The P001 Bermudan best-of-two rainbow proof is also exposed this way for
 task compatibility. Its checked-in ``_agent`` adapter delegates to the
@@ -317,13 +320,13 @@ binding id that the runtime actually reuses. Build and review prompts consume
 that packet only after the lane obligations so route guidance stays a
 backend-fit constraint rather than a route-first synthesis plan.
 
-For the migrated FX and quanto exact-helper lanes, that backend-fit packet is
-now intentionally helper-only. Prompt and trace surfaces expose the semantic-
-facing helper binding such as
-``price_fx_vanilla_analytical(market_state, spec)`` or
-``price_quanto_option_analytical_from_market_state(market_state, spec)``
-instead of surfacing raw kernels or route-local input-mapping instructions as
-live build authority.
+For the migrated FX and quanto lanes, the backend-fit packet now distinguishes
+primitive targets from true helper bindings. Quanto prompts and traces expose
+the resolver, adjusted-forward support, Black kernels, or generic correlated
+simulation components as appropriate for the selected method. Backend
+``helper_refs`` remains empty for these lanes. Compatibility wrappers such as
+``price_quanto_option_analytical_from_market_state(...)`` remain callable by
+existing applications but do not appear as live build authority.
 
 The trace boundary also exposes a family-first ``construction_identity``
 summary. For operators, that is now the primary readout:

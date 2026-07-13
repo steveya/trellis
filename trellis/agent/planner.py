@@ -647,6 +647,7 @@ SPECIALIZED_SPECS: dict[str, SpecSchema] = {
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
             FieldDef("n_paths", "int", "Number of Monte Carlo paths", "50000"),
             FieldDef("n_steps", "int", "Number of Monte Carlo time steps", "252"),
+            FieldDef("seed", "int", "Pseudo/QMC randomization seed", "42"),
         ],
     ),
     "european_option_analytical": SpecSchema(

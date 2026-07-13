@@ -498,7 +498,7 @@ def test_detect_adapter_lifecycle_records_flags_stale_checked_in_adapter(monkeyp
     assert "await" in fresh[0].reason.lower() or "pending" in fresh[0].reason.lower()
 
 
-def test_detect_adapter_lifecycle_records_marks_changed_quanto_shells_stale():
+def test_detect_adapter_lifecycle_records_keep_validated_quanto_shells_current():
     from trellis.agent.knowledge.promotion import (
         AdapterLifecycleStatus,
         detect_adapter_lifecycle_records,
@@ -512,8 +512,8 @@ def test_detect_adapter_lifecycle_records_marks_changed_quanto_shells_stale():
 
     assert "trellis.instruments._agent.fxvanillaanalytical" not in stale_ids
     assert "trellis.instruments._agent.fxvanillamontecarlo" not in stale_ids
-    assert "trellis.instruments._agent.quantooptionanalytical" in stale_ids
-    assert "trellis.instruments._agent.quantooptionmontecarlo" in stale_ids
+    assert "trellis.instruments._agent.quantooptionanalytical" not in stale_ids
+    assert "trellis.instruments._agent.quantooptionmontecarlo" not in stale_ids
 
 
 def test_review_and_adopt_promotion_candidate_propagate_adapter_lifecycle_state(monkeypatch, tmp_path):

@@ -30,7 +30,7 @@ def _expected_route_modules(compiled) -> tuple[str, ...]:
             (
                 *compiled.pricing_plan.method_modules,
                 *blueprint.target_modules,
-                *blueprint.dsl_lowering.helper_modules,
+                *blueprint.dsl_lowering.target_modules,
                 *calibration_modules,
             )
         )
@@ -64,7 +64,8 @@ def _semantic_regression_snapshot(compiled):
             "primitive_routes": semantic_blueprint.primitive_routes,
             "route_modules": semantic_blueprint.route_modules,
             "target_modules": semantic_blueprint.target_modules,
-            "dsl_helper_refs": semantic_blueprint.dsl_lowering.helper_refs,
+            "dsl_target_refs": semantic_blueprint.dsl_lowering.target_refs,
+            "dsl_helper_refs": semantic_blueprint.dsl_lowering.route_helper_refs,
             "required_market_data": semantic_blueprint.required_market_data,
         },
         "product_ir": None
@@ -213,8 +214,9 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.request.metadata["semantic_contract"]["semantic_id"] == "quanto_option"
     assert compiled.request.metadata["semantic_contract"]["semantic_concept"]["semantic_id"] == "quanto_option"
     assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "equity_quanto"
-    assert "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state" in (
-        compiled.request.metadata["semantic_blueprint"]["dsl_helper_refs"]
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_helper_refs"] == []
+    assert "trellis.models.resolution.quanto.resolve_quanto_inputs" in (
+        compiled.request.metadata["semantic_blueprint"]["dsl_target_refs"]
     )
     assert compiled.request.metadata["semantic_blueprint"]["lane_plan"]["lane_family"] == "analytical"
     assert compiled.request.metadata["semantic_blueprint"]["lane_plan"]["plan_kind"] == "exact_target_binding"
@@ -228,8 +230,10 @@ def test_compile_build_request_uses_quanto_semantic_contract_blueprint():
     assert compiled.generation_plan is not None
     assert compiled.execution_plan.reason == "semantic_contract_request"
     assert "trellis.models.resolution.quanto" in compiled.semantic_blueprint.target_modules
-    assert "trellis.models.analytical.quanto" in compiled.semantic_blueprint.target_modules
-    assert "trellis.models.quanto_option" in compiled.generation_plan.approved_modules
+    assert "trellis.models.analytical.support" in compiled.semantic_blueprint.target_modules
+    assert "trellis.models.black" in compiled.semantic_blueprint.target_modules
+    assert "trellis.models.analytical.quanto" not in compiled.semantic_blueprint.target_modules
+    assert "trellis.models.quanto_option" not in compiled.generation_plan.approved_modules
     assert "trellis.models.resolution.quanto" in compiled.generation_plan.approved_modules
     assert compiled.semantic_blueprint.lane_plan is not None
     assert compiled.semantic_blueprint.lane_plan.lane_family == "analytical"
@@ -262,22 +266,24 @@ def test_compile_build_request_attaches_route_binding_authority_packet():
     assert authority["route_family"] == "analytical"
     assert authority["authority_kind"] == "exact_backend_fit"
     assert authority["compatibility_alias_policy"] == "internal_only"
-    assert backend_binding["binding_id"] == "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+    assert backend_binding["binding_id"] == "trellis.models.black.black76_call"
     assert backend_binding["engine_family"] == "analytical"
     assert backend_binding["exact_backend_fit"] is True
-    assert backend_binding["primitive_refs"] == [
-        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+    assert "trellis.models.resolution.quanto.resolve_quanto_inputs" in backend_binding["primitive_refs"]
+    assert backend_binding["pricing_kernel_refs"] == [
+        "trellis.models.black.black76_call",
+        "trellis.models.black.black76_put",
     ]
-    assert "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state" in backend_binding["helper_refs"]
+    assert backend_binding["helper_refs"] == []
     assert authority["operator_metadata"] == {
-        "display_name": "Quanto option analytical binding",
-        "short_description": "Exact analytical backend binding for semantic quanto option pricing.",
-        "diagnostic_label": "quanto_analytical_binding",
+        "display_name": "Black-76 analytical binding",
+        "short_description": "Exact Black-76 kernel binding for analytical option composition.",
+        "diagnostic_label": "black76_analytical_binding",
     }
     assert authority["validation_bundle_id"] == "analytical:quanto_option"
     assert (
         authority["exact_validation_bundle_id"]
-        == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+        == "analytical:quanto_option@trellis.models.black.black76_call"
     )
     assert "check_non_negativity" in authority["validation_check_ids"]
     assert backend_binding["admissibility"]["multicurrency_support"] == "native_payout_with_fx"
@@ -328,7 +334,7 @@ def test_compile_build_request_records_generated_skill_artifacts_in_shared_bundl
 
     assert "## Generated Skills" in compiled.knowledge_text
     assert "## Routing Skills" in compiled.routing_knowledge_text
-    assert "route_hint:equity_quanto:route-helper" in (
+    assert "route_hint:equity_quanto:route-helper" not in (
         compiled.knowledge_summary["selected_artifact_ids"]
     )
     assert "builder" in compiled.knowledge_summary["selected_artifacts_by_audience"]

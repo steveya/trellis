@@ -19,6 +19,10 @@ def test_api_map_contains_expected_core_entries():
     assert api_map["payoff"]["module"] == "trellis.core.payoff"
     assert api_map["monte_carlo"]["module"] == "trellis.models.monte_carlo"
     assert (
+        api_map["quanto_option_composition"]["module"]
+        == "trellis.models.resolution.quanto"
+    )
+    assert (
         api_map["rate_monte_carlo_composition"]["module"]
         == "trellis.models.monte_carlo.simulation_substrate"
     )
@@ -43,6 +47,7 @@ def test_api_map_key_imports_are_registry_valid():
         "equity_tree",
         "rate_lattice",
         "monte_carlo",
+        "quanto_option_composition",
         "rate_monte_carlo_composition",
         "qmc",
         "pde",
@@ -129,6 +134,25 @@ def test_api_map_prioritizes_fx_vanilla_primitive_composition():
     assert "resolve_fx_vanilla_inputs" in analytical_text
     assert "garman_kohlhagen_price_raw" in analytical_text
     assert "price_fx_vanilla_analytical" not in analytical_text
+
+
+def test_api_map_prioritizes_quanto_primitive_composition():
+    section = get_api_map()["quanto_option_composition"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "resolve_quanto_inputs",
+        "quanto_adjusted_forward",
+        "black76_call",
+        "black76_put",
+        "CorrelatedGBM",
+        "MonteCarloEngine",
+        "terminal_value_payoff",
+        "sobol_normals",
+    ):
+        assert symbol in text
+    assert "price_quanto_option_analytical" not in text
+    assert "price_quanto_option_monte_carlo" not in text
 
 
 def test_equity_tree_api_map_prioritizes_lattice_algebra_primitives():

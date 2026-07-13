@@ -881,6 +881,14 @@ class TestSobolNormals:
         Z = sobol_normals(256, 10, n_factors=3)
         assert Z.shape == (256, 10, 3)
 
+    def test_seed_reproduces_scrambled_sequence(self):
+        first = sobol_normals(256, 10, n_factors=2, seed=17)
+        second = sobol_normals(256, 10, n_factors=2, seed=17)
+        different = sobol_normals(256, 10, n_factors=2, seed=23)
+
+        assert raw_np.array_equal(first, second)
+        assert not raw_np.array_equal(first, different)
+
     def test_roughly_standard_normal_marginals(self):
         """Each column should have mean ~ 0 and std ~ 1."""
         n_paths = 1024

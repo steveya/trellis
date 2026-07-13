@@ -1842,6 +1842,87 @@ def build_payoff(
     )
 
 
+def _align_validation_market_payload_to_spec(
+    payload: Mapping[str, object],
+    spec,
+    *,
+    rate: float,
+    vol: float,
+    corr: float,
+) -> dict[str, object]:
+    """Project exact spec identities onto a synthetic validation market.
+
+    Validation fixtures must exercise the same named bindings as the runtime
+    contract. This function only adds synthetic entries under identifiers that
+    the spec explicitly declares; it does not weaken runtime resolver fallbacks.
+    """
+    aligned = dict(payload)
+    if spec is None:
+        return aligned
+
+    underlier_id = str(getattr(spec, "underlier_id", None) or "").strip()
+    if underlier_id:
+        underlier_spots = dict(aligned.get("underlier_spots") or {})
+        spot = getattr(spec, "spot", None)
+        if spot is None:
+            spot = aligned.get("spot", 100.0)
+        underlier_spots[underlier_id] = float(spot)
+        aligned["underlier_spots"] = underlier_spots
+
+    underlier_currency = str(
+        getattr(spec, "underlier_currency", None) or ""
+    ).strip()
+    if underlier_currency and aligned.get("discount") is not None:
+        from trellis.curves.yield_curve import YieldCurve
+
+        forecast_curves = dict(aligned.get("forecast_curves") or {})
+        foreign_curve = YieldCurve.flat(max(float(rate) - 0.02, 0.005))
+        forecast_curves.setdefault(underlier_currency, foreign_curve)
+        forecast_curves.setdefault(f"{underlier_currency}-DISC", foreign_curve)
+        aligned["forecast_curves"] = forecast_curves
+
+    underlier_vol_key = str(
+        getattr(spec, "underlier_vol_surface_key", None) or ""
+    ).strip()
+    fx_vol_key = str(getattr(spec, "fx_vol_surface_key", None) or "").strip()
+    if underlier_vol_key or fx_vol_key:
+        from trellis.models.vol_surface import FlatVol
+
+        vol_surfaces = dict(aligned.get("vol_surfaces") or {})
+        default_surface = aligned.get("vol_surface") or FlatVol(float(vol))
+        if underlier_vol_key:
+            vol_surfaces[underlier_vol_key] = default_surface
+        if fx_vol_key:
+            vol_surfaces[fx_vol_key] = FlatVol(float(vol))
+        aligned["vol_surfaces"] = vol_surfaces
+
+    fx_pair = str(getattr(spec, "fx_pair", None) or "").strip()
+    if fx_pair:
+        from trellis.instruments.fx import FXRate
+
+        domestic_currency = str(
+            getattr(spec, "domestic_currency", None) or ""
+        ).strip()
+        fx_rates = dict(aligned.get("fx_rates") or {})
+        if fx_pair not in fx_rates and domestic_currency and underlier_currency:
+            fx_rates[fx_pair] = FXRate(
+                spot=1.10,
+                domestic=domestic_currency,
+                foreign=underlier_currency,
+            )
+        aligned["fx_rates"] = fx_rates
+
+    correlation_key = str(
+        getattr(spec, "quanto_correlation_key", None) or ""
+    ).strip()
+    if correlation_key:
+        model_parameters = dict(aligned.get("model_parameters") or {})
+        model_parameters[correlation_key] = float(corr)
+        aligned["model_parameters"] = model_parameters
+
+    return aligned
+
+
 def _validate_build(
     payoff_cls,
     code: str,
@@ -2200,6 +2281,13 @@ def _validate_build(
                 "merton_validation": jump_payload,
                 "bates_validation": jump_payload,
             }
+        payload = _align_validation_market_payload_to_spec(
+            payload,
+            getattr(test_payoff, "spec", None),
+            rate=rate,
+            vol=vol,
+            corr=corr,
+        )
         return MarketState(**payload)
 
     # Build the initial market state from the plan's required_market_data.
@@ -3396,17 +3484,6 @@ def _generate_skeleton(
     generation_plan=None,
 ) -> str:
     """Deterministically generate the full module skeleton from the spec schema."""
-    instrument_type = (
-        getattr(generation_plan, "instrument_type", None)
-        or getattr(pricing_plan, "model_to_build", None)
-        or ""
-    ).strip().lower().replace(" ", "_")
-    method = (
-        getattr(generation_plan, "method", None)
-        or getattr(pricing_plan, "method", None)
-        or ""
-    ).strip().lower().replace(" ", "_")
-
     required = [f for f in spec_schema.fields if f.default is None]
     optional = [f for f in spec_schema.fields if f.default is not None]
     field_lines = []
@@ -3422,12 +3499,7 @@ def _generate_skeleton(
     import_lines = ["from trellis.core.payoff import PricingValue"]
     import_lines.extend(_skeleton_type_import_lines(spec_schema))
     import_lines.extend(_skeleton_exact_binding_import_lines(generation_plan))
-    semantic_helper_imports, semantic_helper_lines = _skeleton_semantic_helper_hints(
-        instrument_type,
-        method,
-    )
-    import_lines.extend(semantic_helper_imports)
-    evaluate_preamble_lines = ["        spec = self._spec", *semantic_helper_lines]
+    evaluate_preamble_lines = ["        spec = self._spec"]
     extra_imports = "\n".join(dict.fromkeys(import_lines))
     if extra_imports:
         extra_imports = f"{extra_imports}\n"
@@ -3480,24 +3552,6 @@ def _skeleton_type_import_lines(spec_schema) -> tuple[str, ...]:
     if not names:
         return ()
     return (f"from trellis.core.types import {', '.join(names)}",)
-
-
-def _skeleton_semantic_helper_hints(
-    instrument_type: str,
-    method: str,
-) -> tuple[tuple[str, ...], tuple[str, ...]]:
-    """Return semantic-facing helper imports and commented evaluate hints."""
-    helper_hints = {
-        ("quanto_option", "analytical"): (
-            ("from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state",),
-            ("        # return price_quanto_option_analytical_from_market_state(market_state, spec)",),
-        ),
-        ("quanto_option", "monte_carlo"): (
-            ("from trellis.models.quanto_option import price_quanto_option_monte_carlo_from_market_state",),
-            ("        # return price_quanto_option_monte_carlo_from_market_state(market_state, spec)",),
-        ),
-    }
-    return helper_hints.get((instrument_type, method), ((), ()))
 
 
 def _generation_plan_field(generation_plan, name: str, default=None):
@@ -3573,6 +3627,7 @@ def _exact_binding_refs(generation_plan) -> tuple[str, ...]:
                 "pricing_kernel_refs",
                 "schedule_builder_refs",
                 "cashflow_engine_refs",
+                "dsl_target_refs",
                 "dsl_helper_refs",
                 "dsl_target_bindings",
                 "target_bindings",
@@ -3596,6 +3651,7 @@ def _exact_binding_refs(generation_plan) -> tuple[str, ...]:
         "backend_binding_id",
         "backend_exact_target_refs",
         "backend_helper_refs",
+        "lowering_target_refs",
         "lowering_helper_refs",
     ):
         add_ref(_generation_plan_field(generation_plan, attr))
@@ -3628,28 +3684,7 @@ def _exact_binding_refs(generation_plan) -> tuple[str, ...]:
         text = str(ref or "").strip()
         if text and text not in normalized:
             normalized.append(text)
-    for ref in _semantic_exact_binding_refs(tuple(normalized)):
-        if ref not in normalized:
-            normalized.append(ref)
     return tuple(normalized)
-
-
-def _semantic_exact_binding_refs(refs: tuple[str, ...]) -> tuple[str, ...]:
-    """Return semantic-facing helper refs that supersede lower-level route helpers."""
-    extra: list[str] = []
-    raw_to_semantic = {
-        "trellis.models.analytical.quanto.price_quanto_option_analytical": (
-            "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
-        ),
-        "trellis.models.monte_carlo.quanto.price_quanto_option_monte_carlo": (
-            "trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state"
-        ),
-    }
-    for ref in refs:
-        semantic = raw_to_semantic.get(ref)
-        if semantic and semantic not in extra:
-            extra.append(semantic)
-    return tuple(extra)
 
 
 def _swaption_comparison_helper_kwargs(semantic_blueprint) -> str:
@@ -3964,7 +3999,7 @@ def _deterministic_exact_binding_evaluate_body(
     request_metadata: Mapping[str, object] | None = None,
     comparison_target: str | None = None,
 ) -> str | None:
-    """Return a deterministic evaluate body for supported exact helper-backed routes."""
+    """Return a deterministic evaluate body for supported exact-bound routes."""
     metadata = dict(request_metadata or {})
     refs = set(_exact_binding_refs(generation_plan))
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
@@ -4020,6 +4055,149 @@ def _deterministic_exact_binding_evaluate_body(
     )
     primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
     primitive_route = str(getattr(primitive_plan, "route", "") or "").strip()
+    generation_method = str(
+        _generation_plan_field(generation_plan, "method", "") or ""
+    ).strip().lower().replace("-", "_")
+    if (
+        primitive_route == "equity_quanto"
+        and {
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+        }.issubset(refs)
+    ):
+        return textwrap.dedent(
+            """\
+            resolved = resolve_quanto_inputs(market_state, self._spec)
+            option_type = normalized_option_type(self._spec.option_type)
+            if resolved.T <= 0.0:
+                return float(self._spec.notional) * float(
+                    terminal_intrinsic(
+                        option_type,
+                        spot=resolved.spot,
+                        strike=self._spec.strike,
+                    )
+                )
+
+            forward = quanto_adjusted_forward(
+                spot=resolved.spot,
+                domestic_df=resolved.domestic_df,
+                foreign_df=resolved.foreign_df,
+                corr=resolved.corr,
+                sigma_underlier=resolved.sigma_underlier,
+                sigma_fx=resolved.sigma_fx,
+                T=resolved.T,
+            )
+            if option_type == "call":
+                undiscounted = black76_call(
+                    forward,
+                    self._spec.strike,
+                    resolved.sigma_underlier,
+                    resolved.T,
+                )
+            else:
+                undiscounted = black76_put(
+                    forward,
+                    self._spec.strike,
+                    resolved.sigma_underlier,
+                    resolved.T,
+                )
+            return float(
+                discounted_value(
+                    undiscounted,
+                    resolved.domestic_df,
+                    scale=self._spec.notional,
+                )
+            )
+            """
+        ).rstrip()
+    if (
+        primitive_route == "equity_quanto"
+        and "trellis.models.monte_carlo.engine.MonteCarloEngine" in refs
+    ):
+        sampling_setup = ""
+        shocks_argument = ""
+        if generation_method == "qmc":
+            sampling_setup = textwrap.dedent(
+                """\
+                requested_paths = max(int(getattr(self._spec, "n_paths", 50000)), 1)
+                n_paths = 1 << (requested_paths - 1).bit_length()
+                seed = int(getattr(self._spec, "seed", 42))
+                shocks = sobol_normals(
+                    n_paths,
+                    n_steps,
+                    n_factors=2,
+                    seed=seed,
+                )
+                """
+            ).rstrip()
+            shocks_argument = "    shocks=shocks,"
+        else:
+            sampling_setup = textwrap.dedent(
+                """\
+                n_paths = max(int(getattr(self._spec, "n_paths", 50000)), 1)
+                seed = int(getattr(self._spec, "seed", 42))
+                """
+            ).rstrip()
+        body = textwrap.dedent(
+            """\
+            resolved = resolve_quanto_inputs(market_state, self._spec)
+            option_type = normalized_option_type(self._spec.option_type)
+            if resolved.T <= 0.0:
+                return float(self._spec.notional) * float(
+                    terminal_intrinsic(
+                        option_type,
+                        spot=resolved.spot,
+                        strike=self._spec.strike,
+                    )
+                )
+
+            domestic_rate = float(implied_zero_rate(resolved.domestic_df, resolved.T))
+            foreign_rate = float(implied_zero_rate(resolved.foreign_df, resolved.T))
+            underlier_drift = (
+                domestic_rate
+                - foreign_rate
+                - resolved.corr * resolved.sigma_underlier * resolved.sigma_fx
+            )
+            process = CorrelatedGBM(
+                mu=[underlier_drift, domestic_rate - foreign_rate],
+                sigma=[resolved.sigma_underlier, resolved.sigma_fx],
+                corr=[
+                    [1.0, resolved.corr],
+                    [resolved.corr, 1.0],
+                ],
+            )
+            payoff = terminal_value_payoff(
+                lambda terminal: float(self._spec.notional) * terminal_intrinsic(
+                    option_type,
+                    spot=terminal[..., 0],
+                    strike=self._spec.strike,
+                ),
+                name="quanto_terminal",
+            )
+            n_steps = max(int(getattr(self._spec, "n_steps", 252)), 1)
+            __SAMPLING_SETUP__
+            engine = MonteCarloEngine(
+                process,
+                n_paths=n_paths,
+                n_steps=n_steps,
+                seed=seed,
+                method="exact",
+            )
+            result = engine.price(
+                get_numpy().array([resolved.spot, resolved.fx_spot], dtype=float),
+                float(resolved.T),
+                payoff,
+                discount_rate=domestic_rate,
+                return_paths=False,
+            __SHOCKS_ARGUMENT__
+            )
+            return float(result["price"])
+            """
+        ).rstrip()
+        return body.replace("__SAMPLING_SETUP__", sampling_setup).replace(
+            "__SHOCKS_ARGUMENT__",
+            shocks_argument,
+        )
     if (
         primitive_route == "analytical_garman_kohlhagen"
         and "trellis.models.analytical.fx.garman_kohlhagen_price_raw" in refs
@@ -4685,12 +4863,6 @@ def _deterministic_exact_binding_evaluate_body(
                 """
             ).rstrip()
     helper_bodies = {
-        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state": (
-            "return price_quanto_option_analytical_from_market_state(market_state, spec)"
-        ),
-        "trellis.models.quanto_option.price_quanto_option_monte_carlo_from_market_state": (
-            "return price_quanto_option_monte_carlo_from_market_state(market_state, spec)"
-        ),
         "trellis.models.fx_vanilla.price_fx_vanilla_analytical": (
             "return price_fx_vanilla_analytical(market_state, spec)"
         ),
@@ -5410,11 +5582,52 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.monte_carlo.path_state import terminal_value_payoff"
         )
-    if "GBM(" in body:
+    if re.search(r"(?<!Correlated)GBM\(", body):
         imports.append("from trellis.models.processes.gbm import GBM")
+    if "CorrelatedGBM(" in body:
+        imports.append(
+            "from trellis.models.processes.correlated_gbm import CorrelatedGBM"
+        )
     if "MonteCarloEngine(" in body:
         imports.append(
             "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+        )
+    if "resolve_quanto_inputs(" in body:
+        imports.append(
+            "from trellis.models.resolution.quanto import resolve_quanto_inputs"
+        )
+    if any(
+        symbol in body
+        for symbol in (
+            "discounted_value(",
+            "implied_zero_rate(",
+            "normalized_option_type(",
+            "quanto_adjusted_forward(",
+            "terminal_intrinsic(",
+        )
+    ):
+        support_symbols = [
+            symbol
+            for symbol in (
+                "discounted_value",
+                "implied_zero_rate",
+                "normalized_option_type",
+                "quanto_adjusted_forward",
+                "terminal_intrinsic",
+            )
+            if f"{symbol}(" in body
+        ]
+        imports.append(
+            "from trellis.models.analytical.support import "
+            + ", ".join(support_symbols)
+        )
+    if "black76_call(" in body or "black76_put(" in body:
+        imports.append("from trellis.models.black import black76_call, black76_put")
+    if "get_numpy(" in body:
+        imports.append("from trellis.core.differentiable import get_numpy")
+    if "sobol_normals(" in body:
+        imports.append(
+            "from trellis.models.monte_carlo.variance_reduction import sobol_normals"
         )
     if "resolve_fx_barrier_inputs(" in body:
         imports.append(
@@ -5428,10 +5641,6 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.monte_carlo.path_state import "
             "BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff"
-        )
-    if "terminal_intrinsic(" in body:
-        imports.append(
-            "from trellis.models.analytical import terminal_intrinsic"
         )
     if "raw_np." in body:
         imports.append("import numpy as raw_np")
@@ -5487,10 +5696,6 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             "    with_control,\n"
             ")"
         )
-    if "GBM(" in body:
-        imports.append("from trellis.models.processes.gbm import GBM")
-    if "MonteCarloEngine(" in body:
-        imports.append("from trellis.models.monte_carlo.engine import MonteCarloEngine")
     if "longstaff_schwartz(" in body:
         imports.append("from trellis.models.monte_carlo.lsm import longstaff_schwartz")
     if "LaguerreBasis(" in body:

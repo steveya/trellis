@@ -105,12 +105,12 @@ def _generation_boundary(
     exact_fit = bool(route_id)
     binding_ids = {
         "analytical_black76": "trellis.models.black.black76_call",
-        "equity_quanto": "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+        "equity_quanto": "trellis.models.black.black76_call",
         "analytical_garman_kohlhagen": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
     }
     helper_refs = {
         "analytical_black76": ["trellis.models.black.black76_call"],
-        "equity_quanto": ["trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"],
+        "equity_quanto": [],
         "analytical_garman_kohlhagen": ["trellis.models.fx_vanilla.price_fx_vanilla_analytical"],
     }
     binding_id = binding_ids.get(route_id, "trellis.models.black.black76_call")
@@ -220,7 +220,7 @@ def _validation_contract(
 ):
     binding_ids = {
         "analytical_black76": "trellis.models.black.black76_call",
-        "equity_quanto": "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+        "equity_quanto": "trellis.models.black.black76_call",
         "analytical_garman_kohlhagen": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
         "correlated_basket_monte_carlo": "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
     }

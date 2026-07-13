@@ -271,14 +271,15 @@ def _build_semantic_family_registry() -> MappingProxyType:
         _family_definition(
             family_key="quanto_option",
             semantic_id="quanto_option",
-            candidate_methods=("analytical", "monte_carlo"),
+            candidate_methods=("analytical", "monte_carlo", "qmc"),
             default_preferred_method="analytical",
             method_surfaces=(
                 _method_surface_definition(
                     "analytical",
                     target_modules=(
                         "trellis.models.resolution.quanto",
-                        "trellis.models.analytical.quanto",
+                        "trellis.models.analytical.support",
+                        "trellis.models.black",
                     ),
                     primitive_families=("equity_quanto",),
                     adapter_obligations=(
@@ -293,7 +294,10 @@ def _build_semantic_family_registry() -> MappingProxyType:
                     "monte_carlo",
                     target_modules=(
                         "trellis.models.resolution.quanto",
-                        "trellis.models.monte_carlo.quanto",
+                        "trellis.models.analytical.support",
+                        "trellis.models.processes.correlated_gbm",
+                        "trellis.models.monte_carlo.engine",
+                        "trellis.models.monte_carlo.path_state",
                     ),
                     primitive_families=("equity_quanto",),
                     adapter_obligations=(
@@ -301,7 +305,28 @@ def _build_semantic_family_registry() -> MappingProxyType:
                         "resolve_fx_rate",
                         "resolve_forward_and_discount_curves",
                         "resolve_joint_underlier_fx_state",
-                        "price_through_quanto_mc_helper",
+                        "compose_joint_process_engine_and_terminal_payoff",
+                    ),
+                    spec_schema_hints=("quanto_option",),
+                ),
+                _method_surface_definition(
+                    "qmc",
+                    target_modules=(
+                        "trellis.models.resolution.quanto",
+                        "trellis.models.analytical.support",
+                        "trellis.models.processes.correlated_gbm",
+                        "trellis.models.monte_carlo.engine",
+                        "trellis.models.monte_carlo.path_state",
+                        "trellis.models.monte_carlo.variance_reduction",
+                    ),
+                    primitive_families=("equity_quanto",),
+                    adapter_obligations=(
+                        "resolve_underlier_spot",
+                        "resolve_fx_rate",
+                        "resolve_forward_and_discount_curves",
+                        "resolve_joint_underlier_fx_state",
+                        "compose_joint_process_engine_and_terminal_payoff",
+                        "bind_seeded_two_factor_sobol_shocks",
                     ),
                     spec_schema_hints=("quanto_option",),
                 ),

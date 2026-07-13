@@ -95,6 +95,7 @@ The retained route hierarchy is:
 
 - primary route: analytical quanto adjustment
 - independent cross-check: correlated underlier/FX Monte Carlo
+- accelerator variant: seeded Sobol shocks through the same Monte Carlo engine
 
 The contract and compiled blueprint should preserve enough detail to:
 
@@ -110,15 +111,29 @@ The useful checked-in surfaces are:
 - `trellis.agent.semantic_contracts.make_quanto_option_contract`
 - `trellis.agent.family_contract_templates`
 - `trellis.models.resolution.quanto`
-- `trellis.models.analytical.quanto`
-- `trellis.models.monte_carlo.quanto`
+- `trellis.models.analytical.support`
+- `trellis.models.black`
+- `trellis.models.processes.correlated_gbm`
+- `trellis.models.monte_carlo.engine`
+- `trellis.models.monte_carlo.path_state`
+- `trellis.models.monte_carlo.variance_reduction`
 - `trellis.core.payoff`
+
+`trellis.models.quanto_option`, `trellis.models.analytical.quanto`, and
+`trellis.models.monte_carlo.quanto` remain compatibility/reference surfaces.
+They are intentionally absent from generated-route target modules.
 
 ## Current Design Implications
 
 - use the shared resolver for exact market binding rather than open-coded key
   guesses
-- keep the analytical and Monte Carlo helpers as stable route surfaces
+- compose analytical pricing from the adjusted-forward, Black, expiry, and
+  discount primitives
+- compose Monte Carlo from the correlated process, generic engine, joint
+  initial state, terminal-only payoff, and domestic discounting
+- treat QMC as a seeded low-discrepancy driver for the same simulation lane,
+  not as another product-specific pricing surface
+- keep product pricing wrappers available only for compatibility and reference
 - preserve the narrow proving slice explicitly rather than implying broad quanto
   support
 - treat the new calibration workflow as an input-provenance and materialization
@@ -128,11 +143,11 @@ The useful checked-in surfaces are:
 
 ## Related Linear Tickets
 
-Status snapshot as of 2026-07-12:
+Status snapshot as of 2026-07-13:
 
 - `QUA-1174` owns named hybrid market binding and the coherent `T105` fixture.
-- `QUA-1173` owns retirement of quanto product-helper construction authority
-  after `QUA-1174` lands.
+- `QUA-1173` implements retirement of quanto product-helper construction
+  authority after `QUA-1174` supplied coherent named hybrid bindings.
 - Nearest related follow-on issues found in Linear:
   - `QUA-289` Analytical support: `Done`
   - `QUA-291` Reusable analytical kernels: `Done`

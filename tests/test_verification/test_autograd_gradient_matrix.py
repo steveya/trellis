@@ -26,7 +26,7 @@ from trellis.curves.credit_curve import CreditCurve
 from trellis.curves.yield_curve import YieldCurve
 from trellis.instruments.bond import Bond
 from trellis.instruments.fx import FXRate
-from trellis.models.analytical.quanto import price_quanto_option_analytical
+from trellis.models.analytical.support import discounted_value, quanto_adjusted_forward
 from trellis.models.calibration.materialization import materialize_black_vol_surface
 from trellis.models.calibration.quanto import (
     QuantoCorrelationCalibrationQuote,
@@ -124,13 +124,17 @@ GRADIENT_MATRIX: tuple[GradientMatrixRow, ...] = (
         ),
     ),
     GradientMatrixRow(
-        family_id="quanto_generated_helper",
-        product_family="route-generated quanto analytical helper route",
+        family_id="quanto_primitive_composition",
+        product_family="generated quanto analytical primitive-composition route",
         category="route_generated",
         support_status="supported",
         expected_derivative_method="autodiff_scalar_gradient",
         fallback_derivative_method=None,
-        documentation_terms=("quanto_generated_helper", "route-generated", "autodiff_scalar_gradient"),
+        documentation_terms=(
+            "quanto_primitive_composition",
+            "adjusted-forward",
+            "autodiff_scalar_gradient",
+        ),
     ),
     GradientMatrixRow(
         family_id="barrier_mc_discontinuous_policy",
@@ -510,7 +514,7 @@ def _check_bounded_quanto_calibration(row: GradientMatrixRow) -> None:
     )
 
 
-def _check_quanto_generated_helper(row: GradientMatrixRow) -> None:
+def _check_quanto_primitive_composition(row: GradientMatrixRow) -> None:
     assert row.expected_derivative_method == "autodiff_scalar_gradient"
 
     from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
@@ -536,7 +540,27 @@ def _check_quanto_generated_helper(row: GradientMatrixRow) -> None:
             vol_surface=FlatVol(0.20),
             model_parameters={"quanto_correlation": 0.35},
         )
-        return price_quanto_option_analytical(spec, resolve_quanto_inputs(market_state, spec))
+        resolved = resolve_quanto_inputs(market_state, spec)
+        forward = quanto_adjusted_forward(
+            spot=resolved.spot,
+            domestic_df=resolved.domestic_df,
+            foreign_df=resolved.foreign_df,
+            corr=resolved.corr,
+            sigma_underlier=resolved.sigma_underlier,
+            sigma_fx=resolved.sigma_fx,
+            T=resolved.T,
+        )
+        undiscounted = black76_call(
+            forward,
+            spec.strike,
+            resolved.sigma_underlier,
+            resolved.T,
+        )
+        return discounted_value(
+            undiscounted,
+            resolved.domestic_df,
+            scale=spec.notional,
+        )
 
     autodiff_delta = gradient(price_from_spot)(100.0)
     finite_difference_delta = (price_from_spot(100.01) - price_from_spot(99.99)) / 0.02
@@ -605,7 +629,7 @@ _ROW_CHECKS = {
     "smooth_monte_carlo_pathwise": _check_smooth_monte_carlo_pathwise,
     "rates_bootstrap_calibration": _check_rates_bootstrap_calibration,
     "bounded_quanto_calibration": _check_bounded_quanto_calibration,
-    "quanto_generated_helper": _check_quanto_generated_helper,
+    "quanto_primitive_composition": _check_quanto_primitive_composition,
     "barrier_mc_discontinuous_policy": _check_barrier_mc_discontinuous_policy,
     "portfolio_aad_vjp": _check_portfolio_aad_vjp,
 }

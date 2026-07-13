@@ -30,11 +30,11 @@ def test_compile_build_request_attaches_validation_contract_summary():
     assert contract.bundle_id == "analytical:quanto_option"
     assert (
         contract.backend_binding_id
-        == "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+        == "trellis.models.black.black76_call"
     )
     assert (
         contract.exact_bundle_id
-        == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+        == "analytical:quanto_option@trellis.models.black.black76_call"
     )
     assert contract.route_id == "equity_quanto"
     assert contract.route_family == "analytical"
@@ -450,7 +450,7 @@ def test_validate_build_emits_validation_contract_summary_in_bundle_events(monke
     assert selected["validation_contract"]["bundle_id"] == "analytical:quanto_option"
     assert (
         selected["validation_contract"]["exact_bundle_id"]
-        == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+        == "analytical:quanto_option@trellis.models.black.black76_call"
     )
     assert selected["route_binding_authority"]["route_id"] == "equity_quanto"
     assert isinstance(selected["route_binding_authority"]["canary_task_ids"], list)
@@ -458,7 +458,7 @@ def test_validate_build_emits_validation_contract_summary_in_bundle_events(monke
     assert executed["route_binding_authority"]["validation_bundle_id"] == "analytical:quanto_option"
     assert (
         executed["route_binding_authority"]["exact_validation_bundle_id"]
-        == "analytical:quanto_option@trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+        == "analytical:quanto_option@trellis.models.black.black76_call"
     )
 
 

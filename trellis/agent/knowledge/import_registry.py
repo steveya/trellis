@@ -542,6 +542,7 @@ If a module or symbol is not listed below, it does NOT exist.
 
 ### Core
 from trellis.core.date_utils import generate_schedule, year_fraction, add_months
+from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention, Frequency
@@ -554,6 +555,7 @@ from trellis.curves.credit_curve import CreditCurve
 ### Models — Analytical
 from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put
 from trellis.models.analytical import terminal_intrinsic, terminal_vanilla_from_basis
+from trellis.models.analytical.support import discounted_value, implied_zero_rate, normalized_option_type, quanto_adjusted_forward, terminal_intrinsic
 from trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs, garman_kohlhagen_call_raw, garman_kohlhagen_price_raw, garman_kohlhagen_put_raw
 from trellis.models.analytical.jamshidian import zcb_option_hw
 from trellis.models.analytical.barrier import barrier_option_price, down_and_out_call, down_and_in_call
@@ -587,6 +589,7 @@ from trellis.models.monte_carlo.primal_dual import primal_dual_mc, primal_dual_m
 from trellis.models.monte_carlo.stochastic_mesh import stochastic_mesh, stochastic_mesh_result
 from trellis.models.monte_carlo.discretization import euler_maruyama, milstein, exact_simulation
 from trellis.models.monte_carlo.variance_reduction import antithetic, control_variate, sobol_normals
+from trellis.models.processes.correlated_gbm import CorrelatedGBM
 from trellis.models.monte_carlo.schemes import Euler, Milstein, Exact, LogEuler, HestonQuadraticExponential, LaguerreBasis, PolynomialBasis
 from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_observation_basket_initial_state, build_ranked_observation_basket_process, build_ranked_observation_basket_state_payoff, price_ranked_observation_basket_monte_carlo, recommended_ranked_observation_basket_mc_engine_kwargs, terminal_ranked_observation_basket_payoff
 from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketMonteCarloPayoff, RankedObservationBasketSpec

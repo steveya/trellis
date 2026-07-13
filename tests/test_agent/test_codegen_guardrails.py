@@ -90,7 +90,7 @@ def test_generation_plan_includes_common_modules_and_targets():
     assert plan.test_map is not None
 
 
-def test_generation_plan_carries_backend_binding_identity_for_exact_helper_routes():
+def test_generation_plan_carries_quanto_primitive_binding_identity_without_helpers():
     compiled = compile_build_request(
         "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
         instrument_type="quanto_option",
@@ -99,16 +99,15 @@ def test_generation_plan_carries_backend_binding_identity_for_exact_helper_route
 
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.backend_binding_id == (
-        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state"
+        "trellis.models.black.black76_call"
     )
     assert compiled.generation_plan.backend_engine_family == "analytical"
     assert compiled.generation_plan.backend_route_family == "analytical"
     assert compiled.generation_plan.backend_exact_target_refs == (
-        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+        "trellis.models.black.black76_call",
+        "trellis.models.black.black76_put",
     )
-    assert compiled.generation_plan.backend_helper_refs == (
-        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
-    )
+    assert compiled.generation_plan.backend_helper_refs == ()
     assert compiled.generation_plan.backend_compatibility_alias_policy == "internal_only"
 
 
@@ -561,7 +560,10 @@ def test_generation_plan_renders_compiled_semantic_and_validation_boundary():
     assert "- Lowering boundary:" in text
     assert "route_alias=`equity_quanto`" not in text
     assert "expr=`ContractAtom`" in text
-    assert "price_quanto_option_analytical_from_market_state" in text
+    assert "targets=`trellis.models.resolution.quanto.resolve_quanto_inputs`" in text
+    assert "trellis.models.analytical.support.quanto_adjusted_forward" in text
+    assert "trellis.models.black.black76_call" in text
+    assert "price_quanto_option_analytical_from_market_state" not in text
     assert "- Validation contract:" in text
     assert "bundle=`analytical:quanto_option`" in text
     assert "check_non_negativity" in text
@@ -689,7 +691,7 @@ def test_generation_route_card_for_swaption_analytical_stays_helper_only():
     assert "Backend notes:" not in text
 
 
-def test_generation_route_card_for_quanto_exact_helper_stays_helper_only():
+def test_generation_route_card_for_quanto_exposes_primitive_composition_only():
     compiled = compile_build_request(
         "Quanto option on SAP in USD with EUR underlier currency expiring 2025-11-15",
         instrument_type="quanto_option",
@@ -698,10 +700,13 @@ def test_generation_route_card_for_quanto_exact_helper_stays_helper_only():
 
     text = render_generation_route_card(compiled.generation_plan)
 
-    assert "price_quanto_option_analytical_from_market_state" in text
-    assert "resolve_quanto_inputs" not in text
-    assert "trellis.models.analytical.quanto.price_quanto_option_analytical" not in text
-    assert "apply_quanto_adjustment_terms" not in text
+    assert "resolve_quanto_inputs" in text
+    assert "quanto_adjusted_forward" in text
+    assert "black76_call" in text
+    assert "black76_put" in text
+    assert "Helper authority:" not in text
+    assert "price_quanto_option_analytical_from_market_state" not in text
+    assert "trellis.models.analytical.quanto" not in text
 
 
 def test_generation_route_card_for_zcb_option_analytical_stays_helper_only():

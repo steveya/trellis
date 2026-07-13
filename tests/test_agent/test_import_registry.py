@@ -400,6 +400,32 @@ def test_fx_vanilla_composition_primitives_are_in_static_import_registry():
     ]
 
 
+def test_quanto_composition_primitives_are_in_static_import_registry():
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+
+    assert "resolve_quanto_inputs" in static_registry[
+        "trellis.models.resolution.quanto"
+    ]
+    assert {
+        "discounted_value",
+        "implied_zero_rate",
+        "normalized_option_type",
+        "quanto_adjusted_forward",
+        "terminal_intrinsic",
+    } <= set(static_registry["trellis.models.analytical.support"])
+    assert "CorrelatedGBM" in static_registry[
+        "trellis.models.processes.correlated_gbm"
+    ]
+    assert "MonteCarloEngine" in static_registry[
+        "trellis.models.monte_carlo.engine"
+    ]
+    assert "sobol_normals" in static_registry[
+        "trellis.models.monte_carlo.variance_reduction"
+    ]
+
+
 def test_resolve_import_candidates_handles_known_and_unknown_symbols():
     candidates = resolve_import_candidates(["theta_method_1d", "definitely_not_real"])
     assert "trellis.models.pde.theta_method" in candidates["theta_method_1d"]

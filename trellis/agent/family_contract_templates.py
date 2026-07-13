@@ -129,9 +129,9 @@ _QUANTO_OPTION_TEMPLATE = FamilyContract(
         ),
     ),
     methods=MethodContract(
-        candidate_methods=("analytical", "monte_carlo"),
+        candidate_methods=("analytical", "monte_carlo", "qmc"),
         reference_methods=("analytical",),
-        production_methods=("analytical", "monte_carlo"),
+        production_methods=("analytical", "monte_carlo", "qmc"),
         unsupported_variants=(
             "early_exercise_quanto",
             "path_dependent_quanto",
@@ -163,8 +163,13 @@ _QUANTO_OPTION_TEMPLATE = FamilyContract(
             "trellis.agent.planner",
             "trellis.agent.quant",
             "trellis.agent.codegen_guardrails",
-            "trellis.models.analytical.quanto",
+            "trellis.models.resolution.quanto",
+            "trellis.models.analytical.support",
+            "trellis.models.black",
             "trellis.models.processes.correlated_gbm",
+            "trellis.models.monte_carlo.engine",
+            "trellis.models.monte_carlo.path_state",
+            "trellis.models.monte_carlo.variance_reduction",
         ),
         primitive_families=("equity_quanto",),
         adapter_obligations=(

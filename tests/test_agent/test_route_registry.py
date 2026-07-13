@@ -489,27 +489,44 @@ class TestQuantoRoutes:
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         new_prims = resolve_route_primitives(spec, self.IR, method="analytical")
         expected_prims = {
-            (
-                "trellis.models.quanto_option",
-                "price_quanto_option_analytical_from_market_state",
-                "route_helper",
-            ),
+            ("trellis.models.resolution.quanto", "resolve_quanto_inputs", "market_binding"),
+            ("trellis.models.analytical.support", "quanto_adjusted_forward", "assembly_helper"),
+            ("trellis.models.analytical.support", "discounted_value", "assembly_helper"),
+            ("trellis.models.analytical.support", "normalized_option_type", "payoff_primitive"),
+            ("trellis.models.analytical.support", "terminal_intrinsic", "terminal_payoff"),
+            ("trellis.models.black", "black76_call", "pricing_kernel"),
+            ("trellis.models.black", "black76_put", "pricing_kernel"),
         }
         assert _prim_set(new_prims) == expected_prims
+        assert all(primitive.role != "route_helper" for primitive in new_prims)
         assert resolve_route_adapters(spec, self.IR, method="analytical") == ()
 
     def test_monte_carlo_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         new_prims = resolve_route_primitives(spec, self.IR, method="monte_carlo")
         expected_prims = {
-            (
-                "trellis.models.quanto_option",
-                "price_quanto_option_monte_carlo_from_market_state",
-                "route_helper",
-            ),
+            ("trellis.models.resolution.quanto", "resolve_quanto_inputs", "market_binding"),
+            ("trellis.models.analytical.support", "implied_zero_rate", "assembly_helper"),
+            ("trellis.models.analytical.support", "terminal_intrinsic", "terminal_payoff"),
+            ("trellis.core.differentiable", "get_numpy", "array_backend"),
+            ("trellis.models.processes.correlated_gbm", "CorrelatedGBM", "state_process"),
+            ("trellis.models.monte_carlo.engine", "MonteCarloEngine", "engine"),
+            ("trellis.models.monte_carlo.path_state", "terminal_value_payoff", "payoff_adapter"),
         }
         assert _prim_set(new_prims) == expected_prims
+        assert all(primitive.role != "route_helper" for primitive in new_prims)
         assert resolve_route_family(spec, self.IR, method="monte_carlo") == "monte_carlo"
+
+    def test_qmc_primitives_add_low_discrepancy_sampler(self, registry):
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
+        new_prims = resolve_route_primitives(spec, self.IR, method="qmc")
+
+        assert (
+            "trellis.models.monte_carlo.variance_reduction",
+            "sobol_normals",
+            "low_discrepancy_sampler",
+        ) in _prim_set(new_prims)
+        assert all(primitive.role != "route_helper" for primitive in new_prims)
 
     def test_engine_family(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]

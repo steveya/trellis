@@ -681,6 +681,13 @@ market state instead of relying on a generic hard-coded strike. That keeps the
 analytical-versus-Monte-Carlo parity check focused on route differences rather
 than on a distorted fixture contract.
 
+Build-time validation preserves exact semantic identities as well. Synthetic
+quanto markets project the declared underlier id, currency curve, volatility
+surface keys, FX pair, and correlation key into the validation fixture. They do
+not relax the resolver to generic aliases, so a route that cannot consume the
+real named contract fails during validation rather than passing on a broader
+fixture.
+
 For helper-backed comparison routes, the build loop now also prefers
 deterministic exact wrappers over open-ended adapter synthesis. Those wrappers
 thread semantic comparison-regime bindings such as explicit Hull-White
@@ -690,12 +697,26 @@ keeps comparison failures concentrated on real model/regime mismatches instead
 of letting generated adapter drift reintroduce stale imports or route-local
 numerical defaults.
 
-The lower-layer cleanup tranches now apply that same pattern to FX and quanto
-routes as well. ``trellis.models.fx_vanilla`` and
-``trellis.models.quanto_option`` are the semantic-facing helper kits for the
-supported analytical and Monte Carlo slices, and the checked-in adapters under
-``trellis.instruments._agent`` are intentionally thin shells over those
-helpers instead of separate implementations.
+The lower-layer cleanup tranches now apply primitive composition to FX and
+quanto routes as well. For quanto, the semantic compiler points analytical
+builds to the exact market resolver, analytical support primitives, and
+Black-76 kernels. Monte Carlo builds receive the resolver, rate conversion,
+``CorrelatedGBM``, ``MonteCarloEngine``, and the terminal-payoff adapter; QMC
+adds seeded two-factor ``sobol_normals`` through the same engine surface. The
+checked-in adapters under ``trellis.instruments._agent`` demonstrate that
+composition and contain no product-pricing wrapper call. The wrappers in
+``trellis.models.quanto_option``, ``trellis.models.analytical.quanto``, and
+``trellis.models.monte_carlo.quanto`` remain compatibility/reference APIs only.
+The compact ``quanto_option_composition`` entry in ``canonical/api_map.yaml``
+is the intended hot start for a fresh builder; exact symbols are then confirmed
+through the import registry.
+
+The compiled metadata preserves this distinction. ``dsl_target_refs`` and
+``lowering_target_refs`` list all selected primitive targets. ``dsl_helper_refs``,
+``lowering_helper_refs``, and backend ``helper_refs`` contain only primitives
+whose canonical role is actually ``route_helper``. Validators require every
+admitted quanto primitive to be called and reject wrapper-only or
+method-substituted source even when its numeric output happens to be close.
 
 The bounded P001 Bermudan rainbow proof uses the same compatibility-shell
 discipline, but its target is execution IR rather than an exact helper module.

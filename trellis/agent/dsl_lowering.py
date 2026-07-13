@@ -1,4 +1,4 @@
-"""Lower normalized DSL fragments onto checked-in helper-backed binding targets.
+"""Lower normalized DSL fragments onto checked-in primitive binding targets.
 
 This module is the first executable bridge from the semiring/Bellman DSL
 algebra to the checked-in semantic compiler outputs. It is intentionally
@@ -96,7 +96,7 @@ class SemanticDslLowering:
         return collect_control_styles(self.normalized_expr)
 
     @property
-    def helper_modules(self) -> tuple[str, ...]:
+    def target_modules(self) -> tuple[str, ...]:
         """Return the distinct modules referenced by the lowering targets."""
         modules: list[str] = []
         for binding in self.target_bindings:
@@ -105,13 +105,32 @@ class SemanticDslLowering:
         return tuple(modules)
 
     @property
-    def helper_refs(self) -> tuple[str, ...]:
+    def target_refs(self) -> tuple[str, ...]:
         """Return the distinct module.symbol targets referenced by the lowering."""
         refs: list[str] = []
         for binding in self.target_bindings:
             if binding.primitive_ref not in refs:
                 refs.append(binding.primitive_ref)
         return tuple(refs)
+
+    @property
+    def route_helper_refs(self) -> tuple[str, ...]:
+        """Return only targets explicitly admitted as product/route helpers."""
+        return tuple(
+            binding.primitive_ref
+            for binding in self.target_bindings
+            if binding.role == "route_helper"
+        )
+
+    @property
+    def helper_modules(self) -> tuple[str, ...]:
+        """Backward-compatible alias for :attr:`target_modules`."""
+        return self.target_modules
+
+    @property
+    def helper_refs(self) -> tuple[str, ...]:
+        """Backward-compatible alias for :attr:`target_refs`."""
+        return self.target_refs
 
     @property
     def admissibility_errors(self) -> tuple[str, ...]:

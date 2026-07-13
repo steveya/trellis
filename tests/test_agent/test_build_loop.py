@@ -84,7 +84,7 @@ UNAPPROVED_IMPORT_MODULE_CODE = MOCK_MODULE_CODE.replace(
 )
 
 GOOD_QUANTO_MODULE_CODE = '''\
-"""Compatibility adapter for the quanto analytical payoff."""
+"""Primitive-composed adapter for the quanto analytical payoff."""
 
 from __future__ import annotations
 
@@ -94,7 +94,14 @@ from datetime import date
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention
-from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
+from trellis.models.analytical.support import (
+    discounted_value,
+    normalized_option_type,
+    quanto_adjusted_forward,
+    terminal_intrinsic,
+)
+from trellis.models.black import black76_call, black76_put
+from trellis.models.resolution.quanto import resolve_quanto_inputs
 
 
 REQUIREMENTS = frozenset(
@@ -125,7 +132,7 @@ class QuantoOptionSpec:
 
 
 class QuantoOptionAnalyticalPayoff:
-    """Compatibility payoff that delegates through the semantic-facing helper."""
+    """Quanto payoff composed from market, support, and Black primitives."""
 
     def __init__(self, spec: QuantoOptionSpec):
         self._spec = spec
@@ -139,11 +146,40 @@ class QuantoOptionAnalyticalPayoff:
         return REQUIREMENTS
 
     def evaluate(self, market_state: MarketState) -> PricingValue:
-        return price_quanto_option_analytical_from_market_state(market_state, self._spec)
+        resolved = resolve_quanto_inputs(market_state, self._spec)
+        option_type = normalized_option_type(self._spec.option_type)
+        if resolved.T <= 0.0:
+            return float(self._spec.notional) * float(
+                terminal_intrinsic(
+                    option_type,
+                    spot=resolved.spot,
+                    strike=self._spec.strike,
+                )
+            )
+        forward = quanto_adjusted_forward(
+            spot=resolved.spot,
+            domestic_df=resolved.domestic_df,
+            foreign_df=resolved.foreign_df,
+            corr=resolved.corr,
+            sigma_underlier=resolved.sigma_underlier,
+            sigma_fx=resolved.sigma_fx,
+            T=resolved.T,
+        )
+        if option_type == "call":
+            value = black76_call(
+                forward, self._spec.strike, resolved.sigma_underlier, resolved.T
+            )
+        else:
+            value = black76_put(
+                forward, self._spec.strike, resolved.sigma_underlier, resolved.T
+            )
+        return float(
+            discounted_value(value, resolved.domestic_df, scale=self._spec.notional)
+        )
 '''
 
 UNAPPROVED_QUANTO_IMPORT_MODULE_CODE = GOOD_QUANTO_MODULE_CODE.replace(
-    "from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state",
+    "from trellis.models.resolution.quanto import resolve_quanto_inputs",
     "from trellis.models.processes.heston import Heston",
 )
 
@@ -389,7 +425,7 @@ def test_reference_modules_use_concrete_copula_surfaces():
     assert ("trellis.models.credit_basket_copula", "Credit basket copula helper") in modules
 
 
-def test_generate_quanto_monte_carlo_skeleton_uses_family_helper_surface():
+def test_generate_quanto_monte_carlo_skeleton_does_not_preload_product_helper():
     from types import SimpleNamespace
 
     from trellis.agent.executor import _generate_skeleton
@@ -427,10 +463,11 @@ def test_generate_quanto_monte_carlo_skeleton_uses_family_helper_surface():
         generation_plan=SimpleNamespace(method="monte_carlo", instrument_type="quanto_option"),
     )
 
-    assert "from trellis.models.quanto_option import price_quanto_option_monte_carlo_from_market_state" in skeleton
+    assert "price_quanto_option_monte_carlo_from_market_state" not in skeleton
+    assert "price_quanto_option_monte_carlo" not in skeleton
     assert "from trellis.core.payoff import PricingValue" in skeleton
     assert "def evaluate(self, market_state: MarketState) -> PricingValue:" in skeleton
-    assert "return price_quanto_option_monte_carlo_from_market_state(market_state, spec)" in skeleton
+    assert 'raise NotImplementedError("evaluate not yet implemented")' in skeleton
 def test_generate_module_reports_syntax_error_context(monkeypatch):
     from types import SimpleNamespace
 
@@ -1375,7 +1412,12 @@ class TestBuildLoop:
         return_value=None,
     )
     @patch("trellis.agent.executor._generate_module")
-    def test_build_retries_after_code_generation_error(self, mock_gen_mod, _mock_exact_binding):
+    def test_build_retries_after_code_generation_error(
+        self,
+        mock_gen_mod,
+        _mock_exact_binding,
+        tmp_path,
+    ):
         """Code-generation failures should be retried before the build loop gives up."""
         mock_gen_mod.side_effect = [
             RuntimeError("OpenAI text request failed after 1 attempts"),
@@ -1384,15 +1426,24 @@ class TestBuildLoop:
 
         from trellis.agent.executor import build_payoff
 
-        cls = build_payoff(
-            "Quanto option: quanto-adjusted BS vs MC cross-currency",
-            force_rebuild=True,
-            fresh_build=True,
-            validation="fast",
-            instrument_type="quanto_option",
-            preferred_method="analytical",
-            max_retries=2,
-        )
+        def _write_isolated(_output_path, _module_path, code):
+            path = tmp_path / "quantooptionanalytical.py"
+            path.write_text(code)
+            return path
+
+        with patch(
+            "trellis.agent.executor._write_generated_module",
+            side_effect=_write_isolated,
+        ):
+            cls = build_payoff(
+                "Quanto option: quanto-adjusted BS vs MC cross-currency",
+                force_rebuild=True,
+                fresh_build=True,
+                validation="fast",
+                instrument_type="quanto_option",
+                preferred_method="analytical",
+                max_retries=2,
+            )
 
         assert cls.__name__ == "QuantoOptionAnalyticalPayoff"
         assert mock_gen_mod.call_count == 2

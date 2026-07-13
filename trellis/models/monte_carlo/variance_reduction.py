@@ -110,13 +110,15 @@ def sobol_normals(
     n_paths: int,
     n_steps: int,
     n_factors: int = 1,
+    *,
+    seed: int | None = None,
 ) -> raw_np.ndarray:
-    """Generate quasi-random normal samples via a factor-space Sobol sequence."""
+    """Generate reproducible quasi-random normals in factor-step space."""
     from scipy.stats import norm
     from scipy.stats.qmc import Sobol
 
     dimension = n_steps * n_factors
-    sampler = Sobol(d=dimension, scramble=True)
+    sampler = Sobol(d=dimension, scramble=True, seed=seed)
     uniforms = sampler.random(n_paths)
     uniforms = raw_np.clip(uniforms, 1e-10, 1 - 1e-10)
     normals = norm.ppf(uniforms)
@@ -124,4 +126,3 @@ def sobol_normals(
     if n_factors == 1:
         return normals.reshape(n_paths, n_steps)
     return normals.reshape(n_paths, n_steps, n_factors)
-

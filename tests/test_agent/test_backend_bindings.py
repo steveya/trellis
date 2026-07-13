@@ -531,6 +531,56 @@ def test_resolve_backend_binding_spec_uses_fx_vanilla_primitive_composition(
 
 
 @pytest.mark.parametrize(
+    "method,expected_ref,expected_extra_ref",
+    [
+        (
+            "analytical",
+            "trellis.models.black.black76_call",
+            "trellis.models.analytical.support.quanto_adjusted_forward",
+        ),
+        (
+            "monte_carlo",
+            "trellis.models.monte_carlo.engine.MonteCarloEngine",
+            "trellis.models.processes.correlated_gbm.CorrelatedGBM",
+        ),
+        (
+            "qmc",
+            "trellis.models.monte_carlo.engine.MonteCarloEngine",
+            "trellis.models.monte_carlo.variance_reduction.sobol_normals",
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_quanto_primitive_composition(
+    method,
+    expected_ref,
+    expected_extra_ref,
+):
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("equity_quanto", catalog)
+
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="quanto_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("fx_translation",),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+        ),
+        method=method,
+    )
+
+    assert resolved.binding_id == expected_ref
+    assert expected_extra_ref in resolved.primitive_refs
+    assert resolved.market_binding_refs == (
+        "trellis.models.resolution.quanto.resolve_quanto_inputs",
+    )
+    assert resolved.helper_refs == ()
+
+
+@pytest.mark.parametrize(
     "product_ir,expected_route_family,expected_helper_refs,expected_kernel_refs",
     [
         pytest.param(

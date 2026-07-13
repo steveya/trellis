@@ -8,7 +8,14 @@ from datetime import date
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention
-from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
+from trellis.models.analytical.support import (
+    discounted_value,
+    normalized_option_type,
+    quanto_adjusted_forward,
+    terminal_intrinsic,
+)
+from trellis.models.black import black76_call, black76_put
+from trellis.models.resolution.quanto import resolve_quanto_inputs
 
 
 REQUIREMENTS = frozenset(
@@ -42,7 +49,7 @@ class QuantoOptionSpec:
 
 
 class QuantoOptionAnalyticalPayoff:
-    """Compatibility payoff that delegates through the semantic-facing helper."""
+    """Quanto analytical adapter composed from market and Black primitives."""
 
     def __init__(self, spec: QuantoOptionSpec):
         self._spec = spec
@@ -56,4 +63,44 @@ class QuantoOptionAnalyticalPayoff:
         return REQUIREMENTS
 
     def evaluate(self, market_state: MarketState) -> PricingValue:
-        return price_quanto_option_analytical_from_market_state(market_state, self._spec)
+        resolved = resolve_quanto_inputs(market_state, self._spec)
+        option_type = normalized_option_type(self._spec.option_type)
+        if resolved.T <= 0.0:
+            return float(self._spec.notional) * float(
+                terminal_intrinsic(
+                    option_type,
+                    spot=resolved.spot,
+                    strike=self._spec.strike,
+                )
+            )
+
+        forward = quanto_adjusted_forward(
+            spot=resolved.spot,
+            domestic_df=resolved.domestic_df,
+            foreign_df=resolved.foreign_df,
+            corr=resolved.corr,
+            sigma_underlier=resolved.sigma_underlier,
+            sigma_fx=resolved.sigma_fx,
+            T=resolved.T,
+        )
+        if option_type == "call":
+            undiscounted = black76_call(
+                forward,
+                self._spec.strike,
+                resolved.sigma_underlier,
+                resolved.T,
+            )
+        else:
+            undiscounted = black76_put(
+                forward,
+                self._spec.strike,
+                resolved.sigma_underlier,
+                resolved.T,
+            )
+        return float(
+            discounted_value(
+                undiscounted,
+                resolved.domestic_df,
+                scale=self._spec.notional,
+            )
+        )

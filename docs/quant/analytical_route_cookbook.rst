@@ -200,13 +200,15 @@ Recent analytical routes in Trellis follow the same resolver-to-raw split:
   ``garman_kohlhagen_price_raw(...)`` in
   ``trellis.models.analytical.fx``.
 - Quanto vanilla: ``resolve_quanto_inputs(...)`` ->
-  ``ResolvedQuantoInputs`` -> ``price_quanto_option_raw(...)`` in
-  ``trellis.models.resolution.quanto`` and
-  ``trellis.models.analytical.quanto``. The resolver accepts canonical foreign
-  carry keys such as ``EUR-DISC`` directly, but any noncanonical foreign-curve
-  reuse now requires an explicit ``quanto_foreign_curve_policy`` bridge instead
-  of silently falling back to the only forecast curve or the domestic discount
-  curve.
+  ``ResolvedQuantoInputs`` -> ``quanto_adjusted_forward(...)`` ->
+  ``black76_call(...)`` / ``black76_put(...)`` -> ``discounted_value(...)``.
+  The generated route composes these primitives directly. The retained
+  ``price_quanto_option_raw(...)`` kernel is a compatibility and verification
+  reference, not generated-route construction authority. The resolver accepts
+  canonical foreign carry keys such as ``EUR-DISC`` directly, but any
+  noncanonical foreign-curve reuse requires an explicit
+  ``quanto_foreign_curve_policy`` bridge instead of silently falling back to
+  the only forecast curve or the domestic discount curve.
 - European rate-style swaption: ``resolve_swaption_black76_inputs(...)`` ->
   ``ResolvedSwaptionBlack76Inputs`` ->
   ``price_swaption_black76_raw(...)`` in
@@ -218,9 +220,12 @@ Recent analytical routes in Trellis follow the same resolver-to-raw split:
   ``trellis.models.zcb_option`` and
   ``trellis.models.analytical.jamshidian``.
 
-When a checked-in helper already owns market binding plus a raw kernel, agent
-generated adapters should delegate to that helper-backed surface instead of
-reconstructing annuity, forward, or strike-normalization logic inline.
+When an admitted route helper owns market binding plus a raw kernel, agent
+generated adapters should delegate to that surface instead of reconstructing
+annuity, forward, or strike-normalization logic inline. Primitive-composed
+routes such as quanto are the converse: the admitted resolver and numerical
+primitives are the construction contract, and product wrappers must not replace
+that composition.
 The public adapter should preserve the same present-value scalar as the raw
 kernel; the raw helper exists for reuse and verification, not because the
 public route must collapse the trace.

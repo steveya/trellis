@@ -337,13 +337,18 @@ The first migrated vanilla cases now use that boundary directly:
   ``trellis.models.monte_carlo.local_vol``.  This is a bounded European
   vanilla local-vol route and intentionally rejects nonzero dividend yield on
   the PDE side until the operator separates carry from discounting.
-- FX vanilla market resolution remains in ``trellis.models.fx_vanilla``, but
-  generated pricing adapters bind its resolved inputs directly to analytical
-  kernels or generic Monte Carlo primitives. The product-level FX vanilla
-  helpers remain compatibility/reference APIs. Quanto routes still expose the
-  bounded semantic-facing helper kit in ``trellis.models.quanto_option`` until
-  that family receives its own primitive-composition migration. Their market
-  boundary is no longer single-surface: ``MarketState.vol_surfaces`` preserves
+- FX vanilla and quanto market resolution remain product-semantic boundaries,
+  but generated pricing adapters bind resolved inputs directly to reusable
+  numerical primitives. For quanto analytics, the route composes
+  ``resolve_quanto_inputs``, ``quanto_adjusted_forward``, the Black-76 call/put
+  kernels, explicit expiry handling, and domestic discounting. The simulation
+  route composes the same resolver with ``CorrelatedGBM``,
+  ``MonteCarloEngine``, and a terminal-only payoff. QMC supplies seeded
+  two-factor Sobol shocks to that same engine and rounds the path count to a
+  power of two. Product-level FX vanilla and quanto pricing wrappers remain
+  compatibility/reference APIs; they are not generated-route construction
+  authority. The quanto market boundary is no longer single-surface:
+  ``MarketState.vol_surfaces`` preserves
   named implied-volatility objects, and the quanto spec can bind an exact
   underlier id plus independent underlier/FX surface keys. The resolver records
   those object names in provenance and refuses missing exact keys. Explicit
@@ -519,8 +524,11 @@ branches, Heston ADI diagnostic scaffold, double-barrier payoff primitives,
 and vanilla-equity transform helper keep backend binding, admissibility, and
 validation ownership explicit. Exact-helper validation enforces the thin
 ``(market_state, spec, ...)`` call surface only for true checked route helpers;
-primitive-only supports, including vanilla theta-method PDE, require
-agent-written route assembly rather than a product/method wrapper.
+primitive-only supports, including vanilla theta-method PDE and the analytical,
+Monte Carlo, and QMC quanto lanes, require agent-written route assembly rather
+than a product/method wrapper. Their lowering records primitive targets
+separately from true ``route_helper`` bindings so generic resolvers and kernels
+are not mislabeled as helper authority in prompts or traces.
 
 For schedule-driven cap/floor strips lowered onto ``analytical_black76``, the
 typed schedule state now carries admissibility directly. Structural

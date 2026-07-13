@@ -3797,6 +3797,201 @@ def test_generated_fx_vanilla_analytical_and_mc_agree_without_product_helpers():
     assert mc_price == pytest.approx(analytical_price, rel=0.05, abs=1_000.0)
 
 
+def test_generated_quanto_analytical_and_mc_agree_without_product_helpers():
+    from dataclasses import fields
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import benchmark_spec_overrides, build_market_state_for_task
+
+    def materialize(schema_id, method, exact_refs):
+        generation_plan = SimpleNamespace(
+            lane_exact_binding_refs=exact_refs,
+            primitive_plan=SimpleNamespace(route="equity_quanto"),
+            method=method,
+            instrument_type="quanto_option",
+        )
+        schema = SPECIALIZED_SPECS[schema_id]
+        generated = _materialize_deterministic_exact_binding_module(
+            _generate_skeleton(
+                schema,
+                "Quanto option primitive composition",
+                generation_plan=generation_plan,
+            ),
+            generation_plan,
+            comparison_target=method,
+        )
+        assert generated is not None
+        namespace: dict = {}
+        exec(compile(generated.code, f"<qua_1173_{method}>", "exec"), namespace)  # noqa: S102
+        return schema, namespace, generated.code
+
+    analytical_schema, analytical_ns, analytical_source = materialize(
+        "quanto_option_analytical",
+        "analytical",
+        (
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+        ),
+    )
+    mc_schema, mc_ns, mc_source = materialize(
+        "quanto_option_monte_carlo",
+        "monte_carlo",
+        ("trellis.models.monte_carlo.engine.MonteCarloEngine",),
+    )
+    qmc_schema, qmc_ns, qmc_source = materialize(
+        "quanto_option_monte_carlo",
+        "qmc",
+        ("trellis.models.monte_carlo.engine.MonteCarloEngine",),
+    )
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T105"
+    )
+    market_state, _ = build_market_state_for_task(task)
+    overrides = benchmark_spec_overrides(task)
+
+    def build_payoff(schema, namespace, **extra):
+        spec_type = namespace[schema.spec_name]
+        spec_fields = {field.name for field in fields(spec_type)}
+        terms = {key: value for key, value in overrides.items() if key in spec_fields}
+        terms.update({key: value for key, value in extra.items() if key in spec_fields})
+        return namespace[schema.class_name](spec_type(**terms))
+
+    analytical = build_payoff(analytical_schema, analytical_ns)
+    mc = build_payoff(mc_schema, mc_ns, n_paths=32_768, n_steps=64, seed=17)
+    qmc = build_payoff(qmc_schema, qmc_ns, n_paths=8_192, n_steps=64, seed=17)
+    analytical_price = float(analytical.evaluate(market_state))
+    mc_price = float(mc.evaluate(market_state))
+    qmc_price = float(qmc.evaluate(market_state))
+
+    assert "price_quanto_option_" not in analytical_source
+    assert "price_quanto_option_" not in mc_source
+    assert "price_quanto_option_" not in qmc_source
+    assert "build_quanto_mc_process" not in mc_source
+    assert "terminal_quanto_option_payoff" not in mc_source
+    assert "resolve_quanto_inputs(" in analytical_source
+    assert "quanto_adjusted_forward(" in analytical_source
+    assert "black76_call(" in analytical_source
+    assert "black76_put(" in analytical_source
+    assert "discounted_value(" in analytical_source
+    assert (
+        "from trellis.models.analytical.support import "
+        "discounted_value, normalized_option_type, quanto_adjusted_forward, "
+        "terminal_intrinsic"
+        in analytical_source
+    )
+    assert "from trellis.models.analytical import terminal_intrinsic" not in analytical_source
+    assert "resolve_quanto_inputs(" in mc_source
+    assert "implied_zero_rate(" in mc_source
+    assert "CorrelatedGBM(" in mc_source
+    assert "MonteCarloEngine(" in mc_source
+    assert "terminal_value_payoff(" in mc_source
+    assert "terminal_intrinsic(" in mc_source
+    assert "from trellis.models.processes.gbm import GBM" not in mc_source
+    assert "from trellis.models.analytical import terminal_intrinsic" not in mc_source
+    assert "get_numpy().array([resolved.spot, resolved.fx_spot]" in mc_source
+    assert "return_paths=False" in mc_source
+    assert "sobol_normals(" in qmc_source
+    assert "shocks=shocks" in qmc_source
+    assert analytical_price > 0.0
+    assert mc_price == pytest.approx(analytical_price, rel=0.03, abs=50_000.0)
+    assert qmc_price == pytest.approx(analytical_price, rel=0.03, abs=50_000.0)
+
+
+def test_validation_market_payload_preserves_exact_quanto_spec_identities():
+    from datetime import date as _date
+
+    from trellis.agent.executor import _align_validation_market_payload_to_spec
+    from trellis.core.market_state import MarketState
+    from trellis.curves.forward_curve import ForwardCurve
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
+    from trellis.instruments.fx import FXRate
+    from trellis.models.resolution.quanto import resolve_quanto_inputs
+    from trellis.models.vol_surface import FlatVol
+
+    discount = YieldCurve.flat(0.05)
+    foreign = YieldCurve.flat(0.03)
+    payload = {
+        "as_of": _date(2024, 11, 15),
+        "settlement": _date(2024, 11, 15),
+        "discount": discount,
+        "forward_curve": ForwardCurve(discount),
+        "forecast_curves": {"EUR-DISC": foreign},
+        "vol_surface": FlatVol(0.20),
+        "fx_rates": {"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+        "spot": 100.0,
+        "underlier_spots": {"SPX": 100.0},
+        "model_parameters": {"quanto_correlation": 0.35},
+    }
+    spec = QuantoOptionSpec(
+        notional=1_000_000.0,
+        strike=100.0,
+        expiry_date=_date(2025, 11, 15),
+        fx_pair="EURUSD",
+        underlier_id="SX5E",
+        underlier_vol_surface_key="sx5e_implied_vol",
+        fx_vol_surface_key="eurusd_implied_vol",
+        quanto_correlation_key="sx5e_eurusd",
+    )
+
+    aligned = _align_validation_market_payload_to_spec(
+        payload,
+        spec,
+        rate=0.05,
+        vol=0.20,
+        corr=0.35,
+    )
+    resolved = resolve_quanto_inputs(MarketState(**aligned), spec)
+
+    assert aligned["underlier_spots"]["SX5E"] == pytest.approx(100.0)
+    assert set(aligned["vol_surfaces"]) >= {
+        "sx5e_implied_vol",
+        "eurusd_implied_vol",
+    }
+    assert aligned["model_parameters"]["sx5e_eurusd"] == pytest.approx(0.35)
+    assert resolved.spot == pytest.approx(100.0)
+    assert resolved.corr == pytest.approx(0.35)
+
+
+def test_generated_quanto_qmc_uses_seeded_sobol_joint_factor_shocks():
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import SPECIALIZED_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.monte_carlo.engine.MonteCarloEngine",),
+        primitive_plan=SimpleNamespace(route="equity_quanto"),
+        method="qmc",
+        instrument_type="quanto_option",
+    )
+    schema = SPECIALIZED_SPECS["quanto_option_monte_carlo"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Quanto option QMC primitive composition",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="qmc",
+    )
+
+    assert generated is not None
+    assert "sobol_normals(" in generated.code
+    assert "n_factors=2" in generated.code
+    assert "seed = int(getattr(self._spec, \"seed\", 42))" in generated.code
+    assert "shocks=shocks" in generated.code
+    assert "price_quanto_option_" not in generated.code
+
+
 def test_deterministic_exact_binding_module_materializes_barrier_helper_with_time_import():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,

@@ -1288,15 +1288,29 @@ def compile_route_binding_authority(
             if str(ref).strip()
         )
     )
+    lowering_route_helper_refs = tuple(
+        dict.fromkeys(
+            str(getattr(binding, "primitive_ref", "") or "").strip()
+            for binding in (
+                getattr(
+                    getattr(semantic_blueprint, "dsl_lowering", None),
+                    "target_bindings",
+                    (),
+                )
+                or ()
+            )
+            if str(getattr(binding, "role", "") or "").strip() == "route_helper"
+            and str(getattr(binding, "primitive_ref", "") or "").strip()
+        )
+    )
     helper_refs = tuple(
         dict.fromkeys(
             str(ref).strip()
             for ref in (
                 getattr(generation_plan, "backend_helper_refs", ())
                 or getattr(primitive_plan, "backend_helper_refs", ())
-                or getattr(generation_plan, "lowering_helper_refs", ())
-                or getattr(getattr(semantic_blueprint, "dsl_lowering", None), "helper_refs", ())
                 or getattr(binding_spec, "helper_refs", ())
+                or lowering_route_helper_refs
                 or ()
             )
             if str(ref).strip()

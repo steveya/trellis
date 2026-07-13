@@ -673,24 +673,26 @@ def _render_family_route_guidance(
         ])
         if method == "analytical":
             lines.extend([
-                "- For analytical quanto, import and call `price_quanto_option_analytical` from `trellis.models.analytical.quanto`.",
-                "- Prefer support helpers from `trellis.models.analytical.support`, especially `normalized_option_type`, `terminal_intrinsic`, `quanto_adjusted_forward`, and `discounted_value`.",
-                "- Do not reimplement the quanto-adjusted analytical pricing body inside `evaluate()`.",
+                "- Compose analytical quanto pricing from `quanto_adjusted_forward`, `black76_call` / `black76_put`, and `discounted_value`; do not delegate to a quanto product-pricing wrapper.",
+                "- Use `normalized_option_type` and `terminal_intrinsic` so option direction and expiry behavior remain explicit.",
                 "- If you need terminal binary-style subproblems, use `cash_or_nothing_intrinsic` or `asset_or_nothing_intrinsic` from `trellis.models.analytical.support` instead of open-coding indicator branches.",
                 "- For analytical quanto, compute the quanto-adjusted forward as `spot * foreign_df / domestic_df * exp(-corr * sigma_underlier * sigma_fx * T)`.",
                 "- Then price with `black76_call` or `black76_put` on that forward and multiply by `domestic_df * notional`.",
+                "- `trellis.models.quanto_option` and `trellis.models.analytical.quanto` retain compatibility/reference wrappers, but they are not generated-route construction authority.",
             ])
-        elif method == "monte_carlo":
+        elif method in {"monte_carlo", "qmc"}:
             lines.extend([
-                "- For Monte Carlo quanto, import and call `price_quanto_option_monte_carlo` from `trellis.models.monte_carlo.quanto`.",
-                "- Do not reimplement process / engine / payoff / discount wiring inside `evaluate()`.",
-                "- The shared Monte Carlo helper already owns the joint underlier/FX process, engine controls, terminal payoff mapping, and domestic discounting policy.",
-                "- For Monte Carlo quanto, reuse `resolve_quanto_inputs`, build a `CorrelatedGBM`, and simulate the underlier/FX pair jointly only when you are reading or validating the helper surface.",
+                "- Compose the simulation lane from `resolve_quanto_inputs`, `implied_zero_rate`, `CorrelatedGBM`, `MonteCarloEngine`, `terminal_value_payoff`, and `terminal_intrinsic`; do not delegate to a quanto product-pricing wrapper.",
                 "- Use the real Trellis correlated-GBM signature: `CorrelatedGBM(mu=[...], sigma=[...], corr=[[1.0, rho], [rho, 1.0]])`.",
                 "- Seed the joint process with `np.array([resolved.spot, resolved.fx_spot], dtype=float)` when calling `engine.simulate(...)` or `engine.price(...)`.",
                 "- Do not seed a multi-asset correlated GBM with only `resolved.spot` or other scalar initial states.",
-                "- Discount the terminal payoff with the domestic discount factor returned by the shared resolver.",
+                "- Pass a terminal-only payoff that reads the underlier factor at `terminal[..., 0]`, then discount with the resolved domestic discount factor.",
             ])
+            if method == "qmc":
+                lines.extend([
+                    "- Generate seeded two-factor shocks with `sobol_normals(n_paths, n_steps, n_factors=2, seed=seed)` and pass them through `MonteCarloEngine.price(..., shocks=shocks)`.",
+                    "- Round the QMC path count up to a power of two so the Sobol balance property is preserved.",
+                ])
 
     return "\n".join(lines)
 

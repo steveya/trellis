@@ -26,7 +26,6 @@ _ENGINE_SIGNATURES = {
         "black76_call",
         "black76_put",
         "garman_kohlhagen_price_raw",
-        "price_quanto_option_analytical",
     ),
     "fft_pricing": ("fft_price", "cos_price"),
     "pde_solver": ("theta_method_1d", "Grid", "BlackScholesOperator"),
@@ -508,36 +507,6 @@ _EXACT_HELPER_SIGNATURES = {
             "spec instead of resolved inputs or ad hoc strike plumbing."
         ),
     },
-    "price_quanto_option_analytical_from_market_state": {
-        "min_positional_args": 2,
-        "required_parameters": ("market_state", "spec"),
-        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
-        "allowed_keywords": frozenset({"market_state", "spec"}),
-        "required_positional_markers": (
-            frozenset({"market_state"}),
-            frozenset({"spec", "_spec"}),
-        ),
-        "message": (
-            "`price_quanto_option_analytical_from_market_state(...)` expects "
-            "`(market_state, spec)`. Pass the live `market_state` and the original "
-            "spec-like object instead of resolved quanto inputs or raw Black helpers."
-        ),
-    },
-    "price_quanto_option_monte_carlo_from_market_state": {
-        "min_positional_args": 2,
-        "required_parameters": ("market_state", "spec"),
-        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
-        "allowed_keywords": frozenset({"market_state", "spec"}),
-        "required_positional_markers": (
-            frozenset({"market_state"}),
-            frozenset({"spec", "_spec"}),
-        ),
-        "message": (
-            "`price_quanto_option_monte_carlo_from_market_state(...)` expects "
-            "`(market_state, spec)`. Pass the live `market_state` and the original "
-            "spec-like object instead of resolved quanto inputs or ad hoc MC glue."
-        ),
-    },
 }
 
 
@@ -639,6 +608,13 @@ class AlgorithmContractValidator:
             )
         )
         findings.extend(self._check_exact_helper_surface(source, route_spec, exact_surface_primitives))
+        findings.extend(
+            self._check_required_primitive_composition(
+                source,
+                route_spec,
+                exact_surface_primitives,
+            )
+        )
 
         # Checked route helpers own internal engine, payoff, and discounting
         # obligations, but only after the helper call surface itself validates.
@@ -715,6 +691,37 @@ class AlgorithmContractValidator:
                             f"referenced in the generated code."
                         ),
                     ))
+        return findings
+
+    def _check_required_primitive_composition(
+        self,
+        source: str,
+        route_spec: RouteSpec,
+        exact_surface_primitives,
+    ) -> list[SemanticFinding]:
+        """Require explicit primitive composition for helper-retired routes."""
+        if route_spec.id != "equity_quanto":
+            return []
+
+        findings: list[SemanticFinding] = []
+        for primitive in exact_surface_primitives:
+            if not primitive.required or primitive.excluded:
+                continue
+            if _calls_symbol(source, primitive.symbol):
+                continue
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="required_primitive_not_called",
+                    message=(
+                        f"Route '{route_spec.id}' requires explicit composition with "
+                        f"'{primitive.symbol}' from '{primitive.module}', but generated "
+                        "code does not call that primitive. Product pricing wrappers do "
+                        "not satisfy this construction contract."
+                    ),
+                )
+            )
         return findings
 
     def _check_exact_helper_surface(

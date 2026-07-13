@@ -54,6 +54,32 @@ payoff:
     - "DeterministicCashflowPayoff wraps any Instrument into Payoff"
 
 # ---------------------------------------------------------------------------
+# Quanto option composition
+# ---------------------------------------------------------------------------
+quanto_option_composition:
+  module: trellis.models.resolution.quanto
+  modules:
+    market_binding: trellis.models.resolution.quanto
+    analytical_support: trellis.models.analytical.support
+    black_kernel: trellis.models.black
+    process: trellis.models.processes.correlated_gbm
+    monte_carlo_engine: trellis.models.monte_carlo.engine
+  key_imports:
+    - "from trellis.models.resolution.quanto import resolve_quanto_inputs"
+    - "from trellis.models.analytical.support import discounted_value, implied_zero_rate, normalized_option_type, quanto_adjusted_forward, terminal_intrinsic"
+    - "from trellis.models.black import black76_call, black76_put"
+    - "from trellis.models.processes.correlated_gbm import CorrelatedGBM"
+    - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+    - "from trellis.models.monte_carlo.path_state import terminal_value_payoff"
+    - "from trellis.models.monte_carlo.variance_reduction import sobol_normals"
+  notes:
+    - "Start with resolve_quanto_inputs so named underlier, FX, curve, volatility, and correlation bindings stay contract-driven"
+    - "Analytical lane: form the quanto-adjusted forward, branch to Black-76 call/put, apply domestic discounting and notional, and handle expiry explicitly"
+    - "Monte Carlo lane: derive domestic/foreign rates, build the two-factor CorrelatedGBM, use a joint initial state and terminal-only payoff, and discount domestically"
+    - "QMC uses the same MonteCarloEngine lane with seeded two-factor Sobol shocks and a power-of-two path count"
+    - "Product-level quanto pricing wrappers remain compatibility/reference APIs and are not generated-route construction authority"
+
+# ---------------------------------------------------------------------------
 # Model imports — trees
 # ---------------------------------------------------------------------------
 equity_tree:
@@ -109,6 +135,7 @@ monte_carlo:
     - "For American/Bermudan vanilla equity Monte Carlo, resolve the market contract with `resolve_single_state_monte_carlo_inputs(...)`, then compose `GBM`, `MonteCarloEngine`, `terminal_intrinsic_from_resolved(...)`, and `longstaff_schwartz(...)` explicitly"
     - "For FX vanilla Monte Carlo, compose `resolve_fx_vanilla_inputs(...)`, `GBM`, `MonteCarloEngine`, `terminal_value_payoff(...)`, and `terminal_intrinsic(...)`; derive drift from domestic minus foreign rates and discount domestically"
     - "For FX single-barrier Monte Carlo, compose `resolve_fx_barrier_inputs(...)`, `GBM`, `MonteCarloEngine`, `BarrierMonitor`, `MonteCarloPathRequirement`, `StateAwarePayoff`, and `terminal_intrinsic(...)`; use reduced barrier-hit state and domestic discounting"
+    - "For quanto Monte Carlo or QMC, follow `quanto_option_composition`: bind exact hybrid inputs, build `CorrelatedGBM`, and pass a terminal-only payoff to `MonteCarloEngine`"
     - "Autocallable MC routes should prefer `price_autocallable_monte_carlo_result(...)`; use `sampling='sobol'` only for QMC comparison targets"
     - "Double-barrier MC routes should use two barrier monitors or `double_barrier_state_payoff(...)` instead of adapting a one-barrier analytical formula"
     - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"

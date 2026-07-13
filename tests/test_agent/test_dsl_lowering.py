@@ -1,4 +1,4 @@
-"""Tests for semantic DSL lowering onto helper-backed route targets."""
+"""Tests for semantic DSL lowering onto checked primitive targets."""
 
 from __future__ import annotations
 
@@ -136,9 +136,19 @@ def test_quanto_lowering_prefers_binding_spec_targets_when_route_primitives_are_
         lambda route_id, product_ir=None, primitive_plan=None, catalog=None, method=None: SimpleNamespace(
             primitives=(
                 PrimitiveRef(
-                    "trellis.models.quanto_option",
-                    "price_quanto_option_analytical_from_market_state",
-                    "route_helper",
+                    "trellis.models.resolution.quanto",
+                    "resolve_quanto_inputs",
+                    "market_binding",
+                ),
+                PrimitiveRef(
+                    "trellis.models.analytical.support",
+                    "quanto_adjusted_forward",
+                    "assembly_helper",
+                ),
+                PrimitiveRef(
+                    "trellis.models.black",
+                    "black76_call",
+                    "pricing_kernel",
                 ),
             ),
             route_family="analytical",
@@ -156,9 +166,12 @@ def test_quanto_lowering_prefers_binding_spec_targets_when_route_primitives_are_
     lowering = blueprint.dsl_lowering
     assert lowering is not None
     assert lowering.errors == ()
-    assert lowering.helper_refs == (
-        "trellis.models.quanto_option.price_quanto_option_analytical_from_market_state",
+    assert lowering.target_refs == (
+        "trellis.models.resolution.quanto.resolve_quanto_inputs",
+        "trellis.models.analytical.support.quanto_adjusted_forward",
+        "trellis.models.black.black76_call",
     )
+    assert lowering.route_helper_refs == ()
 
 
 def test_callable_bond_pde_lowers_to_event_aware_helper():

@@ -41,6 +41,7 @@ _ALWAYS_BLOCKING_CATEGORIES = {
     "heston_black_vol_surface_mismatch",
     "route_helper_not_called",
     "route_helper_signature_mismatch",
+    "required_primitive_not_called",
 }
 
 

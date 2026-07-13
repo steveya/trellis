@@ -126,8 +126,11 @@ def test_route_notes_are_not_projected_as_live_route_hints():
     assert "route_hint:analytical_garman_kohlhagen:note:1" not in route_hint_ids
 
 
-def test_exact_helper_route_without_notes_does_not_project_note_records():
-    assert get_skill_record("route_hint:equity_quanto:note:1") is None
+def test_quanto_primitive_route_does_not_project_helper_skill():
+    assert get_skill_record("route_hint:equity_quanto:route-helper") is None
+    note = get_skill_record("route_hint:equity_quanto:note:1")
+    assert note is not None
+    assert note.kind == "historical_note"
 
 
 def test_skill_index_generation_is_deterministic():
