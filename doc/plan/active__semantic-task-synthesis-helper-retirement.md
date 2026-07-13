@@ -39,11 +39,9 @@ Status mirror last synced: `2026-07-12`
 
 ## Current Sequence
 
-1. Complete `QUA-1175` so quant and model-validator receive compact,
-   role-specific navigation contracts at runtime.
-2. Complete `QUA-1173` by composing analytical and Monte Carlo pricing from
+1. Complete `QUA-1173` by composing analytical and Monte Carlo pricing from
    those bindings and generic numerical primitives without quanto helpers.
-3. Re-run the helper-authority audit and choose the next coherent product
+2. Re-run the helper-authority audit and choose the next coherent product
    family by remaining authority count and semantic risk.
 
 ## Completion Evidence
