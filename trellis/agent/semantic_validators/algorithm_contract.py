@@ -10,7 +10,6 @@ Checks:
 from __future__ import annotations
 
 import ast
-import re
 
 from trellis.agent.codegen_guardrails import GenerationPlan
 from trellis.agent.route_registry import RouteSpec, resolve_route_primitives
@@ -511,8 +510,15 @@ _EXACT_HELPER_SIGNATURES = {
 
 
 def _calls_symbol(source: str, symbol: str) -> bool:
-    """Return whether ``source`` appears to call ``symbol`` as a function."""
-    return re.search(rf"\b{re.escape(symbol)}\s*\(", source) is not None
+    """Return whether a Python call node targets ``symbol``."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    return any(
+        isinstance(node, ast.Call) and _call_matches_symbol(node, symbol)
+        for node in ast.walk(tree)
+    )
 
 
 def _calls_checked_route_helper(
