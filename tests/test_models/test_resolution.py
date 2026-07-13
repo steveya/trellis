@@ -318,6 +318,40 @@ def test_resolve_quanto_inputs_rejects_missing_explicit_named_vol_surface():
         resolve_quanto_inputs(market_state, spec)
 
 
+def test_resolve_quanto_inputs_lists_ambiguous_named_vol_surfaces():
+    from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
+    from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+    spec = QuantoOptionSpec(
+        notional=100_000,
+        strike=100.0,
+        expiry_date=date(2025, 11, 15),
+        fx_pair="EURUSD",
+        underlier_id="SX5E",
+    )
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.05),
+        forecast_curves={"EUR-DISC": YieldCurve.flat(0.03)},
+        fx_rates={"EURUSD": FXRate(spot=1.10, domestic="USD", foreign="EUR")},
+        underlier_spots={"SX5E": 100.0},
+        vol_surfaces={
+            "eurusd_implied_vol": FlatVol(0.12),
+            "sx5e_implied_vol": FlatVol(0.20),
+        },
+        model_parameters={"quanto_correlation": 0.25},
+    )
+
+    with pytest.raises(ValueError) as exc_info:
+        resolve_quanto_inputs(market_state, spec)
+
+    message = str(exc_info.value)
+    assert "2 named surfaces available" in message
+    assert "eurusd_implied_vol" in message
+    assert "sx5e_implied_vol" in message
+
+
 def test_resolve_quanto_inputs_requires_correlation():
     from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
     from trellis.models.resolution.quanto import resolve_quanto_inputs

@@ -71,6 +71,9 @@ Optional or later-extension inputs:
 - the runtime must not fabricate `fx_vol` or `underlier_fx_correlation`
 - the runtime must not use a generic model `rho` when an exact quanto
   correlation key or descriptor is declared
+- when ``quanto_correlation_key`` is present, ``model_parameters`` must either
+  contain that exact key or provide a ``correlation_source.source_key`` with
+  the same value; the resolver does not continue through legacy aliases
 - missing required quanto inputs should fail with family-specific wording rather
   than degrade into generic vanilla semantics
 - calibration-derived correlation must remain an explicit

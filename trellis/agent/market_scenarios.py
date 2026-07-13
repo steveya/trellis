@@ -376,7 +376,18 @@ def construct_market_state_for_scenario(
         }
         if per_underlier_vols:
             model_parameters["underlier_vols"] = per_underlier_vols
-            if vol_surface is None and len(set(per_underlier_vols.values())) == 1:
+            has_named_underlier_surface = any(
+                underlier.vol_surface_name and underlier.volatility is not None
+                for underlier in contract.underliers
+            )
+            if (
+                vol_surface is None
+                and len(set(per_underlier_vols.values())) == 1
+                and not (
+                    contract.constructor_kind == "hybrid_equity_fx"
+                    and has_named_underlier_surface
+                )
+            ):
                 vol_surface = FlatVol(next(iter(per_underlier_vols.values())))
             applied_inputs["underlier_vols"] = sorted(per_underlier_vols)
         for underlier in contract.underliers:

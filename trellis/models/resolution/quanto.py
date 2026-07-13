@@ -25,7 +25,13 @@ np = get_numpy()
 
 
 class QuantoSpecLike(Protocol):
-    """Minimal spec surface required by the shared quanto resolvers."""
+    """Minimal spec surface required by the shared quanto resolvers.
+
+    Specs may additionally expose ``underlier_id``,
+    ``underlier_vol_surface_key``, and ``fx_vol_surface_key``. The resolver
+    discovers those exact-binding extensions with ``getattr`` so legacy specs
+    remain structurally compatible.
+    """
 
     strike: float
     expiry_date: date
@@ -890,7 +896,9 @@ def _resolve_quanto_vol_surface_details(
             key, surface = next(iter(named_surfaces.items()))
             return surface, str(key)
         raise ValueError(
-            f"Quanto pricing requires a default or exact named {role} implied-vol surface"
+            f"Quanto pricing requires a default or exact named {role} "
+            f"implied-vol surface ({len(named_surfaces)} named surfaces available: "
+            f"{sorted(named_surfaces)})"
         )
 
     matching_names = [
