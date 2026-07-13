@@ -49,6 +49,10 @@ def test_observation_return_primitives_are_visible_to_import_registry():
         assert module in find_symbol_modules(symbol)
         assert is_valid_import(module, symbol)
 
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    assert "ObservationReturnContract" in registry_text
+
     expectation_module = "trellis.models.analytical.support.expectations"
     expectation_symbol = "gauss_hermite_product_expectation"
     assert expectation_symbol in list_module_exports(expectation_module)

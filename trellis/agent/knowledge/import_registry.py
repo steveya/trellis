@@ -440,6 +440,7 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
     groups = {
         "Core": [],
         "Curves": [],
+        "Models — Payoff Composition": [],
         "Models — Analytical": [],
         "Models — Trees": [],
         "Models — Monte Carlo": [],
@@ -465,6 +466,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Core"].append(line)
         elif "trellis.curves." in mod:
             groups["Curves"].append(line)
+        elif mod == "trellis.models.observation_returns":
+            groups["Models — Payoff Composition"].append(line)
         elif "trellis.models.black" in mod:
             groups["Models — Analytical"].append(line)
         elif "trellis.models.analytical" in mod:
