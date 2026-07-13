@@ -199,3 +199,34 @@ def test_observation_return_payoff_rejects_nonpositive_observed_levels():
     accumulator = reducer.init(raw_np.array([100.0]), 1)
     with pytest.raises(ValueError, match="observed levels must be finite and positive"):
         reducer.update(accumulator, raw_np.array([-90.0]), 1)
+
+
+def test_observation_return_payoff_rejects_execution_grid_mismatch():
+    from trellis.models.monte_carlo.path_state import MonteCarloPathState
+    from trellis.models.observation_returns import (
+        ObservationReturnContract,
+        observation_return_payoff,
+    )
+
+    payoff = observation_return_payoff(
+        ObservationReturnContract(observation_times=(0.5, 1.0)),
+        maturity=1.0,
+        n_steps=4,
+    )
+    with pytest.raises(ValueError, match="execution grid has 8 steps; expected 4"):
+        payoff(raw_np.ones((2, 9)) * 100.0)
+
+    reducer = payoff.path_requirement.reducers[0]
+    with pytest.raises(ValueError, match="execution grid has 8 steps; expected 4"):
+        reducer.init(raw_np.array([100.0, 100.0]), 8)
+
+    state = MonteCarloPathState(
+        initial_value=100.0,
+        n_steps=8,
+        terminal_values=raw_np.array([100.0]),
+        reducer_values={
+            "observation_returns": raw_np.array([[100.0, 0.0]]),
+        },
+    )
+    with pytest.raises(ValueError, match="execution grid has 8 steps; expected 4"):
+        payoff.evaluate_state(state)

@@ -157,6 +157,15 @@ def _validate_positive_levels(values) -> None:
         raise ValueError("observed levels must be finite and positive")
 
 
+def _validate_execution_grid(actual_steps: int, expected_steps: int) -> None:
+    actual = int(actual_steps)
+    expected = int(expected_steps)
+    if actual != expected:
+        raise ValueError(
+            f"execution grid has {actual} steps; expected {expected}"
+        )
+
+
 def build_observation_return_reducer(
     contract: ObservationReturnContract,
     *,
@@ -173,7 +182,7 @@ def build_observation_return_reducer(
     )
 
     def _init(initial_values, total_steps):
-        del total_steps
+        _validate_execution_grid(total_steps, n_steps)
         previous = _single_state_cross_section(initial_values)
         _validate_positive_levels(previous)
         return np.stack((previous, np.zeros_like(previous)), axis=1)
@@ -225,7 +234,10 @@ def observation_return_payoff(
         if view.ndim == 3 and view.shape[2] == 1:
             values = values[:, :, 0]
             view = _validation_view(values)
-        if view.ndim != 2 or view.shape[1] <= max(steps):
+        if view.ndim != 2:
+            raise ValueError("paths must be a scalar-state path matrix")
+        _validate_execution_grid(view.shape[1] - 1, n_steps)
+        if view.shape[1] <= max(steps):
             raise ValueError("paths do not contain every required observation step")
         level_steps = (0, *steps)
         levels = values[:, level_steps]
@@ -234,6 +246,7 @@ def observation_return_payoff(
         return bounded_observation_return_sum(gross_returns, contract)
 
     def _evaluate_state(state):
+        _validate_execution_grid(state.n_steps, n_steps)
         reduced = _to_backend_array(state.reduced_value(reducer_name))
         accumulated = reduced[:, 1]
         settled = np.clip(
