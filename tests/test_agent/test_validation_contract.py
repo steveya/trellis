@@ -44,7 +44,8 @@ def test_compile_build_request_attaches_validation_contract_summary():
         "quanto_adjustment_applied",
         "fx_conversion_applied_before_settlement",
     }
-    assert "black_vol_surface" in contract.required_market_data
+    assert "underlier_vol_surface" in contract.required_market_data
+    assert "fx_vol_surface" in contract.required_market_data
     assert compiled.request.metadata["validation_contract"]["bundle_id"] == contract.bundle_id
     assert (
         compiled.request.metadata["validation_contract"]["backend_binding_id"]
@@ -235,7 +236,8 @@ def test_checked_range_accrual_binding_keeps_validation_contract_truthful():
                 "discount_curve",
                 "forward_curve",
                 "underlier_spot",
-                "black_vol_surface",
+                "underlier_vol_surface",
+                "fx_vol_surface",
                 "fx_rates",
                 "model_parameters",
             },

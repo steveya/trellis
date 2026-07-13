@@ -79,6 +79,29 @@ def price(market_state):
     assert report.ok
 
 
+def test_lite_review_accepts_exact_named_vol_surface_input():
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+def price(spec, market_state):
+    surface = market_state.vol_surfaces[spec.underlier_vol_surface_key]
+    sigma = float(surface.black_vol(1.0, spec.strike))
+    return sigma
+"""
+    pricing_plan = PricingPlan(
+        method="analytical",
+        method_modules=["trellis.models.black"],
+        required_market_data={"black_vol_surface"},
+        model_to_build="quanto_option",
+        reasoning="test",
+    )
+
+    report = review_generated_code(source, pricing_plan=pricing_plan)
+
+    assert report.ok
+
+
 def test_lite_review_rejects_wall_clock_valuation_date():
     from trellis.agent.lite_review import review_generated_code
     from trellis.agent.quant import PricingPlan

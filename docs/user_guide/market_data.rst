@@ -557,6 +557,24 @@ wraps that same request-driven selection flow and merges the import-manifest
 warning surface so later book workflows can reuse named components without
 hand-assembling a ``MarketState`` first.
 
+Named Implied-Volatility Surfaces
+---------------------------------
+
+``MarketSnapshot.vol_surfaces`` is preserved when a snapshot is compiled into
+``MarketState.vol_surfaces``. ``MarketState.vol_surface`` remains the selected
+default for single-surface consumers; when exactly one named surface exists it
+becomes that default automatically. Calibration materialization writes a Black
+surface to both fields, so the selected compatibility surface and its durable
+name cannot drift apart.
+
+Multi-factor contracts should bind the named mapping explicitly. The bounded
+quanto contract, for example, carries an ``underlier_id``, an
+``underlier_vol_surface_key``, and an ``fx_vol_surface_key``. Its resolver binds
+the equity spot, FX quote, and two surfaces independently and records each
+exact key in provenance. A declared key that is absent fails closed; it does
+not fall back to the default surface or reinterpret a currency code as an
+underlier identifier.
+
 Correlation Sources
 -------------------
 
@@ -589,6 +607,9 @@ materialize the calibrated underlier/FX correlation as
 ``model_parameter_set``. The workflow still consumes explicit domestic and
 foreign curves, spots, volatility inputs, and market quotes; it does not build
 a general rates/equity/FX hybrid calibration plant.
+An explicit ``quanto_correlation_key`` is likewise authoritative. A generic
+``rho`` from an unrelated Heston parameter pack is not accepted as the
+underlier/FX correlation when the contract names a correlation binding.
 
 Multi-Curve
 -----------

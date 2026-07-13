@@ -118,6 +118,18 @@ class TestAnalyzeGap:
 
 class TestCheckMarketData:
 
+    def test_single_named_vol_surface_becomes_the_runtime_default(self):
+        surface = FlatVol(0.23)
+        ms = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            vol_surfaces={"sx5e_implied_vol": surface},
+        )
+
+        assert ms.vol_surface is surface
+        assert ms.vol_surfaces == {"sx5e_implied_vol": surface}
+        assert "black_vol_surface" in ms.available_capabilities
+
     def test_all_present(self):
         ms = MarketState(as_of=SETTLE, settlement=SETTLE,
                          discount=YieldCurve.flat(0.05), vol_surface=FlatVol(0.20))

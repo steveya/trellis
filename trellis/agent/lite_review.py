@@ -15,7 +15,7 @@ from dataclasses import dataclass
 _CAPABILITY_ATTR_PREFIXES = {
     "discount_curve": ("market_state.discount",),
     "forward_curve": ("market_state.forward_curve", "market_state.forecast_curves"),
-    "black_vol_surface": ("market_state.vol_surface",),
+    "black_vol_surface": ("market_state.vol_surface", "market_state.vol_surfaces"),
     "fx_rates": ("market_state.fx_rates",),
     "spot": ("market_state.spot", "market_state.underlier_spots"),
     "local_vol_surface": ("market_state.local_vol_surface", "market_state.local_vol_surfaces"),

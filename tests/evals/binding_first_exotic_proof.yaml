@@ -23,6 +23,8 @@ T105:
     - forward_curve
     - fx_rates
     - spot
+    - black_vol_surface
+    - model_parameters
   comparison_targets:
     - quanto_bs
     - mc_quanto

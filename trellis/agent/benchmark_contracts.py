@@ -63,6 +63,12 @@ _DIRECT_OVERRIDE_KEYS: tuple[str, ...] = (
     "currency_pair",
     "fx_pair",
     "foreign_discount_key",
+    "underlier_id",
+    "underlier_currency",
+    "domestic_currency",
+    "underlier_vol_surface_key",
+    "fx_vol_surface_key",
+    "quanto_correlation_key",
     "rebate",
     "call_strike",
     "put_strike",
@@ -127,6 +133,7 @@ _BENCHMARK_PRODUCT_INSTRUMENT_TYPES: dict[str, str] = {
     "equity_vanilla": "european_option",
     "fx_vanilla": "european_option",
     "fx_barrier_option": "barrier_option",
+    "quanto_option": "quanto_option",
     "swaption": "swaption",
     "cds": "cds",
     "barrier_option": "barrier_option",
@@ -307,6 +314,9 @@ def benchmark_spec_overrides(
         )
         if product == "fx_barrier_option":
             overrides.update(_barrier_option_overrides(contract, valuation_date=valuation_date))
+    elif product == "quanto_option":
+        pair = str(contract.get("currency_pair") or "EURUSD").strip().upper()
+        overrides["fx_pair"] = pair
     elif product in {"period_rate_option_strip", "rate_cap_floor_collar"}:
         overrides.update(
             _rate_cap_floor_overrides(

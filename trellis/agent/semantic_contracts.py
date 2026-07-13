@@ -1550,6 +1550,7 @@ def _extract_primary_underlier(text: str, term_sheet) -> tuple[str, ...]:
     """Extract the primary underlier for single-name option-style requests."""
     parameters = getattr(term_sheet, "parameters", {}) or {}
     for key in (
+        "underlier_id",
         "underlier",
         "underlier_name",
         "underlier_symbol",
@@ -2070,6 +2071,12 @@ def make_quanto_option_contract(
     preferred_method: str = "analytical",
     underlying_asset_class: str | None = None,
     option_type: str | None = None,
+    underlier_currency: str | None = None,
+    domestic_currency: str | None = None,
+    fx_pair: str | None = None,
+    underlier_vol_surface_key: str | None = None,
+    fx_vol_surface_key: str | None = None,
+    quanto_correlation_key: str | None = None,
 ) -> SemanticContract:
     """Construct a generic quanto-style semantic contract."""
     underlier_names = _tuple(underliers)
@@ -2111,6 +2118,21 @@ def make_quanto_option_contract(
         payoff_rule="quanto_adjusted_vanilla_payoff",
         settlement_rule="cash_settle_at_expiry_after_fx_conversion",
         payoff_traits=("discounting", "vol_surface_dependence", "fx_translation"),
+        term_fields=_freeze_mapping(
+            {
+                key: value
+                for key, value in {
+                    "underlier_id": underlier_names[0],
+                    "underlier_currency": underlier_currency,
+                    "domestic_currency": domestic_currency,
+                    "fx_pair": fx_pair,
+                    "underlier_vol_surface_key": underlier_vol_surface_key,
+                    "fx_vol_surface_key": fx_vol_surface_key,
+                    "quanto_correlation_key": quanto_correlation_key,
+                }.items()
+                if value not in {None, ""}
+            }
+        ),
         observables=(
             ObservableSpec(
                 observable_id="terminal_underlier_spot",
@@ -2218,11 +2240,19 @@ def make_quanto_option_contract(
             allowed_provenance=("observed",),
         ),
         SemanticMarketInputSpec(
-            input_id="black_vol_surface",
+            input_id="underlier_vol_surface",
             description="Implied volatility surface for the underlier.",
             capability="black_vol_surface",
-            aliases=("vol_surface", "volatility_surface"),
-            connector_hint="Provide implied vol or a surface.",
+            aliases=("vol_surface", "volatility_surface", "underlier_vol_surface_key"),
+            connector_hint="Provide the exact named underlier surface when declared.",
+            allowed_provenance=("observed",),
+        ),
+        SemanticMarketInputSpec(
+            input_id="fx_vol_surface",
+            description="Implied volatility surface for the FX conversion factor.",
+            capability="black_vol_surface",
+            aliases=("fx_vol", "fx_volatility", "fx_vol_surface_key"),
+            connector_hint="Provide the exact named FX surface when declared.",
             allowed_provenance=("observed",),
         ),
         SemanticMarketInputSpec(
@@ -3722,6 +3752,7 @@ def _rebuild_quanto_option_contract(
 ) -> SemanticContract:
     """Rebuild a quanto option contract for one preferred method."""
     product = contract.product
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
     return make_quanto_option_contract(
         description=contract.description,
         underliers=tuple(getattr(product, "constituents", ()) or ()),
@@ -3729,6 +3760,12 @@ def _rebuild_quanto_option_contract(
         preferred_method=normalized_method,
         underlying_asset_class=getattr(getattr(product, "underlying", None), "asset_class", ""),
         option_type=str(getattr(product, "option_type", "") or ""),
+        underlier_currency=term_fields.get("underlier_currency"),
+        domestic_currency=term_fields.get("domestic_currency"),
+        fx_pair=term_fields.get("fx_pair"),
+        underlier_vol_surface_key=term_fields.get("underlier_vol_surface_key"),
+        fx_vol_surface_key=term_fields.get("fx_vol_surface_key"),
+        quanto_correlation_key=term_fields.get("quanto_correlation_key"),
     )
 
 
@@ -5483,10 +5520,17 @@ def _draft_quanto_option_contract(
         raise ValueError(
             "Semantic quanto option request requires an expiry or exercise schedule."
         )
+    parameters = getattr(term_sheet, "parameters", {}) or {}
     return make_quanto_option_contract(
         description=description,
         underliers=underliers,
         observation_schedule=observation_schedule,
+        underlier_currency=parameters.get("underlier_currency"),
+        domestic_currency=parameters.get("domestic_currency"),
+        fx_pair=parameters.get("fx_pair") or parameters.get("currency_pair"),
+        underlier_vol_surface_key=parameters.get("underlier_vol_surface_key"),
+        fx_vol_surface_key=parameters.get("fx_vol_surface_key"),
+        quanto_correlation_key=parameters.get("quanto_correlation_key"),
     )
 
 

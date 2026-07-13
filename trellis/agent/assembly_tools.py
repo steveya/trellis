@@ -30,7 +30,10 @@ from trellis.models.monte_carlo.event_aware import (
 _MARKET_READ_HINTS = {
     "discount_curve": "`market_state.discount`",
     "forward_curve": "`market_state.forecast_forward_curve(self._spec.rate_index)` or `market_state.forward_curve`",
-    "black_vol_surface": "`market_state.vol_surface.black_vol(...)`",
+    "black_vol_surface": (
+        "`market_state.vol_surface.black_vol(...)` or "
+        "`market_state.vol_surfaces[...].black_vol(...)`"
+    ),
     "fx_rates": "`market_state.fx_rates[...]`",
     "spot": "`market_state.spot` or `market_state.underlier_spots[...]`",
     "credit_curve": "`market_state.credit_curve`",

@@ -64,8 +64,14 @@ MARKET_DATA: list[MarketDataCapability] = [
         description="Black (lognormal) implied volatility surface.",
         market_state_field="vol_surface",
         providing_modules=("trellis.models.vol_surface",),
-        example_usage="sigma = market_state.vol_surface.black_vol(expiry, strike)",
-        how_to_provide="Session(vol_surface=FlatVol(0.20))",
+        example_usage=(
+            "sigma = market_state.vol_surface.black_vol(expiry, strike)  # default\n"
+            "sigma_fx = market_state.vol_surfaces['eurusd'].black_vol(expiry, fx_spot)"
+        ),
+        how_to_provide=(
+            "Use Session(vol_surface=FlatVol(0.20)) or a MarketSnapshot with "
+            "vol_surfaces={'surface_name': surface}."
+        ),
     ),
     MarketDataCapability(
         name="credit_curve",

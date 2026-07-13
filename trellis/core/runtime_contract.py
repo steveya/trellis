@@ -57,6 +57,7 @@ _PROXY_MAPPING_FIELDS = frozenset(
         "forecast_curves",
         "fx_rates",
         "underlier_spots",
+        "vol_surfaces",
         "local_vol_surfaces",
         "jump_parameter_sets",
         "model_parameter_sets",

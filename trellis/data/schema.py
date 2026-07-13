@@ -554,6 +554,7 @@ class MarketSnapshot:
             discount=selected_discount_curve,
             forward_curve=selected_forward_curve,
             vol_surface=self.vol_surface(vol_surface),
+            vol_surfaces=dict(self.vol_surfaces) or None,
             credit_curve=selected_credit_curve,
             fixing_histories=selected_fixing_histories,
             forecast_curves=selected_forecast_curves,

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from datetime import date, datetime
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -1764,6 +1764,63 @@ def test_fx_vanilla_proof_rows_declare_non_degenerate_runtime_contracts():
     )
 
 
+def test_t105_declares_exact_hybrid_market_and_quanto_contract():
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import benchmark_spec_overrides, build_market_state_for_task
+    from trellis.instruments._agent.quantooptionanalytical import QuantoOptionSpec
+    from trellis.models.resolution.quanto import resolve_quanto_inputs
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T105"
+    )
+
+    assert task["instrument_type"] == "quanto_option"
+    assert task["market_scenario_id"] == "eur_equity_usd_quanto"
+    assert task["extension_contract"] == {
+        "product": "quanto_option",
+        "option_type": "call",
+        "strike": pytest.approx(100.0),
+        "spot": pytest.approx(100.0),
+        "expiry_years": pytest.approx(1.0),
+        "notional": pytest.approx(1_000_000.0),
+        "underlier_id": "SX5E",
+        "underlier_currency": "EUR",
+        "domestic_currency": "USD",
+        "currency_pair": "EURUSD",
+        "underlier_vol_surface_key": "sx5e_implied_vol",
+        "fx_vol_surface_key": "eurusd_implied_vol",
+        "quanto_correlation_key": "sx5e_eurusd",
+    }
+    overrides = benchmark_spec_overrides(task)
+    assert overrides["underlier_id"] == "SX5E"
+    assert overrides["fx_pair"] == "EURUSD"
+    assert overrides["underlier_vol_surface_key"] == "sx5e_implied_vol"
+    assert overrides["fx_vol_surface_key"] == "eurusd_implied_vol"
+    assert overrides["quanto_correlation_key"] == "sx5e_eurusd"
+
+    market_state, market_context = build_market_state_for_task(task)
+    spec_field_names = {field.name for field in fields(QuantoOptionSpec)}
+    resolved = resolve_quanto_inputs(
+        market_state,
+        QuantoOptionSpec(
+            **{
+                key: value
+                for key, value in overrides.items()
+                if key in spec_field_names
+            }
+        ),
+    )
+
+    assert resolved.spot == pytest.approx(100.0)
+    assert resolved.fx_spot == pytest.approx(1.10)
+    assert resolved.sigma_underlier == pytest.approx(0.20)
+    assert resolved.sigma_fx == pytest.approx(0.12)
+    assert resolved.corr == pytest.approx(0.25)
+    assert market_context["metadata"]["scenario_construction_kind"] == "hybrid_equity_fx"
+
+
 def test_t109_declares_non_degenerate_fx_barrier_runtime_contract():
     from trellis.agent.task_manifests import load_task_manifest
     from trellis.agent.task_runtime import benchmark_spec_overrides
@@ -2297,8 +2354,7 @@ def test_cross_validate_comparison_task_prices_reused_fx_modules():
 
 
 def test_cross_validate_comparison_task_prices_reused_quanto_modules():
-    from dataclasses import replace
-
+    from trellis.agent.task_manifests import load_task_manifest
     from trellis.agent.task_runtime import (
         ComparisonBuildTarget,
         _cross_validate_comparison_task,
@@ -2307,47 +2363,12 @@ def test_cross_validate_comparison_task_prices_reused_quanto_modules():
     from trellis.instruments._agent.quantooptionanalytical import QuantoOptionAnalyticalPayoff
     from trellis.instruments._agent.quantooptionmontecarlo import QuantoOptionMonteCarloPayoff
 
-    task = {
-        "id": "T105",
-        "title": "Quanto option: quanto-adjusted BS vs MC cross-currency",
-        "market": {
-            "source": "mock",
-            "as_of": "2024-11-15",
-            "discount_curve": "usd_ois",
-            "forecast_curve": "EUR-DISC",
-            "fx_rate": "EURUSD",
-            "underlier_spot": "SPX",
-            "model_parameters": "heston_equity",
-        },
-        "market_assertions": {
-            "requires": [
-                "discount_curve",
-                "forward_curve",
-                "fx_rates",
-                "spot",
-                "model_parameters",
-            ],
-            "selected": {
-                "discount_curve": "usd_ois",
-                "forecast_curve": "EUR-DISC",
-                "fx_rate": "EURUSD",
-                "underlier_spot": "SPX",
-                "model_parameters": "heston_equity",
-            },
-        },
-        "cross_validate": {
-            "internal": ["quanto_bs", "mc_quanto"],
-            "tolerance_pct": 5.0,
-        },
-    }
-    market_state, _ = build_market_state_for_task(task)
-    market_state = replace(
-        market_state,
-        model_parameters={
-            **dict(market_state.model_parameters or {}),
-            "quanto_foreign_curve_policy": {"kind": "selected_forecast_curve"},
-        },
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T105"
     )
+    market_state, _ = build_market_state_for_task(task)
 
     class FakeResult:
         def __init__(self, payoff_cls):
@@ -4916,33 +4937,18 @@ Notional: 10. Underliers: SPX,NDX. Spots: 100.0,95.0. Strike: 100. Expiry date: 
 
 
 def test_make_test_payoff_aligns_quanto_fixture_to_runtime_market_state():
-    from dataclasses import replace
-
+    from trellis.agent.task_manifests import load_task_manifest
     from trellis.agent.planner import SPECIALIZED_SPECS
     from trellis.agent.task_runtime import _make_test_payoff, build_market_state_for_task
     from trellis.instruments._agent.quantooptionmontecarlo import QuantoOptionMonteCarloPayoff
     from trellis.models.resolution.quanto import resolve_quanto_inputs
 
-    task = {
-        "id": "T105",
-        "title": "Quanto option: quanto-adjusted BS vs MC cross-currency",
-        "market": {
-            "source": "mock",
-            "as_of": "2024-11-15",
-            "discount_curve": "usd_ois",
-            "forecast_curve": "EUR-DISC",
-            "fx_rate": "EURUSD",
-            "model_parameters": "heston_equity",
-        },
-    }
-    market_state, _ = build_market_state_for_task(task)
-    market_state = replace(
-        market_state,
-        model_parameters={
-            **dict(market_state.model_parameters or {}),
-            "quanto_foreign_curve_policy": {"kind": "selected_forecast_curve"},
-        },
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T105"
     )
+    market_state, _ = build_market_state_for_task(task)
 
     payoff = _make_test_payoff(
         QuantoOptionMonteCarloPayoff,

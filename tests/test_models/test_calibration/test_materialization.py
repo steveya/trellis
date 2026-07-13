@@ -101,8 +101,9 @@ def test_black_vol_materialization_records_surface_binding():
     record = resolve_materialized_object(calibrated, object_kind="black_vol_surface")
     assert record is not None
     assert record["object_name"] == "rates_cap_surface"
-    assert record["target_fields"] == ["vol_surface"]
+    assert record["target_fields"] == ["vol_surface", "vol_surfaces"]
     assert calibrated.vol_surface.black_vol(1.0, 0.05) == 0.22
+    assert calibrated.vol_surfaces["rates_cap_surface"] is calibrated.vol_surface
 
 
 def test_materialization_record_rejects_empty_object_name():

@@ -49,6 +49,7 @@ def test_render_thin_adapter_plan_includes_market_reads_and_primitives():
     assert "Thin Adapter Plan" in text
     assert "market_state.discount" in text
     assert "market_state.vol_surface.black_vol" in text
+    assert "market_state.vol_surfaces" in text
     assert "trellis.models.black.black76_call" in text
 
 

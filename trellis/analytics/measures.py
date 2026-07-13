@@ -85,6 +85,7 @@ def _clone_market_state(ms: MarketState, **overrides) -> MarketState:
         "discount": ms.discount,
         "forward_curve": ms.forward_curve,
         "vol_surface": ms.vol_surface,
+        "vol_surfaces": ms.vol_surfaces,
         "state_space": ms.state_space,
         "credit_curve": ms.credit_curve,
         "fixing_histories": ms.fixing_histories,

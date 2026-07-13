@@ -125,7 +125,14 @@ def test_summarize_binding_first_exotic_proof_captures_binding_ids_and_honest_bl
         "T105": {
             "cohort": "event_control_schedule",
             "outcome_class": "proved",
-            "required_mock_capabilities": ["discount_curve", "forward_curve", "fx_rates", "spot"],
+            "required_mock_capabilities": [
+                "discount_curve",
+                "forward_curve",
+                "fx_rates",
+                "spot",
+                "black_vol_surface",
+                "model_parameters",
+            ],
             "comparison_targets": ["quanto_bs", "mc_quanto"],
             "requires_binding_ids": True,
         },

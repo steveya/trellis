@@ -48,6 +48,39 @@ scenarios:
           rate: 0.025
           curve_name: EUR-DISC
 
+  eur_equity_usd_quanto:
+    source: mock
+    as_of: "2024-11-15"
+    description: Named EUR equity and EURUSD factors for a USD-settled quanto option.
+    selected_components:
+      discount_curve: usd_ois
+      forecast_curve: EUR-DISC
+      fx_rate: EURUSD
+      vol_surface: spx_heston_implied_vol
+    constructor:
+      kind: hybrid_equity_fx
+      valuation_date: "2024-11-15"
+      domestic_rate: 0.045
+      foreign_rate: 0.025
+      foreign_curve_name: EUR-DISC
+      fx_pair: EURUSD
+      fx_spot: 1.10
+      fx_volatility: 0.12
+      fx_vol_surface_name: eurusd_implied_vol
+      underlier:
+        name: SX5E
+        spot: 100.0
+        volatility: 0.20
+        vol_surface_name: sx5e_implied_vol
+        carry:
+          kind: dividend_yield
+          rate: 0.025
+          curve_name: EUR-DISC
+      correlation_source:
+        kind: explicit
+        value: 0.25
+        source_key: sx5e_eurusd
+
   usd_rates_smile:
     source: mock
     as_of: "2024-11-15"

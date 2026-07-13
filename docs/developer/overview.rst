@@ -447,6 +447,14 @@ requests plus optional named scenario-template ids, return a stable
 ``SnapshotSelectionResult``, and surface missing-component or stale-snapshot
 diagnostics without silently falling back to another component.
 
+Snapshot compilation also preserves the full named implied-volatility mapping
+on ``MarketState.vol_surfaces`` while keeping ``vol_surface`` as the selected
+single-surface compatibility field. Hybrid constructors can therefore bind a
+named underlier spot and FX quote independently and attach distinct underlier
+and FX surfaces. The quanto resolver treats explicit object keys as contracts:
+missing named spots, surfaces, or correlations fail with binding-specific
+diagnostics, and task provenance records the exact objects used.
+
 That imported-snapshot path now feeds three checked desk routes as well.
 ``PricingService`` recognizes the approved ``range_accrual_discounted``,
 ``callable_range_accrual_deterministic``, ``callable_bond_tree``, and

@@ -15,6 +15,7 @@ from trellis.core.runtime_contract import (
 )
 from trellis.curves.yield_curve import YieldCurve
 from trellis.engine.payoff_pricer import price_payoff
+from trellis.models.vol_surface import FlatVol
 
 
 SETTLE = date(2024, 11, 15)
@@ -93,6 +94,31 @@ def test_market_state_contract_proxy_raises_for_missing_mapping_key():
     assert excinfo.value.field == "underlier_spots"
     assert excinfo.value.missing_key == "GOOG"
     assert excinfo.value.available_keys == ("AAPL", "MSFT")
+
+
+def test_market_state_contract_proxy_wraps_named_vol_surface_lookups():
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        vol_surface=FlatVol(0.20),
+        vol_surfaces={
+            "sx5e_implied_vol": FlatVol(0.20),
+            "eurusd_implied_vol": FlatVol(0.12),
+        },
+    )
+    proxied = wrap_market_state_with_contract(
+        market_state,
+        requirements=("black_vol_surface",),
+        context="QuantoPayoff",
+    )
+
+    assert proxied.vol_surfaces["eurusd_implied_vol"].black_vol(1.0, 1.1) == pytest.approx(0.12)
+    with pytest.raises(ContractViolation) as excinfo:
+        proxied.vol_surfaces["missing_surface"]
+
+    assert excinfo.value.kind == "missing_market_key"
+    assert excinfo.value.field == "vol_surfaces"
+    assert excinfo.value.missing_key == "missing_surface"
 
 
 def test_price_payoff_surfaces_structured_contract_violation_for_missing_mapping_key():
