@@ -35,7 +35,7 @@ Status mirror last synced: `2026-07-12`
 | `QUA-1172` | FX vanilla: primitive-composed analytical and MC lanes | Done |
 | `QUA-1174` | Hybrid market binding: named underlier and volatility surfaces | Done |
 | `QUA-1173` | Quanto option: primitive-composed analytical and MC lanes | Backlog |
-| `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | In Progress |
+| `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | Done |
 
 ## Current Sequence
 
