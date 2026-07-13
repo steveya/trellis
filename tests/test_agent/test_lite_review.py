@@ -1356,9 +1356,12 @@ def test_validate_build_passes_quant_selected_method_to_model_validator(monkeypa
         "trellis.agent.executor._make_test_payoff",
         lambda *args, **kwargs: object(),
     )
+    events: list[tuple[str, dict[str, object]]] = []
     monkeypatch.setattr(
         "trellis.agent.executor._record_platform_event",
-        lambda *args, **kwargs: None,
+        lambda compiled_request, event, **kwargs: events.append(
+            (event, kwargs.get("details", {}))
+        ),
     )
     monkeypatch.setattr(
         "trellis.agent.executor._should_run_reference_oracle",
@@ -1428,6 +1431,16 @@ def test_validate_build_passes_quant_selected_method_to_model_validator(monkeypa
     assert failures == []
     assert captured["method"] == "analytical"
     assert captured["run_llm_review"] is False
+    skipped = next(
+        details
+        for event, details in events
+        if event == "model_validator_llm_review_skipped"
+    )
+    assert skipped["orientation_contract"] == {
+        "role": "model_validator",
+        "contract_id": "model-validator-runtime-navigation",
+        "version": 1,
+    }
 
 
 def test_format_validation_failure_feedback_includes_structured_diagnostics():

@@ -37,6 +37,7 @@ from trellis.agent.semantic_validation import validate_semantics
 from trellis.agent.builder import write_module, run_tests
 from trellis.agent.knowledge.import_registry import resolve_import_candidates
 from trellis.agent.knowledge.api_map import format_api_map_for_prompt
+from trellis.agent.role_orientation import role_orientation_summary
 
 
 # Sentinel in the skeleton that gets replaced by the LLM-generated body.
@@ -960,6 +961,8 @@ def build_payoff(
         )
     )
     quant_challenger_packet = quant_challenger_packet_summary(pricing_plan)
+    # Keep identity queryable without decoding the nested challenger packet.
+    quant_orientation = role_orientation_summary("quant")
     _record_platform_event(
         compiled_request,
         "quant_selected_method",
@@ -975,6 +978,7 @@ def build_payoff(
             "selection_reason": pricing_plan.selection_reason,
             "assumption_summary": list(pricing_plan.assumption_summary),
             "required_market_data": sorted(pricing_plan.required_market_data),
+            "orientation_contract": quant_orientation,
             "challenger_packet": quant_challenger_packet,
             "sensitivity_support": (
                 pricing_plan.sensitivity_support.to_dict()
@@ -996,6 +1000,7 @@ def build_payoff(
                 artifact_kind="PricingPlan",
             ),
             "required_market_data": sorted(pricing_plan.required_market_data),
+            "orientation_contract": quant_orientation,
             "method_modules": list(pricing_plan.method_modules),
             "reasoning": pricing_plan.reasoning,
             "selection_reason": pricing_plan.selection_reason,
@@ -1377,7 +1382,10 @@ def build_payoff(
             compiled_request,
             "model_validator_skipped",
             status="info",
-            details={"validation": validation},
+            details={
+                "validation": validation,
+                "orientation_contract": role_orientation_summary("model_validator"),
+            },
         )
 
     # Retrieve all relevant knowledge for this task (single call)
@@ -2589,6 +2597,9 @@ def _validate_build(
                         ),
                         "risk_level": review_policy.risk_level,
                         "reason": review_policy.model_validator_reason,
+                        "orientation_contract": role_orientation_summary(
+                            "model_validator"
+                        ),
                     },
                 )
                 report = validate_model(
@@ -2650,6 +2661,9 @@ def _validate_build(
                         executed=review_policy.run_model_validator_llm,
                     ),
                     "finding_count": len(report.findings),
+                    "orientation_contract": role_orientation_summary(
+                        "model_validator"
+                    ),
                     "blocker_count": len(blocker_findings),
                     "approved": report.approved,
                     "llm_review": review_policy.run_model_validator_llm,
@@ -2690,6 +2704,9 @@ def _validate_build(
             details={
                 "risk_level": review_policy.risk_level,
                 "reason": deterministic_review_block_reason,
+                "orientation_contract": role_orientation_summary(
+                    "model_validator"
+                ),
                 "failure_count": len(failures),
                 "deterministic_evidence": model_validation_evidence_packet,
             },

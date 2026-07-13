@@ -1071,6 +1071,7 @@ def _cycle_stage_details(stage: str, details: dict[str, Any]) -> dict[str, Any]:
             "selection_reason",
             "assumption_summary",
             "required_market_data",
+            "orientation_contract",
             "challenger_packet",
         ),
         "validation_bundle": (
@@ -1093,6 +1094,7 @@ def _cycle_stage_details(stage: str, details: dict[str, Any]) -> dict[str, Any]:
             "approved",
             "llm_review",
             "risk_level",
+            "orientation_contract",
             "residual_risks",
             "finding_classification",
             "reason",

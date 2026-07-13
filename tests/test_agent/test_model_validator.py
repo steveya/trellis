@@ -221,6 +221,9 @@ def test_llm_conceptual_review_includes_shared_knowledge(monkeypatch):
     )
 
     assert findings == []
+    assert "model-validator-runtime-navigation@1" in captured["prompt"]
+    assert "deterministic_evidence_packet" in captured["prompt"]
+    assert "quant-runtime-navigation" not in captured["prompt"]
     assert "Shared Review Principles" in captured["prompt"]
     assert "Check calibration first." in captured["prompt"]
 

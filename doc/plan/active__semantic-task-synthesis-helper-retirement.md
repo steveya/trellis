@@ -33,19 +33,17 @@ Status mirror last synced: `2026-07-12`
 | `QUA-1170` | Vanilla PDE: primitive-composed theta-method lane | Done |
 | `QUA-1171` | FX barrier: primitive-composed analytical and MC lanes | Done |
 | `QUA-1172` | FX vanilla: primitive-composed analytical and MC lanes | Done |
-| `QUA-1174` | Hybrid market binding: named underlier and volatility surfaces | In Progress |
-| `QUA-1173` | Quanto option: primitive-composed analytical and MC lanes | Backlog; blocked by `QUA-1174` |
-| `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | Backlog |
+| `QUA-1174` | Hybrid market binding: named underlier and volatility surfaces | Done |
+| `QUA-1173` | Quanto option: primitive-composed analytical and MC lanes | Backlog |
+| `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | In Progress |
 
 ## Current Sequence
 
-1. Complete `QUA-1174` so quanto pricing binds a named underlier, FX quote,
-   distinct implied-volatility surfaces, foreign curve, and correlation.
+1. Complete `QUA-1175` so quant and model-validator receive compact,
+   role-specific navigation contracts at runtime.
 2. Complete `QUA-1173` by composing analytical and Monte Carlo pricing from
    those bindings and generic numerical primitives without quanto helpers.
-3. Complete `QUA-1175` so quant and model-validator receive compact,
-   role-specific navigation contracts at runtime.
-4. Re-run the helper-authority audit and choose the next coherent product
+3. Re-run the helper-authority audit and choose the next coherent product
    family by remaining authority count and semantic risk.
 
 ## Completion Evidence

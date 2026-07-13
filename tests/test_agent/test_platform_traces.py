@@ -198,6 +198,11 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
         details={
             "method": "analytical",
             "selection_reason": "exact_binding",
+            "orientation_contract": {
+                "role": "quant",
+                "contract_id": "quant-runtime-navigation",
+                "version": 1,
+            },
             "challenger_packet": {
                 "selected_method": "analytical",
                 "method_identity": "analytical",
@@ -261,7 +266,14 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
         compiled,
         "model_validator_skipped",
         status="info",
-        details={"validation": "standard"},
+        details={
+            "validation": "standard",
+            "orientation_contract": {
+                "role": "model_validator",
+                "contract_id": "model-validator-runtime-navigation",
+                "version": 1,
+            },
+        },
         root=tmp_path,
     )
     append_platform_trace_event(
@@ -304,6 +316,19 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
     assert quant_stage["details"]["challenger_packet"]["candidate_methods"][1][
         "method"
     ] == "monte_carlo"
+    assert quant_stage["details"]["orientation_contract"]["contract_id"] == (
+        "quant-runtime-navigation"
+    )
+    model_validator_stage = next(
+        stage
+        for stage in cycle_report["stages"]
+        if stage["stage"] == "model_validator"
+    )
+    assert model_validator_stage["details"]["orientation_contract"] == {
+        "role": "model_validator",
+        "contract_id": "model-validator-runtime-navigation",
+        "version": 1,
+    }
     arbiter_stage = next(
         stage for stage in cycle_report["stages"] if stage["stage"] == "arbiter"
     )

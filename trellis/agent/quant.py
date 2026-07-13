@@ -15,7 +15,12 @@ import re
 
 from trellis.agent.knowledge import get_store
 from trellis.agent.knowledge.decompose import decompose, decompose_to_ir
-from trellis.agent.knowledge.methods import CANONICAL_METHODS, normalize_method
+from trellis.agent.knowledge.methods import (
+    CANONICAL_METHODS,
+    default_method_modules,
+    normalize_method,
+)
+from trellis.agent.role_orientation import role_orientation_summary
 from trellis.agent.sensitivity_support import (
     SensitivitySupport,
     normalize_requested_measures,
@@ -77,17 +82,6 @@ class PricingPlan:
     assumption_summary: tuple[str, ...] = ()
     challenger_packet: QuantChallengerPacket | Mapping[str, object] | None = None
 
-
-_DEFAULT_METHOD_MODULES = {
-    "analytical": ["trellis.models.black"],
-    "rate_tree": ["trellis.models.trees.lattice"],
-    "monte_carlo": ["trellis.models.monte_carlo.engine"],
-    "qmc": ["trellis.models.qmc"],
-    "fft_pricing": ["trellis.models.transforms.fft_pricer"],
-    "pde_solver": ["trellis.models.pde.theta_method"],
-    "copula": ["trellis.models.copulas.gaussian"],
-    "waterfall": ["trellis.models.cashflow_engine.waterfall"],
-}
 
 # Legacy _FAMILY_BLUEPRINT_ROUTE_MODULES removed.
 # Route → module mappings are now sourced from the route registry
@@ -467,6 +461,7 @@ def quant_challenger_packet_summary(
         )
     if validation_contract_id:
         payload["validation_contract_id"] = validation_contract_id
+    payload["orientation_contract"] = role_orientation_summary("quant")
     return payload
 
 
@@ -675,7 +670,7 @@ def select_pricing_method_for_product_ir(
     requirements_entry = store._load_requirements(method)
     plan = PricingPlan(
         method=method,
-        method_modules=list(_DEFAULT_METHOD_MODULES.get(method, ())),
+        method_modules=list(default_method_modules(method)),
         required_market_data=normalize_market_data_requirements(
             getattr(product_ir, "required_market_data", ()) or ()
         ),
@@ -876,7 +871,7 @@ def _apply_heston_transform_overrides(
 
     method = "fft_pricing"
     method_modules = list(
-        _DEFAULT_METHOD_MODULES.get(method, ())
+        default_method_modules(method)
         if plan.method == "analytical"
         else plan.method_modules
     )
@@ -949,7 +944,7 @@ def _apply_local_vol_overrides(
     if method == "analytical":
         method = "monte_carlo"
 
-    method_modules = list(_DEFAULT_METHOD_MODULES.get(method, plan.method_modules))
+    method_modules = list(default_method_modules(method) or plan.method_modules)
     if method == "monte_carlo":
         for module_path in (
             "trellis.models.monte_carlo.local_vol",

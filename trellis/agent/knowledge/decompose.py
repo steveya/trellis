@@ -51,6 +51,7 @@ from trellis.agent.contract_ir import (
     ZeroRateTenor,
     canonicalize,
 )
+from trellis.agent.knowledge.methods import default_method_modules
 from trellis.agent.dynamic_contract_ir import (
     ActionSpec,
     AutomaticTerminationEvent,
@@ -3837,6 +3838,7 @@ def _decompose_via_llm(
     from trellis.agent.knowledge.retrieval import (
         format_decomposition_knowledge_for_prompt,
     )
+    from trellis.agent.role_orientation import render_role_orientation_card
     load_env()
 
     # Build feature taxonomy context
@@ -3863,8 +3865,11 @@ def _decompose_via_llm(
     knowledge_section = ""
     if knowledge_text:
         knowledge_section = f"\n\n## Shared Knowledge\n{knowledge_text}"
+    orientation_card = render_role_orientation_card("quant")
 
-    prompt = f"""You are a quantitative finance expert decomposing a financial instrument
+    prompt = f"""{orientation_card}
+
+You are a quantitative finance expert decomposing a financial instrument
 into its constituent features for a pricing library.
 
 ## Available Features
@@ -3886,7 +3891,6 @@ Return JSON:
 {{
     "features": ["feature1", "feature2", ...],
     "method": "pricing_method",
-    "method_modules": ["trellis.models.module1", ...],
     "required_market_data": ["discount_curve", "black_vol_surface", ...],
     "reasoning": "Brief explanation of why this decomposition and method",
     "notes": "Any known complexities or edge cases"
@@ -3900,15 +3904,17 @@ Return JSON:
             instrument=key,
             features=("discounting",),
             method=normalize_method("analytical"),
+            method_modules=default_method_modules("analytical"),
             reasoning="LLM decomposition failed — falling back to analytical.",
             learned=True,
         )
 
+    method = normalize_method(data.get("method", "analytical"))
     return ProductDecomposition(
         instrument=key,
         features=tuple(data.get("features", ["discounting"])),
-        method=normalize_method(data.get("method", "analytical")),
-        method_modules=tuple(data.get("method_modules", [])),
+        method=method,
+        method_modules=default_method_modules(method),
         required_market_data=frozenset(data.get("required_market_data", ["discount_curve"])),
         reasoning=data.get("reasoning", ""),
         notes=data.get("notes", ""),

@@ -1,0 +1,133 @@
+schema_version: 1
+orientations:
+  quant:
+    contract_id: quant-runtime-navigation
+    version: 1
+    title: Quant Runtime Orientation
+    purpose: Select and challenge pricing methods from typed product semantics and canonical quantitative knowledge.
+    max_render_chars: 3600
+    owns:
+      - Interpret ProductIR and semantic contract assumptions for method selection.
+      - Rank candidate method families and state rejected alternatives.
+      - Declare required market-data capabilities and residual model-risk handoff.
+    excludes:
+      - Do not generate code or select import paths; builder owns API-map and import-registry construction.
+      - Do not invent deterministic validation checks or override compiled route admissibility.
+      - Do not write or promote cookbook entries during task execution.
+    navigation:
+      - order: 1
+        resource_id: quant_runtime_packet
+        kind: runtime_contract
+        path: runtime:semantic_contract_product_ir_and_quant_challenger_packet
+        purpose: Start from typed product meaning, requested measures, assumptions, and already-ranked method evidence.
+      - order: 2
+        resource_id: product_decompositions
+        kind: canonical_knowledge
+        path: trellis/agent/knowledge/canonical/decompositions.yaml
+        purpose: Resolve known product features, candidate methods, required data, and modeling requirements.
+      - order: 3
+        resource_id: admitted_routes
+        kind: canonical_knowledge
+        path: trellis/agent/knowledge/canonical/routes.yaml
+        purpose: Check which method families are admitted for the typed product; do not choose implementation symbols.
+      - order: 4
+        resource_id: model_grammar
+        kind: canonical_knowledge
+        path: trellis/agent/knowledge/canonical/model_grammar.yaml
+        purpose: Compare model dynamics, state variables, calibration targets, and numerical families.
+      - order: 5
+        resource_id: method_requirements
+        kind: canonical_knowledge
+        path: trellis/agent/knowledge/canonical/method_requirements.yaml
+        purpose: Apply method-level assumptions and market-data obligations.
+      - order: 6
+        resource_id: cookbook_catalog
+        kind: read_only_pattern_index
+        path: trellis/agent/knowledge/canonical/cookbooks.yaml
+        purpose: Consult validated pattern evidence only after typed decomposition; never promote or let it override semantics.
+      - order: 7
+        resource_id: quant_docs_index
+        kind: official_docs_index
+        path: docs/quant/index.rst
+        purpose: Navigate pricing-stack, ContractIR, DSL, numerical, and knowledge-maintenance documentation.
+      - order: 8
+        resource_id: model_grammar_design
+        kind: official_docs
+        path: docs/unified_pricing_engine_model_grammar.md
+        purpose: Use the maintained model-layer grammar when canonical entries need conceptual interpretation.
+
+  model_validator:
+    contract_id: model-validator-runtime-navigation
+    version: 1
+    title: Model Validator Runtime Orientation
+    purpose: Review only residual conceptual, calibration, numerical-model, and limitation risks after deterministic evidence.
+    max_render_chars: 4200
+    owns:
+      - Assess residual conceptual soundness and calibration adequacy named by the validation contract.
+      - Challenge model assumptions using the quant packet, route contract, and executed evidence.
+      - Record bounded model-risk findings and limitations with specific evidence.
+    excludes:
+      - Do not repeat deterministic checks already owned by deterministic_evidence_packet and arbiter verdicts.
+      - Do not select routes, rewrite generated code, or review code style.
+      - Do not write or promote cookbook entries during validation.
+    navigation:
+      - order: 1
+        resource_id: validation_contract
+        kind: runtime_contract
+        path: runtime:validation_contract
+        purpose: Start from deterministic checks, residual risks, exact validation identity, and review policy.
+      - order: 2
+        resource_id: deterministic_evidence
+        kind: runtime_evidence
+        path: runtime:deterministic_evidence_packet
+        purpose: Treat executed validation, reference-oracle, and arbiter claims as already owned evidence.
+      - order: 3
+        resource_id: quant_challenger_packet
+        kind: runtime_evidence
+        path: runtime:quant_challenger_packet
+        purpose: Review the selected method, rejected alternatives, assumptions, and residual-risk handoff without reconstructing quant reasoning.
+      - order: 4
+        resource_id: admitted_routes
+        kind: canonical_knowledge
+        path: trellis/agent/knowledge/canonical/routes.yaml
+        purpose: Inspect declared route assumptions and validation expectations as read-only context.
+      - order: 5
+        resource_id: model_grammar
+        kind: canonical_knowledge
+        path: trellis/agent/knowledge/canonical/model_grammar.yaml
+        purpose: Evaluate dynamics, factors, calibration targets, and numerical-method compatibility.
+      - order: 6
+        resource_id: method_requirements
+        kind: canonical_knowledge
+        path: trellis/agent/knowledge/canonical/method_requirements.yaml
+        purpose: Check method-level conceptual and calibration obligations.
+      - order: 7
+        resource_id: cookbook_catalog
+        kind: read_only_pattern_index
+        path: trellis/agent/knowledge/canonical/cookbooks.yaml
+        purpose: Use validated patterns only as supporting model evidence, never as validation or promotion authority.
+      - order: 8
+        resource_id: limitations
+        kind: support_contract
+        path: LIMITATIONS.md
+        purpose: Bound findings against current supported and unsupported behavior.
+      - order: 9
+        resource_id: validation_loop_design
+        kind: official_docs
+        path: docs/design_validation_contract_loop.md
+        purpose: Preserve deterministic-first ownership and residual-review boundaries.
+      - order: 10
+        resource_id: calibration_reference
+        kind: official_docs
+        path: docs/mathematical/calibration.rst
+        purpose: Review calibration targets, solve diagnostics, provenance, and known workflow boundaries.
+      - order: 11
+        resource_id: quant_docs_index
+        kind: official_docs_index
+        path: docs/quant/index.rst
+        purpose: Navigate mathematical and computational references without loading all documents.
+      - order: 12
+        resource_id: audit_contract
+        kind: official_docs
+        path: docs/developer/audit_and_observability.rst
+        purpose: Align findings with cycle-report, trace, and model-risk evidence contracts.

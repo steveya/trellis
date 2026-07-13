@@ -301,6 +301,11 @@ class TestPricingPlan:
         assert "deterministic_validation_bundle" in summary["expected_executable_checks"]
         assert "alternative_method_challenge" in summary["expected_executable_checks"]
         assert "quant:multiple_valid_methods_available" in summary["residual_risk_handoff"]
+        assert summary["orientation_contract"] == {
+            "role": "quant",
+            "contract_id": "quant-runtime-navigation",
+            "version": 1,
+        }
 
     def test_product_ir_sensitivity_request_prefers_rate_tree_for_callable_bond(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
