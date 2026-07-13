@@ -654,6 +654,50 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("equity_quanto"), spec)
         assert any(f.category == "required_primitive_not_called" for f in findings)
 
+    @pytest.mark.parametrize(
+        "non_call_source",
+        [
+            "# black76_call(forward, strike, vol, T)",
+            '"""black76_call(forward, strike, vol, T)"""',
+            "def black76_call(forward, strike, vol, T):\n        return 0.0",
+        ],
+    )
+    def test_rejects_non_call_text_for_required_quanto_primitive(
+        self,
+        registry,
+        non_call_source,
+    ):
+        spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
+        source = f'''
+def evaluate(self, market_state):
+    resolved = resolve_quanto_inputs(market_state, self._spec)
+    option_type = normalized_option_type(self._spec.option_type)
+    if resolved.T <= 0.0:
+        return terminal_intrinsic(option_type, spot=resolved.spot, strike=self._spec.strike)
+    forward = quanto_adjusted_forward(
+        spot=resolved.spot,
+        domestic_df=resolved.domestic_df,
+        foreign_df=resolved.foreign_df,
+        corr=resolved.corr,
+        sigma_underlier=resolved.sigma_underlier,
+        sigma_fx=resolved.sigma_fx,
+        T=resolved.T,
+    )
+    {non_call_source}
+    call = 0.0
+    put = black76_put(forward, self._spec.strike, resolved.sigma_underlier, resolved.T)
+    return discounted_value(call if option_type == "call" else put, resolved.domestic_df)
+'''
+        validator = AlgorithmContractValidator()
+
+        findings = validator.validate(source, _make_plan("equity_quanto"), spec)
+
+        assert any(
+            finding.category == "required_primitive_not_called"
+            and "'black76_call'" in finding.message
+            for finding in findings
+        )
+
     def test_accepts_complete_quanto_analytical_primitive_surface(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
         source = '''
