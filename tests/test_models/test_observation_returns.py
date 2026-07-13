@@ -170,3 +170,32 @@ def test_observation_return_payoff_matches_full_paths_and_reduced_state():
     assert result["path_state"] is not None
     assert result["path_state"].full_paths is None
     assert tuple(result["path_state"].reducer_values) == ("reset_returns",)
+
+
+def test_observation_return_payoff_rejects_nonpositive_observed_levels():
+    from trellis.models.observation_returns import (
+        ObservationReturnContract,
+        build_observation_return_reducer,
+        observation_return_payoff,
+    )
+
+    contract = ObservationReturnContract(observation_times=(1.0,))
+    payoff = observation_return_payoff(
+        contract,
+        maturity=1.0,
+        n_steps=1,
+    )
+    with pytest.raises(ValueError, match="observed levels must be finite and positive"):
+        payoff(raw_np.array([[-100.0, -90.0]]))
+
+    reducer = build_observation_return_reducer(
+        contract,
+        maturity=1.0,
+        n_steps=1,
+    )
+    with pytest.raises(ValueError, match="observed levels must be finite and positive"):
+        reducer.init(raw_np.array([-100.0]), 1)
+
+    accumulator = reducer.init(raw_np.array([100.0]), 1)
+    with pytest.raises(ValueError, match="observed levels must be finite and positive"):
+        reducer.update(accumulator, raw_np.array([-90.0]), 1)

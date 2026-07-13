@@ -151,6 +151,12 @@ def _single_state_cross_section(values):
     )
 
 
+def _validate_positive_levels(values) -> None:
+    view = _validation_view(values)
+    if raw_np.any(~raw_np.isfinite(view)) or raw_np.any(view <= 0.0):
+        raise ValueError("observed levels must be finite and positive")
+
+
 def build_observation_return_reducer(
     contract: ObservationReturnContract,
     *,
@@ -169,6 +175,7 @@ def build_observation_return_reducer(
     def _init(initial_values, total_steps):
         del total_steps
         previous = _single_state_cross_section(initial_values)
+        _validate_positive_levels(previous)
         return np.stack((previous, np.zeros_like(previous)), axis=1)
 
     def _update(accumulator, values, step):
@@ -178,6 +185,8 @@ def build_observation_return_reducer(
         previous = current_accumulator[:, 0]
         accumulated = current_accumulator[:, 1]
         current = _single_state_cross_section(values)
+        _validate_positive_levels(previous)
+        _validate_positive_levels(current)
         gross_return = current / previous
         interval_return = simple_observation_returns(
             gross_return,
@@ -220,6 +229,7 @@ def observation_return_payoff(
             raise ValueError("paths do not contain every required observation step")
         level_steps = (0, *steps)
         levels = values[:, level_steps]
+        _validate_positive_levels(levels)
         gross_returns = levels[:, 1:] / levels[:, :-1]
         return bounded_observation_return_sum(gross_returns, contract)
 
