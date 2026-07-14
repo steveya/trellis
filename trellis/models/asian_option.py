@@ -1,4 +1,4 @@
-"""Checked Asian-option Monte Carlo helper surfaces."""
+"""Checked Asian-option compatibility helper surfaces."""
 
 from __future__ import annotations
 
@@ -13,6 +13,12 @@ from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
 from trellis.models.analytical.support import normalized_option_type
+from trellis.models.analytical.support.lognormal_moments import (
+    match_lognormal_moments,
+    single_factor_lognormal_sum_contract,
+    weighted_lognormal_sum_moments,
+)
+from trellis.models.black import black76_call, black76_put
 
 
 class ArithmeticAsianOptionSpecLike(Protocol):
@@ -254,37 +260,35 @@ def price_arithmetic_asian_option_analytical_result(
             observation_count=len(observation_times),
         )
 
-    matched_mean = _arithmetic_average_first_moment(
-        spot=spot,
-        rate=rate,
-        dividend_yield=dividend_yield,
-        observation_times=observation_times,
+    observation_count = len(observation_times)
+    moments = weighted_lognormal_sum_moments(
+        single_factor_lognormal_sum_contract(
+            spot=spot,
+            observation_times=observation_times,
+            weights=(1.0 / observation_count,) * observation_count,
+            carry=rate - dividend_yield,
+            volatility=sigma,
+        )
     )
-    matched_second_moment = _arithmetic_average_second_moment(
-        spot=spot,
-        rate=rate,
-        dividend_yield=dividend_yield,
-        sigma=sigma,
-        observation_times=observation_times,
-    )
-    effective_lognormal_var = max(
-        math.log(max(matched_second_moment, 1e-300) / max(matched_mean * matched_mean, 1e-300)),
-        0.0,
-    )
-    price = notional * _discounted_lognormal_option_price(
-        matched_mean=matched_mean,
-        matched_lognormal_var=effective_lognormal_var,
-        strike=strike,
-        maturity=maturity,
-        rate=rate,
-        option_type=option_type,
-    )
+    matched = match_lognormal_moments(moments)
+    effective_volatility = matched.effective_volatility(maturity=maturity)
+    if strike <= 0.0:
+        undiscounted = 0.0 if option_type == "put" else matched.mean - strike
+    else:
+        option_kernel = black76_put if option_type == "put" else black76_call
+        undiscounted = option_kernel(
+            matched.mean,
+            strike,
+            effective_volatility,
+            maturity,
+        )
+    price = notional * math.exp(-rate * maturity) * float(undiscounted)
     return ArithmeticAsianOptionAnalyticalResult(
         price=price,
-        matched_mean=matched_mean,
-        matched_second_moment=matched_second_moment,
-        effective_lognormal_vol=math.sqrt(effective_lognormal_var / maturity),
-        observation_count=len(observation_times),
+        matched_mean=matched.mean,
+        matched_second_moment=matched.second_moment,
+        effective_lognormal_vol=effective_volatility,
+        observation_count=observation_count,
     )
 
 
@@ -347,72 +351,6 @@ def _resolve_observation_times(
     if n_observations == 1:
         return (0.0,)
     return tuple(float(value) for value in raw_np.linspace(0.0, maturity, n_observations))
-
-
-def _arithmetic_average_first_moment(
-    *,
-    spot: float,
-    rate: float,
-    dividend_yield: float,
-    observation_times: tuple[float, ...],
-) -> float:
-    count = len(observation_times)
-    if count == 0:
-        raise ValueError("Arithmetic Asian helper requires at least one observation time")
-    growth = raw_np.exp((rate - dividend_yield) * raw_np.asarray(observation_times, dtype=float))
-    return float(spot * raw_np.mean(growth))
-
-
-def _arithmetic_average_second_moment(
-    *,
-    spot: float,
-    rate: float,
-    dividend_yield: float,
-    sigma: float,
-    observation_times: tuple[float, ...],
-) -> float:
-    count = len(observation_times)
-    if count == 0:
-        raise ValueError("Arithmetic Asian helper requires at least one observation time")
-    total = 0.0
-    drift = rate - dividend_yield
-    for left_time in observation_times:
-        for right_time in observation_times:
-            total += math.exp(
-                drift * (left_time + right_time) + sigma * sigma * min(left_time, right_time)
-            )
-    return spot * spot * total / float(count * count)
-
-
-def _discounted_lognormal_option_price(
-    *,
-    matched_mean: float,
-    matched_lognormal_var: float,
-    strike: float,
-    maturity: float,
-    rate: float,
-    option_type: str,
-) -> float:
-    discount = math.exp(-rate * maturity)
-    if strike <= 0.0:
-        if option_type == "put":
-            return 0.0
-        return discount * (matched_mean - strike)
-    if matched_lognormal_var <= 1e-14:
-        intrinsic = max(matched_mean - strike, 0.0)
-        if option_type == "put":
-            intrinsic = max(strike - matched_mean, 0.0)
-        return discount * intrinsic
-    std = math.sqrt(matched_lognormal_var)
-    d1 = (math.log(matched_mean / strike) + 0.5 * matched_lognormal_var) / std
-    d2 = d1 - std
-    if option_type == "put":
-        return discount * (strike * _normal_cdf(-d2) - matched_mean * _normal_cdf(-d1))
-    return discount * (matched_mean * _normal_cdf(d1) - strike * _normal_cdf(d2))
-
-
-def _normal_cdf(value: float) -> float:
-    return 0.5 * (1.0 + math.erf(value / math.sqrt(2.0)))
 
 
 __all__ = [

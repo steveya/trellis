@@ -2,9 +2,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import math
 
 import pytest
 
+from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
 from trellis.curves.yield_curve import YieldCurve
@@ -102,3 +104,41 @@ def test_arithmetic_asian_analytical_tracks_bounded_monte_carlo_for_weekly_put()
     assert analytical >= 0.0
     assert monte_carlo >= 0.0
     assert analytical == pytest.approx(monte_carlo, rel=0.12, abs=0.5)
+
+
+@pytest.mark.parametrize("option_type", ["call", "put"])
+def test_arithmetic_asian_analytical_handles_nonpositive_strike(option_type):
+    from trellis.models.asian_option import (
+        price_arithmetic_asian_option_analytical_result,
+    )
+
+    spec = _ArithmeticAsianSpec(
+        notional=100.0,
+        underlier="SPX",
+        strike=-5.0,
+        expiry_date=date(2025, 12, 31),
+        observation_dates=(
+            date(2025, 3, 31),
+            date(2025, 6, 30),
+            date(2025, 9, 30),
+            date(2025, 12, 31),
+        ),
+        option_type=option_type,
+        day_count=DayCountConvention.ACT_365,
+    )
+
+    result = price_arithmetic_asian_option_analytical_result(_market_state(), spec)
+    maturity = year_fraction(
+        date(2025, 1, 1),
+        spec.expiry_date,
+        spec.day_count,
+    )
+    expected = (
+        0.0
+        if option_type == "put"
+        else spec.notional
+        * math.exp(-0.03 * maturity)
+        * (result.matched_mean - spec.strike)
+    )
+
+    assert result.price == pytest.approx(expected)

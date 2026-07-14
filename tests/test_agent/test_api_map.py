@@ -27,6 +27,10 @@ def test_api_map_contains_expected_core_entries():
         == "trellis.models.observation_aggregation"
     )
     assert (
+        api_map["weighted_lognormal_sum_composition"]["module"]
+        == "trellis.models.analytical.support.lognormal_moments"
+    )
+    assert (
         api_map["quanto_option_composition"]["module"]
         == "trellis.models.resolution.quanto"
     )
@@ -56,6 +60,7 @@ def test_api_map_key_imports_are_registry_valid():
         "rate_lattice",
         "monte_carlo",
         "scheduled_observation_composition",
+        "weighted_lognormal_sum_composition",
         "observation_return_composition",
         "quanto_option_composition",
         "rate_monte_carlo_composition",
@@ -149,6 +154,22 @@ def test_api_map_exposes_product_neutral_scheduled_observation_composition():
         "weighted_observation_payoff",
         "GBM",
         "MonteCarloEngine",
+    ):
+        assert symbol in text
+    assert "asian" not in text.lower()
+
+
+def test_api_map_exposes_product_neutral_weighted_lognormal_sum_composition():
+    section = get_api_map()["weighted_lognormal_sum_composition"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "WeightedLognormalSumContract",
+        "single_factor_lognormal_sum_contract",
+        "weighted_lognormal_sum_moments",
+        "match_lognormal_moments",
+        "black76_call",
+        "black76_put",
     ):
         assert symbol in text
     assert "asian" not in text.lower()

@@ -153,6 +153,17 @@ scheduled_observation_composition:
     - "Use weighted_observation_sum(...) for direct path-array checks and weighted_observation_payoff(...) with return_paths=False for reduced-state execution."
     - "Pass derivative-specific settlement logic through settlement_fn; strike, direction, notional, and payoff branching belong in generated adapter code rather than this product-neutral aggregate."
 
+weighted_lognormal_sum_composition:
+  module: trellis.models.analytical.support.lognormal_moments
+  key_imports:
+    - "from trellis.models.analytical.support.lognormal_moments import WeightedLognormalSumContract, match_lognormal_moments, single_factor_lognormal_sum_contract, weighted_lognormal_sum_moments"
+    - "from trellis.models.black import black76_call, black76_put"
+  notes:
+    - "Use an explicit log-return covariance matrix for general correlated lognormal observations; single_factor_lognormal_sum_contract(...) supplies sigma squared times min(t_i, t_j) for one constant-parameter GBM."
+    - "weighted_lognormal_sum_moments(...) returns exact first and second moments under the declared covariance; match_lognormal_moments(...) is a moment-matching approximation, not an exact distributional identity."
+    - "Signed weights may be used for moment calculation, but lognormal matching fails closed unless all weights are non-negative and the fitted mean is strictly positive."
+    - "Pass the matched mean, effective_volatility(maturity=...), strike, and maturity to black76_call or black76_put, then apply the contractual discount factor and notional explicitly because Black-76 kernels are undiscounted."
+
 observation_return_composition:
   module: trellis.models.observation_returns
   key_imports:
