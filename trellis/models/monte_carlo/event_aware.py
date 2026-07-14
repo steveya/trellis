@@ -903,7 +903,10 @@ def _replay_reducer_values(
                 cross_section,
                 step,
             )
-    return reduced
+    return {
+        reducer.name: reducer.finalize(reduced[reducer.name])
+        for reducer in path_requirement.reducers
+    }
 
 
 def build_short_rate_discount_reducer(

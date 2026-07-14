@@ -210,6 +210,69 @@ class TestEventAwareMonteCarloAssembly:
         assert result["path_state"] is not None
         assert result["price"] > 0.0
 
+    def test_event_aware_full_path_replay_publishes_finalized_reducer_values(self):
+        from trellis.models.monte_carlo.event_aware import (
+            EventAwareMonteCarloEvent,
+            EventAwareMonteCarloProblemSpec,
+            EventAwareMonteCarloProcessSpec,
+            build_event_aware_monte_carlo_problem,
+        )
+        from trellis.models.monte_carlo.path_statistics import (
+            SquaredLogReturnContract,
+            annualized_squared_log_return_sum,
+            build_squared_log_return_reducer,
+        )
+
+        contract = SquaredLogReturnContract(
+            n_steps=2,
+            observation_steps=(0, 1, 2),
+            annualization_factor=2.0,
+        )
+        problem = build_event_aware_monte_carlo_problem(
+            EventAwareMonteCarloProblemSpec(
+                process_spec=EventAwareMonteCarloProcessSpec(
+                    family="gbm_1d",
+                    risk_free_rate=0.03,
+                    sigma=0.20,
+                ),
+                initial_state=100.0,
+                maturity=1.0,
+                n_steps=contract.n_steps,
+                path_requirement_kind="event_replay",
+                reducer_kind="compiled_schedule_payoff",
+                state_payoff=lambda state: state.reduced_value(
+                    "realized_variance"
+                ),
+                path_reducers=(
+                    build_squared_log_return_reducer(
+                        contract,
+                        name="realized_variance",
+                    ),
+                ),
+                event_specs=(
+                    EventAwareMonteCarloEvent(
+                        time=1.0,
+                        name="terminal_observation",
+                        kind="observation",
+                    ),
+                ),
+            )
+        )
+        paths = raw_np.array(
+            [
+                [100.0, 105.0, 110.0],
+                [100.0, 95.0, 90.0],
+            ]
+        )
+
+        replayed = problem.payoff(paths)
+
+        assert replayed.shape == (2,)
+        raw_np.testing.assert_allclose(
+            replayed,
+            annualized_squared_log_return_sum(paths, contract),
+        )
+
     def test_price_event_aware_monte_carlo_accepts_problem_spec(self):
         from trellis.models.monte_carlo.event_aware import (
             EventAwareMonteCarloProblemSpec,
