@@ -410,6 +410,38 @@ def test_api_map_prioritizes_product_neutral_path_statistic_composition():
     assert "price_equity_variance_swap_monte_carlo" not in monte_carlo_text
 
 
+def test_api_map_exposes_product_neutral_conditional_extremum_composition():
+    api_map = get_api_map()
+    section = api_map["conditional_extremum_composition"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "ConditionalBridgeExtremumContract",
+        "ScalarTransitionObservation",
+        "ScalarTransitionReducer",
+        "build_conditional_bridge_extremum_reducer",
+        "MonteCarloRandomInputs",
+        "sobol_transition_inputs",
+        "MonteCarloPathRequirement",
+        "MonteCarloEngine",
+        "GBM",
+    ):
+        assert symbol in text
+    assert "exact scalar" in text.lower()
+    assert "one stochastic transition reducer" in text.lower()
+    assert "settlement" in text.lower()
+    assert "price_equity_fixed_lookback_option" not in text
+
+    selection = select_api_map_sections(
+        ApiMapQuery(
+            instrument_type="lookback_option",
+            method="monte_carlo",
+            features=("continuous_monitoring",),
+        )
+    )
+    assert "conditional_extremum_composition" in selection.selected_families
+
+
 def test_api_map_exposes_product_neutral_observation_return_composition():
     section = get_api_map()["observation_return_composition"]
     text = "\n".join((*section["key_imports"], *section["notes"]))

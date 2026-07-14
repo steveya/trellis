@@ -7,6 +7,7 @@ monitoring, variance reduction, and multiple discretization schemes.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import math
 
 import numpy as raw_np
@@ -26,6 +27,13 @@ from trellis.models.monte_carlo.path_state import (
     MonteCarloPathRequirement,
     MonteCarloPathState,
     _materialize_initial_cross_section,
+)
+from trellis.models.monte_carlo.transition_state import (
+    MonteCarloRandomInputs,
+    ScalarTransitionObservation,
+    coerce_transition_uniforms,
+    replay_scalar_transition_reducers,
+    resolve_scalar_bridge_parameters,
 )
 
 np = get_numpy()
@@ -224,6 +232,10 @@ def _validate_differentiable_state_requirement(
     requirement: MonteCarloPathRequirement,
     payoff_metadata: dict[str, object] | None = None,
 ) -> None:
+    if requirement.transition_reducers:
+        raise NotImplementedError(
+            "differentiable Monte Carlo does not support stochastic transition reducers"
+        )
     metadata = describe_monte_carlo_derivative_policy(
         requirement,
         differentiable=True,
@@ -250,6 +262,10 @@ def _differentiable_path_state_from_paths(
     requirement: MonteCarloPathRequirement,
     n_steps: int,
 ) -> MonteCarloPathState:
+    if requirement.transition_reducers:
+        raise NotImplementedError(
+            "differentiable Monte Carlo does not support stochastic transition reducers"
+        )
     terminal_values = paths[:, -1]
     snapshots = {
         step: paths[:, step]
@@ -294,12 +310,16 @@ class _ReducedPathAccumulator:
         n_paths: int,
         n_steps: int,
         terminal_shape: tuple[int, ...],
+        process=None,
+        maturity: float | None = None,
+        transition_uniforms: raw_np.ndarray | None = None,
     ) -> None:
         self._requirement = requirement
         self._n_steps = n_steps
         self._snapshot_steps = set(requirement.snapshot_steps)
         self._barrier_monitors = requirement.barrier_monitors
         self._reducers = requirement.reducers
+        self._transition_reducers = requirement.transition_reducers
 
         initial = _materialize_initial_cross_section(initial_value, n_paths, float)
         if terminal_shape != initial.shape:
@@ -329,8 +349,60 @@ class _ReducedPathAccumulator:
             for reducer in self._reducers
         }
 
+        self._transition_process = process
+        self._transition_dt = None
+        self._transition_uniforms = None
+        self._previous_values = None
+        self._transition_reducer_values: dict[str, raw_np.ndarray] = {}
+        if self._transition_reducers:
+            if process is None or maturity is None or transition_uniforms is None:
+                raise ValueError(
+                    "transition reducers require process, maturity, and transition_uniforms"
+                )
+            maturity_value = float(maturity)
+            if not math.isfinite(maturity_value) or maturity_value <= 0.0:
+                raise ValueError("maturity must be finite and positive")
+            self._transition_dt = maturity_value / n_steps
+            self._transition_uniforms = coerce_transition_uniforms(
+                self._transition_reducers,
+                transition_uniforms,
+                n_paths=n_paths,
+                n_steps=n_steps,
+            )
+            self._previous_values = initial.copy()
+            self._transition_reducer_values = {
+                reducer.name: reducer.init(initial, n_steps)
+                for reducer in self._transition_reducers
+            }
+
     def observe(self, step: int, values: raw_np.ndarray) -> None:
         """Store one simulated cross-section."""
+        if self._transition_reducers:
+            start_time = (step - 1) * self._transition_dt
+            end_time = step * self._transition_dt
+            coordinate, variance = resolve_scalar_bridge_parameters(
+                self._transition_process,
+                start_time,
+                end_time,
+            )
+            current_values = raw_np.asarray(values, dtype=float)
+            for reducer in self._transition_reducers:
+                observation = ScalarTransitionObservation(
+                    previous_values=self._previous_values,
+                    current_values=current_values,
+                    step=step,
+                    start_time=start_time,
+                    end_time=end_time,
+                    bridge_coordinate=coordinate,
+                    bridge_variance=variance,
+                    bridge_uniforms=self._transition_uniforms[:, step - 1],
+                )
+                self._transition_reducer_values[reducer.name] = reducer.update(
+                    self._transition_reducer_values[reducer.name],
+                    observation,
+                )
+            self._previous_values = current_values.copy()
+
         if self._full_paths is not None:
             self._full_paths[:, step] = values
 
@@ -359,10 +431,18 @@ class _ReducedPathAccumulator:
             snapshots=self._snapshots,
             barrier_hits=self._barrier_hits,
             reducer_values={
-                reducer.name: reducer.finalize(
-                    self._reducer_values[reducer.name]
-                )
-                for reducer in self._reducers
+                **{
+                    reducer.name: reducer.finalize(
+                        self._reducer_values[reducer.name]
+                    )
+                    for reducer in self._reducers
+                },
+                **{
+                    reducer.name: reducer.finalize(
+                        self._transition_reducer_values[reducer.name]
+                    )
+                    for reducer in self._transition_reducers
+                },
             },
         )
 
@@ -411,6 +491,12 @@ class MonteCarloEngine:
         self.n_paths = n_paths
         self.n_steps = n_steps
         self.rng = raw_np.random.default_rng(seed)
+        transition_seed = (
+            raw_np.random.SeedSequence(seed, spawn_key=(1,))
+            if seed is not None
+            else raw_np.random.SeedSequence()
+        )
+        self._transition_rng = raw_np.random.default_rng(transition_seed)
         self.method = method
         self.scheme = scheme
 
@@ -708,6 +794,7 @@ class MonteCarloEngine:
         x0,
         T: float,
         requirement: MonteCarloPathRequirement,
+        transition_uniforms: raw_np.ndarray | None = None,
     ) -> MonteCarloPathState:
         """Stream exact transitions into reduced storage."""
         if _state_dim(self.process) != 1:
@@ -721,6 +808,9 @@ class MonteCarloEngine:
             n_paths=self.n_paths,
             n_steps=self.n_steps,
             terminal_shape=x.shape,
+            process=self.process if requirement.transition_reducers else None,
+            maturity=T if requirement.transition_reducers else None,
+            transition_uniforms=transition_uniforms,
         )
         kind = _specialized_process_kind(self.process)
 
@@ -914,19 +1004,143 @@ class MonteCarloEngine:
 
         return accumulator.build(x0, x)
 
+    def _validate_transition_execution(
+        self,
+        requirement: MonteCarloPathRequirement,
+        T: float,
+    ) -> None:
+        """Fail closed unless the requested transition law is exact and supported."""
+        if not requirement.transition_reducers:
+            return
+        if len(requirement.transition_reducers) != 1:
+            raise NotImplementedError(
+                "transition state currently supports one stochastic transition reducer; "
+                "a joint auxiliary-randomness law is required for multiple reducers"
+            )
+        if _state_dim(self.process) != 1:
+            raise NotImplementedError(
+                "conditional transition extrema currently require scalar state"
+            )
+        scheme_name = (
+            getattr(self.scheme, "name", None)
+            if self.scheme is not None
+            else None
+        )
+        method = scheme_name or self.method
+        if method != "exact":
+            raise NotImplementedError(
+                "conditional transition extrema currently require exact scalar transitions"
+            )
+        maturity = float(T)
+        if not math.isfinite(maturity) or maturity <= 0.0:
+            raise ValueError("maturity must be finite and positive")
+        resolve_scalar_bridge_parameters(
+            self.process,
+            0.0,
+            maturity / self.n_steps,
+        )
+
+    def _simulate_state_exact_with_shocks(
+        self,
+        x0,
+        T: float,
+        requirement: MonteCarloPathRequirement,
+        shocks: raw_np.ndarray,
+        transition_uniforms: raw_np.ndarray,
+    ) -> MonteCarloPathState:
+        """Stream exact scalar transitions from explicit random inputs."""
+        x = raw_np.full(self.n_paths, x0, dtype=float)
+        accumulator = _ReducedPathAccumulator(
+            requirement,
+            initial_value=x0,
+            n_paths=self.n_paths,
+            n_steps=self.n_steps,
+            terminal_shape=x.shape,
+            process=self.process,
+            maturity=T,
+            transition_uniforms=transition_uniforms,
+        )
+        dt = T / self.n_steps
+        for index in range(self.n_steps):
+            t = index * dt
+            x = raw_np.asarray(
+                self.process.exact_sample(x, t, dt, shocks[:, index]),
+                dtype=float,
+            )
+            accumulator.observe(index + 1, x)
+        return accumulator.build(x0, x)
+
     def simulate_state(
         self,
         x0,
         T: float,
         path_requirement: MonteCarloPathRequirement,
+        *,
+        shocks=None,
+        random_inputs: MonteCarloRandomInputs | None = None,
     ) -> MonteCarloPathState:
         """Generate reduced path state according to an explicit storage contract."""
         requirement = _coerce_path_requirement(path_requirement)
         if requirement is None:
             requirement = MonteCarloPathRequirement.full_paths()
 
-        if requirement.full_path:
-            paths = self.simulate(x0, T)
+        if shocks is not None and random_inputs is not None:
+            raise ValueError("supply either shocks or random_inputs, not both")
+        if random_inputs is not None and not isinstance(
+            random_inputs,
+            MonteCarloRandomInputs,
+        ):
+            raise TypeError("random_inputs must be a MonteCarloRandomInputs")
+        process_shocks = (
+            random_inputs.process_shocks
+            if random_inputs is not None
+            else shocks
+        )
+        transition_uniforms = (
+            random_inputs.transition_uniforms
+            if random_inputs is not None
+            else None
+        )
+        self._validate_transition_execution(requirement, T)
+        if requirement.transition_reducers:
+            if process_shocks is not None and transition_uniforms is None:
+                raise ValueError(
+                    "explicit process shocks require random_inputs with separate "
+                    "transition_uniforms for stochastic transition reducers"
+                )
+            if transition_uniforms is None:
+                transition_uniforms = raw_np.clip(
+                    self._transition_rng.random((self.n_paths, self.n_steps)),
+                    1e-15,
+                    1.0 - 1e-15,
+                )
+            transition_uniforms = coerce_transition_uniforms(
+                requirement.transition_reducers,
+                transition_uniforms,
+                n_paths=self.n_paths,
+                n_steps=self.n_steps,
+            )
+        elif transition_uniforms is not None:
+            raise ValueError(
+                "transition_uniforms were supplied but no transition reducer was requested"
+            )
+
+        if process_shocks is not None:
+            shock_tensor = _coerce_shock_tensor(
+                process_shocks,
+                self.n_paths,
+                self.n_steps,
+                _factor_dim(self.process),
+            )
+            if requirement.transition_reducers:
+                return self._simulate_state_exact_with_shocks(
+                    x0,
+                    T,
+                    requirement,
+                    shock_tensor,
+                    transition_uniforms,
+                )
+            paths = self.simulate_with_shocks(x0, T, shock_tensor)
             barrier_hits = {
                 monitor.name: _barrier_hits_from_paths(paths, monitor)
                 for monitor in requirement.barrier_monitors
@@ -941,16 +1155,57 @@ class MonteCarloEngine:
                 if raw_np.asarray(x0).ndim > 0 else float(x0),
                 n_steps=self.n_steps,
                 terminal_values=raw_np.asarray(paths[:, -1]).copy(),
-                full_paths=paths,
+                full_paths=paths if requirement.full_path else None,
                 snapshots=snapshots,
                 barrier_hits=barrier_hits,
                 reducer_values=_replay_reducers(paths, requirement),
             )
 
+        if requirement.full_path:
+            paths = self.simulate(x0, T)
+            barrier_hits = {
+                monitor.name: _barrier_hits_from_paths(paths, monitor)
+                for monitor in requirement.barrier_monitors
+            }
+            snapshots = {
+                step: raw_np.asarray(paths[:, step]).copy()
+                for step in requirement.snapshot_steps
+                if 0 < step < self.n_steps
+            }
+            transition_values = (
+                replay_scalar_transition_reducers(
+                    paths,
+                    process=self.process,
+                    maturity=T,
+                    reducers=requirement.transition_reducers,
+                    transition_uniforms=transition_uniforms,
+                )
+                if requirement.transition_reducers
+                else {}
+            )
+            return MonteCarloPathState(
+                initial_value=raw_np.asarray(x0, dtype=float).copy()
+                if raw_np.asarray(x0).ndim > 0 else float(x0),
+                n_steps=self.n_steps,
+                terminal_values=raw_np.asarray(paths[:, -1]).copy(),
+                full_paths=paths,
+                snapshots=snapshots,
+                barrier_hits=barrier_hits,
+                reducer_values={
+                    **_replay_reducers(paths, requirement),
+                    **transition_values,
+                },
+            )
+
         if self.scheme is not None:
             scheme_name = getattr(self.scheme, "name", None)
             if scheme_name == "exact":
-                return self._simulate_state_exact(x0, T, requirement)
+                return self._simulate_state_exact(
+                    x0,
+                    T,
+                    requirement,
+                    transition_uniforms,
+                )
             if scheme_name == "euler":
                 return self._simulate_state_euler(x0, T, requirement)
             if scheme_name == "milstein":
@@ -963,7 +1218,12 @@ class MonteCarloEngine:
             return self._simulate_state_with_custom_scheme(x0, T, requirement)
 
         if self.method == "exact":
-            return self._simulate_state_exact(x0, T, requirement)
+            return self._simulate_state_exact(
+                x0,
+                T,
+                requirement,
+                transition_uniforms,
+            )
         if self.method == "milstein":
             return self._simulate_state_milstein(x0, T, requirement)
         return self._simulate_state_euler(x0, T, requirement)
@@ -978,13 +1238,15 @@ class MonteCarloEngine:
         storage_policy: str | MonteCarloPathRequirement = "auto",
         return_paths: bool = True,
         shocks=None,
+        random_inputs: MonteCarloRandomInputs | None = None,
         differentiable: bool = False,
     ) -> dict:
         """Price a derivative via Monte Carlo.
 
-        ``shocks=...`` forces a deterministic pathwise evaluation path.  When
+        ``shocks=...`` forces a deterministic process path. ``random_inputs``
+        additionally carries an independent transition-uniform channel. When
         ``differentiable=True``, both the simulated paths and the sample mean
-        remain autograd-traceable.
+        remain autograd-traceable for supported smooth contracts.
         """
         path_state = None
         paths = None
@@ -995,7 +1257,71 @@ class MonteCarloEngine:
         state_evaluator = getattr(payoff_fn, "evaluate_state", None)
         payoff_metadata = _payoff_derivative_metadata(payoff_fn)
 
-        if shocks is not None:
+        if shocks is not None and random_inputs is not None:
+            raise ValueError("supply either shocks or random_inputs, not both")
+
+        if random_inputs is not None:
+            if not isinstance(random_inputs, MonteCarloRandomInputs):
+                raise TypeError("random_inputs must be a MonteCarloRandomInputs")
+            if callable(state_evaluator) and (
+                explicit_requirement is not None
+                or declared_requirement is not None
+            ):
+                requirement = explicit_requirement or declared_requirement
+                if (
+                    random_inputs.transition_uniforms is not None
+                    and not requirement.transition_reducers
+                ):
+                    raise ValueError(
+                        "transition_uniforms were supplied but no transition reducer "
+                        "was requested"
+                    )
+                if differentiable:
+                    _validate_differentiable_state_requirement(
+                        requirement,
+                        payoff_metadata,
+                    )
+                    simulated_paths = self.simulate_with_shocks(
+                        x0,
+                        T,
+                        random_inputs.process_shocks,
+                        differentiable=True,
+                    )
+                    path_state = _differentiable_path_state_from_paths(
+                        simulated_paths,
+                        initial_value=x0,
+                        requirement=requirement,
+                        n_steps=self.n_steps,
+                    )
+                    paths = simulated_paths if return_paths else None
+                else:
+                    execution_requirement = (
+                        replace(requirement, full_path=True)
+                        if return_paths and not requirement.full_path
+                        else requirement
+                    )
+                    path_state = self.simulate_state(
+                        x0,
+                        T,
+                        execution_requirement,
+                        random_inputs=random_inputs,
+                    )
+                    paths = path_state.full_paths if return_paths else None
+                payoffs = state_evaluator(path_state)
+                executed_requirement = requirement
+            else:
+                if random_inputs.transition_uniforms is not None:
+                    raise ValueError(
+                        "transition_uniforms require a state-aware transition reducer"
+                    )
+                paths = self.simulate_with_shocks(
+                    x0,
+                    T,
+                    random_inputs.process_shocks,
+                    differentiable=differentiable,
+                )
+                payoffs = payoff_fn(paths)
+        elif shocks is not None:
             if (
                 differentiable
                 and callable(state_evaluator)

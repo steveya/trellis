@@ -56,10 +56,28 @@ Monte Carlo
 .. autofunction:: trellis.models.monte_carlo.build_running_extremum_reducer
 .. autofunction:: trellis.models.monte_carlo.build_squared_log_return_reducer
 
+.. autoclass:: trellis.models.monte_carlo.ScalarTransitionObservation
+   :members:
+
+.. autoclass:: trellis.models.monte_carlo.ScalarTransitionReducer
+   :members:
+
+.. autoclass:: trellis.models.monte_carlo.ConditionalBridgeExtremumContract
+   :members:
+
+.. autoclass:: trellis.models.monte_carlo.MonteCarloRandomInputs
+   :members:
+
+.. autofunction:: trellis.models.monte_carlo.conditional_log_bridge_extremum
+.. autofunction:: trellis.models.monte_carlo.build_conditional_bridge_extremum_reducer
+.. autofunction:: trellis.models.monte_carlo.replay_scalar_transition_reducers
+.. autofunction:: trellis.models.monte_carlo.transition_state.coerce_transition_uniforms
+
 QMC
 ---
 
 .. autofunction:: trellis.models.qmc.sobol_normals
+.. autofunction:: trellis.models.qmc.sobol_transition_inputs
 .. autofunction:: trellis.models.qmc.brownian_bridge
 
 PDE Solvers

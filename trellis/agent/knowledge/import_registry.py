@@ -594,13 +594,14 @@ from trellis.models.trees.backward_induction import backward_induction
 from trellis.models.monte_carlo.engine import MonteCarloEngine
 from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, MonteCarloPathState, PathReducer, StateAwarePayoff, terminal_value_payoff
 from trellis.models.monte_carlo.path_statistics import RunningExtremumContract, SquaredLogReturnContract, annualized_squared_log_return_sum, build_running_extremum_reducer, build_squared_log_return_reducer, discrete_path_extremum
+from trellis.models.monte_carlo.transition_state import ConditionalBridgeExtremumContract, MonteCarloRandomInputs, ScalarConditionalBridgeProcess, ScalarTransitionObservation, ScalarTransitionReducer, build_conditional_bridge_extremum_reducer, coerce_transition_uniforms, conditional_log_bridge_extremum, replay_scalar_transition_reducers, resolve_scalar_bridge_parameters
 from trellis.models.monte_carlo.basket_state import build_basket_path_requirement, evaluate_ranked_observation_basket_paths, evaluate_ranked_observation_basket_state, observation_step_indices
 from trellis.models.monte_carlo.profiling import MonteCarloPathKernelBenchmark, benchmark_path_kernel
 from trellis.models.monte_carlo.lsm import longstaff_schwartz, laguerre_basis
 from trellis.models.monte_carlo.primal_dual import primal_dual_mc, primal_dual_mc_result
 from trellis.models.monte_carlo.stochastic_mesh import stochastic_mesh, stochastic_mesh_result
 from trellis.models.monte_carlo.discretization import euler_maruyama, milstein, exact_simulation
-from trellis.models.monte_carlo.variance_reduction import antithetic, control_variate, sobol_normals
+from trellis.models.monte_carlo.variance_reduction import antithetic, control_variate, sobol_normals, sobol_transition_inputs
 from trellis.models.processes.correlated_gbm import CorrelatedGBM
 from trellis.models.monte_carlo.schemes import Euler, Milstein, Exact, LogEuler, HestonQuadraticExponential, LaguerreBasis, PolynomialBasis
 from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_observation_basket_initial_state, build_ranked_observation_basket_process, build_ranked_observation_basket_state_payoff, price_ranked_observation_basket_monte_carlo, recommended_ranked_observation_basket_mc_engine_kwargs, terminal_ranked_observation_basket_payoff
@@ -613,7 +614,7 @@ from trellis.models.variance_swap import EquityVarianceSwapMonteCarloResult, Res
 from trellis.models.equity_option_monte_carlo import build_vanilla_equity_monte_carlo_problem, price_american_equity_option_lsm_monte_carlo, price_single_state_terminal_claim_monte_carlo_result, price_vanilla_equity_option_monte_carlo, price_vanilla_equity_option_monte_carlo_result, resolve_single_state_terminal_claim_monte_carlo_inputs, resolve_vanilla_equity_monte_carlo_inputs
 
 ### Models — QMC
-from trellis.models.qmc import brownian_bridge, sobol_normals
+from trellis.models.qmc import brownian_bridge, sobol_normals, sobol_transition_inputs
 
 ### Models — PDE
 from trellis.models.pde.theta_method import theta_method_1d

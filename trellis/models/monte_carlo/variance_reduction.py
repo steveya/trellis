@@ -7,6 +7,7 @@ import math
 import numpy as raw_np
 
 from trellis.models.monte_carlo.brownian_bridge import brownian_bridge
+from trellis.models.monte_carlo.transition_state import MonteCarloRandomInputs
 
 
 def antithetic_normals(
@@ -126,3 +127,49 @@ def sobol_normals(
     if n_factors == 1:
         return normals.reshape(n_paths, n_steps)
     return normals.reshape(n_paths, n_steps, n_factors)
+
+
+def sobol_transition_inputs(
+    n_paths: int,
+    n_steps: int,
+    n_factors: int = 1,
+    *,
+    seed: int | None = None,
+) -> MonteCarloRandomInputs:
+    """Generate joint Sobol process normals and one transition-uniform channel.
+
+    The final coordinate at every step is retained as a uniform rather than
+    transformed into a normal. This gives stochastic transition observers a
+    distinct low-discrepancy coordinate without mixing pseudo-random draws into
+    QMC execution or reusing a process shock.
+    """
+    from scipy.stats import norm
+    from scipy.stats.qmc import Sobol
+
+    for value, name in (
+        (n_paths, "n_paths"),
+        (n_steps, "n_steps"),
+        (n_factors, "n_factors"),
+    ):
+        if isinstance(value, bool) or int(value) != value or int(value) <= 0:
+            raise ValueError(f"{name} must be a positive integer")
+    n_paths = int(n_paths)
+    n_steps = int(n_steps)
+    n_factors = int(n_factors)
+    sampler = Sobol(
+        d=n_steps * (n_factors + 1),
+        scramble=True,
+        seed=seed,
+    )
+    joint_uniforms = raw_np.clip(
+        sampler.random(n_paths),
+        1e-10,
+        1.0 - 1e-10,
+    ).reshape(n_paths, n_steps, n_factors + 1)
+    process_normals = norm.ppf(joint_uniforms[:, :, :n_factors])
+    if n_factors == 1:
+        process_normals = process_normals[:, :, 0]
+    return MonteCarloRandomInputs(
+        process_shocks=process_normals,
+        transition_uniforms=joint_uniforms[:, :, -1],
+    )

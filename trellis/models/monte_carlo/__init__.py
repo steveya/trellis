@@ -87,6 +87,17 @@ from trellis.models.monte_carlo.path_statistics import (
     build_squared_log_return_reducer,
     discrete_path_extremum,
 )
+from trellis.models.monte_carlo.transition_state import (
+    ConditionalBridgeExtremumContract,
+    MonteCarloRandomInputs,
+    ScalarConditionalBridgeProcess,
+    ScalarTransitionObservation,
+    ScalarTransitionReducer,
+    build_conditional_bridge_extremum_reducer,
+    conditional_log_bridge_extremum,
+    replay_scalar_transition_reducers,
+    resolve_scalar_bridge_parameters,
+)
 from trellis.models.monte_carlo.primal_dual import primal_dual_mc, primal_dual_mc_result
 from trellis.models.monte_carlo.stochastic_mesh import stochastic_mesh, stochastic_mesh_result
 from trellis.models.monte_carlo.tv_regression import (
@@ -99,6 +110,7 @@ from trellis.models.monte_carlo.variance_reduction import (
     brownian_bridge_increments,
     control_variate,
     sobol_normals,
+    sobol_transition_inputs,
 )
 from trellis.models.monte_carlo.semantic_basket import (
     RankedObservationBasketMonteCarloPayoff,

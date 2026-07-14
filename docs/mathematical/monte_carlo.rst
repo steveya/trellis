@@ -78,6 +78,26 @@ Brownian Bridge
    W(t_m) \mid W(t_1), W(t_2) \sim N\!\left(\frac{(t_2 - t_m)W_1 + (t_m - t_1)W_2}{t_2 - t_1},\;
    \frac{(t_m - t_1)(t_2 - t_m)}{t_2 - t_1}\right)
 
+This midpoint construction generates a Brownian path conditional on endpoint
+values. It is different from sampling the exact interval extremum. For a scalar
+log diffusion with endpoint logs :math:`x_0,x_1`, integrated log variance
+:math:`v`, and an independent :math:`U\sim\mathcal U(0,1)`, the conditional
+maximum and minimum are sampled by
+
+.. math::
+
+   X_{\max/\min}
+   = \frac{x_0+x_1 \pm
+     \sqrt{(x_0-x_1)^2 - 2v\log(1-U)}}{2}.
+
+``ScalarTransitionObservation`` carries those inputs and
+``ConditionalBridgeExtremumContract`` selects the monitored transitions.
+Constant-parameter ``GBM`` currently provides the admitted exact log bridge
+variance. Piecewise parameter regimes can leave a curved conditional mean and
+are not admitted merely from total variance. Other coordinates, approximate
+schemes, vector state, and non-diffusion processes require a separately derived
+kernel.
+
 Variance Reduction
 ------------------
 
@@ -87,8 +107,11 @@ Variance Reduction
 
 **Quasi-random (Sobol)**: low-discrepancy sequences give nearly :math:`O(N^{-1})` convergence.
 
-Canonical package surface: ``trellis.models.qmc`` re-exports Sobol normals and
-Brownian-bridge helpers while the estimator logic remains in ``trellis.models.monte_carlo``.
+Canonical package surface: ``trellis.models.qmc`` re-exports Sobol normals,
+joint Sobol process-normal/transition-uniform inputs, and Brownian-bridge path
+helpers while estimator and transition-state logic remain in
+``trellis.models.monte_carlo``. Auxiliary transition uniforms use distinct
+Sobol coordinates; they are not recovered from process shocks.
 
 Longstaff-Schwartz (LSM)
 -------------------------
