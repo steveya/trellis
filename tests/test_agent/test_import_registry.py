@@ -65,6 +65,27 @@ def test_observation_return_primitives_are_visible_to_import_registry():
     assert is_valid_import(process_module, process_symbol)
 
 
+def test_weighted_observation_primitives_are_visible_to_import_registry():
+    module = "trellis.models.observation_aggregation"
+    symbols = {
+        "WeightedObservationContract",
+        "build_weighted_observation_reducer",
+        "weighted_observation_payoff",
+        "weighted_observation_sum",
+    }
+
+    assert module_exists(module)
+    assert symbols <= set(list_module_exports(module))
+    for symbol in symbols:
+        assert module in find_symbol_modules(symbol)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+
 def test_quoted_observable_helpers_are_visible_to_import_registry():
     module = "trellis.models.quoted_observable"
 

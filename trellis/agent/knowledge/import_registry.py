@@ -466,7 +466,10 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Core"].append(line)
         elif "trellis.curves." in mod:
             groups["Curves"].append(line)
-        elif mod == "trellis.models.observation_returns":
+        elif mod in {
+            "trellis.models.observation_aggregation",
+            "trellis.models.observation_returns",
+        }:
             groups["Models — Payoff Composition"].append(line)
         elif "trellis.models.black" in mod:
             groups["Models — Analytical"].append(line)
@@ -571,6 +574,7 @@ from trellis.models.fx_vanilla import FXVanillaSpecLike, ResolvedFXVanillaInputs
 from trellis.models.fx_barrier_option import FXBarrierMonteCarloResult, FXBarrierOptionSpec, ResolvedFXBarrierInputs, price_fx_barrier_option_analytical, price_fx_barrier_option_monte_carlo, price_fx_barrier_option_monte_carlo_result, resolve_fx_barrier_inputs
 from trellis.models.credit_index_option import CreditIndexOptionSpec, price_credit_index_option_black_on_spread, price_credit_index_option_monte_carlo
 from trellis.models.local_vol_option import LocalVolPDEResult, LocalVolVanillaOptionSpec, price_local_vol_option_monte_carlo, price_local_vol_option_pde, price_local_vol_option_pde_result
+from trellis.models.observation_aggregation import WeightedObservationContract, build_weighted_observation_reducer, weighted_observation_payoff, weighted_observation_sum
 from trellis.models.observation_returns import ObservationReturnContract, bounded_observation_return_sum, build_observation_return_reducer, observation_return_payoff, simple_observation_returns
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot

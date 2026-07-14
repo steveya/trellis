@@ -585,6 +585,28 @@ payoff, schedule, strike/coupon terms, or settlement rule. Those bridge
 decisions are task-runner contracts, not general natural-language parser
 behavior.
 
+For weighted scalar observations, agents now have a compact API-map entry named
+``scheduled_observation_composition``. The required construction order is:
+
+#. declare a ``WeightedObservationContract`` with explicit times and weights
+#. choose a scalar-state process and a uniform grid that represents every
+   contractual time exactly and distinctly
+#. define derivative-specific settlement logic in the generated adapter
+#. pass ``weighted_observation_payoff(...)`` to ``MonteCarloEngine`` with
+   ``return_paths=False``
+#. apply the task's discounting and market-binding conventions explicitly
+
+The contract permits a time-zero observation and signed weights, but it never
+normalizes weights or supplies strike, direction, notional, payoff branching,
+or discounting. ``weighted_observation_sum(...)`` provides a direct path-array
+check against the reduced-state result. Off-grid/aliased times, vector state,
+non-finite path values, and malformed settlement output are deterministic
+composition failures. They must not trigger a generated product helper.
+
+This is reusable construction infrastructure only. Existing product routes and
+compatibility wrappers remain unchanged until a separate migration proves
+fresh primitive-composed source and strict replay evidence.
+
 For schedule-based consecutive returns, agents now have a compact API-map entry
 named ``observation_return_composition``. The required construction order is:
 

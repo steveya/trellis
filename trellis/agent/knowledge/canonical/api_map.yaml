@@ -141,6 +141,18 @@ monte_carlo:
     - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"
     - "Do not invent method='lsm' on MonteCarloEngine"
 
+scheduled_observation_composition:
+  module: trellis.models.observation_aggregation
+  key_imports:
+    - "from trellis.models.observation_aggregation import WeightedObservationContract, build_weighted_observation_reducer, weighted_observation_payoff, weighted_observation_sum"
+    - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+    - "from trellis.models.processes.gbm import GBM, PiecewiseConstantGBM"
+  notes:
+    - "Declare every observation time and weight explicitly with WeightedObservationContract; weights are not normalized implicitly, so an average uses one weight of 1 / n per observation."
+    - "The observation grid may include time zero, but every time must map exactly and distinctly onto the MonteCarloEngine grid or the contract fails closed."
+    - "Use weighted_observation_sum(...) for direct path-array checks and weighted_observation_payoff(...) with return_paths=False for reduced-state execution."
+    - "Pass derivative-specific settlement logic through settlement_fn; strike, direction, notional, and payoff branching belong in generated adapter code rather than this product-neutral aggregate."
+
 observation_return_composition:
   module: trellis.models.observation_returns
   key_imports:
