@@ -358,7 +358,7 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
         ContractIRSolverParityCase(
             case_id="asian_put_monte_carlo",
             family_id="asian_option",
-            description="Arithmetic Asian put on SPX weekly average from 2025-01-03 to 2025-01-31 strike 4500",
+            description="Arithmetic Asian put on SPX weekly average from 2025-01-03 to 2025-01-31 strike 5000",
             instrument_type="asian_option",
             preferred_method="monte_carlo",
             expected_source="request_decomposition",
@@ -366,8 +366,8 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             expected_declaration_id="compose_arithmetic_asian_monte_carlo_put",
             reference_price=_asian_monte_carlo_reference,
             market_state_factory=_variance_market_state,
-            tolerance_abs=5.0,
-            tolerance_rel=0.01,
+            tolerance_abs=0.50,
+            tolerance_rel=0.02,
         ),
     )
 

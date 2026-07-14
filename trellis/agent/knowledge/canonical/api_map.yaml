@@ -149,7 +149,7 @@ scheduled_observation_composition:
   notes:
     - "Declare every observation time and weight explicitly with WeightedObservationContract; weights are not normalized implicitly, so an average uses one weight of 1 / n per observation."
     - "The observation grid may include time zero, but every time must map exactly and distinctly onto the MonteCarloEngine grid or the contract fails closed."
-    - "Call contract.resolve_uniform_grid_steps(...) to validate an explicit n_steps value or select the smallest exact grid within declared min_steps and max_steps bounds; do not copy a route-local search loop."
+    - "Call contract.resolve_uniform_grid_steps(...) to validate an explicit n_steps value against the declared min_steps and max_steps bounds and exact alignment, or to select the smallest exact grid within those bounds; do not copy a route-local search loop."
     - "Use weighted_observation_sum(...) for direct path-array checks and weighted_observation_payoff(...) with return_paths=False for reduced-state execution."
     - "Pass derivative-specific settlement logic through settlement_fn; strike, direction, notional, and payoff branching belong in generated adapter code rather than this product-neutral aggregate."
 

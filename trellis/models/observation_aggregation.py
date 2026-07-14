@@ -125,8 +125,19 @@ class WeightedObservationContract:
         max_steps: int = 4096,
     ) -> int:
         """Validate an explicit grid or find the smallest exact bounded grid."""
+        lower = int(min_steps)
+        upper = int(max_steps)
+        if lower <= 0:
+            raise ValueError("min_steps must be positive")
+        if upper < lower:
+            raise ValueError("max_steps must be at least min_steps")
+
         if n_steps is not None:
             step_count = int(n_steps)
+            if step_count < lower:
+                raise ValueError("n_steps must be at least min_steps")
+            if step_count > upper:
+                raise ValueError("n_steps must not exceed max_steps")
             self.observation_steps(maturity=maturity, n_steps=step_count)
             return step_count
 
@@ -135,13 +146,6 @@ class WeightedObservationContract:
             raise ValueError("maturity must be finite and positive")
         if self.observation_times[-1] > horizon + 1e-12:
             raise ValueError("observation_times cannot exceed maturity")
-
-        lower = int(min_steps)
-        upper = int(max_steps)
-        if lower <= 0:
-            raise ValueError("min_steps must be positive")
-        if upper < lower:
-            raise ValueError("max_steps must be at least min_steps")
 
         for candidate in range(lower, upper + 1):
             try:

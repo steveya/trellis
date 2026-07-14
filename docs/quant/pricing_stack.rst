@@ -200,9 +200,10 @@ responsibility boundary explicit:
 
 Time zero is an admissible observation.  Every observation, including the
 final one, must map exactly and distinctly onto the selected uniform simulation
-grid. ``resolve_uniform_grid_steps(...)`` validates a caller-selected grid or
-finds the smallest exact grid inside explicit ``min_steps`` and ``max_steps``
-bounds. Off-grid times, aliased times, exhausted search bounds, vector process
+grid. ``resolve_uniform_grid_steps(...)`` validates a caller-selected grid
+against exact alignment and the explicit ``min_steps`` / ``max_steps`` bounds,
+or finds the smallest exact grid inside those bounds. Off-grid times, aliased
+times, exhausted search bounds, vector process
 state, non-finite values, and settlement callbacks that do not return one value
 per path fail closed. Negative weights are valid because the abstraction is a
 linear functional, not an implicit average or a positive-price contract.

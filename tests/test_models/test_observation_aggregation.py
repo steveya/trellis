@@ -76,6 +76,18 @@ def test_weighted_observation_contract_resolves_bounded_exact_uniform_grid():
 
     with pytest.raises(ValueError, match="represented exactly"):
         contract.resolve_uniform_grid_steps(maturity=1.0, n_steps=6)
+    with pytest.raises(ValueError, match="n_steps must not exceed max_steps"):
+        contract.resolve_uniform_grid_steps(
+            maturity=1.0,
+            n_steps=8,
+            max_steps=7,
+        )
+    with pytest.raises(ValueError, match="n_steps must be at least min_steps"):
+        contract.resolve_uniform_grid_steps(
+            maturity=1.0,
+            n_steps=4,
+            min_steps=5,
+        )
     with pytest.raises(ValueError, match="no exact uniform simulation grid"):
         contract.resolve_uniform_grid_steps(
             maturity=1.0,

@@ -1,7 +1,7 @@
 # ContractIR Structural Compiler Parity
 
-- Generated at: `2026-07-14T08:42:34.386044+00:00`
-- Repo revision: `e8a9628521372df7629e6e47127aa0bdde8cc96a`
+- Generated at: `2026-07-14T09:57:42.062477+00:00`
+- Repo revision: `a60236cfde6bfa8eed2bdc18e1e92f5e17cd31a3`
 
 ## Family Summary
 
@@ -27,7 +27,7 @@
 | asian_call_monte_carlo | request_decomposition | bound | compose_arithmetic_asian_monte_carlo_call |  | True | True |
 - `asian_call_monte_carlo` value parity: structural=`634.069513646976` reference=`632.5420227089422` abs_diff=`1.527490938033793`
 | asian_put_monte_carlo | request_decomposition | bound | compose_arithmetic_asian_monte_carlo_put |  | True | True |
-- `asian_put_monte_carlo` value parity: structural=`0.36505258985973554` reference=`0.2771686955877112` abs_diff=`0.08788389427202437`
+- `asian_put_monte_carlo` value parity: structural=`81.8444098610135` reference=`82.07356978454168` abs_diff=`0.22915992352817227`
 
 ## basket_option
 

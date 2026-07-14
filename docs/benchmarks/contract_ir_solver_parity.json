@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-07-14T08:42:34.386044+00:00",
-  "repo_revision": "e8a9628521372df7629e6e47127aa0bdde8cc96a",
+  "generated_at": "2026-07-14T09:57:42.062477+00:00",
+  "repo_revision": "a60236cfde6bfa8eed2bdc18e1e92f5e17cd31a3",
   "status": "completed",
   "families": [
     {
@@ -134,7 +134,7 @@
         {
           "case_id": "asian_put_monte_carlo",
           "family_id": "asian_option",
-          "description": "Arithmetic Asian put on SPX weekly average from 2025-01-03 to 2025-01-31 strike 4500",
+          "description": "Arithmetic Asian put on SPX weekly average from 2025-01-03 to 2025-01-31 strike 5000",
           "instrument_type": "asian_option",
           "preferred_method": "monte_carlo",
           "expected_source": "request_decomposition",
@@ -160,13 +160,13 @@
           "product_ir_instrument": "asian_option",
           "product_ir_payoff_family": "asian_option",
           "passed": true,
-          "structural_contract_ir": "ContractIR(payoff=Max(args=(Sub(lhs=Strike(value=4500.0), rhs=ArithmeticMean(expr=Spot(underlier_id='SPX'), schedule=FiniteSchedule(dates=(datetime.date(2025, 1, 3), datetime.date(2025, 1, 10), datetime.date(2025, 1, 17), datetime.date(2025, 1, 24), datetime.date(2025, 1, 31))))), Constant(value=0.0))), exercise=Exercise(style='european', schedule=Singleton(t=datetime.date(2025, 1, 31))), observation=Observation(kind='schedule', schedule=FiniteSchedule(dates=(datetime.date(2025, 1, 3), datetime.date(2025, 1, 10), datetime.date(2025, 1, 17), datetime.date(2025, 1, 24), datetime.date(2025, 1, 31)))), underlying=Underlying(spec=EquitySpot(name='SPX', dynamics='gbm')))",
+          "structural_contract_ir": "ContractIR(payoff=Max(args=(Sub(lhs=Strike(value=5000.0), rhs=ArithmeticMean(expr=Spot(underlier_id='SPX'), schedule=FiniteSchedule(dates=(datetime.date(2025, 1, 3), datetime.date(2025, 1, 10), datetime.date(2025, 1, 17), datetime.date(2025, 1, 24), datetime.date(2025, 1, 31))))), Constant(value=0.0))), exercise=Exercise(style='european', schedule=Singleton(t=datetime.date(2025, 1, 31))), observation=Observation(kind='schedule', schedule=FiniteSchedule(dates=(datetime.date(2025, 1, 3), datetime.date(2025, 1, 10), datetime.date(2025, 1, 17), datetime.date(2025, 1, 24), datetime.date(2025, 1, 31)))), underlying=Underlying(spec=EquitySpot(name='SPX', dynamics='gbm')))",
           "declaration_id": "compose_arithmetic_asian_monte_carlo_put",
           "callable_ref": "trellis.models.monte_carlo.engine.MonteCarloEngine",
-          "structural_price": 0.36505258985973554,
-          "reference_price": 0.2771686955877112,
-          "abs_diff": 0.08788389427202437,
-          "rel_diff": 0.31707727341168346
+          "structural_price": 81.8444098610135,
+          "reference_price": 82.07356978454168,
+          "abs_diff": 0.22915992352817227,
+          "rel_diff": 0.0027921281373499353
         }
       ]
     },
