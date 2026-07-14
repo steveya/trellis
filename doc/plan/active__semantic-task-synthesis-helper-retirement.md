@@ -47,19 +47,24 @@ Status mirror last synced: `2026-07-14`
 | `QUA-1184` | Semantic agent navigation: render task-relevant canonical composition cards | Done |
 | `QUA-1185` | Task runtime: offline cached replays suppress post-build LLM stages | Backlog |
 | `QUA-1186` | Analytical support: Gaussian probability and scalar-root navigation | Done |
-| `QUA-1187` | Monte Carlo path state: extrema and squared-log-return reducers | Backlog |
+| `QUA-1187` | Monte Carlo path state: extrema and squared-log-return reducers | Done |
+| `QUA-1188` | Monte Carlo transition state: conditional bridge extrema primitive | Backlog |
+| `QUA-1189` | Fixed lookback Monte Carlo: retire helper authority (blocked by QUA-1188) | Backlog |
+| `QUA-1190` | Variance swap Monte Carlo: retire helper authority | Backlog |
 
 ## Current Sequence
 
-1. Complete QUA-1187 so Monte Carlo agents can compose discrete running
-   extrema and squared-log-return state without lookback or variance-swap
-   helpers. Keep continuous-monitoring bridge semantics explicit.
-2. Complete QUA-1185 before treating cached offline replay as zero-model
+1. Complete QUA-1190 so the variance-swap Monte Carlo lane composes the
+   QUA-1187 squared-log-return state instead of delegating to a product helper.
+2. Complete QUA-1188, then unblock QUA-1189 so fixed-lookback Monte Carlo
+   preserves conditional continuous extrema rather than silently substituting
+   the QUA-1187 discrete-observation reducer.
+3. Complete QUA-1185 before treating cached offline replay as zero-model
    evidence without explicit reflection/consolidation skip flags.
-3. After each substrate lands, open focused helper-retirement tickets only for
+4. After each substrate lands, open focused helper-retirement tickets only for
    product families whose remaining market, numerical, payoff, and validation
    components are confirmed reusable.
-4. Run live fresh-generation evidence only with current external-model approval;
+5. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 
