@@ -31,6 +31,10 @@ def _unique_strings(values: Iterable[str]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(value for value in values if value))
 
 
+def _ordered_strings(values: Iterable[str]) -> tuple[str, ...]:
+    return tuple(text for value in values if (text := str(value).strip()))
+
+
 def _normalize_methods(methods: Iterable[str]) -> tuple[str, ...]:
     return _unique_strings(normalize_method(method) for method in methods)
 
@@ -93,14 +97,21 @@ class ContractIRSolverMaterialization:
     callable_ref: str
     call_style: str
     adapter_ref: str | None = None
+    result_path: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         if not self.callable_ref:
             raise ContractIRSolverRegistryError("materialization.callable_ref must be non-empty")
-        if self.call_style not in {"helper_call", "raw_kernel_kwargs"}:
+        if self.call_style not in {
+            "helper_call",
+            "raw_kernel_kwargs",
+            "adapter_composed",
+        }:
             raise ContractIRSolverRegistryError(
-                "materialization.call_style must be 'helper_call' or 'raw_kernel_kwargs'"
+                "materialization.call_style must be 'helper_call', "
+                "'raw_kernel_kwargs', or 'adapter_composed'"
             )
+        object.__setattr__(self, "result_path", _ordered_strings(self.result_path))
 
 
 @dataclass(frozen=True)

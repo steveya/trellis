@@ -138,7 +138,12 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.equity_option_transforms",
     ),
     "asian_option": (
-        "trellis.models.asian_option",
+        "trellis.models.analytical.support.lognormal_moments",
+        "trellis.models.monte_carlo.engine",
+        "trellis.models.monte_carlo.path_state",
+        "trellis.models.observation_aggregation",
+        "trellis.models.processes.gbm",
+        "trellis.models.resolution.single_state_diffusion",
     ),
     "lookback_option": (
         "trellis.models.analytical.equity_exotics",

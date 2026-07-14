@@ -47,6 +47,15 @@ def _declaration(
 
 
 class TestContractIRSolverRegistry:
+    def test_materialization_preserves_ordered_result_path(self):
+        materialization = ContractIRSolverMaterialization(
+            callable_ref="trellis.models.synthetic.nested_result",
+            call_style="adapter_composed",
+            result_path=("result", "result"),
+        )
+
+        assert materialization.result_path == ("result", "result")
+
     def test_selection_order_uses_precedence_then_registration_order(self):
         low_a = _declaration("low_a", payoff_kind="vanilla_payoff", precedence=10)
         low_b = _declaration("low_b", payoff_kind="digital_payoff", precedence=10)

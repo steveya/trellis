@@ -124,7 +124,6 @@ monte_carlo:
     - "from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, price_single_barrier_option_monte_carlo_result, resolve_single_barrier_inputs"
     - "from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_state_payoff, resolve_double_barrier_inputs"
     - "from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, price_double_barrier_option_monte_carlo_result"
-    - "from trellis.models.asian_option import price_arithmetic_asian_option_monte_carlo, price_arithmetic_asian_option_analytical"
     - "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
     - "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo, price_equity_variance_swap_monte_carlo_result, equity_variance_swap_outputs_monte_carlo"
     - "from trellis.models.monte_carlo import euler_maruyama, milstein, brownian_bridge"
@@ -150,6 +149,7 @@ scheduled_observation_composition:
   notes:
     - "Declare every observation time and weight explicitly with WeightedObservationContract; weights are not normalized implicitly, so an average uses one weight of 1 / n per observation."
     - "The observation grid may include time zero, but every time must map exactly and distinctly onto the MonteCarloEngine grid or the contract fails closed."
+    - "Call contract.resolve_uniform_grid_steps(...) to validate an explicit n_steps value or select the smallest exact grid within declared min_steps and max_steps bounds; do not copy a route-local search loop."
     - "Use weighted_observation_sum(...) for direct path-array checks and weighted_observation_payoff(...) with return_paths=False for reduced-state execution."
     - "Pass derivative-specific settlement logic through settlement_fn; strike, direction, notional, and payoff branching belong in generated adapter code rather than this product-neutral aggregate."
 
@@ -163,6 +163,22 @@ weighted_lognormal_sum_composition:
     - "weighted_lognormal_sum_moments(...) returns exact first and second moments under the declared covariance; match_lognormal_moments(...) is a moment-matching approximation, not an exact distributional identity."
     - "Signed weights may be used for moment calculation, but lognormal matching fails closed unless all weights are non-negative and the fitted mean is strictly positive."
     - "Pass the matched mean, effective_volatility(maturity=...), strike, and maturity to black76_call or black76_put, then apply the contractual discount factor and notional explicitly because Black-76 kernels are undiscounted."
+
+arithmetic_asian_composition:
+  module: trellis.models.observation_aggregation
+  key_imports:
+    - "from trellis.models.resolution.single_state_diffusion import resolve_single_state_diffusion_inputs"
+    - "from trellis.models.observation_aggregation import WeightedObservationContract, weighted_observation_payoff"
+    - "from trellis.models.analytical.support.lognormal_moments import single_factor_lognormal_sum_contract, weighted_lognormal_sum_moments, match_lognormal_moments"
+    - "from trellis.models.black import black76_call, black76_put"
+    - "from trellis.models.monte_carlo.path_state import StateAwarePayoff"
+    - "from trellis.models.processes.gbm import GBM"
+    - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+  notes:
+    - "For a bounded European fixed-strike arithmetic-average option, resolve the scalar market inputs first and derive every observation time and equal averaging weight explicitly from the contract."
+    - "Analytical lane: compose the single-factor lognormal-sum contract, exact first two moments, lognormal moment match, and Black-76 call or put kernel; apply discounting and notional outside the kernel."
+    - "Monte Carlo lane: use the same observation times in WeightedObservationContract, resolve an exact bounded grid with contract.resolve_uniform_grid_steps(...), compose weighted_observation_payoff with derivative-specific call or put settlement, and run GBM through MonteCarloEngine with return_paths=False."
+    - "geometric averaging, floating-strike averaging, multi-asset averages, non-European exercise, nonpositive post-settlement observation times, and observation dates that cannot map exactly to the bounded uniform grid must fail closed rather than inherit this lane."
 
 observation_return_composition:
   module: trellis.models.observation_returns

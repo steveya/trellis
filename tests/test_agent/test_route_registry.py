@@ -2452,45 +2452,133 @@ class TestFallbackRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
-    def test_asian_monte_carlo_primitives_use_checked_helpers(self, registry):
+    def test_arithmetic_asian_monte_carlo_uses_reusable_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         ir = ProductIR(
             instrument="asian_option",
             payoff_family="asian_option",
-            payoff_traits=("asian",),
+            payoff_traits=("asian", "arithmetic_average"),
             exercise_style="european",
             model_family="equity_diffusion",
             state_dependence="path_dependent",
+            schedule_dependence=True,
         )
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
             (
-                "trellis.models.asian_option",
-                "price_arithmetic_asian_option_monte_carlo",
-                "route_helper",
+                "trellis.models.resolution.single_state_diffusion",
+                "resolve_single_state_diffusion_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.observation_aggregation",
+                "WeightedObservationContract",
+                "payoff_contract",
+            ),
+            (
+                "trellis.models.observation_aggregation",
+                "weighted_observation_payoff",
+                "payoff_primitive",
+            ),
+            ("trellis.models.processes.gbm", "GBM", "state_process"),
+            (
+                "trellis.models.monte_carlo.engine",
+                "MonteCarloEngine",
+                "path_simulation",
+            ),
+            (
+                "trellis.models.monte_carlo.path_state",
+                "StateAwarePayoff",
+                "payoff_contract",
+            ),
+            ("trellis.core.date_utils", "year_fraction", "time_measure"),
+            (
+                "trellis.core.differentiable",
+                "get_numpy",
+                "numerical_backend",
             ),
         }
         assert _prim_set(new_prims) == expected_prims
 
-    def test_asian_analytical_primitives_use_checked_helper(self, registry):
+    def test_arithmetic_asian_analytical_uses_reusable_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         ir = ProductIR(
             instrument="asian_option",
             payoff_family="asian_option",
-            payoff_traits=("asian",),
+            payoff_traits=("asian", "arithmetic_average"),
             exercise_style="european",
             model_family="equity_diffusion",
             state_dependence="path_dependent",
+            schedule_dependence=True,
         )
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
             (
-                "trellis.models.asian_option",
-                "price_arithmetic_asian_option_analytical",
-                "route_helper",
+                "trellis.models.resolution.single_state_diffusion",
+                "resolve_single_state_diffusion_inputs",
+                "market_binding",
             ),
+            (
+                "trellis.models.analytical.support.lognormal_moments",
+                "single_factor_lognormal_sum_contract",
+                "payoff_contract",
+            ),
+            (
+                "trellis.models.analytical.support.lognormal_moments",
+                "weighted_lognormal_sum_moments",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.analytical.support.lognormal_moments",
+                "match_lognormal_moments",
+                "pricing_kernel",
+            ),
+            ("trellis.models.black", "black76_call", "pricing_kernel"),
+            ("trellis.models.black", "black76_put", "pricing_kernel"),
+            ("trellis.core.date_utils", "year_fraction", "time_measure"),
         }
         assert _prim_set(new_prims) == expected_prims
+
+    @pytest.mark.parametrize(
+        ("payoff_traits", "exercise_style", "schedule_dependence"),
+        [
+            (("asian", "geometric_average"), "european", True),
+            (("asian", "arithmetic_average", "floating_strike"), "european", True),
+            (("asian", "arithmetic_average", "multi_asset"), "european", True),
+            (("asian", "arithmetic_average"), "american", True),
+            (("asian", "arithmetic_average"), "european", False),
+        ],
+    )
+    def test_arithmetic_asian_primitives_fail_closed_for_broader_semantics(
+        self,
+        registry,
+        payoff_traits,
+        exercise_style,
+        schedule_dependence,
+    ):
+        forbidden_symbols = {
+            "WeightedObservationContract",
+            "weighted_observation_payoff",
+            "single_factor_lognormal_sum_contract",
+            "weighted_lognormal_sum_moments",
+            "match_lognormal_moments",
+        }
+        ir = ProductIR(
+            instrument="asian_option",
+            payoff_family="asian_option",
+            payoff_traits=payoff_traits,
+            exercise_style=exercise_style,
+            model_family="equity_diffusion",
+            state_dependence="path_dependent",
+            schedule_dependence=schedule_dependence,
+        )
+
+        for route_id in ("analytical_black76", "monte_carlo_paths"):
+            spec = [route for route in registry.routes if route.id == route_id][0]
+            primitives = resolve_route_primitives(spec, ir)
+            assert forbidden_symbols.isdisjoint(
+                primitive.symbol for primitive in primitives
+            )
 
     def test_lookback_monte_carlo_primitives_use_checked_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]

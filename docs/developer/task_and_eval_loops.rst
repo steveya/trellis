@@ -982,17 +982,17 @@ single ``BarrierMonitor``, notional convention, and deterministic discounting.
 Rebate-bearing barriers should remain on the analytical Rubinstein route until
 the PDE/MC rebate contract is implemented.
 
-Digital, Asian, and fixed-lookback proof targets use exact helper wrappers only
-for the retained comparison surfaces that have checked numerical contracts.
-Cash-or-asset digital Crank-Nicolson and Rannacher targets bind to
-``price_equity_digital_option_pde(...)``; arithmetic-Asian MC targets bind to
-``price_arithmetic_asian_option_monte_carlo(...)``; Turnbull-Wakeman targets
-are analytical comparison targets and bind to
-``price_arithmetic_asian_option_analytical(...)`` even when the broader task is
-a multi-method path-dependent option; and fixed-lookback MC targets bind to
-``price_equity_fixed_lookback_option_monte_carlo(...)``. Sparse legacy task
-text may use cross-validation target names to recover product identity, but the
-runtime still fails closed if the resolved contract and exact helper disagree.
+Digital and fixed-lookback proof targets retain exact helper wrappers where the
+checked numerical contract still lives at that boundary. Arithmetic-Asian
+targets no longer do. The MC target assembles the single-state resolver,
+weighted observation contract/payoff, GBM, and generic Monte Carlo engine. The
+Turnbull-Wakeman-style target assembles weighted lognormal moments, moment
+matching, and a Black-76 call or put kernel. Both use the same explicit
+observation schedule, discounting, and notional contract. Sparse legacy task
+text may use cross-validation target names to recover product identity, but
+geometric, floating-strike, multi-asset, non-European, or nonrepresentable-grid
+semantics fail closed instead of inheriting the arithmetic fixed-strike lane.
+The retained Asian pricing wrappers are comparison references only.
 
 Capped/floored cliquet comparisons are now a primitive-composed task lane. The
 analytical target builds an ``ObservationReturnContract`` and combines bounded

@@ -83,17 +83,22 @@ The default Phase 3 registry admits:
 4. Two-asset analytical basket / spread call / put helpers
 5. Equity variance swaps via ``price_equity_variance_swap_analytical`` and
    ``price_equity_variance_swap_monte_carlo``
-6. Bounded arithmetic-Asian analytical call / put helpers via
-   ``price_arithmetic_asian_option_analytical``
-7. Expiry-aligned arithmetic-Asian call Monte Carlo via
-   ``price_arithmetic_asian_option_monte_carlo``
+6. Bounded arithmetic-Asian analytical call / put composition via the shared
+   single-state resolver, weighted-lognormal moments, moment matching, and
+   Black-76 kernels
+7. Expiry-aligned arithmetic-Asian call Monte Carlo composition via
+   ``WeightedObservationContract``, ``weighted_observation_payoff(...)``,
+   ``resolve_uniform_grid_steps(...)``, ``GBM``, and ``MonteCarloEngine``
 8. Terminal linear curve-spread and surface-spread quoted-observable helpers
    via ``trellis.models.quoted_observable``
 
 Arithmetic Asians are still only partially admitted. The compiler now binds a
-bounded analytical approximation plus one bounded Monte Carlo call lane for the
-checked European schedule-based equity-diffusion cohort, but broader
-family-general route retirement remains outside the admitted support contract.
+bounded analytical approximation plus one bounded Monte Carlo call lane from
+generic primitives for the checked European schedule-based equity-diffusion
+cohort. Geometric averaging, floating strike, multiple underliers,
+non-European exercise, and inexact observation grids remain outside the
+admitted support contract. Exact-grid selection is owned by the product-neutral
+observation contract and remains bounded by ``max_grid_steps``.
 
 Quoted-observable support is also intentionally bounded. The default registry
 admits only terminal linear ``CurveQuote`` spread and ``SurfaceQuote`` spread /

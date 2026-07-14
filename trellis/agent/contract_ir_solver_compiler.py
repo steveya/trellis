@@ -83,6 +83,12 @@ def _string_tuple(values) -> tuple[str, ...]:
     return tuple(result)
 
 
+def _path_tuple(values) -> tuple[str, ...]:
+    if not values:
+        return ()
+    return tuple(text for value in values if (text := str(value).strip()))
+
+
 def _float_tuple(values) -> tuple[float, ...]:
     if not values:
         return ()
@@ -525,6 +531,7 @@ class ContractIRSolverSelection:
     requested_outputs: tuple[str, ...]
     callable_ref: str
     call_style: str
+    result_path: tuple[str, ...] = ()
     match_bindings: Mapping[str, object] = field(default_factory=dict)
     consumed_term_groups: tuple[str, ...] = ()
     required_capabilities: tuple[str, ...] = ()
@@ -541,6 +548,7 @@ class ContractIRSolverSelection:
     def __post_init__(self) -> None:
         object.__setattr__(self, "match_bindings", _freeze_mapping(self.match_bindings))
         object.__setattr__(self, "requested_outputs", _string_tuple(self.requested_outputs))
+        object.__setattr__(self, "result_path", _path_tuple(self.result_path))
         object.__setattr__(self, "consumed_term_groups", _string_tuple(self.consumed_term_groups))
         object.__setattr__(self, "required_capabilities", _string_tuple(self.required_capabilities))
         object.__setattr__(self, "optional_capabilities", _string_tuple(self.optional_capabilities))
@@ -561,6 +569,7 @@ class ContractIRCompilerDecision:
     requested_outputs: tuple[str, ...]
     callable_ref: str
     call_style: str
+    result_path: tuple[str, ...] = ()
     call_kwargs: Mapping[str, object] = field(default_factory=dict)
     value_scale: float = 1.0
     match_bindings: Mapping[str, object] = field(default_factory=dict)
@@ -571,12 +580,13 @@ class ContractIRCompilerDecision:
     validation_bundle_id: str = ""
     helper_refs: tuple[str, ...] = ()
     pricing_kernel_refs: tuple[str, ...] = ()
-    callable: Callable[..., float] | None = field(default=None, repr=False, compare=False)
+    callable: Callable[..., object] | None = field(default=None, repr=False, compare=False)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "call_kwargs", _freeze_mapping(self.call_kwargs))
         object.__setattr__(self, "match_bindings", _freeze_mapping(self.match_bindings))
         object.__setattr__(self, "requested_outputs", _string_tuple(self.requested_outputs))
+        object.__setattr__(self, "result_path", _path_tuple(self.result_path))
         object.__setattr__(self, "consumed_term_groups", _string_tuple(self.consumed_term_groups))
         object.__setattr__(self, "resolved_market_coordinates", _string_tuple(self.resolved_market_coordinates))
         object.__setattr__(self, "helper_refs", _string_tuple(self.helper_refs))
@@ -602,8 +612,13 @@ def execute_contract_ir_solver_decision(decision: ContractIRCompilerDecision) ->
     """Execute one bound structural solver decision."""
 
     callable_obj = decision.callable or _import_ref(decision.callable_ref)
-    result = float(callable_obj(**dict(decision.call_kwargs)))
-    return float(decision.value_scale) * result
+    result = callable_obj(**dict(decision.call_kwargs))
+    for key in decision.result_path:
+        if isinstance(result, Mapping):
+            result = result[key]
+        else:
+            result = getattr(result, key)
+    return float(decision.value_scale) * float(result)
 
 
 def _normalize_requested_method(
@@ -754,6 +769,7 @@ def select_contract_ir_solver(
         requested_outputs=outputs,
         callable_ref=declaration.materialization.callable_ref,
         call_style=declaration.materialization.call_style,
+        result_path=declaration.materialization.result_path,
         match_bindings=dict(bindings),
         consumed_term_groups=declaration.authority.required_term_groups,
         required_capabilities=declaration.market_requirements.required_capabilities,
@@ -860,13 +876,18 @@ def compile_contract_ir_solver(
 
     _precedence, declaration, bindings, adapter_payload = top[0]
     callable_ref = declaration.materialization.callable_ref
-    callable_obj = _import_ref(callable_ref)
+    callable_obj = adapter_payload.get("callable") or _import_ref(callable_ref)
+    result_path = adapter_payload.get(
+        "result_path",
+        declaration.materialization.result_path,
+    )
     return ContractIRCompilerDecision(
         declaration_id=declaration.provenance.declaration_id,
         requested_method=method,
         requested_outputs=outputs,
         callable_ref=callable_ref,
         call_style=declaration.materialization.call_style,
+        result_path=tuple(result_path or ()),
         call_kwargs=dict(adapter_payload.get("call_kwargs") or {}),
         value_scale=float(adapter_payload.get("value_scale", 1.0)),
         match_bindings=dict(bindings),
@@ -1310,6 +1331,7 @@ def _variance_helper_adapter(
 class _StructuralArithmeticAsianSpec:
     notional: float
     underlier: str
+    spot: float
     strike: float
     expiry_date: date
     observation_dates: tuple[date, ...]
@@ -1320,7 +1342,7 @@ class _StructuralArithmeticAsianSpec:
     seed: int | None = 42
 
 
-def _arithmetic_asian_binding_adapter(
+def _resolve_arithmetic_asian_binding(
     *,
     contract_ir: ContractIR,
     term_environment: ContractIRTermEnvironment,
@@ -1329,7 +1351,7 @@ def _arithmetic_asian_binding_adapter(
     bindings: dict[str, object],
     option_type: str,
     include_monte_carlo_controls: bool,
-) -> dict[str, object]:
+) -> tuple[_StructuralArithmeticAsianSpec, tuple[str, ...]]:
     expiry = contract_ir.exercise.schedule
     if not isinstance(expiry, Singleton):
         raise ValueError("Arithmetic Asian adapter requires European singleton exercise")
@@ -1370,6 +1392,7 @@ def _arithmetic_asian_binding_adapter(
     spec = _StructuralArithmeticAsianSpec(
         notional=float(term_environment.cash_settlement.notional),
         underlier=underlier,
+        spot=_resolve_spot(market_state, underlier),
         strike=float(bindings["k"]),
         expiry_date=expiry.t,
         observation_dates=tuple(averaging_schedule.dates),
@@ -1384,36 +1407,216 @@ def _arithmetic_asian_binding_adapter(
         coordinates.append(f"term_fields.{explicit_dividend_yield_key}")
     elif abs(dividend_yield) > 0.0:
         coordinates.append("model_parameters.underlier_carry_rates")
+    return spec, tuple(coordinates)
+
+
+def _arithmetic_asian_observation_times(
+    market_state: MarketState,
+    spec: _StructuralArithmeticAsianSpec,
+) -> tuple[float, ...]:
+    settlement = market_state.settlement or market_state.as_of
+    if settlement is None:
+        raise ValueError("Arithmetic Asian composition requires market settlement or as_of")
+    times = tuple(
+        float(year_fraction(settlement, observation_date, spec.day_count))
+        for observation_date in spec.observation_dates
+    )
+    if any(time <= 0.0 for time in times):
+        raise ValueError("Arithmetic Asian composition requires observations after settlement")
+    return times
+
+
+def _arithmetic_asian_analytical_binding_adapter(
+    *,
+    option_type: str,
+    **kwargs,
+) -> dict[str, object]:
+    from trellis.models.analytical.support.lognormal_moments import (
+        match_lognormal_moments,
+        single_factor_lognormal_sum_contract,
+        weighted_lognormal_sum_moments,
+    )
+    from trellis.models.resolution.single_state_diffusion import (
+        resolve_single_state_diffusion_inputs,
+    )
+
+    market_state = kwargs["market_state"]
+    spec, coordinates = _resolve_arithmetic_asian_binding(
+        option_type=option_type,
+        include_monte_carlo_controls=False,
+        **kwargs,
+    )
+    resolved = resolve_single_state_diffusion_inputs(market_state, spec)
+    if resolved.maturity <= 0.0:
+        intrinsic = (
+            max(resolved.strike - resolved.spot, 0.0)
+            if resolved.option_type == "put"
+            else max(resolved.spot - resolved.strike, 0.0)
+        )
+        return {
+            "callable": lambda: intrinsic,
+            "call_kwargs": {},
+            "value_scale": resolved.notional,
+            "resolved_market_coordinates": coordinates,
+        }
+
+    observation_times = _arithmetic_asian_observation_times(market_state, spec)
+    count = len(observation_times)
+    moments = weighted_lognormal_sum_moments(
+        single_factor_lognormal_sum_contract(
+            spot=resolved.spot,
+            observation_times=observation_times,
+            weights=(1.0 / count,) * count,
+            carry=resolved.rate - resolved.dividend_yield,
+            volatility=resolved.sigma,
+        )
+    )
+    matched = match_lognormal_moments(moments)
+    discount_factor = float(market_state.discount.discount(resolved.maturity))
+    if resolved.strike <= 0.0:
+        boundary_value = (
+            0.0
+            if resolved.option_type == "put"
+            else float(matched.mean - resolved.strike)
+        )
+        return {
+            "callable": lambda: boundary_value,
+            "call_kwargs": {},
+            "value_scale": resolved.notional * discount_factor,
+            "resolved_market_coordinates": coordinates,
+        }
     return {
         "call_kwargs": {
-            "market_state": market_state,
-            "spec": spec,
+            "F": matched.mean,
+            "K": resolved.strike,
+            "sigma": matched.effective_volatility(maturity=resolved.maturity),
+            "T": resolved.maturity,
         },
-        "value_scale": 1.0,
-        "resolved_market_coordinates": tuple(coordinates),
+        "value_scale": resolved.notional * discount_factor,
+        "resolved_market_coordinates": coordinates,
+    }
+
+
+def _arithmetic_asian_monte_carlo_binding_adapter(
+    *,
+    option_type: str,
+    **kwargs,
+) -> dict[str, object]:
+    from trellis.core.differentiable import get_numpy
+    from trellis.models.monte_carlo.engine import MonteCarloEngine
+    from trellis.models.monte_carlo.path_state import StateAwarePayoff
+    from trellis.models.observation_aggregation import (
+        WeightedObservationContract,
+        weighted_observation_payoff,
+    )
+    from trellis.models.processes.gbm import GBM
+    from trellis.models.resolution.single_state_diffusion import (
+        resolve_single_state_diffusion_inputs,
+    )
+
+    market_state = kwargs["market_state"]
+    term_environment = kwargs["term_environment"]
+    spec, coordinates = _resolve_arithmetic_asian_binding(
+        option_type=option_type,
+        include_monte_carlo_controls=True,
+        **kwargs,
+    )
+    resolved = resolve_single_state_diffusion_inputs(market_state, spec)
+    if resolved.maturity <= 0.0:
+        intrinsic = (
+            max(resolved.strike - resolved.spot, 0.0)
+            if resolved.option_type == "put"
+            else max(resolved.spot - resolved.strike, 0.0)
+        )
+        return {
+            "callable": lambda: intrinsic,
+            "call_kwargs": {},
+            "result_path": (),
+            "value_scale": resolved.notional,
+            "resolved_market_coordinates": coordinates,
+        }
+
+    observation_times = _arithmetic_asian_observation_times(market_state, spec)
+    count = len(observation_times)
+    observation_contract = WeightedObservationContract(
+        observation_times=observation_times,
+        weights=(1.0 / count,) * count,
+    )
+    configured_steps = term_environment.raw_term_fields.get("n_steps")
+    n_steps = observation_contract.resolve_uniform_grid_steps(
+        maturity=resolved.maturity,
+        n_steps=(
+            None
+            if configured_steps in {None, ""}
+            else max(int(configured_steps), 1)
+        ),
+        min_steps=max(count, 1),
+        max_steps=max(
+            int(term_environment.raw_term_fields.get("max_grid_steps") or 4096),
+            count,
+        ),
+    )
+
+    np = get_numpy()
+    settlement_fn = (
+        (lambda average: np.maximum(resolved.strike - average, 0.0))
+        if resolved.option_type == "put"
+        else (lambda average: np.maximum(average - resolved.strike, 0.0))
+    )
+    payoff: StateAwarePayoff = weighted_observation_payoff(
+        observation_contract,
+        maturity=resolved.maturity,
+        n_steps=n_steps,
+        settlement_fn=settlement_fn,
+        reducer_name="arithmetic_average",
+        name="arithmetic_asian_payoff",
+    )
+    engine = MonteCarloEngine(
+        GBM(mu=resolved.rate - resolved.dividend_yield, sigma=resolved.sigma),
+        n_paths=spec.n_paths,
+        n_steps=n_steps,
+        seed=spec.seed,
+        method="exact",
+    )
+    return {
+        "callable": engine.price,
+        "call_kwargs": {
+            "x0": resolved.spot,
+            "T": resolved.maturity,
+            "payoff_fn": payoff,
+            "discount_rate": resolved.rate,
+            "return_paths": False,
+        },
+        "result_path": ("price",),
+        "value_scale": resolved.notional,
+        "resolved_market_coordinates": coordinates,
     }
 
 
 def _arithmetic_asian_call_analytical_binding_adapter(**kwargs) -> dict[str, object]:
-    return _arithmetic_asian_binding_adapter(
+    return _arithmetic_asian_analytical_binding_adapter(
         option_type="call",
-        include_monte_carlo_controls=False,
         **kwargs,
     )
 
 
 def _arithmetic_asian_put_analytical_binding_adapter(**kwargs) -> dict[str, object]:
-    return _arithmetic_asian_binding_adapter(
+    return _arithmetic_asian_analytical_binding_adapter(
         option_type="put",
-        include_monte_carlo_controls=False,
         **kwargs,
     )
 
 
 def _arithmetic_asian_call_monte_carlo_binding_adapter(**kwargs) -> dict[str, object]:
-    return _arithmetic_asian_binding_adapter(
+    return _arithmetic_asian_monte_carlo_binding_adapter(
         option_type="call",
-        include_monte_carlo_controls=True,
+        **kwargs,
+    )
+
+
+def _arithmetic_asian_put_monte_carlo_binding_adapter(**kwargs) -> dict[str, object]:
+    return _arithmetic_asian_monte_carlo_binding_adapter(
+        option_type="put",
         **kwargs,
     )
 
@@ -1836,14 +2039,21 @@ def _default_registry() -> ContractIRSolverRegistry:
                 required_term_groups=("cash_settlement", "accrual_conventions"),
             ),
             materialization=ContractIRSolverMaterialization(
-                callable_ref="trellis.models.asian_option.price_arithmetic_asian_option_analytical",
-                call_style="helper_call",
+                callable_ref="trellis.models.black.black76_call",
+                call_style="raw_kernel_kwargs",
                 adapter_ref="trellis.agent.contract_ir_solver_compiler._arithmetic_asian_call_analytical_adapter",
             ),
             provenance=ContractIRSolverProvenance(
-                declaration_id="helper_arithmetic_asian_option_analytical_call",
+                declaration_id="compose_arithmetic_asian_analytical_call",
                 validation_bundle_id="asian_option_contract",
-                helper_refs=("trellis.models.asian_option.price_arithmetic_asian_option_analytical",),
+                pricing_kernel_refs=(
+                    "trellis.models.analytical.support.lognormal_moments.weighted_lognormal_sum_moments",
+                    "trellis.models.analytical.support.lognormal_moments.match_lognormal_moments",
+                    "trellis.models.black.black76_call",
+                ),
+                market_binding_refs=(
+                    "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+                ),
             ),
             precedence=39,
         ),
@@ -1877,14 +2087,21 @@ def _default_registry() -> ContractIRSolverRegistry:
                 required_term_groups=("cash_settlement", "accrual_conventions"),
             ),
             materialization=ContractIRSolverMaterialization(
-                callable_ref="trellis.models.asian_option.price_arithmetic_asian_option_analytical",
-                call_style="helper_call",
+                callable_ref="trellis.models.black.black76_put",
+                call_style="raw_kernel_kwargs",
                 adapter_ref="trellis.agent.contract_ir_solver_compiler._arithmetic_asian_put_analytical_adapter",
             ),
             provenance=ContractIRSolverProvenance(
-                declaration_id="helper_arithmetic_asian_option_analytical_put",
+                declaration_id="compose_arithmetic_asian_analytical_put",
                 validation_bundle_id="asian_option_contract",
-                helper_refs=("trellis.models.asian_option.price_arithmetic_asian_option_analytical",),
+                pricing_kernel_refs=(
+                    "trellis.models.analytical.support.lognormal_moments.weighted_lognormal_sum_moments",
+                    "trellis.models.analytical.support.lognormal_moments.match_lognormal_moments",
+                    "trellis.models.black.black76_put",
+                ),
+                market_binding_refs=(
+                    "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+                ),
             ),
             precedence=38,
         ),
@@ -1918,16 +2135,71 @@ def _default_registry() -> ContractIRSolverRegistry:
                 required_term_groups=("cash_settlement", "accrual_conventions"),
             ),
             materialization=ContractIRSolverMaterialization(
-                callable_ref="trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo",
-                call_style="helper_call",
+                callable_ref="trellis.models.monte_carlo.engine.MonteCarloEngine",
+                call_style="adapter_composed",
                 adapter_ref="trellis.agent.contract_ir_solver_compiler._arithmetic_asian_call_monte_carlo_adapter",
+                result_path=("price",),
             ),
             provenance=ContractIRSolverProvenance(
-                declaration_id="helper_arithmetic_asian_option_monte_carlo",
+                declaration_id="compose_arithmetic_asian_monte_carlo_call",
                 validation_bundle_id="asian_option_contract",
-                helper_refs=("trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo",),
+                pricing_kernel_refs=(
+                    "trellis.models.observation_aggregation.weighted_observation_payoff",
+                    "trellis.models.monte_carlo.engine.MonteCarloEngine",
+                ),
+                market_binding_refs=(
+                    "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+                ),
             ),
             precedence=37,
+        ),
+        ContractIRSolverDeclaration(
+            authority=ContractIRSolverSelectionAuthority(
+                contract_pattern=ContractPattern(
+                    payoff=PayoffPattern(
+                        kind="max",
+                        args=(
+                            PayoffPattern(
+                                kind="sub",
+                                args=(
+                                    StrikePattern(value=Wildcard("k")),
+                                    PayoffPattern(
+                                        kind="arithmetic_mean",
+                                        args=(
+                                            SpotPattern(underlier=Wildcard("u")),
+                                            Wildcard("averaging_schedule"),
+                                        ),
+                                    ),
+                                ),
+                            ),
+                            ConstantPattern(value=0.0),
+                        ),
+                    ),
+                    exercise=ExercisePattern(style="european"),
+                    observation=ObservationPattern(kind="schedule"),
+                    underlying=UnderlyingPattern(kind="equity_diffusion"),
+                ),
+                admissible_methods=("monte_carlo",),
+                required_term_groups=("cash_settlement", "accrual_conventions"),
+            ),
+            materialization=ContractIRSolverMaterialization(
+                callable_ref="trellis.models.monte_carlo.engine.MonteCarloEngine",
+                call_style="adapter_composed",
+                adapter_ref="trellis.agent.contract_ir_solver_compiler._arithmetic_asian_put_monte_carlo_adapter",
+                result_path=("price",),
+            ),
+            provenance=ContractIRSolverProvenance(
+                declaration_id="compose_arithmetic_asian_monte_carlo_put",
+                validation_bundle_id="asian_option_contract",
+                pricing_kernel_refs=(
+                    "trellis.models.observation_aggregation.weighted_observation_payoff",
+                    "trellis.models.monte_carlo.engine.MonteCarloEngine",
+                ),
+                market_binding_refs=(
+                    "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+                ),
+            ),
+            precedence=36,
         ),
         *quoted_observable_solver_declarations(),
     )
@@ -1988,6 +2260,10 @@ def _arithmetic_asian_put_analytical_adapter(**kwargs) -> dict[str, object]:
 
 def _arithmetic_asian_call_monte_carlo_adapter(**kwargs) -> dict[str, object]:
     return _arithmetic_asian_call_monte_carlo_binding_adapter(**kwargs)
+
+
+def _arithmetic_asian_put_monte_carlo_adapter(**kwargs) -> dict[str, object]:
+    return _arithmetic_asian_put_monte_carlo_binding_adapter(**kwargs)
 
 
 _DEFAULT_REGISTRY: ContractIRSolverRegistry | None = None

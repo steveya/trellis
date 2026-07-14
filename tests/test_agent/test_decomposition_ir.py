@@ -51,11 +51,38 @@ class TestProductIR:
 
         assert ir.instrument == "asian_option"
         assert ir.payoff_family == "asian_option"
-        assert "asian" in ir.payoff_traits
+        assert set(ir.payoff_traits) >= {"asian", "geometric_average"}
+        assert "arithmetic_average" not in ir.payoff_traits
         assert ir.exercise_style == "european"
         assert ir.state_dependence == "path_dependent"
+        assert ir.schedule_dependence is True
         assert "monte_carlo" in ir.candidate_engine_families
         assert ir.supported is True
+
+    def test_ir_distinguishes_fixed_arithmetic_and_floating_strike_asian_semantics(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        fixed = decompose_to_ir(
+            "Arithmetic Asian call on SPX monthly average, fixed strike 4500",
+            instrument_type="asian_option",
+        )
+        floating = decompose_to_ir(
+            "Floating-strike arithmetic Asian call on SPX monthly average",
+            instrument_type="asian_option",
+        )
+
+        assert set(fixed.payoff_traits) >= {
+            "asian",
+            "arithmetic_average",
+            "fixed_strike",
+        }
+        assert "floating_strike" not in fixed.payoff_traits
+        assert set(floating.payoff_traits) >= {
+            "asian",
+            "arithmetic_average",
+            "floating_strike",
+        }
+        assert "fixed_strike" not in floating.payoff_traits
 
     def test_ir_for_local_vol_option_uses_local_vol_model_family(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir

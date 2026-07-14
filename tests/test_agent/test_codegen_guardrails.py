@@ -393,7 +393,7 @@ def test_european_option_family_support_approves_cev_helper_surfaces():
     assert report.ok
 
 
-def test_path_dependent_family_support_approves_asian_and_lookback_helpers():
+def test_path_dependent_family_support_approves_asian_primitives_and_lookback_helper():
     asian_plan = build_generation_plan(
         pricing_plan=PricingPlan(
             method="monte_carlo",
@@ -407,9 +407,10 @@ def test_path_dependent_family_support_approves_asian_and_lookback_helpers():
         product_ir=ProductIR(
             instrument="asian_option",
             payoff_family="asian_option",
-            payoff_traits=("asian", "path_dependent"),
+            payoff_traits=("asian", "arithmetic_average", "path_dependent"),
             exercise_style="european",
             model_family="equity_diffusion",
+            schedule_dependence=True,
         ),
     )
     lookback_plan = build_generation_plan(
@@ -431,12 +432,27 @@ def test_path_dependent_family_support_approves_asian_and_lookback_helpers():
         ),
     )
 
-    assert "trellis.models.asian_option" in asian_plan.approved_modules
+    assert "trellis.models.asian_option" not in asian_plan.approved_modules
+    assert {
+        "trellis.models.observation_aggregation",
+        "trellis.models.analytical.support.lognormal_moments",
+        "trellis.models.resolution.single_state_diffusion",
+        "trellis.models.monte_carlo.engine",
+        "trellis.models.monte_carlo.path_state",
+        "trellis.models.processes.gbm",
+    } <= set(asian_plan.approved_modules)
     assert "trellis.models.lookback_option" in lookback_plan.approved_modules
     asian_report = validate_generated_imports(
+        "from trellis.models.observation_aggregation import "
+        "WeightedObservationContract, weighted_observation_payoff\n"
+        "from trellis.models.monte_carlo.engine import MonteCarloEngine\n"
+        "from trellis.models.monte_carlo.path_state import StateAwarePayoff\n"
+        "from trellis.models.processes.gbm import GBM\n",
+        asian_plan,
+    )
+    wrapper_report = validate_generated_imports(
         "from trellis.models.asian_option import "
-        "price_arithmetic_asian_option_monte_carlo, "
-        "price_arithmetic_asian_option_analytical\n",
+        "price_arithmetic_asian_option_monte_carlo\n",
         asian_plan,
     )
     lookback_report = validate_generated_imports(
@@ -446,6 +462,7 @@ def test_path_dependent_family_support_approves_asian_and_lookback_helpers():
     )
 
     assert asian_report.ok
+    assert not wrapper_report.ok
     assert lookback_report.ok
 
 

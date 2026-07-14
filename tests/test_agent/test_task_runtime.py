@@ -4726,6 +4726,22 @@ def test_make_test_payoff_uses_basket_specific_schedule_defaults(monkeypatch):
     assert payoff.spec.kwargs["expiry_date"] == date(2025, 11, 15)
 
 
+def test_make_test_payoff_preserves_count_based_asian_schedule_default():
+    from trellis.agent.executor import _make_test_payoff
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.instruments._agent.asianoption import AsianOptionPayoff
+
+    payoff = _make_test_payoff(
+        AsianOptionPayoff,
+        STATIC_SPECS["asian_option"],
+        date(2024, 11, 15),
+    )
+
+    assert payoff.spec.observation_dates == ()
+    assert payoff.spec.n_observations == 12
+    assert payoff.spec.expiry_date == date(2025, 11, 15)
+
+
 def test_make_test_payoff_uses_typed_multi_underlier_defaults_for_basket_options(monkeypatch):
     """Generic basket smoke tests should get valid multi-underlier defaults."""
     from trellis.agent.task_runtime import _make_test_payoff

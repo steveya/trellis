@@ -250,3 +250,27 @@ def test_current_repository_helper_authority_report_is_internally_consistent():
     assert report.to_dict()["summary"]["route_authority_reference_count"] == len(
         report.route_authority
     )
+
+
+def test_current_repository_retires_arithmetic_asian_helper_authority():
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    root = Path(__file__).resolve().parents[2]
+    report = build_helper_authority_report(root)
+    asian_symbols = {
+        "price_asian_option_monte_carlo",
+        "price_arithmetic_asian_option_analytical",
+        "price_arithmetic_asian_option_monte_carlo",
+    }
+
+    assert not [
+        item
+        for item in (*report.route_authority, *report.binding_authority)
+        if item.symbol in asian_symbols
+    ]
+    assert not [
+        item
+        for item in report.adapter_calls
+        if item.path == "trellis/instruments/_agent/asianoption.py"
+        and item.symbol in asian_symbols
+    ]
