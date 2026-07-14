@@ -58,6 +58,12 @@ def test_observation_return_primitives_are_visible_to_import_registry():
     assert expectation_symbol in list_module_exports(expectation_module)
     assert expectation_module in find_symbol_modules(expectation_symbol)
 
+    process_module = "trellis.models.processes.gbm"
+    process_symbol = "PiecewiseConstantGBM"
+    assert process_symbol in list_module_exports(process_module)
+    assert process_module in find_symbol_modules(process_symbol)
+    assert is_valid_import(process_module, process_symbol)
+
 
 def test_quoted_observable_helpers_are_visible_to_import_registry():
     module = "trellis.models.quoted_observable"

@@ -128,6 +128,7 @@ def test_api_map_exposes_product_neutral_observation_return_composition():
         "observation_return_payoff",
         "gauss_hermite_product_expectation",
         "MonteCarloEngine",
+        "PiecewiseConstantGBM",
     ):
         assert symbol in text
     assert "cliquet" not in text.lower()

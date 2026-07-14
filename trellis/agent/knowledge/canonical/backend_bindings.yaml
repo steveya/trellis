@@ -269,7 +269,7 @@ bindings:
             symbol: observation_return_payoff
             role: payoff_primitive
           - module: trellis.models.processes.gbm
-            symbol: GBM
+            symbol: PiecewiseConstantGBM
             role: state_process
           - module: trellis.models.monte_carlo.engine
             symbol: MonteCarloEngine

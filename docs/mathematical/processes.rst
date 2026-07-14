@@ -14,6 +14,16 @@ GBM
 Exact: :math:`S_T = S_0\exp[(\mu-\sigma^2/2)T + \sigma\sqrt{T}Z]`.
 Moments: :math:`\mathbb{E}[S_T] = S_0 e^{\mu T}`.
 
+Piecewise-Constant GBM
+----------------------
+
+``PiecewiseConstantGBM`` keeps deterministic drift and volatility pairs on an
+ordered time grid. Its exact transition integrates drift and variance across
+every interval crossed by a simulation step, so the numerical grid need not
+coincide with parameter boundaries. This is useful for scheduled-return
+composition when each observation interval binds a different market quote; it
+does not infer a local-volatility process from an implied-volatility surface.
+
 Vasicek
 -------
 
@@ -204,6 +214,8 @@ Implementation
 --------------
 
 .. autoclass:: trellis.models.processes.gbm.GBM
+   :members:
+.. autoclass:: trellis.models.processes.gbm.PiecewiseConstantGBM
    :members:
 .. autoclass:: trellis.models.processes.heston.Heston
    :members:

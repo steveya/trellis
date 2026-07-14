@@ -553,6 +553,47 @@ def test_prompt_skill_selection_skips_helper_hint_for_primitive_route_branch():
     }
 
 
+def test_helper_hint_resolution_normalizes_pricing_method(monkeypatch):
+    from types import SimpleNamespace
+
+    from trellis.agent.knowledge.schema import ProductIR
+    from trellis.agent.knowledge.skills import _resolved_route_accepts_helper_hint
+
+    observed = {}
+    route = SimpleNamespace(id="method_keyed_route")
+    monkeypatch.setattr(
+        "trellis.agent.route_registry.load_route_registry",
+        lambda: SimpleNamespace(routes=(route,)),
+    )
+
+    def resolve_route_primitives(_route, _product_ir, *, method):
+        observed["method"] = method
+        return ()
+
+    monkeypatch.setattr(
+        "trellis.agent.route_registry.resolve_route_primitives",
+        resolve_route_primitives,
+    )
+    record = SimpleNamespace(
+        skill_id="route_hint:method_keyed_route:route-helper",
+        source_artifact="method_keyed_route",
+    )
+
+    assert not _resolved_route_accepts_helper_hint(
+        record,
+        product_ir=ProductIR(
+            instrument="cliquet_option",
+            payoff_family="cliquet_option",
+            exercise_style="european",
+            state_dependence="path_dependent",
+            schedule_dependence=True,
+        ),
+        pricing_method="Monte Carlo",
+        route_ids=("method_keyed_route",),
+    )
+    assert observed["method"] == "monte_carlo"
+
+
 def test_prompt_skill_selection_prefers_hard_constraints_over_exact_route_note_matches(monkeypatch):
     from trellis.agent.knowledge.skills import select_prompt_skill_artifacts
 

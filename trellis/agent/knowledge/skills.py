@@ -322,7 +322,7 @@ def _resolved_route_accepts_helper_hint(
     primitives = resolve_route_primitives(
         route,
         product_ir,
-        method=pricing_method,
+        method=normalize_method(pricing_method),
     )
     return any(primitive.role == "route_helper" for primitive in primitives)
 

@@ -1805,7 +1805,11 @@ class TestAnalyticalRoutes:
                 "observation_return_payoff",
                 "payoff_primitive",
             ),
-            ("trellis.models.processes.gbm", "GBM", "state_process"),
+            (
+                "trellis.models.processes.gbm",
+                "PiecewiseConstantGBM",
+                "state_process",
+            ),
             (
                 "trellis.models.monte_carlo.engine",
                 "MonteCarloEngine",

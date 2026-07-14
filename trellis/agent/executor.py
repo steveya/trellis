@@ -4019,7 +4019,7 @@ def _scheduled_observation_return_evaluate_body(
     monte_carlo_refs = {
         "trellis.models.observation_returns.ObservationReturnContract",
         "trellis.models.observation_returns.observation_return_payoff",
-        "trellis.models.processes.gbm.GBM",
+        "trellis.models.processes.gbm.PiecewiseConstantGBM",
         "trellis.models.monte_carlo.engine.MonteCarloEngine",
     }
     use_monte_carlo = normalized_target == "monte_carlo" or (
@@ -4083,9 +4083,26 @@ def _scheduled_observation_return_evaluate_body(
                 carry_rates = dict(params.get("underlier_carry_rates") or {})
                 carry = next(iter(carry_rates.values()), 0.0)
             carry = float(carry)
+            interval_mus = []
+            interval_sigmas = []
+            previous_time = 0.0
+            for observation_time in observation_times:
+                tau = observation_time - previous_time
+                interval_rate = float(
+                    market_state.discount.zero_rate(max(observation_time, 1e-6))
+                )
+                interval_sigma = float(
+                    market_state.vol_surface.black_vol(max(tau, 1e-6), float(spec.spot))
+                )
+                interval_mus.append(interval_rate - carry)
+                interval_sigmas.append(interval_sigma)
+                previous_time = observation_time
             rate = float(market_state.discount.zero_rate(max(maturity, 1e-6)))
-            sigma = float(market_state.vol_surface.black_vol(max(maturity, 1e-6), float(spec.spot)))
-            process = GBM(mu=rate - carry, sigma=sigma)
+            process = PiecewiseConstantGBM(
+                interval_ends=observation_times,
+                mus=tuple(interval_mus),
+                sigmas=tuple(interval_sigmas),
+            )
             engine = MonteCarloEngine(
                 process,
                 n_paths=max(int(getattr(spec, "n_paths", 120000) or 120000), 2),

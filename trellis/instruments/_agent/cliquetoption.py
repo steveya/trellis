@@ -64,7 +64,7 @@ class CliquetOptionPayoff:
         if market_state.vol_surface is None:
             raise ValueError("scheduled observation returns require market_state.vol_surface")
 
-        observation_dates = tuple(sorted(spec.observation_dates))
+        observation_dates = tuple(sorted(spec.observation_dates or ()))
         observation_times = tuple(
             float(year_fraction(settlement, observation_date, spec.time_day_count))
             for observation_date in observation_dates

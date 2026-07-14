@@ -410,9 +410,10 @@ remain a route-helper contract failure.
 Scheduled observation-return routes are primitive-composed. Their diagnosis
 packets should require ``ObservationReturnContract`` plus the selected
 analytical or Monte Carlo primitives. For Monte Carlo, that means
-``observation_return_payoff``, ``GBM``, and ``MonteCarloEngine`` with an exact
-observation grid and reduced-state execution. For bounded analytical work, it
-means ``bounded_observation_return_sum`` inside
+``observation_return_payoff``, ``PiecewiseConstantGBM``, and
+``MonteCarloEngine`` with interval-specific drift and volatility, an exact
+observation grid, and reduced-state execution. For bounded analytical work,
+it means ``bounded_observation_return_sum`` inside
 ``gauss_hermite_product_expectation``; unbounded reset optionlets additionally
 use the Black-76 call or put kernels. A call to a retained product-level cliquet
 pricing function does not subsume these obligations and should produce a

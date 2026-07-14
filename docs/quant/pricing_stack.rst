@@ -405,7 +405,8 @@ The first migrated vanilla cases now use that boundary directly:
   ``black76_put`` and explicit carry and discounting. A locally or globally
   bounded analytical lane evaluates ``bounded_observation_return_sum`` inside
   ``gauss_hermite_product_expectation``. The Monte Carlo lane combines
-  ``observation_return_payoff``, ``GBM``, and ``MonteCarloEngine`` with
+  ``observation_return_payoff``, ``PiecewiseConstantGBM``, and
+  ``MonteCarloEngine`` with one drift/volatility pair per reset interval and
   ``return_paths=False`` so only the previous level and accumulated return are
   retained. The product-level cliquet pricing functions remain independent
   comparison and compatibility references; calling one does not satisfy a

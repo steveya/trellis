@@ -915,8 +915,10 @@ Capped/floored cliquet comparisons are now a primitive-composed task lane. The
 analytical target builds an ``ObservationReturnContract`` and combines bounded
 return accumulation with a node-budgeted product expectation; the unbounded
 reset form instead assembles explicit Black-76 optionlets. The Monte Carlo
-target combines the same contract with ``observation_return_payoff``, ``GBM``,
-and ``MonteCarloEngine`` using reduced-state execution. Fresh generated source
+target combines the same contract with ``observation_return_payoff``,
+``PiecewiseConstantGBM``, and ``MonteCarloEngine`` using reduced-state
+execution. Each reset interval keeps its own drift and Black volatility instead
+of flattening the final-maturity quote across the path. Fresh generated source
 must show those obligations directly. Retained cliquet pricing functions are
 comparison references and do not count as route implementation evidence. The
 generic volatility monotonicity invariant is not enforced for

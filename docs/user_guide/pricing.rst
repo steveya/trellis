@@ -147,7 +147,7 @@ return:
        ObservationReturnContract,
        observation_return_payoff,
    )
-   from trellis.models.processes.gbm import GBM
+   from trellis.models.processes.gbm import PiecewiseConstantGBM
 
    terms = ObservationReturnContract(
        observation_times=(0.25, 0.5, 0.75, 1.0),
@@ -164,7 +164,11 @@ return:
        n_steps=252,
    )
    result = MonteCarloEngine(
-       GBM(mu=0.03, sigma=0.20),
+       PiecewiseConstantGBM(
+           interval_ends=terms.observation_times,
+           mus=(0.03, 0.03, 0.03, 0.03),
+           sigmas=(0.18, 0.19, 0.20, 0.21),
+       ),
        n_paths=100_000,
        n_steps=252,
        seed=42,
