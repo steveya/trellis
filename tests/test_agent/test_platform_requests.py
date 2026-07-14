@@ -875,7 +875,7 @@ def test_semantic_blueprint_summary_preserves_range_accrual_callability_blockers
         (
             "F010",
             "analytical",
-            "trellis.models.analytical.equity_exotics.price_equity_digital_option_analytical",
+            "trellis.models.black.black76_cash_or_nothing_call",
         ),
         (
             "F011",
@@ -922,6 +922,11 @@ def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_fina
     assert compiled.generation_plan.primitive_plan.route_family == expected_route_family
     assert "primitive_plan_not_available" not in compiled.generation_plan.uncertainty_flags
     assert expected_backend_ref in compiled.generation_plan.backend_exact_target_refs
+    if task_id == "F010":
+        assert (
+            "trellis.models.analytical.equity_exotics.price_equity_digital_option_analytical"
+            not in compiled.generation_plan.backend_exact_target_refs
+        )
 
     if task_id == "F009":
         assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}

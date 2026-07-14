@@ -435,6 +435,19 @@ The first migrated vanilla cases now use that boundary directly:
   owns the bounded Black-Scholes grid on ``[lower_barrier, upper_barrier]``,
   absorbing boundaries, and knock-in/out parity; the Monte Carlo helper owns
   the GBM engine binding, two barrier monitors, and deterministic discounting.
+- European analytical digital routes are primitive-composed. They bind the
+  contract day count, rate, Black volatility, dividend carry, and option type
+  through ``resolve_single_state_diffusion_inputs(...)``. They build the
+  forward through ``forward_from_dividend_yield(...)`` and then select one of
+  ``black76_cash_or_nothing_call``, ``black76_cash_or_nothing_put``,
+  ``black76_asset_or_nothing_call``, or
+  ``black76_asset_or_nothing_put`` from the payoff semantics. These kernels
+  return undiscounted basis values; the adapter applies discount and notional
+  once through ``discounted_value(...)`` and applies the cash amount only to
+  cash settlement. Shared cash/asset intrinsic primitives own strict expiry
+  semantics. The retained
+  ``price_equity_digital_option_analytical`` function is a cash-digital
+  compatibility/reference surface, not route construction authority.
 - Digital proof routes now include a bounded one-dimensional PDE helper,
   ``trellis.models.equity_option_pde.price_equity_digital_option_pde``. It
   prices cash-or-nothing and asset-or-nothing equity digitals with the shared
@@ -667,6 +680,14 @@ require agent-written route assembly rather than a product/method wrapper.
 Their lowering records primitive targets separately from true ``route_helper``
 bindings so generic resolvers and kernels are not mislabeled as helper authority
 in prompts or traces.
+
+The admitted European analytical digital lane is also primitive-only. Its
+compact hot start is ``digital_option_composition`` in
+``canonical/api_map.yaml``. Canonical decomposition and route evidence state
+the resolver, basis selection, and scaling obligations, while exact symbol
+validation resolves through the import registry. Cash/asset settlement and
+call/put orientation remain contract choices; a product wrapper cannot
+substitute for that semantic selection even when one numeric case is close.
 
 For schedule-driven cap/floor strips lowered onto ``analytical_black76``, the
 typed schedule state now carries admissibility directly. Structural

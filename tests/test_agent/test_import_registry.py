@@ -502,6 +502,22 @@ def test_quanto_composition_primitives_are_in_static_import_registry():
     ]
 
 
+def test_digital_composition_support_reexports_are_discoverable():
+    module = "trellis.models.analytical.support"
+    symbols = {
+        "asset_or_nothing_intrinsic",
+        "cash_or_nothing_intrinsic",
+        "discounted_value",
+        "forward_from_dividend_yield",
+    }
+
+    assert symbols <= set(list_module_exports(module))
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert symbols <= set(static_registry[module])
+
+
 def test_resolve_import_candidates_handles_known_and_unknown_symbols():
     candidates = resolve_import_candidates(["theta_method_1d", "definitely_not_real"])
     assert "trellis.models.pde.theta_method" in candidates["theta_method_1d"]

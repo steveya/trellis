@@ -702,10 +702,13 @@ def test_resolve_backend_binding_spec_uses_quanto_primitive_composition(
                 model_family="equity_diffusion",
             ),
             "analytical",
-            (
-                "trellis.models.analytical.equity_exotics.price_equity_digital_option_analytical",
-            ),
             (),
+            (
+                "trellis.models.black.black76_cash_or_nothing_call",
+                "trellis.models.black.black76_cash_or_nothing_put",
+                "trellis.models.black.black76_asset_or_nothing_call",
+                "trellis.models.black.black76_asset_or_nothing_put",
+            ),
             id="digital",
         ),
         pytest.param(

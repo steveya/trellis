@@ -802,6 +802,23 @@ The compact ``quanto_option_composition`` entry in ``canonical/api_map.yaml``
 is the intended hot start for a fresh builder; exact symbols are then confirmed
 through the import registry.
 
+The F010 analytical digital lane follows the same authority boundary without
+adding a numerical abstraction. Canonical route and exact-binding records now
+select the shared single-state diffusion resolver, forward/discount/payoff
+support primitives, and four Black-76 cash/asset digital basis kernels. The
+checked adapter visibly composes payout selection and scaling from those
+product-neutral APIs and rejects unknown settlement types. The older product
+function remains available only for cash-digital compatibility comparison. The
+helper-authority audit must therefore find no analytical digital helper in the
+route, binding, or checked adapter, while route and adapter tests preserve
+cash/asset and call/put basis selection.
+
+Package-level primitive APIs remain discoverable rather than merely importable.
+The import registry's static package-export inventory records the same digital
+support symbols and is merged with live module introspection. Route validation
+therefore fails if documentation names a package-level composition primitive
+that a fresh builder cannot confirm through symbol lookup.
+
 The compiled metadata preserves this distinction. ``dsl_target_refs`` and
 ``lowering_target_refs`` list all selected primitive targets. ``dsl_helper_refs``,
 ``lowering_helper_refs``, and backend ``helper_refs`` contain only primitives

@@ -408,19 +408,22 @@
   learned: false
 
 # QUA-852: anchor intent-based requests for analytical exotic pricers on the
-# promoted equity-exotic analytical routes.  For benchmark tasks these are
-# reached via ``financepy_binding_id`` + the deterministic exact-binding body
-# path, so these entries are defensive hygiene for the non-benchmark planner
-# path (intent-based requests without an explicit binding).
+# promoted analytical route. QUA-1183 moves the admitted European digital
+# cohort to basis-kernel composition; the remaining exotics still use their
+# checked compatibility implementations.
 - instrument: digital_option
   features: [terminal_markov, discounting, vol_surface_dependence]
   method: analytical
   method_modules:
-    - trellis.models.analytical.equity_exotics
+    - trellis.models.resolution.single_state_diffusion
+    - trellis.models.analytical.support
+    - trellis.models.black
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
-    - "USE THE EXACT HELPER: Call `price_equity_digital_option_analytical(market_state, spec)` directly; do not restate the Black digital payoff assembly inline."
-  reasoning: "Digital cash-or-nothing and asset-or-nothing payoffs have closed-form BS expressions via the shared analytical helper."
+    - "Start with `resolve_single_state_diffusion_inputs(market_state, spec)`, then build the Black forward with `forward_from_dividend_yield`; do not duplicate date, rate, volatility, or option-type binding."
+    - "Select `black76_cash_or_nothing_call` / `black76_cash_or_nothing_put` for cash settlement and multiply by cash payoff, or `black76_asset_or_nothing_call` / `black76_asset_or_nothing_put` for asset settlement without cash scaling."
+    - "Apply discount and notional exactly once with `discounted_value`, reject unknown payout types, and use `cash_or_nothing_intrinsic` / `asset_or_nothing_intrinsic` for strict expiry semantics."
+  reasoning: "European digital claims are a small basis-selection problem over reusable Black-76 cash/asset call/put kernels; no product wrapper is required."
   learned: false
 
 - instrument: lookback_option

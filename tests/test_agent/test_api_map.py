@@ -35,6 +35,10 @@ def test_api_map_contains_expected_core_entries():
         == "trellis.models.resolution.quanto"
     )
     assert (
+        api_map["digital_option_composition"]["module"]
+        == "trellis.models.resolution.single_state_diffusion"
+    )
+    assert (
         api_map["rate_monte_carlo_composition"]["module"]
         == "trellis.models.monte_carlo.simulation_substrate"
     )
@@ -62,6 +66,7 @@ def test_api_map_key_imports_are_registry_valid():
         "scheduled_observation_composition",
         "weighted_lognormal_sum_composition",
         "observation_return_composition",
+        "digital_option_composition",
         "quanto_option_composition",
         "rate_monte_carlo_composition",
         "qmc",
@@ -240,6 +245,25 @@ def test_api_map_prioritizes_quanto_primitive_composition():
         assert symbol in text
     assert "price_quanto_option_analytical" not in text
     assert "price_quanto_option_monte_carlo" not in text
+
+
+def test_api_map_prioritizes_digital_basis_composition():
+    section = get_api_map()["digital_option_composition"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "resolve_single_state_diffusion_inputs",
+        "forward_from_dividend_yield",
+        "discounted_value",
+        "cash_or_nothing_intrinsic",
+        "asset_or_nothing_intrinsic",
+        "black76_cash_or_nothing_call",
+        "black76_cash_or_nothing_put",
+        "black76_asset_or_nothing_call",
+        "black76_asset_or_nothing_put",
+    ):
+        assert symbol in text
+    assert "price_equity_digital_option_analytical" not in text
 
 
 def test_equity_tree_api_map_prioritizes_lattice_algebra_primitives():
