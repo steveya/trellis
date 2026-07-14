@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-import json
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 from trellis.core.capabilities import analyze_gap, normalize_capability_name
 
@@ -313,6 +312,11 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("strike_variance", "float", "Variance strike"),
             FieldDef("expiry_date", "date", "Variance swap maturity date"),
             FieldDef("realized_variance", "float", "Realized variance accrued to the valuation date", "0.0"),
+            FieldDef("annualization_convention", "str", "Realized-variance annualization convention", "'per_year'"),
+            FieldDef("dividend_yield", "float | None", "Continuous underlier dividend yield override", "None"),
+            FieldDef("n_paths", "int", "Number of Monte Carlo paths", "60000"),
+            FieldDef("n_steps", "int", "Exact uniform realized-variance observation steps", "252"),
+            FieldDef("seed", "int | None", "Monte Carlo random seed", "42"),
             FieldDef("replication_strikes", "str | None", "Comma-separated strike grid for variance-replication parity checks", "None"),
             FieldDef("replication_volatilities", "str | None", "Comma-separated volatility grid aligned with replication_strikes", "None"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),

@@ -287,6 +287,27 @@ fail closed. The functions in ``trellis.models.asian_option`` remain
 compatibility and independent-comparison references, not generated-route
 construction authority.
 
+Variance Swap Composition
+-------------------------
+
+The admitted variance-swap Monte Carlo task route is also assembled from
+reusable pieces. It binds spot, maturity, rate, carry, scalar volatility, and
+discounting with ``resolve_scalar_diffusion_market_inputs(...)``; declares the
+uniform observation grid with ``SquaredLogReturnContract``; and passes the
+matching reducer through ``MonteCarloPathRequirement`` and
+``StateAwarePayoff``. Generated code applies historical realized variance,
+the variance strike, notional, and discounting after evaluating the path
+statistic. The product-level variance-swap functions remain available as
+compatibility and comparison references.
+
+This route requires ``annualization_convention="per_year"`` and uses
+``annualization_factor=1/maturity``. The current admitted surface is a
+single-underlier, constant-scalar-volatility GBM with deterministic rates and
+carry and uniformly spaced observations. A volatility smile, local or
+stochastic volatility, irregular sampling, or a different annualization
+convention needs a different route and fails closed rather than being silently
+collapsed into this approximation.
+
 The P001 Bermudan best-of-two rainbow proof is also exposed this way for
 task compatibility. Its checked-in ``_agent`` adapter delegates to the
 ``trellis.execution`` Bermudan best-of basket shim, which reuses the route-free

@@ -396,6 +396,7 @@ def test_api_map_prioritizes_product_neutral_path_statistic_composition():
         "annualized_squared_log_return_sum",
         "build_running_extremum_reducer",
         "build_squared_log_return_reducer",
+        "resolve_scalar_diffusion_market_inputs",
         "MonteCarloPathRequirement",
         "StateAwarePayoff",
         "MonteCarloEngine",
@@ -403,6 +404,8 @@ def test_api_map_prioritizes_product_neutral_path_statistic_composition():
         assert symbol in text
     assert "settlement" in text
     assert "continuous" in text.lower()
+    assert "annualization_convention" in text
+    assert "trellis.models.variance_swap" not in text
     assert "price_equity_fixed_lookback_option_monte_carlo" not in monte_carlo_text
     assert "price_equity_variance_swap_monte_carlo" not in monte_carlo_text
 

@@ -3707,7 +3707,15 @@ def test_deterministic_exact_binding_module_materializes_variance_swap_mc_target
 
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(
-            "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo",
+            "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+            "trellis.models.monte_carlo.path_statistics.SquaredLogReturnContract",
+            "trellis.models.monte_carlo.path_statistics.annualized_squared_log_return_sum",
+            "trellis.models.monte_carlo.path_statistics.build_squared_log_return_reducer",
+            "trellis.models.processes.gbm.GBM",
+            "trellis.models.monte_carlo.engine.MonteCarloEngine",
+            "trellis.models.monte_carlo.path_state.MonteCarloPathRequirement",
+            "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+            "trellis.core.differentiable.get_numpy",
         ),
         primitive_plan=None,
         method="monte_carlo",
@@ -3726,9 +3734,127 @@ def test_deterministic_exact_binding_module_materializes_variance_swap_mc_target
     )
 
     assert generated is not None
-    assert "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo" in generated.code
-    assert "price_equity_variance_swap_monte_carlo(" in generated.code
+    for symbol in (
+        "resolve_scalar_diffusion_market_inputs(",
+        "SquaredLogReturnContract(",
+        "annualized_squared_log_return_sum(",
+        "build_squared_log_return_reducer(",
+        "MonteCarloPathRequirement(",
+        "StateAwarePayoff(",
+        "GBM(",
+        "MonteCarloEngine(",
+        "return_paths=False",
+        "annualization_convention",
+    ):
+        assert symbol in generated.code
+    assert "trellis.models.variance_swap" not in generated.code
+    assert "price_equity_variance_swap_monte_carlo" not in generated.code
+    assert "discount_rate=0.0" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_generated_variance_swap_monte_carlo_composition_matches_reference():
+    from datetime import date as _date
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.variance_swap import (
+        price_equity_variance_swap_monte_carlo_result,
+    )
+    from trellis.models.vol_surface import FlatVol
+
+    primitive_refs = (
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.models.monte_carlo.path_statistics.SquaredLogReturnContract",
+        "trellis.models.monte_carlo.path_statistics.annualized_squared_log_return_sum",
+        "trellis.models.monte_carlo.path_statistics.build_squared_log_return_reducer",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.MonteCarloPathRequirement",
+        "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+        "trellis.core.differentiable.get_numpy",
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=primitive_refs,
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="variance_swap",
+    )
+    schema = STATIC_SPECS["variance_swap"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Variance swap primitive composition",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="mc_variance_swap",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1190>", "exec"), namespace)  # noqa: S102
+    spec = namespace[schema.spec_name](
+        notional=10_000.0,
+        spot=100.0,
+        strike_variance=0.035,
+        expiry_date=_date(2025, 1, 1),
+        realized_variance=0.002,
+        annualization_convention="per_year",
+        n_paths=40_000,
+        n_steps=96,
+        seed=19,
+    )
+    market_state = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=YieldCurve.flat(0.03),
+        vol_surface=FlatVol(0.20),
+    )
+    payoff = namespace[schema.class_name](spec)
+
+    composed_price = float(payoff.evaluate(market_state))
+    reference = price_equity_variance_swap_monte_carlo_result(
+        market_state,
+        spec,
+    )
+
+    assert composed_price == pytest.approx(
+        reference.price,
+        abs=6.0 * reference.standard_error,
+    )
+
+    default_seed_spec = namespace[schema.spec_name](
+        notional=10_000.0,
+        spot=100.0,
+        strike_variance=0.035,
+        expiry_date=_date(2025, 1, 1),
+        n_paths=2_000,
+        n_steps=24,
+        seed=None,
+    )
+    default_seed_payoff = namespace[schema.class_name](default_seed_spec)
+    assert default_seed_payoff.evaluate(market_state) == pytest.approx(
+        default_seed_payoff.evaluate(market_state),
+        rel=0.0,
+        abs=0.0,
+    )
+
+    invalid_count_spec = namespace[schema.spec_name](
+        notional=10_000.0,
+        spot=100.0,
+        strike_variance=0.035,
+        expiry_date=_date(2025, 1, 1),
+        n_paths=0,
+        n_steps=24,
+    )
+    with pytest.raises(ValueError, match="at least two paths"):
+        namespace[schema.class_name](invalid_count_spec).evaluate(market_state)
 
 
 def test_deterministic_exact_binding_module_materializes_route_free_vanilla_black76_body():

@@ -843,7 +843,7 @@ def test_resolve_backend_binding_spec_uses_cliquet_primitive_composition():
     assert "trellis.models.observation_returns.bounded_observation_return_sum" in resolved.primitive_refs
 
 
-def test_resolve_backend_binding_spec_uses_variance_swap_monte_carlo_helper():
+def test_resolve_backend_binding_spec_composes_variance_swap_monte_carlo():
     catalog = load_backend_binding_catalog()
     monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
     product_ir = ProductIR(
@@ -864,12 +864,19 @@ def test_resolve_backend_binding_spec_uses_variance_swap_monte_carlo_helper():
 
     resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
 
-    assert resolved.helper_refs == (
-        "trellis.models.variance_swap.price_equity_variance_swap_monte_carlo",
-    )
-    assert resolved.pricing_kernel_refs == (
-        "trellis.models.variance_swap.equity_variance_swap_outputs_monte_carlo",
-    )
+    assert resolved.helper_refs == ()
+    assert resolved.pricing_kernel_refs == ()
+    assert {
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.models.monte_carlo.path_statistics.SquaredLogReturnContract",
+        "trellis.models.monte_carlo.path_statistics.annualized_squared_log_return_sum",
+        "trellis.models.monte_carlo.path_statistics.build_squared_log_return_reducer",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.MonteCarloPathRequirement",
+        "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+        "trellis.core.differentiable.get_numpy",
+    } <= set(resolved.primitive_refs)
 
 
 def test_resolve_backend_binding_spec_uses_merton_jump_diffusion_helpers():

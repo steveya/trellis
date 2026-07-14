@@ -890,19 +890,54 @@ class TestMonteCarloPathsRoutes:
         }
         assert _prim_set(new_prims) == expected_prims
 
-    def test_variance_swap_primitives_use_realized_variance_helper(self, registry):
+    def test_variance_swap_primitives_compose_realized_variance_state(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         new_prims = resolve_route_primitives(spec, self.VARIANCE_SWAP_IR)
         expected_prims = {
             (
-                "trellis.models.variance_swap",
-                "price_equity_variance_swap_monte_carlo",
-                "route_helper",
+                "trellis.models.resolution.single_state_diffusion",
+                "resolve_scalar_diffusion_market_inputs",
+                "market_binding",
             ),
             (
-                "trellis.models.variance_swap",
-                "equity_variance_swap_outputs_monte_carlo",
-                "pricing_kernel",
+                "trellis.models.monte_carlo.path_statistics",
+                "SquaredLogReturnContract",
+                "payoff_contract",
+            ),
+            (
+                "trellis.models.monte_carlo.path_statistics",
+                "annualized_squared_log_return_sum",
+                "payoff_primitive",
+            ),
+            (
+                "trellis.models.monte_carlo.path_statistics",
+                "build_squared_log_return_reducer",
+                "payoff_primitive",
+            ),
+            (
+                "trellis.models.processes.gbm",
+                "GBM",
+                "state_process",
+            ),
+            (
+                "trellis.models.monte_carlo.engine",
+                "MonteCarloEngine",
+                "path_simulation",
+            ),
+            (
+                "trellis.models.monte_carlo.path_state",
+                "MonteCarloPathRequirement",
+                "payoff_contract",
+            ),
+            (
+                "trellis.models.monte_carlo.path_state",
+                "StateAwarePayoff",
+                "payoff_contract",
+            ),
+            (
+                "trellis.core.differentiable",
+                "get_numpy",
+                "numerical_backend",
             ),
         }
         assert _prim_set(new_prims) == expected_prims
@@ -2807,7 +2842,6 @@ class TestFallbackRoutes:
     def test_vanilla_pde_admissibility_rejects_wrong_operator_family(self, registry):
         from dataclasses import replace
 
-        from trellis.agent.family_lowering_ir import PDEOperatorSpec
         from trellis.agent.semantic_contract_compiler import compile_semantic_contract
         from trellis.agent.semantic_contracts import make_vanilla_option_contract
 
