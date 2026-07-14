@@ -210,6 +210,63 @@ derivative.  Product route authority moves only in a separate migration after
 fresh generated source demonstrates the complete process, payoff, and
 discounting composition.
 
+Weighted Lognormal-Sum Moments
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``trellis.models.analytical.support.lognormal_moments`` provides exact first
+and second moments for one explicitly weighted sum of jointly lognormal
+observations.  For
+
+.. math::
+
+   A = \sum_i w_i X_i,
+
+the contract stores each horizon :math:`t_i`, initial level :math:`S_{0,i}`,
+expected-growth rate :math:`b_i`, and the covariance
+:math:`C_{ij}=\operatorname{Cov}(\log X_i,\log X_j)` of log returns.  Therefore
+
+.. math::
+
+   m_i = \mathbb{E}[X_i] = S_{0,i}e^{b_i t_i},
+
+.. math::
+
+   \mathbb{E}[A] = \sum_i w_i m_i,
+   \qquad
+   \mathbb{E}[A^2] = \sum_{i,j} w_i w_j m_i m_j e^{C_{ij}}.
+
+``WeightedLognormalSumContract`` requires finite dimensions, positive initial
+levels, ordered non-negative horizons, and a finite symmetric positive-
+semidefinite log-covariance matrix.  It accepts signed weights for raw moment
+calculation.  ``match_lognormal_moments(...)`` fails closed for signed weights
+because the resulting sum is not guaranteed to have positive support.
+
+For one constant-parameter GBM,
+``single_factor_lognormal_sum_contract(...)`` constructs
+
+.. math::
+
+   C_{ij} = \sigma^2\min(t_i,t_j).
+
+The fitted ``LognormalMomentMatch`` reports total log variance
+
+.. math::
+
+   v_{\log} = \log\left(\frac{\mathbb{E}[A^2]}{\mathbb{E}[A]^2}\right),
+
+and ``effective_volatility(maturity=T)`` returns
+:math:`\sqrt{v_{\log}/T}`.  A generated analytical adapter can pass the fitted
+mean as the forward and that volatility to ``black76_call`` or
+``black76_put``.  Those kernels are undiscounted, so the adapter must still
+apply the contractual discount factor and notional explicitly.
+
+Only the two declared moments are exact.  Replacing the distribution of the
+sum by a lognormal distribution is an approximation and should be validated
+against a direct Monte Carlo construction such as the scheduled weighted-
+observation reducer above.  The compatibility arithmetic-average wrapper now
+uses this kernel, but product route authority remains unchanged until its
+separate migration ticket proves fresh generated composition.
+
 Scheduled Observation Returns
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

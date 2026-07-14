@@ -607,6 +607,33 @@ This is reusable construction infrastructure only. Existing product routes and
 compatibility wrappers remain unchanged until a separate migration proves
 fresh primitive-composed source and strict replay evidence.
 
+For weighted lognormal-sum approximations, use the API-map entry
+``weighted_lognormal_sum_composition``.  The bounded analytical sequence is:
+
+#. resolve contractual observation horizons, weights, initial levels, carries,
+   and the log-return covariance authority
+#. construct ``WeightedLognormalSumContract`` directly, or use
+   ``single_factor_lognormal_sum_contract(...)`` for one constant-parameter GBM
+#. call ``weighted_lognormal_sum_moments(...)`` and retain both raw moments as
+   validation evidence
+#. call ``match_lognormal_moments(...)`` only when non-negative weights and a
+   strictly positive fitted mean make a lognormal approximation admissible
+#. call ``black76_call`` or ``black76_put`` with the fitted mean and effective
+   volatility, then apply discounting and notional explicitly
+#. compare the approximation with an independently composed Monte Carlo result
+
+The log-covariance matrix is a semantic input, not an arbitrary numerical
+stabilizer.  It must be finite, symmetric, and positive semidefinite.  For one
+GBM observed repeatedly, its entries are ``sigma**2 * min(t_i, t_j)``; using an
+identity matrix would incorrectly erase shared Brownian history.  The fitted
+distribution is approximate even though the first and second moments are
+exact under the declared model.
+
+The compatibility arithmetic-average analytical wrapper delegates to these
+primitives, but remains a reference caller.  Runtime route/binding authority
+does not move until fresh generated source and replay evidence pass the
+separate migration gate.
+
 For schedule-based consecutive returns, agents now have a compact API-map entry
 named ``observation_return_composition``. The required construction order is:
 
