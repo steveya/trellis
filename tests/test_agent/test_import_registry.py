@@ -86,6 +86,37 @@ def test_weighted_observation_primitives_are_visible_to_import_registry():
         assert symbol in registry_text
 
 
+def test_path_statistic_primitives_are_visible_to_import_registry():
+    module = "trellis.models.monte_carlo.path_statistics"
+    symbols = {
+        "RunningExtremumContract",
+        "SquaredLogReturnContract",
+        "annualized_squared_log_return_sum",
+        "build_running_extremum_reducer",
+        "build_squared_log_return_reducer",
+        "discrete_path_extremum",
+    }
+
+    assert module_exists(module)
+    assert symbols <= set(list_module_exports(module))
+    for symbol in symbols:
+        assert module in find_symbol_modules(symbol)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert symbols <= set(static_registry[module])
+    assert "PathReducer" in static_registry[
+        "trellis.models.monte_carlo.path_state"
+    ]
+
+
 def test_weighted_lognormal_moment_primitives_are_visible_to_import_registry():
     module = "trellis.models.analytical.support.lognormal_moments"
     symbols = {

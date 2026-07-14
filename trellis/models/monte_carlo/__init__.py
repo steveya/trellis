@@ -79,6 +79,14 @@ from trellis.models.monte_carlo.path_state import (
     barrier_payoff,
     terminal_value_payoff,
 )
+from trellis.models.monte_carlo.path_statistics import (
+    RunningExtremumContract,
+    SquaredLogReturnContract,
+    annualized_squared_log_return_sum,
+    build_running_extremum_reducer,
+    build_squared_log_return_reducer,
+    discrete_path_extremum,
+)
 from trellis.models.monte_carlo.primal_dual import primal_dual_mc, primal_dual_mc_result
 from trellis.models.monte_carlo.stochastic_mesh import stochastic_mesh, stochastic_mesh_result
 from trellis.models.monte_carlo.tv_regression import (

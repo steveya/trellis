@@ -303,6 +303,115 @@ This layer is construction infrastructure, not a replacement product helper.
 Existing product-route authority is migrated separately only after fresh task
 artifacts prove that they can compose these primitives.
 
+Discrete Path Statistics
+~~~~~~~~~~~~~~~~~~~~~~~~
+
+``trellis.models.monte_carlo.path_statistics`` provides two public,
+product-neutral summaries for finite positive scalar paths.  For explicitly
+selected simulation steps :math:`i_0 < \cdots < i_m`, the extrema contract
+computes either
+
+.. math::
+
+   \min_j S_{i_j}
+   \quad\text{or}\quad
+   \max_j S_{i_j},
+
+while the squared-log-return contract computes
+
+.. math::
+
+   a\sum_{j=1}^{m}
+   \left(\log\frac{S_{i_j}}{S_{i_{j-1}}}\right)^2.
+
+``RunningExtremumContract`` and ``SquaredLogReturnContract`` carry the exact
+engine ``n_steps`` value and the complete ordered ``observation_steps`` tuple.
+There is no implicit time-zero observation.  The first squared-return
+observation is the baseline and contributes no return.  The scalar
+``annualization_factor`` :math:`a` multiplies the complete sum; Trellis does
+not infer it from maturity, calendar, or observation count.  A prior positive
+extremum may be supplied through ``initial_extremum`` without turning the
+reducer into a named derivative.
+
+Each statistic has matching full-path and reduced-state surfaces:
+
+- ``discrete_path_extremum(...)`` and
+  ``annualized_squared_log_return_sum(...)`` provide direct path-array
+  evidence;
+- ``build_running_extremum_reducer(...)`` and
+  ``build_squared_log_return_reducer(...)`` produce bounded
+  ``PathReducer`` state for ``MonteCarloEngine``;
+- ``PathReducer.finalize_fn`` separates private accumulator state from the
+  public value stored under ``MonteCarloPathState.reduced_value(name)``.  For
+  example, squared returns retain the previous level internally but publish
+  only the annualized sum.
+
+Generated pricing code owns settlement.  A discrete fixed-strike maximum
+claim can therefore be assembled without a product pricer:
+
+.. code-block:: python
+
+   from trellis.core.differentiable import get_numpy
+   from trellis.models.monte_carlo.engine import MonteCarloEngine
+   from trellis.models.monte_carlo.path_state import (
+       MonteCarloPathRequirement,
+       StateAwarePayoff,
+   )
+   from trellis.models.monte_carlo.path_statistics import (
+       RunningExtremumContract,
+       build_running_extremum_reducer,
+       discrete_path_extremum,
+   )
+   from trellis.models.processes.gbm import GBM
+
+   np = get_numpy()
+   contract = RunningExtremumContract(
+       n_steps=64,
+       observation_steps=tuple(range(65)),
+       direction="maximum",
+   )
+   reducer = build_running_extremum_reducer(contract, name="running_maximum")
+   settlement = lambda maximum: notional * np.maximum(maximum - strike, 0.0)
+   payoff = StateAwarePayoff(
+       path_requirement=MonteCarloPathRequirement(reducers=(reducer,)),
+       evaluate_paths_fn=lambda paths: settlement(
+           discrete_path_extremum(paths, contract)
+       ),
+       evaluate_state_fn=lambda state: settlement(
+           state.reduced_value("running_maximum")
+       ),
+   )
+   result = MonteCarloEngine(
+       GBM(mu=rate - dividend_yield, sigma=volatility),
+       n_paths=100_000,
+       n_steps=contract.n_steps,
+       seed=42,
+       method="exact",
+   ).price(
+       spot,
+       maturity,
+       payoff,
+       discount_rate=rate,
+       return_paths=False,
+   )
+
+The same pattern lets caller code add historical realized variance, compare a
+contractual variance strike, apply notional, and discount after reading a
+squared-log-return reducer.  Those terms are deliberately absent from the
+path-state module.
+
+Extrema are exact only over the listed discrete observations.  The existing
+``brownian_bridge(...)`` utility constructs Brownian paths and bridge-ordered
+increments; it does not sample conditional transition extrema.  Continuous
+extrema need previous/current transition state, process variance, and bridge
+randomness that the deterministic ``PathReducer.update(...)`` interface does
+not receive.  Trellis therefore fails closed on that claim rather than
+presenting the discrete reducer as a continuous-monitoring correction.
+
+Full-path operations preserve the differentiable backend away from extrema
+ties.  Extrema remain nonsmooth at ties, and true streaming reduced-state AD
+is outside the current engine support contract recorded in ``LIMITATIONS.md``.
+
 The first migrated vanilla cases now use that boundary directly:
 
 - vanilla European Monte Carlo lowers onto ``EventAwareMonteCarloIR`` as a

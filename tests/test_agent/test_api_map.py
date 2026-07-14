@@ -36,6 +36,10 @@ def test_api_map_contains_expected_core_entries():
         == "trellis.models.observation_aggregation"
     )
     assert (
+        api_map["path_statistic_composition"]["module"]
+        == "trellis.models.monte_carlo.path_statistics"
+    )
+    assert (
         api_map["weighted_lognormal_sum_composition"]["module"]
         == "trellis.models.analytical.support.lognormal_moments"
     )
@@ -74,6 +78,7 @@ def test_api_map_key_imports_are_registry_valid():
         "rate_lattice",
         "monte_carlo",
         "scheduled_observation_composition",
+        "path_statistic_composition",
         "weighted_lognormal_sum_composition",
         "observation_return_composition",
         "digital_option_composition",
@@ -247,6 +252,24 @@ def test_api_map_semantic_selection_reaches_composition_cards():
         ),
         (
             ApiMapQuery(
+                instrument_type="fixed_lookback_option",
+                payoff_family="lookback_option",
+                method="monte_carlo",
+                features=("running_extremum",),
+            ),
+            "path_statistic_composition",
+        ),
+        (
+            ApiMapQuery(
+                instrument_type="variance_swap",
+                payoff_family="variance_swap",
+                method="monte_carlo",
+                features=("squared_log_return",),
+            ),
+            "path_statistic_composition",
+        ),
+        (
+            ApiMapQuery(
                 description="Price a cliquet with capped interval returns.",
             ),
             "observation_return_composition",
@@ -353,6 +376,35 @@ def test_monte_carlo_api_map_prioritizes_terminal_claim_composition():
     assert "price_single_state_terminal_claim_monte_carlo_result" in text
     assert "terminal_intrinsic_from_resolved" in text
     assert "price_vanilla_equity_option_monte_carlo" not in text
+
+
+def test_api_map_prioritizes_product_neutral_path_statistic_composition():
+    api_map = get_api_map()
+    section = api_map["path_statistic_composition"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+    monte_carlo_text = "\n".join(
+        (
+            *api_map["monte_carlo"]["key_imports"],
+            *api_map["monte_carlo"]["notes"],
+        )
+    )
+
+    for symbol in (
+        "RunningExtremumContract",
+        "SquaredLogReturnContract",
+        "discrete_path_extremum",
+        "annualized_squared_log_return_sum",
+        "build_running_extremum_reducer",
+        "build_squared_log_return_reducer",
+        "MonteCarloPathRequirement",
+        "StateAwarePayoff",
+        "MonteCarloEngine",
+    ):
+        assert symbol in text
+    assert "settlement" in text
+    assert "continuous" in text.lower()
+    assert "price_equity_fixed_lookback_option_monte_carlo" not in monte_carlo_text
+    assert "price_equity_variance_swap_monte_carlo" not in monte_carlo_text
 
 
 def test_api_map_exposes_product_neutral_observation_return_composition():

@@ -81,11 +81,14 @@ class PathReducer:
     Instead of storing the full path, a PathReducer maintains a summary
     (e.g. running max, running average) that is updated at each time step
     via init_fn (called once at step 0) and update_fn (called at each step).
+    An optional finalize_fn projects private accumulator state into the value
+    published on MonteCarloPathState.
     """
 
     name: str
     init_fn: Callable[[raw_np.ndarray, int], raw_np.ndarray]
     update_fn: Callable[[raw_np.ndarray, raw_np.ndarray, int], raw_np.ndarray]
+    finalize_fn: Callable[[raw_np.ndarray], raw_np.ndarray] | None = None
 
     def init(self, initial_values: raw_np.ndarray, n_steps: int) -> raw_np.ndarray:
         """Initialize the reducer accumulator from the starting cross-section."""
@@ -94,6 +97,23 @@ class PathReducer:
     def update(self, accumulator: raw_np.ndarray, values: raw_np.ndarray, step: int) -> raw_np.ndarray:
         """Advance the accumulator with one new cross-section."""
         return _to_backend_array(self.update_fn(accumulator, values, step))
+
+    def finalize(self, accumulator: raw_np.ndarray) -> raw_np.ndarray:
+        """Project internal accumulator state into its published statistic."""
+        if self.finalize_fn is None:
+            return _to_backend_array(accumulator)
+        result = _to_backend_array(self.finalize_fn(accumulator))
+        accumulator_view = _validation_view(accumulator)
+        result_view = _validation_view(result)
+        if (
+            accumulator_view.ndim == 0
+            or result_view.ndim == 0
+            or result_view.shape[0] != accumulator_view.shape[0]
+        ):
+            raise ValueError(
+                "finalize_fn must preserve the reducer accumulator path axis"
+            )
+        return result
 
 
 @dataclass(frozen=True)
