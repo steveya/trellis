@@ -651,7 +651,7 @@ class TestKnowledgeStore:
         assert "callable" in d.features
         assert d.method == "rate_tree"
 
-    def test_analytical_exotic_decompositions_anchor_on_equity_exotics_module(self):
+    def test_analytical_exotic_decompositions_anchor_on_checked_implementations(self):
         """QUA-852: digital/lookback/chooser/compound intent requests resolve to analytical.
 
         Without these entries the planner's decomposition router falls through to
@@ -664,8 +664,31 @@ class TestKnowledgeStore:
         from trellis.agent.knowledge import get_store
         store = get_store()
 
+        digital = store._decompositions.get("digital_option")
+        assert digital is not None
+        assert digital.method == "analytical"
+        assert "trellis.models.resolution.single_state_diffusion" in digital.method_modules
+        assert "trellis.models.analytical.support" in digital.method_modules
+        assert "trellis.models.black" in digital.method_modules
+        assert "trellis.models.analytical.equity_exotics" not in digital.method_modules
+        assert "discount_curve" in digital.required_market_data
+        assert "black_vol_surface" in digital.required_market_data
+        digital_requirements = " ".join(digital.modeling_requirements)
+        for kernel in (
+            "resolve_single_state_diffusion_inputs",
+            "forward_from_dividend_yield",
+            "discounted_value",
+            "cash_or_nothing_intrinsic",
+            "asset_or_nothing_intrinsic",
+            "black76_cash_or_nothing_call",
+            "black76_cash_or_nothing_put",
+            "black76_asset_or_nothing_call",
+            "black76_asset_or_nothing_put",
+        ):
+            assert kernel in digital_requirements
+        assert "price_equity_digital_option_analytical" not in digital_requirements
+
         for instrument, helper_symbol in (
-            ("digital_option", "price_equity_digital_option_analytical"),
             ("lookback_option", "price_equity_fixed_lookback_option_analytical"),
             ("chooser_option", "price_equity_chooser_option_analytical"),
             ("compound_option", "price_equity_compound_option_analytical"),

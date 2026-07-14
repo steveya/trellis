@@ -44,6 +44,14 @@ class TestSpecSchema:
         assert "strike" in field_names
         assert "expiry_date" in field_names
 
+    def test_digital_static_spec_preserves_dividend_yield_override(self):
+        fields = {
+            field.name: field for field in STATIC_SPECS["digital_option"].fields
+        }
+
+        assert fields["dividend_yield"].type == "float"
+        assert fields["dividend_yield"].default == "0.0"
+
     def test_schedule_dependent_static_specs_use_typed_date_tuples(self):
         callable_spec = STATIC_SPECS["callable_bond"]
         puttable_spec = STATIC_SPECS["puttable_bond"]

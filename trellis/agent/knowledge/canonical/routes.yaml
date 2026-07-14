@@ -1606,12 +1606,38 @@ routes:
             exercise:
               style: european
         primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_digital_option_analytical
-            role: route_helper
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: resolve_single_state_diffusion_inputs
+            role: market_binding
+          - module: trellis.models.analytical.support
+            symbol: forward_from_dividend_yield
+            role: forward_builder
+          - module: trellis.models.analytical.support
+            symbol: discounted_value
+            role: discounting
+          - module: trellis.models.analytical.support
+            symbol: cash_or_nothing_intrinsic
+            role: payoff_primitive
+          - module: trellis.models.analytical.support
+            symbol: asset_or_nothing_intrinsic
+            role: payoff_primitive
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_cash_or_nothing_put
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_asset_or_nothing_put
+            role: pricing_kernel
         adapters: []
         notes:
-          - "Use the exact digital helper with `market_state` and `spec`; do not rebuild the Black digital payoff inline."
+          - "Start with `resolve_single_state_diffusion_inputs(...)`; use `forward_from_dividend_yield(...)` for the Black forward and the resolved curve for the discount factor."
+          - "Select the cash-or-nothing or asset-or-nothing call/put kernel from the declared payout and option types. Black-76 digital kernels return undiscounted values, so use `discounted_value(...)` to apply discount, notional, and the cash amount only for cash settlement."
+          - "Reject unsupported payout types and use `cash_or_nothing_intrinsic(...)` or `asset_or_nothing_intrinsic(...)` at expiry so the strict indicator is shared; do not call a product pricing wrapper."
       # The ``default`` sentinel intentionally stays in legacy form: it is
       # dispatched by ``resolve_route_primitives`` as the explicit fall-through
       # catch-all, not as a structural ContractPattern match. QUA-920 does not

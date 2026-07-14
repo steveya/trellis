@@ -131,6 +131,23 @@ seeded two-factor Sobol shocks. Checked-in adapters under
 ``trellis.instruments._agent`` remain compatibility artifacts and examples;
 the primitive contract, not a product-pricing wrapper, is authoritative.
 
+European Digital Options
+------------------------
+
+For a European cash-or-nothing or asset-or-nothing equity digital, the
+analytical task route selects a Black-76 basis kernel from the declared payout
+and call/put orientation. The adapter first uses the shared single-state
+diffusion resolver for time, rate, volatility, carry, and option type, then
+uses shared forward, discount, and terminal-payoff primitives around the
+selected kernel. It applies notional once and applies ``cash_payoff`` only for
+cash settlement.
+
+This makes the supported boundary visible: European exercise, lognormal equity
+dynamics, deterministic rates, and strict terminal indicators. Unknown payout
+or option types fail instead of being treated as puts or cash digitals. The
+product-level analytical function remains a compatibility reference for cash
+digitals; task construction uses the basis kernels directly.
+
 Scheduled Observation Returns
 -----------------------------
 

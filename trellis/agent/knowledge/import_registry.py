@@ -561,7 +561,7 @@ from trellis.curves.credit_curve import CreditCurve
 ### Models — Analytical
 from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put
 from trellis.models.analytical import terminal_intrinsic, terminal_vanilla_from_basis
-from trellis.models.analytical.support import discounted_value, gauss_hermite_product_expectation, implied_zero_rate, normalized_option_type, quanto_adjusted_forward, terminal_intrinsic
+from trellis.models.analytical.support import asset_or_nothing_intrinsic, cash_or_nothing_intrinsic, discounted_value, forward_from_dividend_yield, gauss_hermite_product_expectation, implied_zero_rate, normalized_option_type, quanto_adjusted_forward, terminal_intrinsic
 from trellis.models.analytical.support.expectations import gauss_hermite_product_expectation
 from trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs, garman_kohlhagen_call_raw, garman_kohlhagen_price_raw, garman_kohlhagen_put_raw
 from trellis.models.analytical.jamshidian import zcb_option_hw

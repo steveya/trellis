@@ -20,6 +20,7 @@ _KNOWLEDGE_DIR = Path(__file__).parent
 _API_MAP_CACHE: dict[str, dict[str, Any]] = {}
 
 _FAMILY_ORDER = (
+    "digital_option_composition",
     "equity_tree",
     "rate_lattice",
     "monte_carlo",

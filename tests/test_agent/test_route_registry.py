@@ -1717,15 +1717,55 @@ class TestAnalyticalRoutes:
             ("trellis.models.analytical.barrier", "barrier_option_price", "route_helper"),
         }
 
-    def test_digital_primitives_use_exact_helper(self, registry):
+    def test_digital_primitives_use_black76_basis_kernels(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         new_prims = resolve_route_primitives(spec, self.DIGITAL_IR)
         assert resolve_route_family(spec, self.DIGITAL_IR) == "analytical"
         assert _prim_set(new_prims) == {
             (
-                "trellis.models.analytical.equity_exotics",
-                "price_equity_digital_option_analytical",
-                "route_helper",
+                "trellis.models.black",
+                "black76_asset_or_nothing_call",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.black",
+                "black76_asset_or_nothing_put",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.black",
+                "black76_cash_or_nothing_call",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.black",
+                "black76_cash_or_nothing_put",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.resolution.single_state_diffusion",
+                "resolve_single_state_diffusion_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "forward_from_dividend_yield",
+                "forward_builder",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "discounted_value",
+                "discounting",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "cash_or_nothing_intrinsic",
+                "payoff_primitive",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "asset_or_nothing_intrinsic",
+                "payoff_primitive",
             ),
         }
 

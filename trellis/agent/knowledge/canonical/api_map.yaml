@@ -54,6 +54,26 @@ payoff:
     - "DeterministicCashflowPayoff wraps any Instrument into Payoff"
 
 # ---------------------------------------------------------------------------
+# European digital option composition
+# ---------------------------------------------------------------------------
+digital_option_composition:
+  module: trellis.models.resolution.single_state_diffusion
+  modules:
+    market_binding: trellis.models.resolution.single_state_diffusion
+    analytical_support: trellis.models.analytical.support
+    black_kernel: trellis.models.black
+  key_imports:
+    - "from trellis.models.resolution.single_state_diffusion import resolve_single_state_diffusion_inputs"
+    - "from trellis.models.analytical.support import asset_or_nothing_intrinsic, cash_or_nothing_intrinsic, discounted_value, forward_from_dividend_yield"
+    - "from trellis.models.black import black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put"
+  notes:
+    - "Admitted scope is European cash-or-nothing or asset-or-nothing call/put claims under lognormal equity dynamics and deterministic rates"
+    - "Start with resolve_single_state_diffusion_inputs, then form the forward with forward_from_dividend_yield before selecting the kernel"
+    - "Black-76 digital kernels return undiscounted basis values; use discounted_value to apply discount and notional once, and apply cash_payoff only to cash-or-nothing settlement"
+    - "At expiry use cash_or_nothing_intrinsic or asset_or_nothing_intrinsic so strict indicator semantics stay on the shared payoff basis"
+    - "The product-level analytical digital wrapper remains a compatibility/reference API and is not generated-route construction authority"
+
+# ---------------------------------------------------------------------------
 # Quanto option composition
 # ---------------------------------------------------------------------------
 quanto_option_composition:
@@ -289,6 +309,7 @@ analytical:
   notes:
     - "For FX vanilla analytics, resolve spot, domestic/foreign discount factors, volatility, and contract terms, then call `garman_kohlhagen_price_raw(...)` on the resolved basis and apply notional"
     - "For FX single-barrier analytics, resolve FX spot, domestic/foreign rates, volatility, monitoring, and payoff terms, then call `barrier_option_price(...)` with foreign rate as `q` and apply notional"
+    - "For European digitals, use the Black-76 cash-or-nothing or asset-or-nothing call/put basis kernel selected by contract semantics; bind the carry-adjusted forward and apply discount, notional, and cash amount explicitly"
 
 # ---------------------------------------------------------------------------
 # Model imports — calibration
@@ -309,6 +330,8 @@ utilities:
     module: trellis.models.black
     imports:
       - "from trellis.models.black import black76_call, black76_put, black76_asset_or_nothing_call, black76_asset_or_nothing_put, black76_cash_or_nothing_call, black76_cash_or_nothing_put"
+    notes:
+      - "All Black-76 kernels return undiscounted values on the forward basis; callers own market binding, discounting, notional, and payout scaling"
   garman_kohlhagen:
     module: trellis.models.analytical.fx
     imports:
