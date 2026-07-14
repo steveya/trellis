@@ -4354,9 +4354,8 @@ def _arithmetic_asian_evaluate_body(
                     else max(int(configured_steps), 1)
                 ),
                 min_steps=max(observation_count - 1, 1),
-                max_steps=max(
-                    int(getattr(spec, "max_grid_steps", 4096) or 4096),
-                    observation_count,
+                max_steps=int(
+                    getattr(spec, "max_grid_steps", 4096) or 4096
                 ),
             )
 

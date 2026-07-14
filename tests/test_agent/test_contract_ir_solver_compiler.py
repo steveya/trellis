@@ -34,6 +34,7 @@ from trellis.agent.contract_ir import (
 )
 from trellis.agent.contract_ir_solver_compiler import (
     ContractIRCompilerDecision,
+    ContractIRTermEnvironment,
     ContractIRSolverBindingError,
     ContractIRSolverNoMatchError,
     build_contract_ir_term_environment,
@@ -859,6 +860,47 @@ class TestContractIRSolverCompiler:
         assert decision.result_path == ("price",)
         assert decision.helper_refs == ()
         assert execute_contract_ir_solver_decision(decision) >= 0.0
+
+    def test_asian_monte_carlo_respects_explicit_grid_search_upper_bound(self):
+        market_state = _variance_market_state()
+        context = build_valuation_context(
+            market_snapshot=market_state,
+            requested_outputs=("price",),
+        )
+        averaging = _finite_schedule(
+            "2025-01-07",
+            "2025-01-13",
+            "2025-01-19",
+            "2025-01-25",
+        )
+        contract_ir = ContractIR(
+            payoff=Max(
+                (
+                    Sub(ArithmeticMean(Spot("SPX"), averaging), Strike(4500.0)),
+                    Constant(0.0),
+                )
+            ),
+            exercise=Exercise(
+                style="european",
+                schedule=Singleton(date(2025, 1, 25)),
+            ),
+            observation=Observation(kind="schedule", schedule=averaging),
+            underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+        )
+
+        with pytest.raises(
+            ContractIRSolverBindingError,
+            match="max_steps must be at least min_steps",
+        ):
+            compile_contract_ir_solver(
+                contract_ir,
+                term_environment=ContractIRTermEnvironment(
+                    raw_term_fields={"max_grid_steps": 3},
+                ),
+                valuation_context=context,
+                market_state=market_state,
+                preferred_method="monte_carlo",
+            )
 
     @pytest.mark.parametrize("preferred_method", ["analytical", "monte_carlo"])
     def test_arithmetic_asian_lane_rejects_floating_strike_multi_asset_and_non_european(

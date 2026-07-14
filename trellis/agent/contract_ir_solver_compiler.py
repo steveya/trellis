@@ -1551,9 +1551,8 @@ def _arithmetic_asian_monte_carlo_binding_adapter(
             else max(int(configured_steps), 1)
         ),
         min_steps=max(count, 1),
-        max_steps=max(
-            int(term_environment.raw_term_fields.get("max_grid_steps") or 4096),
-            count,
+        max_steps=int(
+            term_environment.raw_term_fields.get("max_grid_steps") or 4096
         ),
     )
 

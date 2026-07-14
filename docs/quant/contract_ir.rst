@@ -429,7 +429,7 @@ The current cutover is intentionally bounded:
 - unmigrated, under-specified, or structurally unsupported requests still fall
   back to the compatibility route path
 - arithmetic Asians now have bounded structural analytical call / put and
-  Monte Carlo call composition lanes assembled from reusable resolver,
+  Monte Carlo call / put composition lanes assembled from reusable resolver,
   observation, moment, process, and engine primitives; broader family
   retirement remains explicitly bounded
 - quoted-observable terminal linear curve-spread and surface-spread payoffs now

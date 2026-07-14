@@ -86,14 +86,14 @@ The default Phase 3 registry admits:
 6. Bounded arithmetic-Asian analytical call / put composition via the shared
    single-state resolver, weighted-lognormal moments, moment matching, and
    Black-76 kernels
-7. Expiry-aligned arithmetic-Asian call Monte Carlo composition via
+7. Expiry-aligned arithmetic-Asian call / put Monte Carlo composition via
    ``WeightedObservationContract``, ``weighted_observation_payoff(...)``,
    ``resolve_uniform_grid_steps(...)``, ``GBM``, and ``MonteCarloEngine``
 8. Terminal linear curve-spread and surface-spread quoted-observable helpers
    via ``trellis.models.quoted_observable``
 
 Arithmetic Asians are still only partially admitted. The compiler now binds a
-bounded analytical approximation plus one bounded Monte Carlo call lane from
+bounded analytical approximation plus bounded Monte Carlo call / put lanes from
 generic primitives for the checked European schedule-based equity-diffusion
 cohort. Geometric averaging, floating strike, multiple underliers,
 non-European exercise, and inexact observation grids remain outside the

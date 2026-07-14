@@ -119,7 +119,7 @@ class AsianOptionPayoff:
                 else max(int(configured_steps), 1)
             ),
             min_steps=max(observation_count - 1, 1),
-            max_steps=max(int(spec.max_grid_steps), observation_count),
+            max_steps=int(spec.max_grid_steps),
         )
 
         np = get_numpy()
