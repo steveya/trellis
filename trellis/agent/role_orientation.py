@@ -41,6 +41,8 @@ class RoleOrientation:
     title: str
     purpose: str
     max_render_chars: int
+    max_context_chars: int
+    max_resource_chars: int
     owns: tuple[str, ...]
     excludes: tuple[str, ...]
     navigation: tuple[OrientationResource, ...]
@@ -101,8 +103,22 @@ def _parse_orientation(role: str, payload: object) -> RoleOrientation:
 
     version = int(payload.get("version") or 0)
     max_render_chars = int(payload.get("max_render_chars") or 0)
-    if version <= 0 or max_render_chars <= 0:
-        raise ValueError(f"{context} requires positive version and max_render_chars")
+    max_context_chars = int(payload.get("max_context_chars") or 0)
+    max_resource_chars = int(payload.get("max_resource_chars") or 0)
+    if (
+        version <= 0
+        or max_render_chars <= 0
+        or max_context_chars <= 0
+        or max_resource_chars <= 0
+    ):
+        raise ValueError(
+            f"{context} requires positive version, max_render_chars, "
+            "max_context_chars, and max_resource_chars"
+        )
+    if max_resource_chars > max_context_chars:
+        raise ValueError(
+            f"{context} max_resource_chars cannot exceed max_context_chars"
+        )
     orientation = RoleOrientation(
         role=role,
         contract_id=_required_text(payload, "contract_id", context=context),
@@ -110,6 +126,8 @@ def _parse_orientation(role: str, payload: object) -> RoleOrientation:
         title=_required_text(payload, "title", context=context),
         purpose=_required_text(payload, "purpose", context=context),
         max_render_chars=max_render_chars,
+        max_context_chars=max_context_chars,
+        max_resource_chars=max_resource_chars,
         owns=_string_tuple(payload.get("owns"), context=f"{context} owns"),
         excludes=_string_tuple(
             payload.get("excludes"),

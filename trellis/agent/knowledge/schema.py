@@ -76,6 +76,7 @@ class ProductDecomposition:
     reasoning: str = ""
     notes: str = ""                             # known complexities
     learned: bool = False                       # True if auto-discovered
+    orientation_resolution: dict[str, object] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)

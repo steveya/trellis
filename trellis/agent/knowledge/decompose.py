@@ -3892,10 +3892,10 @@ def _decompose_via_llm(
 ) -> ProductDecomposition:
     """Use LLM to decompose a novel product into known features."""
     from trellis.agent.config import llm_generate_json, load_env
-    from trellis.agent.knowledge.retrieval import (
-        format_decomposition_knowledge_for_prompt,
+    from trellis.agent.orientation_resolution import (
+        RoleOrientationQuery,
+        resolve_role_orientation_packet,
     )
-    from trellis.agent.role_orientation import render_role_orientation_card
     load_env()
 
     # Build feature taxonomy context
@@ -3918,13 +3918,17 @@ def _decompose_via_llm(
             max_lessons=5,
         )
     )
-    knowledge_text = format_decomposition_knowledge_for_prompt(prior_knowledge)
-    knowledge_section = ""
-    if knowledge_text:
-        knowledge_section = f"\n\n## Shared Knowledge\n{knowledge_text}"
-    orientation_card = render_role_orientation_card("quant")
+    orientation_packet = resolve_role_orientation_packet(
+        "quant",
+        RoleOrientationQuery(
+            instrument_type=instrument_hint or key,
+            description=description,
+            features=tuple(heuristic_features),
+        ),
+        knowledge=prior_knowledge,
+    )
 
-    prompt = f"""{orientation_card}
+    prompt = f"""{orientation_packet.rendered}
 
 You are a quantitative finance expert decomposing a financial instrument
 into its constituent features for a pricing library.
@@ -3934,7 +3938,6 @@ into its constituent features for a pricing library.
 
 ## Available Pricing Methods
 {', '.join(methods)}
-{knowledge_section}
 
 ## Instrument to Decompose
 "{description}"
@@ -3964,6 +3967,7 @@ Return JSON:
             method_modules=default_method_modules("analytical"),
             reasoning="LLM decomposition failed — falling back to analytical.",
             learned=True,
+            orientation_resolution=orientation_packet.summary(),
         )
 
     method = normalize_method(data.get("method", "analytical"))
@@ -3976,4 +3980,5 @@ Return JSON:
         reasoning=data.get("reasoning", ""),
         notes=data.get("notes", ""),
         learned=True,
+        orientation_resolution=orientation_packet.summary(),
     )

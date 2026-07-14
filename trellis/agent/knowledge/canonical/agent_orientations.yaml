@@ -2,10 +2,12 @@ schema_version: 1
 orientations:
   quant:
     contract_id: quant-runtime-navigation
-    version: 1
+    version: 2
     title: Quant Runtime Orientation
     purpose: Select and challenge pricing methods from typed product semantics and canonical quantitative knowledge.
     max_render_chars: 3600
+    max_context_chars: 4800
+    max_resource_chars: 700
     owns:
       - Interpret ProductIR and semantic contract assumptions for method selection.
       - Rank candidate method families and state rejected alternatives.
@@ -58,10 +60,12 @@ orientations:
 
   model_validator:
     contract_id: model-validator-runtime-navigation
-    version: 1
+    version: 2
     title: Model Validator Runtime Orientation
     purpose: Review only residual conceptual, calibration, numerical-model, and limitation risks after deterministic evidence.
     max_render_chars: 4200
+    max_context_chars: 5600
+    max_resource_chars: 500
     owns:
       - Assess residual conceptual soundness and calibration adequacy named by the validation contract.
       - Challenge model assumptions using the quant packet, route contract, and executed evidence.

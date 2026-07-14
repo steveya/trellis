@@ -81,6 +81,7 @@ class PricingPlan:
     selection_reason: str = ""
     assumption_summary: tuple[str, ...] = ()
     challenger_packet: QuantChallengerPacket | Mapping[str, object] | None = None
+    orientation_resolution: Mapping[str, object] | None = None
 
 
 # Legacy _FAMILY_BLUEPRINT_ROUTE_MODULES removed.
@@ -558,6 +559,9 @@ def _plan_from_decomposition(decomposition) -> PricingPlan:
         sensitivity_support=support_for_method(method),
         selection_reason=selection_reason,
         assumption_summary=assumption_summary,
+        orientation_resolution=dict(
+            getattr(decomposition, "orientation_resolution", {}) or {}
+        ),
     )
     return _attach_challenger_packet(plan, candidate_methods=(method,))
 

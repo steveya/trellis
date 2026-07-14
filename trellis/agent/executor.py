@@ -963,6 +963,16 @@ def build_payoff(
     quant_challenger_packet = quant_challenger_packet_summary(pricing_plan)
     # Keep identity queryable without decoding the nested challenger packet.
     quant_orientation = role_orientation_summary("quant")
+    quant_orientation_resolution = dict(
+        getattr(pricing_plan, "orientation_resolution", {}) or {}
+    ) or {
+        "role": "quant",
+        "orientation_identity": (
+            f"{quant_orientation['contract_id']}@{quant_orientation['version']}"
+        ),
+        "prompt_injected": False,
+        "reason": "deterministic_method_selection",
+    }
     _record_platform_event(
         compiled_request,
         "quant_selected_method",
@@ -979,6 +989,7 @@ def build_payoff(
             "assumption_summary": list(pricing_plan.assumption_summary),
             "required_market_data": sorted(pricing_plan.required_market_data),
             "orientation_contract": quant_orientation,
+            "orientation_resolution": quant_orientation_resolution,
             "challenger_packet": quant_challenger_packet,
             "sensitivity_support": (
                 pricing_plan.sensitivity_support.to_dict()
@@ -1001,6 +1012,7 @@ def build_payoff(
             ),
             "required_market_data": sorted(pricing_plan.required_market_data),
             "orientation_contract": quant_orientation,
+            "orientation_resolution": quant_orientation_resolution,
             "method_modules": list(pricing_plan.method_modules),
             "reasoning": pricing_plan.reasoning,
             "selection_reason": pricing_plan.selection_reason,
@@ -2688,6 +2700,11 @@ def _validate_build(
                         "orientation_contract": role_orientation_summary(
                             "model_validator"
                         ),
+                        "orientation_resolution": {
+                            "role": "model_validator",
+                            "prompt_injected": False,
+                            "reason": review_policy.model_validator_reason,
+                        },
                     },
                 )
                 report = validate_model(
@@ -2752,6 +2769,13 @@ def _validate_build(
                     "orientation_contract": role_orientation_summary(
                         "model_validator"
                     ),
+                    "orientation_resolution": dict(
+                        getattr(report, "orientation_resolution", {}) or {}
+                    ) or {
+                        "role": "model_validator",
+                        "prompt_injected": False,
+                        "reason": review_policy.model_validator_reason,
+                    },
                     "blocker_count": len(blocker_findings),
                     "approved": report.approved,
                     "llm_review": review_policy.run_model_validator_llm,
@@ -2795,6 +2819,11 @@ def _validate_build(
                 "orientation_contract": role_orientation_summary(
                     "model_validator"
                 ),
+                "orientation_resolution": {
+                    "role": "model_validator",
+                    "prompt_injected": False,
+                    "reason": deterministic_review_block_reason,
+                },
                 "failure_count": len(failures),
                 "deterministic_evidence": model_validation_evidence_packet,
             },

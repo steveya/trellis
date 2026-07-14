@@ -221,7 +221,9 @@ def test_llm_conceptual_review_includes_shared_knowledge(monkeypatch):
     )
 
     assert findings == []
-    assert "model-validator-runtime-navigation@1" in captured["prompt"]
+    assert "model-validator-runtime-navigation@2" in captured["prompt"]
+    assert "## Resolved Role Context" in captured["prompt"]
+    assert "docs/mathematical/calibration.rst#" in captured["prompt"]
     assert "deterministic_evidence_packet" in captured["prompt"]
     assert "quant-runtime-navigation" not in captured["prompt"]
     assert "Shared Review Principles" in captured["prompt"]
@@ -695,6 +697,8 @@ def test_validate_model_threads_deterministic_evidence_packet(monkeypatch):
 
     assert report.findings == []
     assert captured["deterministic_evidence_packet"] == packet
+    assert report.orientation_resolution["prompt_injected"] is True
+    assert report.orientation_resolution["selected_resource_ids"]
 
 
 def test_validate_model_for_request_threads_generation_plan(monkeypatch):

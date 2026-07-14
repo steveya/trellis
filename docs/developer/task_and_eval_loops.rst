@@ -43,6 +43,14 @@ indexes, while the model-validator contract starts from executed validation
 evidence. Both expose cookbook entries as read-only evidence and explicitly
 exclude runtime promotion authority.
 
+Version 2 resolves those indexes into bounded task-relevant content rather than
+showing hosted roles paths they cannot open. Resolution reuses ranked knowledge
+and generated-skill records, follows actual quant-document sections, strips
+builder-only code/helper authority, and records source identities plus a digest
+without persisting excerpts. Deterministic quant selection and skipped model
+validation record ``prompt_injected=false`` rather than claiming that an LLM
+consumed the packet.
+
 Stage-aware builder retrieval also preserves the compiled generation route.
 Every live refresh scopes shared knowledge by pricing method, exact route id,
 and declared route families before replacing the trace summary. A retry may

@@ -84,6 +84,15 @@ def validate_model(
         )
         run_llm_review = policy.run_model_validator_llm
     if run_llm_review:
+        orientation_packet = _resolve_model_validator_orientation_packet(
+            instrument_type=instrument_type,
+            method=method,
+            knowledge_context=knowledge_context,
+            product_ir=product_ir,
+            residual_risks=_model_validator_residual_risks(validation_contract),
+            review_reason=review_reason,
+        )
+        report.orientation_resolution = orientation_packet.summary()
         llm_findings = _llm_conceptual_review(
             code,
             instrument_type,
@@ -97,6 +106,7 @@ def validate_model(
             deterministic_evidence_packet=deterministic_evidence_packet,
             review_reason=review_reason,
             model=model,
+            orientation_packet=orientation_packet,
         )
         report.findings.extend(llm_findings)
 
@@ -156,16 +166,21 @@ def _llm_conceptual_review(
     deterministic_evidence_packet: Mapping[str, object] | None = None,
     review_reason: str | None = None,
     model: str | None = None,
+    orientation_packet=None,
 ) -> list[ValidationFinding]:
     """LLM-based model validation — conceptual soundness review."""
     from trellis.agent.config import llm_generate_json, get_default_model
-    from trellis.agent.role_orientation import render_role_orientation_card
 
     model = model or get_default_model()
 
-    knowledge_section = ""
-    if knowledge_context.strip():
-        knowledge_section = f"\n## Shared Knowledge\n{knowledge_context}\n"
+    if orientation_packet is None:
+        orientation_packet = _resolve_model_validator_orientation_packet(
+            instrument_type=instrument_type,
+            method=method,
+            knowledge_context=knowledge_context,
+            residual_risks=residual_risks,
+            review_reason=review_reason,
+        )
     residual_risk_section = ""
     if residual_risks:
         residual_risk_lines = "\n".join(f"- `{risk}`" for risk in residual_risks)
@@ -200,8 +215,7 @@ def _llm_conceptual_review(
 
         route_contract_section = "\n" + render_review_contract_card(generation_plan) + "\n"
 
-    orientation_card = render_role_orientation_card("model_validator")
-    prompt = f"""{orientation_card}
+    prompt = f"""{orientation_packet.rendered}
 
 You are a model validation analyst at a quantitative finance firm.
 Your role is to independently assess whether a pricing model is conceptually
@@ -214,7 +228,6 @@ reference bounds, or other validations already covered by the validation contrac
 
 ## Instrument type: {instrument_type}
 ## Pricing method: {method}
-{knowledge_section}
 {route_contract_section}
 {residual_risk_section}
 {quant_packet_section}
@@ -288,6 +301,42 @@ Return ONLY the JSON array."""
                 remediation=item.get("remediation", ""),
             ))
     return findings
+
+
+def _resolve_model_validator_orientation_packet(
+    *,
+    instrument_type: str,
+    method: str,
+    knowledge_context: str,
+    product_ir=None,
+    residual_risks: tuple[str, ...] = (),
+    review_reason: str | None = None,
+):
+    """Resolve the bounded context actually supplied to model validation."""
+    from trellis.agent.orientation_resolution import (
+        RoleOrientationQuery,
+        resolve_role_orientation_packet,
+    )
+
+    return resolve_role_orientation_packet(
+        "model_validator",
+        RoleOrientationQuery(
+            instrument_type=instrument_type,
+            method=method,
+            features=tuple(getattr(product_ir, "payoff_traits", ()) or ()),
+            model_family=str(getattr(product_ir, "model_family", "") or ""),
+            route_families=tuple(
+                getattr(product_ir, "route_families", ()) or ()
+            ),
+            residual_risks=tuple(residual_risks),
+            review_reason=str(review_reason or ""),
+            description=(
+                "Conceptual soundness, calibration, numerical quality, and "
+                f"limitations for {instrument_type} using {method}."
+            ),
+        ),
+        supplemental_context=knowledge_context,
+    )
 
 
 def _model_validator_residual_risks(validation_contract) -> tuple[str, ...]:

@@ -19,7 +19,9 @@ def test_load_role_orientations_exposes_required_runtime_roles():
     assert orientations["model_validator"].contract_id == (
         "model-validator-runtime-navigation"
     )
-    assert all(orientation.version == 1 for orientation in orientations.values())
+    assert all(orientation.version == 2 for orientation in orientations.values())
+    assert all(orientation.max_context_chars > 0 for orientation in orientations.values())
+    assert all(orientation.max_resource_chars > 0 for orientation in orientations.values())
     assert all(orientation.navigation for orientation in orientations.values())
 
 
@@ -36,7 +38,7 @@ def test_role_orientation_cards_are_bounded_and_role_separated():
 
     assert len(quant_card) <= quant.max_render_chars
     assert len(validator_card) <= validator.max_render_chars
-    assert "`quant-runtime-navigation@1`" in quant_card
+    assert "`quant-runtime-navigation@2`" in quant_card
     assert "canonical/decompositions.yaml" in quant_card
     assert "canonical/model_grammar.yaml" in quant_card
     assert "canonical/cookbooks.yaml" in quant_card
@@ -44,7 +46,7 @@ def test_role_orientation_cards_are_bounded_and_role_separated():
     assert "Do not generate code or select import paths" in quant_card
     assert "deterministic_evidence_packet" not in quant_card
 
-    assert "`model-validator-runtime-navigation@1`" in validator_card
+    assert "`model-validator-runtime-navigation@2`" in validator_card
     assert "deterministic_evidence_packet" in validator_card
     assert "docs/mathematical/calibration.rst" in validator_card
     assert "canonical/cookbooks.yaml" in validator_card
@@ -59,12 +61,12 @@ def test_role_orientation_summary_is_trace_safe():
     assert role_orientation_summary("quant") == {
         "role": "quant",
         "contract_id": "quant-runtime-navigation",
-        "version": 1,
+        "version": 2,
     }
     assert role_orientation_summary("model_validator") == {
         "role": "model_validator",
         "contract_id": "model-validator-runtime-navigation",
-        "version": 1,
+        "version": 2,
     }
 
 
@@ -84,12 +86,12 @@ def test_custom_role_orientation_manifest_is_reloaded(tmp_path):
     path.write_text(yaml.safe_dump(canonical, sort_keys=False))
     first = load_role_orientations(path)
 
-    canonical["orientations"]["quant"]["version"] = 2
+    canonical["orientations"]["quant"]["version"] = 3
     path.write_text(yaml.safe_dump(canonical, sort_keys=False))
     second = load_role_orientations(path)
 
-    assert first["quant"].version == 1
-    assert second["quant"].version == 2
+    assert first["quant"].version == 2
+    assert second["quant"].version == 3
 
 
 def test_role_orientation_file_navigation_targets_exist():
@@ -169,9 +171,14 @@ def test_quant_llm_decomposition_prompt_includes_only_quant_orientation(monkeypa
 
     assert result.method == "monte_carlo"
     assert result.method_modules == ("trellis.models.monte_carlo.engine",)
-    assert "quant-runtime-navigation@1" in captured["prompt"]
+    assert "quant-runtime-navigation@2" in captured["prompt"]
+    assert "## Resolved Role Context" in captured["prompt"]
     assert "canonical/decompositions.yaml" in captured["prompt"]
     assert "model-validator-runtime-navigation" not in captured["prompt"]
+    assert "## API Map" not in captured["prompt"]
+    assert result.orientation_resolution["role"] == "quant"
+    assert result.orientation_resolution["context_chars"] > 0
+    assert result.orientation_resolution["selected_resource_ids"]
     assert '"method_modules"' not in captured["prompt"]
 
     pricing_plan = _plan_from_decomposition(result)

@@ -14,13 +14,19 @@ prompt boundary. The canonical source is
 ``trellis/agent/knowledge/canonical/agent_orientations.yaml`` and the typed
 loader is ``trellis.agent.role_orientation``.
 
+The version-2 contracts are made operational by
+``trellis.agent.orientation_resolution``. The resolver does not give hosted
+roles filesystem tools. It follows the declared indexes inside the repository,
+selects relevant source sections deterministically, and injects only the
+bounded result at the LLM boundary.
+
 Contract Shape
 --------------
 
 Each role contract declares:
 
 - a stable contract id and positive version
-- a prompt-size budget
+- separate card, resolved-context, and per-resource character budgets
 - the decisions the role owns and explicitly does not own
 - an ordered list of runtime evidence, canonical knowledge, support contracts,
   and official documentation targets
@@ -29,6 +35,8 @@ The loader fails closed unless both ``quant`` and ``model_validator`` are
 present and every navigation order is consecutive. Tests also verify that all
 file-backed targets exist. Runtime targets use the ``runtime:`` prefix because
 their evidence is supplied by the compiled request rather than read from disk.
+File-backed resolution is confined to the repository root. Missing indexed
+documents and paths that escape that root fail closed.
 
 Role Boundaries
 ---------------
@@ -44,23 +52,50 @@ contracts, the read-only cookbook catalog, current limitations, calibration
 documentation, and audit contracts. This preserves deterministic-first review
 ownership.
 
+Bounded Resolution
+------------------
+
+The resolver builds a typed semantic query from the instrument, method,
+features, model family, route identity, residual risks, and review trigger. It
+then:
+
+#. projects the already-ranked ``KnowledgeStore`` result into role-safe
+   decomposition, model-grammar, method-requirement, lesson, and read-only
+   cookbook evidence
+#. consults the generated skill index but rejects route-helper records and
+   construction-shaped guidance for these roles
+#. follows declared RST ``toctree`` entries, including Markdown targets, and
+   ranks actual document sections against the same query
+#. strips code blocks and builder-only import/helper instructions
+#. truncates each resource and the final packet independently, recording any
+   omissions
+
+Documentation ranking scores only the bounded text that could enter the
+prompt. A keyword that appears later in a long unrelated section therefore
+cannot make that section outrank a directly relevant heading.
+
 Prompt And Trace Behavior
 -------------------------
 
 Only the role that makes an LLM call receives its rendered card. The quant
-card is injected into novel-product decomposition; the model-validator card is
-injected into residual conceptual review. Cards are bounded and are not a
-mechanism for loading every referenced file into a prompt.
+card and resolved context are injected into novel-product decomposition; the
+model-validator card and resolved context are injected into residual conceptual
+review. Known-product deterministic quant selection does not pretend that a
+prompt packet was used.
 
-Lifecycle events and cycle reports persist only ``role``, ``contract_id``, and
-``version`` under ``orientation_contract``. That low-cardinality identity is
-enough for replay and drift review while avoiding duplicate prompt payloads in
-traces.
+Lifecycle events and cycle reports persist ``role``, ``contract_id``, and
+``version`` under ``orientation_contract``. They persist a separate
+``orientation_resolution`` summary containing whether a packet was injected,
+selected resource and section ids, character and omission counts, and a content
+digest. Full excerpts are not copied into traces.
 
 Cookbook Authority
 ------------------
 
 Both role cards expose ``canonical/cookbooks.yaml`` as read-only validated
-pattern evidence. Runtime calls cannot update or promote entries. Candidate
-learning remains ephemeral until the governed remediation and promotion path
-has independent validation evidence.
+pattern evidence. The resolver exposes method descriptions and matching
+solution-contract assumptions, payoff meaning, and market-data obligations; it
+does not expose cookbook code templates to quant or model-validator. Runtime
+calls cannot update or promote entries. Candidate learning remains ephemeral
+until the governed remediation and promotion path has independent validation
+evidence.

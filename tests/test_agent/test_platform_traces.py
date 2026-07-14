@@ -201,7 +201,13 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
             "orientation_contract": {
                 "role": "quant",
                 "contract_id": "quant-runtime-navigation",
-                "version": 1,
+                "version": 2,
+            },
+            "orientation_resolution": {
+                "role": "quant",
+                "orientation_identity": "quant-runtime-navigation@2",
+                "prompt_injected": False,
+                "reason": "deterministic_method_selection",
             },
             "challenger_packet": {
                 "selected_method": "analytical",
@@ -271,7 +277,12 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
             "orientation_contract": {
                 "role": "model_validator",
                 "contract_id": "model-validator-runtime-navigation",
-                "version": 1,
+                "version": 2,
+            },
+            "orientation_resolution": {
+                "role": "model_validator",
+                "prompt_injected": False,
+                "reason": "standard_validation_profile",
             },
         },
         root=tmp_path,
@@ -319,6 +330,7 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
     assert quant_stage["details"]["orientation_contract"]["contract_id"] == (
         "quant-runtime-navigation"
     )
+    assert quant_stage["details"]["orientation_resolution"]["prompt_injected"] is False
     model_validator_stage = next(
         stage
         for stage in cycle_report["stages"]
@@ -327,8 +339,12 @@ def test_platform_trace_persists_cycle_report_from_lifecycle_events(tmp_path):
     assert model_validator_stage["details"]["orientation_contract"] == {
         "role": "model_validator",
         "contract_id": "model-validator-runtime-navigation",
-        "version": 1,
+        "version": 2,
     }
+    assert (
+        model_validator_stage["details"]["orientation_resolution"]["reason"]
+        == "standard_validation_profile"
+    )
     arbiter_stage = next(
         stage for stage in cycle_report["stages"] if stage["stage"] == "arbiter"
     )

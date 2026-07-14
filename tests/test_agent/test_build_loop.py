@@ -1404,7 +1404,13 @@ class TestBuildLoop:
         assert quant_event["orientation_contract"] == {
             "role": "quant",
             "contract_id": "quant-runtime-navigation",
-            "version": 1,
+            "version": 2,
+        }
+        assert quant_event["orientation_resolution"] == {
+            "role": "quant",
+            "orientation_identity": "quant-runtime-navigation@2",
+            "prompt_injected": False,
+            "reason": "deterministic_method_selection",
         }
 
     @patch(

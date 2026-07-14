@@ -21,11 +21,14 @@ smallest useful navigation surface in this order:
 #. the cookbook catalog as read-only pattern evidence
 #. the quant documentation index and model-grammar design reference
 
-The card deliberately omits exact symbol and import lookup. Existing routing
-context may still include the family-level API map, but exact symbol selection
-remains the builder's responsibility through the API map and import registry.
-This keeps method selection independent from whichever convenience helper
-happens to exist.
+The version-2 resolver follows those targets and supplies only task-relevant
+source excerpts. It projects typed decomposition, model-grammar,
+method-requirement, lesson, and cookbook solution-contract evidence, then
+selects bounded sections from the quant documentation index. Cookbook code,
+route-helper hints, code blocks, and exact symbol/import lookup are removed.
+Exact symbol selection remains the builder's responsibility through the API map
+and import registry. This keeps method selection independent from whichever
+convenience helper happens to exist.
 
 Method Selection
 ----------------
@@ -35,7 +38,9 @@ table in ``quant.py``. Product features, method candidates, required market
 data, exercise style, state dependence, and model family become ``ProductIR``.
 The quant layer ranks the admitted candidates and emits a ``PricingPlan`` plus
 a ``QuantChallengerPacket``. Genuinely novel products may use bounded LLM
-decomposition, and that prompt receives the same orientation card.
+decomposition, and that prompt receives the resolved quant packet. The selected
+resource ids, section ids, omissions, and content digest are retained as trace
+metadata without retaining the excerpts themselves.
 The selected method family is mapped to deterministic default construction
 modules in runtime code; the LLM is not asked to emit module or import paths.
 
