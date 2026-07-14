@@ -38,14 +38,20 @@ Status mirror last synced: `2026-07-14`
 | `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | Done |
 | `QUA-1176` | Observation returns: reusable bounded accumulation primitives | Done |
 | `QUA-1177` | Cliquet pricing: primitive-composed analytical and Monte Carlo lanes | Done |
-| `QUA-1178` | Semantic route audit: machine-readable helper authority inventory | In Progress |
+| `QUA-1178` | Semantic route audit: machine-readable helper authority inventory | Done |
+| `QUA-1179` | Monte Carlo: reusable scheduled observation aggregation | Todo |
+| `QUA-1180` | Analytical support: weighted lognormal-sum moments | Todo |
+| `QUA-1181` | Arithmetic Asian pricing: retire helper authority | Todo (blocked by `QUA-1179`, `QUA-1180`) |
 
 ## Current Sequence
 
-1. Land the repeatable QUA-1178 helper-authority audit and record the merged
-   baseline.
-2. Use its route, binding, and adapter evidence to choose the next coherent
-   product family by remaining authority count and semantic risk.
+1. Implement QUA-1179 product-neutral scheduled observation aggregation for
+   reduced-state Monte Carlo.
+2. Implement QUA-1180 product-neutral weighted lognormal-sum moments for
+   analytical composition.
+3. Complete QUA-1181 by removing arithmetic-Asian helper authority only after
+   both reusable primitive tickets land; keep geometric and multi-asset Asian
+   contracts outside that admitted cohort.
 
 ## Completion Evidence
 
