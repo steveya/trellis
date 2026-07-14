@@ -147,7 +147,10 @@ def _replay_reducers(paths: raw_np.ndarray, requirement: MonteCarloPathRequireme
         values = _to_backend_array(paths[:, step])
         for reducer in requirement.reducers:
             reducer_values[reducer.name] = reducer.update(reducer_values[reducer.name], values, step)
-    return reducer_values
+    return {
+        reducer.name: reducer.finalize(reducer_values[reducer.name])
+        for reducer in requirement.reducers
+    }
 
 
 def _metadata_tuple(values) -> tuple[str, ...]:
@@ -355,7 +358,12 @@ class _ReducedPathAccumulator:
             full_paths=self._full_paths,
             snapshots=self._snapshots,
             barrier_hits=self._barrier_hits,
-            reducer_values=self._reducer_values,
+            reducer_values={
+                reducer.name: reducer.finalize(
+                    self._reducer_values[reducer.name]
+                )
+                for reducer in self._reducers
+            },
         )
 
 

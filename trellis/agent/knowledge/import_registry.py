@@ -591,7 +591,8 @@ from trellis.models.trees.backward_induction import backward_induction
 
 ### Models — Monte Carlo
 from trellis.models.monte_carlo.engine import MonteCarloEngine
-from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff, terminal_value_payoff
+from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, MonteCarloPathState, PathReducer, StateAwarePayoff, terminal_value_payoff
+from trellis.models.monte_carlo.path_statistics import RunningExtremumContract, SquaredLogReturnContract, annualized_squared_log_return_sum, build_running_extremum_reducer, build_squared_log_return_reducer, discrete_path_extremum
 from trellis.models.monte_carlo.basket_state import build_basket_path_requirement, evaluate_ranked_observation_basket_paths, evaluate_ranked_observation_basket_state, observation_step_indices
 from trellis.models.monte_carlo.profiling import MonteCarloPathKernelBenchmark, benchmark_path_kernel
 from trellis.models.monte_carlo.lsm import longstaff_schwartz, laguerre_basis

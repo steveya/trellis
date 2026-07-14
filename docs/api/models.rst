@@ -37,6 +37,17 @@ Monte Carlo
 .. autofunction:: trellis.models.monte_carlo.milstein
 .. autofunction:: trellis.models.monte_carlo.lsm.longstaff_schwartz
 
+.. autoclass:: trellis.models.monte_carlo.RunningExtremumContract
+   :members:
+
+.. autoclass:: trellis.models.monte_carlo.SquaredLogReturnContract
+   :members:
+
+.. autofunction:: trellis.models.monte_carlo.discrete_path_extremum
+.. autofunction:: trellis.models.monte_carlo.annualized_squared_log_return_sum
+.. autofunction:: trellis.models.monte_carlo.build_running_extremum_reducer
+.. autofunction:: trellis.models.monte_carlo.build_squared_log_return_reducer
+
 QMC
 ---
 

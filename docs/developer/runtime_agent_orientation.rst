@@ -84,6 +84,22 @@ model-validator role packets. Those roles continue to reason from semantic
 contracts, quantitative documentation, and executed evidence; implementation
 symbol selection remains builder-owned.
 
+The ``path_statistic_composition`` card applies the same rule to path-dependent
+Monte Carlo construction. Semantic aliases such as ``running_extremum``,
+``lookback_option``, ``squared_log_return``, and ``variance_swap`` lead the
+builder to exact observation-step contracts, full-path parity functions, and
+bounded reducers. The general Monte Carlo card no longer advertises the
+lookback or variance-swap product pricers as construction imports. Quant still
+selects and challenges the model from product semantics, and model-validator
+still reviews monitoring, annualization, calibration, and residual numerical
+risk; neither role receives implementation imports.
+
+This separation is important for small-context agents. The semantic query
+chooses one complete composition card, the card names the minimal public
+symbols and ownership boundaries, and the import registry confirms those
+symbols. The builder does not need to search the full package or infer the
+private accumulator layout of a ``PathReducer``.
+
 Bounded Resolution
 ------------------
 

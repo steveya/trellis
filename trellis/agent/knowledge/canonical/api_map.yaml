@@ -164,6 +164,7 @@ monte_carlo:
     - "from trellis.models.monte_carlo.schemes import HestonQuadraticExponential, LaguerreBasis"
     - "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo, price_heston_option_monte_carlo_result"
     - "from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff, terminal_value_payoff"
+    - "from trellis.models.monte_carlo.path_statistics import RunningExtremumContract, SquaredLogReturnContract, build_running_extremum_reducer, build_squared_log_return_reducer"
     - "from trellis.models.fx_vanilla import resolve_fx_vanilla_inputs"
     - "from trellis.models.fx_barrier_option import resolve_fx_barrier_inputs"
     - "from trellis.models.analytical import terminal_intrinsic"
@@ -171,8 +172,6 @@ monte_carlo:
     - "from trellis.models.single_barrier_option import SingleBarrierMonteCarloConfig, price_single_barrier_option_monte_carlo_result, resolve_single_barrier_inputs"
     - "from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_state_payoff, resolve_double_barrier_inputs"
     - "from trellis.models.double_barrier_option import DoubleBarrierMonteCarloConfig, price_double_barrier_option_monte_carlo_result"
-    - "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
-    - "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo, price_equity_variance_swap_monte_carlo_result, equity_variance_swap_outputs_monte_carlo"
     - "from trellis.models.monte_carlo import euler_maruyama, milstein, brownian_bridge"
     - "from trellis.models.monte_carlo import antithetic, control_variate, sobol_normals"
     - "from trellis.models.processes.gbm import GBM, PiecewiseConstantGBM"
@@ -182,10 +181,27 @@ monte_carlo:
     - "For FX vanilla Monte Carlo, compose `resolve_fx_vanilla_inputs(...)`, `GBM`, `MonteCarloEngine`, `terminal_value_payoff(...)`, and `terminal_intrinsic(...)`; derive drift from domestic minus foreign rates and discount domestically"
     - "For FX single-barrier Monte Carlo, compose `resolve_fx_barrier_inputs(...)`, `GBM`, `MonteCarloEngine`, `BarrierMonitor`, `MonteCarloPathRequirement`, `StateAwarePayoff`, and `terminal_intrinsic(...)`; use reduced barrier-hit state and domestic discounting"
     - "For quanto Monte Carlo or QMC, follow `quanto_option_composition`: bind exact hybrid inputs, build `CorrelatedGBM`, and pass a terminal-only payoff to `MonteCarloEngine`"
+    - "For discrete running extrema or squared-log-return state, follow `path_statistic_composition` and keep strike, direction, notional, discounting, and other derivative settlement in adapter code"
     - "Autocallable MC routes should prefer `price_autocallable_monte_carlo_result(...)`; use `sampling='sobol'` only for QMC comparison targets"
     - "Double-barrier MC routes should use two barrier monitors or `double_barrier_state_payoff(...)` instead of adapting a one-barrier analytical formula"
     - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"
     - "Do not invent method='lsm' on MonteCarloEngine"
+
+path_statistic_composition:
+  module: trellis.models.monte_carlo.path_statistics
+  navigation:
+    aliases: [path_statistic, running_extremum, running_minimum, running_maximum, squared_log_return, realized_variance, realised_variance, lookback_option, fixed_lookback_option, variance_swap]
+  key_imports:
+    - "from trellis.models.monte_carlo.path_statistics import RunningExtremumContract, SquaredLogReturnContract, annualized_squared_log_return_sum, build_running_extremum_reducer, build_squared_log_return_reducer, discrete_path_extremum"
+    - "from trellis.models.monte_carlo.path_state import MonteCarloPathRequirement, StateAwarePayoff"
+    - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+  notes:
+    - "Declare the exact engine n_steps and every discrete observation step in RunningExtremumContract or SquaredLogReturnContract. Step zero participates only when listed; for squared log returns, the first listed step is the baseline and contributes no return."
+    - "Use discrete_path_extremum(...) or annualized_squared_log_return_sum(...) for full-path evidence and the matching build_*_reducer(...) function for bounded storage; both surfaces implement the same observation contract."
+    - "Compose the returned reducer into MonteCarloPathRequirement and StateAwarePayoff. Apply caller-owned settlement to the full-path statistic or state.reduced_value(name); strike, option direction, notional, discounting, historical realized state, and other derivative terms do not belong in the reducer."
+    - "annualization_factor multiplies the complete squared-log-return sum and is never inferred from maturity, calendar, or observation count. The caller must choose and document the contractual convention."
+    - "Running extrema are exact only over the declared discrete observations. Continuous-monitoring extrema require a separate transition-level Brownian-bridge contract and must not be claimed from these reducers."
+    - "These primitives require finite positive scalar path levels. Full-path smooth operations preserve the differentiable backend away from extrema ties, while streaming reduced-state AD remains outside the current engine support contract."
 
 scheduled_observation_composition:
   module: trellis.models.observation_aggregation
