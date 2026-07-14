@@ -713,7 +713,7 @@ Analytical Probability And Critical-State Composition
 Analytical adapters can compose Gaussian probability terms from the public,
 product-neutral kernels in ``trellis.models.analytical.support.probability``.
 ``standard_normal_cdf(x)`` supplies :math:`\Phi(x)`, while
-``bivariate_standard_normal_cdf(x, y, \rho)`` supplies
+``bivariate_standard_normal_cdf(x, y, rho)`` supplies
 :math:`\Phi_2(x, y; \rho)`. Inputs must be finite and correlation is admitted
 only on the closed interval :math:`[-1, 1]`; the exact singular boundaries are
 handled explicitly rather than perturbed onto a nearby model.

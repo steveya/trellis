@@ -7,6 +7,10 @@ from math import isfinite
 from scipy.special import ndtr
 from scipy.stats import multivariate_normal
 
+_BIVARIATE_MAX_INTEGRATION_POINTS = 200_000
+_BIVARIATE_ABSOLUTE_TOLERANCE = 1e-10
+_BIVARIATE_RELATIVE_TOLERANCE = 1e-10
+
 
 def _finite_float(value: float, *, name: str) -> float:
     """Return ``value`` as a finite float or fail closed."""
@@ -35,7 +39,9 @@ def bivariate_standard_normal_cdf(
 
     The correlation must lie in the closed interval ``[-1, 1]``. The exact
     singular boundaries are evaluated analytically; interior correlations use
-    SciPy's bivariate normal integration.
+    SciPy's bivariate normal integration. Fixed ``1e-10`` tolerances and a
+    bounded integration budget balance analytical-pricing accuracy with calls
+    made repeatedly inside critical-state root solves.
     """
     normalized_x = _finite_float(x, name="x")
     normalized_y = _finite_float(y, name="y")
@@ -62,9 +68,9 @@ def bivariate_standard_normal_cdf(
                 [1.0, normalized_correlation],
                 [normalized_correlation, 1.0],
             ],
-            maxpts=2_000_000,
-            abseps=1e-12,
-            releps=1e-12,
+            maxpts=_BIVARIATE_MAX_INTEGRATION_POINTS,
+            abseps=_BIVARIATE_ABSOLUTE_TOLERANCE,
+            releps=_BIVARIATE_RELATIVE_TOLERANCE,
         )
     )
     if not isfinite(probability) or not 0.0 <= probability <= 1.0:
