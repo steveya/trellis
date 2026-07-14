@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-13`
+Status mirror last synced: `2026-07-14`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
@@ -37,14 +37,13 @@ Status mirror last synced: `2026-07-13`
 | `QUA-1173` | Quanto option: primitive-composed analytical and MC lanes | Done |
 | `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | Done |
 | `QUA-1176` | Observation returns: reusable bounded accumulation primitives | Done |
-| `QUA-1177` | Cliquet pricing: primitive-composed analytical and Monte Carlo lanes | In Progress |
+| `QUA-1177` | Cliquet pricing: primitive-composed analytical and Monte Carlo lanes | Done |
 
 ## Current Sequence
 
-1. Land `QUA-1177`, then prove F014/P007 without cliquet pricing-helper
-   authority under strict fresh-build replay.
-2. Re-run the helper-authority audit and choose the next coherent product
-   family by remaining authority count and semantic risk.
+1. Re-run the helper-authority audit on merged main.
+2. Choose the next coherent product family by remaining authority count and
+   semantic risk.
 
 ## Completion Evidence
 
