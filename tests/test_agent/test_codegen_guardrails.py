@@ -264,6 +264,38 @@ def test_validate_generated_imports_accepts_control_timeline_facade_exports():
     assert report.ok
 
 
+def test_analytical_generation_plan_approves_gaussian_probability_and_scalar_root():
+    probability_module = "trellis.models.analytical.support.probability"
+    scalar_root_module = "trellis.models.calibration.solve_request"
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=[probability_module],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="critical_state_option",
+            reasoning="test",
+        ),
+        instrument_type="chooser_option",
+        inspected_modules=(probability_module,),
+        product_ir=ProductIR(
+            instrument="chooser_option",
+            payoff_family="chooser_option",
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert scalar_root_module in plan.approved_modules
+    report = validate_generated_imports(
+        "from trellis.models.analytical.support.probability import "
+        "standard_normal_cdf, bivariate_standard_normal_cdf\n"
+        "from trellis.models.calibration.solve_request import "
+        "ObjectiveBundle, SolveBounds, SolveRequest, execute_solve_request\n",
+        plan,
+    )
+    assert report.ok
+
+
 def test_barrier_family_support_approves_shared_barrier_primitives():
     plan = build_generation_plan(
         pricing_plan=PricingPlan(

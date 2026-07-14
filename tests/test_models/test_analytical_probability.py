@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from math import asin, pi
+from math import asin, nextafter, pi
 
 import pytest
 
@@ -54,6 +54,16 @@ def test_bivariate_standard_normal_cdf_is_symmetric_and_handles_singular_boundar
     assert bivariate_standard_normal_cdf(x, y, -1.0) == pytest.approx(
         max(standard_normal_cdf(x) - standard_normal_cdf(-y), 0.0)
     )
+    assert bivariate_standard_normal_cdf(
+        x,
+        y,
+        nextafter(1.0, 0.0),
+    ) == pytest.approx(bivariate_standard_normal_cdf(x, y, 1.0), abs=1e-10)
+    assert bivariate_standard_normal_cdf(
+        x,
+        y,
+        nextafter(-1.0, 0.0),
+    ) == pytest.approx(bivariate_standard_normal_cdf(x, y, -1.0), abs=1e-10)
 
 
 def test_standard_normal_cdf_composes_with_typed_bounded_scalar_root():

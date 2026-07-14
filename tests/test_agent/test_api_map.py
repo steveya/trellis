@@ -295,6 +295,7 @@ def test_api_map_semantic_selection_reaches_gaussian_root_composition(
     assert "bivariate_standard_normal_cdf" in text
     assert "SolveRequest" in text
     assert "execute_solve_request" in text
+    assert "from trellis.models.calibration.solve_request import" in text
 
 
 def test_api_map_selection_and_rendering_are_stable_and_budgeted():

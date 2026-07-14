@@ -65,7 +65,7 @@ analytical_gaussian_composition:
     scalar_root: trellis.models.calibration.solve_request
   key_imports:
     - "from trellis.models.analytical.support.probability import standard_normal_cdf, bivariate_standard_normal_cdf"
-    - "from trellis.models.calibration import ObjectiveBundle, SolveBounds, SolveRequest, execute_solve_request"
+    - "from trellis.models.calibration.solve_request import ObjectiveBundle, SolveBounds, SolveRequest, execute_solve_request"
   notes:
     - "Use standard_normal_cdf(...) and bivariate_standard_normal_cdf(...) as product-neutral scalar probability kernels; they are SciPy-backed and are not automatic-differentiation primitives"
     - "For an implicit critical state, define the derivative-specific scalar objective in adapter code and solve it through a bounded root_scalar SolveRequest; do not introduce route-local Newton loops or product helpers"

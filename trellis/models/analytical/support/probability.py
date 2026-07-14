@@ -68,6 +68,7 @@ def bivariate_standard_normal_cdf(
                 [1.0, normalized_correlation],
                 [normalized_correlation, 1.0],
             ],
+            allow_singular=True,
             maxpts=_BIVARIATE_MAX_INTEGRATION_POINTS,
             abseps=_BIVARIATE_ABSOLUTE_TOLERANCE,
             releps=_BIVARIATE_RELATIVE_TOLERANCE,
