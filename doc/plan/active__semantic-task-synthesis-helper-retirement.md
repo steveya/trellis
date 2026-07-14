@@ -42,16 +42,19 @@ Status mirror last synced: `2026-07-14`
 | `QUA-1179` | Monte Carlo: reusable scheduled observation aggregation | Done |
 | `QUA-1180` | Analytical support: weighted lognormal-sum moments | Done |
 | `QUA-1181` | Arithmetic Asian pricing: retire helper authority | In Progress |
+| `QUA-1182` | Semantic agent navigation: bounded knowledge and documentation packets | In Progress |
 
 ## Current Sequence
 
-1. Implement QUA-1179 product-neutral scheduled observation aggregation for
-   reduced-state Monte Carlo.
-2. Implement QUA-1180 product-neutral weighted lognormal-sum moments for
-   analytical composition.
-3. Complete QUA-1181 by removing arithmetic-Asian helper authority only after
-   both reusable primitive tickets land; keep geometric and multi-asset Asian
-   contracts outside that admitted cohort.
+1. Complete QUA-1182 so hosted quant and model-validator calls receive bounded,
+   task-relevant content behind their navigation contracts rather than path-only
+   cards.
+2. Complete QUA-1181's live fresh-generation proof only after explicit external
+   model approval; its implementation, offline replay, and release gate are
+   already complete.
+3. Select the next helper-authoritative green family using the merged audit and
+   prove the improved navigation during fresh generation before retiring its
+   helper authority.
 
 ## Completion Evidence
 

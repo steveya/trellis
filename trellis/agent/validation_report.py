@@ -33,6 +33,7 @@ class ValidationReport:
     findings: list[ValidationFinding] = field(default_factory=list)
     timestamp: str = field(default_factory=lambda: datetime.now().isoformat())
     approved: bool = False
+    orientation_resolution: dict[str, object] = field(default_factory=dict)
 
     @property
     def critical_findings(self) -> list[ValidationFinding]:

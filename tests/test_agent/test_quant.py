@@ -304,7 +304,7 @@ class TestPricingPlan:
         assert summary["orientation_contract"] == {
             "role": "quant",
             "contract_id": "quant-runtime-navigation",
-            "version": 1,
+            "version": 2,
         }
 
     def test_product_ir_sensitivity_request_prefers_rate_tree_for_callable_bond(self):

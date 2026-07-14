@@ -1440,8 +1440,9 @@ def test_validate_build_passes_quant_selected_method_to_model_validator(monkeypa
     assert skipped["orientation_contract"] == {
         "role": "model_validator",
         "contract_id": "model-validator-runtime-navigation",
-        "version": 1,
+        "version": 2,
     }
+    assert skipped["orientation_resolution"]["prompt_injected"] is False
 
 
 def test_format_validation_failure_feedback_includes_structured_diagnostics():

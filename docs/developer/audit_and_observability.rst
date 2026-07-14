@@ -217,7 +217,11 @@ The cycle report records:
 - compact stage summaries and low-cardinality details suitable for replay,
   dashboards, and later promotion/adoption checks
 - the versioned runtime orientation identity for quant and model-validator
-  stages, without duplicating either role's full prompt card
+  stages
+- the bounded orientation-resolution summary when present: prompt-injected
+  state, selected resource/section ids, character and omission counts, and
+  content digest, plus unavailable documentation resource ids for slim
+  installed runtimes, without duplicating source excerpts
 
 Use ``load_platform_trace_cycle_report(...)`` when code needs the typed
 ``CycleReport`` object for one trace. Use ``load_platform_traces(...)`` when a
@@ -232,8 +236,10 @@ from ad hoc event strings.
 
 The ``orientation_contract`` field contains only ``role``, ``contract_id``,
 and ``version``. Use it to establish which navigation and ownership contract
-governed a runtime role. See :doc:`runtime_agent_orientation` for the canonical
-manifest and the distinction from repository-level ``AGENTS.md`` guidance.
+governed a runtime role. The separate ``orientation_resolution`` field proves
+whether content was injected and which bounded sources governed that call.
+See :doc:`runtime_agent_orientation` for the canonical manifest, resolution
+contract, and distinction from repository-level ``AGENTS.md`` guidance.
 
 Agent Cycle Result Surface
 --------------------------
