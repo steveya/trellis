@@ -1200,6 +1200,10 @@ def _cliquet_option_overrides(contract: Mapping[str, Any], *, valuation_date: da
         "option_type": str(contract.get("option_type") or "call").strip().lower(),
         "day_count": _day_count(contract.get("day_count")) or DayCountConvention.THIRTY_E_360,
         "time_day_count": _day_count(contract.get("time_day_count")) or DayCountConvention.ACT_365,
+        "local_cap": _float_or_none(contract.get("local_cap")),
+        "local_floor": _float_or_none(contract.get("local_floor")),
+        "global_cap": _float_or_none(contract.get("global_cap")),
+        "global_floor": _float_or_none(contract.get("global_floor")),
     }
 
 

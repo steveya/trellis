@@ -509,6 +509,12 @@ route-helper gates now recognize the checked cliquet MC helper as satisfying
 the lower-level `monte_carlo_paths` route obligation for `cliquet_option`,
 without relaxing ordinary missing-helper checks.
 
+This records the original `P007` repair. `QUA-1177` supersedes its construction
+authority: current cliquet routes compose the generic observation-return,
+Black-76, bounded-expectation, GBM, and Monte Carlo primitives directly. The
+retained analytical and Monte Carlo cliquet functions are comparison references
+only, and the semantic/lite-review exemptions described above have been removed.
+
 Validation:
 
 ```bash

@@ -256,6 +256,28 @@ bindings:
         role: route_helper
     conditional_primitives:
       - when:
+          contract_pattern:
+            payoff:
+              kind: cliquet_payoff
+            exercise:
+              style: european
+        primitives:
+          - module: trellis.models.observation_returns
+            symbol: ObservationReturnContract
+            role: payoff_contract
+          - module: trellis.models.observation_returns
+            symbol: observation_return_payoff
+            role: payoff_primitive
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+      - when:
           payoff_family: variance_swap
           exercise_style: [none]
         primitives:
@@ -909,9 +931,24 @@ bindings:
             exercise:
               style: european
         primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_cliquet_option_analytical
-            role: route_helper
+          - module: trellis.models.observation_returns
+            symbol: ObservationReturnContract
+            role: payoff_contract
+          - module: trellis.models.observation_returns
+            symbol: bounded_observation_return_sum
+            role: payoff_primitive
+          - module: trellis.models.black
+            symbol: black76_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_put
+            role: pricing_kernel
+          - module: trellis.models.analytical.support.expectations
+            symbol: gauss_hermite_product_expectation
+            role: pricing_kernel
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
       - when:
           contract_pattern:
             payoff:

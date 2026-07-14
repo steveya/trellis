@@ -2288,7 +2288,8 @@ def test_deterministic_exact_binding_module_does_not_materialize_learning_target
     assert generated is None
 
 
-def test_deterministic_exact_binding_module_materializes_cliquet_monte_carlo_helper():
+def test_deterministic_exact_binding_module_composes_observation_return_monte_carlo():
+    from trellis.agent.codegen_guardrails import PrimitiveRef
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
         _generate_skeleton,
@@ -2298,7 +2299,36 @@ def test_deterministic_exact_binding_module_materializes_cliquet_monte_carlo_hel
 
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(),
-        primitive_plan=None,
+        primitive_plan=SimpleNamespace(
+            route="monte_carlo_paths",
+            primitives=(
+                PrimitiveRef(
+                    "trellis.models.observation_returns",
+                    "ObservationReturnContract",
+                    "payoff_contract",
+                ),
+                PrimitiveRef(
+                    "trellis.models.observation_returns",
+                    "observation_return_payoff",
+                    "payoff_primitive",
+                ),
+                PrimitiveRef(
+                    "trellis.models.processes.gbm",
+                    "GBM",
+                    "state_process",
+                ),
+                PrimitiveRef(
+                    "trellis.models.monte_carlo.engine",
+                    "MonteCarloEngine",
+                    "path_simulation",
+                ),
+                PrimitiveRef(
+                    "trellis.core.date_utils",
+                    "year_fraction",
+                    "time_measure",
+                ),
+            ),
+        ),
         method="monte_carlo",
         instrument_type="cliquet_option",
     )
@@ -2315,10 +2345,188 @@ def test_deterministic_exact_binding_module_materializes_cliquet_monte_carlo_hel
     )
 
     assert generated is not None
-    assert "from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo" in generated.code
-    assert "price_equity_cliquet_option_monte_carlo(" in generated.code
-    assert 'n_paths=getattr(spec, "n_paths", 120000)' in generated.code
+    assert "ObservationReturnContract(" in generated.code
+    assert "observation_return_payoff(" in generated.code
+    assert "GBM(" in generated.code
+    assert "MonteCarloEngine(" in generated.code
+    assert "return_paths=False" in generated.code
+    assert "price_equity_cliquet_option_monte_carlo" not in generated.code
+    assert "price_equity_cliquet_option_analytical" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_generated_observation_return_lanes_match_retained_references():
+    from dataclasses import fields
+
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import benchmark_spec_overrides, build_market_state_for_task
+    from trellis.models.analytical import price_equity_cliquet_option_analytical
+
+    analytical_primitives = (
+        PrimitiveRef(
+            "trellis.models.observation_returns",
+            "ObservationReturnContract",
+            "payoff_contract",
+        ),
+        PrimitiveRef(
+            "trellis.models.observation_returns",
+            "bounded_observation_return_sum",
+            "payoff_primitive",
+        ),
+        PrimitiveRef("trellis.models.black", "black76_call", "pricing_kernel"),
+        PrimitiveRef("trellis.models.black", "black76_put", "pricing_kernel"),
+        PrimitiveRef(
+            "trellis.models.analytical.support.expectations",
+            "gauss_hermite_product_expectation",
+            "pricing_kernel",
+        ),
+        PrimitiveRef("trellis.core.date_utils", "year_fraction", "time_measure"),
+    )
+    monte_carlo_primitives = (
+        PrimitiveRef(
+            "trellis.models.observation_returns",
+            "ObservationReturnContract",
+            "payoff_contract",
+        ),
+        PrimitiveRef(
+            "trellis.models.observation_returns",
+            "observation_return_payoff",
+            "payoff_primitive",
+        ),
+        PrimitiveRef("trellis.models.processes.gbm", "GBM", "state_process"),
+        PrimitiveRef(
+            "trellis.models.monte_carlo.engine",
+            "MonteCarloEngine",
+            "path_simulation",
+        ),
+        PrimitiveRef("trellis.core.date_utils", "year_fraction", "time_measure"),
+    )
+
+    def materialize(method, route, primitives):
+        generation_plan = SimpleNamespace(
+            lane_exact_binding_refs=(),
+            primitive_plan=SimpleNamespace(route=route, primitives=primitives),
+            method=method,
+            instrument_type="cliquet_option",
+        )
+        schema = STATIC_SPECS["cliquet_option"]
+        generated = _materialize_deterministic_exact_binding_module(
+            _generate_skeleton(
+                schema,
+                "Scheduled bounded observation returns",
+                generation_plan=generation_plan,
+            ),
+            generation_plan,
+            comparison_target=method,
+        )
+        assert generated is not None
+        namespace: dict = {}
+        exec(compile(generated.code, f"<qua_1177_{method}>", "exec"), namespace)  # noqa: S102
+        return schema, namespace, generated.code
+
+    analytical_schema, analytical_ns, analytical_source = materialize(
+        "analytical",
+        "analytical_black76",
+        analytical_primitives,
+    )
+    mc_schema, mc_ns, mc_source = materialize(
+        "monte_carlo",
+        "monte_carlo_paths",
+        monte_carlo_primitives,
+    )
+    tasks = {
+        task["id"]: task
+        for manifest in ("TASKS_BENCHMARK_FINANCEPY.yaml", "TASKS_EXTENSION.yaml")
+        for task in load_task_manifest(manifest)
+        if task["id"] in {"F014", "P007"}
+    }
+
+    def payoff(schema, namespace, overrides, **extra):
+        spec_type = namespace[schema.spec_name]
+        spec_fields = {field.name for field in fields(spec_type)}
+        terms = {key: value for key, value in overrides.items() if key in spec_fields}
+        terms.update({key: value for key, value in extra.items() if key in spec_fields})
+        return namespace[schema.class_name](spec_type(**terms))
+
+    for task_id in ("F014", "P007"):
+        task = tasks[task_id]
+        market_state, _ = build_market_state_for_task(task)
+        overrides = benchmark_spec_overrides(task)
+        analytical = payoff(analytical_schema, analytical_ns, overrides)
+        analytical_price = float(analytical.evaluate(market_state))
+        reference_price = float(
+            price_equity_cliquet_option_analytical(market_state, analytical.spec)
+        )
+        assert analytical_price == pytest.approx(reference_price, rel=1e-10, abs=1e-10)
+
+        if task_id == "P007":
+            monte_carlo = payoff(
+                mc_schema,
+                mc_ns,
+                overrides,
+                n_paths=30_000,
+                seed=17,
+            )
+            monte_carlo_price = float(monte_carlo.evaluate(market_state))
+            assert monte_carlo_price == pytest.approx(
+                analytical_price,
+                rel=0.05,
+                abs=0.10,
+            )
+
+    for source in (analytical_source, mc_source):
+        assert "price_equity_cliquet_option_analytical" not in source
+        assert "price_equity_cliquet_option_monte_carlo" not in source
+        assert "ObservationReturnContract(" in source
+    assert "bounded_observation_return_sum(" in analytical_source
+    assert "gauss_hermite_product_expectation(" in analytical_source
+    assert "observation_return_payoff(" in mc_source
+    assert "MonteCarloEngine(" in mc_source
+    assert "return_paths=False" in mc_source
+
+
+def test_checked_cliquet_adapter_composes_primitives_without_product_pricer():
+    from dataclasses import fields
+    from pathlib import Path
+
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import benchmark_spec_overrides, build_market_state_for_task
+    from trellis.instruments._agent.cliquetoption import CliquetOptionPayoff, CliquetOptionSpec
+    from trellis.models.analytical import price_equity_cliquet_option_analytical
+
+    source = Path("trellis/instruments/_agent/cliquetoption.py").read_text()
+    assert "price_equity_cliquet_option_analytical" not in source
+    assert "price_equity_cliquet_option_monte_carlo" not in source
+    assert "ObservationReturnContract(" in source
+    assert "bounded_observation_return_sum(" in source
+    assert "gauss_hermite_product_expectation(" in source
+
+    tasks = {
+        task["id"]: task
+        for manifest in ("TASKS_BENCHMARK_FINANCEPY.yaml", "TASKS_EXTENSION.yaml")
+        for task in load_task_manifest(manifest)
+        if task["id"] in {"F014", "P007"}
+    }
+    spec_fields = {field.name for field in fields(CliquetOptionSpec)}
+    for task_id in ("F014", "P007"):
+        task = tasks[task_id]
+        market_state, _ = build_market_state_for_task(task)
+        overrides = benchmark_spec_overrides(task)
+        spec = CliquetOptionSpec(
+            **{key: value for key, value in overrides.items() if key in spec_fields}
+        )
+
+        composed_price = float(CliquetOptionPayoff(spec).evaluate(market_state))
+        reference_price = float(
+            price_equity_cliquet_option_analytical(market_state, spec)
+        )
+        assert composed_price == pytest.approx(reference_price, rel=1e-10, abs=1e-10)
 
 
 @pytest.mark.parametrize(

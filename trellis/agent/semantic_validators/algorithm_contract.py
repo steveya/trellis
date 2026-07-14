@@ -50,10 +50,6 @@ _CHECKED_ROUTE_HELPER_BINDINGS = {
         "routes": frozenset({"monte_carlo_paths"}),
         "instruments": frozenset({"heston_option", "european_option", "vanilla_option"}),
     },
-    "price_equity_cliquet_option_monte_carlo": {
-        "routes": frozenset({"monte_carlo_paths"}),
-        "instruments": frozenset({"cliquet_option"}),
-    },
 }
 _CHECKED_ROUTE_HELPER_SYMBOLS = frozenset(_CHECKED_ROUTE_HELPER_BINDINGS)
 _HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({

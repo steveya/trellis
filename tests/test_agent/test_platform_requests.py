@@ -893,11 +893,6 @@ def test_semantic_blueprint_summary_preserves_range_accrual_callability_blockers
             "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical",
         ),
         (
-            "F014",
-            "analytical",
-            "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical",
-        ),
-        (
             "F015",
             "analytical",
             "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical",
@@ -930,6 +925,41 @@ def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_fina
 
     if task_id == "F009":
         assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
+
+
+def test_compile_build_request_uses_cliquet_primitive_composition_for_f014():
+    from trellis.agent.benchmark_contracts import benchmark_request_description
+    from trellis.agent.platform_requests import compile_build_request
+
+    task = _financepy_benchmark_task("F014")
+    compiled = compile_build_request(
+        benchmark_request_description(task),
+        instrument_type=task["instrument_type"],
+        preferred_method="analytical",
+    )
+
+    assert compiled.generation_plan is not None
+    primitive_plan = compiled.generation_plan.primitive_plan
+    assert primitive_plan is not None
+    primitive_refs = {
+        f"{primitive.module}.{primitive.symbol}"
+        for primitive in primitive_plan.primitives
+    }
+    assert {
+        "trellis.models.observation_returns.ObservationReturnContract",
+        "trellis.models.observation_returns.bounded_observation_return_sum",
+        "trellis.models.black.black76_call",
+        "trellis.models.black.black76_put",
+        (
+            "trellis.models.analytical.support.expectations."
+            "gauss_hermite_product_expectation"
+        ),
+    } <= primitive_refs
+    assert not any("price_equity_cliquet_option" in ref for ref in primitive_refs)
+    assert not any(
+        "price_equity_cliquet_option" in ref
+        for ref in compiled.generation_plan.backend_exact_target_refs
+    )
 
 
 @pytest.mark.parametrize(

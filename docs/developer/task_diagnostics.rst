@@ -407,13 +407,16 @@ internals to the checked helper.  If the adapter omits that helper or passes an
 invented surface such as raw ``spot`` or barrier keywords, the diagnosis should
 remain a route-helper contract failure.
 
-The same distinction applies to the capped/floored cliquet Monte Carlo helper.
-When the product identity is ``cliquet_option`` and the route is
-``monte_carlo_paths``, a thin adapter that calls
-``price_equity_cliquet_option_monte_carlo(market_state, spec, ...)`` delegates
-reset-date GBM increments, local/global return clipping, antithetic sampling,
-and discounting to the checked helper. Ordinary Monte Carlo adapters still
-need to satisfy their compiled route-helper or primitive obligations directly.
+Scheduled observation-return routes are primitive-composed. Their diagnosis
+packets should require ``ObservationReturnContract`` plus the selected
+analytical or Monte Carlo primitives. For Monte Carlo, that means
+``observation_return_payoff``, ``GBM``, and ``MonteCarloEngine`` with an exact
+observation grid and reduced-state execution. For bounded analytical work, it
+means ``bounded_observation_return_sum`` inside
+``gauss_hermite_product_expectation``; unbounded reset optionlets additionally
+use the Black-76 call or put kernels. A call to a retained product-level cliquet
+pricing function does not subsume these obligations and should produce a
+structured missing-primitive or route-contract failure.
 
 Vanilla American or Bermudan equity options are intentionally different. The
 ``exercise_monte_carlo`` route is primitive-composed: an adapter resolves inputs

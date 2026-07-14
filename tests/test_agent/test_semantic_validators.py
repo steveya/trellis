@@ -230,7 +230,7 @@ def evaluate(self, market_state):
         )
         assert any(f.category == "route_helper_not_called" for f in findings)
 
-    def test_accepts_checked_cliquet_helper_for_monte_carlo_paths(self, registry):
+    def test_rejects_retired_cliquet_helper_for_monte_carlo_paths(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         source = '''
 from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
@@ -255,8 +255,7 @@ def evaluate(self, market_state):
             ),
             spec,
         )
-        assert not any(f.category == "route_helper_not_called" for f in findings)
-        assert not any(f.category == "engine_family_mismatch" for f in findings)
+        assert any(f.category == "route_helper_not_called" for f in findings)
 
     def test_rejects_double_barrier_terminal_payoff_without_pde_engine(self, registry):
         spec = [r for r in registry.routes if r.id == "pde_theta_1d"][0]

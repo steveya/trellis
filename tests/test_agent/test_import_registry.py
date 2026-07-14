@@ -74,7 +74,7 @@ def test_quoted_observable_helpers_are_visible_to_import_registry():
     assert "price_curve_quote_spread_analytical" in registry_text
 
 
-def test_cliquet_monte_carlo_helper_is_visible_to_import_registry():
+def test_retained_cliquet_monte_carlo_reference_is_visible_to_import_registry():
     module = "trellis.models.monte_carlo.event_aware"
     symbol = "price_equity_cliquet_option_monte_carlo"
 

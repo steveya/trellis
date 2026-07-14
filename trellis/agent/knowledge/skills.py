@@ -184,6 +184,7 @@ def select_prompt_skill_artifacts(
     pricing_method: str | None = None,
     route_ids: Iterable[str] = (),
     route_families: Iterable[str] = (),
+    product_ir: Any = None,
     knowledge_surface: str = "compact",
 ) -> list[dict[str, Any]]:
     """Return small prompt-ready skill guidance for one agent audience/stage.
@@ -239,6 +240,13 @@ def select_prompt_skill_artifacts(
             route_families=normalized_route_families,
         ):
             continue
+        if not _resolved_route_accepts_helper_hint(
+            record,
+            product_ir=product_ir,
+            pricing_method=pricing_method,
+            route_ids=normalized_route_ids,
+        ):
+            continue
         candidates.append(record)
 
     candidates.sort(
@@ -284,6 +292,41 @@ def select_prompt_skill_artifacts(
     )
 
 
+def _resolved_route_accepts_helper_hint(
+    record: SkillRecord,
+    *,
+    product_ir: Any,
+    pricing_method: str | None,
+    route_ids: tuple[str, ...],
+) -> bool:
+    """Reject broad helper hints when the resolved product branch has no helper."""
+    if product_ir is None or not record.skill_id.endswith(":route-helper"):
+        return True
+
+    route_id = _normalize_key(record.source_artifact)
+    if not route_id or route_id not in route_ids:
+        return True
+
+    from trellis.agent.route_registry import load_route_registry, resolve_route_primitives
+
+    route = next(
+        (
+            candidate
+            for candidate in load_route_registry().routes
+            if _normalize_key(candidate.id) == route_id
+        ),
+        None,
+    )
+    if route is None:
+        return False
+    primitives = resolve_route_primitives(
+        route,
+        product_ir,
+        method=pricing_method,
+    )
+    return any(primitive.role == "route_helper" for primitive in primitives)
+
+
 def append_prompt_skill_artifacts(
     text: str,
     artifacts: Iterable[dict[str, Any]],
@@ -319,6 +362,7 @@ def augment_prompt_with_skill_records(
     pricing_method: str | None = None,
     route_ids: Iterable[str] = (),
     route_families: Iterable[str] = (),
+    product_ir: Any = None,
     knowledge_surface: str = "compact",
     heading: str = "## Generated Skills",
 ) -> tuple[str, list[dict[str, Any]]]:
@@ -331,6 +375,7 @@ def augment_prompt_with_skill_records(
         pricing_method=pricing_method,
         route_ids=route_ids,
         route_families=route_families,
+        product_ir=product_ir,
         knowledge_surface=knowledge_surface,
     )
     return append_prompt_skill_artifacts(text, artifacts, heading=heading), artifacts

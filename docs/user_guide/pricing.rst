@@ -184,6 +184,15 @@ can reuse the same ``ObservationReturnContract`` and
 standard normals. Correlated returns, stochastic-volatility state, or
 nonpositive observables require a different model-specific composition.
 
+For an unbounded reset-style option, compose each observation interval as a
+unit-strike Black-76 call or put on the forward return and apply carry and
+discounting explicitly. For local or global bounds, use the contract and
+bounded accumulator inside the product expectation shown above. The retained
+``price_equity_cliquet_option_analytical`` and
+``price_equity_cliquet_option_monte_carlo`` functions are useful independent
+references for these supported cases, but generated adapters are expected to
+assemble the public primitives directly.
+
 The P001 Bermudan best-of-two rainbow proof is also exposed this way for
 task compatibility. Its checked-in ``_agent`` adapter delegates to the
 ``trellis.execution`` Bermudan best-of basket shim, which reuses the route-free

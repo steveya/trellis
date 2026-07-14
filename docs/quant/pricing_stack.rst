@@ -399,13 +399,17 @@ The first migrated vanilla cases now use that boundary directly:
   forward spread, strike spread, spread volatility, index annuity, discounting,
   and loss convention. This is a spread-option task helper, not an index-loss
   curve, tranche, or base-correlation model.
-- capped/floored equity cliquet comparisons now have bounded analytical and
-  Monte Carlo helper surfaces: the analytical path integrates reset returns
-  with local/global caps and floors, while the Monte Carlo path delegates
-  reset-date GBM increments, clipping, antithetic sampling, and discounting to
-  ``trellis.models.monte_carlo.event_aware.price_equity_cliquet_option_monte_carlo``.
-  These helpers support the explicit capped/floored comparison task surface;
-  they do not imply arbitrary cliquet-book or path-contract coverage.
+- scheduled equity reset-return comparisons now assemble from
+  ``ObservationReturnContract`` and product-neutral numerical primitives. An
+  unbounded analytical lane prices each reset interval with ``black76_call`` or
+  ``black76_put`` and explicit carry and discounting. A locally or globally
+  bounded analytical lane evaluates ``bounded_observation_return_sum`` inside
+  ``gauss_hermite_product_expectation``. The Monte Carlo lane combines
+  ``observation_return_payoff``, ``GBM``, and ``MonteCarloEngine`` with
+  ``return_paths=False`` so only the previous level and accumulated return are
+  retained. The product-level cliquet pricing functions remain independent
+  comparison and compatibility references; calling one does not satisfy a
+  generated route's construction contract.
 
 The developer-facing notation and task-triage lifecycle for these
 stochastic-volatility buckets is maintained in
@@ -557,11 +561,12 @@ branches, Heston ADI diagnostic scaffold, double-barrier payoff primitives,
 and vanilla-equity transform helper keep backend binding, admissibility, and
 validation ownership explicit. Exact-helper validation enforces the thin
 ``(market_state, spec, ...)`` call surface only for true checked route helpers;
-primitive-only supports, including vanilla theta-method PDE and the analytical,
-Monte Carlo, and QMC quanto lanes, require agent-written route assembly rather
-than a product/method wrapper. Their lowering records primitive targets
-separately from true ``route_helper`` bindings so generic resolvers and kernels
-are not mislabeled as helper authority in prompts or traces.
+primitive-only supports, including vanilla theta-method PDE, the analytical,
+Monte Carlo, and QMC quanto lanes, and scheduled observation-return lanes,
+require agent-written route assembly rather than a product/method wrapper.
+Their lowering records primitive targets separately from true ``route_helper``
+bindings so generic resolvers and kernels are not mislabeled as helper authority
+in prompts or traces.
 
 For schedule-driven cap/floor strips lowered onto ``analytical_black76``, the
 typed schedule state now carries admissibility directly. Structural

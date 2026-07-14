@@ -43,6 +43,13 @@ indexes, while the model-validator contract starts from executed validation
 evidence. Both expose cookbook entries as read-only evidence and explicitly
 exclude runtime promotion authority.
 
+Stage-aware builder retrieval also preserves the compiled generation route.
+Every live refresh scopes shared knowledge by pricing method, exact route id,
+and declared route families before replacing the trace summary. A retry may
+therefore refresh relevant evidence, but it cannot silently broaden a compiled
+``analytical_black76`` request into an unrelated exact-helper hint from another
+analytical route.
+
 Current composition rules:
 
 - identity inference treats product names such as ``autocallable``,
@@ -904,14 +911,18 @@ a multi-method path-dependent option; and fixed-lookback MC targets bind to
 text may use cross-validation target names to recover product identity, but the
 runtime still fails closed if the resolved contract and exact helper disagree.
 
-Capped/floored cliquet comparisons follow a bounded version of that contract.
-The analytical target can use the checked capped/floored reset-return
-quadrature path, and the Monte Carlo target should call
-``price_equity_cliquet_option_monte_carlo(market_state, spec, ...)`` instead of
-rebuilding reset-date GBM path generation inline. The generic volatility
-monotonicity invariant is not enforced for ``cliquet_option`` because
-local/global caps and floors can make the capped return value non-monotone in
-Black volatility; volatility sensitivity remains part of the validation pack.
+Capped/floored cliquet comparisons are now a primitive-composed task lane. The
+analytical target builds an ``ObservationReturnContract`` and combines bounded
+return accumulation with a node-budgeted product expectation; the unbounded
+reset form instead assembles explicit Black-76 optionlets. The Monte Carlo
+target combines the same contract with ``observation_return_payoff``, ``GBM``,
+and ``MonteCarloEngine`` using reduced-state execution. Fresh generated source
+must show those obligations directly. Retained cliquet pricing functions are
+comparison references and do not count as route implementation evidence. The
+generic volatility monotonicity invariant is not enforced for
+``cliquet_option`` because local/global caps and floors can make the capped
+return value non-monotone in Black volatility; volatility sensitivity remains
+part of the validation pack.
 
 The ADI helper also owns its variance-grid domain. The grid upper bound is
 based on the CIR variance-process dispersion, not a raw ``xi * sqrt(T)`` move;

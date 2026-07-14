@@ -1137,7 +1137,7 @@ def test_accepts_helper_backed_autocallable_route():
     assert report.ok
 
 
-def test_accepts_helper_backed_cliquet_monte_carlo_route():
+def test_rejects_retired_helper_backed_cliquet_monte_carlo_route():
     from trellis.agent.semantic_validation import validate_semantics
 
     pricing_plan = PricingPlan(
@@ -1165,8 +1165,8 @@ def test_accepts_helper_backed_cliquet_monte_carlo_route():
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "assembly.required_primitive_missing" not in issue_codes
-    assert report.ok
+    assert "assembly.required_primitive_missing" in issue_codes
+    assert not report.ok
 
 
 @pytest.mark.parametrize(

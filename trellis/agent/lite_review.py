@@ -32,7 +32,6 @@ _SUSPICIOUS_LITERAL_NAMES = {
 }
 _CHECKED_ROUTE_HELPER_SYMBOLS = frozenset({
     "price_heston_option_monte_carlo",
-    "price_equity_cliquet_option_monte_carlo",
 })
 _CHECKED_MARKET_BINDING_OWNER_SYMBOLS = frozenset({
     "price_single_state_terminal_claim_monte_carlo_result",
