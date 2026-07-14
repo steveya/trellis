@@ -312,6 +312,95 @@ def test_build_with_tracking_forwards_retry_overlays_to_build_payoff(monkeypatch
     ]
 
 
+def test_build_with_tracking_scopes_live_knowledge_to_compiled_route(monkeypatch):
+    from trellis.agent.knowledge.autonomous import _build_with_tracking
+    from trellis.agent.knowledge.gap_check import GapReport
+    from trellis.agent.knowledge.schema import ProductDecomposition
+
+    observed: list[dict[str, object]] = []
+    decomposition = ProductDecomposition(
+        instrument="cliquet_option",
+        features=("scheduled_observation_returns",),
+        method="analytical",
+        learned=False,
+    )
+    product_ir = SimpleNamespace(
+        instrument="cliquet_option",
+        route_families=("analytical",),
+    )
+
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._reset_deterministic_planning_caches",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.retrieve_for_product_ir",
+        lambda *args, **kwargs: [],
+    )
+
+    def fake_shared_payload(knowledge, **kwargs):
+        observed.append(dict(kwargs))
+        route_ids = tuple(kwargs.get("route_ids") or ())
+        scoped = route_ids == ("analytical_black76",)
+        text = "scoped primitive knowledge" if scoped else "unscoped SABR helper"
+        selected_ids = ["principle:P10"] if scoped else [
+            "route_hint:sabr_hagan_analytical:route-helper"
+        ]
+        return {
+            "summary": {"selected_artifact_ids": selected_ids},
+            "builder_text_distilled": text,
+            "builder_text": text,
+            "builder_text_expanded": text,
+            "review_text_distilled": text,
+            "review_text_expanded": text,
+        }
+
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.build_shared_knowledge_payload",
+        fake_shared_payload,
+    )
+
+    def fake_build_payoff(*args, **kwargs):
+        generation_plan = SimpleNamespace(
+            lowering_route_id=None,
+            primitive_plan=SimpleNamespace(route="analytical_black76"),
+        )
+        request = SimpleNamespace(
+            audience="builder",
+            knowledge_surface="compact",
+            prompt_surface="compact",
+            pricing_method="analytical",
+            product_ir=product_ir,
+            compiled_request=SimpleNamespace(generation_plan=generation_plan),
+        )
+        assert kwargs["knowledge_retriever"](request) == "scoped primitive knowledge"
+        return type("FakeCliquetPayoff", (), {})
+
+    monkeypatch.setattr("trellis.agent.executor.build_payoff", fake_build_payoff)
+
+    payoff_cls, meta = _build_with_tracking(
+        description="Cliquet option",
+        instrument_type="cliquet_option",
+        decomposition=decomposition,
+        product_ir=product_ir,
+        gap_report=GapReport(confidence=0.8, retrieved_lesson_ids=[]),
+        model="test-model",
+        market_state=None,
+        max_retries=1,
+        validation="standard",
+        force_rebuild=True,
+        preferred_method="analytical",
+    )
+
+    assert payoff_cls.__name__ == "FakeCliquetPayoff"
+    assert observed[-1] == {
+        "pricing_method": "analytical",
+        "route_ids": ("analytical_black76",),
+        "route_families": ("analytical",),
+    }
+    assert meta["knowledge_summary"]["selected_artifact_ids"] == ["principle:P10"]
+
+
 def test_build_with_knowledge_preserves_platform_trace_metadata_on_failure(monkeypatch):
     from trellis.agent.knowledge.gap_check import GapReport
     from trellis.agent.knowledge.schema import ProductDecomposition

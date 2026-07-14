@@ -210,7 +210,7 @@ def test_autonomous_build_tracking_refreshes_knowledge_between_attempts(monkeypa
         retrieval_calls["count"] += 1
         return {"marker": retrieval_calls["count"]}
 
-    def fake_build_shared_payload(knowledge):
+    def fake_build_shared_payload(knowledge, **kwargs):
         marker = knowledge["marker"]
         return {
             "builder_text_distilled": f"distilled {marker}",

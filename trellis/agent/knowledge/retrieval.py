@@ -844,6 +844,7 @@ def build_shared_knowledge_payload(
         pricing_method=resolved_method,
         route_ids=resolved_route_ids,
         route_families=resolved_route_families,
+        product_ir=product_ir,
         knowledge_surface="compact",
     )
     review_artifacts = select_prompt_skill_artifacts(
@@ -854,6 +855,7 @@ def build_shared_knowledge_payload(
         pricing_method=resolved_method,
         route_ids=resolved_route_ids,
         route_families=resolved_route_families,
+        product_ir=product_ir,
         knowledge_surface="compact",
     )
     routing_artifacts = select_prompt_skill_artifacts(
@@ -864,6 +866,7 @@ def build_shared_knowledge_payload(
         pricing_method=resolved_method,
         route_ids=resolved_route_ids,
         route_families=resolved_route_families,
+        product_ir=product_ir,
         knowledge_surface="compact",
     )
 

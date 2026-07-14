@@ -1765,16 +1765,57 @@ class TestAnalyticalRoutes:
             ),
         }
 
-    def test_cliquet_primitives_use_exact_helper(self, registry):
+    def test_cliquet_analytical_primitives_use_observation_return_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         new_prims = resolve_route_primitives(spec, self.CLIQUET_IR)
         assert resolve_route_family(spec, self.CLIQUET_IR) == "analytical"
         assert _prim_set(new_prims) == {
             (
-                "trellis.models.analytical.equity_exotics",
-                "price_equity_cliquet_option_analytical",
-                "route_helper",
+                "trellis.models.observation_returns",
+                "ObservationReturnContract",
+                "payoff_contract",
             ),
+            (
+                "trellis.models.observation_returns",
+                "bounded_observation_return_sum",
+                "payoff_primitive",
+            ),
+            (
+                "trellis.models.analytical.support.expectations",
+                "gauss_hermite_product_expectation",
+                "pricing_kernel",
+            ),
+            ("trellis.models.black", "black76_call", "pricing_kernel"),
+            ("trellis.models.black", "black76_put", "pricing_kernel"),
+            ("trellis.core.date_utils", "year_fraction", "time_measure"),
+        }
+
+    def test_cliquet_monte_carlo_primitives_use_reduced_observation_state(self, registry):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        new_prims = resolve_route_primitives(spec, self.CLIQUET_IR)
+        assert resolve_route_family(spec, self.CLIQUET_IR) == "monte_carlo"
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.observation_returns",
+                "ObservationReturnContract",
+                "payoff_contract",
+            ),
+            (
+                "trellis.models.observation_returns",
+                "observation_return_payoff",
+                "payoff_primitive",
+            ),
+            (
+                "trellis.models.processes.gbm",
+                "PiecewiseConstantGBM",
+                "state_process",
+            ),
+            (
+                "trellis.models.monte_carlo.engine",
+                "MonteCarloEngine",
+                "path_simulation",
+            ),
+            ("trellis.core.date_utils", "year_fraction", "time_measure"),
         }
 
     def test_variance_swap_primitives_use_exact_helper_and_output_kernel(self, registry):

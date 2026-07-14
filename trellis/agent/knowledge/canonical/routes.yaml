@@ -454,6 +454,34 @@ routes:
         black_vol_surface: [market_state.vol_surface]
     conditional_primitives:
       - when:
+          contract_pattern:
+            payoff:
+              kind: cliquet_payoff
+            exercise:
+              style: european
+        primitives:
+          - module: trellis.models.observation_returns
+            symbol: ObservationReturnContract
+            role: payoff_contract
+          - module: trellis.models.observation_returns
+            symbol: observation_return_payoff
+            role: payoff_primitive
+          - module: trellis.models.processes.gbm
+            symbol: PiecewiseConstantGBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+        adapters: []
+        notes:
+          - "Resolve the contractual observation grid and local/global bounds explicitly, then pass observation_return_payoff(...) to MonteCarloEngine with return_paths=False."
+          - "Bind one drift and Black volatility per reset interval through PiecewiseConstantGBM; do not flatten the term structure to the final maturity."
+          - "The payoff and engine must use the same exact uniform grid; let ObservationReturnContract fail closed when contractual dates cannot be represented."
+          - "Do not call a product pricing wrapper or hand-roll reset branching in the generated adapter."
+      - when:
           payoff_family: variance_swap
           exercise_style: [none]
         primitives:
@@ -1484,12 +1512,29 @@ routes:
             exercise:
               style: european
         primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_cliquet_option_analytical
-            role: route_helper
+          - module: trellis.models.observation_returns
+            symbol: ObservationReturnContract
+            role: payoff_contract
+          - module: trellis.models.observation_returns
+            symbol: bounded_observation_return_sum
+            role: payoff_primitive
+          - module: trellis.models.black
+            symbol: black76_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_put
+            role: pricing_kernel
+          - module: trellis.models.analytical.support.expectations
+            symbol: gauss_hermite_product_expectation
+            role: pricing_kernel
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
         adapters: []
         notes:
-          - "Use the cliquet helper with `market_state` and `spec`; keep observation-date resets and carry handling in the shared helper."
+          - "For an unbounded reset-return sum, assemble each reset optionlet from black76_call/black76_put with explicit interval forward, discount, volatility, and carry."
+          - "When any local/global bound is present, map independent normal interval shocks to gross returns and evaluate bounded_observation_return_sum(...) inside gauss_hermite_product_expectation(...)."
+          - "Apply the declared notional, spot scale, and settlement discount explicitly; do not call a product pricing wrapper."
       - when:
           contract_pattern:
             payoff:

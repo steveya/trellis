@@ -37,7 +37,7 @@ Status mirror last synced: `2026-07-13`
 | `QUA-1173` | Quanto option: primitive-composed analytical and MC lanes | Done |
 | `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | Done |
 | `QUA-1176` | Observation returns: reusable bounded accumulation primitives | Done |
-| `QUA-1177` | Cliquet pricing: primitive-composed analytical and Monte Carlo lanes | Backlog |
+| `QUA-1177` | Cliquet pricing: primitive-composed analytical and Monte Carlo lanes | In Progress |
 
 ## Current Sequence
 

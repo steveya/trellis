@@ -147,7 +147,7 @@ return:
        ObservationReturnContract,
        observation_return_payoff,
    )
-   from trellis.models.processes.gbm import GBM
+   from trellis.models.processes.gbm import PiecewiseConstantGBM
 
    terms = ObservationReturnContract(
        observation_times=(0.25, 0.5, 0.75, 1.0),
@@ -164,7 +164,11 @@ return:
        n_steps=252,
    )
    result = MonteCarloEngine(
-       GBM(mu=0.03, sigma=0.20),
+       PiecewiseConstantGBM(
+           interval_ends=terms.observation_times,
+           mus=(0.03, 0.03, 0.03, 0.03),
+           sigmas=(0.18, 0.19, 0.20, 0.21),
+       ),
        n_paths=100_000,
        n_steps=252,
        seed=42,
@@ -183,6 +187,15 @@ can reuse the same ``ObservationReturnContract`` and
 ``gauss_hermite_product_expectation(...)`` when interval shocks are independent
 standard normals. Correlated returns, stochastic-volatility state, or
 nonpositive observables require a different model-specific composition.
+
+For an unbounded reset-style option, compose each observation interval as a
+unit-strike Black-76 call or put on the forward return and apply carry and
+discounting explicitly. For local or global bounds, use the contract and
+bounded accumulator inside the product expectation shown above. The retained
+``price_equity_cliquet_option_analytical`` and
+``price_equity_cliquet_option_monte_carlo`` functions are useful independent
+references for these supported cases, but generated adapters are expected to
+assemble the public primitives directly.
 
 The P001 Bermudan best-of-two rainbow proof is also exposed this way for
 task compatibility. Its checked-in ``_agent`` adapter delegates to the

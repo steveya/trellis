@@ -3992,6 +3992,257 @@ def _nth_to_default_helper_body(refs: set[str]) -> str | None:
     ).rstrip()
 
 
+def _declared_primitive_refs(generation_plan) -> set[str]:
+    """Return every concrete primitive declared by the selected route."""
+    primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
+    return {
+        f"{primitive.module}.{primitive.symbol}"
+        for primitive in getattr(primitive_plan, "primitives", ()) or ()
+        if getattr(primitive, "module", "") and getattr(primitive, "symbol", "")
+    }
+
+
+def _scheduled_observation_return_evaluate_body(
+    refs: set[str],
+    *,
+    normalized_target: str,
+    generation_method: str,
+) -> str | None:
+    """Compose scheduled-return valuation from product-neutral primitives."""
+    analytical_refs = {
+        "trellis.models.observation_returns.ObservationReturnContract",
+        "trellis.models.observation_returns.bounded_observation_return_sum",
+        "trellis.models.analytical.support.expectations.gauss_hermite_product_expectation",
+        "trellis.models.black.black76_call",
+        "trellis.models.black.black76_put",
+    }
+    monte_carlo_refs = {
+        "trellis.models.observation_returns.ObservationReturnContract",
+        "trellis.models.observation_returns.observation_return_payoff",
+        "trellis.models.processes.gbm.PiecewiseConstantGBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+    }
+    use_monte_carlo = normalized_target == "monte_carlo" or (
+        not normalized_target and generation_method == "monte_carlo"
+    )
+    if use_monte_carlo and monte_carlo_refs.issubset(refs):
+        return textwrap.dedent(
+            """\
+            settlement = market_state.settlement or market_state.as_of
+            if settlement is None:
+                raise ValueError("scheduled observation returns require settlement or as_of")
+            if market_state.discount is None:
+                raise ValueError("scheduled observation returns require market_state.discount")
+            if market_state.vol_surface is None:
+                raise ValueError("scheduled observation returns require market_state.vol_surface")
+
+            raw_times = getattr(spec, "observation_times", None)
+            observation_dates = tuple(sorted(getattr(spec, "observation_dates", ()) or ()))
+            time_day_count = (
+                getattr(spec, "time_day_count", None)
+                or getattr(spec, "day_count", DayCountConvention.ACT_365)
+            )
+            if raw_times:
+                observation_times = tuple(sorted(float(time) for time in raw_times))
+            else:
+                observation_times = tuple(
+                    float(year_fraction(settlement, observation_date, time_day_count))
+                    for observation_date in observation_dates
+                )
+            if not observation_times:
+                raise ValueError("scheduled observation returns require observation dates or times")
+
+            option_type = str(getattr(spec, "option_type", "call") or "call").strip().lower()
+            if option_type not in {"call", "put"}:
+                raise ValueError(f"unsupported observation-return direction {option_type!r}")
+            local_floor = getattr(spec, "local_floor", None)
+            local_cap = getattr(spec, "local_cap", None)
+            global_floor = getattr(spec, "global_floor", None)
+            global_cap = getattr(spec, "global_cap", None)
+            contract = ObservationReturnContract(
+                observation_times=observation_times,
+                direction="up" if option_type == "call" else "down",
+                local_floor=0.0 if local_floor is None else float(local_floor),
+                local_cap=float("inf") if local_cap is None else float(local_cap),
+                global_floor=float("-inf") if global_floor is None else float(global_floor),
+                global_cap=float("inf") if global_cap is None else float(global_cap),
+                payoff_scale=float(spec.notional) * float(spec.spot),
+            )
+            maturity = observation_times[-1]
+            if observation_dates:
+                default_steps = max((observation_dates[-1] - settlement).days, 1)
+            else:
+                default_steps = max(int(round(maturity * 365.0)), 1)
+            n_steps = max(int(getattr(spec, "n_steps", default_steps) or default_steps), 1)
+
+            carry = getattr(spec, "dividend_yield", None)
+            if carry is None:
+                carry = getattr(spec, "dividend_rate", None)
+            if carry is None:
+                params = dict(getattr(market_state, "model_parameters", None) or {})
+                carry_rates = dict(params.get("underlier_carry_rates") or {})
+                carry = next(iter(carry_rates.values()), 0.0)
+            carry = float(carry)
+            interval_mus = []
+            interval_sigmas = []
+            previous_time = 0.0
+            for observation_time in observation_times:
+                tau = observation_time - previous_time
+                interval_rate = float(
+                    market_state.discount.zero_rate(max(observation_time, 1e-6))
+                )
+                interval_sigma = float(
+                    market_state.vol_surface.black_vol(max(tau, 1e-6), float(spec.spot))
+                )
+                interval_mus.append(interval_rate - carry)
+                interval_sigmas.append(interval_sigma)
+                previous_time = observation_time
+            rate = float(market_state.discount.zero_rate(max(maturity, 1e-6)))
+            process = PiecewiseConstantGBM(
+                interval_ends=observation_times,
+                mus=tuple(interval_mus),
+                sigmas=tuple(interval_sigmas),
+            )
+            engine = MonteCarloEngine(
+                process,
+                n_paths=max(int(getattr(spec, "n_paths", 120000) or 120000), 2),
+                n_steps=n_steps,
+                seed=getattr(spec, "seed", 42),
+                method="exact",
+            )
+            payoff = observation_return_payoff(
+                contract,
+                maturity=maturity,
+                n_steps=n_steps,
+            )
+            result = engine.price(
+                float(spec.spot),
+                maturity,
+                payoff,
+                discount_rate=rate,
+                return_paths=False,
+            )
+            return float(result["price"])
+            """
+        ).rstrip()
+
+    use_analytical = normalized_target in {"", "analytical"} and generation_method in {
+        "",
+        "analytical",
+    }
+    if not use_analytical or not analytical_refs.issubset(refs):
+        return None
+    return textwrap.dedent(
+        """\
+        settlement = market_state.settlement or market_state.as_of
+        if settlement is None:
+            raise ValueError("scheduled observation returns require settlement or as_of")
+        if market_state.discount is None:
+            raise ValueError("scheduled observation returns require market_state.discount")
+        if market_state.vol_surface is None:
+            raise ValueError("scheduled observation returns require market_state.vol_surface")
+
+        raw_times = getattr(spec, "observation_times", None)
+        observation_dates = tuple(sorted(getattr(spec, "observation_dates", ()) or ()))
+        time_day_count = (
+            getattr(spec, "time_day_count", None)
+            or getattr(spec, "day_count", DayCountConvention.ACT_365)
+        )
+        if raw_times:
+            observation_times = tuple(sorted(float(time) for time in raw_times))
+        else:
+            observation_times = tuple(
+                float(year_fraction(settlement, observation_date, time_day_count))
+                for observation_date in observation_dates
+            )
+        if not observation_times:
+            raise ValueError("scheduled observation returns require observation dates or times")
+
+        option_type = str(getattr(spec, "option_type", "call") or "call").strip().lower()
+        if option_type not in {"call", "put"}:
+            raise ValueError(f"unsupported observation-return direction {option_type!r}")
+        local_floor = getattr(spec, "local_floor", None)
+        local_cap = getattr(spec, "local_cap", None)
+        global_floor = getattr(spec, "global_floor", None)
+        global_cap = getattr(spec, "global_cap", None)
+        contract = ObservationReturnContract(
+            observation_times=observation_times,
+            direction="up" if option_type == "call" else "down",
+            local_floor=0.0 if local_floor is None else float(local_floor),
+            local_cap=float("inf") if local_cap is None else float(local_cap),
+            global_floor=float("-inf") if global_floor is None else float(global_floor),
+            global_cap=float("inf") if global_cap is None else float(global_cap),
+        )
+        carry = getattr(spec, "dividend_yield", None)
+        if carry is None:
+            carry = getattr(spec, "dividend_rate", None)
+        if carry is None:
+            params = dict(getattr(market_state, "model_parameters", None) or {})
+            carry_rates = dict(params.get("underlier_carry_rates") or {})
+            carry = next(iter(carry_rates.values()), 0.0)
+        carry = float(carry)
+        notional = float(spec.notional)
+        spot = float(spec.spot)
+
+        has_explicit_bounds = any(
+            value is not None
+            for value in (local_floor, local_cap, global_floor, global_cap)
+        )
+        if not has_explicit_bounds:
+            total = 0.0
+            previous_time = 0.0
+            for observation_time in observation_times:
+                tau = observation_time - previous_time
+                rate = float(market_state.discount.zero_rate(max(observation_time, 1e-6)))
+                sigma = float(market_state.vol_surface.black_vol(max(tau, 1e-6), spot))
+                forward_ratio = exp((rate - carry) * tau)
+                if option_type == "call":
+                    optionlet = black76_call(forward_ratio, 1.0, sigma, tau)
+                else:
+                    optionlet = black76_put(forward_ratio, 1.0, sigma, tau)
+                total += (
+                    spot
+                    * exp(-carry * previous_time)
+                    * exp(-rate * tau)
+                    * optionlet
+                )
+                previous_time = observation_time
+            return float(notional * total)
+
+        period_inputs = []
+        previous_time = 0.0
+        for observation_time in observation_times:
+            tau = observation_time - previous_time
+            rate = float(market_state.discount.zero_rate(max(observation_time, 1e-6)))
+            sigma = float(market_state.vol_surface.black_vol(max(tau, 1e-6), spot))
+            period_inputs.append((tau, rate, sigma))
+            previous_time = observation_time
+
+        def interval_payoff(normals):
+            gross_returns = [
+                exp(
+                    (rate - carry - 0.5 * sigma * sigma) * tau
+                    + sigma * sqrt(tau) * float(normal)
+                )
+                for normal, (tau, rate, sigma) in zip(normals, period_inputs)
+            ]
+            return bounded_observation_return_sum(gross_returns, contract)
+
+        expected_return = gauss_hermite_product_expectation(
+            interval_payoff,
+            dimension=len(period_inputs),
+            order=max(int(getattr(spec, "quadrature_order", 21) or 21), 3),
+            max_nodes=max(
+                int(getattr(spec, "max_quadrature_nodes", 2000000) or 2000000),
+                1,
+            ),
+        )
+        discount_factor = float(market_state.discount.discount(observation_times[-1]))
+        return float(notional * spot * discount_factor * expected_return)
+        """
+    ).rstrip()
+
+
 def _deterministic_exact_binding_evaluate_body(
     generation_plan,
     *,
@@ -4002,6 +4253,7 @@ def _deterministic_exact_binding_evaluate_body(
     """Return a deterministic evaluate body for supported exact-bound routes."""
     metadata = dict(request_metadata or {})
     refs = set(_exact_binding_refs(generation_plan))
+    refs.update(_declared_primitive_refs(generation_plan))
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
     vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_mc_call_kwargs = (
@@ -4058,6 +4310,13 @@ def _deterministic_exact_binding_evaluate_body(
     generation_method = str(
         _generation_plan_field(generation_plan, "method", "") or ""
     ).strip().lower().replace("-", "_")
+    scheduled_return_body = _scheduled_observation_return_evaluate_body(
+        refs,
+        normalized_target=normalized_target,
+        generation_method=generation_method,
+    )
+    if scheduled_return_body is not None:
+        return scheduled_return_body
     if (
         primitive_route == "equity_quanto"
         and {
@@ -4606,13 +4865,6 @@ def _deterministic_exact_binding_evaluate_body(
             'n_x=getattr(spec, "tree_grid_size", 301))'
         )
 
-    if comparison_target == "monte_carlo" and instrument_type == "cliquet_option":
-        return (
-            "return price_equity_cliquet_option_monte_carlo("
-            "market_state, spec, "
-            'n_paths=getattr(spec, "n_paths", 120000), '
-            'seed=getattr(spec, "seed", 42))'
-        )
     if (
         normalized_target in {"cn_rannacher", "cn_standard"}
         and "trellis.models.equity_option_pde.price_equity_digital_option_pde" in refs
@@ -5080,15 +5332,6 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical": (
             "return price_equity_compound_option_analytical(market_state, spec)"
         ),
-        "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical": (
-            "return price_equity_cliquet_option_analytical(market_state, spec)"
-        ),
-        "trellis.models.monte_carlo.event_aware.price_equity_cliquet_option_monte_carlo": (
-            "return price_equity_cliquet_option_monte_carlo("
-            "market_state, spec, "
-            'n_paths=getattr(spec, "n_paths", 120000), '
-            'seed=getattr(spec, "seed", 42))'
-        ),
         "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical": (
             "return price_equity_variance_swap_analytical(market_state, spec)"
         ),
@@ -5426,6 +5669,8 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     imports: list[str] = []
     if "exp(" in body:
         imports.append("from math import exp")
+    if "sqrt(" in body:
+        imports.append("from math import sqrt")
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
     if "price_heston_option_monte_carlo(" in body:
@@ -5525,11 +5770,6 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.instruments.nth_to_default import price_nth_to_default_basket"
         )
-    if "price_equity_cliquet_option_monte_carlo(" in body:
-        imports.append(
-            "from trellis.models.monte_carlo.event_aware import "
-            "price_equity_cliquet_option_monte_carlo"
-        )
     if "price_event_aware_equity_option_pde(" in body:
         imports.append(
             "from trellis.models.equity_option_pde import price_event_aware_equity_option_pde"
@@ -5591,6 +5831,21 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "MonteCarloEngine(" in body:
         imports.append(
             "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+        )
+    if "ObservationReturnContract(" in body:
+        observation_symbols = ["ObservationReturnContract"]
+        if "bounded_observation_return_sum(" in body:
+            observation_symbols.append("bounded_observation_return_sum")
+        if "observation_return_payoff(" in body:
+            observation_symbols.append("observation_return_payoff")
+        imports.append(
+            "from trellis.models.observation_returns import "
+            + ", ".join(observation_symbols)
+        )
+    if "gauss_hermite_product_expectation(" in body:
+        imports.append(
+            "from trellis.models.analytical.support.expectations import "
+            "gauss_hermite_product_expectation"
         )
     if "resolve_quanto_inputs(" in body:
         imports.append(

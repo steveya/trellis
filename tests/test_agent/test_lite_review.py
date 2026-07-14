@@ -975,7 +975,7 @@ def price(self, market_state):
     assert "lite.monte_carlo_paths_route_helper_missing" in issue_codes
 
 
-def test_lite_review_accepts_checked_cliquet_helper_for_monte_carlo_paths():
+def test_lite_review_does_not_let_retired_cliquet_helper_own_market_binding():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.lite_review import review_generated_code
     from trellis.agent.quant import PricingPlan
@@ -1023,7 +1023,8 @@ def price(self, market_state):
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "lite.monte_carlo_paths_route_helper_missing" not in issue_codes
+    assert "lite.monte_carlo_paths_discount_curve_access_missing" in issue_codes
+    assert "lite.monte_carlo_paths_black_vol_surface_access_missing" in issue_codes
 
 
 def test_builder_prompt_surface_uses_semantic_repair_for_lite_review():

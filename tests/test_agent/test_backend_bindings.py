@@ -678,22 +678,6 @@ def test_resolve_backend_binding_spec_uses_quanto_primitive_composition(
         ),
         pytest.param(
             ProductIR(
-                instrument="cliquet_option",
-                payoff_family="cliquet_option",
-                payoff_traits=("vanilla_option",),
-                exercise_style="european",
-                state_dependence="terminal_markov",
-                model_family="equity_diffusion",
-            ),
-            "analytical",
-            (
-                "trellis.models.analytical.equity_exotics.price_equity_cliquet_option_analytical",
-            ),
-            (),
-            id="cliquet",
-        ),
-        pytest.param(
-            ProductIR(
                 instrument="variance_swap",
                 payoff_family="variance_swap",
                 payoff_traits=(
@@ -733,6 +717,35 @@ def test_resolve_backend_binding_spec_uses_exact_helpers_for_absorbed_black76_eq
     assert resolved.route_family == expected_route_family
     assert resolved.helper_refs == expected_helper_refs
     assert resolved.pricing_kernel_refs == expected_kernel_refs
+
+
+def test_resolve_backend_binding_spec_uses_cliquet_primitive_composition():
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
+
+    assert analytical is not None
+
+    resolved = resolve_backend_binding_spec(
+        analytical,
+        product_ir=ProductIR(
+            instrument="cliquet_option",
+            payoff_family="cliquet_option",
+            payoff_traits=("vanilla_option",),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            schedule_dependence=True,
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert resolved.pricing_kernel_refs == (
+        "trellis.models.black.black76_call",
+        "trellis.models.black.black76_put",
+        "trellis.models.analytical.support.expectations.gauss_hermite_product_expectation",
+    )
+    assert "trellis.models.observation_returns.ObservationReturnContract" in resolved.primitive_refs
+    assert "trellis.models.observation_returns.bounded_observation_return_sum" in resolved.primitive_refs
 
 
 def test_resolve_backend_binding_spec_uses_variance_swap_monte_carlo_helper():

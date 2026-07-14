@@ -629,7 +629,7 @@ from trellis.models.levy_option import LevyOptionMonteCarloResult, LevyOptionTra
 from trellis.models.bates_option import BatesOptionMonteCarloResult, BatesOptionTransformResult, ResolvedBatesOptionInputs, bates_log_ratio_char_fn, bates_log_spot_char_fn, price_bates_option_monte_carlo, price_bates_option_monte_carlo_result, price_bates_option_transform, price_bates_option_transform_result, resolve_bates_option_inputs
 
 ### Models — Processes
-from trellis.models.processes.gbm import GBM
+from trellis.models.processes.gbm import GBM, PiecewiseConstantGBM
 from trellis.models.processes.heston import Heston
 from trellis.models.processes.hull_white import HullWhite
 from trellis.models.processes.vasicek import Vasicek

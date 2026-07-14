@@ -8,7 +8,7 @@ from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
 from trellis.data.resolver import resolve_market_snapshot
 from trellis.models.processes.base import StochasticProcess
-from trellis.models.processes.gbm import GBM
+from trellis.models.processes.gbm import GBM, PiecewiseConstantGBM
 from trellis.models.processes.correlated_gbm import CorrelatedGBM
 from trellis.models.processes.vasicek import Vasicek
 from trellis.models.processes.cir import CIR
@@ -61,6 +61,30 @@ class TestGBM:
         gbm = GBM(mu=0.05, sigma=0.20)
         assert gbm.drift(100.0, 0) == pytest.approx(5.0)
         assert gbm.diffusion(100.0, 0) == pytest.approx(20.0)
+
+
+class TestPiecewiseConstantGBM:
+    def test_exact_sample_integrates_across_parameter_intervals(self):
+        process = PiecewiseConstantGBM(
+            interval_ends=(0.25, 1.0),
+            mus=(0.01, 0.03),
+            sigmas=(0.10, 0.30),
+        )
+
+        sampled = process.exact_sample(100.0, 0.20, 0.10, 0.0)
+
+        integrated_mu = 0.01 * 0.05 + 0.03 * 0.05
+        integrated_variance = 0.10**2 * 0.05 + 0.30**2 * 0.05
+        expected = 100.0 * raw_np.exp(integrated_mu - 0.5 * integrated_variance)
+        assert sampled == pytest.approx(expected, rel=1e-12)
+
+    def test_rejects_inconsistent_parameter_grid(self):
+        with pytest.raises(ValueError, match="same length"):
+            PiecewiseConstantGBM(
+                interval_ends=(0.25, 1.0),
+                mus=(0.01,),
+                sigmas=(0.10, 0.30),
+            )
 
 
 class TestCorrelatedGBM:

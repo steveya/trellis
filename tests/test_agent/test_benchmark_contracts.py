@@ -26,6 +26,13 @@ def _benchmark_tasks() -> dict[str, dict]:
     }
 
 
+def _extension_tasks() -> dict[str, dict]:
+    return {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml", root=ROOT)
+    }
+
+
 def test_canonical_benchmark_instrument_type_maps_broad_runtime_families():
     tasks = _benchmark_tasks()
 
@@ -216,6 +223,12 @@ def test_benchmark_spec_overrides_cover_fx_rates_cap_and_swaption_contracts():
     )
     assert cliquet["day_count"] is DayCountConvention.THIRTY_E_360
     assert cliquet["time_day_count"] is DayCountConvention.ACT_365
+
+    bounded_cliquet = benchmark_spec_overrides(_extension_tasks()["P007"], root=ROOT)
+    assert bounded_cliquet["local_cap"] == pytest.approx(0.08)
+    assert bounded_cliquet["local_floor"] == pytest.approx(0.0)
+    assert bounded_cliquet["global_cap"] == pytest.approx(0.20)
+    assert bounded_cliquet["global_floor"] == pytest.approx(0.0)
 
     variance_swap = benchmark_spec_overrides(tasks["F015"], root=ROOT)
     assert variance_swap["strike_variance"] == pytest.approx(0.04)

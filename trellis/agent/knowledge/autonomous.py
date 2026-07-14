@@ -573,20 +573,47 @@ def _build_with_tracking(
             overlay_payloads
         )
 
-    def _retrieve_live_payload() -> dict[str, Any]:
-        """Render a fresh shared-knowledge payload for each retry attempt."""
-        if product_ir is not None:
+    def _retrieve_live_payload(request=None) -> dict[str, Any]:
+        """Render route-scoped shared knowledge for each build or retry attempt."""
+        request_product_ir = getattr(request, "product_ir", None) or product_ir
+        pricing_method = (
+            getattr(request, "pricing_method", None)
+            or preferred_method
+            or decomposition.method
+        )
+        if request_product_ir is not None:
             latest_knowledge = retrieve_for_product_ir(
-                product_ir,
-                preferred_method=preferred_method or decomposition.method,
+                request_product_ir,
+                preferred_method=pricing_method,
             )
         else:
             latest_knowledge = retrieve_for_task(
-                method=decomposition.method,
+                method=pricing_method,
                 features=list(decomposition.features),
                 instrument=decomposition.instrument,
             )
-        return build_shared_knowledge_payload(latest_knowledge)
+
+        compiled_request = getattr(request, "compiled_request", None)
+        generation_plan = getattr(compiled_request, "generation_plan", None)
+        primitive_plan = getattr(generation_plan, "primitive_plan", None)
+        route_ids = tuple(
+            dict.fromkeys(
+                route_id
+                for route_id in (
+                    getattr(generation_plan, "lowering_route_id", None),
+                    getattr(primitive_plan, "route", None),
+                )
+                if isinstance(route_id, str) and route_id.strip()
+            )
+        )
+        return build_shared_knowledge_payload(
+            latest_knowledge,
+            pricing_method=pricing_method,
+            route_ids=route_ids,
+            route_families=tuple(
+                getattr(request_product_ir, "route_families", ()) or ()
+            ),
+        )
 
     import trellis.agent.executor as executor
     original_record_platform_event = executor._record_platform_event
@@ -594,9 +621,13 @@ def _build_with_tracking(
     def _stage_aware_knowledge_retriever(request) -> str:
         """Serve fresh knowledge with audience/surface awareness on every attempt."""
         try:
-            payload = _retrieve_live_payload()
+            payload = _retrieve_live_payload(request)
         except Exception:
             payload = knowledge_payload
+
+        meta.setdefault("knowledge_summary", {}).update(
+            dict(payload.get("summary") or {})
+        )
 
         audience = getattr(request, "audience", "builder")
         knowledge_surface = getattr(request, "knowledge_surface", "compact")
