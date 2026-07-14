@@ -109,6 +109,36 @@ def test_weighted_lognormal_moment_primitives_are_visible_to_import_registry():
         assert symbol in registry_text
 
 
+def test_gaussian_probability_primitives_are_visible_to_import_registry():
+    module = "trellis.models.analytical.support.probability"
+    symbols = {
+        "bivariate_standard_normal_cdf",
+        "standard_normal_cdf",
+    }
+
+    assert module_exists(module)
+    assert symbols <= set(list_module_exports(module))
+    for symbol in symbols:
+        assert module in find_symbol_modules(symbol)
+        assert is_valid_import(module, symbol)
+
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+    for symbol in symbols:
+        assert symbol in registry_text
+
+    scalar_root_module = "trellis.models.calibration.solve_request"
+    scalar_root_symbols = {
+        "ObjectiveBundle",
+        "SolveBounds",
+        "SolveRequest",
+        "execute_solve_request",
+    }
+    assert scalar_root_symbols <= set(list_module_exports(scalar_root_module))
+    for symbol in scalar_root_symbols:
+        assert is_valid_import(scalar_root_module, symbol)
+
+
 def test_quoted_observable_helpers_are_visible_to_import_registry():
     module = "trellis.models.quoted_observable"
 

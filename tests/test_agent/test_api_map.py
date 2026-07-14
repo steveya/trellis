@@ -61,6 +61,7 @@ def test_api_map_contains_expected_core_entries():
         "equity_tree",
         "rate_lattice",
         "rate_monte_carlo_composition",
+        "analytical_gaussian_composition",
     ):
         assert module_exists(api_map[section_name]["module"])
 
@@ -264,6 +265,37 @@ def test_api_map_semantic_selection_reaches_composition_cards():
     for query, expected_family in cases:
         selection = select_api_map_sections(query)
         assert expected_family in selection.selected_families
+
+
+@pytest.mark.parametrize(
+    "payoff_family",
+    ["chooser_option", "compound_option", "lookback_option"],
+)
+def test_api_map_semantic_selection_reaches_gaussian_root_composition(
+    payoff_family,
+):
+    selection = select_api_map_sections(
+        ApiMapQuery(
+            payoff_family=payoff_family,
+            method="analytical",
+            model_family="equity_diffusion",
+        )
+    )
+    text = format_api_map_for_prompt(
+        compact=True,
+        query=ApiMapQuery(
+            payoff_family=payoff_family,
+            method="analytical",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "analytical_gaussian_composition" in selection.selected_families
+    assert "standard_normal_cdf" in text
+    assert "bivariate_standard_normal_cdf" in text
+    assert "SolveRequest" in text
+    assert "execute_solve_request" in text
+    assert "from trellis.models.calibration.solve_request import" in text
 
 
 def test_api_map_selection_and_rendering_are_stable_and_budgeted():

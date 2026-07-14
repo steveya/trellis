@@ -56,6 +56,7 @@ METHOD_FAMILY_PREFIXES = {
     "analytical": (
         "trellis.models.black",
         "trellis.models.analytical",
+        "trellis.models.calibration.solve_request",
     ),
     "rate_tree": (
         "trellis.models.trees",
