@@ -4,7 +4,7 @@ The goal of this module is narrower than a general benchmark runner:
 
 - prove the admitted structural families bind deterministically
 - compare structural authority against the current request compiler path
-- leave an explicit blocked outcome for arithmetic Asians
+- compare composed arithmetic-Asian lanes against compatibility references
 
 This is the checked evidence surface that gates Phase 4 cutover for the bounded
 admitted cohort and tracks any residual route-fallback gaps.
@@ -29,6 +29,7 @@ from trellis.agent.knowledge.import_registry import get_repo_revision
 from trellis.agent.platform_requests import compile_build_request
 from trellis.agent.valuation_context import build_valuation_context
 from trellis.core.market_state import MarketState
+from trellis.core.types import DayCountConvention
 from trellis.curves.yield_curve import YieldCurve
 from trellis.models.analytical.equity_exotics import price_equity_variance_swap_analytical
 from trellis.models.asian_option import (
@@ -60,7 +61,7 @@ class ContractIRSolverParityCase:
     expected_source: str
     expected_shadow_status: str
     expected_declaration_id: str
-    reference_price: Callable[[object, MarketState], float] | None
+    reference_price: Callable[[object, MarketState, object], float] | None
     market_state_factory: Callable[[], MarketState]
     tolerance_abs: float = 1e-12
     tolerance_rel: float = 1e-12
@@ -118,7 +119,7 @@ def _variance_market_state() -> MarketState:
     )
 
 
-def _black_vanilla_reference(decision, market_state: MarketState) -> float:
+def _black_vanilla_reference(decision, market_state: MarketState, contract_ir) -> float:
     call = decision.declaration_id.endswith("_call")
     T = float(decision.call_kwargs["T"])
     K = float(decision.call_kwargs["K"])
@@ -128,7 +129,7 @@ def _black_vanilla_reference(decision, market_state: MarketState) -> float:
     return float(df) * kernel(forward, K, 0.2, T)
 
 
-def _digital_reference(decision, market_state: MarketState) -> float:
+def _digital_reference(decision, market_state: MarketState, contract_ir) -> float:
     T = float(decision.call_kwargs["T"])
     K = float(decision.call_kwargs["K"])
     df = float(market_state.discount.discount(T))
@@ -142,24 +143,64 @@ def _digital_reference(decision, market_state: MarketState) -> float:
     raise AssertionError(f"Unhandled digital declaration {decision.declaration_id!r}")
 
 
-def _swaption_reference(decision, market_state: MarketState) -> float:
+def _swaption_reference(decision, market_state: MarketState, contract_ir) -> float:
     return float(price_swaption_black76(market_state, decision.call_kwargs["spec"]))
 
 
-def _basket_reference(decision, market_state: MarketState) -> float:
+def _basket_reference(decision, market_state: MarketState, contract_ir) -> float:
     return float(price_basket_option_analytical(market_state, decision.call_kwargs["spec"]))
 
 
-def _variance_reference(decision, market_state: MarketState) -> float:
+def _variance_reference(decision, market_state: MarketState, contract_ir) -> float:
     return float(price_equity_variance_swap_analytical(market_state, decision.call_kwargs["spec"]))
 
 
-def _asian_monte_carlo_reference(decision, market_state: MarketState) -> float:
-    return float(price_arithmetic_asian_option_monte_carlo(market_state, decision.call_kwargs["spec"]))
+@dataclass(frozen=True)
+class _ArithmeticAsianReferenceSpec:
+    notional: float
+    underlier: str
+    spot: float
+    strike: float
+    expiry_date: date
+    observation_dates: tuple[date, ...]
+    option_type: str
+    day_count: DayCountConvention = DayCountConvention.ACT_365
+    dividend_yield: float = 0.0
+    n_paths: int = 50_000
+    seed: int | None = 42
 
 
-def _asian_analytical_reference(decision, market_state: MarketState) -> float:
-    return float(price_arithmetic_asian_option_analytical(market_state, decision.call_kwargs["spec"]))
+def _asian_reference_spec(decision, market_state: MarketState, contract_ir) -> _ArithmeticAsianReferenceSpec:
+    averaging_schedule = decision.match_bindings["averaging_schedule"]
+    exercise_schedule = contract_ir.exercise.schedule
+    underlier = str(decision.match_bindings["u"])
+    strike = float(decision.match_bindings["k"])
+    spot = float((market_state.underlier_spots or {})[underlier])
+    if decision.requested_method == "monte_carlo":
+        notional = float(decision.value_scale)
+    else:
+        maturity = float(decision.call_kwargs["T"])
+        discount_factor = float(market_state.discount.discount(maturity))
+        notional = float(decision.value_scale) / discount_factor
+    return _ArithmeticAsianReferenceSpec(
+        notional=notional,
+        underlier=underlier,
+        spot=spot,
+        strike=strike,
+        expiry_date=exercise_schedule.t,
+        observation_dates=tuple(averaging_schedule.dates),
+        option_type="put" if decision.declaration_id.endswith("_put") else "call",
+    )
+
+
+def _asian_monte_carlo_reference(decision, market_state: MarketState, contract_ir) -> float:
+    spec = _asian_reference_spec(decision, market_state, contract_ir)
+    return float(price_arithmetic_asian_option_monte_carlo(market_state, spec))
+
+
+def _asian_analytical_reference(decision, market_state: MarketState, contract_ir) -> float:
+    spec = _asian_reference_spec(decision, market_state, contract_ir)
+    return float(price_arithmetic_asian_option_analytical(market_state, spec))
 
 
 def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
@@ -280,7 +321,7 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             preferred_method="analytical",
             expected_source="request_decomposition",
             expected_shadow_status="bound",
-            expected_declaration_id="helper_arithmetic_asian_option_analytical_call",
+            expected_declaration_id="compose_arithmetic_asian_analytical_call",
             reference_price=_asian_analytical_reference,
             market_state_factory=_variance_market_state,
             tolerance_abs=1e-12,
@@ -294,7 +335,7 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             preferred_method="analytical",
             expected_source="request_decomposition",
             expected_shadow_status="bound",
-            expected_declaration_id="helper_arithmetic_asian_option_analytical_put",
+            expected_declaration_id="compose_arithmetic_asian_analytical_put",
             reference_price=_asian_analytical_reference,
             market_state_factory=_variance_market_state,
             tolerance_abs=1e-12,
@@ -308,9 +349,25 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             preferred_method="monte_carlo",
             expected_source="request_decomposition",
             expected_shadow_status="bound",
-            expected_declaration_id="helper_arithmetic_asian_option_monte_carlo",
+            expected_declaration_id="compose_arithmetic_asian_monte_carlo_call",
             reference_price=_asian_monte_carlo_reference,
             market_state_factory=_variance_market_state,
+            tolerance_abs=5.0,
+            tolerance_rel=0.01,
+        ),
+        ContractIRSolverParityCase(
+            case_id="asian_put_monte_carlo",
+            family_id="asian_option",
+            description="Arithmetic Asian put on SPX weekly average from 2025-01-03 to 2025-01-31 strike 5000",
+            instrument_type="asian_option",
+            preferred_method="monte_carlo",
+            expected_source="request_decomposition",
+            expected_shadow_status="bound",
+            expected_declaration_id="compose_arithmetic_asian_monte_carlo_put",
+            reference_price=_asian_monte_carlo_reference,
+            market_state_factory=_variance_market_state,
+            tolerance_abs=0.50,
+            tolerance_rel=0.02,
         ),
     )
 
@@ -413,7 +470,7 @@ def _run_case(case: ContractIRSolverParityCase) -> dict[str, object]:
     reference_price = (
         None
         if case.reference_price is None
-        else float(case.reference_price(decision, market_state))
+        else float(case.reference_price(decision, market_state, contract_ir))
     )
     abs_diff = None if reference_price is None else abs(structural_price - reference_price)
     rel_diff = None

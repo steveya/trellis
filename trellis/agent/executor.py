@@ -3032,6 +3032,9 @@ def _make_test_payoff(
         )
     )
     heston_option_context = "heston" in basket_context
+    if spec_schema.spec_name == "AsianOptionSpec":
+        # Sparse task rows declare an observation count, not an invented date schedule.
+        name_defaults["observation_dates"] = ()
     if spec_schema.spec_name == "FXVanillaOptionSpec":
         name_defaults["notional"] = 10.0
         name_defaults["strike"] = 1.08
@@ -4243,6 +4246,263 @@ def _scheduled_observation_return_evaluate_body(
     ).rstrip()
 
 
+def _arithmetic_asian_evaluate_body(
+    refs: set[str],
+    *,
+    normalized_target: str,
+    generation_method: str,
+) -> str | None:
+    """Compose bounded arithmetic-Asian routes from product-neutral primitives."""
+    common_refs = {
+        "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+        "trellis.core.date_utils.year_fraction",
+    }
+    monte_carlo_refs = common_refs | {
+        "trellis.models.observation_aggregation.WeightedObservationContract",
+        "trellis.models.observation_aggregation.weighted_observation_payoff",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+        "trellis.core.differentiable.get_numpy",
+    }
+    analytical_refs = common_refs | {
+        "trellis.models.analytical.support.lognormal_moments.single_factor_lognormal_sum_contract",
+        "trellis.models.analytical.support.lognormal_moments.weighted_lognormal_sum_moments",
+        "trellis.models.analytical.support.lognormal_moments.match_lognormal_moments",
+        "trellis.models.black.black76_call",
+        "trellis.models.black.black76_put",
+    }
+
+    use_monte_carlo = normalized_target == "mc_asian" or (
+        normalized_target in {"", "monte_carlo"}
+        and generation_method == "monte_carlo"
+    )
+    if use_monte_carlo and monte_carlo_refs.issubset(refs):
+        return textwrap.dedent(
+            """\
+            averaging_type = str(
+                getattr(spec, "averaging_type", "arithmetic") or "arithmetic"
+            ).strip().lower()
+            if averaging_type != "arithmetic":
+                raise ValueError(
+                    "arithmetic Asian composition requires arithmetic averaging"
+                )
+            resolved = resolve_single_state_diffusion_inputs(market_state, spec)
+            if resolved.maturity <= 0.0:
+                intrinsic = (
+                    max(resolved.strike - resolved.spot, 0.0)
+                    if resolved.option_type == "put"
+                    else max(resolved.spot - resolved.strike, 0.0)
+                )
+                return float(resolved.notional * intrinsic)
+
+            settlement = market_state.settlement or market_state.as_of
+            if settlement is None:
+                raise ValueError(
+                    "arithmetic Asian composition requires settlement or as_of"
+                )
+            observation_dates = tuple(
+                getattr(spec, "observation_dates", ()) or ()
+            )
+            if observation_dates:
+                if tuple(sorted(observation_dates)) != observation_dates:
+                    raise ValueError(
+                        "arithmetic Asian observation dates must be increasing"
+                    )
+                if observation_dates[-1] != spec.expiry_date:
+                    raise ValueError(
+                        "arithmetic Asian final observation must equal expiry_date"
+                    )
+                observation_times = tuple(
+                    float(year_fraction(settlement, observation_date, spec.day_count))
+                    for observation_date in observation_dates
+                )
+                if any(time <= 0.0 for time in observation_times):
+                    raise ValueError(
+                        "arithmetic Asian observations must be after settlement"
+                    )
+            else:
+                observation_count = int(
+                    getattr(spec, "n_observations", 0) or 0
+                )
+                if observation_count <= 0:
+                    raise ValueError(
+                        "arithmetic Asian composition requires observation_dates "
+                        "or positive n_observations"
+                    )
+                if observation_count == 1:
+                    observation_times = (0.0,)
+                else:
+                    observation_times = tuple(
+                        resolved.maturity * index / (observation_count - 1)
+                        for index in range(observation_count)
+                    )
+
+            observation_count = len(observation_times)
+            observation_contract = WeightedObservationContract(
+                observation_times=observation_times,
+                weights=(1.0 / observation_count,) * observation_count,
+            )
+            configured_steps = getattr(spec, "n_steps", None)
+            if configured_steps is None and not observation_dates:
+                configured_steps = max(observation_count - 1, 1)
+            n_steps = observation_contract.resolve_uniform_grid_steps(
+                maturity=resolved.maturity,
+                n_steps=(
+                    None
+                    if configured_steps is None
+                    else max(int(configured_steps), 1)
+                ),
+                min_steps=max(observation_count - 1, 1),
+                max_steps=int(
+                    getattr(spec, "max_grid_steps", 4096) or 4096
+                ),
+            )
+
+            np = get_numpy()
+            if resolved.option_type == "put":
+                settlement_fn = lambda average: np.maximum(
+                    resolved.strike - average, 0.0
+                )
+            else:
+                settlement_fn = lambda average: np.maximum(
+                    average - resolved.strike, 0.0
+                )
+            payoff: StateAwarePayoff = weighted_observation_payoff(
+                observation_contract,
+                maturity=resolved.maturity,
+                n_steps=n_steps,
+                settlement_fn=settlement_fn,
+                reducer_name="arithmetic_average",
+                name="arithmetic_asian_payoff",
+            )
+            process = GBM(
+                mu=resolved.rate - resolved.dividend_yield,
+                sigma=resolved.sigma,
+            )
+            engine = MonteCarloEngine(
+                process,
+                n_paths=max(int(getattr(spec, "n_paths", 50000) or 50000), 2),
+                n_steps=n_steps,
+                seed=getattr(spec, "seed", 42),
+                method="exact",
+            )
+            result = engine.price(
+                resolved.spot,
+                resolved.maturity,
+                payoff,
+                discount_rate=resolved.rate,
+                return_paths=False,
+            )
+            return float(resolved.notional * result["price"])
+            """
+        ).rstrip()
+
+    use_analytical = normalized_target == "turnbull_wakeman_approx" or (
+        normalized_target in {"", "analytical"}
+        and generation_method == "analytical"
+    )
+    if not use_analytical or not analytical_refs.issubset(refs):
+        return None
+    return textwrap.dedent(
+        """\
+        averaging_type = str(
+            getattr(spec, "averaging_type", "arithmetic") or "arithmetic"
+        ).strip().lower()
+        if averaging_type != "arithmetic":
+            raise ValueError(
+                "arithmetic Asian composition requires arithmetic averaging"
+            )
+        resolved = resolve_single_state_diffusion_inputs(market_state, spec)
+        if resolved.maturity <= 0.0:
+            intrinsic = (
+                max(resolved.strike - resolved.spot, 0.0)
+                if resolved.option_type == "put"
+                else max(resolved.spot - resolved.strike, 0.0)
+            )
+            return float(resolved.notional * intrinsic)
+
+        settlement = market_state.settlement or market_state.as_of
+        if settlement is None:
+            raise ValueError(
+                "arithmetic Asian composition requires settlement or as_of"
+            )
+        observation_dates = tuple(
+            getattr(spec, "observation_dates", ()) or ()
+        )
+        if observation_dates:
+            if tuple(sorted(observation_dates)) != observation_dates:
+                raise ValueError(
+                    "arithmetic Asian observation dates must be increasing"
+                )
+            if observation_dates[-1] != spec.expiry_date:
+                raise ValueError(
+                    "arithmetic Asian final observation must equal expiry_date"
+                )
+            observation_times = tuple(
+                float(year_fraction(settlement, observation_date, spec.day_count))
+                for observation_date in observation_dates
+            )
+            if any(time <= 0.0 for time in observation_times):
+                raise ValueError(
+                    "arithmetic Asian observations must be after settlement"
+                )
+        else:
+            observation_count = int(
+                getattr(spec, "n_observations", 0) or 0
+            )
+            if observation_count <= 0:
+                raise ValueError(
+                    "arithmetic Asian composition requires observation_dates "
+                    "or positive n_observations"
+                )
+            if observation_count == 1:
+                observation_times = (0.0,)
+            else:
+                observation_times = tuple(
+                    resolved.maturity * index / (observation_count - 1)
+                    for index in range(observation_count)
+                )
+
+        observation_count = len(observation_times)
+        moments = weighted_lognormal_sum_moments(
+            single_factor_lognormal_sum_contract(
+                spot=resolved.spot,
+                observation_times=observation_times,
+                weights=(1.0 / observation_count,) * observation_count,
+                carry=resolved.rate - resolved.dividend_yield,
+                volatility=resolved.sigma,
+            )
+        )
+        matched = match_lognormal_moments(moments)
+        if resolved.strike <= 0.0:
+            undiscounted = (
+                0.0
+                if resolved.option_type == "put"
+                else float(matched.mean - resolved.strike)
+            )
+        elif resolved.option_type == "put":
+            undiscounted = black76_put(
+                matched.mean,
+                resolved.strike,
+                matched.effective_volatility(maturity=resolved.maturity),
+                resolved.maturity,
+            )
+        else:
+            undiscounted = black76_call(
+                matched.mean,
+                resolved.strike,
+                matched.effective_volatility(maturity=resolved.maturity),
+                resolved.maturity,
+            )
+        discount_factor = float(
+            market_state.discount.discount(resolved.maturity)
+        )
+        return float(resolved.notional * discount_factor * undiscounted)
+        """
+    ).rstrip()
+
+
 def _deterministic_exact_binding_evaluate_body(
     generation_plan,
     *,
@@ -4317,6 +4577,14 @@ def _deterministic_exact_binding_evaluate_body(
     )
     if scheduled_return_body is not None:
         return scheduled_return_body
+    if instrument_type == "asian_option":
+        asian_body = _arithmetic_asian_evaluate_body(
+            refs,
+            normalized_target=normalized_target,
+            generation_method=generation_method,
+        )
+        if asian_body is not None:
+            return asian_body
     if (
         primitive_route == "equity_quanto"
         and {
@@ -4879,16 +5147,6 @@ def _deterministic_exact_binding_evaluate_body(
             'n_t=getattr(spec, "n_t", 401))'
         )
     if (
-        normalized_target == "mc_asian"
-        and "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo" in refs
-    ):
-        return "return price_arithmetic_asian_option_monte_carlo(market_state, spec)"
-    if (
-        normalized_target == "turnbull_wakeman_approx"
-        and "trellis.models.asian_option.price_arithmetic_asian_option_analytical" in refs
-    ):
-        return "return price_arithmetic_asian_option_analytical(market_state, spec)"
-    if (
         normalized_target == "mc_lookback"
         and "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo" in refs
     ):
@@ -5316,12 +5574,6 @@ def _deterministic_exact_binding_evaluate_body(
         ),
         "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo": (
             "return price_equity_fixed_lookback_option_monte_carlo(market_state, spec)"
-        ),
-        "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo": (
-            "return price_arithmetic_asian_option_monte_carlo(market_state, spec)"
-        ),
-        "trellis.models.asian_option.price_arithmetic_asian_option_analytical": (
-            "return price_arithmetic_asian_option_analytical(market_state, spec)"
         ),
         "trellis.models.equity_option_pde.price_equity_digital_option_pde": (
             "return price_equity_digital_option_pde(market_state, spec)"
@@ -5786,14 +6038,6 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.equity_option_transforms import price_equity_digital_option_transform"
         )
-    if "price_arithmetic_asian_option_monte_carlo(" in body:
-        imports.append(
-            "from trellis.models.asian_option import price_arithmetic_asian_option_monte_carlo"
-        )
-    if "price_arithmetic_asian_option_analytical(" in body:
-        imports.append(
-            "from trellis.models.asian_option import price_arithmetic_asian_option_analytical"
-        )
     if "price_equity_fixed_lookback_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
@@ -5831,6 +6075,21 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "MonteCarloEngine(" in body:
         imports.append(
             "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+        )
+    if "WeightedObservationContract(" in body:
+        imports.append(
+            "from trellis.models.observation_aggregation import "
+            "WeightedObservationContract, weighted_observation_payoff"
+        )
+    if "StateAwarePayoff" in body and "BarrierMonitor(" not in body:
+        imports.append(
+            "from trellis.models.monte_carlo.path_state import StateAwarePayoff"
+        )
+    if "single_factor_lognormal_sum_contract(" in body:
+        imports.append(
+            "from trellis.models.analytical.support.lognormal_moments import "
+            "match_lognormal_moments, single_factor_lognormal_sum_contract, "
+            "weighted_lognormal_sum_moments"
         )
     if "ObservationReturnContract(" in body:
         observation_symbols = ["ObservationReturnContract"]

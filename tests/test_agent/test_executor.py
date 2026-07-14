@@ -2168,24 +2168,55 @@ def test_deterministic_exact_binding_module_materializes_digital_pde_targets(
 
 
 @pytest.mark.parametrize(
-    ("comparison_target", "helper_ref", "expected_call"),
+    ("comparison_target", "primitive_refs", "expected_symbols"),
     [
         (
             "mc_asian",
-            "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo",
-            "price_arithmetic_asian_option_monte_carlo(market_state, spec)",
+            (
+                "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+                "trellis.models.observation_aggregation.WeightedObservationContract",
+                "trellis.models.observation_aggregation.weighted_observation_payoff",
+                "trellis.models.processes.gbm.GBM",
+                "trellis.models.monte_carlo.engine.MonteCarloEngine",
+                "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+                "trellis.core.date_utils.year_fraction",
+                "trellis.core.differentiable.get_numpy",
+            ),
+            (
+                "WeightedObservationContract(",
+                "resolve_uniform_grid_steps(",
+                "weighted_observation_payoff(",
+                "StateAwarePayoff",
+                "GBM(",
+                "MonteCarloEngine(",
+                "return_paths=False",
+            ),
         ),
         (
             "turnbull_wakeman_approx",
-            "trellis.models.asian_option.price_arithmetic_asian_option_analytical",
-            "price_arithmetic_asian_option_analytical(market_state, spec)",
+            (
+                "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+                "trellis.models.analytical.support.lognormal_moments.single_factor_lognormal_sum_contract",
+                "trellis.models.analytical.support.lognormal_moments.weighted_lognormal_sum_moments",
+                "trellis.models.analytical.support.lognormal_moments.match_lognormal_moments",
+                "trellis.models.black.black76_call",
+                "trellis.models.black.black76_put",
+                "trellis.core.date_utils.year_fraction",
+            ),
+            (
+                "single_factor_lognormal_sum_contract(",
+                "weighted_lognormal_sum_moments(",
+                "match_lognormal_moments(",
+                "black76_call",
+                "black76_put",
+            ),
         ),
     ],
 )
 def test_deterministic_exact_binding_module_materializes_asian_targets(
     comparison_target,
-    helper_ref,
-    expected_call,
+    primitive_refs,
+    expected_symbols,
 ):
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
@@ -2195,7 +2226,7 @@ def test_deterministic_exact_binding_module_materializes_asian_targets(
     from trellis.agent.planner import STATIC_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=(helper_ref,),
+        lane_exact_binding_refs=primitive_refs,
         primitive_plan=None,
         method="monte_carlo",
         instrument_type="asian_option",
@@ -2213,8 +2244,95 @@ def test_deterministic_exact_binding_module_materializes_asian_targets(
     )
 
     assert generated is not None
-    assert expected_call in generated.code
+    assert all(symbol in generated.code for symbol in expected_symbols)
+    assert "price_asian_option" not in generated.code
+    assert "price_arithmetic_asian_option" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize("option_type", ["call", "put"])
+def test_generated_arithmetic_asian_primitive_lanes_execute_and_agree(option_type):
+    from datetime import date as _date
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.vol_surface import FlatVol
+
+    refs_by_target = {
+        "mc_asian": (
+            "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+            "trellis.models.observation_aggregation.WeightedObservationContract",
+            "trellis.models.observation_aggregation.weighted_observation_payoff",
+            "trellis.models.processes.gbm.GBM",
+            "trellis.models.monte_carlo.engine.MonteCarloEngine",
+            "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+            "trellis.core.date_utils.year_fraction",
+            "trellis.core.differentiable.get_numpy",
+        ),
+        "turnbull_wakeman_approx": (
+            "trellis.models.resolution.single_state_diffusion.resolve_single_state_diffusion_inputs",
+            "trellis.models.analytical.support.lognormal_moments.single_factor_lognormal_sum_contract",
+            "trellis.models.analytical.support.lognormal_moments.weighted_lognormal_sum_moments",
+            "trellis.models.analytical.support.lognormal_moments.match_lognormal_moments",
+            "trellis.models.black.black76_call",
+            "trellis.models.black.black76_put",
+            "trellis.core.date_utils.year_fraction",
+        ),
+    }
+    schema = STATIC_SPECS["asian_option"]
+    prices: dict[str, float] = {}
+    market = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=YieldCurve.flat(0.05),
+        vol_surface=FlatVol(0.20),
+    )
+
+    for target, refs in refs_by_target.items():
+        generation_plan = SimpleNamespace(
+            lane_exact_binding_refs=refs,
+            primitive_plan=None,
+            method="monte_carlo" if target == "mc_asian" else "analytical",
+            instrument_type="asian_option",
+        )
+        generated = _materialize_deterministic_exact_binding_module(
+            _generate_skeleton(
+                schema,
+                "Arithmetic Asian primitive composition",
+                generation_plan=generation_plan,
+            ),
+            generation_plan,
+            comparison_target=target,
+        )
+
+        assert generated is not None
+        namespace: dict = {}
+        exec(compile(generated.code, f"<qua_1181_{target}>", "exec"), namespace)  # noqa: S102
+        payoff = namespace[schema.class_name](
+            namespace[schema.spec_name](
+                notional=1.0,
+                spot=100.0,
+                strike=100.0,
+                expiry_date=_date(2025, 1, 1),
+                averaging_type="arithmetic",
+                option_type=option_type,
+                n_observations=5,
+                n_paths=40_000,
+                n_steps=4,
+                seed=42,
+            )
+        )
+        prices[target] = float(payoff.evaluate(market))
+
+    assert prices["mc_asian"] == pytest.approx(
+        prices["turnbull_wakeman_approx"],
+        abs=0.20,
+    )
 
 
 def test_deterministic_exact_binding_module_materializes_lookback_mc_target():

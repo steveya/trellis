@@ -134,7 +134,7 @@ def test_compile_build_request_records_bounded_asian_analytical_shadow():
     assert compiler["source"] == "request_decomposition"
     assert compiler["shadow_status"] == "bound"
     assert compiler["contract_ir_solver_shadow"]["declaration_id"] == (
-        "helper_arithmetic_asian_option_analytical_call"
+        "compose_arithmetic_asian_analytical_call"
     )
     assert compiler["shadow_error"] is None
 
@@ -153,7 +153,7 @@ def test_compile_build_request_records_bounded_asian_put_analytical_shadow():
     assert compiler["source"] == "request_decomposition"
     assert compiler["shadow_status"] == "bound"
     assert compiler["contract_ir_solver_shadow"]["declaration_id"] == (
-        "helper_arithmetic_asian_option_analytical_put"
+        "compose_arithmetic_asian_analytical_put"
     )
     assert compiler["shadow_error"] is None
 
@@ -172,7 +172,7 @@ def test_compile_build_request_records_bounded_asian_monte_carlo_shadow():
     assert compiler["source"] == "request_decomposition"
     assert compiler["shadow_status"] == "bound"
     assert compiler["contract_ir_solver_shadow"]["declaration_id"] == (
-        "helper_arithmetic_asian_option_monte_carlo"
+        "compose_arithmetic_asian_monte_carlo_call"
     )
     assert compiler["shadow_error"] is None
 
@@ -198,5 +198,13 @@ def test_contract_ir_solver_parity_report_promotes_bounded_asian_family():
     assert any(case["case_id"] == "asian_call_analytical" for case in families["asian_option"]["cases"])
     assert any(case["case_id"] == "asian_call_monte_carlo" for case in families["asian_option"]["cases"])
     assert any(case["case_id"] == "asian_put_analytical" for case in families["asian_option"]["cases"])
+    assert any(case["case_id"] == "asian_put_monte_carlo" for case in families["asian_option"]["cases"])
+    put_monte_carlo = next(
+        case
+        for case in families["asian_option"]["cases"]
+        if case["case_id"] == "asian_put_monte_carlo"
+    )
+    assert put_monte_carlo["reference_price"] > 10.0
+    assert put_monte_carlo["rel_diff"] <= 0.02
     assert report["totals"]["phase4_candidates"] == 6
     assert any("bounded analytical approximation" in note for note in families["asian_option"]["notes"])

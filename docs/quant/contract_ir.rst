@@ -428,9 +428,10 @@ The current cutover is intentionally bounded:
   cohort that can already decompose into ``ContractIR``
 - unmigrated, under-specified, or structurally unsupported requests still fall
   back to the compatibility route path
-- arithmetic Asians now have bounded structural analytical call / put helpers
-  plus the earlier Monte Carlo call lane, while broader family retirement
-  remains explicitly bounded
+- arithmetic Asians now have bounded structural analytical call / put and
+  Monte Carlo call / put composition lanes assembled from reusable resolver,
+  observation, moment, process, and engine primitives; broader family
+  retirement remains explicitly bounded
 - quoted-observable terminal linear curve-spread and surface-spread payoffs now
   have checked executable helper bindings, while quote options and dynamic
   quote-linked structures remain blocked
@@ -475,8 +476,11 @@ The current bounded structural-solver wave covers:
    and the bounded realised-variance Monte Carlo helper
    ``trellis.models.variance_swap.price_equity_variance_swap_monte_carlo``
 6. Bounded arithmetic Asians through
-   ``trellis.models.asian_option.price_arithmetic_asian_option_analytical`` and
-   ``trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo``
+   ``resolve_single_state_diffusion_inputs(...)`` plus weighted-lognormal
+   moment matching and Black-76 for the analytical lane, or
+   ``WeightedObservationContract``, ``weighted_observation_payoff(...)``,
+   ``resolve_uniform_grid_steps(...)``, ``GBM``, and ``MonteCarloEngine`` for
+   the Monte Carlo lane
 7. Terminal linear quoted-observable spreads through
    ``trellis.models.quoted_observable``
 
@@ -568,9 +572,10 @@ Explicit Phase 3 Non-goals
 
 Arithmetic Asians are now representable in ``ContractIR`` and admit bounded
 structural analytical and Monte Carlo lanes for European schedule-based equity
-diffusion payoffs. The checked helper surface uses a discrete moment-matched
-lognormal approximation for the analytical lane, so the support contract is
-still bounded and explicit rather than universal.
+diffusion payoffs. The analytical composition uses a discrete moment-matched
+lognormal approximation, while the Monte Carlo composition requires every
+observation to map exactly onto a bounded uniform simulation grid. The support
+contract is therefore explicit rather than universal.
 
 That distinction is deliberate:
 

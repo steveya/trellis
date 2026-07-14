@@ -57,6 +57,53 @@ def test_weighted_observation_contract_validates_schedule_weights_and_grid():
         ).observation_steps(maturity=1.0, n_steps=2)
 
 
+def test_weighted_observation_contract_resolves_bounded_exact_uniform_grid():
+    from trellis.models.observation_aggregation import WeightedObservationContract
+
+    contract = WeightedObservationContract(
+        observation_times=(0.25, 0.5, 0.75, 1.0),
+        weights=(0.25, 0.25, 0.25, 0.25),
+    )
+
+    assert contract.resolve_uniform_grid_steps(maturity=1.0) == 4
+    assert (
+        contract.resolve_uniform_grid_steps(
+            maturity=1.0,
+            n_steps=8,
+        )
+        == 8
+    )
+
+    with pytest.raises(ValueError, match="represented exactly"):
+        contract.resolve_uniform_grid_steps(maturity=1.0, n_steps=6)
+    with pytest.raises(ValueError, match="n_steps must not exceed max_steps"):
+        contract.resolve_uniform_grid_steps(
+            maturity=1.0,
+            n_steps=8,
+            max_steps=7,
+        )
+    with pytest.raises(ValueError, match="n_steps must be at least min_steps"):
+        contract.resolve_uniform_grid_steps(
+            maturity=1.0,
+            n_steps=4,
+            min_steps=5,
+        )
+    with pytest.raises(ValueError, match="no exact uniform simulation grid"):
+        contract.resolve_uniform_grid_steps(
+            maturity=1.0,
+            min_steps=1,
+            max_steps=3,
+        )
+    with pytest.raises(ValueError, match="min_steps must be positive"):
+        contract.resolve_uniform_grid_steps(maturity=1.0, min_steps=0)
+    with pytest.raises(ValueError, match="max_steps must be at least min_steps"):
+        contract.resolve_uniform_grid_steps(
+            maturity=1.0,
+            min_steps=5,
+            max_steps=4,
+        )
+
+
 def test_weighted_observation_sum_uses_explicit_weights_and_preserves_autograd():
     from trellis.core.differentiable import get_numpy, gradient
     from trellis.models.observation_aggregation import (

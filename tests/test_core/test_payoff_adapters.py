@@ -381,9 +381,9 @@ def test_quanto_monte_carlo_helpers_build_joint_process_and_initial_state():
     assert payoff == pytest.approx([2.0, 0.0])
 
 
-def test_asian_monte_carlo_helper_matches_compat_adapter_price_for_arithmetic_average():
+def test_asian_compat_adapter_composes_arithmetic_average_with_generic_engine():
     from trellis.instruments._agent.asianoption import AsianOptionPayoff, AsianOptionSpec
-    from trellis.models.asian_option import price_asian_option_monte_carlo
+    from trellis.models.asian_option import price_asian_option_monte_carlo_result
 
     spec = AsianOptionSpec(
         notional=100_000,
@@ -396,18 +396,17 @@ def test_asian_monte_carlo_helper_matches_compat_adapter_price_for_arithmetic_av
     )
     market_state = _market_state()
 
-    helper_pv = price_asian_option_monte_carlo(
+    helper = price_asian_option_monte_carlo_result(
         market_state,
         replace(spec, notional=spec.notional / spec.spot),
     )
     adapter_pv = AsianOptionPayoff(spec).evaluate(market_state)
 
-    assert helper_pv == pytest.approx(adapter_pv, rel=1e-12)
+    assert adapter_pv == pytest.approx(helper.price, abs=5.0 * helper.std_error)
 
 
-def test_asian_monte_carlo_helper_matches_compat_adapter_price_for_geometric_average():
+def test_asian_compat_adapter_fails_closed_for_geometric_average():
     from trellis.instruments._agent.asianoption import AsianOptionPayoff, AsianOptionSpec
-    from trellis.models.asian_option import price_asian_option_monte_carlo
 
     spec = AsianOptionSpec(
         notional=100_000,
@@ -418,12 +417,5 @@ def test_asian_monte_carlo_helper_matches_compat_adapter_price_for_geometric_ave
         option_type="put",
         n_observations=12,
     )
-    market_state = _market_state()
-
-    helper_pv = price_asian_option_monte_carlo(
-        market_state,
-        replace(spec, notional=spec.notional / spec.spot),
-    )
-    adapter_pv = AsianOptionPayoff(spec).evaluate(market_state)
-
-    assert helper_pv == pytest.approx(adapter_pv, rel=1e-12)
+    with pytest.raises(ValueError, match="arithmetic averaging"):
+        AsianOptionPayoff(spec).evaluate(_market_state())

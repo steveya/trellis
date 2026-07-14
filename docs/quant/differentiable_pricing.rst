@@ -16,7 +16,8 @@ Trellis promotes autograd only where it has a clear payoff:
   American/Bermudan options over one flat-vol coordinate
 - curve bootstrap calibration, where the repricing Jacobian is now traced from
   the public repricing map instead of approximated inside the solver
-- SABR calibration, where a gradient is more useful than repeated finite-difference sweeps
+- SABR calibration, where a gradient is more useful than repeated
+  finite-difference sweeps
 - binomial/trinomial tree pricing for smooth payoffs when the tree state is built
   from autograd-aware inputs
 - Monte Carlo pathwise pricing when shocks are supplied explicitly and the
@@ -531,7 +532,7 @@ path-summary lane. It supports European arithmetic-average call/put specs that
 expose ``spot``, ``strike``, ``expiry_date``, ``observation_dates`` or
 ``n_observations``, ``option_type``, optional ``notional``, and optional
 ``dividend_yield``. It prices with the same moment-matched lognormal
-approximation as the bounded arithmetic-Asian helper and differentiates the
+approximation as the bounded arithmetic-Asian analytical composition and differentiates the
 shared ``FlatVol`` scalar with VJP. Barrier, knock, first-hit, grid-vol path,
 early-exercise path, geometric-average, and broader event-monitor shapes fail
 closed with explicit support reasons.

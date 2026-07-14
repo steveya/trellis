@@ -200,10 +200,13 @@ responsibility boundary explicit:
 
 Time zero is an admissible observation.  Every observation, including the
 final one, must map exactly and distinctly onto the selected uniform simulation
-grid.  Off-grid times, aliased times, vector process state, non-finite values,
-and settlement callbacks that do not return one value per path fail closed.
-Negative weights are valid because the abstraction is a linear functional, not
-an implicit average or a positive-price contract.
+grid. ``resolve_uniform_grid_steps(...)`` validates a caller-selected grid
+against exact alignment and the explicit ``min_steps`` / ``max_steps`` bounds,
+or finds the smallest exact grid inside those bounds. Off-grid times, aliased
+times, exhausted search bounds, vector process
+state, non-finite values, and settlement callbacks that do not return one value
+per path fail closed. Negative weights are valid because the abstraction is a
+linear functional, not an implicit average or a positive-price contract.
 
 This surface does not resolve market data and does not price a named
 derivative.  Product route authority moves only in a separate migration after
@@ -438,12 +441,15 @@ The first migrated vanilla cases now use that boundary directly:
   Black-Scholes theta solver and optional Rannacher startup smoothing, so
   Crank-Nicolson/Rannacher comparison targets can delegate to a checked helper
   instead of regenerating discontinuous-terminal grid code.
-- Arithmetic-Asian proof routes keep the numerical method split explicit:
-  ``trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo``
-  owns the path-sampling MC comparison lane, while
-  ``price_arithmetic_asian_option_analytical`` owns the Turnbull-Wakeman
-  approximation lane. The analytical approximation is not treated as a Monte
-  Carlo primitive just because it appears in an Asian multi-method task.
+- Arithmetic-Asian proof routes now compose from product-neutral primitives.
+  Both lanes start with ``resolve_single_state_diffusion_inputs(...)`` and the
+  same explicit observation schedule. The analytical lane combines
+  ``single_factor_lognormal_sum_contract(...)``, exact weighted moments,
+  ``match_lognormal_moments(...)``, and a Black-76 call or put kernel. The
+  Monte Carlo lane combines ``WeightedObservationContract``,
+  ``weighted_observation_payoff(...)``, ``GBM``, and ``MonteCarloEngine`` with
+  reduced-state execution. Product-level Asian functions remain independent
+  comparison references and are not generated-route authority.
 - Fixed-lookback MC proof routes use
   ``trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo``
   for the checked equity-diffusion comparison surface. The helper applies a

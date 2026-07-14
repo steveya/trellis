@@ -148,6 +148,98 @@ def test_resolve_backend_binding_spec_uses_vanilla_pde_primitive_composition():
     }
 
 
+@pytest.mark.parametrize(
+    ("route_id", "expected_symbols"),
+    [
+        (
+            "analytical_black76",
+            {
+                "resolve_single_state_diffusion_inputs",
+                "single_factor_lognormal_sum_contract",
+                "weighted_lognormal_sum_moments",
+                "match_lognormal_moments",
+                "black76_call",
+                "black76_put",
+                "year_fraction",
+            },
+        ),
+        (
+            "monte_carlo_paths",
+            {
+                "resolve_single_state_diffusion_inputs",
+                "WeightedObservationContract",
+                "weighted_observation_payoff",
+                "GBM",
+                "MonteCarloEngine",
+                "StateAwarePayoff",
+                "year_fraction",
+                "get_numpy",
+            },
+        ),
+    ],
+)
+def test_resolve_backend_binding_spec_uses_arithmetic_asian_primitive_composition(
+    route_id,
+    expected_symbols,
+):
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id(route_id, catalog)
+    product_ir = ProductIR(
+        instrument="asian_option",
+        payoff_family="asian_option",
+        payoff_traits=("asian", "arithmetic_average"),
+        exercise_style="european",
+        state_dependence="path_dependent",
+        schedule_dependence=True,
+        model_family="equity_diffusion",
+    )
+
+    assert binding is not None
+    resolved = resolve_backend_binding_spec(binding, product_ir=product_ir)
+
+    assert resolved.helper_refs == ()
+    assert expected_symbols == {primitive.symbol for primitive in resolved.primitives}
+    assert not any("asian_option.price_" in ref for ref in resolved.primitive_refs)
+
+
+@pytest.mark.parametrize(
+    "payoff_traits",
+    [
+        ("asian", "geometric_average"),
+        ("asian", "arithmetic_average", "floating_strike"),
+        ("asian", "arithmetic_average", "multi_asset"),
+    ],
+)
+def test_resolve_backend_binding_spec_does_not_narrow_broader_asian_contracts(
+    payoff_traits,
+):
+    catalog = load_backend_binding_catalog()
+    product_ir = ProductIR(
+        instrument="asian_option",
+        payoff_family="asian_option",
+        payoff_traits=payoff_traits,
+        exercise_style="european",
+        state_dependence="path_dependent",
+        schedule_dependence=True,
+        model_family="equity_diffusion",
+    )
+    forbidden = {
+        "WeightedObservationContract",
+        "weighted_observation_payoff",
+        "single_factor_lognormal_sum_contract",
+        "weighted_lognormal_sum_moments",
+        "match_lognormal_moments",
+    }
+
+    for route_id in ("analytical_black76", "monte_carlo_paths"):
+        binding = find_backend_binding_by_route_id(route_id, catalog)
+        assert binding is not None
+        resolved = resolve_backend_binding_spec(binding, product_ir=product_ir)
+        assert forbidden.isdisjoint(
+            primitive.symbol for primitive in resolved.primitives
+        )
+
+
 def test_binding_catalog_skips_malformed_primitive_rows(monkeypatch):
     from trellis.agent import backend_bindings as backend_bindings_module
 

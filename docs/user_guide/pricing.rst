@@ -197,6 +197,79 @@ bounded accumulator inside the product expectation shown above. The retained
 references for these supported cases, but generated adapters are expected to
 assemble the public primitives directly.
 
+Arithmetic Asian Composition
+----------------------------
+
+European fixed-strike arithmetic averages use the same composition rule. Bind
+the market once, declare the observation schedule and equal weights, then pass
+the derivative-specific call or put settlement into the generic reduced-state
+payoff:
+
+.. code-block:: python
+
+   from trellis.core.differentiable import get_numpy
+   from trellis.models.monte_carlo.engine import MonteCarloEngine
+   from trellis.models.observation_aggregation import (
+       WeightedObservationContract,
+       weighted_observation_payoff,
+   )
+   from trellis.models.processes.gbm import GBM
+   from trellis.models.resolution.single_state_diffusion import (
+       resolve_single_state_diffusion_inputs,
+   )
+
+   resolved = resolve_single_state_diffusion_inputs(market_state, spec)
+   times = (0.25, 0.50, 0.75, 1.0)
+   averaging = WeightedObservationContract(
+       observation_times=times,
+       weights=(0.25, 0.25, 0.25, 0.25),
+   )
+   n_steps = averaging.resolve_uniform_grid_steps(
+       maturity=resolved.maturity,
+       max_steps=4096,
+   )
+   np = get_numpy()
+   payoff = weighted_observation_payoff(
+       averaging,
+       maturity=resolved.maturity,
+       n_steps=n_steps,
+       settlement_fn=lambda average: np.maximum(
+           average - resolved.strike, 0.0
+       ),
+   )
+   result = MonteCarloEngine(
+       GBM(
+           mu=resolved.rate - resolved.dividend_yield,
+           sigma=resolved.sigma,
+       ),
+       n_paths=50_000,
+       n_steps=n_steps,
+       seed=42,
+       method="exact",
+   ).price(
+       resolved.spot,
+       resolved.maturity,
+       payoff,
+       discount_rate=resolved.rate,
+       return_paths=False,
+   )
+   pv = resolved.notional * result["price"]
+
+The analytical comparison lane uses the same times and weights with
+``single_factor_lognormal_sum_contract(...)``,
+``weighted_lognormal_sum_moments(...)``, and
+``match_lognormal_moments(...)``. Pass the matched mean and effective
+volatility to ``black76_call(...)`` or ``black76_put(...)``, then apply the
+discount factor and notional explicitly.
+
+This admitted composition is intentionally narrow. Observation dates must map
+exactly and distinctly to a grid within the declared search bound. Geometric
+averages, floating-strike averages, multi-asset averages, non-European
+exercise, and stochastic-volatility dynamics need different contracts and
+fail closed. The functions in ``trellis.models.asian_option`` remain
+compatibility and independent-comparison references, not generated-route
+construction authority.
+
 The P001 Bermudan best-of-two rainbow proof is also exposed this way for
 task compatibility. Its checked-in ``_agent`` adapter delegates to the
 ``trellis.execution`` Bermudan best-of basket shim, which reuses the route-free

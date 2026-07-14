@@ -116,6 +116,48 @@ class WeightedObservationContract:
             )
         return steps
 
+    def resolve_uniform_grid_steps(
+        self,
+        *,
+        maturity: float,
+        n_steps: int | None = None,
+        min_steps: int = 1,
+        max_steps: int = 4096,
+    ) -> int:
+        """Validate an explicit grid or find the smallest exact bounded grid."""
+        lower = int(min_steps)
+        upper = int(max_steps)
+        if lower <= 0:
+            raise ValueError("min_steps must be positive")
+        if upper < lower:
+            raise ValueError("max_steps must be at least min_steps")
+
+        if n_steps is not None:
+            step_count = int(n_steps)
+            if step_count < lower:
+                raise ValueError("n_steps must be at least min_steps")
+            if step_count > upper:
+                raise ValueError("n_steps must not exceed max_steps")
+            self.observation_steps(maturity=maturity, n_steps=step_count)
+            return step_count
+
+        horizon = float(maturity)
+        if not isfinite(horizon) or horizon <= 0.0:
+            raise ValueError("maturity must be finite and positive")
+        if self.observation_times[-1] > horizon + 1e-12:
+            raise ValueError("observation_times cannot exceed maturity")
+
+        for candidate in range(lower, upper + 1):
+            try:
+                self.observation_steps(maturity=horizon, n_steps=candidate)
+            except ValueError:
+                continue
+            return candidate
+        raise ValueError(
+            "no exact uniform simulation grid exists between "
+            f"{lower} and {upper} steps"
+        )
+
 
 def weighted_observation_sum(observations, contract: WeightedObservationContract):
     """Return the explicitly weighted sum along the observation axis."""

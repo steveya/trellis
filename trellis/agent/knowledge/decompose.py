@@ -2575,6 +2575,11 @@ def _traits_from_text(desc: str) -> tuple[str, ...]:
     """Infer feature-like payoff traits from free text."""
     trait_aliases = {
         "asian": ("asian",),
+        "arithmetic_average": ("arithmetic_average", "arithmetic_mean"),
+        "geometric_average": ("geometric_average", "geometric_mean"),
+        "fixed_strike": ("fixed_strike",),
+        "floating_strike": ("floating_strike",),
+        "multi_asset": ("multi_asset", "multi_underlier", "multi_underlying"),
         "barrier": ("barrier",),
         "double_barrier": ("double barrier", "double_barrier", "lower and upper barriers"),
         "digital": (
@@ -3000,12 +3005,13 @@ def _exercise_style_for(
 
 def _schedule_dependence_for(instrument: str, payoff_traits: tuple[str, ...]) -> bool:
     """Return whether the product is schedule dependent."""
+    if instrument == "asian_option" or "asian" in payoff_traits:
+        return True
     if instrument in {
         "american_put",
         "american_option",
         "european_option",
         "heston_option",
-        "asian_option",
         "barrier_option",
         "digital_option",
         "lookback_option",
@@ -3159,6 +3165,57 @@ def _candidate_engine_families_for(
 def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> ProductIR:
     """Augment ProductIR with high-signal request context missing from static decompositions."""
     desc = _normalise(description)
+    if ir.instrument == "asian_option" or ir.payoff_family == "asian_option":
+        payoff_traits = list(ir.payoff_traits)
+        geometric = any(
+            marker in desc
+            for marker in ("geometric_asian", "geometric_average", "geometric_mean")
+        )
+        arithmetic = any(
+            marker in desc
+            for marker in ("arithmetic_asian", "arithmetic_average", "arithmetic_mean")
+        )
+        floating_strike = "floating_strike" in desc
+        fixed_strike = "fixed_strike" in desc
+        multi_asset = any(
+            marker in desc
+            for marker in (
+                "multi_asset",
+                "multi_underlier",
+                "multi_underlying",
+                "rainbow",
+                "basket",
+                "best_of",
+            )
+        )
+
+        for trait in (
+            "arithmetic_average",
+            "geometric_average",
+            "fixed_strike",
+            "floating_strike",
+            "multi_asset",
+        ):
+            if trait in payoff_traits:
+                payoff_traits.remove(trait)
+        if geometric:
+            payoff_traits.append("geometric_average")
+        elif arithmetic:
+            payoff_traits.append("arithmetic_average")
+        if floating_strike:
+            payoff_traits.append("floating_strike")
+        elif fixed_strike:
+            payoff_traits.append("fixed_strike")
+        if multi_asset:
+            payoff_traits.append("multi_asset")
+
+        return replace(
+            ir,
+            payoff_traits=tuple(payoff_traits),
+            schedule_dependence=True,
+            state_dependence="path_dependent",
+        )
+
     if ir.instrument == "short_rate_bond":
         payoff_traits = list(ir.payoff_traits)
         for trait in (

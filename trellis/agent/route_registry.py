@@ -2032,6 +2032,14 @@ def _matches_condition(
             )
             if not expected_traits.issubset(payoff_traits):
                 return False
+        elif key == "exclude_payoff_traits":
+            excluded_traits = (
+                {str(item).strip().lower() for item in expected}
+                if isinstance(expected, list)
+                else {str(expected).strip().lower()}
+            )
+            if excluded_traits.intersection(payoff_traits):
+                return False
         elif key == "exercise_style":
             if isinstance(expected, list):
                 if exercise_style not in expected:

@@ -33,6 +33,8 @@ from trellis.agent.contract_ir import (
     VarianceObservable,
 )
 from trellis.agent.contract_ir_solver_compiler import (
+    ContractIRCompilerDecision,
+    ContractIRTermEnvironment,
     ContractIRSolverBindingError,
     ContractIRSolverNoMatchError,
     build_contract_ir_term_environment,
@@ -382,6 +384,20 @@ def _variance_market_state() -> MarketState:
 
 
 class TestContractIRSolverCompiler:
+    def test_execution_traverses_ordered_nested_result_path(self):
+        decision = ContractIRCompilerDecision(
+            declaration_id="nested_result",
+            requested_method="monte_carlo",
+            requested_outputs=("price",),
+            callable_ref="trellis.models.synthetic.nested_result",
+            call_style="adapter_composed",
+            callable=lambda: {"result": {"result": 2.5}},
+            result_path=("result", "result"),
+            value_scale=4.0,
+        )
+
+        assert execute_contract_ir_solver_decision(decision) == pytest.approx(10.0)
+
     def test_vanilla_black76_call_is_route_mask_invariant(self):
         contract = _vanilla_call_contract_ir()
         market_state = _equity_market_state()
@@ -754,17 +770,17 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        assert decision.declaration_id == "helper_arithmetic_asian_option_analytical_call"
-        assert decision.callable_ref == "trellis.models.asian_option.price_arithmetic_asian_option_analytical"
-        spec = decision.call_kwargs["spec"]
-        assert spec.underlier == "SPX"
-        assert spec.option_type == "call"
-        assert spec.observation_dates == (
-            date(2025, 1, 31),
-            date(2025, 2, 28),
-            date(2025, 3, 31),
-            date(2025, 4, 30),
-        )
+        assert decision.declaration_id == "compose_arithmetic_asian_analytical_call"
+        assert decision.callable_ref == "trellis.models.black.black76_call"
+        assert decision.call_style == "raw_kernel_kwargs"
+        assert decision.helper_refs == ()
+        assert {
+            "trellis.models.analytical.support.lognormal_moments.weighted_lognormal_sum_moments",
+            "trellis.models.analytical.support.lognormal_moments.match_lognormal_moments",
+            "trellis.models.black.black76_call",
+        } <= set(decision.pricing_kernel_refs)
+        assert set(decision.call_kwargs) == {"F", "K", "sigma", "T"}
+        assert decision.call_kwargs["K"] == 4500.0
         assert execute_contract_ir_solver_decision(decision) > 0.0
 
     def test_asian_put_contract_binds_bounded_analytical_lane(self):
@@ -778,18 +794,17 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        assert decision.declaration_id == "helper_arithmetic_asian_option_analytical_put"
-        assert decision.callable_ref == "trellis.models.asian_option.price_arithmetic_asian_option_analytical"
-        spec = decision.call_kwargs["spec"]
-        assert spec.underlier == "SPX"
-        assert spec.option_type == "put"
-        assert spec.observation_dates == (
-            date(2025, 1, 3),
-            date(2025, 1, 10),
-            date(2025, 1, 17),
-            date(2025, 1, 24),
-            date(2025, 1, 31),
-        )
+        assert decision.declaration_id == "compose_arithmetic_asian_analytical_put"
+        assert decision.callable_ref == "trellis.models.black.black76_put"
+        assert decision.call_style == "raw_kernel_kwargs"
+        assert decision.helper_refs == ()
+        assert {
+            "trellis.models.analytical.support.lognormal_moments.weighted_lognormal_sum_moments",
+            "trellis.models.analytical.support.lognormal_moments.match_lognormal_moments",
+            "trellis.models.black.black76_put",
+        } <= set(decision.pricing_kernel_refs)
+        assert set(decision.call_kwargs) == {"F", "K", "sigma", "T"}
+        assert decision.call_kwargs["K"] == 4550.0
         assert execute_contract_ir_solver_decision(decision) >= 0.0
 
     def test_asian_contract_binds_bounded_monte_carlo_lane(self):
@@ -803,18 +818,157 @@ class TestContractIRSolverCompiler:
             preferred_method="monte_carlo",
         )
 
-        assert decision.declaration_id == "helper_arithmetic_asian_option_monte_carlo"
-        assert decision.callable_ref == "trellis.models.asian_option.price_arithmetic_asian_option_monte_carlo"
-        spec = decision.call_kwargs["spec"]
-        assert spec.underlier == "SPX"
-        assert spec.option_type == "call"
-        assert spec.observation_dates == (
-            date(2025, 1, 31),
-            date(2025, 2, 28),
-            date(2025, 3, 31),
-            date(2025, 4, 30),
+        assert decision.declaration_id == "compose_arithmetic_asian_monte_carlo_call"
+        assert decision.callable_ref == (
+            "trellis.models.monte_carlo.engine.MonteCarloEngine"
         )
+        assert decision.call_style == "adapter_composed"
+        assert decision.result_path == ("price",)
+        assert decision.helper_refs == ()
+        assert {
+            "trellis.models.observation_aggregation.weighted_observation_payoff",
+            "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        } <= set(decision.pricing_kernel_refs)
+        assert set(decision.call_kwargs) == {
+            "x0",
+            "T",
+            "payoff_fn",
+            "discount_rate",
+            "return_paths",
+        }
         assert execute_contract_ir_solver_decision(decision) > 0.0
+
+    def test_asian_put_contract_binds_bounded_monte_carlo_lane(self):
+        market_state = _variance_market_state()
+        context = build_valuation_context(
+            market_snapshot=market_state,
+            requested_outputs=("price",),
+        )
+
+        decision = compile_contract_ir_solver(
+            _asian_put_contract_ir(),
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="monte_carlo",
+        )
+
+        assert decision.declaration_id == "compose_arithmetic_asian_monte_carlo_put"
+        assert decision.callable_ref == (
+            "trellis.models.monte_carlo.engine.MonteCarloEngine"
+        )
+        assert decision.call_style == "adapter_composed"
+        assert decision.result_path == ("price",)
+        assert decision.helper_refs == ()
+        assert execute_contract_ir_solver_decision(decision) >= 0.0
+
+    def test_asian_monte_carlo_respects_explicit_grid_search_upper_bound(self):
+        market_state = _variance_market_state()
+        context = build_valuation_context(
+            market_snapshot=market_state,
+            requested_outputs=("price",),
+        )
+        averaging = _finite_schedule(
+            "2025-01-07",
+            "2025-01-13",
+            "2025-01-19",
+            "2025-01-25",
+        )
+        contract_ir = ContractIR(
+            payoff=Max(
+                (
+                    Sub(ArithmeticMean(Spot("SPX"), averaging), Strike(4500.0)),
+                    Constant(0.0),
+                )
+            ),
+            exercise=Exercise(
+                style="european",
+                schedule=Singleton(date(2025, 1, 25)),
+            ),
+            observation=Observation(kind="schedule", schedule=averaging),
+            underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+        )
+
+        with pytest.raises(
+            ContractIRSolverBindingError,
+            match="max_steps must be at least min_steps",
+        ):
+            compile_contract_ir_solver(
+                contract_ir,
+                term_environment=ContractIRTermEnvironment(
+                    raw_term_fields={"max_grid_steps": 3},
+                ),
+                valuation_context=context,
+                market_state=market_state,
+                preferred_method="monte_carlo",
+            )
+
+    @pytest.mark.parametrize("preferred_method", ["analytical", "monte_carlo"])
+    def test_arithmetic_asian_lane_rejects_floating_strike_multi_asset_and_non_european(
+        self,
+        preferred_method,
+    ):
+        schedule = _finite_schedule(
+            "2025-01-31",
+            "2025-02-28",
+            "2025-03-31",
+            "2025-04-30",
+        )
+        expiry = Singleton(schedule.dates[-1])
+        floating_strike = ContractIR(
+            payoff=Max(
+                (
+                    Sub(Spot("SPX"), ArithmeticMean(Spot("SPX"), schedule)),
+                    Constant(0.0),
+                )
+            ),
+            exercise=Exercise(style="european", schedule=expiry),
+            observation=Observation(kind="schedule", schedule=schedule),
+            underlying=Underlying(spec=EquitySpot("SPX", "gbm")),
+        )
+        multi_asset = ContractIR(
+            payoff=Max(
+                (
+                    Sub(
+                        ArithmeticMean(
+                            LinearBasket(
+                                ((0.5, Spot("SPX")), (0.5, Spot("NDX")))
+                            ),
+                            schedule,
+                        ),
+                        Strike(4500.0),
+                    ),
+                    Constant(0.0),
+                )
+            ),
+            exercise=Exercise(style="european", schedule=expiry),
+            observation=Observation(kind="schedule", schedule=schedule),
+            underlying=Underlying(
+                spec=CompositeUnderlying(
+                    (EquitySpot("SPX", "gbm"), EquitySpot("NDX", "gbm"))
+                )
+            ),
+        )
+        non_european = replace(
+            _asian_contract_ir(),
+            exercise=Exercise(
+                style="american",
+                schedule=ContinuousInterval(date(2025, 1, 1), expiry.t),
+            ),
+        )
+        market_state = _variance_market_state()
+        context = build_valuation_context(
+            market_snapshot=market_state,
+            requested_outputs=("price",),
+        )
+
+        for contract_ir in (floating_strike, multi_asset, non_european):
+            with pytest.raises(ContractIRSolverNoMatchError):
+                compile_contract_ir_solver(
+                    contract_ir,
+                    valuation_context=context,
+                    market_state=market_state,
+                    preferred_method=preferred_method,
+                )
 
     def test_semantic_blueprint_attaches_contract_ir_shadow_when_market_is_bound(self):
         market_state = _equity_market_state()

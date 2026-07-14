@@ -1,7 +1,7 @@
 # ContractIR Structural Compiler Parity
 
-- Generated at: `2026-05-04T17:18:54.553180+00:00`
-- Repo revision: `ec988607163a8d5643b26f71d5209dbf90a59d23`
+- Generated at: `2026-07-14T09:57:42.062477+00:00`
+- Repo revision: `a60236cfde6bfa8eed2bdc18e1e92f5e17cd31a3`
 
 ## Family Summary
 
@@ -20,12 +20,14 @@
 
 | Case | Source | Shadow | Declaration | Route | Exact-target contains callable | Passed |
 | --- | --- | --- | --- | --- | --- | --- |
-| asian_call_analytical | request_decomposition | bound | helper_arithmetic_asian_option_analytical_call |  | True | True |
-- `asian_call_analytical` value parity: structural=`635.2555626779794` reference=`635.2555626779794` abs_diff=`0.0`
-| asian_put_analytical | request_decomposition | bound | helper_arithmetic_asian_option_analytical_put |  | True | True |
-- `asian_put_analytical` value parity: structural=`0.38122467688092687` reference=`0.38122467688092687` abs_diff=`0.0`
-| asian_call_monte_carlo | request_decomposition | bound | helper_arithmetic_asian_option_monte_carlo |  | True | True |
-- `asian_call_monte_carlo` value parity: structural=`632.5420227089422` reference=`632.5420227089422` abs_diff=`0.0`
+| asian_call_analytical | request_decomposition | bound | compose_arithmetic_asian_analytical_call |  | True | True |
+- `asian_call_analytical` value parity: structural=`635.2555626779798` reference=`635.2555626779798` abs_diff=`0.0`
+| asian_put_analytical | request_decomposition | bound | compose_arithmetic_asian_analytical_put |  | True | True |
+- `asian_put_analytical` value parity: structural=`0.38122467688113615` reference=`0.38122467688113615` abs_diff=`0.0`
+| asian_call_monte_carlo | request_decomposition | bound | compose_arithmetic_asian_monte_carlo_call |  | True | True |
+- `asian_call_monte_carlo` value parity: structural=`634.069513646976` reference=`632.5420227089422` abs_diff=`1.527490938033793`
+| asian_put_monte_carlo | request_decomposition | bound | compose_arithmetic_asian_monte_carlo_put |  | True | True |
+- `asian_put_monte_carlo` value parity: structural=`81.8444098610135` reference=`82.07356978454168` abs_diff=`0.22915992352817227`
 
 ## basket_option
 

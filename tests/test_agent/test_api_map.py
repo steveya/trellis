@@ -175,6 +175,31 @@ def test_api_map_exposes_product_neutral_weighted_lognormal_sum_composition():
     assert "asian" not in text.lower()
 
 
+def test_api_map_routes_arithmetic_asian_agents_to_primitive_composition():
+    section = get_api_map()["arithmetic_asian_composition"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "resolve_single_state_diffusion_inputs",
+        "WeightedObservationContract",
+        "resolve_uniform_grid_steps",
+        "weighted_observation_payoff",
+        "single_factor_lognormal_sum_contract",
+        "weighted_lognormal_sum_moments",
+        "match_lognormal_moments",
+        "black76_call",
+        "black76_put",
+        "GBM",
+        "MonteCarloEngine",
+        "StateAwarePayoff",
+    ):
+        assert symbol in text
+    assert "price_arithmetic_asian_option" not in text
+    assert "arithmetic-average" in text
+    assert "geometric" in text
+    assert "floating-strike" in text
+
+
 def test_api_map_prioritizes_fx_vanilla_primitive_composition():
     api_map = get_api_map()
     monte_carlo_text = "\n".join(
