@@ -2,11 +2,20 @@
 
 from __future__ import annotations
 
-import re
 import importlib
+import inspect
+import re
+
+import pytest
 
 from trellis.agent.knowledge.import_registry import module_exists
-from trellis.agent.knowledge.api_map import format_api_map_for_prompt, get_api_map
+from trellis.agent.knowledge import api_map as api_map_module
+from trellis.agent.knowledge.api_map import (
+    ApiMapQuery,
+    format_api_map_for_prompt,
+    get_api_map,
+    select_api_map_sections,
+)
 
 
 _IMPORT_RE = re.compile(r"^from\s+([A-Za-z0-9_.]+)\s+import\s+(.+?)\s*$")
@@ -96,25 +105,203 @@ def test_api_map_key_imports_are_registry_valid():
 
 
 def test_api_map_formatter_includes_navigation_guidance():
-    text = format_api_map_for_prompt(compact=True)
+    text = format_api_map_for_prompt(
+        compact=True,
+        query=ApiMapQuery(
+            instrument_type="digital_option",
+            payoff_family="digital_option",
+            method="analytical",
+            model_family="equity_diffusion",
+        ),
+    )
 
     assert "API Map" in text
     assert "MarketState" in text
-    assert "equity_tree" in text
-    assert "rate_lattice" in text
-    assert "trellis.models.monte_carlo" in text
     assert "digital_option_composition" in text
     assert "resolve_single_state_diffusion_inputs" in text
     assert "black76_cash_or_nothing_call" in text
+    assert "#### quanto_option_composition" not in text
+    assert "Selected cards:" in text
+    assert "Omitted cards:" in text
     assert "inspect_api_map" not in text
 
 
-def test_api_map_formatter_includes_all_canonical_utilities():
+def test_api_map_no_query_formatter_is_bounded_complete_catalog():
     text = format_api_map_for_prompt(compact=True)
+    selection = select_api_map_sections()
+    api_map = get_api_map()
+    expected_families = tuple(
+        name
+        for name, section in api_map.items()
+        if name not in {"market_state", "payoff", "utilities"}
+        and isinstance(section, dict)
+        and section.get("module")
+    )
 
+    assert selection.catalog_only is True
+    assert selection.available_families == expected_families
+    assert not selection.selected_families
+    for family_name in selection.available_families:
+        assert family_name in text
     assert "rate_style_swaption" in text
     assert "jamshidian_zcb_option" in text
     assert "credit_curve" in text
+    assert "from trellis" not in text
+    assert len(text) <= 4000
+
+
+def test_api_map_compact_default_enforces_four_thousand_character_budget():
+    text = format_api_map_for_prompt(
+        compact=True,
+        query=ApiMapQuery(
+            requested_families=(
+                "monte_carlo",
+                "pde",
+                "rate_monte_carlo_composition",
+                "quanto_option_composition",
+            )
+        ),
+    )
+
+    assert len(text) <= 4000
+    assert "truncated" in text.lower()
+
+
+def test_every_canonical_api_map_family_is_explicitly_reachable():
+    available = select_api_map_sections().available_families
+
+    for family_name in available:
+        selection = select_api_map_sections(
+            ApiMapQuery(requested_families=(family_name,))
+        )
+        assert family_name in selection.selected_families
+
+
+def test_every_canonical_api_map_utility_is_explicitly_reachable():
+    available = select_api_map_sections().available_utilities
+
+    for utility_name in available:
+        selection = select_api_map_sections(
+            ApiMapQuery(requested_families=(utility_name,))
+        )
+        assert utility_name in selection.selected_utilities
+
+
+def test_empty_api_map_treats_empty_query_as_catalog_only(monkeypatch):
+    monkeypatch.setattr(api_map_module, "get_api_map", lambda: {})
+
+    assert select_api_map_sections().catalog_only is True
+    assert select_api_map_sections(ApiMapQuery()).catalog_only is True
+
+
+def test_api_map_semantic_selection_reaches_composition_cards():
+    cases = (
+        (
+            ApiMapQuery(
+                payoff_family="digital_option",
+                method="analytical",
+            ),
+            "digital_option_composition",
+        ),
+        (
+            ApiMapQuery(
+                instrument_type="quanto_option",
+                payoff_family="quanto_option",
+                method="monte_carlo",
+                model_family="hybrid",
+            ),
+            "quanto_option_composition",
+        ),
+        (
+            ApiMapQuery(
+                instrument_type="arithmetic_asian_option",
+                payoff_family="asian_option",
+                method="analytical",
+                features=("scheduled_observation", "arithmetic_average"),
+            ),
+            "arithmetic_asian_composition",
+        ),
+        (
+            ApiMapQuery(
+                features=("scheduled_observation",),
+                method="monte_carlo",
+            ),
+            "scheduled_observation_composition",
+        ),
+        (
+            ApiMapQuery(
+                features=("weighted_lognormal_sum",),
+                method="analytical",
+            ),
+            "weighted_lognormal_sum_composition",
+        ),
+        (
+            ApiMapQuery(
+                instrument_type="cliquet",
+                payoff_family="cliquet",
+                method="monte_carlo",
+                features=("observation_return",),
+            ),
+            "observation_return_composition",
+        ),
+        (
+            ApiMapQuery(
+                description="Price a cliquet with capped interval returns.",
+            ),
+            "observation_return_composition",
+        ),
+        (
+            ApiMapQuery(
+                instrument_type="bermudan_swaption",
+                payoff_family="swaption",
+                method="monte_carlo",
+                model_family="interest_rate",
+            ),
+            "rate_monte_carlo_composition",
+        ),
+    )
+
+    for query, expected_family in cases:
+        selection = select_api_map_sections(query)
+        assert expected_family in selection.selected_families
+
+
+def test_api_map_selection_and_rendering_are_stable_and_budgeted():
+    query = ApiMapQuery(
+        instrument_type="arithmetic_asian_option",
+        payoff_family="asian_option",
+        method="monte_carlo",
+        features=("scheduled_observation", "arithmetic_average"),
+    )
+
+    first = select_api_map_sections(query)
+    second = select_api_map_sections(query)
+    text = format_api_map_for_prompt(
+        compact=True,
+        query=query,
+        max_chars=1200,
+    )
+
+    assert first == second
+    assert len(text) <= 1200
+    assert "truncated" in text.lower()
+    assert "arithmetic_asian_composition" in text
+
+
+def test_api_map_reachability_does_not_depend_on_manual_family_tuple():
+    source = inspect.getsource(api_map_module)
+
+    assert "_FAMILY_ORDER" not in source
+
+
+def test_api_map_rejects_unknown_explicit_cards_and_invalid_budgets():
+    with pytest.raises(ValueError, match="Unknown API map cards"):
+        select_api_map_sections(
+            ApiMapQuery(requested_families=("not_a_canonical_card",))
+        )
+
+    with pytest.raises(ValueError, match="at least 240"):
+        format_api_map_for_prompt(max_chars=0)
 
 
 def test_monte_carlo_api_map_prioritizes_american_lsm_primitives():

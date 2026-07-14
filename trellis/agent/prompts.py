@@ -24,7 +24,7 @@ run tests, fetch market data, and price instruments on demand.
 {requirements}
 
 ## Capabilities
-- inspect_api_map: Inspect the compact API navigation map before broad tree exploration.
+- inspect_api_map: Inspect the bounded API catalog or select task-relevant cards from semantic fields before broad tree exploration.
 - inspect_library: See all modules, classes, and functions in the trellis package.
 - read_module: Read source code of any module.
 - find_symbol: Locate a public Trellis symbol before importing it.

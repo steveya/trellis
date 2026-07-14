@@ -44,8 +44,11 @@ from trellis.agent.knowledge.import_registry import (
     suggest_tests_for_symbol,
 )
 from trellis.agent.knowledge.api_map import (
+    ApiMapQuery,
+    ApiMapSelection,
     format_api_map_for_prompt,
     get_api_map,
+    select_api_map_sections,
 )
 from trellis.agent.knowledge.skills import (
     augment_prompt_with_skill_records,
@@ -187,8 +190,11 @@ __all__ = [
     "get_test_map",
     "get_repo_facts",
     "suggest_tests_for_symbol",
+    "ApiMapQuery",
+    "ApiMapSelection",
     "get_api_map",
     "format_api_map_for_prompt",
+    "select_api_map_sections",
     "load_skill_index",
     "load_skill_lineage_index",
     "get_skill_record",

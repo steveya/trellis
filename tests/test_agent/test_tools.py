@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from trellis.agent.executor import _handle_tool_call
+from trellis.agent.tools import TOOLS
 
 
 def test_find_symbol_tool_returns_matches():
@@ -12,11 +13,68 @@ def test_find_symbol_tool_returns_matches():
     assert any(match["module"] == "trellis.models.pde.theta_method" for match in payload)
 
 
-def test_inspect_api_map_tool_returns_navigation_card():
+def test_inspect_api_map_tool_returns_bounded_navigation_catalog():
     payload = _handle_tool_call("inspect_api_map", {})
     assert "API Map" in payload
     assert "MarketState" in payload
-    assert "trellis.models.monte_carlo" in payload
+    assert "digital_option_composition" in payload
+    assert "quanto_option_composition" in payload
+    assert "from trellis" not in payload
+    assert len(payload) <= 4000
+
+
+def test_inspect_api_map_tool_accepts_semantic_query():
+    payload = _handle_tool_call(
+        "inspect_api_map",
+        {
+            "instrument_type": "digital_option",
+            "payoff_family": "digital_option",
+            "method": "analytical",
+            "model_family": "equity_diffusion",
+        },
+    )
+
+    assert "digital_option_composition" in payload
+    assert "resolve_single_state_diffusion_inputs" in payload
+    assert "black76_cash_or_nothing_call" in payload
+    assert "#### quanto_option_composition" not in payload
+
+
+def test_inspect_api_map_tool_accepts_exact_utility_card():
+    payload = _handle_tool_call(
+        "inspect_api_map",
+        {"families": ["black76"]},
+    )
+
+    assert "#### black76" in payload
+    assert "from trellis.models.black import" in payload
+
+
+def test_inspect_api_map_tool_returns_readable_error_for_unknown_card():
+    payload = _handle_tool_call(
+        "inspect_api_map",
+        {"families": ["not_a_canonical_card"]},
+    )
+
+    assert payload.startswith("Error inspecting API map:")
+    assert "not_a_canonical_card" in payload
+
+
+def test_inspect_api_map_tool_schema_exposes_bounded_semantic_fields():
+    tool = next(item for item in TOOLS if item["name"] == "inspect_api_map")
+    properties = tool["input_schema"]["properties"]
+
+    assert {
+        "instrument_type",
+        "payoff_family",
+        "method",
+        "model_family",
+        "features",
+        "route_ids",
+        "route_families",
+        "description",
+        "families",
+    } <= set(properties)
 
 
 def test_list_exports_tool_returns_public_exports():

@@ -5,10 +5,36 @@ from __future__ import annotations
 TOOLS = [
     {
         "name": "inspect_api_map",
-        "description": "Inspect the compact API navigation map before broad tree exploration.",
+        "description": (
+            "Inspect the bounded API navigation catalog, optionally selecting "
+            "task-relevant cards from semantic product and route fields."
+        ),
         "input_schema": {
             "type": "object",
-            "properties": {},
+            "properties": {
+                "instrument_type": {"type": "string"},
+                "payoff_family": {"type": "string"},
+                "method": {"type": "string"},
+                "model_family": {"type": "string"},
+                "features": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "route_ids": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "route_families": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                },
+                "description": {"type": "string"},
+                "families": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Explicit canonical card names to inspect.",
+                },
+            },
             "required": [],
         },
     },

@@ -58,6 +58,8 @@ payoff:
 # ---------------------------------------------------------------------------
 digital_option_composition:
   module: trellis.models.resolution.single_state_diffusion
+  navigation:
+    aliases: [digital_option, cash_or_nothing, asset_or_nothing]
   modules:
     market_binding: trellis.models.resolution.single_state_diffusion
     analytical_support: trellis.models.analytical.support
@@ -78,6 +80,8 @@ digital_option_composition:
 # ---------------------------------------------------------------------------
 quanto_option_composition:
   module: trellis.models.resolution.quanto
+  navigation:
+    aliases: [quanto_option, quanto, hybrid_equity_fx]
   modules:
     market_binding: trellis.models.resolution.quanto
     analytical_support: trellis.models.analytical.support
@@ -104,6 +108,8 @@ quanto_option_composition:
 # ---------------------------------------------------------------------------
 equity_tree:
   module: trellis.models.trees.algebra
+  navigation:
+    aliases: [equity_tree, american_option, bermudan_option]
   key_imports:
     - "from trellis.models.resolution.single_state_diffusion import resolve_single_state_diffusion_inputs, terminal_intrinsic_from_resolved"
     - "from trellis.models.trees.algebra import equity_tree, with_control, compile_lattice_recipe, build_lattice, price_on_lattice"
@@ -115,6 +121,8 @@ equity_tree:
 
 rate_lattice:
   module: trellis.models.trees.lattice
+  navigation:
+    aliases: [rate_tree, callable_bond, puttable_bond, bermudan_swaption]
   key_imports:
     - "from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction"
     - "from trellis.models.zcb_option_tree import price_zcb_option_tree"
@@ -162,6 +170,8 @@ monte_carlo:
 
 scheduled_observation_composition:
   module: trellis.models.observation_aggregation
+  navigation:
+    aliases: [scheduled_observation, weighted_observation, arithmetic_asian_option]
   key_imports:
     - "from trellis.models.observation_aggregation import WeightedObservationContract, build_weighted_observation_reducer, weighted_observation_payoff, weighted_observation_sum"
     - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
@@ -175,6 +185,8 @@ scheduled_observation_composition:
 
 weighted_lognormal_sum_composition:
   module: trellis.models.analytical.support.lognormal_moments
+  navigation:
+    aliases: [weighted_lognormal_sum, arithmetic_asian_option, lognormal_moment_matching]
   key_imports:
     - "from trellis.models.analytical.support.lognormal_moments import WeightedLognormalSumContract, match_lognormal_moments, single_factor_lognormal_sum_contract, weighted_lognormal_sum_moments"
     - "from trellis.models.black import black76_call, black76_put"
@@ -186,6 +198,8 @@ weighted_lognormal_sum_composition:
 
 arithmetic_asian_composition:
   module: trellis.models.observation_aggregation
+  navigation:
+    aliases: [arithmetic_asian, arithmetic_asian_option, asian_option]
   key_imports:
     - "from trellis.models.resolution.single_state_diffusion import resolve_single_state_diffusion_inputs"
     - "from trellis.models.observation_aggregation import WeightedObservationContract, weighted_observation_payoff"
@@ -202,6 +216,8 @@ arithmetic_asian_composition:
 
 observation_return_composition:
   module: trellis.models.observation_returns
+  navigation:
+    aliases: [observation_return, cliquet, ratchet_option]
   key_imports:
     - "from trellis.models.observation_returns import ObservationReturnContract, bounded_observation_return_sum, build_observation_return_reducer, observation_return_payoff, simple_observation_returns"
     - "from trellis.models.analytical.support.expectations import gauss_hermite_product_expectation"
@@ -215,6 +231,8 @@ observation_return_composition:
 
 rate_monte_carlo_composition:
   module: trellis.models.monte_carlo.simulation_substrate
+  navigation:
+    aliases: [rate_monte_carlo, bermudan_swaption, callable_rate_product]
   key_imports:
     - "from trellis.models.monte_carlo.event_aware import build_event_aware_monte_carlo_process, resolve_hull_white_monte_carlo_process_inputs"
     - "from trellis.models.monte_carlo.simulation_substrate import FactorStateSimulationResult, HullWhiteRateProjection, HullWhiteSwapFutureValueModel, SwapFloatResetProgram"
@@ -240,6 +258,8 @@ qmc:
 # ---------------------------------------------------------------------------
 pde:
   module: trellis.models.pde
+  navigation:
+    aliases: [pde_solver, finite_difference, theta_method]
   key_imports:
     - "from trellis.models.equity_option_pde import price_cev_option_pde"
     - "from trellis.models.equity_option_pde import price_equity_digital_option_pde"
@@ -271,6 +291,8 @@ pde:
 # ---------------------------------------------------------------------------
 fft:
   module: trellis.models.transforms.fft_pricer
+  navigation:
+    aliases: [fft_pricing, transform_fft, cos_method]
   key_imports:
     - "from trellis.models.transforms.fft_pricer import fft_price"
     - "from trellis.models.transforms.cos_method import cos_price"
@@ -286,6 +308,8 @@ fft:
 # ---------------------------------------------------------------------------
 copulas:
   module: trellis.models.copulas.factor
+  navigation:
+    aliases: [copula, copula_loss_distribution, credit_copula]
   key_imports:
     - "from trellis.models.copulas.factor import FactorCopula"
     - "from trellis.models.copulas.gaussian import GaussianCopula"

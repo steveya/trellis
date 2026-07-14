@@ -688,6 +688,10 @@ the resolver, basis selection, and scaling obligations, while exact symbol
 validation resolves through the import registry. Cash/asset settlement and
 call/put orientation remain contract choices; a product wrapper cannot
 substitute for that semantic selection even when one numeric case is close.
+API-map rendering selects this card from typed digital product/payoff cues
+rather than from a separate global family list. Other composition cards remain
+reachable through the complete bounded catalog without being injected into
+unrelated builder prompts.
 
 For schedule-driven cap/floor strips lowered onto ``analytical_black76``, the
 typed schedule state now carries admissibility directly. Structural
