@@ -40,6 +40,26 @@ def test_inspect_api_map_tool_accepts_semantic_query():
     assert "#### quanto_option_composition" not in payload
 
 
+def test_inspect_api_map_tool_accepts_exact_utility_card():
+    payload = _handle_tool_call(
+        "inspect_api_map",
+        {"families": ["black76"]},
+    )
+
+    assert "#### black76" in payload
+    assert "from trellis.models.black import" in payload
+
+
+def test_inspect_api_map_tool_returns_readable_error_for_unknown_card():
+    payload = _handle_tool_call(
+        "inspect_api_map",
+        {"families": ["not_a_canonical_card"]},
+    )
+
+    assert payload.startswith("Error inspecting API map:")
+    assert "not_a_canonical_card" in payload
+
+
 def test_inspect_api_map_tool_schema_exposes_bounded_semantic_fields():
     tool = next(item for item in TOOLS if item["name"] == "inspect_api_map")
     properties = tool["input_schema"]["properties"]

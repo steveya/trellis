@@ -22,7 +22,7 @@ _KNOWLEDGE_DIR = Path(__file__).parent
 _API_MAP_CACHE: dict[str, dict[str, Any]] = {}
 _SPECIAL_TOP_LEVEL_KEYS = frozenset({"market_state", "payoff", "utilities"})
 _WORD = re.compile(r"[a-z0-9]+")
-_DEFAULT_COMPACT_CHARS = 6000
+_DEFAULT_COMPACT_CHARS = 4000
 _DEFAULT_EXPANDED_CHARS = 9000
 _DEFAULT_SELECTION_LIMIT = 4
 
@@ -114,7 +114,15 @@ def select_api_map_sections(
     """Select task-relevant cards directly from the canonical API map."""
     api_map = get_api_map()
     if not api_map:
-        return ApiMapSelection((), (), (), (), (), (), query is None)
+        return ApiMapSelection(
+            available_families=(),
+            selected_families=(),
+            omitted_families=(),
+            available_utilities=(),
+            selected_utilities=(),
+            omitted_utilities=(),
+            catalog_only=query is None or query.is_empty,
+        )
 
     family_names = _family_names(api_map)
     utility_names = _utility_names(api_map)
@@ -138,9 +146,10 @@ def select_api_map_sections(
             if str(item).strip()
         )
     )
-    unknown = tuple(name for name in requested if name not in family_names)
+    available_cards = frozenset((*family_names, *utility_names))
+    unknown = tuple(name for name in requested if name not in available_cards)
     if unknown:
-        raise ValueError("Unknown API map families: " + ", ".join(unknown))
+        raise ValueError("Unknown API map cards: " + ", ".join(unknown))
 
     if requested:
         selected_families = tuple(
@@ -166,7 +175,8 @@ def select_api_map_sections(
     selected_utilities = tuple(
         name
         for name in utility_names
-        if _utility_is_relevant(
+        if name in requested
+        or _utility_is_relevant(
             name,
             api_map["utilities"][name],
             query,

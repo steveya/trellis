@@ -265,35 +265,38 @@ def _hydrate_spec_schema_defaults_from_semantics(
 def _handle_tool_call(name: str, input_data: dict) -> str:
     """Dispatch a tool call from the LLM agent."""
     if name == "inspect_api_map":
-        query_keys = (
-            "instrument_type",
-            "payoff_family",
-            "method",
-            "model_family",
-            "features",
-            "route_ids",
-            "route_families",
-            "description",
-            "families",
-        )
-        query = None
-        if any(input_data.get(key) for key in query_keys):
-            query = ApiMapQuery(
-                instrument_type=str(input_data.get("instrument_type") or ""),
-                payoff_family=str(input_data.get("payoff_family") or ""),
-                method=str(input_data.get("method") or ""),
-                model_family=str(input_data.get("model_family") or ""),
-                features=tuple(input_data.get("features") or ()),
-                route_ids=tuple(input_data.get("route_ids") or ()),
-                route_families=tuple(input_data.get("route_families") or ()),
-                description=str(input_data.get("description") or ""),
-                requested_families=tuple(input_data.get("families") or ()),
+        try:
+            query_keys = (
+                "instrument_type",
+                "payoff_family",
+                "method",
+                "model_family",
+                "features",
+                "route_ids",
+                "route_families",
+                "description",
+                "families",
             )
-        return format_api_map_for_prompt(
-            compact=True,
-            query=query,
-            max_chars=6000,
-        )
+            query = None
+            if any(input_data.get(key) for key in query_keys):
+                query = ApiMapQuery(
+                    instrument_type=str(input_data.get("instrument_type") or ""),
+                    payoff_family=str(input_data.get("payoff_family") or ""),
+                    method=str(input_data.get("method") or ""),
+                    model_family=str(input_data.get("model_family") or ""),
+                    features=tuple(input_data.get("features") or ()),
+                    route_ids=tuple(input_data.get("route_ids") or ()),
+                    route_families=tuple(input_data.get("route_families") or ()),
+                    description=str(input_data.get("description") or ""),
+                    requested_families=tuple(input_data.get("families") or ()),
+                )
+            return format_api_map_for_prompt(
+                compact=True,
+                query=query,
+                max_chars=4000,
+            )
+        except Exception as e:
+            return f"Error inspecting API map: {e}"
 
     if name == "inspect_library":
         tree = get_package_tree()

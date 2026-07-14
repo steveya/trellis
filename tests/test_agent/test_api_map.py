@@ -150,6 +150,23 @@ def test_api_map_no_query_formatter_is_bounded_complete_catalog():
     assert len(text) <= 4000
 
 
+def test_api_map_compact_default_enforces_four_thousand_character_budget():
+    text = format_api_map_for_prompt(
+        compact=True,
+        query=ApiMapQuery(
+            requested_families=(
+                "monte_carlo",
+                "pde",
+                "rate_monte_carlo_composition",
+                "quanto_option_composition",
+            )
+        ),
+    )
+
+    assert len(text) <= 4000
+    assert "truncated" in text.lower()
+
+
 def test_every_canonical_api_map_family_is_explicitly_reachable():
     available = select_api_map_sections().available_families
 
@@ -158,6 +175,23 @@ def test_every_canonical_api_map_family_is_explicitly_reachable():
             ApiMapQuery(requested_families=(family_name,))
         )
         assert family_name in selection.selected_families
+
+
+def test_every_canonical_api_map_utility_is_explicitly_reachable():
+    available = select_api_map_sections().available_utilities
+
+    for utility_name in available:
+        selection = select_api_map_sections(
+            ApiMapQuery(requested_families=(utility_name,))
+        )
+        assert utility_name in selection.selected_utilities
+
+
+def test_empty_api_map_treats_empty_query_as_catalog_only(monkeypatch):
+    monkeypatch.setattr(api_map_module, "get_api_map", lambda: {})
+
+    assert select_api_map_sections().catalog_only is True
+    assert select_api_map_sections(ApiMapQuery()).catalog_only is True
 
 
 def test_api_map_semantic_selection_reaches_composition_cards():
@@ -261,7 +295,7 @@ def test_api_map_reachability_does_not_depend_on_manual_family_tuple():
 
 
 def test_api_map_rejects_unknown_explicit_cards_and_invalid_budgets():
-    with pytest.raises(ValueError, match="Unknown API map families"):
+    with pytest.raises(ValueError, match="Unknown API map cards"):
         select_api_map_sections(
             ApiMapQuery(requested_families=("not_a_canonical_card",))
         )
