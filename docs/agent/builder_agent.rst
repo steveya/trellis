@@ -9,7 +9,8 @@ Two-Step Pipeline
 
 **Step 1: Spec Design** (deterministic or LLM)
 
-For known instruments (10 static specs), the spec dataclass is deterministic:
+For known instruments with a registered static spec, the spec dataclass is
+deterministic:
 
 .. code-block:: python
 
@@ -32,48 +33,35 @@ For unknown instruments, an LLM call designs the spec via structured JSON output
 The system generates a complete skeleton (imports, spec, class, requirements)
 and asks the LLM to fill in ``evaluate()``. The prompt includes:
 
-- The skeleton code
-- The quant agent's method selection
-- The relevant **cookbook** pattern
-- Reference implementations for the chosen method
+- the compiled semantic contract, method selection, and route obligations
+- task-relevant API-map cards selected from typed product and route cues
+- exact public symbols verified against the import registry
+- bounded validated lessons and read-only cookbook evidence
+- the skeleton code and deterministic acceptance requirements
 
-Cookbooks
----------
+Navigation And Authority
+------------------------
 
-Five evaluate() body templates, one per method:
+The builder owns code and import selection. A no-query ``inspect_api_map``
+call returns a bounded complete catalog; semantic fields or explicit family
+names return the relevant full construction cards. The builder confirms exact
+symbols with ``find_symbol`` or ``list_exports`` before reading modules
+or writing code.
 
-.. list-table::
-   :header-rows: 1
-
-   * - Method
-     - Return Type
-     - Pattern
-   * - ``analytical``
-     - ``Cashflows``
-     - Forward rates → Black76 → dated payoffs
-   * - ``rate_tree``
-     - ``PresentValue``
-     - Build tree → backward induction with exercise
-   * - ``monte_carlo``
-     - ``PresentValue``
-     - Simulate paths → compute path-dependent payoff
-   * - ``copula``
-     - ``PresentValue``
-     - Simulate correlated defaults → tranche loss
-   * - ``waterfall``
-     - ``Cashflows``
-     - Amortize → prepay → run through tranches
-
-Each cookbook marks ``>>> INSTRUMENT-SPECIFIC <<<`` where the builder fills in
-instrument logic.
+Cookbooks are validated method-pattern evidence, not product implementation
+authority. Runtime tasks cannot write or promote cookbook entries, and a
+product- or method-specific pricing helper is not a substitute for assembling
+an admitted route from reusable market, process, payoff, control, numerical,
+and validation primitives. The quant and model-validator role packets remain
+code-free and do not receive the builder API-map surface.
 
 Static Specs
 ------------
 
-10 instrument types with deterministic field names:
-
-swaption, cap, floor, callable_bond, puttable_bond, barrier_option,
-asian_option, cdo, nth_to_default, bermudan_swaption.
+Registered static specs provide deterministic field names and defaults for
+known instrument families. Product meaning still comes from the semantic
+contract; a static spec cannot broaden exercise style, payoff family, model
+family, or market binding.
 
 Caching
 -------
@@ -86,3 +74,11 @@ Implementation
 --------------
 
 .. autofunction:: trellis.agent.executor.build_payoff
+
+See Also
+--------
+
+- :doc:`../developer/runtime_agent_orientation` for the separation between
+  worktree instructions, runtime role packets, and builder API navigation
+- :doc:`../quant/knowledge_maintenance` for primitive-first knowledge
+  maintenance and cookbook governance
