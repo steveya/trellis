@@ -334,7 +334,10 @@ def test_default_role_packets_are_role_separated_and_source_bounded():
     assert "quant-runtime-navigation" not in validator.rendered
     assert "deterministic evidence" not in quant.context.lower()
     assert "from trellis" not in quant.context.lower()
+    assert "## api map" not in quant.context.lower()
     assert "route_helper" not in quant.context.lower()
+    assert "from trellis" not in validator.context.lower()
+    assert "## api map" not in validator.context.lower()
     assert any(
         "heston" in excerpt.section.lower()
         for excerpt in quant.excerpts

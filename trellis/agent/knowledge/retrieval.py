@@ -28,7 +28,11 @@ from trellis.agent.knowledge.promotion import (
     summarize_adapter_lifecycle_records,
 )
 from trellis.agent.knowledge.store import identify_superseded_basket_lesson_ids
-from trellis.agent.knowledge.api_map import format_api_map_for_prompt
+from trellis.agent.knowledge.api_map import (
+    ApiMapQuery,
+    format_api_map_for_prompt,
+    select_api_map_sections,
+)
 
 _COMPACT_LIMITS = {
     "builder": {
@@ -73,6 +77,74 @@ _DISTILLED_LIMITS = {
         "lessons": 2,
     },
 }
+
+
+def _api_map_query_for_knowledge(
+    knowledge: dict[str, Any],
+    *,
+    pricing_method: str | None = None,
+    route_ids: tuple[str, ...] | list[str] = (),
+    route_families: tuple[str, ...] | list[str] | None = None,
+) -> ApiMapQuery:
+    """Project retrieved semantic knowledge into builder-only API navigation."""
+    product_ir: ProductIR | None = knowledge.get("product_ir")
+    decomposition: ProductDecomposition | None = knowledge.get("decomposition")
+    cookbook: CookbookEntry | None = knowledge.get("cookbook")
+
+    instrument = str(
+        getattr(product_ir, "instrument", "")
+        or getattr(decomposition, "instrument", "")
+        or ""
+    )
+    payoff_family = str(getattr(product_ir, "payoff_family", "") or "")
+    method = str(
+        pricing_method
+        or getattr(decomposition, "method", "")
+        or getattr(cookbook, "method", "")
+        or ""
+    )
+    model_family = str(getattr(product_ir, "model_family", "") or "")
+    features = tuple(
+        dict.fromkeys(
+            str(item)
+            for item in (
+                *tuple(getattr(product_ir, "payoff_traits", ()) or ()),
+                *tuple(getattr(decomposition, "features", ()) or ()),
+            )
+            if str(item).strip()
+        )
+    )
+    resolved_route_families = tuple(
+        str(item)
+        for item in (
+            route_families
+            if route_families is not None
+            else tuple(getattr(product_ir, "route_families", ()) or ())
+        )
+        if str(item).strip()
+    )
+    description = " ".join(
+        part
+        for part in (
+            instrument,
+            payoff_family,
+            str(getattr(product_ir, "derivative_family", "") or ""),
+            str(getattr(product_ir, "underlying_asset_class", "") or ""),
+        )
+        if part
+    )
+    return ApiMapQuery(
+        instrument_type=instrument,
+        payoff_family=payoff_family,
+        method=method,
+        model_family=model_family,
+        features=features,
+        route_ids=tuple(
+            str(item) for item in route_ids if str(item).strip()
+        ),
+        route_families=resolved_route_families,
+        description=description,
+    )
 
 
 def _adapter_lifecycle_warnings(*, compact: bool) -> str:
@@ -140,7 +212,12 @@ def _adapter_lifecycle_summary() -> dict[str, Any]:
     }
 
 
-def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = False) -> str:
+def format_knowledge_for_prompt(
+    knowledge: dict[str, Any],
+    *,
+    compact: bool = False,
+    api_map_query: ApiMapQuery | None = None,
+) -> str:
     """Format a ``retrieve_for_task()`` result dict as a single markdown string.
 
     The output is structured as numbered sections in this order:
@@ -156,7 +233,10 @@ def format_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = Fa
 
     # 0. API map (small family-level orientation before the full registry)
     try:
-        api_map = format_api_map_for_prompt(compact=compact)
+        api_map = format_api_map_for_prompt(
+            compact=compact,
+            query=api_map_query or _api_map_query_for_knowledge(knowledge),
+        )
         if api_map:
             sections.append(api_map)
     except Exception:
@@ -575,17 +655,10 @@ def format_review_knowledge_for_prompt(
 def format_decomposition_knowledge_for_prompt(knowledge: dict[str, Any], *, compact: bool = False) -> str:
     """Format shared knowledge for decomposition / routing prompts.
 
-    The API map is surfaced first so route selection starts from the compact
-    family-level navigation layer before the broader routing context.
+    Routing roles receive semantic and method evidence only. Builder-only API
+    imports remain in the builder knowledge surfaces.
     """
     sections: list[str] = []
-
-    try:
-        api_map = format_api_map_for_prompt(compact=compact)
-        if api_map:
-            sections.append(api_map)
-    except Exception:
-        pass
 
     principles: list[Principle] = knowledge.get("principles", [])
     model_grammar: list[ModelGrammarEntry] = knowledge.get("model_grammar", [])
@@ -658,6 +731,7 @@ def format_distilled_knowledge_for_prompt(
     knowledge: dict[str, Any],
     *,
     audience: str = "builder",
+    api_map_query: ApiMapQuery | None = None,
 ) -> str:
     """Format the smallest useful reusable memory card for repeated tasks."""
     sections: list[str] = []
@@ -673,7 +747,10 @@ def format_distilled_knowledge_for_prompt(
     if audience == "builder":
         limits = _DISTILLED_LIMITS["builder"]
         lines = []
-        api_map = format_api_map_for_prompt(compact=True)
+        api_map = format_api_map_for_prompt(
+            compact=True,
+            query=api_map_query or _api_map_query_for_knowledge(knowledge),
+        )
         instrument_label = (
             str(getattr(product_ir, "instrument", "") or "").strip().lower()
             if product_ir is not None
@@ -759,9 +836,6 @@ def format_distilled_knowledge_for_prompt(
     elif audience == "routing":
         limits = _DISTILLED_LIMITS["routing"]
         lines = []
-        api_map = format_api_map_for_prompt(compact=True)
-        if api_map:
-            lines.append(api_map)
         lines.append("## Distilled Routing Memory\n")
         if product_ir is not None:
             display_route_families = _prompt_display_route_families(product_ir)
@@ -825,10 +899,28 @@ def build_shared_knowledge_payload(
     )
     resolved_route_ids = tuple(str(item) for item in route_ids if str(item).strip())
     resolved_method = pricing_method or None
+    api_map_query = _api_map_query_for_knowledge(
+        knowledge,
+        pricing_method=resolved_method,
+        route_ids=resolved_route_ids,
+        route_families=resolved_route_families,
+    )
 
-    builder_text_distilled_base = format_distilled_knowledge_for_prompt(knowledge, audience="builder")
-    builder_text_base = format_knowledge_for_prompt(knowledge, compact=True)
-    builder_text_expanded_base = format_knowledge_for_prompt(knowledge, compact=False)
+    builder_text_distilled_base = format_distilled_knowledge_for_prompt(
+        knowledge,
+        audience="builder",
+        api_map_query=api_map_query,
+    )
+    builder_text_base = format_knowledge_for_prompt(
+        knowledge,
+        compact=True,
+        api_map_query=api_map_query,
+    )
+    builder_text_expanded_base = format_knowledge_for_prompt(
+        knowledge,
+        compact=False,
+        api_map_query=api_map_query,
+    )
     review_text_distilled_base = format_distilled_knowledge_for_prompt(knowledge, audience="review")
     review_text_base = format_review_knowledge_for_prompt(knowledge, compact=True)
     review_text_expanded_base = format_review_knowledge_for_prompt(knowledge, compact=False)
@@ -917,6 +1009,7 @@ def build_shared_knowledge_payload(
     )
 
     summary = summarize_knowledge_for_trace(knowledge)
+    summary["api_map_selection"] = select_api_map_sections(api_map_query).summary()
     selected_by_audience = {
         "builder": builder_artifacts,
         "review": review_artifacts,

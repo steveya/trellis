@@ -56,6 +56,24 @@ contracts, the read-only cookbook catalog, current limitations, calibration
 documentation, and audit contracts. This preserves deterministic-first review
 ownership.
 
+Builder API Navigation
+----------------------
+
+The builder has a separate navigation surface in
+``canonical/api_map.yaml``. It is not part of either runtime role packet.
+The typed ``ApiMapQuery`` selector uses product, payoff, method, model,
+feature, and route cues to render only the relevant full cards. A no-query
+``inspect_api_map`` call returns a bounded catalog of every canonical model
+and utility card; callers can then request exact cards or submit semantic
+fields. This keeps new canonical cards reachable without adding their names to
+a second hand-maintained global order.
+
+Builder prompt traces record selected and omitted API-map card identities.
+Rendered cards have a hard character budget and mark truncation explicitly.
+Exact symbols remain the import registry's responsibility after family
+selection. Quant and model-validator regression tests reject API-map imports
+or code templates in their resolved context.
+
 Bounded Resolution
 ------------------
 

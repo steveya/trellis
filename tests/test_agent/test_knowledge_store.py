@@ -830,9 +830,15 @@ class TestFormatting:
 
         assert "## Product Semantics" in payload["builder_text"]
         assert "API Map" in payload["builder_text_distilled"]
+        assert "quanto_option_composition" in payload["builder_text_distilled"]
+        assert (
+            "#### digital_option_composition"
+            not in payload["builder_text_distilled"]
+        )
         assert "## Shared Failure Memory" in payload["review_text"]
         assert payload["routing_text"]
-        assert "API Map" in payload["routing_text_distilled"]
+        assert "API Map" not in payload["routing_text_distilled"]
+        assert "from trellis" not in payload["routing_text_distilled"]
         assert (
             "## Prior Lessons From Similar Products" in payload["routing_text"]
             or "## Shared Routing Principles" in payload["routing_text"]
@@ -845,6 +851,10 @@ class TestFormatting:
         assert payload["routing_text_distilled"]
         assert payload["summary"]["instrument"] == product_ir.instrument
         assert payload["summary"]["lesson_count"] >= 1
+        assert "quanto_option_composition" in (
+            payload["summary"]["api_map_selection"]["selected_families"]
+        )
+        assert payload["summary"]["api_map_selection"]["omitted_families"]
         assert payload["summary"]["selected_artifact_ids"]
         assert "## Generated Skills" in payload["builder_text_distilled"]
         assert "builder" in payload["summary"]["selected_artifacts_by_audience"]

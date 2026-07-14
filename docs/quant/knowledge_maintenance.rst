@@ -107,7 +107,9 @@ therefore narrow context in this order:
 
 1. preserve the declared semantic contract, including product refinements,
    schedules, observables, state, and exercise/control semantics;
-2. use ``canonical/api_map.yaml`` to find the relevant module families;
+2. use the typed semantic selector over ``canonical/api_map.yaml`` to find
+   relevant module families; use its bounded complete catalog when no semantic
+   query is available;
 3. retrieve exact public symbols from the import registry;
 4. assemble reusable process, market-binding, schedule, payoff, control,
    discounting, and validation capabilities;
