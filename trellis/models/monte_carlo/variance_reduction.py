@@ -7,6 +7,7 @@ import math
 import numpy as raw_np
 
 from trellis.models.monte_carlo.brownian_bridge import brownian_bridge
+from trellis.models.monte_carlo.transition_state import MonteCarloRandomInputs
 
 
 def antithetic_normals(
@@ -134,7 +135,7 @@ def sobol_transition_inputs(
     n_factors: int = 1,
     *,
     seed: int | None = None,
-):
+) -> MonteCarloRandomInputs:
     """Generate joint Sobol process normals and one transition-uniform channel.
 
     The final coordinate at every step is retained as a uniform rather than
@@ -144,10 +145,6 @@ def sobol_transition_inputs(
     """
     from scipy.stats import norm
     from scipy.stats.qmc import Sobol
-
-    from trellis.models.monte_carlo.transition_state import (
-        MonteCarloRandomInputs,
-    )
 
     for value, name in (
         (n_paths, "n_paths"),

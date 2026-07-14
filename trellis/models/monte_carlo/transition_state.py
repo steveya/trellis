@@ -360,13 +360,14 @@ def build_conditional_bridge_extremum_reducer(
     )
 
 
-def _coerce_transition_uniforms(
+def coerce_transition_uniforms(
     reducers: tuple[ScalarTransitionReducer, ...],
     transition_uniforms: raw_np.ndarray,
     *,
     n_paths: int,
     n_steps: int,
 ) -> raw_np.ndarray:
+    """Validate one path-by-step auxiliary uniform matrix."""
     if len(reducers) != 1:
         raise NotImplementedError(
             "transition state currently supports one stochastic transition reducer; "
@@ -410,7 +411,7 @@ def replay_scalar_transition_reducers(
     reducer_names = [reducer.name for reducer in reducers]
     if len(reducer_names) != len(set(reducer_names)):
         raise ValueError("transition reducer names must be unique")
-    uniforms = _coerce_transition_uniforms(
+    uniforms = coerce_transition_uniforms(
         reducers,
         transition_uniforms,
         n_paths=n_paths,
@@ -457,6 +458,7 @@ __all__ = [
     "ScalarTransitionObservation",
     "ScalarTransitionReducer",
     "build_conditional_bridge_extremum_reducer",
+    "coerce_transition_uniforms",
     "conditional_log_bridge_extremum",
     "replay_scalar_transition_reducers",
     "resolve_scalar_bridge_parameters",

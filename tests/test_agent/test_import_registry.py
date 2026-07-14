@@ -137,6 +137,7 @@ def test_transition_state_primitives_are_visible_to_import_registry():
         "ScalarTransitionObservation",
         "ScalarTransitionReducer",
         "build_conditional_bridge_extremum_reducer",
+        "coerce_transition_uniforms",
         "conditional_log_bridge_extremum",
         "replay_scalar_transition_reducers",
         "resolve_scalar_bridge_parameters",

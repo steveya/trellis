@@ -7,6 +7,7 @@ monitoring, variance reduction, and multiple discretization schemes.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import math
 
 import numpy as raw_np
@@ -30,7 +31,7 @@ from trellis.models.monte_carlo.path_state import (
 from trellis.models.monte_carlo.transition_state import (
     MonteCarloRandomInputs,
     ScalarTransitionObservation,
-    _coerce_transition_uniforms,
+    coerce_transition_uniforms,
     replay_scalar_transition_reducers,
     resolve_scalar_bridge_parameters,
 )
@@ -362,7 +363,7 @@ class _ReducedPathAccumulator:
             if not math.isfinite(maturity_value) or maturity_value <= 0.0:
                 raise ValueError("maturity must be finite and positive")
             self._transition_dt = maturity_value / n_steps
-            self._transition_uniforms = _coerce_transition_uniforms(
+            self._transition_uniforms = coerce_transition_uniforms(
                 self._transition_reducers,
                 transition_uniforms,
                 n_paths=n_paths,
@@ -1113,7 +1114,7 @@ class MonteCarloEngine:
                     1e-15,
                     1.0 - 1e-15,
                 )
-            transition_uniforms = _coerce_transition_uniforms(
+            transition_uniforms = coerce_transition_uniforms(
                 requirement.transition_reducers,
                 transition_uniforms,
                 n_paths=self.n_paths,
@@ -1294,10 +1295,15 @@ class MonteCarloEngine:
                     )
                     paths = simulated_paths if return_paths else None
                 else:
+                    execution_requirement = (
+                        replace(requirement, full_path=True)
+                        if return_paths and not requirement.full_path
+                        else requirement
+                    )
                     path_state = self.simulate_state(
                         x0,
                         T,
-                        requirement,
+                        execution_requirement,
                         random_inputs=random_inputs,
                     )
                     paths = path_state.full_paths if return_paths else None

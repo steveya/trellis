@@ -270,6 +270,49 @@ def test_state_aware_price_accepts_typed_transition_random_inputs():
     assert result["path_state"].full_paths is None
 
 
+def test_state_aware_price_preserves_requested_paths_with_typed_random_inputs():
+    from trellis.models.monte_carlo.engine import MonteCarloEngine
+    from trellis.models.monte_carlo.path_state import StateAwarePayoff
+    from trellis.models.monte_carlo.variance_reduction import (
+        sobol_transition_inputs,
+    )
+    from trellis.models.processes.gbm import GBM
+
+    n_paths = 64
+    n_steps = 4
+    requirement = _extremum_requirement(n_steps=n_steps)
+    payoff = StateAwarePayoff(
+        path_requirement=requirement,
+        evaluate_paths_fn=lambda _paths: (_ for _ in ()).throw(
+            AssertionError("typed transition pricing must use reduced state")
+        ),
+        evaluate_state_fn=lambda state: state.reduced_value("continuous_maximum"),
+        name="transition_path_evidence",
+    )
+
+    result = MonteCarloEngine(
+        GBM(mu=0.04, sigma=0.20),
+        n_paths=n_paths,
+        n_steps=n_steps,
+        method="exact",
+    ).price(
+        100.0,
+        1.0,
+        payoff,
+        random_inputs=sobol_transition_inputs(
+            n_paths,
+            n_steps,
+            seed=47,
+        ),
+    )
+
+    assert result["paths"].shape == (n_paths, n_steps + 1)
+    assert result["path_state"].full_paths is result["paths"]
+    assert result["path_state"].reduced_value("continuous_maximum").shape == (
+        n_paths,
+    )
+
+
 def test_seeded_pseudo_bridge_randomness_is_reproducible_for_full_and_reduced_state():
     from trellis.models.monte_carlo.engine import MonteCarloEngine
     from trellis.models.processes.gbm import GBM

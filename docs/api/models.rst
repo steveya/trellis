@@ -71,6 +71,7 @@ Monte Carlo
 .. autofunction:: trellis.models.monte_carlo.conditional_log_bridge_extremum
 .. autofunction:: trellis.models.monte_carlo.build_conditional_bridge_extremum_reducer
 .. autofunction:: trellis.models.monte_carlo.replay_scalar_transition_reducers
+.. autofunction:: trellis.models.monte_carlo.transition_state.coerce_transition_uniforms
 
 QMC
 ---
