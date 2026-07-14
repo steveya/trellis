@@ -23,6 +23,10 @@ def test_api_map_contains_expected_core_entries():
         == "trellis.models.observation_returns"
     )
     assert (
+        api_map["scheduled_observation_composition"]["module"]
+        == "trellis.models.observation_aggregation"
+    )
+    assert (
         api_map["quanto_option_composition"]["module"]
         == "trellis.models.resolution.quanto"
     )
@@ -51,6 +55,7 @@ def test_api_map_key_imports_are_registry_valid():
         "equity_tree",
         "rate_lattice",
         "monte_carlo",
+        "scheduled_observation_composition",
         "observation_return_composition",
         "quanto_option_composition",
         "rate_monte_carlo_composition",
@@ -132,6 +137,21 @@ def test_api_map_exposes_product_neutral_observation_return_composition():
     ):
         assert symbol in text
     assert "cliquet" not in text.lower()
+
+
+def test_api_map_exposes_product_neutral_scheduled_observation_composition():
+    section = get_api_map()["scheduled_observation_composition"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "WeightedObservationContract",
+        "weighted_observation_sum",
+        "weighted_observation_payoff",
+        "GBM",
+        "MonteCarloEngine",
+    ):
+        assert symbol in text
+    assert "asian" not in text.lower()
 
 
 def test_api_map_prioritizes_fx_vanilla_primitive_composition():

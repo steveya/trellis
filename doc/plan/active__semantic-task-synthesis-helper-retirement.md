@@ -39,7 +39,7 @@ Status mirror last synced: `2026-07-14`
 | `QUA-1176` | Observation returns: reusable bounded accumulation primitives | Done |
 | `QUA-1177` | Cliquet pricing: primitive-composed analytical and Monte Carlo lanes | Done |
 | `QUA-1178` | Semantic route audit: machine-readable helper authority inventory | Done |
-| `QUA-1179` | Monte Carlo: reusable scheduled observation aggregation | Todo |
+| `QUA-1179` | Monte Carlo: reusable scheduled observation aggregation | In Progress |
 | `QUA-1180` | Analytical support: weighted lognormal-sum moments | Todo |
 | `QUA-1181` | Arithmetic Asian pricing: retire helper authority | Todo (blocked by `QUA-1179`, `QUA-1180`) |
 

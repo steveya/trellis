@@ -174,6 +174,42 @@ schedule-driven proof routes are still separate follow-on slices, but the
 compiler no longer points at an event-aware family without a checked runtime
 problem-spec boundary underneath it.
 
+Scheduled Weighted Observations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``trellis.models.observation_aggregation`` provides one product-neutral linear
+functional of scheduled scalar process state.  A
+``WeightedObservationContract`` declares ordered non-negative observation
+times and one explicit finite weight per observation.  Trellis does not
+normalize those weights: an arithmetic mean uses ``1 / n`` for each of ``n``
+observations, while sums, spreads, and signed linear summaries keep their own
+declared coefficients.
+
+``weighted_observation_sum(...)`` evaluates the same contract from an existing
+observation matrix. ``build_weighted_observation_reducer(...)`` accumulates it
+as a ``PathReducer``, and ``weighted_observation_payoff(...)`` combines that
+reduced state with a caller-supplied ``settlement_fn``.  This keeps the
+responsibility boundary explicit:
+
+- the library maps contractual times to simulation steps and owns the weighted
+  state reduction;
+- generated pricing code owns strike, option direction, notional, final payoff
+  shape, and discounting;
+- ``MonteCarloEngine`` can run the resulting ``StateAwarePayoff`` with
+  ``return_paths=False``.
+
+Time zero is an admissible observation.  Every observation, including the
+final one, must map exactly and distinctly onto the selected uniform simulation
+grid.  Off-grid times, aliased times, vector process state, non-finite values,
+and settlement callbacks that do not return one value per path fail closed.
+Negative weights are valid because the abstraction is a linear functional, not
+an implicit average or a positive-price contract.
+
+This surface does not resolve market data and does not price a named
+derivative.  Product route authority moves only in a separate migration after
+fresh generated source demonstrates the complete process, payoff, and
+discounting composition.
+
 Scheduled Observation Returns
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
