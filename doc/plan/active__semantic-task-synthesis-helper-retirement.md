@@ -42,19 +42,18 @@ Status mirror last synced: `2026-07-14`
 | `QUA-1179` | Monte Carlo: reusable scheduled observation aggregation | Done |
 | `QUA-1180` | Analytical support: weighted lognormal-sum moments | Done |
 | `QUA-1181` | Arithmetic Asian pricing: retire helper authority | In Progress |
-| `QUA-1182` | Semantic agent navigation: bounded knowledge and documentation packets | In Progress |
+| `QUA-1182` | Semantic agent navigation: bounded knowledge and documentation packets | Done |
 
 ## Current Sequence
 
-1. Complete QUA-1182 so hosted quant and model-validator calls receive bounded,
-   task-relevant content behind their navigation contracts rather than path-only
-   cards.
-2. Complete QUA-1181's live fresh-generation proof only after explicit external
+1. Select the next helper-authoritative green family using the merged audit and
+   prove QUA-1182's bounded navigation during fresh generation before retiring
+   that helper authority.
+2. Use the resulting trace to compare first-pass source selection, retrieved
+   lessons, documentation sections, retries, and residual validation findings.
+3. Complete QUA-1181's live fresh-generation proof only after explicit external
    model approval; its implementation, offline replay, and release gate are
    already complete.
-3. Select the next helper-authoritative green family using the merged audit and
-   prove the improved navigation during fresh generation before retiring its
-   helper authority.
 
 ## Completion Evidence
 
