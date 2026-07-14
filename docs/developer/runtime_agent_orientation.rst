@@ -36,7 +36,11 @@ present and every navigation order is consecutive. Tests also verify that all
 file-backed targets exist. Runtime targets use the ``runtime:`` prefix because
 their evidence is supplied by the compiled request rather than read from disk.
 File-backed resolution is confined to the repository root. Missing indexed
-documents and paths that escape that root fail closed.
+children and paths that escape that root fail closed. A slim installed wheel
+may intentionally omit the repository's top-level documentation tree; in that
+case the resolver keeps canonical packaged knowledge, records the unavailable
+documentation resource ids as omissions, and continues within the same prompt
+budget.
 
 Role Boundaries
 ---------------
@@ -60,7 +64,8 @@ features, model family, route identity, residual risks, and review trigger. It
 then:
 
 #. projects the already-ranked ``KnowledgeStore`` result into role-safe
-   decomposition, model-grammar, method-requirement, lesson, and read-only
+   decomposition, promoted/validated lesson, model-grammar,
+   method-requirement, and read-only
    cookbook evidence
 #. consults the generated skill index but rejects route-helper records and
    construction-shaped guidance for these roles
@@ -87,7 +92,8 @@ Lifecycle events and cycle reports persist ``role``, ``contract_id``, and
 ``version`` under ``orientation_contract``. They persist a separate
 ``orientation_resolution`` summary containing whether a packet was injected,
 selected resource and section ids, character and omission counts, and a content
-digest. Full excerpts are not copied into traces.
+digest. It also identifies documentation resources unavailable in a slim
+installed runtime. Full excerpts are not copied into traces.
 
 Cookbook Authority
 ------------------

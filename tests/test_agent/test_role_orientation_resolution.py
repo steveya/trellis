@@ -8,11 +8,15 @@ from pathlib import Path
 import pytest
 
 from trellis.agent.knowledge.schema import (
+    AppliesWhen,
     CookbookEntry,
+    Lesson,
+    LessonStatus,
     MethodRequirements,
     ModelGrammarEntry,
     Principle,
     ProductDecomposition,
+    Severity,
 )
 from trellis.agent.role_orientation import (
     OrientationResource,
@@ -209,6 +213,7 @@ def test_quant_projection_uses_canonical_evidence_without_cookbook_code(
             if resource.resource_id
             in {
                 "product_decompositions",
+                "retrieved_lessons",
                 "model_grammar",
                 "method_requirements",
                 "cookbook_catalog",
@@ -245,6 +250,23 @@ def test_quant_projection_uses_canonical_evidence_without_cookbook_code(
         ),
         "lessons": [],
     }
+    knowledge["lessons"] = [
+        Lesson(
+            id="test_lesson",
+            title="Preserve observation state",
+            severity=Severity.HIGH,
+            category="path_state",
+            applies_when=AppliesWhen(
+                method=("monte_carlo",),
+                features=("path_dependent",),
+            ),
+            symptom="Scheduled observations were lost.",
+            root_cause="The estimator used terminal state only.",
+            fix="Carry observation state through the sampled path.",
+            validation="A scheduled-observation regression passed.",
+            status=LessonStatus.PROMOTED,
+        )
+    ]
 
     monkeypatch.setattr(
         "trellis.agent.knowledge.skills.select_prompt_skill_artifacts",
@@ -280,6 +302,8 @@ def test_quant_projection_uses_canonical_evidence_without_cookbook_code(
     assert "Geometric Brownian motion" in packet.context
     assert "Simulation with explicit process" in packet.context
     assert "Generated skill principle:safe-navigation" in packet.context
+    assert "Lesson test_lesson: Preserve observation state" in packet.context
+    assert "Carry observation state" in packet.context
     assert "forbidden-helper" not in packet.context
     assert "forbidden.builder_api" not in packet.context
     assert "task_specific_helper" not in packet.context
@@ -321,3 +345,56 @@ def test_default_role_packets_are_role_separated_and_source_bounded():
     assert len(validator.context) <= get_role_orientation(
         "model_validator"
     ).max_context_chars
+
+
+def test_resolution_reports_docs_unavailable_in_slim_installed_runtime(
+    tmp_path,
+    monkeypatch,
+):
+    from trellis.agent import orientation_resolution
+
+    monkeypatch.setattr(orientation_resolution, "_REPO_ROOT", tmp_path)
+    packet = orientation_resolution.resolve_role_orientation_packet(
+        "quant",
+        orientation_resolution.RoleOrientationQuery(
+            instrument_type="novel_claim",
+            method="monte_carlo",
+        ),
+        knowledge={
+            "decomposition": ProductDecomposition(
+                instrument="novel_claim",
+                features=("path_dependent",),
+                method="monte_carlo",
+            ),
+        },
+    )
+
+    assert "quant_docs_index" in packet.unavailable_resource_ids
+    assert "model_grammar_design" in packet.unavailable_resource_ids
+    assert packet.omitted_count >= len(packet.unavailable_resource_ids)
+    assert packet.summary()["unavailable_resource_ids"] == [
+        "quant_docs_index",
+        "model_grammar_design",
+    ]
+
+
+def test_custom_orientation_card_still_enforces_render_budget(tmp_path):
+    from trellis.agent.orientation_resolution import (
+        RoleOrientationQuery,
+        resolve_role_orientation_packet,
+    )
+
+    _write_docs(tmp_path)
+    orientation = replace(
+        _docs_only_orientation("quant"),
+        max_render_chars=10,
+    )
+
+    with pytest.raises(ValueError, match="above its 10-char budget"):
+        resolve_role_orientation_packet(
+            "quant",
+            RoleOrientationQuery(method="monte_carlo"),
+            orientation=orientation,
+            repo_root=tmp_path,
+            knowledge={},
+        )

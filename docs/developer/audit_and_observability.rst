@@ -220,7 +220,8 @@ The cycle report records:
   stages
 - the bounded orientation-resolution summary when present: prompt-injected
   state, selected resource/section ids, character and omission counts, and
-  content digest, without duplicating source excerpts
+  content digest, plus unavailable documentation resource ids for slim
+  installed runtimes, without duplicating source excerpts
 
 Use ``load_platform_trace_cycle_report(...)`` when code needs the typed
 ``CycleReport`` object for one trace. Use ``load_platform_traces(...)`` when a

@@ -25,6 +25,26 @@ def test_load_role_orientations_exposes_required_runtime_roles():
     assert all(orientation.navigation for orientation in orientations.values())
 
 
+def test_product_decomposition_hash_ignores_trace_metadata():
+    from trellis.agent.knowledge.schema import ProductDecomposition
+
+    first = ProductDecomposition(
+        instrument="example",
+        features=("terminal_payoff",),
+        method="analytical",
+        orientation_resolution={"content_digest": "first"},
+    )
+    second = ProductDecomposition(
+        instrument="example",
+        features=("terminal_payoff",),
+        method="analytical",
+        orientation_resolution={"content_digest": "second"},
+    )
+
+    assert first == second
+    assert hash(first) == hash(second)
+
+
 def test_role_orientation_cards_are_bounded_and_role_separated():
     from trellis.agent.role_orientation import (
         get_role_orientation,

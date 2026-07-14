@@ -101,6 +101,7 @@ class ResolvedRoleOrientationPacket:
     rendered: str
     excerpts: tuple[ResolvedOrientationExcerpt, ...]
     omitted_count: int
+    unavailable_resource_ids: tuple[str, ...]
     content_digest: str
 
     def summary(self) -> dict[str, object]:
@@ -117,6 +118,7 @@ class ResolvedRoleOrientationPacket:
             "selected_sections": [excerpt.section_id for excerpt in self.excerpts],
             "context_chars": len(self.context),
             "omitted_count": self.omitted_count,
+            "unavailable_resource_ids": list(self.unavailable_resource_ids),
             "content_digest": self.content_digest,
         }
 
@@ -155,13 +157,15 @@ def resolve_role_orientation_packet(
         resolved_knowledge,
         root=root,
     )
-    candidates.extend(
-        _documentation_excerpts(
-            resolved_orientation,
-            query,
-            root=root,
-        )
+    documentation, unavailable_resource_ids = _documentation_excerpts(
+        resolved_orientation,
+        query,
+        root=root,
+        allow_missing_resources=(
+            repo_root is None and not (root / "docs").is_dir()
+        ),
     )
+    candidates.extend(documentation)
     supplemental = _supplemental_excerpt(
         resolved_orientation,
         query,
@@ -182,6 +186,7 @@ def resolve_role_orientation_packet(
         candidates,
         max_chars=resolved_orientation.max_context_chars,
         max_resource_chars=resolved_orientation.max_resource_chars,
+        base_omitted_count=len(unavailable_resource_ids),
     )
     card = (
         render_role_orientation_card(role)
@@ -196,6 +201,7 @@ def resolve_role_orientation_packet(
         rendered=rendered,
         excerpts=selected,
         omitted_count=omitted_count,
+        unavailable_resource_ids=unavailable_resource_ids,
         content_digest=sha256(context.encode("utf-8")).hexdigest(),
     )
 
@@ -239,6 +245,12 @@ def _canonical_excerpts(
             )
             text = _append_selected_principles(text, knowledge.get("principles", ()))
             section = "Product decomposition and principles"
+        elif resource.resource_id == "retrieved_lessons":
+            text = _render_lessons(
+                knowledge.get("lessons", ()),
+                knowledge.get("borrowed_lessons", ()),
+            )
+            section = "Selected validated lessons"
         elif resource.resource_id == "admitted_routes":
             text = _render_route_identity(query)
             section = "Admitted route identity"
@@ -306,6 +318,31 @@ def _append_selected_principles(text: str, principles: Any) -> str:
     if not rows:
         return text
     return "\n".join(part for part in (text, *rows) if part)
+
+
+def _render_lessons(primary: Any, borrowed: Any) -> str:
+    """Render bounded retrieved lessons without builder or import authority."""
+    rows: list[str] = []
+    seen: set[str] = set()
+    for lesson in (*tuple(primary or ()), *tuple(borrowed or ())):
+        lesson_id = str(getattr(lesson, "id", "") or "").strip()
+        if not lesson_id or lesson_id in seen:
+            continue
+        seen.add(lesson_id)
+        title = str(getattr(lesson, "title", "") or "").strip()
+        root_cause = str(getattr(lesson, "root_cause", "") or "").strip()
+        fix = str(getattr(lesson, "fix", "") or "").strip()
+        validation = str(getattr(lesson, "validation", "") or "").strip()
+        rows.append(f"Lesson {lesson_id}: {title}")
+        if root_cause:
+            rows.append(f"Root cause: {root_cause}")
+        if fix:
+            rows.append(f"Validated correction: {fix}")
+        if validation:
+            rows.append(f"Validation evidence: {validation}")
+        if len(seen) >= 3:
+            break
+    return "\n".join(rows)
 
 
 def _append_generated_skill_evidence(
@@ -464,11 +501,22 @@ def _documentation_excerpts(
     query: RoleOrientationQuery,
     *,
     root: Path,
-) -> list[ResolvedOrientationExcerpt]:
+    allow_missing_resources: bool,
+) -> tuple[list[ResolvedOrientationExcerpt], tuple[str, ...]]:
     excerpts: list[ResolvedOrientationExcerpt] = []
+    unavailable_resource_ids: list[str] = []
     for resource in orientation.navigation:
         if resource.kind not in _DOCUMENT_KINDS:
             continue
+        resource_path = _confined_path(root, resource.path)
+        if not resource_path.exists():
+            if allow_missing_resources:
+                unavailable_resource_ids.append(resource.resource_id)
+                continue
+            raise ValueError(
+                f"Orientation resource {resource.resource_id!r} references "
+                f"missing {resource.path}"
+            )
         sections = _sections_for_resource(resource, root=root)
         ranked: list[tuple[int, _DocumentSection]] = []
         for section in sections:
@@ -495,7 +543,7 @@ def _documentation_excerpts(
                 score=score,
             )
         )
-    return excerpts
+    return excerpts, tuple(unavailable_resource_ids)
 
 
 def _sections_for_resource(
@@ -668,9 +716,17 @@ def _render_bounded_context(
     *,
     max_chars: int,
     max_resource_chars: int,
+    base_omitted_count: int = 0,
 ) -> tuple[str, tuple[ResolvedOrientationExcerpt, ...], int]:
     if not candidates or max_chars <= 0:
-        return "", (), len(candidates)
+        omitted = len(candidates) + base_omitted_count
+        if omitted and max_chars > 0:
+            marker, _ = _truncate(
+                f"[orientation context truncated; {omitted} excerpt(s) omitted]",
+                max_chars,
+            )
+            return marker, (), omitted
+        return "", (), omitted
     heading = "## Resolved Role Context\n"
     selected: list[ResolvedOrientationExcerpt] = []
     blocks: list[str] = []
@@ -682,11 +738,13 @@ def _render_bounded_context(
         if len(current) <= max_chars:
             selected.append(bounded)
             blocks.append(block)
-    omitted = len(candidates) - len(selected)
+    omitted = len(candidates) - len(selected) + base_omitted_count
     context = heading + "\n\n".join(blocks)
     if omitted:
         while selected:
-            omitted = len(candidates) - len(selected)
+            omitted = (
+                len(candidates) - len(selected) + base_omitted_count
+            )
             marker = (
                 f"[orientation context truncated; {omitted} excerpt(s) omitted]"
             )
@@ -705,7 +763,7 @@ def _render_bounded_context(
                 continue
             selected.pop()
         if not selected:
-            omitted = len(candidates)
+            omitted = len(candidates) + base_omitted_count
             marker = (
                 f"[orientation context truncated; {omitted} excerpt(s) omitted]"
             )
@@ -869,4 +927,10 @@ def _render_supplied_orientation_card(orientation: RoleOrientation) -> str:
             for item in orientation.navigation
         ),
     ]
-    return "\n".join(lines)
+    card = "\n".join(lines)
+    if len(card) > orientation.max_render_chars:
+        raise ValueError(
+            f"Role orientation {orientation.identity} renders to {len(card)} chars, "
+            f"above its {orientation.max_render_chars}-char budget"
+        )
+    return card

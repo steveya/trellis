@@ -17,7 +17,7 @@ order starts with runtime evidence:
 #. the compiled validation contract
 #. the deterministic evidence packet
 #. the quant challenger packet
-#. admitted route, model-grammar, and method-requirement context
+#. retrieved lessons plus admitted route, model-grammar, and method-requirement context
 #. cookbook patterns as read-only supporting evidence
 #. ``LIMITATIONS.md`` and the validation, calibration, quant, and audit docs
 
@@ -28,9 +28,10 @@ question about model suitability, calibration, numerical quality, or a support
 boundary.
 
 The version-2 resolver supplies the actual bounded evidence behind those
-targets. It includes the already-selected review memory, relevant model grammar
-and method requirements, read-only cookbook assumptions, current limitation
-sections, and matching calibration/quant documentation. It strips code blocks,
+targets. It includes the already-selected review memory, validated/promoted
+lessons, relevant model grammar and method requirements, read-only cookbook
+assumptions, current limitation sections, and matching calibration/quant
+documentation. It strips code blocks,
 imports, route-helper instructions, and full cookbook templates because the
 validator does not own construction.
 

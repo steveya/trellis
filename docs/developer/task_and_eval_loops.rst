@@ -45,11 +45,17 @@ exclude runtime promotion authority.
 
 Version 2 resolves those indexes into bounded task-relevant content rather than
 showing hosted roles paths they cannot open. Resolution reuses ranked knowledge
-and generated-skill records, follows actual quant-document sections, strips
+including validated/promoted lessons and generated-skill records, follows
+actual quant-document sections, strips
 builder-only code/helper authority, and records source identities plus a digest
 without persisting excerpts. Deterministic quant selection and skipped model
 validation record ``prompt_injected=false`` rather than claiming that an LLM
 consumed the packet.
+
+Slim installed wheels may omit the repository's top-level documentation tree.
+Those calls retain packaged canonical knowledge and record unavailable document
+resources as bounded omissions; invalid indexed children and escaping paths
+still fail closed.
 
 Stage-aware builder retrieval also preserves the compiled generation route.
 Every live refresh scopes shared knowledge by pricing method, exact route id,

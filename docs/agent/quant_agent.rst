@@ -16,7 +16,7 @@ its LLM boundary. The card is rendered from
 smallest useful navigation surface in this order:
 
 #. the runtime semantic contract, ``ProductIR``, and quant challenger packet
-#. canonical product decompositions and admitted route families
+#. canonical product decompositions, retrieved lessons, and admitted route families
 #. the model grammar and method requirements
 #. the cookbook catalog as read-only pattern evidence
 #. the quant documentation index and model-grammar design reference
