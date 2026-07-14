@@ -44,20 +44,25 @@ Status mirror last synced: `2026-07-14`
 | `QUA-1181` | Arithmetic Asian pricing: retire helper authority | Done |
 | `QUA-1182` | Semantic agent navigation: bounded knowledge and documentation packets | Done |
 | `QUA-1183` | Digital option pricing: retire analytical helper authority | Done |
-| `QUA-1184` | Semantic agent navigation: render task-relevant canonical composition cards | Backlog |
+| `QUA-1184` | Semantic agent navigation: render task-relevant canonical composition cards | Done |
 | `QUA-1185` | Task runtime: offline cached replays suppress post-build LLM stages | Backlog |
+| `QUA-1186` | Analytical support: Gaussian probability and scalar-root navigation | Backlog |
+| `QUA-1187` | Monte Carlo path state: extrema and squared-log-return reducers | Backlog |
 
 ## Current Sequence
 
-1. Complete QUA-1184 so every canonical composition card is either reachable
-   through bounded semantic selection or explicitly classified as intentionally
-   non-rendered.
-2. Re-run the helper-authority audit on merged `main` and select the next
-   green family whose reusable numerical and market primitives already exist.
-   Open a focused retirement ticket only after that capability audit.
+1. Complete QUA-1186 so analytical agents can compose univariate/bivariate
+   Gaussian terms and bounded critical-state solves from public, navigable
+   primitives instead of chooser, compound, or lookback helpers.
+2. Complete QUA-1187 so Monte Carlo agents can compose discrete running
+   extrema and squared-log-return state without lookback or variance-swap
+   helpers. Keep continuous-monitoring bridge semantics explicit.
 3. Complete QUA-1185 before treating cached offline replay as zero-model
    evidence without explicit reflection/consolidation skip flags.
-4. Run live fresh-generation evidence only with current external-model approval;
+4. After each substrate lands, open focused helper-retirement tickets only for
+   product families whose remaining market, numerical, payoff, and validation
+   components are confirmed reusable.
+5. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 
