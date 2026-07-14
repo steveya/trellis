@@ -103,6 +103,9 @@ def test_api_map_formatter_includes_navigation_guidance():
     assert "equity_tree" in text
     assert "rate_lattice" in text
     assert "trellis.models.monte_carlo" in text
+    assert "digital_option_composition" in text
+    assert "resolve_single_state_diffusion_inputs" in text
+    assert "black76_cash_or_nothing_call" in text
     assert "inspect_api_map" not in text
 
 

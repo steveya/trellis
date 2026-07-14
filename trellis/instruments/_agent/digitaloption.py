@@ -46,27 +46,11 @@ from trellis.models.resolution.single_state_diffusion import (
 
 @dataclass(frozen=True)
 class DigitalOptionSpec:
-    """Specification for Build a pricer for: FinancePy parity: equity digital cash-or-nothing
+    """European equity digital contract.
 
-digital_option
-
-Spot: 100.0.
-Strike: 100.0.
-Option type: call.
-Payout type: cash_or_nothing.
-Cash payoff: 10.0.
-Expiry date: 2025-11-15.
-
-Preferred method family: analytical
-FinancePy binding: financepy.equity.digital.black_scholes
-Benchmark product: digital_option
-
-Construct methods: analytical
-Comparison targets: analytical (analytical)
-Cross-validation harness:
-  external targets: financepy
-
-Implementation target: analytical."""
+    Supports cash-or-nothing and asset-or-nothing call/put settlement with an
+    explicit continuous dividend yield.
+    """
     notional: float
     spot: float
     strike: float
@@ -135,9 +119,10 @@ Implementation target: analytical."""
                 )
             return float(resolved.notional * settlement_amount)
 
-        if market_state.discount is None:
-            raise ValueError("single-state diffusion resolver did not bind discounting")
-        discount_factor = float(market_state.discount.discount(resolved.maturity))
+        discount_curve = market_state.discount
+        if discount_curve is None:
+            raise ValueError("digital option pricing requires market_state.discount")
+        discount_factor = float(discount_curve.discount(resolved.maturity))
         forward = forward_from_dividend_yield(
             spot=resolved.spot,
             domestic_rate=resolved.rate,

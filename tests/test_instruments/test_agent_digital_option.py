@@ -125,3 +125,4 @@ def test_checked_digital_adapter_source_has_no_product_pricing_helper():
     assert "discounted_value" in source
     assert "black76_cash_or_nothing_call" in source
     assert "black76_asset_or_nothing_put" in source
+    assert "cash-or-nothing and asset-or-nothing" in DigitalOptionSpec.__doc__

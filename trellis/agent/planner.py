@@ -231,6 +231,7 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("option_type", "str", "Option type: 'call' or 'put'", "'call'"),
             FieldDef("payout_type", "str", "Digital payout type", "'cash_or_nothing'"),
             FieldDef("cash_payoff", "float", "Cash amount paid when the option finishes in the money", "1.0"),
+            FieldDef("dividend_yield", "float", "Continuous underlier dividend yield", "0.0"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_365"),
         ],
     ),

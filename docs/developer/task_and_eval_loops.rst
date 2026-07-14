@@ -813,6 +813,11 @@ helper-authority audit must therefore find no analytical digital helper in the
 route, binding, or checked adapter, while route and adapter tests preserve
 cash/asset and call/put basis selection.
 
+The deterministic digital spec schema includes ``dividend_yield``. Benchmark
+``dividend_rate`` aliases therefore survive spec-override filtering when an
+adapter is regenerated, rather than silently reverting the analytical forward
+to zero carry.
+
 Package-level primitive APIs remain discoverable rather than merely importable.
 The import registry's static package-export inventory records the same digital
 support symbols and is merged with live module introspection. Route validation
