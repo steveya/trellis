@@ -102,6 +102,72 @@ def test_resolve_single_state_diffusion_inputs_reads_market_state_contract():
     assert resolved.option_type == "put"
 
 
+def test_resolve_scalar_diffusion_market_inputs_is_not_option_shaped():
+    from trellis.models.resolution.single_state_diffusion import (
+        resolve_scalar_diffusion_market_inputs,
+    )
+
+    class TrackingVolSurface:
+        def __init__(self):
+            self.calls = []
+
+        def black_vol(self, maturity, coordinate):
+            self.calls.append((maturity, coordinate))
+            return 0.27
+
+    surface = TrackingVolSurface()
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.04, max_tenor=5.0),
+        vol_surface=surface,
+        model_parameters={"underlier_carry_rates": {"SPX": 0.015}},
+    )
+    spec = SimpleNamespace(
+        spot=105.0,
+        expiry_date=date(2025, 11, 15),
+        underlier="SPX",
+    )
+
+    resolved = resolve_scalar_diffusion_market_inputs(
+        market_state,
+        spec,
+        volatility_coordinate=99.0,
+    )
+
+    assert resolved.spot == pytest.approx(105.0)
+    assert resolved.maturity == pytest.approx(1.0)
+    assert resolved.rate == pytest.approx(0.04)
+    assert resolved.dividend_yield == pytest.approx(0.015)
+    assert resolved.sigma == pytest.approx(0.27)
+    assert resolved.discount_factor == pytest.approx(np.exp(-0.04))
+    assert resolved.volatility_coordinate == pytest.approx(99.0)
+    assert surface.calls == [(pytest.approx(1.0), pytest.approx(99.0))]
+
+
+def test_resolve_scalar_diffusion_market_inputs_rejects_ambiguous_carry_binding():
+    from trellis.models.resolution.single_state_diffusion import (
+        resolve_scalar_diffusion_market_inputs,
+    )
+
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.04, max_tenor=5.0),
+        vol_surface=FlatVol(0.20),
+        model_parameters={
+            "underlier_carry_rates": {"SPX": 0.015, "NDX": 0.01}
+        },
+    )
+    spec = SimpleNamespace(
+        spot=105.0,
+        expiry_date=date(2025, 11, 15),
+    )
+
+    with pytest.raises(ValueError, match="multiple underlier carry rates"):
+        resolve_scalar_diffusion_market_inputs(market_state, spec)
+
+
 def test_short_rate_comparison_regime_builds_typed_flat_market_objects():
     from trellis.models.resolution.short_rate_claims import ShortRateComparisonRegime
 

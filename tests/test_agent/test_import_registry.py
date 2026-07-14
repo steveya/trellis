@@ -115,6 +115,17 @@ def test_path_statistic_primitives_are_visible_to_import_registry():
     assert "PathReducer" in static_registry[
         "trellis.models.monte_carlo.path_state"
     ]
+    resolution_module = "trellis.models.resolution.single_state_diffusion"
+    assert "resolve_scalar_diffusion_market_inputs" in set(
+        list_module_exports(resolution_module)
+    )
+    assert is_valid_import(
+        resolution_module,
+        "resolve_scalar_diffusion_market_inputs",
+    )
+    assert "resolve_scalar_diffusion_market_inputs" in static_registry[
+        resolution_module
+    ]
 
 
 def test_weighted_lognormal_moment_primitives_are_visible_to_import_registry():

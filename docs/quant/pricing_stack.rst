@@ -395,10 +395,25 @@ claim can therefore be assembled without a product pricer:
        return_paths=False,
    )
 
-The same pattern lets caller code add historical realized variance, compare a
-contractual variance strike, apply notional, and discount after reading a
-squared-log-return reducer.  Those terms are deliberately absent from the
+The admitted variance-swap Monte Carlo route uses this pattern directly.  It
+first calls
+``resolve_scalar_diffusion_market_inputs(..., volatility_coordinate=spec.spot)``
+to bind spot, maturity, deterministic rate and carry, one scalar Black
+volatility, and the matching discount factor without importing option strike
+or call/put semantics.  For the supported ``annualization_convention`` value
+``per_year``, generated code declares observations at every engine step and
+sets :math:`a=1/T`.  It then adds any historical realized variance, subtracts
+the contractual variance strike, applies notional, and discounts the result.
+Those settlement terms are deliberately absent from both the resolver and the
 path-state module.
+
+This is a constant-parameter GBM comparison lane, not a general variance-model
+claim.  Smile integration, local or stochastic volatility, irregular or
+calendar-weighted observations, alternative annualization conventions, and
+continuous-sampling corrections require separate semantic and numerical
+contracts.  The retained product-level variance-swap functions are
+compatibility and independent-comparison references, not generated-route
+authority.
 
 Extrema are exact only over the listed discrete observations.  The existing
 ``brownian_bridge(...)`` utility constructs Brownian paths and bridge-ordered

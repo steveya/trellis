@@ -16,6 +16,14 @@ Volatility Surface
 .. autoclass:: trellis.models.GridVolSurface
    :members:
 
+Scalar Diffusion Market Resolution
+----------------------------------
+
+.. autoclass:: trellis.models.resolution.ResolvedScalarDiffusionMarketInputs
+   :members:
+
+.. autofunction:: trellis.models.resolution.resolve_scalar_diffusion_market_inputs
+
 Trees
 -----
 

@@ -4563,6 +4563,130 @@ def _arithmetic_asian_evaluate_body(
     ).rstrip()
 
 
+def _variance_swap_monte_carlo_evaluate_body(
+    refs: set[str],
+    *,
+    normalized_target: str,
+    generation_method: str,
+) -> str | None:
+    """Compose variance-swap Monte Carlo from product-neutral primitives."""
+    required_refs = {
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.models.monte_carlo.path_statistics.SquaredLogReturnContract",
+        "trellis.models.monte_carlo.path_statistics.annualized_squared_log_return_sum",
+        "trellis.models.monte_carlo.path_statistics.build_squared_log_return_reducer",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.MonteCarloPathRequirement",
+        "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+        "trellis.core.differentiable.get_numpy",
+    }
+    use_monte_carlo = normalized_target == "mc_variance_swap" or (
+        normalized_target in {"", "monte_carlo"}
+        and generation_method == "monte_carlo"
+    )
+    if not use_monte_carlo or not required_refs.issubset(refs):
+        return None
+
+    return textwrap.dedent(
+        """\
+        convention = str(
+            getattr(spec, "annualization_convention", "per_year")
+            or "per_year"
+        ).strip().lower()
+        if convention != "per_year":
+            raise ValueError(
+                "variance swap composition supports annualization_convention='per_year'"
+            )
+
+        resolved = resolve_scalar_diffusion_market_inputs(
+            market_state,
+            spec,
+            volatility_coordinate=float(spec.spot),
+        )
+        notional = float(spec.notional)
+        strike_variance = float(spec.strike_variance)
+        realized_variance = float(
+            getattr(spec, "realized_variance", 0.0) or 0.0
+        )
+        if resolved.spot <= 0.0:
+            raise ValueError("variance swap Monte Carlo requires positive spot")
+        if resolved.maturity <= 0.0:
+            return float(
+                notional * (realized_variance - strike_variance)
+            )
+
+        n_paths_value = getattr(spec, "n_paths", 60000)
+        n_steps_value = getattr(spec, "n_steps", 252)
+        seed_value = getattr(spec, "seed", 42)
+        n_paths = 60000 if n_paths_value is None else int(n_paths_value)
+        n_steps = 252 if n_steps_value is None else int(n_steps_value)
+        seed = 42 if seed_value is None else int(seed_value)
+        if n_paths < 2:
+            raise ValueError("variance swap Monte Carlo requires at least two paths")
+        if n_steps <= 0:
+            raise ValueError("variance swap Monte Carlo requires positive n_steps")
+
+        contract = SquaredLogReturnContract(
+            n_steps=n_steps,
+            observation_steps=tuple(range(n_steps + 1)),
+            annualization_factor=1.0 / resolved.maturity,
+        )
+        reducer_name = "annualized_squared_log_returns"
+        reducer = build_squared_log_return_reducer(
+            contract,
+            name=reducer_name,
+        )
+        np = get_numpy()
+        engine_discount_rate = (
+            -float(np.log(resolved.discount_factor))
+            / resolved.maturity
+        )
+
+        def settle(future_variance):
+            return (
+                notional
+                * (
+                    realized_variance
+                    + future_variance
+                    - strike_variance
+                )
+            )
+
+        payoff = StateAwarePayoff(
+            path_requirement=MonteCarloPathRequirement(
+                reducers=(reducer,)
+            ),
+            evaluate_paths_fn=lambda paths: settle(
+                annualized_squared_log_return_sum(paths, contract)
+            ),
+            evaluate_state_fn=lambda state: settle(
+                state.reduced_value(reducer_name)
+            ),
+            name="variance_swap_composed_payoff",
+        )
+        engine = MonteCarloEngine(
+            GBM(
+                mu=resolved.rate - resolved.dividend_yield,
+                sigma=resolved.sigma,
+            ),
+            n_paths=n_paths,
+            n_steps=n_steps,
+            seed=seed,
+            method="exact",
+        )
+        result = engine.price(
+            resolved.spot,
+            resolved.maturity,
+            payoff,
+            discount_rate=engine_discount_rate,
+            return_paths=False,
+        )
+        return float(np.asarray(result["price"]))
+        """
+    ).rstrip()
+
+
 def _deterministic_exact_binding_evaluate_body(
     generation_plan,
     *,
@@ -4645,6 +4769,14 @@ def _deterministic_exact_binding_evaluate_body(
         )
         if asian_body is not None:
             return asian_body
+    if instrument_type == "variance_swap":
+        variance_swap_body = _variance_swap_monte_carlo_evaluate_body(
+            refs,
+            normalized_target=normalized_target,
+            generation_method=generation_method,
+        )
+        if variance_swap_body is not None:
+            return variance_swap_body
     if (
         primitive_route == "equity_quanto"
         and {
@@ -5089,13 +5221,6 @@ def _deterministic_exact_binding_evaluate_body(
             "market_state, spec, "
             'n_paths=getattr(spec, "n_paths", 80000), '
             'n_steps=getattr(spec, "n_steps", 96), '
-            'seed=getattr(spec, "seed", 42))'
-        ),
-        "mc_variance_swap": (
-            "return price_equity_variance_swap_monte_carlo("
-            "market_state, spec, "
-            'n_paths=getattr(spec, "n_paths", 60000), '
-            'n_steps=getattr(spec, "n_steps", 252), '
             'seed=getattr(spec, "seed", 42))'
         ),
     }
@@ -5647,13 +5772,6 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical": (
             "return price_equity_variance_swap_analytical(market_state, spec)"
         ),
-        "trellis.models.variance_swap.price_equity_variance_swap_monte_carlo": (
-            "return price_equity_variance_swap_monte_carlo("
-            "market_state, spec, "
-            'n_paths=getattr(spec, "n_paths", 60000), '
-            'n_steps=getattr(spec, "n_steps", 252), '
-            'seed=getattr(spec, "seed", 42))'
-        ),
         "trellis.models.analytical.barrier.barrier_option_price": (
             "if market_state.discount is None:\n"
             '    raise ValueError("market_state.discount is required for analytical barrier pricing")\n'
@@ -6101,10 +6219,6 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_equity_fixed_lookback_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
-        )
-    if "price_equity_variance_swap_monte_carlo(" in body:
-        imports.append(
-            "from trellis.models.variance_swap import price_equity_variance_swap_monte_carlo"
         )
     if "price_fx_barrier_option_analytical(" in body:
         imports.append(

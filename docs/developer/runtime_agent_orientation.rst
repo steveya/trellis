@@ -88,11 +88,14 @@ The ``path_statistic_composition`` card applies the same rule to path-dependent
 Monte Carlo construction. Semantic aliases such as ``running_extremum``,
 ``lookback_option``, ``squared_log_return``, and ``variance_swap`` lead the
 builder to exact observation-step contracts, full-path parity functions, and
-bounded reducers. The general Monte Carlo card no longer advertises the
-lookback or variance-swap product pricers as construction imports. Quant still
-selects and challenges the model from product semantics, and model-validator
-still reviews monitoring, annualization, calibration, and residual numerical
-risk; neither role receives implementation imports.
+bounded reducers. For admitted variance-swap Monte Carlo, the card also points
+to the product-neutral scalar-diffusion market resolver and states that
+generated code owns annualization and settlement. The general Monte Carlo card
+no longer advertises the lookback or variance-swap product pricers as
+construction imports. Quant still selects and challenges the model from
+product semantics, and model-validator still reviews monitoring,
+annualization, calibration, and residual numerical risk; neither role receives
+implementation imports.
 
 This separation is important for small-context agents. The semantic query
 chooses one complete composition card, the card names the minimal public

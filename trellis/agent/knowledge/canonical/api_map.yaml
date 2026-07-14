@@ -195,11 +195,13 @@ path_statistic_composition:
     - "from trellis.models.monte_carlo.path_statistics import RunningExtremumContract, SquaredLogReturnContract, annualized_squared_log_return_sum, build_running_extremum_reducer, build_squared_log_return_reducer, discrete_path_extremum"
     - "from trellis.models.monte_carlo.path_state import MonteCarloPathRequirement, StateAwarePayoff"
     - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+    - "from trellis.models.resolution.single_state_diffusion import resolve_scalar_diffusion_market_inputs"
   notes:
     - "Declare the exact engine n_steps and every discrete observation step in RunningExtremumContract or SquaredLogReturnContract. Step zero participates only when listed; for squared log returns, the first listed step is the baseline and contributes no return."
     - "Use discrete_path_extremum(...) or annualized_squared_log_return_sum(...) for full-path evidence and the matching build_*_reducer(...) function for bounded storage; both surfaces implement the same observation contract."
     - "Compose the returned reducer into MonteCarloPathRequirement and StateAwarePayoff. Apply caller-owned settlement to the full-path statistic or state.reduced_value(name); strike, option direction, notional, discounting, historical realized state, and other derivative terms do not belong in the reducer."
     - "annualization_factor multiplies the complete squared-log-return sum and is never inferred from maturity, calendar, or observation count. The caller must choose and document the contractual convention."
+    - "For admitted variance-swap Monte Carlo, require annualization_convention='per_year', bind the scalar market once with resolve_scalar_diffusion_market_inputs(...), and use annualization_factor=1/maturity. Generated adapter code owns historical realized variance, strike, notional, discounting, and outputs; do not delegate settlement to a product-specific compatibility helper."
     - "Running extrema are exact only over the declared discrete observations. Continuous-monitoring extrema require a separate transition-level Brownian-bridge contract and must not be claimed from these reducers."
     - "These primitives require finite positive scalar path levels. Full-path smooth operations preserve the differentiable backend away from extrema ties, while streaming reduced-state AD remains outside the current engine support contract."
 
