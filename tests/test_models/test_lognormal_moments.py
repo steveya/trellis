@@ -252,3 +252,55 @@ def test_lognormal_match_result_validates_fields_and_maturity():
     )
     with pytest.raises(ValueError, match="maturity must be finite and positive"):
         matched.effective_volatility(maturity=0.0)
+
+
+def test_single_factor_lognormal_match_preserves_autograd_volatility_sensitivity():
+    from trellis.core.differentiable import gradient
+    from trellis.models.analytical.support.lognormal_moments import (
+        match_lognormal_moments,
+        single_factor_lognormal_sum_contract,
+        weighted_lognormal_sum_moments,
+    )
+    from trellis.models.black import black76_call
+
+    def price(volatility):
+        moments = weighted_lognormal_sum_moments(
+            single_factor_lognormal_sum_contract(
+                spot=100.0,
+                observation_times=(0.25, 0.5, 0.75, 1.0),
+                weights=(0.25,) * 4,
+                carry=0.03,
+                volatility=volatility,
+            )
+        )
+        matched = match_lognormal_moments(moments)
+        return black76_call(
+            matched.mean,
+            100.0,
+            matched.effective_volatility(maturity=1.0),
+            1.0,
+        )
+
+    sensitivity = gradient(price)(0.20)
+    bump = 1e-5
+    finite_difference = (price(0.20 + bump) - price(0.20 - bump)) / (2.0 * bump)
+
+    assert raw_np.isfinite(sensitivity)
+    assert sensitivity == pytest.approx(finite_difference, rel=1e-5)
+
+
+def test_lognormal_contract_translates_covariance_eigensolver_failure(monkeypatch):
+    from trellis.models.analytical.support import lognormal_moments
+
+    def _raise(_matrix):
+        raise raw_np.linalg.LinAlgError("did not converge")
+
+    monkeypatch.setattr(lognormal_moments.raw_np.linalg, "eigvalsh", _raise)
+    with pytest.raises(ValueError, match="positive semidefinite"):
+        lognormal_moments.WeightedLognormalSumContract(
+            observation_times=(0.5, 1.0),
+            weights=(0.5, 0.5),
+            initial_levels=(100.0, 100.0),
+            carries=(0.0, 0.0),
+            log_covariance=((0.01, 0.01), (0.01, 0.02)),
+        )

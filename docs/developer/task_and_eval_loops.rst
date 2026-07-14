@@ -627,7 +627,9 @@ stabilizer.  It must be finite, symmetric, and positive semidefinite.  For one
 GBM observed repeatedly, its entries are ``sigma**2 * min(t_i, t_j)``; using an
 identity matrix would incorrectly erase shared Brownian history.  The fitted
 distribution is approximate even though the first and second moments are
-exact under the declared model.
+exact under the declared model.  The single-factor constructor and moment
+pipeline preserve differentiable spot, carry, volatility, and weight values;
+validation inspects their primal scalar values without coercing traced inputs.
 
 The compatibility arithmetic-average analytical wrapper delegates to these
 primitives, but remains a reference caller.  Runtime route/binding authority

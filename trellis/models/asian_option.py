@@ -272,12 +272,17 @@ def price_arithmetic_asian_option_analytical_result(
     )
     matched = match_lognormal_moments(moments)
     effective_volatility = matched.effective_volatility(maturity=maturity)
-    option_kernel = black76_put if option_type == "put" else black76_call
-    price = (
-        notional
-        * math.exp(-rate * maturity)
-        * float(option_kernel(matched.mean, strike, effective_volatility, maturity))
-    )
+    if strike <= 0.0:
+        undiscounted = 0.0 if option_type == "put" else matched.mean - strike
+    else:
+        option_kernel = black76_put if option_type == "put" else black76_call
+        undiscounted = option_kernel(
+            matched.mean,
+            strike,
+            effective_volatility,
+            maturity,
+        )
+    price = notional * math.exp(-rate * maturity) * float(undiscounted)
     return ArithmeticAsianOptionAnalyticalResult(
         price=price,
         matched_mean=matched.mean,
