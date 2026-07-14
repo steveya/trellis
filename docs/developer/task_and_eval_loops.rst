@@ -777,6 +777,38 @@ comparators. That keeps canaries such as ``T65`` on the stable
 ``price_swaption_tree(...)`` surface instead of regenerating inline lattice
 exercise code for the comparison target.
 
+Helper-authority inventory
+--------------------------
+
+Helper retirement uses a deterministic repository audit rather than text
+searches or hand-maintained totals:
+
+.. code-block:: console
+
+   python scripts/audit_helper_authority.py
+   python scripts/audit_helper_authority.py --json
+
+The report keeps four evidence surfaces separate:
+
+- required ``route_helper`` declarations on promoted canonical routes;
+- required ``route_helper`` declarations on exact backend bindings;
+- route-only and binding-only declarations, compared as a multiset without
+  normalizing away condition differences;
+- imported ``price_*`` calls executed by checked-in ``_agent`` adapters, with
+  calls to currently authoritative symbols marked separately.
+
+The adapter scan uses Python AST import resolution, including local aliases and
+module aliases. A locally defined function or an unused import is not counted
+as delegation. Re-exported symbols still match helper authority by canonical
+symbol identity, so changing an import path cannot hide continued delegation.
+
+Use ``--fail-on-drift`` when route and backend-binding parity is an explicit
+gate. The ordinary command remains read-only and returns the complete report
+even when drift exists. Counts are repository-state observations, not desired
+constants: migrations should reduce real product/method authority while
+preserving legitimate reusable kernels and making any route/binding movement
+explicit.
+
 Semantic composition gaps versus helper gaps
 ---------------------------------------------
 

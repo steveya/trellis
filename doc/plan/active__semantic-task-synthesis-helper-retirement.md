@@ -38,12 +38,14 @@ Status mirror last synced: `2026-07-14`
 | `QUA-1175` | Agent orientation: runtime quant and model-validator navigation contracts | Done |
 | `QUA-1176` | Observation returns: reusable bounded accumulation primitives | Done |
 | `QUA-1177` | Cliquet pricing: primitive-composed analytical and Monte Carlo lanes | Done |
+| `QUA-1178` | Semantic route audit: machine-readable helper authority inventory | In Progress |
 
 ## Current Sequence
 
-1. Re-run the helper-authority audit on merged main.
-2. Choose the next coherent product family by remaining authority count and
-   semantic risk.
+1. Land the repeatable QUA-1178 helper-authority audit and record the merged
+   baseline.
+2. Use its route, binding, and adapter evidence to choose the next coherent
+   product family by remaining authority count and semantic risk.
 
 ## Completion Evidence
 
