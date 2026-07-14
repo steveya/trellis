@@ -49,6 +49,25 @@ class GBM(StochasticProcess):
         """Return ``Var[S_{t+dt} | S_t = x]`` for the exact GBM transition."""
         return x ** 2 * np.exp(2 * self.mu * dt) * (np.exp(self.sigma ** 2 * dt) - 1)
 
+    @property
+    def conditional_bridge_coordinate(self) -> str:
+        """Return the Gaussian coordinate used by the exact conditional bridge."""
+        return "log"
+
+    def conditional_bridge_variance(
+        self,
+        start_time: float,
+        end_time: float,
+    ) -> float:
+        """Return integrated log variance between two transition times."""
+        start = float(start_time)
+        end = float(end_time)
+        if not isfinite(start) or not isfinite(end) or start < 0.0 or end <= start:
+            raise ValueError(
+                "GBM bridge times must be finite, non-negative, and strictly increasing"
+            )
+        return float(self.sigma ** 2 * (end - start))
+
 
 class PiecewiseConstantGBM(StochasticProcess):
     """GBM with deterministic drift and volatility on ordered time intervals.

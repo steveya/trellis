@@ -13,6 +13,7 @@ from typing import Callable, Mapping
 import numpy as raw_np
 
 from trellis.core.differentiable import get_numpy
+from trellis.models.monte_carlo.transition_state import ScalarTransitionReducer
 
 np = get_numpy()
 
@@ -124,6 +125,7 @@ class MonteCarloPathRequirement:
     snapshot_steps: tuple[int, ...] = ()
     barrier_monitors: tuple[BarrierMonitor, ...] = ()
     reducers: tuple[PathReducer, ...] = ()
+    transition_reducers: tuple[ScalarTransitionReducer, ...] = ()
 
     def __post_init__(self) -> None:
         normalized_steps = _normalize_steps(self.snapshot_steps)
@@ -137,6 +139,18 @@ class MonteCarloPathRequirement:
         reducer_names = [reducer.name for reducer in self.reducers]
         if len(set(reducer_names)) != len(reducer_names):
             raise ValueError("reducer names must be unique")
+
+        transition_reducer_names = [
+            reducer.name for reducer in self.transition_reducers
+        ]
+        if len(set(transition_reducer_names)) != len(transition_reducer_names):
+            raise ValueError("transition reducer names must be unique")
+        overlap = set(reducer_names) & set(transition_reducer_names)
+        if overlap:
+            raise ValueError(
+                "path and transition reducer names must be unique; overlapping names: "
+                + ", ".join(sorted(overlap))
+            )
 
     @classmethod
     def full_paths(cls) -> "MonteCarloPathRequirement":

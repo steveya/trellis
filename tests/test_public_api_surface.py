@@ -293,7 +293,10 @@ def test_family_package_exports_are_canonical():
     import trellis.models.transforms as transforms
     import trellis.models.trees as trees
     from trellis.models.monte_carlo.brownian_bridge import brownian_bridge
-    from trellis.models.monte_carlo.variance_reduction import sobol_normals
+    from trellis.models.monte_carlo.variance_reduction import (
+        sobol_normals,
+        sobol_transition_inputs,
+    )
     from trellis.models.processes.heston import (
         Heston,
         HestonRuntimeBinding,
@@ -309,8 +312,12 @@ def test_family_package_exports_are_canonical():
     assert hasattr(monte_carlo, "MonteCarloEngine")
     assert hasattr(monte_carlo, "euler_maruyama")
     assert hasattr(monte_carlo, "milstein")
+    assert hasattr(monte_carlo, "ScalarTransitionObservation")
+    assert hasattr(monte_carlo, "ConditionalBridgeExtremumContract")
+    assert hasattr(monte_carlo, "MonteCarloRandomInputs")
 
     assert qmc.sobol_normals is sobol_normals
+    assert qmc.sobol_transition_inputs is sobol_transition_inputs
     assert qmc.brownian_bridge is brownian_bridge
 
     assert hasattr(pde, "theta_method_1d")

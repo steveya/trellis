@@ -16,9 +16,13 @@ Those components remain in :mod:`trellis.models.monte_carlo`.
 """
 
 from trellis.models.monte_carlo.brownian_bridge import brownian_bridge
-from trellis.models.monte_carlo.variance_reduction import sobol_normals
+from trellis.models.monte_carlo.variance_reduction import (
+    sobol_normals,
+    sobol_transition_inputs,
+)
 
 __all__ = [
     "sobol_normals",
+    "sobol_transition_inputs",
     "brownian_bridge",
 ]

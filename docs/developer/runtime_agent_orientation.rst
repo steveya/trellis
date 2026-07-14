@@ -97,6 +97,16 @@ product semantics, and model-validator still reviews monitoring,
 annualization, calibration, and residual numerical risk; neither role receives
 implementation imports.
 
+The ``conditional_extremum_composition`` card is a separate continuous-state
+route. It points builders to ``ScalarTransitionObservation``,
+``ConditionalBridgeExtremumContract``, the transition reducer, exact
+constant-parameter ``GBM`` bridge capability, and
+``sobol_transition_inputs(...)``. It explicitly rejects treating discrete
+``PathReducer`` state, Brownian path construction, or a product lookback helper
+as the conditional-extremum primitive. The card also records the current
+one-stochastic-reducer boundary and keeps derivative settlement in generated
+adapter code.
+
 This separation is important for small-context agents. The semantic query
 chooses one complete composition card, the card names the minimal public
 symbols and ownership boundaries, and the import registry confirms those

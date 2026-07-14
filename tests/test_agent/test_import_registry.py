@@ -128,6 +128,35 @@ def test_path_statistic_primitives_are_visible_to_import_registry():
     ]
 
 
+def test_transition_state_primitives_are_visible_to_import_registry():
+    module = "trellis.models.monte_carlo.transition_state"
+    symbols = {
+        "ConditionalBridgeExtremumContract",
+        "MonteCarloRandomInputs",
+        "ScalarConditionalBridgeProcess",
+        "ScalarTransitionObservation",
+        "ScalarTransitionReducer",
+        "build_conditional_bridge_extremum_reducer",
+        "conditional_log_bridge_extremum",
+        "replay_scalar_transition_reducers",
+        "resolve_scalar_bridge_parameters",
+    }
+
+    assert module_exists(module)
+    assert symbols <= set(list_module_exports(module))
+    for symbol in symbols:
+        assert module in find_symbol_modules(symbol)
+        assert is_valid_import(module, symbol)
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert symbols <= set(static_registry[module])
+    assert "sobol_transition_inputs" in static_registry[
+        "trellis.models.monte_carlo.variance_reduction"
+    ]
+
+
 def test_weighted_lognormal_moment_primitives_are_visible_to_import_registry():
     module = "trellis.models.analytical.support.lognormal_moments"
     symbols = {

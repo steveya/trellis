@@ -165,6 +165,7 @@ monte_carlo:
     - "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo, price_heston_option_monte_carlo_result"
     - "from trellis.models.monte_carlo.path_state import BarrierMonitor, MonteCarloPathRequirement, StateAwarePayoff, terminal_value_payoff"
     - "from trellis.models.monte_carlo.path_statistics import RunningExtremumContract, SquaredLogReturnContract, build_running_extremum_reducer, build_squared_log_return_reducer"
+    - "from trellis.models.monte_carlo.transition_state import ConditionalBridgeExtremumContract, MonteCarloRandomInputs, build_conditional_bridge_extremum_reducer"
     - "from trellis.models.fx_vanilla import resolve_fx_vanilla_inputs"
     - "from trellis.models.fx_barrier_option import resolve_fx_barrier_inputs"
     - "from trellis.models.analytical import terminal_intrinsic"
@@ -182,6 +183,7 @@ monte_carlo:
     - "For FX single-barrier Monte Carlo, compose `resolve_fx_barrier_inputs(...)`, `GBM`, `MonteCarloEngine`, `BarrierMonitor`, `MonteCarloPathRequirement`, `StateAwarePayoff`, and `terminal_intrinsic(...)`; use reduced barrier-hit state and domestic discounting"
     - "For quanto Monte Carlo or QMC, follow `quanto_option_composition`: bind exact hybrid inputs, build `CorrelatedGBM`, and pass a terminal-only payoff to `MonteCarloEngine`"
     - "For discrete running extrema or squared-log-return state, follow `path_statistic_composition` and keep strike, direction, notional, discounting, and other derivative settlement in adapter code"
+    - "For exact continuous scalar extrema, follow `conditional_extremum_composition`; do not infer continuous monitoring from discrete PathReducer state"
     - "Autocallable MC routes should prefer `price_autocallable_monte_carlo_result(...)`; use `sampling='sobol'` only for QMC comparison targets"
     - "Double-barrier MC routes should use two barrier monitors or `double_barrier_state_payoff(...)` instead of adapting a one-barrier analytical formula"
     - "If the control primitive uses continuation regression, choose the estimator or basis explicitly; LaguerreBasis is optional, not mandatory"
@@ -204,6 +206,26 @@ path_statistic_composition:
     - "For admitted variance-swap Monte Carlo, require annualization_convention='per_year', bind the scalar market once with resolve_scalar_diffusion_market_inputs(...), and use annualization_factor=1/maturity. Generated adapter code owns historical realized variance, strike, notional, discounting, and outputs; do not delegate settlement to a product-specific compatibility helper."
     - "Running extrema are exact only over the declared discrete observations. Continuous-monitoring extrema require a separate transition-level Brownian-bridge contract and must not be claimed from these reducers."
     - "These primitives require finite positive scalar path levels. Full-path smooth operations preserve the differentiable backend away from extrema ties, while streaming reduced-state AD remains outside the current engine support contract."
+
+conditional_extremum_composition:
+  module: trellis.models.monte_carlo.transition_state
+  navigation:
+    aliases: [conditional_extremum, conditional_bridge_extremum, continuous_extremum, continuous_monitoring, continuous_running_minimum, continuous_running_maximum, continuous_lookback, monte_carlo_continuous_extremum]
+  key_imports:
+    - "from trellis.models.monte_carlo.transition_state import ConditionalBridgeExtremumContract, MonteCarloRandomInputs, ScalarTransitionObservation, ScalarTransitionReducer, build_conditional_bridge_extremum_reducer, conditional_log_bridge_extremum, replay_scalar_transition_reducers"
+    - "from trellis.models.monte_carlo.path_state import MonteCarloPathRequirement, StateAwarePayoff"
+    - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+    - "from trellis.models.monte_carlo.variance_reduction import sobol_transition_inputs"
+    - "from trellis.models.processes.gbm import GBM"
+    - "from trellis.models.resolution.single_state_diffusion import resolve_scalar_diffusion_market_inputs"
+  notes:
+    - "Use ConditionalBridgeExtremumContract to declare exact transition ending steps and minimum/maximum direction, then place the returned ScalarTransitionReducer in MonteCarloPathRequirement.transition_reducers. Read the result with state.reduced_value(name)."
+    - "The admitted kernel samples a conditional log-bridge extremum between exact scalar transition endpoints. Constant-parameter GBM exposes the required log coordinate and interval variance capability."
+    - "Pseudo-random execution owns a private seeded transition stream that does not perturb process shocks. For QMC or other explicit-shock execution, use sobol_transition_inputs(...) or construct MonteCarloRandomInputs with a distinct transition_uniforms matrix; never derive bridge uniforms from process shocks."
+    - "Current execution supports one stochastic transition reducer per requirement. Simultaneous minimum/maximum or other multiple stochastic observers fail closed until a valid joint auxiliary-randomness law is implemented."
+    - "Only exact constant-parameter scalar GBM transitions are admitted. Euler, Milstein, custom schemes, piecewise parameter regimes, vector state, jumps, local volatility, stochastic volatility, and processes without an explicit conditional bridge capability fail closed."
+    - "Use replay_scalar_transition_reducers(...) for full-path evidence with the same transition uniforms. Existing brownian_bridge(...) and brownian_bridge_increments(...) construct paths or reorder process shocks; they do not sample conditional interval extrema."
+    - "The transition primitive owns no derivative settlement. Strike, payoff direction, notional, discounting, prior extrema, output fields, and product validation remain in generated adapter code and semantic contracts."
 
 scheduled_observation_composition:
   module: trellis.models.observation_aggregation
@@ -284,11 +306,11 @@ rate_monte_carlo_composition:
 qmc:
   module: trellis.models.qmc
   key_imports:
-    - "from trellis.models.qmc import sobol_normals, brownian_bridge"
+    - "from trellis.models.qmc import sobol_normals, sobol_transition_inputs, brownian_bridge"
     - "from trellis.models.processes.gbm import GBM"
   notes:
     - "QMC is an accelerator family layered on Monte Carlo-style estimators"
-    - "Current support is Sobol-based normal draws and Brownian-bridge construction"
+    - "Current support is Sobol-based normal draws, joint process-normal/transition-uniform inputs, and Brownian-bridge path construction"
 
 # ---------------------------------------------------------------------------
 # Model imports — PDE / finite differences

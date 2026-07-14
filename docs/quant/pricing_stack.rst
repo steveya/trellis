@@ -418,14 +418,124 @@ authority.
 Extrema are exact only over the listed discrete observations.  The existing
 ``brownian_bridge(...)`` utility constructs Brownian paths and bridge-ordered
 increments; it does not sample conditional transition extrema.  Continuous
-extrema need previous/current transition state, process variance, and bridge
-randomness that the deterministic ``PathReducer.update(...)`` interface does
-not receive.  Trellis therefore fails closed on that claim rather than
-presenting the discrete reducer as a continuous-monitoring correction.
+extrema use the separate transition-state contract below.  The deterministic
+``PathReducer.update(...)`` interface remains unchanged and must not be
+presented as a continuous-monitoring correction.
 
 Full-path operations preserve the differentiable backend away from extrema
 ties.  Extrema remain nonsmooth at ties, and true streaming reduced-state AD
 is outside the current engine support contract recorded in ``LIMITATIONS.md``.
+
+Conditional Transition Extrema
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``trellis.models.monte_carlo.transition_state`` represents statistics defined
+between two simulated endpoints.  ``ScalarTransitionObservation`` carries the
+previous and current scalar cross-sections, interval times, the process-owned
+bridge coordinate and integrated variance, and an independent uniform draw.
+``ScalarTransitionReducer`` consumes that observation without widening or
+changing deterministic ``PathReducer`` callbacks.
+
+The first admitted kernel is the exact conditional extremum of a scalar log
+diffusion.  If :math:`x_0=\log S_{t_0}`, :math:`x_1=\log S_{t_1}` and
+:math:`v` is integrated log variance on the interval, then for
+:math:`U\sim\mathcal U(0,1)` Trellis samples
+
+.. math::
+
+   X_{\max/\min}
+   = \frac{x_0+x_1 \pm
+      \sqrt{(x_0-x_1)^2-2v\log(1-U)}}{2},
+   \qquad S_{\max/\min}=e^{X_{\max/\min}}.
+
+``GBM`` supplies :math:`v=\sigma^2(t_1-t_0)`.  The engine admits this state
+only with exact constant-parameter scalar GBM transitions. Euler, Milstein,
+custom schemes, piecewise parameter regimes, vector processes, local or
+stochastic volatility, jumps, and processes without an explicit
+conditional-bridge capability fail closed. A piecewise log diffusion cannot in
+general be reduced to endpoint values and total variance because its
+conditional mean may be curved across the interval.
+
+Generated code composes the primitive as follows:
+
+.. code-block:: python
+
+   from trellis.models.monte_carlo.engine import MonteCarloEngine
+   from trellis.models.monte_carlo.path_state import (
+       MonteCarloPathRequirement,
+       StateAwarePayoff,
+   )
+   from trellis.models.monte_carlo.transition_state import (
+       ConditionalBridgeExtremumContract,
+       build_conditional_bridge_extremum_reducer,
+       replay_scalar_transition_reducers,
+   )
+   from trellis.models.monte_carlo.variance_reduction import (
+       sobol_transition_inputs,
+   )
+   from trellis.models.processes.gbm import GBM
+
+   contract = ConditionalBridgeExtremumContract(
+       n_steps=64,
+       transition_steps=tuple(range(1, 65)),
+       direction="maximum",
+   )
+   reducer = build_conditional_bridge_extremum_reducer(
+       contract,
+       name="conditional_maximum",
+   )
+   process = GBM(mu=carry, sigma=volatility)
+   random_inputs = sobol_transition_inputs(
+       n_paths=65_536,
+       n_steps=contract.n_steps,
+       seed=17,
+   )
+   payoff = StateAwarePayoff(
+       path_requirement=MonteCarloPathRequirement(
+           transition_reducers=(reducer,),
+       ),
+       evaluate_paths_fn=lambda paths: settle(
+           replay_scalar_transition_reducers(
+               paths,
+               process=process,
+               maturity=maturity,
+               reducers=(reducer,),
+               transition_uniforms=random_inputs.transition_uniforms,
+           )["conditional_maximum"]
+       ),
+       evaluate_state_fn=lambda state: settle(
+           state.reduced_value("conditional_maximum")
+       ),
+   )
+   result = MonteCarloEngine(
+       process,
+       n_paths=65_536,
+       n_steps=contract.n_steps,
+       method="exact",
+   ).price(
+       spot,
+       maturity,
+       payoff,
+       discount_rate=rate,
+       random_inputs=random_inputs,
+       return_paths=False,
+   )
+
+Pseudo-random execution draws bridge uniforms from a private seeded transition
+stream, so requesting the reducer does not perturb process paths.  Explicit and
+QMC execution uses ``MonteCarloRandomInputs``.  ``sobol_transition_inputs(...)``
+allocates process-normal and transition-uniform coordinates from one joint
+scrambled Sobol point and transforms only the process coordinates to normals.
+Reusing a process shock as a bridge uniform, or silently mixing pseudo uniforms
+into QMC, is invalid.
+
+The current engine accepts one stochastic transition reducer per requirement.
+Sampling minimum and maximum independently would not provide their joint law,
+so simultaneous stochastic reducers fail closed.  Strike, option direction,
+notional, discounting, prior extrema, and output construction remain
+caller-owned settlement.  ``replay_scalar_transition_reducers(...)`` provides
+full-path evidence when given the same process, maturity, reducer, and uniform
+matrix.
 
 The first migrated vanilla cases now use that boundary directly:
 
@@ -589,9 +699,10 @@ The first migrated vanilla cases now use that boundary directly:
   comparison references and are not generated-route authority.
 - Fixed-lookback MC proof routes use
   ``trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo``
-  for the checked equity-diffusion comparison surface. The helper applies a
-  Brownian-bridge extrema correction so the MC path summary is aligned with the
-  continuous-monitoring fixed-strike analytical reference.
+  as the current checked compatibility/comparison surface. The product-neutral
+  conditional transition-extremum substrate now exists; route and generated
+  adapter authority migrate separately so product settlement and validation
+  are not moved into the numerical primitive.
 - Single-underlier autocallable proof routes now use
   ``trellis.models.autocallable.price_autocallable_monte_carlo_result`` as the
   checked MC/QMC event helper. It owns exact GBM path simulation, fixed
