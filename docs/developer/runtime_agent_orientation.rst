@@ -74,6 +74,16 @@ Exact symbols remain the import registry's responsibility after family
 selection. Quant and model-validator regression tests reject API-map imports
 or code templates in their resolved context.
 
+Composition cards may join public primitives from more than one subsystem
+without introducing a new product helper. For example,
+``analytical_gaussian_composition`` points a builder handling chooser,
+compound, or other critical-state analytical work to scalar Gaussian
+probability kernels and the existing typed ``SolveRequest`` root surface. The
+card does not contain a derivative formula and does not enter the quant or
+model-validator role packets. Those roles continue to reason from semantic
+contracts, quantitative documentation, and executed evidence; implementation
+symbol selection remains builder-owned.
+
 Bounded Resolution
 ------------------
 

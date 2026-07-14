@@ -31,9 +31,14 @@ from trellis.models.analytical.support.payoffs import (
     terminal_vanilla_from_basis,
     terminal_intrinsic,
 )
+from trellis.models.analytical.support.probability import (
+    bivariate_standard_normal_cdf,
+    standard_normal_cdf,
+)
 
 __all__ = [
     "asset_or_nothing_intrinsic",
+    "bivariate_standard_normal_cdf",
     "call_put_parity_gap",
     "cash_or_nothing_intrinsic",
     "continuous_rate_from_simple_rate",
@@ -52,6 +57,7 @@ __all__ = [
     "quanto_adjusted_forward",
     "safe_time_fraction",
     "simple_rate_from_discount_factor",
+    "standard_normal_cdf",
     "terminal_vanilla_from_basis",
     "terminal_intrinsic",
 ]

@@ -707,6 +707,37 @@ reference PV, and generic lattice/PDE event assembly no longer live only in
 stable while moving the reusable short-rate claim logic into a broader helper
 surface for later fixed-income families.
 
+Analytical Probability And Critical-State Composition
+-----------------------------------------------------
+
+Analytical adapters can compose Gaussian probability terms from the public,
+product-neutral kernels in ``trellis.models.analytical.support.probability``.
+``standard_normal_cdf(x)`` supplies :math:`\Phi(x)`, while
+``bivariate_standard_normal_cdf(x, y, \rho)`` supplies
+:math:`\Phi_2(x, y; \rho)`. Inputs must be finite and correlation is admitted
+only on the closed interval :math:`[-1, 1]`; the exact singular boundaries are
+handled explicitly rather than perturbed onto a nearby model.
+
+These are scalar SciPy-backed functions, not automatic-differentiation
+primitives. They provide probability integration only. A derivative adapter
+still owns the contractual formula, state transformation, discounting,
+notional, and call/put or exercise branching.
+
+When an analytical formula requires an implicit critical state, the adapter
+should define its scalar residual and lower it onto the existing typed solve
+surface:
+
+1. put the residual in a ``root_scalar`` ``ObjectiveBundle``
+2. provide finite bracketing bounds with ``SolveBounds``
+3. construct ``SolveRequest`` with ``solver_hint="brentq"``
+4. call ``execute_solve_request`` and consume the checked ``SolveResult``
+
+This keeps the numerical policy bounded and auditable. Chooser, compound, and
+other critical-state formulas should not create route-local Newton loops or
+promote a product pricing helper as construction authority. The semantic API
+map card ``analytical_gaussian_composition`` is the builder's hot start for
+these probability and root-solving pieces.
+
 Calibration Surface
 -------------------
 

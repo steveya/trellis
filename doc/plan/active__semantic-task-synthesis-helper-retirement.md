@@ -46,7 +46,7 @@ Status mirror last synced: `2026-07-14`
 | `QUA-1183` | Digital option pricing: retire analytical helper authority | Done |
 | `QUA-1184` | Semantic agent navigation: render task-relevant canonical composition cards | Done |
 | `QUA-1185` | Task runtime: offline cached replays suppress post-build LLM stages | Backlog |
-| `QUA-1186` | Analytical support: Gaussian probability and scalar-root navigation | Backlog |
+| `QUA-1186` | Analytical support: Gaussian probability and scalar-root navigation | In Progress |
 | `QUA-1187` | Monte Carlo path state: extrema and squared-log-return reducers | Backlog |
 
 ## Current Sequence
