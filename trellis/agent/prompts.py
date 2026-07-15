@@ -599,11 +599,12 @@ def _render_family_route_guidance(
     if instrument_type == "swaption" and method == "monte_carlo":
         lines.append("## Family Route Guidance")
         lines.extend([
-            "- For European rate-style swaptions, prefer `price_swaption_monte_carlo(market_state, self._spec, ...)` from `trellis.models.rate_style_swaption`.",
-            "- Treat the generated route as a thin adapter over that family helper; do not rebuild Hull-White process resolution, event payload assembly, or event-aware Monte Carlo plumbing inline.",
-            "- The helper already preserves `day_count`, `swap_frequency`, `rate_index`, and any explicit European `swap_start` carried on `self._spec`.",
-            "- Do not hardcode `sigma = 0.01` or fall back to a GBM equity path. The helper resolves the Hull-White process from `market_state` on the bounded calibration/model path.",
-            "- If you need the lower-level assembly surface for debugging, the authoritative pieces remain `resolve_hull_white_monte_carlo_process_inputs(...)`, `build_discounted_swap_pv_payload(...)`, `build_short_rate_discount_reducer(...)`, and `price_event_aware_monte_carlo(...)` under `trellis.models.monte_carlo.event_aware`.",
+            "- For European rate-style swaptions, compose the public market, schedule, process, event, problem, and estimator primitives directly. Use `resolve_swaption_black76_inputs(...)` for the typed European expiry basis and `build_payment_timeline(...)` from the explicit `swap_start` to `swap_end`.",
+            "- Bind `resolve_hull_white_monte_carlo_process_inputs(...)`, then build the settlement with `build_discounted_swap_pv_payload(...)` and the path state with `build_short_rate_discount_reducer(...)`.",
+            "- Declare `EventAwareMonteCarloEvent` values inside `EventAwareMonteCarloProblemSpec`, compile with `build_event_aware_monte_carlo_problem(...)`, and evaluate with `price_event_aware_monte_carlo(...)`.",
+            "- Preserve `day_count`, `swap_frequency`, `rate_index`, explicit `swap_start`, path/step/seed controls, and any explicit Hull-White comparison parameters carried by the task contract.",
+            "- Do not hardcode `sigma = 0.01` unless the semantic comparison contract explicitly supplies it, and do not synthesize a GBM equity path. Hull-White process parameters must flow through the bounded market/model resolver.",
+            "- `price_swaption_monte_carlo(...)` and `resolve_swaption_monte_carlo_problem(...)` remain compatibility/reference APIs. Do not use either as generated construction authority.",
         ])
 
     if instrument_type == "zcb_option":

@@ -5,6 +5,7 @@ from datetime import date
 
 import pytest
 
+from trellis.core.date_utils import year_fraction
 from trellis.core.differentiable import gradient
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
@@ -17,6 +18,7 @@ from trellis.models.rate_style_swaption import (
     price_swaption_black76_raw,
     price_swaption_black76,
     resolve_swaption_black76_inputs,
+    resolve_swaption_monte_carlo_problem,
 )
 from trellis.models.rate_style_swaption_tree import (
     build_swaption_tree_spec,
@@ -238,6 +240,33 @@ def test_price_swaption_monte_carlo_stays_close_to_black76_and_tree():
     assert mc_price > 0.0
     assert mc_price == pytest.approx(tree_price, rel=0.15)
     assert mc_price == pytest.approx(black76_price, rel=0.35)
+
+
+def test_swaption_monte_carlo_problem_starts_payment_schedule_at_explicit_swap_start():
+    class _DelayedStartSpec(_EuropeanSpec):
+        swap_start = date(2030, 5, 15)
+
+    problem = resolve_swaption_monte_carlo_problem(
+        _market_state(),
+        _DelayedStartSpec(),
+        n_steps=64,
+        mean_reversion=0.05,
+        sigma=0.01,
+    )
+
+    assert problem.event_timeline is not None
+    settlement_event = next(
+        event
+        for event in problem.event_timeline.events
+        if event.name == "swaption_settlement"
+    )
+    assert settlement_event.payload["payment_times"][0] == pytest.approx(
+        year_fraction(
+            SETTLE,
+            date(2030, 11, 15),
+            _DelayedStartSpec.day_count,
+        )
+    )
 
 
 def test_price_swaption_black76_with_hull_white_comparison_vol_matches_tree_and_mc():

@@ -6168,6 +6168,113 @@ def _deterministic_exact_binding_evaluate_body(
             return price_swaption_black76_raw(resolved)
             """
         ).rstrip()
+    swaption_monte_carlo_refs = {
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+        "trellis.core.date_utils.build_payment_timeline",
+        "trellis.models.monte_carlo.event_aware.resolve_hull_white_monte_carlo_process_inputs",
+        "trellis.models.monte_carlo.event_aware.build_discounted_swap_pv_payload",
+        "trellis.models.monte_carlo.event_aware.build_short_rate_discount_reducer",
+        "trellis.models.monte_carlo.event_aware.EventAwareMonteCarloEvent",
+        "trellis.models.monte_carlo.event_aware.EventAwareMonteCarloProblemSpec",
+        "trellis.models.monte_carlo.event_aware.build_event_aware_monte_carlo_problem",
+        "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo",
+    }
+    if instrument_type == "swaption" and swaption_monte_carlo_refs.issubset(refs):
+        return textwrap.dedent(
+            f"""\
+            if market_state.discount is None:
+                raise ValueError("Rate-style swaption Monte Carlo pricing requires market_state.discount")
+            if market_state.vol_surface is None:
+                raise ValueError("Rate-style swaption Monte Carlo pricing requires market_state.vol_surface")
+
+            resolved = resolve_swaption_black76_inputs(
+                market_state,
+                spec{swaption_comparison_kwargs},
+            )
+            settlement = getattr(market_state, "settlement", None) or market_state.as_of
+            swap_start = getattr(spec, "swap_start", None) or resolved.expiry_date
+            payment_timeline = tuple(
+                period
+                for period in build_payment_timeline(
+                    swap_start,
+                    spec.swap_end,
+                    spec.swap_frequency,
+                    day_count=spec.day_count,
+                    time_origin=settlement,
+                    label="rate_style_swaption_monte_carlo",
+                )
+                if period.end_date > settlement
+            )
+            if not payment_timeline:
+                raise ValueError("Rate-style swaption Monte Carlo pricing requires payments after swap start")
+
+            process_spec, initial_state = resolve_hull_white_monte_carlo_process_inputs(
+                market_state,
+                option_horizon=max(float(resolved.expiry_years), 1e-6),
+                strike=float(spec.strike){swaption_comparison_kwargs},
+            )
+            forward_curve = None
+            rate_index = getattr(spec, "rate_index", None)
+            if rate_index and hasattr(market_state, "forecast_forward_curve"):
+                forward_curve = market_state.forecast_forward_curve(rate_index)
+            if forward_curve is None:
+                forward_curve = getattr(market_state, "forward_curve", None)
+
+            settlement_payload = build_discounted_swap_pv_payload(
+                payment_timeline=payment_timeline,
+                discount_curve=market_state.discount,
+                forward_curve=forward_curve,
+                exercise_time=float(resolved.expiry_years),
+                discount_reducer_name="discount_to_expiry",
+                mean_reversion=float(process_spec.mean_reversion or 0.0),
+                strike=float(spec.strike),
+                notional=float(spec.notional),
+                is_payer=bool(spec.is_payer),
+                anchor_short_rate=float(initial_state),
+            )
+            n_paths = max(int(getattr(spec, "n_paths", 20000)), 2)
+            n_steps = max(int(getattr(spec, "n_steps", 64)), 1)
+            seed = spec.seed if hasattr(spec, "seed") else 42
+            problem = build_event_aware_monte_carlo_problem(
+                EventAwareMonteCarloProblemSpec(
+                    process_spec=process_spec,
+                    initial_state=float(initial_state),
+                    maturity=float(resolved.expiry_years),
+                    n_steps=n_steps,
+                    path_requirement_kind="event_replay",
+                    reducer_kind="compiled_schedule_payoff",
+                    path_reducers=(
+                        build_short_rate_discount_reducer(
+                            name="discount_to_expiry",
+                            maturity=float(resolved.expiry_years),
+                        ),
+                    ),
+                    settlement_event="swaption_settlement",
+                    event_specs=(
+                        EventAwareMonteCarloEvent(
+                            time=float(resolved.expiry_years),
+                            name="swaption_observation",
+                            kind="observation",
+                        ),
+                        EventAwareMonteCarloEvent(
+                            time=float(resolved.expiry_years),
+                            name="swaption_settlement",
+                            kind="settlement",
+                            priority=1,
+                            payload=settlement_payload,
+                        ),
+                    ),
+                )
+            )
+            result = price_event_aware_monte_carlo(
+                problem,
+                n_paths=n_paths,
+                seed=seed,
+                return_paths=False,
+            )
+            return float(result["price"])
+            """
+        ).rstrip()
     helper_bodies = {
         "trellis.models.fx_vanilla.price_fx_vanilla_analytical": (
             "return price_fx_vanilla_analytical(market_state, spec)"
@@ -6195,11 +6302,6 @@ def _deterministic_exact_binding_evaluate_body(
         ),
         "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree": (
             "return price_bermudan_swaption_tree(market_state, spec)"
-        ),
-        "trellis.models.rate_style_swaption.price_swaption_monte_carlo": (
-            "return price_swaption_monte_carlo("
-            "market_state, spec, n_paths=20000, seed=42"
-            f"{swaption_comparison_kwargs})"
         ),
         "trellis.models.monte_carlo.single_state_diffusion.price_single_state_terminal_claim_monte_carlo_result": (
             "result = price_single_state_terminal_claim_monte_carlo_result(\n"
@@ -8988,11 +9090,12 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
-            "European rate-style swaption Monte Carlo routes should stay on the checked family helper instead of assembling the event-aware problem inline.",
-            "Prefer `from trellis.models.rate_style_swaption import price_swaption_monte_carlo` and delegate to that helper from the adapter.",
-            "Keep the route thin: validate discount/vol access, preserve the contract conventions on `self._spec` including any explicit `swap_start`, then call the helper and return `float(...)`.",
-            "do not hardcode `sigma = 0.01` and do not synthesize a GBM equity path. The helper resolves the Hull-White process from `market_state` on the bounded calibration/model path.",
-            "If you truly need the lower-level runtime for debugging, the authoritative pieces remain `resolve_hull_white_monte_carlo_process_inputs(...)`, `build_discounted_swap_pv_payload(...)`, `build_short_rate_discount_reducer(...)`, and `price_event_aware_monte_carlo(...)` in `trellis.models.monte_carlo.event_aware`.",
+            "European rate-style swaption Monte Carlo routes should compose the checked public event-aware primitives directly.",
+            "Use `resolve_swaption_black76_inputs(...)` for the typed expiry basis and `build_payment_timeline(...)` from explicit `swap_start` through `swap_end`.",
+            "Bind `resolve_hull_white_monte_carlo_process_inputs(...)`, then assemble `build_discounted_swap_pv_payload(...)`, `build_short_rate_discount_reducer(...)`, `EventAwareMonteCarloEvent`, and `EventAwareMonteCarloProblemSpec`.",
+            "Compile with `build_event_aware_monte_carlo_problem(...)` and evaluate with `price_event_aware_monte_carlo(...)`, preserving day count, swap frequency, rate index, path/step/seed controls, and explicit comparison parameters.",
+            "do not hardcode `sigma = 0.01` unless the semantic comparison contract supplies it, and do not synthesize a GBM equity path. Resolve Hull-White parameters through the bounded market/model path.",
+            "`price_swaption_monte_carlo(...)` and `resolve_swaption_monte_carlo_problem(...)` are compatibility/reference surfaces, not generated construction authority.",
         )
     if (
         instrument == "swaption"

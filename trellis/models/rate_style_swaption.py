@@ -367,10 +367,11 @@ def resolve_swaption_monte_carlo_problem(
 
     resolved = resolve_swaption_black76_inputs(market_state, spec)
     settlement = getattr(market_state, "settlement", None) or market_state.as_of
+    swap_start = getattr(spec, "swap_start", None) or resolved.expiry_date
     payment_timeline = tuple(
         period
         for period in build_payment_timeline(
-            resolved.expiry_date,
+            swap_start,
             spec.swap_end,
             spec.swap_frequency,
             day_count=spec.day_count,
@@ -380,7 +381,7 @@ def resolve_swaption_monte_carlo_problem(
         if period.end_date > settlement
     )
     if not payment_timeline:
-        raise ValueError("Rate-style swaption Monte Carlo pricing requires payments after expiry")
+        raise ValueError("Rate-style swaption Monte Carlo pricing requires payments after swap start")
 
     process_spec, initial_state = resolve_hull_white_monte_carlo_process_inputs(
         market_state,

@@ -58,6 +58,7 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1195` | Variance swap pricing: retire analytical helper authority | Done |
 | `QUA-1196` | Swaption pricing: retire European Black76 wrapper authority | Done |
 | `QUA-1197` | Swaption pricing: retire Bermudan Black76 lower-bound helper authority | Done |
+| `QUA-1198` | Swaption Monte Carlo: retire European helper and problem-resolver authority | In Progress |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -91,9 +92,14 @@ Status mirror last synced: `2026-07-15`
    swaption resolver and raw kernel, declare the one-sided lower-bound relation,
    and identify target-specific deterministic artifacts from their immutable
    build source when multiple targets share one mutable module path.
-9. Select the next helper-authority family from the machine-readable audit and
+9. Apply the QUA-1198 European swaption Monte Carlo composition: expose the
+   schedule, Hull-White process, discounted swap-PV payload, short-rate reducer,
+   event/problem contracts, problem compiler, and generic estimator as the
+   generated construction surface while retaining product wrappers only as
+   compatibility and reference APIs.
+10. Select the next helper-authority family from the machine-readable audit and
    create a bounded ticket before changing another route.
-10. Run live fresh-generation evidence only with current external-model approval;
+11. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 

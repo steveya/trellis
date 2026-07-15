@@ -93,6 +93,17 @@ over the schedule. The retained
 ``price_bermudan_swaption_black76_lower_bound(...)`` function is comparison and
 compatibility evidence, not generated construction authority.
 
+T73 applies the same boundary to a European swaption Monte Carlo target. The
+route and exact binding no longer point at ``price_swaption_monte_carlo(...)``
+or ``resolve_swaption_monte_carlo_problem(...)``. They expose the reusable
+expiry resolver, explicit-start payment timeline, Hull-White process binding,
+discounted swap-PV payload, short-rate discount reducer, event/problem
+contracts, problem compiler, and generic event-aware estimator. DSL lowering
+records those stages as an ordered ``ThenExpr`` and deterministic offline
+generation materializes the same sequence. This makes source identity and
+validation evidence describe the estimator that ran rather than a product
+wrapper that hid the assembly.
+
 Compiled request metadata now also carries a compact semantic-blueprint summary
 for downstream tooling. That summary records the canonical lowered route, the
 helper and primitive references selected by DSL lowering, and any explicit

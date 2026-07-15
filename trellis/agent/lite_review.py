@@ -274,7 +274,7 @@ def _capability_literal_is_subsumed_by_route_binding(
     binding_by_route = {
         "analytical_black76": "resolve_swaption_black76_inputs",
         "rate_tree_backward_induction": "price_swaption_tree",
-        "monte_carlo_paths": "price_swaption_monte_carlo",
+        "monte_carlo_paths": "resolve_hull_white_monte_carlo_process_inputs",
     }
     binding_name = binding_by_route.get(primitive_plan.route)
     if binding_name is None or binding_name not in signals.call_names:

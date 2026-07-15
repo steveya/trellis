@@ -260,6 +260,11 @@ def test_rate_style_swaption_monte_carlo_compiles_to_event_aware_family_ir():
     assert "recombining_safe" in family_ir.state_spec.state_tags
     assert family_ir.process_spec.process_family == "hull_white_1f"
     assert family_ir.process_spec.simulation_scheme == "exact_ou"
+    assert family_ir.helper_symbol == ""
+    assert (
+        family_ir.market_mapping
+        == "discount_curve_forward_curve_black_vol_to_short_rate_mc"
+    )
     assert family_ir.control_spec.control_style == "identity"
     assert family_ir.control_spec.controller_role == "holder"
     assert family_ir.control_program.control_style == "holder_max"

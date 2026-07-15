@@ -291,20 +291,84 @@ def build_price(self, market_state):
 HULL_WHITE_EVENT_AWARE_MC_SOURCE = """\
 from __future__ import annotations
 
-from trellis.models.rate_style_swaption import price_swaption_monte_carlo
+from trellis.core.date_utils import build_payment_timeline
+from trellis.models.rate_style_swaption import resolve_swaption_black76_inputs
+from trellis.models.monte_carlo.event_aware import (
+    EventAwareMonteCarloEvent,
+    EventAwareMonteCarloProblemSpec,
+    build_discounted_swap_pv_payload,
+    build_event_aware_monte_carlo_problem,
+    build_short_rate_discount_reducer,
+    price_event_aware_monte_carlo,
+    resolve_hull_white_monte_carlo_process_inputs,
+)
 
 
 def build_price(self, market_state):
-    return float(
-        price_swaption_monte_carlo(
-            market_state,
-            self._spec,
-            n_paths=32,
-            seed=7,
-            mean_reversion=0.05,
-            sigma=0.01,
+    spec = self._spec
+    resolved = resolve_swaption_black76_inputs(
+        market_state,
+        spec,
+        mean_reversion=0.05,
+        sigma=0.01,
+    )
+    payment_timeline = build_payment_timeline(
+        spec.swap_start,
+        spec.swap_end,
+        spec.swap_frequency,
+        day_count=spec.day_count,
+        time_origin=market_state.settlement,
+    )
+    process_spec, initial_state = resolve_hull_white_monte_carlo_process_inputs(
+        market_state,
+        option_horizon=resolved.expiry_years,
+        strike=spec.strike,
+        mean_reversion=0.05,
+        sigma=0.01,
+    )
+    payload = build_discounted_swap_pv_payload(
+        payment_timeline=payment_timeline,
+        discount_curve=market_state.discount,
+        forward_curve=market_state.forecast_forward_curve(spec.rate_index),
+        exercise_time=resolved.expiry_years,
+        discount_reducer_name="discount_to_expiry",
+        mean_reversion=process_spec.mean_reversion,
+        strike=spec.strike,
+        notional=spec.notional,
+        is_payer=spec.is_payer,
+        anchor_short_rate=initial_state,
+    )
+    problem = build_event_aware_monte_carlo_problem(
+        EventAwareMonteCarloProblemSpec(
+            process_spec=process_spec,
+            initial_state=initial_state,
+            maturity=resolved.expiry_years,
+            path_requirement_kind="event_replay",
+            reducer_kind="compiled_schedule_payoff",
+            path_reducers=(
+                build_short_rate_discount_reducer(
+                    name="discount_to_expiry",
+                    maturity=resolved.expiry_years,
+                ),
+            ),
+            settlement_event="swaption_settlement",
+            event_specs=(
+                EventAwareMonteCarloEvent(
+                    time=resolved.expiry_years,
+                    name="swaption_observation",
+                    kind="observation",
+                ),
+                EventAwareMonteCarloEvent(
+                    time=resolved.expiry_years,
+                    name="swaption_settlement",
+                    kind="settlement",
+                    payload=payload,
+                ),
+            ),
         )
     )
+    result = price_event_aware_monte_carlo(problem, n_paths=32, seed=7)
+    return float(result["price"])
 """
 
 
@@ -1298,7 +1362,7 @@ def test_accepts_helper_backed_cdo_tranche_route_without_internal_copula_calls()
     assert report.ok
 
 
-def test_accepts_one_required_state_process_when_route_declares_role_alternatives():
+def test_accepts_european_swaption_event_aware_monte_carlo_composition():
     from trellis.agent.semantic_validation import validate_semantics
 
     pricing_plan = PricingPlan(

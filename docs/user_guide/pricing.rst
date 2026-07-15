@@ -579,6 +579,17 @@ to the raw kernel. ``price_swaption_black76(...)`` remains usable as a public
 compatibility and reference function, but it is not advertised as construction
 authority.
 
+European swaption Monte Carlo targets are primitive-composed as well. Generated
+code resolves the European expiry basis, starts the payment timeline at the
+contract's explicit ``swap_start``, binds the Hull-White process, builds the
+discounted swap-PV settlement payload and short-rate discount reducer, declares
+the expiry events and typed problem, and calls the generic event-aware Monte
+Carlo estimator. Day count, swap frequency, rate index, path/step/seed controls,
+and explicit comparison parameters remain visible in that generated source.
+``price_swaption_monte_carlo(...)`` and
+``resolve_swaption_monte_carlo_problem(...)`` remain callable compatibility and
+reference APIs, but neither is live build authority.
+
 The Bermudan ``black76_european_lower_bound`` comparison reuses those same
 surfaces without pretending Black76 is a Bermudan solver. Generated code
 normalizes the exercise schedule, keeps dates strictly after settlement and

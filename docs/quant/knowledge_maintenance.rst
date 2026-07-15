@@ -123,6 +123,16 @@ capability. In particular, a helper that prices a European swaption is not
 authority for a Bermudan swaption merely because both share the broad
 ``swaption`` instrument label.
 
+The admitted European swaption Monte Carlo lane demonstrates the positive
+case. Its selected API-map card is
+``european_swaption_monte_carlo_composition``. The card points the builder
+to the typed swaption resolver, payment timeline, Hull-White process binding,
+discounted swap-PV payload, short-rate discount reducer, event/problem specs,
+problem compiler, and generic estimator. The generated adapter owns that
+ordered derivative-specific composition. The retained product pricing wrapper
+and product-specific problem resolver remain useful comparison evidence but do
+not replace the primitive packet.
+
 When the available primitives do not yet compose correctly, fail closed with a
 structured capability packet. The packet should distinguish capabilities that
 already exist from the missing glue. For Bermudan swaption Monte Carlo, Trellis

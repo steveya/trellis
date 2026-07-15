@@ -293,7 +293,6 @@ def test_rate_tree_swaption_lowers_to_checked_in_helper_target():
 
 def test_rate_style_swaption_monte_carlo_lowers_to_event_aware_compilation_steps():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
-    from trellis.agent.dsl_algebra import ContractAtom
     from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
 
     contract = make_rate_style_swaption_contract(
@@ -310,13 +309,23 @@ def test_rate_style_swaption_monte_carlo_lowers_to_event_aware_compilation_steps
     assert lowering.route_family == "monte_carlo"
     assert lowering.admissibility_errors == ()
     assert isinstance(lowering.family_ir, EventAwareMonteCarloIR)
-    assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert lowering.binding_id == "trellis.models.rate_style_swaption.price_swaption_monte_carlo"
-    assert lowering.normalized_expr.atom_id == (
-        "trellis.models.rate_style_swaption.price_swaption_monte_carlo:route_helper"
+    assert lowering.family_ir.helper_symbol == ""
+    assert isinstance(lowering.normalized_expr, ThenExpr)
+    assert lowering.binding_id == (
+        "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo"
     )
-    assert lowering.normalized_expr.primitive_ref == (
-        "trellis.models.rate_style_swaption.price_swaption_monte_carlo"
+    assert tuple(
+        term.primitive_ref for term in lowering.normalized_expr.terms
+    ) == (
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+        "trellis.core.date_utils.build_payment_timeline",
+        "trellis.models.monte_carlo.event_aware.resolve_hull_white_monte_carlo_process_inputs",
+        "trellis.models.monte_carlo.event_aware.build_discounted_swap_pv_payload",
+        "trellis.models.monte_carlo.event_aware.build_short_rate_discount_reducer",
+        "trellis.models.monte_carlo.event_aware.EventAwareMonteCarloEvent",
+        "trellis.models.monte_carlo.event_aware.EventAwareMonteCarloProblemSpec",
+        "trellis.models.monte_carlo.event_aware.build_event_aware_monte_carlo_problem",
+        "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo",
     )
     assert blueprint.lane_plan is not None
     assert blueprint.lane_plan.lane_family == "monte_carlo"

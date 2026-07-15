@@ -613,6 +613,10 @@ def _exact_target_refs_for(
         role: _primitive_refs_for_role(primitives, role)
         for role in prioritized_roles
     }
+    if _primitive_refs_for_role(primitives, "problem_builder"):
+        estimator_refs = _primitive_refs_for_role(primitives, "monte_carlo_estimator")
+        if estimator_refs:
+            return estimator_refs
     for role in prioritized_roles:
         refs = refs_by_role[role]
         if refs:

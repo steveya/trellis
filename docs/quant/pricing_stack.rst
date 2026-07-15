@@ -211,10 +211,31 @@ problem-assembly layer in ``trellis.models.monte_carlo.event_aware``:
 That runtime layer resolves process-family plugins, compiles deterministic
 event buckets into reduced-state replay requirements, and assembles a
 ``StateAwarePayoff`` on top of the existing Monte Carlo path-state and
-path-event substrate. The generic vanilla MC migration and the final
-schedule-driven proof routes are still separate follow-on slices, but the
-compiler no longer points at an event-aware family without a checked runtime
-problem-spec boundary underneath it.
+path-event substrate. A generated European swaption adapter now composes that
+surface directly:
+
+1. ``resolve_swaption_black76_inputs(...)`` binds the typed expiry and market
+   conventions;
+2. ``build_payment_timeline(...)`` starts the underlying swap schedule at the
+   explicit ``swap_start``;
+3. ``resolve_hull_white_monte_carlo_process_inputs(...)`` binds the short-rate
+   process;
+4. ``build_discounted_swap_pv_payload(...)`` and
+   ``build_short_rate_discount_reducer(...)`` define settlement and reduced
+   discount state;
+5. ``EventAwareMonteCarloEvent`` and ``EventAwareMonteCarloProblemSpec``
+   declare the expiry event program; and
+6. ``build_event_aware_monte_carlo_problem(...)`` plus
+   ``price_event_aware_monte_carlo(...)`` compile and evaluate it.
+
+The adapter retains day count, swap frequency, rate index, path/step/seed
+controls, and any explicitly declared Hull-White comparison parameters. It
+does not substitute an equity GBM process. The product-level
+``price_swaption_monte_carlo(...)`` and
+``resolve_swaption_monte_carlo_problem(...)`` APIs remain compatibility and
+independent-reference surfaces, not generated construction authority. The
+separate Bermudan Monte Carlo exercise-grid and continuation gaps remain
+fail-closed.
 
 Scheduled Weighted Observations
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
