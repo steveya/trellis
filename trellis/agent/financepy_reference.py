@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from time import perf_counter
 from typing import Any
 
@@ -133,6 +133,23 @@ def _maybe_method_outputs(option, methods: list[str], *args) -> dict[str, float]
             continue
         outputs[method_name] = float(value)
     return outputs
+
+
+def _central_spot_delta(
+    price_at_spot: Callable[[float], float],
+    spot: float,
+    *,
+    bump_pct: float = 1.0,
+) -> float:
+    """Return a product-neutral central spot-bump Delta."""
+
+    bump_size = abs(float(spot)) * float(bump_pct) / 100.0
+    if bump_size <= 0.0:
+        raise ValueError("central spot-bump Delta requires positive spot and bump_pct")
+    return float(
+        (price_at_spot(spot + bump_size) - price_at_spot(spot - bump_size))
+        / (2.0 * bump_size)
+    )
 
 
 def _equity_vanilla_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:
@@ -440,9 +457,33 @@ def _compound_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping
     discount_curve = _flat_curve(float(contract["domestic_rate"]), value_dt)
     dividend_curve = _flat_curve(float(contract["dividend_rate"]), value_dt)
     model = BlackScholes(float(contract["volatility"]))
-    return {
-        "price": float(option.value(value_dt, float(contract["spot"]), discount_curve, dividend_curve, model))
-    }
+    spot = float(contract["spot"])
+
+    def price_at_spot(stock_level: float) -> float:
+        return float(
+            option.value(
+                value_dt,
+                stock_level,
+                discount_curve,
+                dividend_curve,
+                model,
+            )
+        )
+
+    outputs = {"price": price_at_spot(spot)}
+    outputs.update(
+        _maybe_method_outputs(
+            option,
+            ["delta"],
+            value_dt,
+            spot,
+            discount_curve,
+            dividend_curve,
+            model,
+        )
+    )
+    outputs.setdefault("delta", _central_spot_delta(price_at_spot, spot))
+    return outputs
 
 
 def _cliquet_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:

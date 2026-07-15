@@ -766,10 +766,11 @@ def test_resolve_backend_binding_spec_uses_quanto_primitive_composition(
                 model_family="equity_diffusion",
             ),
             "analytical",
-            (
-                "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical",
-            ),
             (),
+            (
+                "trellis.models.black.black76_call",
+                "trellis.models.black.black76_put",
+            ),
             id="compound",
         ),
         pytest.param(
@@ -842,6 +843,42 @@ def test_resolve_backend_binding_spec_exposes_complete_chooser_composition():
         "trellis.models.analytical.support.discounted_value",
         "trellis.models.black.black76_call",
         "trellis.models.black.black76_put",
+        "trellis.models.analytical.support.probability.bivariate_standard_normal_cdf",
+        "trellis.models.calibration.solve_request.ObjectiveBundle",
+        "trellis.models.calibration.solve_request.SolveBounds",
+        "trellis.models.calibration.solve_request.SolveRequest",
+        "trellis.models.calibration.solve_request.execute_solve_request",
+    } <= set(resolved.primitive_refs)
+
+
+def test_resolve_backend_binding_spec_exposes_complete_compound_composition():
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
+
+    assert analytical is not None
+
+    resolved = resolve_backend_binding_spec(
+        analytical,
+        product_ir=ProductIR(
+            instrument="compound_option",
+            payoff_family="compound_option",
+            payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert {
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.core.date_utils.year_fraction",
+        "trellis.models.analytical.support.forward_from_dividend_yield",
+        "trellis.models.analytical.support.discount_factor_from_zero_rate",
+        "trellis.models.analytical.support.discounted_value",
+        "trellis.models.black.black76_call",
+        "trellis.models.black.black76_put",
+        "trellis.models.analytical.support.probability.standard_normal_cdf",
         "trellis.models.analytical.support.probability.bivariate_standard_normal_cdf",
         "trellis.models.calibration.solve_request.ObjectiveBundle",
         "trellis.models.calibration.solve_request.SolveBounds",

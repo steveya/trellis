@@ -890,7 +890,7 @@ def test_semantic_blueprint_summary_preserves_range_accrual_callability_blockers
         (
             "F013",
             "analytical",
-            "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical",
+            "trellis.models.black.black76_call",
         ),
         (
             "F015",
@@ -930,6 +930,11 @@ def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_fina
     if task_id == "F012":
         assert (
             "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical"
+            not in compiled.generation_plan.backend_exact_target_refs
+        )
+    if task_id == "F013":
+        assert (
+            "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical"
             not in compiled.generation_plan.backend_exact_target_refs
         )
 

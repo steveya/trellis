@@ -292,7 +292,7 @@ def test_api_map_semantic_selection_reaches_composition_cards():
 
 @pytest.mark.parametrize(
     "payoff_family",
-    ["compound_option", "lookback_option"],
+    ["lookback_option"],
 )
 def test_api_map_semantic_selection_reaches_gaussian_root_composition(
     payoff_family,
@@ -355,6 +355,35 @@ def test_api_map_exposes_complete_chooser_raw_composition():
     ):
         assert symbol in text
     assert "price_equity_chooser_option_analytical" not in text
+
+
+def test_api_map_exposes_complete_compound_raw_composition():
+    query = ApiMapQuery(
+        payoff_family="compound_option",
+        method="analytical",
+        model_family="equity_diffusion",
+    )
+    selection = select_api_map_sections(query)
+    text = format_api_map_for_prompt(compact=True, query=query)
+
+    assert "compound_option_composition" in selection.selected_families
+    for symbol in (
+        "resolve_scalar_diffusion_market_inputs",
+        "year_fraction",
+        "forward_from_dividend_yield",
+        "discount_factor_from_zero_rate",
+        "discounted_value",
+        "black76_call",
+        "black76_put",
+        "standard_normal_cdf",
+        "bivariate_standard_normal_cdf",
+        "ObjectiveBundle",
+        "SolveBounds",
+        "SolveRequest",
+        "execute_solve_request",
+    ):
+        assert symbol in text
+    assert "price_equity_compound_option_analytical" not in text
 
 
 def test_api_map_selection_and_rendering_are_stable_and_budgeted():

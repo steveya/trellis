@@ -462,9 +462,17 @@
   features: [terminal_markov, discounting, vol_surface_dependence]
   method: analytical
   method_modules:
-    - trellis.models.analytical.equity_exotics
+    - trellis.models.resolution.single_state_diffusion
+    - trellis.models.analytical.support
+    - trellis.models.analytical.support.probability
+    - trellis.models.black
+    - trellis.models.calibration.solve_request
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
-    - "USE THE EXACT HELPER: Call `price_equity_compound_option_analytical(market_state, spec)` directly; keep the critical-spot solve inside the shared analytical module."
-  reasoning: "Call-on-call, call-on-put, put-on-call, put-on-put compound options have a bivariate-normal closed form (Geske) via the shared helper."
+    - "Resolve one explicit inner-expiry market coordinate with `resolve_scalar_diffusion_market_inputs(..., volatility_coordinate=inner_strike)`; the admitted formula assumes one constant rate, dividend yield, and Black volatility across both expiry legs."
+    - "Require settlement < outer expiry < inner expiry; use `year_fraction` for both contractual times and reject degenerate ordering."
+    - "At the outer expiry, form the inner option value from `forward_from_dividend_yield`, `discount_factor_from_zero_rate`, `discounted_value`, and the matching `black76_call` or `black76_put`; subtract the outer strike to define the critical-state objective."
+    - "Solve the positive critical stock state through finite `SolveBounds`, `ObjectiveBundle`, `SolveRequest`, and `execute_solve_request`; verify a sign change before solving and do not add a product helper or adapter-local Newton loop."
+    - "Assemble the selected call-on-call, put-on-call, call-on-put, or put-on-put formula from `standard_normal_cdf`, `bivariate_standard_normal_cdf`, explicit discount factors, strikes, and the solved state, then apply notional exactly once."
+  reasoning: "A European compound option is a bounded analytical composition: solve where the inner option equals the outer strike, then integrate the exercise region with univariate and bivariate Gaussian probabilities."
   learned: false

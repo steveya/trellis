@@ -60,7 +60,7 @@ analytical_gaussian_composition:
   module: trellis.models.analytical.support.probability
   methods: [analytical]
   navigation:
-    aliases: [gaussian_probability, bivariate_gaussian, critical_state, scalar_root, compound_option, lookback_option]
+    aliases: [gaussian_probability, bivariate_gaussian, critical_state, scalar_root, lookback_option]
   modules:
     probability: trellis.models.analytical.support.probability
     scalar_root: trellis.models.calibration.solve_request
@@ -102,6 +102,35 @@ chooser_option_composition:
     - "At the choice date, build call and put present values with forward_from_dividend_yield, discount_factor_from_zero_rate, discounted_value, black76_call, and black76_put; their difference is the scalar root objective"
     - "Use finite positive SolveBounds with a verified sign change, then execute one root_scalar SolveRequest; do not use an unbounded Newton loop"
     - "The adapter owns the critical-state equation, bivariate-Gaussian chooser formula, contractual date coordinates, and one-time notional scaling; the retained chooser wrapper is reference evidence only"
+
+# ---------------------------------------------------------------------------
+# European compound option raw composition
+# ---------------------------------------------------------------------------
+compound_option_composition:
+  module: trellis.models.resolution.single_state_diffusion
+  methods: [analytical]
+  navigation:
+    aliases: [compound_option, compound_payoff, option_on_option, geske]
+  modules:
+    market_binding: trellis.models.resolution.single_state_diffusion
+    time_measure: trellis.core.date_utils
+    analytical_support: trellis.models.analytical.support
+    probability: trellis.models.analytical.support.probability
+    black_kernel: trellis.models.black
+    scalar_root: trellis.models.calibration.solve_request
+  key_imports:
+    - "from trellis.models.resolution.single_state_diffusion import resolve_scalar_diffusion_market_inputs"
+    - "from trellis.core.date_utils import year_fraction"
+    - "from trellis.models.analytical.support import discount_factor_from_zero_rate, discounted_value, forward_from_dividend_yield"
+    - "from trellis.models.black import black76_call, black76_put"
+    - "from trellis.models.analytical.support.probability import standard_normal_cdf, bivariate_standard_normal_cdf"
+    - "from trellis.models.calibration.solve_request import ObjectiveBundle, SolveBounds, SolveRequest, execute_solve_request"
+  notes:
+    - "Admitted scope is a European call or put on a European call or put under one constant rate, dividend yield, and Black volatility projected at the inner expiry and inner-strike volatility coordinate"
+    - "Represent the inner-expiry market coordinate with a local frozen value satisfying ScalarDiffusionMarketSpecLike; require settlement < outer expiry < inner expiry and positive spot, strikes, and volatility"
+    - "At the outer expiry, build the inner option value with forward_from_dividend_yield, discount_factor_from_zero_rate, discounted_value, and the matching Black-76 kernel; subtract the outer strike for the critical-state objective"
+    - "Verify a sign change over finite positive SolveBounds, then execute one root_scalar SolveRequest; do not use an unbounded Newton loop"
+    - "The adapter owns the four bivariate-Gaussian subtype formulas, contractual dates, critical-state equation, and one-time notional scaling; the retained compound wrapper is reference evidence only"
 
 # ---------------------------------------------------------------------------
 # European digital option composition

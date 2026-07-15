@@ -1679,12 +1679,56 @@ routes:
             exercise:
               style: european
         primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_compound_option_analytical
-            role: route_helper
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: resolve_scalar_diffusion_market_inputs
+            role: market_binding
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+          - module: trellis.models.analytical.support
+            symbol: forward_from_dividend_yield
+            role: forward_builder
+          - module: trellis.models.analytical.support
+            symbol: discount_factor_from_zero_rate
+            role: discounting
+          - module: trellis.models.analytical.support
+            symbol: discounted_value
+            role: discounting
+          - module: trellis.models.black
+            symbol: black76_call
+            role: pricing_kernel
+          - module: trellis.models.black
+            symbol: black76_put
+            role: pricing_kernel
+          - module: trellis.models.analytical.support.probability
+            symbol: standard_normal_cdf
+            role: probability_kernel
+          - module: trellis.models.analytical.support.probability
+            symbol: bivariate_standard_normal_cdf
+            role: probability_kernel
+          - module: trellis.models.calibration.solve_request
+            symbol: ObjectiveBundle
+            role: objective_contract
+          - module: trellis.models.calibration.solve_request
+            symbol: SolveBounds
+            role: solver_bounds
+          - module: trellis.models.calibration.solve_request
+            symbol: SolveRequest
+            role: solver_request
+          - module: trellis.models.calibration.solve_request
+            symbol: execute_solve_request
+            role: solver
         adapters: []
         notes:
-          - "Use the compound-option helper with `market_state` and `spec`; keep the critical-spot solve inside the shared helper."
+          - >-
+            Admit only a European compound option under one constant
+            scalar-diffusion market projection at the inner expiry. The adapter
+            owns the inner-value objective, bounded critical-state request,
+            selected bivariate formula, and one-time notional scaling.
+          - >-
+            Fail closed unless settlement < outer expiry < inner expiry, spot and
+            strikes are positive, volatility is positive, and the finite positive
+            root bracket changes sign. Do not call a compound product helper.
       - when:
           contract_pattern:
             payoff:

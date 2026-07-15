@@ -711,9 +711,32 @@ class TestKnowledgeStore:
             assert symbol in chooser_requirements
         assert "price_equity_chooser_option_analytical" not in chooser_requirements
 
+        compound = store._decompositions.get("compound_option")
+        assert compound is not None
+        assert compound.method == "analytical"
+        assert set(compound.method_modules) >= {
+            "trellis.models.resolution.single_state_diffusion",
+            "trellis.models.analytical.support",
+            "trellis.models.analytical.support.probability",
+            "trellis.models.black",
+            "trellis.models.calibration.solve_request",
+        }
+        compound_requirements = " ".join(compound.modeling_requirements)
+        for symbol in (
+            "resolve_scalar_diffusion_market_inputs",
+            "year_fraction",
+            "black76_call",
+            "black76_put",
+            "standard_normal_cdf",
+            "bivariate_standard_normal_cdf",
+            "SolveRequest",
+            "execute_solve_request",
+        ):
+            assert symbol in compound_requirements
+        assert "price_equity_compound_option_analytical" not in compound_requirements
+
         for instrument, helper_symbol in (
             ("lookback_option", "price_equity_fixed_lookback_option_analytical"),
-            ("compound_option", "price_equity_compound_option_analytical"),
         ):
             decomp = store._decompositions.get(instrument)
             assert decomp is not None, f"missing analytical decomposition for {instrument}"

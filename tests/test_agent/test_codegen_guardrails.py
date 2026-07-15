@@ -1289,33 +1289,27 @@ def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
     assert "Do not reinterpret a single-name CDS" not in card
 
 
-@pytest.mark.parametrize(
-    "instrument_type,expected_helper_ref",
-    [
-        (
-            "compound_option",
-            "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical",
-        ),
-    ],
-)
-def test_absorbed_black76_structural_exotic_route_uses_exact_helper_binding(
-    instrument_type,
-    expected_helper_ref,
-):
+def test_compound_route_card_uses_raw_composition_not_product_helper():
     pricing_plan = PricingPlan(
         method="analytical",
-        method_modules=["trellis.models.analytical.equity_exotics"],
+        method_modules=[
+            "trellis.models.resolution.single_state_diffusion",
+            "trellis.models.analytical.support",
+            "trellis.models.analytical.support.probability",
+            "trellis.models.black",
+            "trellis.models.calibration.solve_request",
+        ],
         required_market_data={"discount_curve", "black_vol_surface"},
-        model_to_build=instrument_type,
+        model_to_build="compound_option",
         reasoning="test",
     )
     plan = build_generation_plan(
         pricing_plan=pricing_plan,
-        instrument_type=instrument_type,
-        inspected_modules=("trellis.models.analytical.equity_exotics",),
+        instrument_type="compound_option",
+        inspected_modules=tuple(pricing_plan.method_modules),
         product_ir=ProductIR(
-            instrument=instrument_type,
-            payoff_family=instrument_type,
+            instrument="compound_option",
+            payoff_family="compound_option",
             payoff_traits=("discounting", "terminal_markov", "vol_surface_dependence"),
             exercise_style="european",
             state_dependence="terminal_markov",
@@ -1325,13 +1319,17 @@ def test_absorbed_black76_structural_exotic_route_uses_exact_helper_binding(
 
     card = render_generation_route_card(plan)
 
-    assert plan.primitive_plan is not None
-    assert plan.primitive_plan.route == "analytical_black76"
-    primitive_refs = {
-        f"{primitive.module}.{primitive.symbol}" for primitive in plan.primitive_plan.primitives
-    }
-    assert expected_helper_ref in primitive_refs
-    assert expected_helper_ref.rsplit(".", 1)[-1] in card
+    assert "price_equity_compound_option_analytical" not in card
+    for symbol in (
+        "resolve_scalar_diffusion_market_inputs",
+        "black76_call",
+        "black76_put",
+        "standard_normal_cdf",
+        "bivariate_standard_normal_cdf",
+        "SolveRequest",
+        "execute_solve_request",
+    ):
+        assert symbol in card
 
 
 def test_chooser_route_card_uses_raw_composition_not_product_helper():

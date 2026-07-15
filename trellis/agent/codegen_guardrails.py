@@ -664,7 +664,7 @@ def _render_backend_binding_lines(plan: GenerationPlan, *, compact: bool) -> lis
         lines.append("  - Selected primitives:")
         lines.extend(
             f"    - `{primitive.module}.{primitive.symbol}` ({primitive.role})"
-            for primitive in plan.primitive_plan.primitives[:12]
+            for primitive in plan.primitive_plan.primitives
         )
     resolved_instructions = _resolve_generation_instructions(plan)
     if resolved_instructions.effective_instructions:
