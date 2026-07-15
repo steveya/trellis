@@ -5,16 +5,16 @@
     "title": "European call: theta-method convergence order",
     "kind": "pricing",
     "status": null,
-    "construct": null
+    "construct": "pde"
   },
   "run": {
-    "run_id": "20260324T120000__20260715T024708167601Z",
-    "persisted_at": "2026-07-15T02:47:08.167601+00:00",
-    "task_run_history_path": "/home/runner/work/trellis/trellis/task_runs/history/T13/20260324T120000__20260715T024708167601Z.json",
+    "run_id": "20260413T062250272261",
+    "persisted_at": "2026-04-13T06:22:50.272439+00:00",
+    "task_run_history_path": "/home/runner/work/trellis/trellis/task_runs/history/T13/20260413T062250272261.json",
     "task_run_latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T13.json",
     "task_run_latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260324T120000__20260715T024708167601Z.json",
-    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260324T120000__20260715T024708167601Z.md",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T062250272261.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T062250272261.md",
     "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T13.json",
     "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T13.md"
   },
@@ -46,9 +46,7 @@
     "selected_artifact_ids": [],
     "selected_artifact_titles": [],
     "selected_artifacts_by_audience": {},
-    "captured_lesson_ids": [
-      "vol_001"
-    ],
+    "captured_lesson_ids": [],
     "lesson_contract_reports": [],
     "lesson_contract_count": 0,
     "lesson_contract_outcome": "not_attempted",
@@ -61,19 +59,9 @@
     "promotion_candidate_paths": [],
     "knowledge_trace_paths": [],
     "knowledge_gap_log_paths": [],
-    "reusable_artifact_count": 1,
-    "knowledge_outcome": "captured_knowledge",
-    "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts",
-    "intra_run_learning": {
-      "overlay_retry_count": 0,
-      "overlay_candidate_count": 0,
-      "retry_attribution_kind": "",
-      "retry_attribution_kinds": [],
-      "contract_evidence_consumed": false,
-      "deterministic_input_changed": false,
-      "contract_evidence_consumed_targets": [],
-      "deterministic_input_changed_targets": []
-    }
+    "reusable_artifact_count": 0,
+    "knowledge_outcome": "no_new_knowledge",
+    "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
   },
   "workflow": {
     "status": "succeeded",
@@ -93,12 +81,10 @@
   },
   "comparison": {
     "task": false,
-    "targets": [],
+    "targets": [
+      "pde_solver"
+    ],
     "summary": {}
-  },
-  "execution": {
-    "mode": "live",
-    "llm_cassette": {}
   },
   "market": {
     "source": "default",
@@ -113,8 +99,8 @@
   "telemetry": {
     "task_kind": "pricing",
     "run_outcome": "succeeded",
-    "retried": true,
-    "retry_count": 1,
+    "retried": false,
+    "retry_count": 0,
     "degraded": false,
     "comparison_status": "",
     "selected_artifacts": [],
@@ -124,8 +110,7 @@
   "runtime_controls": {
     "skip_post_build_reflection": false,
     "skip_post_build_consolidation": false,
-    "skip_task_diagnosis_persist": false,
-    "llm_wait_log_path": "/tmp/task_runtime_waits.jsonl"
+    "skip_task_diagnosis_persist": false
   },
   "post_build": {
     "task": {
@@ -133,9 +118,7 @@
       "latest_status": null,
       "updated_at": null,
       "event_count": 0,
-      "active_flags": {},
-      "policy": {},
-      "skipped_stages": []
+      "active_flags": {}
     },
     "methods": {},
     "latest_method": null,
@@ -149,10 +132,8 @@
     "blocker_details": {},
     "task_contract_error": {},
     "cross_validation": {},
-    "knowledge_gaps": [
-      "vol_surface"
-    ],
-    "gap_confidence": 0.75,
+    "knowledge_gaps": [],
+    "gap_confidence": 0.8,
     "method_failures": [],
     "comparison": {
       "status": null,
@@ -171,11 +152,11 @@
   },
   "consolidated_validation": {},
   "storage": {
-    "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T13/20260324T120000__20260715T024708167601Z.json",
+    "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T13/20260413T062250272261.json",
     "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T13.json",
     "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260324T120000__20260715T024708167601Z.json",
-    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260324T120000__20260715T024708167601Z.md",
+    "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T062250272261.json",
+    "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T062250272261.md",
     "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T13.json",
     "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T13.md"
   }

@@ -1270,7 +1270,7 @@ def test_run_task_persists_latest_record(monkeypatch):
         attempts = 1
         gap_confidence = 0.8
         knowledge_gaps = []
-        payoff_cls = type("FakePayoff", (), {})
+        payoff_cls = type("FakeOfflinePayoffClass", (), {})
         failures = []
         reflection = {}
         post_build_tracking = {"last_phase": "consolidation_dispatched", "last_status": "backgrounded"}
@@ -1363,7 +1363,7 @@ def test_run_task_marks_cassette_replay_runs_and_persists_metadata(monkeypatch, 
         attempts = 1
         gap_confidence = 0.8
         knowledge_gaps = []
-        payoff_cls = type("FakePayoff", (), {})
+        payoff_cls = type("FakePolicySkippedPayoffClass", (), {})
         failures = []
         reflection = {}
 
@@ -1505,7 +1505,7 @@ def test_run_task_offline_scope_derives_deterministic_post_build_policy(monkeypa
         attempts = 1
         gap_confidence = 0.8
         knowledge_gaps = []
-        payoff_cls = type("FakeOfflinePayoffClass", (), {})
+        payoff_cls = type("FakePayoff", (), {})
         failures = []
         reflection = {
             "skipped": True,
@@ -3452,7 +3452,7 @@ def test_build_result_payload_preserves_policy_skip_reasons():
         attempts = 1
         gap_confidence = 0.9
         knowledge_gaps = []
-        payoff_cls = type("FakePolicySkippedPayoffClass", (), {})
+        payoff_cls = type("FakePayoff", (), {})
         failures = []
         agent_observations = []
         knowledge_summary = {}
