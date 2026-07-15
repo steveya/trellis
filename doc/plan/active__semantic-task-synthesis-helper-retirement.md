@@ -53,7 +53,8 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1190` | Variance swap Monte Carlo: retire helper authority | Done |
 | `QUA-1192` | Semantic computational IR: ignore ambient market capabilities | Done |
 | `QUA-1191` | Chooser option pricing: retire analytical helper authority | Done |
-| `QUA-1193` | Compound option pricing: retire analytical helper authority | Backlog |
+| `QUA-1193` | Compound option pricing: retire analytical helper authority | Done |
+| `QUA-1194` | Fixed lookback pricing: retire analytical helper authority | Backlog |
 
 ## Current Sequence
 
@@ -63,12 +64,12 @@ Status mirror last synced: `2026-07-15`
 2. Apply the QUA-1192 classifier boundary: only explicit task, target, or
    model-contract evidence may declare stochastic-volatility semantics;
    ambient market capabilities remain non-authoritative.
-3. Apply the reviewed QUA-1191 chooser precedent: retain product wrappers only
-   as independent comparison evidence while checked adapters own bounded
-   formula composition from reusable primitives.
-4. Complete QUA-1193 by replacing compound-option wrapper authority with the
-   reusable Gaussian, scalar-root, market, and Black composition surface while
-   preserving F013 FinancePy parity.
+3. Apply the reviewed QUA-1191 chooser and QUA-1193 compound precedents: retain
+   product wrappers only as independent comparison evidence while checked
+   adapters own bounded formula composition from reusable primitives.
+4. Complete QUA-1194 by replacing analytical fixed-lookback wrapper authority
+   with scalar market, time, Gaussian, discounting, and adapter-owned formula
+   composition while preserving F011 FinancePy price and Delta parity.
 5. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
