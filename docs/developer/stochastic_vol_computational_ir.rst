@@ -99,6 +99,38 @@ Production-like behavior remains deterministic and fail-closed. Any
 AI-assisted repair belongs in offline task, canary, developer, or remediation
 workflows; it is not live self-modifying pricing logic.
 
+Classifier evidence boundary
+----------------------------
+
+The classifier admits only explicit semantic evidence. Task identifiers,
+titles, descriptions, comparison-target identifiers, ``construct`` and
+``new_component`` declarations, and named model/process fields can declare a
+stochastic-volatility problem. Named model fields may appear at the task level
+or inside a ``semantic_contract``, ``product_contract``, ``model_contract``,
+``benchmark_contract``, ``extension_contract``, ``model_assertions``, or
+``semantic_assertions`` block.
+
+The classifier does not inspect ``task["market"]`` or
+``task["market_assertions"]``. Those blocks describe available or selected
+market components, not the model chosen by the pricing contract. A shared
+scenario may contain a Heston-derived implied-volatility surface or a Heston
+parameter pack while an ordinary Black-Scholes, chooser, or quanto task uses
+neither. Component names such as ``spx_heston_implied_vol`` therefore cannot
+create a stochastic-volatility computational IR by themselves.
+
+This boundary is deliberately asymmetric: explicit model semantics can require
+market capabilities, but the presence of a capability cannot infer the model.
+Target-local method and calibration markers also retain their own axis: an
+inherited Bates model can make ``pde`` a Bates PDE problem or
+``market_prices`` a Bates calibration problem, but it cannot rewrite either
+target into an affine-jump transform. An explicit target-local model name has
+precedence. SLV/LSV remains a dedicated bucket because its leverage-function
+contract spans both PDE and Monte Carlo solvers.
+
+When no explicit stochastic-volatility evidence exists,
+``classify_stochastic_vol_task(...)`` returns ``None`` and the task record
+omits the ``computational_problem`` block.
+
 Computational buckets
 ---------------------
 

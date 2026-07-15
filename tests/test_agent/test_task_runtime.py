@@ -1857,6 +1857,48 @@ def test_run_task_carries_stochastic_vol_problem_metadata_for_comparison_task(mo
     assert qe_target["validation_bundle"] == "heston:monte_carlo"
 
 
+def test_run_task_does_not_attach_ambient_stochastic_vol_problem_to_f012(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml")
+        if task["id"] == "F012"
+    )
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.9
+        knowledge_gaps = []
+        payoff_cls = type("ChooserOptionPayoff", (), {"price": 13.84})
+        failures = []
+        reflection = {}
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=lambda **_kwargs: FakeResult(),
+        payoff_factory=lambda payoff_cls, _spec_schema, _settle: payoff_cls(),
+        price_fn=lambda payoff, _market_state: payoff.price,
+        task_run_storage_root=tmp_path,
+        task_run_storage_layout="standalone",
+    )
+
+    assert "computational_problem" not in result
+    assert "computational_problem" not in result["runtime_contract"]
+
+
 def test_task_runtime_bridges_sparse_proof_mc_rows_to_vanilla_option_contract():
     from trellis.agent.semantic_contracts import semantic_contract_summary
     from trellis.agent.task_manifests import load_task_manifest

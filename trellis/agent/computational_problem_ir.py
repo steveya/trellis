@@ -16,6 +16,50 @@ SLV_LSV = "slv_lsv"
 UNSUPPORTED_PATH_DEPENDENT_CONTROL = "unsupported_path_dependent_control"
 STOCHASTIC_VOL_MIXED = "stochastic_vol_mixed"
 
+_MODEL_EVIDENCE_KEYS = frozenset(
+    {
+        "calibration_model",
+        "calibration_model_family",
+        "model",
+        "model_family",
+        "model_id",
+        "model_name",
+        "model_parameter_source",
+        "model_parameters",
+        "process",
+        "process_family",
+        "process_id",
+        "process_name",
+        "selected_model",
+        "selected_process",
+    }
+)
+_MODEL_EVIDENCE_CONTAINERS = (
+    "semantic_contract",
+    "product_contract",
+    "model_contract",
+    "benchmark_contract",
+    "extension_contract",
+    "model_assertions",
+    "semantic_assertions",
+)
+_STOCHASTIC_VOL_EVIDENCE_TERMS = (
+    "heston",
+    "bates",
+    "stochastic vol",
+    "stochastic local vol",
+    "local-stochastic vol",
+    "slv",
+    "lsv",
+    "rough heston",
+)
+_LEVERAGE_MODEL_EVIDENCE_TERMS = (
+    "stochastic local vol",
+    "local-stochastic vol",
+    "slv",
+    "lsv",
+)
+
 
 @dataclass(frozen=True)
 class RepairPacket:
@@ -522,9 +566,9 @@ def _solver_target(text: str, bucket: str) -> str:
 
 
 def _process_family(text: str, bucket: str) -> str:
-    if bucket == SLV_LSV:
+    if bucket == SLV_LSV or _has_any(text, _LEVERAGE_MODEL_EVIDENCE_TERMS):
         return "slv_lsv"
-    if bucket == AFFINE_JUMP_STOCHASTIC_VOL:
+    if bucket == AFFINE_JUMP_STOCHASTIC_VOL or "bates" in text:
         return "bates"
     if "rough" in text:
         return "rough_heston"
@@ -1009,19 +1053,7 @@ def _looks_stochastic_vol_task(
     target_ids: Sequence[str],
 ) -> bool:
     text = _text_blob(task, *target_ids)
-    return _has_any(
-        text,
-        (
-            "heston",
-            "bates",
-            "stochastic vol",
-            "stochastic local vol",
-            "local-stochastic vol",
-            "slv",
-            "lsv",
-            "rough heston",
-        ),
-    )
+    return _has_any(text, _STOCHASTIC_VOL_EVIDENCE_TERMS)
 
 
 def _text_blob(task: Mapping[str, Any], *target_ids: str) -> str:
@@ -1033,13 +1065,36 @@ def _text_blob(task: Mapping[str, Any], *target_ids: str) -> str:
     pieces.extend(target_ids)
     pieces.extend(str(item) for item in _as_list(task.get("construct")))
     pieces.extend(str(item) for item in _as_list(task.get("new_component")))
-    market = task.get("market")
-    if isinstance(market, Mapping):
-        pieces.extend(str(value) for value in market.values())
-    assertions = task.get("market_assertions")
-    if isinstance(assertions, Mapping):
-        pieces.extend(_flatten_strings(assertions))
+    pieces.extend(_explicit_model_evidence(task))
     return " ".join(pieces).replace("_", " ").lower()
+
+
+def _explicit_model_evidence(task: Mapping[str, Any]) -> list[str]:
+    """Return declared model semantics without inspecting ambient market data."""
+    evidence: list[str] = []
+    for key, value in task.items():
+        normalized_key = str(key).strip().lower().replace("-", "_")
+        if normalized_key in _MODEL_EVIDENCE_KEYS:
+            evidence.extend(_flatten_strings(value))
+    for container in _MODEL_EVIDENCE_CONTAINERS:
+        evidence.extend(_named_model_evidence(task.get(container)))
+    return evidence
+
+
+def _named_model_evidence(value: Any) -> list[str]:
+    if not isinstance(value, Mapping):
+        return []
+    evidence: list[str] = []
+    for key, inner in value.items():
+        normalized_key = str(key).strip().lower().replace("-", "_")
+        if normalized_key in _MODEL_EVIDENCE_KEYS:
+            evidence.extend(_flatten_strings(inner))
+        elif isinstance(inner, Mapping):
+            evidence.extend(_named_model_evidence(inner))
+        elif isinstance(inner, (list, tuple)):
+            for item in inner:
+                evidence.extend(_named_model_evidence(item))
+    return evidence
 
 
 def _target_text(target_id: str) -> str:
@@ -1048,12 +1103,17 @@ def _target_text(target_id: str) -> str:
 
 def _target_route_text(task: Mapping[str, Any], target_id: str) -> str:
     text = _target_text(target_id)
-    if target_id != "task":
+    if target_id == "task":
+        pieces = [text, str(task.get("title") or "")]
+        pieces.extend(str(item) for item in _as_list(task.get("construct")))
+        pieces.extend(str(item) for item in _as_list(task.get("new_component")))
+        text = " ".join(pieces).replace("_", " ").lower()
+    if _has_any(text, _STOCHASTIC_VOL_EVIDENCE_TERMS):
         return text
-    pieces = [text, str(task.get("title") or "")]
-    pieces.extend(str(item) for item in _as_list(task.get("construct")))
-    pieces.extend(str(item) for item in _as_list(task.get("new_component")))
-    return " ".join(pieces).replace("_", " ").lower()
+    model_text = " ".join(_explicit_model_evidence(task)).replace("_", " ").lower()
+    if _has_any(model_text, _LEVERAGE_MODEL_EVIDENCE_TERMS):
+        return " ".join(part for part in (text, model_text) if part)
+    return text
 
 
 def _short_text_evidence(text: str) -> str:
