@@ -4259,7 +4259,22 @@ def _call_comparison_payoff_factory(
         signature = inspect.signature(payoff_factory)
     except (TypeError, ValueError):
         signature = None
-    if signature is None or any(
+    if signature is None:
+        try:
+            return payoff_factory(payoff_cls, spec_schema, settle, contract)
+        except TypeError as exc:
+            traceback = exc.__traceback__
+            message = str(exc).lower()
+            arity_error = (
+                traceback is not None
+                and traceback.tb_next is None
+                and "argument" in message
+                and any(token in message for token in ("given", "takes", "expected"))
+            )
+            if not arity_error:
+                raise
+            return payoff_factory(payoff_cls, spec_schema, settle)
+    if any(
         parameter.kind == inspect.Parameter.VAR_POSITIONAL
         for parameter in signature.parameters.values()
     ):

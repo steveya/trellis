@@ -326,6 +326,60 @@ def test_construct_derived_target_can_be_the_explicit_reference():
     ]
 
 
+def test_non_introspectable_legacy_payoff_factory_falls_back_to_three_arguments(
+    monkeypatch,
+):
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.task_runtime import _call_comparison_payoff_factory
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.inspect.signature",
+        lambda _factory: (_ for _ in ()).throw(ValueError("no signature")),
+    )
+    calls = []
+
+    def legacy_factory(payoff_cls, spec_schema, settle):
+        calls.append((payoff_cls, spec_schema, settle))
+        return "legacy-payoff"
+
+    contract = ComparisonTargetContract(target_id="mc", method="monte_carlo")
+    result = _call_comparison_payoff_factory(
+        legacy_factory,
+        object,
+        "schema",
+        "settle",
+        contract,
+    )
+
+    assert result == "legacy-payoff"
+    assert calls == [(object, "schema", "settle")]
+
+
+def test_non_introspectable_payoff_factory_does_not_swallow_internal_type_error(
+    monkeypatch,
+):
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.task_runtime import _call_comparison_payoff_factory
+
+    monkeypatch.setattr(
+        "trellis.agent.task_runtime.inspect.signature",
+        lambda _factory: (_ for _ in ()).throw(ValueError("no signature")),
+    )
+
+    def broken_factory(_payoff_cls, _spec_schema, _settle, _contract):
+        raise TypeError("factory implementation failed")
+
+    contract = ComparisonTargetContract(target_id="mc", method="monte_carlo")
+    with pytest.raises(TypeError, match="factory implementation failed"):
+        _call_comparison_payoff_factory(
+            broken_factory,
+            object,
+            "schema",
+            "settle",
+            contract,
+        )
+
+
 def test_comparison_harness_rejects_unknown_reference_target():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 

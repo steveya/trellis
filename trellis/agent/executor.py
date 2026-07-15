@@ -6509,6 +6509,11 @@ def _materialize_semantic_execution_shim_module(
             "price_bermudan_best_of_basket_from_compat_spec",
         ),
     ).replace(EVALUATE_SENTINEL, textwrap.indent(body, "        "))
+    rendered = _inject_comparison_target_contract_declaration(
+        rendered,
+        request_metadata=request_metadata,
+        comparison_target=comparison_target,
+    )
     rendered = "\n".join(
         line for line in rendered.splitlines()
         if not line.startswith("from trellis.models.")
@@ -6588,6 +6593,11 @@ def _materialize_deterministic_exact_binding_module(
         EVALUATE_SENTINEL,
         textwrap.indent(body, "        "),
     )
+    rendered = _inject_comparison_target_contract_declaration(
+        rendered,
+        request_metadata=request_metadata,
+        comparison_target=comparison_target,
+    )
     if "price_merton_jump_diffusion_option_" in body:
         rendered = _merge_generated_requirements(rendered, ("jump_parameters",))
     if "price_bates_option_" in body:
@@ -6622,6 +6632,38 @@ def _materialize_deterministic_exact_binding_module(
         sanitized_code=source_report.sanitized_source,
         code=source_report.sanitized_source.expandtabs(4),
         source_report=source_report,
+    )
+
+
+def _inject_comparison_target_contract_declaration(
+    source: str,
+    *,
+    request_metadata: Mapping[str, object] | None,
+    comparison_target: str | None,
+) -> str:
+    """Declare the trusted target contract on a deterministic generated wrapper."""
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+
+    raw_contract = (request_metadata or {}).get("comparison_target_contract")
+    if not isinstance(raw_contract, Mapping):
+        return source
+    try:
+        contract = ComparisonTargetContract.from_payload(raw_contract)
+    except (TypeError, ValueError):
+        return source
+    normalized_target = str(comparison_target or "").strip()
+    if normalized_target and contract.target_id != normalized_target:
+        return source
+    marker = "\n    def __init__(self,"
+    if marker not in source:
+        return source
+    declaration = {
+        contract.target_id: {"target_contract": contract.to_payload()}
+    }
+    return source.replace(
+        marker,
+        f"\n    __trellis_comparison_bindings__ = {declaration!r}\n{marker}",
+        1,
     )
 
 

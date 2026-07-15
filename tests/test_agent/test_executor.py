@@ -951,6 +951,7 @@ def test_hydrate_spec_schema_defaults_from_swaption_semantics():
 
 
 def test_deterministic_exact_binding_module_materializes_swaption_helper_wrapper():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
     from trellis.agent.executor import (
         _generate_skeleton,
         _materialize_deterministic_exact_binding_module,
@@ -970,13 +971,21 @@ def test_deterministic_exact_binding_module_materializes_swaption_helper_wrapper
         "European payer swaption",
         generation_plan=generation_plan,
     )
+    target_contract = ComparisonTargetContract(
+        target_id="analytical",
+        method="analytical",
+    ).to_payload()
     generated = _materialize_deterministic_exact_binding_module(
         skeleton,
         generation_plan,
+        request_metadata={"comparison_target_contract": target_contract},
+        comparison_target="analytical",
     )
 
     assert generated is not None
     assert "return price_swaption_black76(market_state, spec)" in generated.code
+    assert "__trellis_comparison_bindings__" in generated.code
+    assert repr(target_contract) in generated.code
     assert "sigma=0.01" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 

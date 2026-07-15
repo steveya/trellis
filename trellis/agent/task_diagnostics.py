@@ -233,9 +233,14 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
         lines.append("")
 
     cross_validation_evidence = evidence.get("cross_validation") or {}
-    artifact_coherence = (
-        dict(cross_validation_evidence.get("artifact_coherence") or {})
+    raw_artifact_coherence = (
+        cross_validation_evidence.get("artifact_coherence")
         if isinstance(cross_validation_evidence, Mapping)
+        else None
+    )
+    artifact_coherence = (
+        dict(raw_artifact_coherence)
+        if isinstance(raw_artifact_coherence, Mapping)
         else {}
     )
     if artifact_coherence:
