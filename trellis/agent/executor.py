@@ -5920,9 +5920,6 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.equity_option_pde.price_equity_digital_option_pde": (
             "return price_equity_digital_option_pde(market_state, spec)"
         ),
-        "trellis.models.analytical.equity_exotics.price_equity_chooser_option_analytical": (
-            "return price_equity_chooser_option_analytical(market_state, spec)"
-        ),
         "trellis.models.analytical.equity_exotics.price_equity_compound_option_analytical": (
             "return price_equity_compound_option_analytical(market_state, spec)"
         ),

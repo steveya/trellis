@@ -292,7 +292,7 @@ def test_api_map_semantic_selection_reaches_composition_cards():
 
 @pytest.mark.parametrize(
     "payoff_family",
-    ["chooser_option", "compound_option", "lookback_option"],
+    ["compound_option", "lookback_option"],
 )
 def test_api_map_semantic_selection_reaches_gaussian_root_composition(
     payoff_family,
@@ -319,6 +319,42 @@ def test_api_map_semantic_selection_reaches_gaussian_root_composition(
     assert "SolveRequest" in text
     assert "execute_solve_request" in text
     assert "from trellis.models.calibration.solve_request import" in text
+
+
+def test_api_map_exposes_complete_chooser_raw_composition():
+    selection = select_api_map_sections(
+        ApiMapQuery(
+            payoff_family="chooser_option",
+            method="analytical",
+            model_family="equity_diffusion",
+        )
+    )
+    text = format_api_map_for_prompt(
+        compact=True,
+        query=ApiMapQuery(
+            payoff_family="chooser_option",
+            method="analytical",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert "chooser_option_composition" in selection.selected_families
+    for symbol in (
+        "resolve_scalar_diffusion_market_inputs",
+        "year_fraction",
+        "forward_from_dividend_yield",
+        "discount_factor_from_zero_rate",
+        "discounted_value",
+        "black76_call",
+        "black76_put",
+        "bivariate_standard_normal_cdf",
+        "ObjectiveBundle",
+        "SolveBounds",
+        "SolveRequest",
+        "execute_solve_request",
+    ):
+        assert symbol in text
+    assert "price_equity_chooser_option_analytical" not in text
 
 
 def test_api_map_selection_and_rendering_are_stable_and_budgeted():

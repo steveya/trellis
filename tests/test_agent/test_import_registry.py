@@ -33,6 +33,20 @@ def test_find_symbol_modules_returns_garman_kohlhagen_kernel_module():
     assert "trellis.models.black" in modules
 
 
+def test_analytical_discount_factor_is_visible_to_import_registry():
+    module = "trellis.models.analytical.support"
+    symbol = "discount_factor_from_zero_rate"
+
+    assert symbol in list_module_exports(module)
+    assert module in find_symbol_modules(symbol)
+    assert is_valid_import(module, symbol)
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert symbol in static_registry[module]
+
+
 def test_observation_return_primitives_are_visible_to_import_registry():
     module = "trellis.models.observation_returns"
     symbols = {

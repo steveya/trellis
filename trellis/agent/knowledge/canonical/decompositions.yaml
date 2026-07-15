@@ -443,11 +443,19 @@
   features: [terminal_markov, discounting, vol_surface_dependence]
   method: analytical
   method_modules:
-    - trellis.models.analytical.equity_exotics
+    - trellis.models.resolution.single_state_diffusion
+    - trellis.models.analytical.support
+    - trellis.models.analytical.support.probability
+    - trellis.models.black
+    - trellis.models.calibration.solve_request
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
-    - "USE THE EXACT HELPER: Call `price_equity_chooser_option_analytical(market_state, spec)` directly; keep the critical-spot solve inside the shared analytical module."
-  reasoning: "Simple chooser options decompose into a call plus a put on a common underlier at the choice date — closed form via the shared helper."
+    - "Resolve one explicit longest-expiry market coordinate with `resolve_scalar_diffusion_market_inputs(..., volatility_coordinate=call_strike)`; the admitted formula assumes one constant rate, dividend yield, and Black volatility across both expiry legs."
+    - "Require the choice date to lie strictly after settlement and strictly before both expiries; use `year_fraction` for every contractual time."
+    - "At the choice date, form call and put values from `forward_from_dividend_yield`, `discount_factor_from_zero_rate`, `discounted_value`, `black76_call`, and `black76_put`; define their difference as the critical-state objective."
+    - "Solve the positive critical stock state through finite `SolveBounds`, `ObjectiveBundle`, `SolveRequest`, and `execute_solve_request`; do not add a product helper or an adapter-local Newton loop."
+    - "Assemble the simple-chooser value from `bivariate_standard_normal_cdf`, explicit carry/discount factors, strikes, and the solved critical state, then apply notional exactly once."
+  reasoning: "A simple chooser is a bounded analytical composition: solve where the future call and put values balance, then integrate the two choice regions with bivariate Gaussian probabilities."
   learned: false
 
 - instrument: compound_option

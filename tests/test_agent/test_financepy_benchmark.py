@@ -68,7 +68,7 @@ def test_financepy_benchmark_manifest_includes_tranche_two_families():
         ("F009", ("price",)),
         ("F010", ("price",)),
         ("F011", ("price",)),
-        ("F012", ("price",)),
+        ("F012", ("price", "delta")),
         ("F013", ("price",)),
         ("F014", ("price",)),
         ("F015", ("price",)),
@@ -82,6 +82,17 @@ def test_price_financepy_reference_supports_tranche_two_families(task_id, expect
     assert result["elapsed_seconds"] >= 0.0
     for output_name in expected_outputs:
         assert output_name in result["outputs"]
+
+
+def test_f012_binding_declares_generic_delta_fallback():
+    from trellis.agent.task_manifests import load_financepy_bindings
+
+    binding = load_financepy_bindings(root=ROOT)[
+        "financepy.equity.chooser.black_scholes"
+    ]
+
+    assert binding["overlapping_outputs"] == ["price", "delta"]
+    assert binding["greek_fallback"] == {"kind": "bump_and_reprice"}
 
 
 def test_build_financepy_benchmark_report_accumulates_totals():
