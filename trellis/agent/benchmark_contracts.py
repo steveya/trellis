@@ -821,15 +821,22 @@ def _benchmark_detail_lines(
         expiry_date = _valuation_date(contract, scenario_contract) + timedelta(
             days=round(float(contract.get("expiry_years") or 0.0) * 365.0)
         )
-        return [
+        lines = [
             f"Spot: {contract.get('spot')}.",
             f"Strike: {contract.get('strike')}.",
             f"Option type: {contract.get('option_type', 'call')}.",
-            f"Lookback type: {contract.get('lookback_type', 'fixed_strike')}.",
-            f"Monitoring style: {contract.get('monitoring_style', 'continuous')}.",
-            f"Running extreme: {contract.get('running_extreme', contract.get('spot'))}.",
-            f"Expiry date: {expiry_date.isoformat()}.",
         ]
+        if contract.get("lookback_type") not in {None, ""}:
+            lines.append(f"Lookback type: {contract['lookback_type']}.")
+        if contract.get("monitoring_style") not in {None, ""}:
+            lines.append(f"Monitoring style: {contract['monitoring_style']}.")
+        lines.extend(
+            [
+                f"Running extreme: {contract.get('running_extreme', contract.get('spot'))}.",
+                f"Expiry date: {expiry_date.isoformat()}.",
+            ]
+        )
+        return lines
     if product == "chooser_option":
         choose_date = _valuation_date(contract, scenario_contract) + timedelta(
             days=round(float(contract.get("choose_time_years") or 0.0) * 365.0)
@@ -1022,8 +1029,6 @@ def _lookback_option_overrides(contract: Mapping[str, Any], *, valuation_date: d
         "strike": _float_or_none(contract.get("strike")),
         "expiry_date": valuation_date + timedelta(days=round(float(contract.get("expiry_years") or 0.0) * 365.0)),
         "option_type": str(contract.get("option_type") or "call").strip().lower(),
-        "lookback_type": str(contract.get("lookback_type") or "fixed_strike").strip().lower(),
-        "monitoring_style": str(contract.get("monitoring_style") or "continuous").strip().lower(),
         "running_extreme": running_extreme if running_extreme is not None else spot,
     }
 

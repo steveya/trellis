@@ -98,6 +98,12 @@ def test_legacy_lookback_contract_is_explicit_and_runtime_bindable(task_id):
     assert overrides["monitoring_style"] == "continuous"
 
 
+def test_financepy_lookback_contract_declares_continuous_monitoring():
+    task = _benchmark_tasks()["F011"]
+
+    assert task["benchmark_contract"]["monitoring_style"] == "continuous"
+
+
 def test_benchmark_request_description_surfaces_cap_model_specific_terms():
     tasks = _benchmark_tasks()
 

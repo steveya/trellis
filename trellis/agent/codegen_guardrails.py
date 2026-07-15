@@ -1751,6 +1751,9 @@ def _augment_product_ir_for_requested_method(
     """
     if product_ir is None:
         return None
+    from trellis.agent.knowledge.decompose import enforce_product_ir_support
+
+    product_ir = enforce_product_ir_support(product_ir)
     method = normalize_method(preferred_method) if preferred_method else ""
     method_hints = {
         "analytical": {

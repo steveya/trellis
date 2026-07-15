@@ -314,9 +314,11 @@ estimator checks. This lane requires ``lookback_type="fixed_strike"``,
 constant-parameter scalar GBM dynamics. Discrete monitoring, floating strike,
 multiple simultaneous stochastic extrema, local or stochastic volatility,
 jumps, and approximate transition schemes need different contracts and fail
-closed. The functions in ``trellis.models.lookback_option`` remain available
-as compatibility and independent-comparison references, not generated-route
-construction authority.
+closed before code generation. An omitted or conflicting strike/monitoring
+style also fails closed instead of inheriting ``fixed_strike`` or
+``continuous`` defaults. The functions in ``trellis.models.lookback_option``
+remain available as compatibility and independent-comparison references, not
+generated-route construction authority.
 
 Variance Swap Composition
 -------------------------

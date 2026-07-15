@@ -112,7 +112,12 @@ monitoring. Canonical legacy tasks carry those terms in their manifest-backed
 contracts; arbitrary sparse requests do not receive product defaults. The
 admitted route then validates continuous monitoring, initializes the reducer
 from the contractual running extremum, and fails closed for unsupported
-dynamics or monitoring styles.
+dynamics or monitoring styles. Missing or conflicting strike/monitoring
+semantics, floating strike, discrete monitoring, and non-scalar-GBM dynamics
+become structured ``ProductIR.unresolved_primitives``. The pre-generation gate
+blocks those contracts before an LLM can synthesize a generic Monte Carlo
+fallback. Assisted recovery may clear those blockers only by producing an
+explicit contract that matches an admitted route.
 
 This separation is important for small-context agents. The semantic query
 chooses one complete composition card, the card names the minimal public

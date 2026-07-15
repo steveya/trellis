@@ -1027,6 +1027,10 @@ Carlo engine. Generated adapter code supplies the prior running extremum and
 owns expiry settlement, strike, notional, discounting, and estimator checks.
 It admits only European fixed-strike continuous monitoring and fails closed
 instead of substituting the discrete running-extremum reducer.
+The support-contract pass records missing strike/monitoring semantics and
+known unsupported variants as structured primitive blockers. Those blockers
+stop the build before code generation even when the generic Monte Carlo route
+would otherwise be a candidate.
 
 The arithmetic-Asian MC target assembles the single-state resolver, weighted
 observation contract/payoff, GBM, and generic Monte Carlo engine. The

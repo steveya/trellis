@@ -711,6 +711,9 @@ The first migrated vanilla cases now use that boundary directly:
   final PV. Comparison with the retained structured sample-dispersion helper is
   statistical, not pathwise. The product-level lookback function remains a
   compatibility and independent-comparison reference, not route authority.
+  Sparse strike/monitoring semantics, floating strike, discrete monitoring,
+  and unsupported dynamics produce structured contract or numerical blockers
+  before generic Monte Carlo generation.
 - Single-underlier autocallable proof routes now use
   ``trellis.models.autocallable.price_autocallable_monte_carlo_result`` as the
   checked MC/QMC event helper. It owns exact GBM path simulation, fixed

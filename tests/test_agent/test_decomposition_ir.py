@@ -85,7 +85,12 @@ class TestProductIR:
         assert "fixed_strike" not in floating.payoff_traits
 
     def test_ir_distinguishes_fixed_continuous_lookback_from_unsupported_variants(self):
-        from trellis.agent.knowledge.decompose import decompose_to_ir
+        from dataclasses import replace
+
+        from trellis.agent.knowledge.decompose import (
+            decompose_to_ir,
+            enforce_product_ir_support,
+        )
 
         sparse = decompose_to_ir(
             "Lookback option: Monte Carlo vs analytical",
@@ -109,6 +114,11 @@ class TestProductIR:
         assert "floating_strike" not in sparse.payoff_traits
         assert "continuous_monitoring" not in sparse.payoff_traits
         assert "discrete_monitoring" not in sparse.payoff_traits
+        assert not sparse.supported
+        assert set(sparse.unresolved_primitives) >= {
+            "lookback_strike_semantics",
+            "lookback_monitoring_semantics",
+        }
 
         assert set(fixed_continuous.payoff_traits) >= {
             "lookback",
@@ -118,6 +128,8 @@ class TestProductIR:
         }
         assert "floating_strike" not in fixed_continuous.payoff_traits
         assert "discrete_monitoring" not in fixed_continuous.payoff_traits
+        assert fixed_continuous.supported
+        assert fixed_continuous.unresolved_primitives == ()
         for ir in (sparse, fixed_continuous):
             assert ir.model_family == "equity_diffusion"
             assert ir.state_dependence == "path_dependent"
@@ -125,9 +137,26 @@ class TestProductIR:
         assert "floating_strike" in floating.payoff_traits
         assert "fixed_strike" not in floating.payoff_traits
         assert "continuous_monitoring" in floating.payoff_traits
+        assert not floating.supported
+        assert "lookback_floating_strike" in floating.unresolved_primitives
         assert "discrete_monitoring" in discrete.payoff_traits
         assert "continuous_monitoring" not in discrete.payoff_traits
         assert "fixed_strike" in discrete.payoff_traits
+        assert not discrete.supported
+        assert "lookback_discrete_monitoring" in discrete.unresolved_primitives
+
+        corrected = enforce_product_ir_support(
+            replace(
+                sparse,
+                payoff_traits=tuple(
+                    dict.fromkeys(
+                        (*sparse.payoff_traits, "fixed_strike", "continuous_monitoring")
+                    )
+                ),
+            )
+        )
+        assert corrected.supported
+        assert corrected.unresolved_primitives == ()
 
     def test_ir_for_local_vol_option_uses_local_vol_model_family(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir

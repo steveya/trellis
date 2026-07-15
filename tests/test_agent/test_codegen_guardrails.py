@@ -481,7 +481,12 @@ def test_path_dependent_family_support_approves_asian_and_lookback_primitives():
         product_ir=ProductIR(
             instrument="lookback_option",
             payoff_family="lookback_option",
-            payoff_traits=("lookback", "path_dependent"),
+            payoff_traits=(
+                "lookback",
+                "path_dependent",
+                "fixed_strike",
+                "continuous_monitoring",
+            ),
             exercise_style="european",
             model_family="equity_diffusion",
         ),
@@ -497,6 +502,7 @@ def test_path_dependent_family_support_approves_asian_and_lookback_primitives():
         "trellis.models.processes.gbm",
     } <= set(asian_plan.approved_modules)
     assert "trellis.models.lookback_option" not in lookback_plan.approved_modules
+    assert lookback_plan.blocker_report is None
     assert {
         "trellis.models.analytical.support",
         "trellis.models.resolution.single_state_diffusion",
@@ -574,6 +580,68 @@ def test_path_dependent_family_support_approves_asian_and_lookback_primitives():
         or "build_conditional_bridge_extremum_reducer" in ref
         for ref in sparse_lookback_plan.lane_exact_binding_refs
     )
+    assert sparse_lookback_plan.blocker_report is not None
+    assert sparse_lookback_plan.blocker_report.should_block
+    assert {
+        "lookback_strike_semantics",
+        "lookback_monitoring_semantics",
+    } <= {blocker.id for blocker in sparse_lookback_plan.blocker_report.blockers}
+
+
+@pytest.mark.parametrize(
+    ("payoff_traits", "model_family", "expected_blocker"),
+    [
+        (
+            ("lookback", "path_dependent", "floating_strike", "continuous_monitoring"),
+            "equity_diffusion",
+            "lookback_floating_strike",
+        ),
+        (
+            ("lookback", "path_dependent", "fixed_strike", "discrete_monitoring"),
+            "equity_diffusion",
+            "lookback_discrete_monitoring",
+        ),
+        (
+            ("lookback", "path_dependent", "fixed_strike", "continuous_monitoring"),
+            "stochastic_volatility",
+            "lookback_transition_dynamics",
+        ),
+    ],
+)
+def test_unsupported_lookback_contracts_block_before_generation(
+    payoff_traits,
+    model_family,
+    expected_blocker,
+):
+    from trellis.agent.build_gate import evaluate_pre_generation_gate
+
+    plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="unsupported lookback contract",
+        ),
+        instrument_type="lookback_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=payoff_traits,
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family=model_family,
+        ),
+    )
+
+    assert plan.blocker_report is not None
+    assert expected_blocker in {
+        blocker.id for blocker in plan.blocker_report.blockers
+    }
+    decision = evaluate_pre_generation_gate(None, plan)
+    assert decision.decision == "block"
+    assert expected_blocker in decision.reason
 
 
 def test_autocallable_generation_plan_approves_event_helper_surface():
