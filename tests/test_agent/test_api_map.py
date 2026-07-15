@@ -440,6 +440,27 @@ def test_api_map_exposes_product_neutral_conditional_extremum_composition():
         )
     )
     assert "conditional_extremum_composition" in selection.selected_families
+    assert "path_statistic_composition" not in selection.selected_families
+    assert "analytical_gaussian_composition" not in selection.selected_families
+
+    sparse_selection = select_api_map_sections(
+        ApiMapQuery(
+            instrument_type="lookback_option",
+            method="monte_carlo",
+        )
+    )
+    assert "conditional_extremum_composition" in sparse_selection.selected_families
+    assert "path_statistic_composition" not in sparse_selection.selected_families
+    assert "analytical_gaussian_composition" not in sparse_selection.selected_families
+
+    analytical_selection = select_api_map_sections(
+        ApiMapQuery(
+            instrument_type="lookback_option",
+            method="analytical",
+        )
+    )
+    assert "analytical_gaussian_composition" in analytical_selection.selected_families
+    assert "conditional_extremum_composition" not in analytical_selection.selected_families
 
 
 def test_api_map_exposes_product_neutral_observation_return_composition():

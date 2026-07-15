@@ -707,13 +707,66 @@ routes:
             this primitive lane.
       - when:
           payoff_family: lookback_option
+          payoff_traits: [lookback, fixed_strike, continuous_monitoring]
+          exclude_payoff_traits: [floating_strike, discrete_monitoring]
           exercise_style: [european]
+          model_family: [equity, equity_diffusion]
         primitives:
-          - module: trellis.models.lookback_option
-            symbol: price_equity_fixed_lookback_option_monte_carlo
-            role: route_helper
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: resolve_scalar_diffusion_market_inputs
+            role: market_binding
+          - module: trellis.models.analytical.support
+            symbol: normalized_option_type
+            role: payoff_primitive
+          - module: trellis.models.monte_carlo.transition_state
+            symbol: ConditionalBridgeExtremumContract
+            role: payoff_contract
+          - module: trellis.models.monte_carlo.transition_state
+            symbol: build_conditional_bridge_extremum_reducer
+            role: payoff_primitive
+          - module: trellis.models.processes.gbm
+            symbol: GBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: path_simulation
+          - module: trellis.models.monte_carlo.path_state
+            symbol: MonteCarloPathRequirement
+            role: payoff_contract
+          - module: trellis.models.monte_carlo.path_state
+            symbol: StateAwarePayoff
+            role: payoff_contract
+          - module: trellis.core.differentiable
+            symbol: get_numpy
+            role: numerical_backend
         adapters: []
-        notes: []
+        notes:
+          - >-
+            Require lookback_type='fixed_strike' and
+            monitoring_style='continuous'. Bind scalar market inputs at the
+            contractual strike volatility coordinate; do not substitute the
+            discrete-observation RunningExtremumContract lane.
+          - >-
+            Compose one ConditionalBridgeExtremumContract over every exact GBM
+            transition. Set direction from call/put and seed initial_extremum
+            with the contractual running maximum or minimum, defaulting to spot.
+          - >-
+            Generated adapter code owns option normalization, expiry settlement,
+            strike, notional, discounting, path/step controls, and estimator
+            diagnostics. Continuous monitoring must fail closed when transition
+            state is unavailable.
+          - >-
+            Integer seeds reproduce independent process and bridge streams;
+            explicit seed=None preserves nondeterministic engine execution.
+            Generated settlement validates the generic engine's
+            population-dispersion standard error internally, while the scalar
+            Payoff result remains the final PV. Retained-helper comparison is
+            statistical, not same-seed pathwise evidence. Require at least two
+            paths.
+          - >-
+            The product-level lookback Monte Carlo function is retained only as
+            compatibility and independent comparison evidence; it is not
+            generated-route authority.
       - when:
           payoff_family: vanilla_option
           exercise_style: [european]

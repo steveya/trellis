@@ -56,3 +56,100 @@
   knowledge_files_to_update:
     - trellis/agent/knowledge/canonical/cookbooks.yaml
     - trellis/agent/knowledge/canonical/method_requirements.yaml
+
+- id: lookback_strike_semantics
+  category: semantic_contract_gap
+  primitive_kind: payoff_contract
+  severity: high
+  summary: >-
+    Lookback pricing requires one explicit strike style; an omitted or
+    conflicting fixed/floating-strike contract cannot inherit a route default.
+  required_tests:
+    - tests/test_agent/test_decomposition_ir.py
+    - tests/test_agent/test_codegen_guardrails.py
+  docs_to_update:
+    - docs/developer/runtime_agent_orientation.rst
+    - docs/user_guide/pricing.rst
+  knowledge_files_to_update:
+    - trellis/agent/knowledge/canonical/decompositions.yaml
+    - trellis/agent/knowledge/canonical/routes.yaml
+
+- id: lookback_monitoring_semantics
+  category: semantic_contract_gap
+  primitive_kind: monitoring_contract
+  severity: high
+  summary: >-
+    Lookback pricing requires one explicit monitoring style; an omitted or
+    conflicting continuous/discrete contract cannot inherit a route default.
+  required_tests:
+    - tests/test_agent/test_decomposition_ir.py
+    - tests/test_agent/test_codegen_guardrails.py
+  docs_to_update:
+    - docs/developer/runtime_agent_orientation.rst
+    - docs/user_guide/pricing.rst
+  knowledge_files_to_update:
+    - trellis/agent/knowledge/canonical/decompositions.yaml
+    - trellis/agent/knowledge/canonical/routes.yaml
+
+- id: lookback_floating_strike
+  category: route_binding_gap
+  primitive_kind: payoff_reduction
+  severity: high
+  summary: >-
+    The admitted lookback route does not yet bind floating-strike settlement
+    to validated transition-state primitives.
+  target_package: trellis.models.monte_carlo
+  suggested_modules:
+    - trellis.models.monte_carlo.transition_state
+    - trellis.models.monte_carlo.path_state
+  required_tests:
+    - tests/test_agent/test_codegen_guardrails.py
+    - tests/test_models/test_monte_carlo/test_transition_state.py
+  docs_to_update:
+    - docs/quant/pricing_stack.rst
+    - LIMITATIONS.md
+  knowledge_files_to_update:
+    - trellis/agent/knowledge/canonical/routes.yaml
+    - trellis/agent/knowledge/canonical/backend_bindings.yaml
+
+- id: lookback_discrete_monitoring
+  category: route_binding_gap
+  primitive_kind: observation_contract
+  severity: high
+  summary: >-
+    The admitted lookback route does not yet bind discrete monitoring and its
+    observation schedule to the running-extremum primitives.
+  target_package: trellis.models.monte_carlo
+  suggested_modules:
+    - trellis.models.monte_carlo.path_statistics
+    - trellis.models.monte_carlo.path_state
+  required_tests:
+    - tests/test_agent/test_codegen_guardrails.py
+    - tests/test_models/test_monte_carlo/test_mc.py
+  docs_to_update:
+    - docs/quant/pricing_stack.rst
+    - LIMITATIONS.md
+  knowledge_files_to_update:
+    - trellis/agent/knowledge/canonical/routes.yaml
+    - trellis/agent/knowledge/canonical/backend_bindings.yaml
+
+- id: lookback_transition_dynamics
+  category: numerical_substrate_gap
+  primitive_kind: conditional_transition_kernel
+  severity: high
+  summary: >-
+    Continuous lookback extrema are admitted only for exact scalar
+    constant-parameter GBM transitions; the requested dynamics need a
+    separately validated conditional-extremum kernel.
+  target_package: trellis.models.monte_carlo
+  suggested_modules:
+    - trellis.models.monte_carlo.transition_state
+  required_tests:
+    - tests/test_agent/test_codegen_guardrails.py
+    - tests/test_models/test_monte_carlo/test_transition_state.py
+  docs_to_update:
+    - docs/mathematical/monte_carlo.rst
+    - LIMITATIONS.md
+  knowledge_files_to_update:
+    - trellis/agent/knowledge/canonical/routes.yaml
+    - trellis/agent/knowledge/canonical/backend_bindings.yaml

@@ -86,16 +86,17 @@ symbol selection remains builder-owned.
 
 The ``path_statistic_composition`` card applies the same rule to path-dependent
 Monte Carlo construction. Semantic aliases such as ``running_extremum``,
-``lookback_option``, ``squared_log_return``, and ``variance_swap`` lead the
-builder to exact observation-step contracts, full-path parity functions, and
-bounded reducers. For admitted variance-swap Monte Carlo, the card also points
-to the product-neutral scalar-diffusion market resolver and states that
-generated code owns annualization and settlement. The general Monte Carlo card
-no longer advertises the lookback or variance-swap product pricers as
-construction imports. Quant still selects and challenges the model from
-product semantics, and model-validator still reviews monitoring,
-annualization, calibration, and residual numerical risk; neither role receives
-implementation imports.
+``squared_log_return``, and ``variance_swap`` lead the builder to exact
+observation-step contracts, full-path parity functions, and bounded reducers.
+The bare ``lookback_option`` alias is intentionally absent because an admitted
+continuous lookback must not inherit discrete-observation state. For admitted
+variance-swap Monte Carlo, the card also points to the product-neutral
+scalar-diffusion market resolver and states that generated code owns
+annualization and settlement. The general Monte Carlo card no longer
+advertises the lookback or variance-swap product pricers as construction
+imports. Quant still selects and challenges the model from product semantics,
+and model-validator still reviews monitoring, annualization, calibration, and
+residual numerical risk; neither role receives implementation imports.
 
 The ``conditional_extremum_composition`` card is a separate continuous-state
 route. It points builders to ``ScalarTransitionObservation``,
@@ -105,7 +106,18 @@ constant-parameter ``GBM`` bridge capability, and
 ``PathReducer`` state, Brownian path construction, or a product lookback helper
 as the conditional-extremum primitive. The card also records the current
 one-stochastic-reducer boundary and keeps derivative settlement in generated
-adapter code.
+adapter code. ``lookback_option`` plus a Monte Carlo method selects this card
+only after the semantic contract has established fixed-strike continuous
+monitoring. Canonical legacy tasks carry those terms in their manifest-backed
+contracts; arbitrary sparse requests do not receive product defaults. The
+admitted route then validates continuous monitoring, initializes the reducer
+from the contractual running extremum, and fails closed for unsupported
+dynamics or monitoring styles. Missing or conflicting strike/monitoring
+semantics, floating strike, discrete monitoring, and non-scalar-GBM dynamics
+become structured ``ProductIR.unresolved_primitives``. The pre-generation gate
+blocks those contracts before an LLM can synthesize a generic Monte Carlo
+fallback. Assisted recovery may clear those blockers only by producing an
+explicit contract that matches an admitted route.
 
 This separation is important for small-context agents. The semantic query
 chooses one complete composition card, the card names the minimal public

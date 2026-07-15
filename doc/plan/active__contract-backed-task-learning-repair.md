@@ -687,6 +687,11 @@ recovery from cross-validation target names. The route and backend-binding
 catalogs now expose these helpers as exact proof surfaces, while generated
 adapters remain thin wrappers over checked runtime code.
 
+This records the historical QUA-899 repair. QUA-1188 and QUA-1189 supersede
+the fixed-lookback Monte Carlo authority: the product helper remains comparison
+evidence, while generated routes compose the scalar resolver, conditional
+transition-extremum contract, exact GBM, and generic Monte Carlo engine.
+
 Validation:
 
 ```bash

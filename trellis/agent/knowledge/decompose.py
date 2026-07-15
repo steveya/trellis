@@ -3162,9 +3162,129 @@ def _candidate_engine_families_for(
     return tuple(families)
 
 
+_LOOKBACK_SUPPORT_BLOCKERS = frozenset(
+    {
+        "lookback_strike_semantics",
+        "lookback_monitoring_semantics",
+        "lookback_floating_strike",
+        "lookback_discrete_monitoring",
+        "lookback_transition_dynamics",
+    }
+)
+
+
+def enforce_product_ir_support(product_ir: ProductIR) -> ProductIR:
+    """Attach hard blockers for product semantics without an admitted route."""
+    if (
+        product_ir.instrument != "lookback_option"
+        and product_ir.payoff_family != "lookback_option"
+    ):
+        return product_ir
+
+    traits = set(product_ir.payoff_traits)
+    had_lookback_blockers = any(
+        blocker in _LOOKBACK_SUPPORT_BLOCKERS
+        for blocker in product_ir.unresolved_primitives
+    )
+    unresolved = [
+        blocker
+        for blocker in product_ir.unresolved_primitives
+        if blocker not in _LOOKBACK_SUPPORT_BLOCKERS
+    ]
+
+    strike_traits = traits & {"fixed_strike", "floating_strike"}
+    if strike_traits == {"floating_strike"}:
+        unresolved.append("lookback_floating_strike")
+    elif strike_traits != {"fixed_strike"}:
+        unresolved.append("lookback_strike_semantics")
+
+    monitoring_traits = traits & {"continuous_monitoring", "discrete_monitoring"}
+    if monitoring_traits == {"discrete_monitoring"}:
+        unresolved.append("lookback_discrete_monitoring")
+    elif monitoring_traits != {"continuous_monitoring"}:
+        unresolved.append("lookback_monitoring_semantics")
+
+    model_family = str(product_ir.model_family or "").strip().lower()
+    if model_family not in {"equity", "equity_diffusion"}:
+        unresolved.append("lookback_transition_dynamics")
+
+    normalized_unresolved = tuple(dict.fromkeys(unresolved))
+    supported = not normalized_unresolved
+    if not product_ir.supported and not had_lookback_blockers:
+        supported = False
+    return replace(
+        product_ir,
+        unresolved_primitives=normalized_unresolved,
+        supported=supported,
+    )
+
+
 def _augment_ir_with_contextual_support(ir: ProductIR, description: str) -> ProductIR:
     """Augment ProductIR with high-signal request context missing from static decompositions."""
     desc = _normalise(description)
+    if ir.instrument == "lookback_option" or ir.payoff_family == "lookback_option":
+        payoff_traits = list(ir.payoff_traits)
+        strike_style = None
+        if any(
+            marker in desc
+            for marker in ("floating_strike", "floating_strike_lookback")
+        ):
+            strike_style = "floating_strike"
+        elif any(
+            marker in desc
+            for marker in ("fixed_strike", "fixed_strike_lookback")
+        ):
+            strike_style = "fixed_strike"
+
+        monitoring_style = None
+        if any(
+            marker in desc
+            for marker in (
+                "discrete_monitoring",
+                "discretely_monitored",
+                "discrete_observation",
+                "monitoring_style:_discrete",
+            )
+        ):
+            monitoring_style = "discrete_monitoring"
+        elif any(
+            marker in desc
+            for marker in (
+                "continuous_monitoring",
+                "continuously_monitored",
+                "continuous_lookback",
+                "monitoring_style:_continuous",
+            )
+        ):
+            monitoring_style = "continuous_monitoring"
+
+        for trait in ("lookback", "path_dependent"):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+        if strike_style is not None:
+            payoff_traits = [
+                trait
+                for trait in payoff_traits
+                if trait not in {"fixed_strike", "floating_strike"}
+            ]
+            payoff_traits.append(strike_style)
+        if monitoring_style is not None:
+            payoff_traits = [
+                trait
+                for trait in payoff_traits
+                if trait not in {"continuous_monitoring", "discrete_monitoring"}
+            ]
+            payoff_traits.append(monitoring_style)
+
+        return enforce_product_ir_support(
+            replace(
+                ir,
+                payoff_traits=tuple(dict.fromkeys(payoff_traits)),
+                schedule_dependence=False,
+                state_dependence="path_dependent",
+            )
+        )
+
     if ir.instrument == "asian_option" or ir.payoff_family == "asian_option":
         payoff_traits = list(ir.payoff_traits)
         geometric = any(

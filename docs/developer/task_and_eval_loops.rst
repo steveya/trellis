@@ -1018,17 +1018,30 @@ single ``BarrierMonitor``, notional convention, and deterministic discounting.
 Rebate-bearing barriers should remain on the analytical Rubinstein route until
 the PDE/MC rebate contract is implemented.
 
-Digital and fixed-lookback proof targets retain exact helper wrappers where the
-checked numerical contract still lives at that boundary. Arithmetic-Asian
-targets no longer do. The MC target assembles the single-state resolver,
-weighted observation contract/payoff, GBM, and generic Monte Carlo engine. The
+Digital proof targets retain exact helper wrappers where the checked numerical
+contract still lives at that boundary. Fixed-lookback and arithmetic-Asian
+Monte Carlo targets no longer do. The fixed-lookback target assembles the
+scalar-diffusion resolver, normalized call/put semantics, one conditional
+bridge-extremum contract, exact constant-parameter GBM, and the generic Monte
+Carlo engine. Generated adapter code supplies the prior running extremum and
+owns expiry settlement, strike, notional, discounting, and estimator checks.
+It admits only European fixed-strike continuous monitoring and fails closed
+instead of substituting the discrete running-extremum reducer.
+The support-contract pass records missing strike/monitoring semantics and
+known unsupported variants as structured primitive blockers. Those blockers
+stop the build before code generation even when the generic Monte Carlo route
+would otherwise be a candidate.
+
+The arithmetic-Asian MC target assembles the single-state resolver, weighted
+observation contract/payoff, GBM, and generic Monte Carlo engine. The
 Turnbull-Wakeman-style target assembles weighted lognormal moments, moment
-matching, and a Black-76 call or put kernel. Both use the same explicit
-observation schedule, discounting, and notional contract. Sparse legacy task
-text may use cross-validation target names to recover product identity, but
-geometric, floating-strike, multi-asset, non-European, or nonrepresentable-grid
-semantics fail closed instead of inheriting the arithmetic fixed-strike lane.
-The retained Asian pricing wrappers are comparison references only.
+matching, and a Black-76 call or put kernel. Both Asian lanes use the same
+explicit observation schedule, discounting, and notional contract. Sparse
+legacy task text may use cross-validation target names to recover product
+identity, but geometric, floating-strike, multi-asset, non-European, or
+nonrepresentable-grid semantics fail closed instead of inheriting the
+arithmetic fixed-strike lane. Retained lookback and Asian pricing wrappers are
+compatibility and independent-comparison references only.
 
 Capped/floored cliquet comparisons are now a primitive-composed task lane. The
 analytical target builds an ``ObservationReturnContract`` and combines bounded

@@ -304,6 +304,7 @@ tasks:
     product: lookback_option
     option_type: call
     lookback_type: fixed_strike
+    monitoring_style: continuous
     strike: 100.0
     spot: 100.0
     expiry_years: 1.0

@@ -33,6 +33,13 @@ def _extension_tasks() -> dict[str, dict]:
     }
 
 
+def _legacy_tasks() -> dict[str, dict]:
+    return {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml", root=ROOT)
+    }
+
+
 def test_canonical_benchmark_instrument_type_maps_broad_runtime_families():
     tasks = _benchmark_tasks()
 
@@ -74,6 +81,27 @@ def test_benchmark_request_description_makes_cap_request_explicit():
     assert "Rate index: USD-SOFR-3M." in description
     assert "Pricing model: black." in description
     assert "cap/floor" not in description.lower()
+
+
+@pytest.mark.parametrize("task_id", ["T30", "T96"])
+def test_legacy_lookback_contract_is_explicit_and_runtime_bindable(task_id):
+    task = _legacy_tasks()[task_id]
+
+    description = benchmark_request_description(task, root=ROOT)
+    overrides = benchmark_spec_overrides(task, root=ROOT)
+
+    assert canonical_benchmark_instrument_type(task) == "lookback_option"
+    assert description is not None
+    assert "Lookback type: fixed_strike." in description
+    assert "Monitoring style: continuous." in description
+    assert overrides["lookback_type"] == "fixed_strike"
+    assert overrides["monitoring_style"] == "continuous"
+
+
+def test_financepy_lookback_contract_declares_continuous_monitoring():
+    task = _benchmark_tasks()["F011"]
+
+    assert task["benchmark_contract"]["monitoring_style"] == "continuous"
 
 
 def test_benchmark_request_description_surfaces_cap_model_specific_terms():

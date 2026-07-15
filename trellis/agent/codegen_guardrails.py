@@ -146,10 +146,6 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.processes.gbm",
         "trellis.models.resolution.single_state_diffusion",
     ),
-    "lookback_option": (
-        "trellis.models.analytical.equity_exotics",
-        "trellis.models.lookback_option",
-    ),
     "barrier_option": (
         "trellis.models.analytical.support.barriers",
         "trellis.models.single_barrier_option",
@@ -1755,6 +1751,9 @@ def _augment_product_ir_for_requested_method(
     """
     if product_ir is None:
         return None
+    from trellis.agent.knowledge.decompose import enforce_product_ir_support
+
+    product_ir = enforce_product_ir_support(product_ir)
     method = normalize_method(preferred_method) if preferred_method else ""
     method_hints = {
         "analytical": {
