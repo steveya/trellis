@@ -4797,7 +4797,7 @@ def _fixed_lookback_monte_carlo_evaluate_body(
         )
 
         def reject_discrete_paths(_paths):
-            raise NotImplementedError(
+            raise ValueError(
                 "continuous fixed-lookback monitoring requires transition state"
             )
 

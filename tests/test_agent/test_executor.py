@@ -2406,6 +2406,7 @@ def test_deterministic_exact_binding_module_materializes_lookback_mc_target():
         assert symbol in generated.code
     assert "trellis.models.lookback_option" not in generated.code
     assert "price_equity_fixed_lookback_option_monte_carlo" not in generated.code
+    assert "raise NotImplementedError" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
     unsupported_plan = build_generation_plan(
