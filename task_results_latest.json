@@ -2,35 +2,55 @@
   "T13": {
     "task_id": "T13",
     "task_kind": "pricing",
-    "run_id": "20260413T062250272261",
-    "persisted_at": "2026-04-13T06:22:50.272439+00:00",
+    "run_id": "20260324T120000__20260715T024708167601Z",
+    "persisted_at": "2026-07-15T02:47:08.167601+00:00",
+    "run_started_at": "2026-03-24T12:00:00",
+    "run_completed_at": "2026-03-24T12:00:00",
+    "git_sha": "06ed1ccbb51efa20216e7ed72c42b4f094111bdf",
+    "knowledge_revision": "12674ec98ff82df9",
     "task": {
       "id": "T13",
-      "title": "European call: theta-method convergence order",
-      "construct": "pde"
+      "title": "European call: theta-method convergence order"
     },
     "result": {
       "task_id": "T13",
       "title": "European call: theta-method convergence order",
       "instrument_type": "european_option",
       "instrument_identity_source": "task.title_or_description",
-      "start_time": "2026-04-13T06:22:50.272261",
+      "start_time": "2026-03-24T12:00:00",
+      "run_started_at": "2026-03-24T12:00:00",
       "comparison_task": false,
-      "construct_methods": [
-        "pde_solver"
-      ],
-      "comparison_targets": [
-        "pde_solver"
-      ],
+      "construct_methods": [],
+      "comparison_targets": [],
       "cross_validate": null,
       "new_component": null,
       "semantic_contract_id": null,
       "runtime_controls": {
         "skip_post_build_reflection": false,
         "skip_post_build_consolidation": false,
-        "skip_task_diagnosis_persist": false
+        "skip_task_diagnosis_persist": false,
+        "llm_wait_log_path": "/tmp/task_runtime_waits.jsonl"
       },
       "execution_mode": "live",
+      "task_corpus": "",
+      "task_definition_version": null,
+      "task_definition_manifest": "",
+      "market_scenario_id": "",
+      "recovery_mode": "strict",
+      "post_build_learning_policy": {
+        "execution_mode": "live",
+        "artifact_policy": "fresh_generated",
+        "recovery_mode": "strict",
+        "run_reflection": false,
+        "run_consolidation": false,
+        "reflection_reason": "recovery_mode_strict",
+        "consolidation_reason": "recovery_mode_strict",
+        "skip_reasons": [
+          "recovery_mode_strict"
+        ],
+        "policy_source": "task_execution_policy"
+      },
+      "recovery_attempts": [],
       "market_context": {
         "source": "default",
         "as_of": null,
@@ -43,7 +63,7 @@
       "runtime_contract": {
         "task_id": "T13",
         "task_title": "European call: theta-method convergence order",
-        "description": "Build a pricer for: European call: theta-method convergence order\n\nConstruct methods: pde_solver\nComparison targets: pde_solver (pde_solver)",
+        "description": "Build a pricer for: European call: theta-method convergence order",
         "instrument_type": "european_option",
         "instrument_identity_source": "task.title_or_description",
         "semantic_contract": null,
@@ -60,11 +80,10 @@
         "market_provenance": {},
         "evaluation_tags": [
           "task_runtime",
-          "construct:pde",
           "market:default"
         ],
         "simulation_identity": {
-          "seed": 1199012082454236288,
+          "seed": 2631944396623188678,
           "seed_source": "derived_from_request_and_snapshot",
           "sample_source": {
             "kind": "market_snapshot",
@@ -84,10 +103,10 @@
             "ordering": "simulation_generation_order",
             "start": 0
           },
-          "simulation_stream_id": "T13:e78cda804c31ee40",
-          "replay_key": "T13:e78cda804c31ee40"
+          "simulation_stream_id": "T13:81180d58c931a054",
+          "replay_key": "T13:81180d58c931a054"
         },
-        "simulation_seed": 1199012082454236288,
+        "simulation_seed": 2631944396623188678,
         "sample_source": {
           "kind": "market_snapshot",
           "source": "default",
@@ -106,34 +125,148 @@
           "ordering": "simulation_generation_order",
           "start": 0
         },
-        "simulation_stream_id": "T13:e78cda804c31ee40",
-        "replay_key": "T13:e78cda804c31ee40",
+        "simulation_stream_id": "T13:81180d58c931a054",
+        "replay_key": "T13:81180d58c931a054",
         "trace_identifier": null,
         "trace_path": null,
         "analytical_trace_path": null,
         "analytical_trace_text_path": null
       },
       "success": true,
-      "attempts": 1,
-      "gap_confidence": 0.8,
-      "knowledge_gaps": [],
-      "payoff_class": "FakePDEPayoff",
-      "preferred_method": "pde_solver",
+      "attempts": 2,
+      "gap_confidence": 0.75,
+      "knowledge_gaps": [
+        "vol_surface"
+      ],
+      "payoff_class": "FakePayoffClass",
+      "preferred_method": null,
       "reference_target": false,
       "failures": [],
       "agent_observation_count": 0,
       "agent_observations": [],
       "knowledge_summary": {},
       "token_usage_summary": {},
+      "intra_run_learning": {},
       "platform_trace_path": null,
       "platform_request_id": null,
       "analytical_trace_path": null,
       "analytical_trace_text_path": null,
       "audit_record_path": null,
-      "build_observability": {},
+      "generated_artifact": {
+        "module_name": "tests.test_agent.test_task_runtime",
+        "class_name": "FakePayoffClass",
+        "file_path": "/home/runner/work/trellis/trellis/tests/test_agent/test_task_runtime.py",
+        "module_path": "tests/test_agent/test_task_runtime.py",
+        "code_hash": "4942902cdb337b239b8939585c38d9cfef48d0fca7d8d8d61b9401a1bfa0e26a",
+        "is_fresh_build": false,
+        "execution_module_name": "",
+        "execution_module_path": "",
+        "execution_file_path": "",
+        "admission_target_module_name": "",
+        "admission_target_module_path": "",
+        "admission_target_file_path": ""
+      },
+      "build_observability": {
+        "agent_cycle": {
+          "schema_version": "agent_cycle_result.v1",
+          "available": false,
+          "status": "not_available",
+          "headline": "No governed agent-review cycle report is available.",
+          "summary": "No stable quant/critic/arbiter/model-validator cycle evidence was attached to this result.",
+          "request_id": "",
+          "outcome": "",
+          "success": null,
+          "pricing_method": "",
+          "validation_contract_id": "",
+          "stage_statuses": {},
+          "stage_summary": [],
+          "evidence_counts": {
+            "deterministic_blockers": 0,
+            "conceptual_blockers": 0,
+            "calibration_blockers": 0,
+            "residual_limitations": 0,
+            "residual_risks": 0
+          },
+          "blockers": [],
+          "warnings": [],
+          "promotion": {
+            "eligible": null,
+            "decision": "not_evaluated",
+            "blockers": [],
+            "warnings": []
+          },
+          "claim": {
+            "certifies": [
+              "governed agent-review cycle completed",
+              "deterministic validation evidence surfaced",
+              "critic/arbiter/model-validator outcomes reported"
+            ],
+            "does_not_certify": [
+              "agent-cycle evidence",
+              "external model approval",
+              "regulatory certification",
+              "xVA or counterparty-risk coverage",
+              "FpML product coverage",
+              "correctness beyond the recorded validation scope"
+            ]
+          },
+          "operator_actions": [
+            "Inspect platform trace artifacts or rerun through the governed agent-review cycle before promotion claims."
+          ]
+        }
+      },
+      "agent_cycle": {
+        "schema_version": "agent_cycle_result.v1",
+        "available": false,
+        "status": "not_available",
+        "headline": "No governed agent-review cycle report is available.",
+        "summary": "No stable quant/critic/arbiter/model-validator cycle evidence was attached to this result.",
+        "request_id": "",
+        "outcome": "",
+        "success": null,
+        "pricing_method": "",
+        "validation_contract_id": "",
+        "stage_statuses": {},
+        "stage_summary": [],
+        "evidence_counts": {
+          "deterministic_blockers": 0,
+          "conceptual_blockers": 0,
+          "calibration_blockers": 0,
+          "residual_limitations": 0,
+          "residual_risks": 0
+        },
+        "blockers": [],
+        "warnings": [],
+        "promotion": {
+          "eligible": null,
+          "decision": "not_evaluated",
+          "blockers": [],
+          "warnings": []
+        },
+        "claim": {
+          "certifies": [
+            "governed agent-review cycle completed",
+            "deterministic validation evidence surfaced",
+            "critic/arbiter/model-validator outcomes reported"
+          ],
+          "does_not_certify": [
+            "agent-cycle evidence",
+            "external model approval",
+            "regulatory certification",
+            "xVA or counterparty-risk coverage",
+            "FpML product coverage",
+            "correctness beyond the recorded validation scope"
+          ]
+        },
+        "operator_actions": [
+          "Inspect platform trace artifacts or rerun through the governed agent-review cycle before promotion claims."
+        ]
+      },
       "blocker_details": null,
       "post_build_tracking": {},
-      "reflection": {},
+      "reflection": {
+        "lesson_captured": "vol_001"
+      },
       "artifacts": {
         "platform_request_ids": [],
         "platform_trace_paths": [],
@@ -143,7 +276,13 @@
         "knowledge_trace_paths": [],
         "cookbook_candidate_paths": [],
         "promotion_candidate_paths": [],
-        "knowledge_gap_log_paths": []
+        "knowledge_gap_log_paths": [],
+        "generated_module_paths": [
+          "tests/test_agent/test_task_runtime.py"
+        ],
+        "generated_file_paths": [
+          "/home/runner/work/trellis/trellis/tests/test_agent/test_task_runtime.py"
+        ]
       },
       "learning": {
         "task_kind": "pricing",
@@ -154,7 +293,9 @@
         "selected_artifact_ids": [],
         "selected_artifact_titles": [],
         "selected_artifacts_by_audience": {},
-        "captured_lesson_ids": [],
+        "captured_lesson_ids": [
+          "vol_001"
+        ],
         "lesson_contract_reports": [],
         "lesson_contract_count": 0,
         "lesson_contract_outcome": "not_attempted",
@@ -167,17 +308,28 @@
         "promotion_candidate_paths": [],
         "knowledge_trace_paths": [],
         "knowledge_gap_log_paths": [],
-        "reusable_artifact_count": 0,
-        "knowledge_outcome": "no_new_knowledge",
-        "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
+        "reusable_artifact_count": 1,
+        "knowledge_outcome": "captured_knowledge",
+        "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts",
+        "intra_run_learning": {
+          "overlay_retry_count": 0,
+          "overlay_candidate_count": 0,
+          "retry_attribution_kind": "",
+          "retry_attribution_kinds": [],
+          "contract_evidence_consumed": false,
+          "deterministic_input_changed": false,
+          "contract_evidence_consumed_targets": [],
+          "deterministic_input_changed_targets": []
+        }
       },
-      "elapsed_seconds": 0.0
+      "elapsed_seconds": 4.5,
+      "run_completed_at": "2026-03-24T12:00:00",
+      "outcome_class": "compare_ready",
+      "passed_expectation": true
     },
     "comparison": {
       "task": false,
-      "targets": [
-        "pde_solver"
-      ],
+      "targets": [],
       "summary": {}
     },
     "execution": {
@@ -201,7 +353,9 @@
         "latest_status": null,
         "updated_at": null,
         "event_count": 0,
-        "active_flags": {}
+        "active_flags": {},
+        "policy": {},
+        "skipped_stages": []
       },
       "methods": {},
       "latest_method": null,
@@ -222,7 +376,9 @@
       "selected_artifact_ids": [],
       "selected_artifact_titles": [],
       "selected_artifacts_by_audience": {},
-      "captured_lesson_ids": [],
+      "captured_lesson_ids": [
+        "vol_001"
+      ],
       "lesson_contract_reports": [],
       "lesson_contract_count": 0,
       "lesson_contract_outcome": "not_attempted",
@@ -235,15 +391,25 @@
       "promotion_candidate_paths": [],
       "knowledge_trace_paths": [],
       "knowledge_gap_log_paths": [],
-      "reusable_artifact_count": 0,
-      "knowledge_outcome": "no_new_knowledge",
-      "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
+      "reusable_artifact_count": 1,
+      "knowledge_outcome": "captured_knowledge",
+      "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts",
+      "intra_run_learning": {
+        "overlay_retry_count": 0,
+        "overlay_candidate_count": 0,
+        "retry_attribution_kind": "",
+        "retry_attribution_kinds": [],
+        "contract_evidence_consumed": false,
+        "deterministic_input_changed": false,
+        "contract_evidence_consumed_targets": [],
+        "deterministic_input_changed_targets": []
+      }
     },
     "telemetry": {
       "task_kind": "pricing",
       "run_outcome": "succeeded",
-      "retried": false,
-      "retry_count": 0,
+      "retried": true,
+      "retry_count": 1,
       "degraded": false,
       "comparison_status": "",
       "selected_artifacts": [],
@@ -259,7 +425,13 @@
       "knowledge_trace_paths": [],
       "cookbook_candidate_paths": [],
       "promotion_candidate_paths": [],
-      "knowledge_gap_log_paths": []
+      "knowledge_gap_log_paths": [],
+      "generated_module_paths": [
+        "tests/test_agent/test_task_runtime.py"
+      ],
+      "generated_file_paths": [
+        "/home/runner/work/trellis/trellis/tests/test_agent/test_task_runtime.py"
+      ]
     },
     "trace_summaries": [],
     "issue_refs": {
@@ -286,8 +458,12 @@
       "success": true,
       "status": "succeeded",
       "task_kind": "pricing",
-      "preferred_method": "pde_solver",
-      "payoff_class": "FakePDEPayoff",
+      "task_corpus": "",
+      "task_definition_version": null,
+      "market_scenario_id": "",
+      "market_scenario_digest": "",
+      "preferred_method": null,
+      "payoff_class": "FakePayoffClass",
       "error": null,
       "failures": [],
       "comparison_status": null,
@@ -295,6 +471,8 @@
       "prices": {},
       "deviations_pct": {},
       "token_usage": {},
+      "git_sha": "06ed1ccbb51efa20216e7ed72c42b4f094111bdf",
+      "knowledge_revision": "12674ec98ff82df9",
       "framework_outcome": null,
       "execution_mode": "live",
       "learning": {
@@ -306,7 +484,9 @@
         "selected_artifact_ids": [],
         "selected_artifact_titles": [],
         "selected_artifacts_by_audience": {},
-        "captured_lesson_ids": [],
+        "captured_lesson_ids": [
+          "vol_001"
+        ],
         "lesson_contract_reports": [],
         "lesson_contract_count": 0,
         "lesson_contract_outcome": "not_attempted",
@@ -319,17 +499,27 @@
         "promotion_candidate_paths": [],
         "knowledge_trace_paths": [],
         "knowledge_gap_log_paths": [],
-        "reusable_artifact_count": 0,
-        "knowledge_outcome": "no_new_knowledge",
-        "knowledge_outcome_reason": "task succeeded without new reusable knowledge artifacts"
+        "reusable_artifact_count": 1,
+        "knowledge_outcome": "captured_knowledge",
+        "knowledge_outcome_reason": "captured 1 lesson(s) and related reusable artifacts",
+        "intra_run_learning": {
+          "overlay_retry_count": 0,
+          "overlay_candidate_count": 0,
+          "retry_attribution_kind": "",
+          "retry_attribution_kinds": [],
+          "contract_evidence_consumed": false,
+          "deterministic_input_changed": false,
+          "contract_evidence_consumed_targets": [],
+          "deterministic_input_changed_targets": []
+        }
       }
     },
     "storage": {
-      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T13/20260413T062250272261.json",
+      "history_path": "/home/runner/work/trellis/trellis/task_runs/history/T13/20260324T120000__20260715T024708167601Z.json",
       "latest_path": "/home/runner/work/trellis/trellis/task_runs/latest/T13.json",
       "latest_index_path": "/home/runner/work/trellis/trellis/task_results_latest.json",
-      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T062250272261.json",
-      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260413T062250272261.md",
+      "diagnosis_history_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260324T120000__20260715T024708167601Z.json",
+      "diagnosis_history_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/history/T13/20260324T120000__20260715T024708167601Z.md",
       "diagnosis_latest_packet_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T13.json",
       "diagnosis_latest_dossier_path": "/home/runner/work/trellis/trellis/task_runs/diagnostics/latest/T13.md"
     }

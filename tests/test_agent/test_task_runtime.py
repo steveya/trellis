@@ -25,7 +25,7 @@ def test_run_task_passes_force_rebuild_and_validation():
         attempts = 2
         gap_confidence = 0.75
         knowledge_gaps = ["vol_surface"]
-        payoff_cls = type("FakePayoff", (), {})
+        payoff_cls = type("FakePayoffClass", (), {})
         failures = []
         reflection = {"lesson_captured": "vol_001"}
 
@@ -96,10 +96,11 @@ def test_run_task_passes_force_rebuild_and_validation():
     assert result["post_build_learning_policy"] == calls[0]["request_metadata"][
         "post_build_learning_policy"
     ]
+    assert result["execution_mode"] == "live"
     assert result["runtime_controls"]["llm_wait_log_path"] == wait_log_path
     assert result["success"] is True
     assert result["elapsed_seconds"] == 4.5
-    assert result["payoff_class"] == "FakePayoff"
+    assert result["payoff_class"] == "FakePayoffClass"
     monkeypatch.undo()
 
 
@@ -1504,7 +1505,7 @@ def test_run_task_offline_scope_derives_deterministic_post_build_policy(monkeypa
         attempts = 1
         gap_confidence = 0.8
         knowledge_gaps = []
-        payoff_cls = type("FakePayoff", (), {})
+        payoff_cls = type("FakeOfflinePayoffClass", (), {})
         failures = []
         reflection = {
             "skipped": True,
@@ -3451,7 +3452,7 @@ def test_build_result_payload_preserves_policy_skip_reasons():
         attempts = 1
         gap_confidence = 0.9
         knowledge_gaps = []
-        payoff_cls = type("FakePayoff", (), {})
+        payoff_cls = type("FakePolicySkippedPayoffClass", (), {})
         failures = []
         agent_observations = []
         knowledge_summary = {}
