@@ -102,6 +102,18 @@ typed decomposition, but they cannot promote cookbook entries during task
 execution or use those patterns to override chooser or compound semantic
 contracts.
 
+The ``fixed_lookback_analytical_composition`` card is the corresponding
+builder-only analytical hot start. It selects scalar market resolution, exact
+time, option normalization, discounting, and the univariate Gaussian CDF. It
+does not inherit the bivariate probability or scalar-root imports from
+``analytical_gaussian_composition``. The card states that generated code owns
+the Conze-Viswanathan call/put formula, historical and runtime extreme
+invariants, the analytic zero-carry limit, expiry settlement, and one-time
+notional scaling. The retained analytical lookback wrapper remains comparison
+evidence. Quant and model-validator continue to receive the semantic contract,
+quantitative documentation, and executed price/Delta evidence rather than
+implementation imports, and no cookbook entry is promoted by this route.
+
 The ``path_statistic_composition`` card applies the same rule to path-dependent
 Monte Carlo construction. Semantic aliases such as ``running_extremum``,
 ``squared_log_return``, and ``variance_swap`` lead the builder to exact

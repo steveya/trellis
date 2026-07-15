@@ -1613,12 +1613,26 @@ routes:
             exercise:
               style: european
         primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_fixed_lookback_option_analytical
-            role: route_helper
+          - module: trellis.models.resolution.single_state_diffusion
+            symbol: resolve_scalar_diffusion_market_inputs
+            role: market_binding
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+          - module: trellis.models.analytical.support
+            symbol: normalized_option_type
+            role: payoff_primitive
+          - module: trellis.models.analytical.support
+            symbol: discount_factor_from_zero_rate
+            role: discounting
+          - module: trellis.models.analytical.support.probability
+            symbol: standard_normal_cdf
+            role: probability_kernel
         adapters: []
         notes:
-          - "Use the dedicated lookback helper with `market_state` and `spec`; do not restate the running-extreme formula inside the generated payoff."
+          - "Admit only European fixed-strike continuous monitoring under constant scalar diffusion inputs and use the `fixed_lookback_analytical_composition` API-map card."
+          - "Generated code owns the call/put formula, historical and runtime extreme invariants, analytic zero-carry limit, expiry settlement, and one-time notional scaling."
+          - "Do not call a product-specific analytical lookback helper; retained wrappers are comparison evidence only."
       - when:
           contract_pattern:
             payoff:

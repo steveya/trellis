@@ -395,17 +395,30 @@ def _lookback_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping
     )
     discount_curve = _flat_curve(float(contract["domestic_rate"]), value_dt)
     dividend_curve = _flat_curve(float(contract["dividend_rate"]), value_dt)
-    return {
-        "price": float(
+    spot = float(contract["spot"])
+    historical_extreme = float(contract.get("running_extreme", spot))
+    option_type = str(contract["option_type"]).strip().lower()
+
+    def price_at_spot(stock_level: float) -> float:
+        effective_extreme = (
+            max(historical_extreme, stock_level)
+            if option_type == "call"
+            else min(historical_extreme, stock_level)
+        )
+        return float(
             option.value(
                 value_dt,
-                float(contract["spot"]),
+                stock_level,
                 discount_curve,
                 dividend_curve,
                 float(contract["volatility"]),
-                float(contract["spot"]),
+                effective_extreme,
             )
         )
+
+    return {
+        "price": price_at_spot(spot),
+        "delta": _central_spot_delta(price_at_spot, spot),
     }
 
 

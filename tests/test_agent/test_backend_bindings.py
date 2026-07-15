@@ -725,9 +725,7 @@ def test_resolve_backend_binding_spec_uses_quanto_primitive_composition(
                 model_family="equity_diffusion",
             ),
             "analytical",
-            (
-                "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical",
-            ),
+            (),
             (),
             id="lookback",
         ),
@@ -848,6 +846,40 @@ def test_resolve_backend_binding_spec_exposes_complete_chooser_composition():
         "trellis.models.calibration.solve_request.SolveBounds",
         "trellis.models.calibration.solve_request.SolveRequest",
         "trellis.models.calibration.solve_request.execute_solve_request",
+    } <= set(resolved.primitive_refs)
+
+
+def test_resolve_backend_binding_spec_exposes_complete_lookback_composition():
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
+
+    assert analytical is not None
+
+    resolved = resolve_backend_binding_spec(
+        analytical,
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=(
+                "continuous_monitoring",
+                "discounting",
+                "fixed_strike",
+                "path_dependent",
+                "vol_surface_dependence",
+            ),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert {
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.core.date_utils.year_fraction",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.analytical.support.discount_factor_from_zero_rate",
+        "trellis.models.analytical.support.probability.standard_normal_cdf",
     } <= set(resolved.primitive_refs)
 
 

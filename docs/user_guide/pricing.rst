@@ -290,6 +290,22 @@ construction authority.
 Fixed Lookback Composition
 --------------------------
 
+The admitted analytical route is also composed rather than delegated to a
+product pricer. It resolves runtime spot, maturity, rate, dividend carry,
+strike-coordinate Black volatility, and discounting with
+``resolve_scalar_diffusion_market_inputs(...)``; normalizes call or put
+semantics; and evaluates the fixed-strike continuous-lookback formula with
+``standard_normal_cdf(...)``. Generated code owns the running maximum/minimum
+branches, expiry settlement, and notional. When rate minus dividend carry is
+zero, it uses the analytic formula limit instead of perturbing market data.
+
+The observed maximum for a call must be at least the contract spot; the
+observed minimum for a put must be at most the contract spot. A runtime spot
+binding is included in the effective maximum or minimum, which lets the normal
+spot-bump Delta workflow reprice the same path-state contract. The F011
+FinancePy comparison therefore reports both price and Delta without a
+lookback-specific Greek function.
+
 The admitted fixed-strike continuous-lookback Monte Carlo task route is built
 from reusable transition primitives. It binds spot, maturity, rate, carry,
 scalar volatility, and discounting with
@@ -316,9 +332,9 @@ multiple simultaneous stochastic extrema, local or stochastic volatility,
 jumps, and approximate transition schemes need different contracts and fail
 closed before code generation. An omitted or conflicting strike/monitoring
 style also fails closed instead of inheriting ``fixed_strike`` or
-``continuous`` defaults. The functions in ``trellis.models.lookback_option``
-remain available as compatibility and independent-comparison references, not
-generated-route construction authority.
+``continuous`` defaults. The analytical compatibility wrapper and the
+functions in ``trellis.models.lookback_option`` remain available as
+independent-comparison references, not generated-route construction authority.
 
 Variance Swap Composition
 -------------------------

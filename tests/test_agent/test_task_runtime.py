@@ -1160,13 +1160,21 @@ def test_legacy_lookback_tasks_resolve_identity_independently_of_formula_alias(
     analytical_plan = build_generation_plan(
         pricing_plan=PricingPlan(
             method="analytical",
-            method_modules=["trellis.models.analytical.equity_exotics"],
+            method_modules=[
+                "trellis.models.resolution.single_state_diffusion",
+                "trellis.models.analytical.support",
+                "trellis.models.analytical.support.probability",
+            ],
             required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build="lookback_option",
             reasoning="analytical comparison target",
         ),
         instrument_type="lookback_option",
-        inspected_modules=("trellis.models.analytical.equity_exotics",),
+        inspected_modules=(
+            "trellis.models.resolution.single_state_diffusion",
+            "trellis.models.analytical.support",
+            "trellis.models.analytical.support.probability",
+        ),
         product_ir=product_ir,
     )
 
@@ -1183,9 +1191,17 @@ def test_legacy_lookback_tasks_resolve_identity_independently_of_formula_alias(
         "gsg_analytical": "analytical",
     }
     assert analytical_plan.primitive_plan is not None
+    primitive_refs = {
+        f"{primitive.module}.{primitive.symbol}"
+        for primitive in analytical_plan.primitive_plan.primitives
+    }
     assert (
-        "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical"
-        in analytical_plan.lane_exact_binding_refs
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs"
+        in primitive_refs
+    )
+    assert not any(
+        "price_equity_fixed_lookback_option_analytical" in ref
+        for ref in (*primitive_refs, *analytical_plan.lane_exact_binding_refs)
     )
 
 

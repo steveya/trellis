@@ -432,11 +432,16 @@
   features: [lookback, path_dependent, discounting, vol_surface_dependence]
   method: analytical
   method_modules:
-    - trellis.models.analytical.equity_exotics
+    - trellis.models.resolution.single_state_diffusion
+    - trellis.models.analytical.support
+    - trellis.models.analytical.support.probability
   required_market_data: [discount_curve, black_vol_surface]
   modeling_requirements:
-    - "USE THE EXACT HELPER: Call `price_equity_fixed_lookback_option_analytical(market_state, spec)` directly; do not restate the running-extreme formula inside the generated payoff."
-  reasoning: "Fixed-strike lookback options have a Conze-Viswanathan closed form; use the shared analytical helper."
+    - "Admit only European fixed-strike continuous monitoring under constant scalar diffusion inputs; reject floating strike, discrete monitoring, non-European exercise, local/stochastic volatility, and jumps."
+    - "Resolve the runtime spot and strike volatility coordinate with `resolve_scalar_diffusion_market_inputs`, normalize call/put semantics, and use `standard_normal_cdf` plus explicit scalar math for the Conze-Viswanathan formula."
+    - "Validate the historical running maximum/minimum against contract spot, include runtime spot in the effective extreme, apply the analytic zero-carry limit, and own expiry settlement and one-time notional scaling in generated code."
+    - "Do not call a product-specific analytical lookback helper; retained wrappers are compatibility/reference evidence only."
+  reasoning: "The admitted fixed-strike continuous lookback formula is a bounded composition over scalar market, time, discounting, option-normalization, and Gaussian primitives."
   learned: false
 
 - instrument: chooser_option

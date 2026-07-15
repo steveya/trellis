@@ -156,9 +156,12 @@ bindings:
     financepy_model: BlackScholes
     overlapping_outputs:
     - price
+    - delta
     comparison_modes:
     - price_parity
     - warm_runtime
+    greek_fallback:
+      kind: bump_and_reprice
   financepy.equity.chooser.black_scholes:
     instrument_family: chooser_option
     method_family: analytical
