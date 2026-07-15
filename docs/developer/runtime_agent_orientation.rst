@@ -76,22 +76,31 @@ or code templates in their resolved context.
 
 Composition cards may join public primitives from more than one subsystem
 without introducing a new product helper. The general
-``analytical_gaussian_composition`` card points a builder handling compound or
-other critical-state analytical work to scalar Gaussian probability kernels
-and the existing typed ``SolveRequest`` root surface. The more specific
+``analytical_gaussian_composition`` card points a builder handling general
+critical-state analytical work to scalar Gaussian probability kernels and the
+existing typed ``SolveRequest`` root surface. The more specific
 ``chooser_option_composition`` card is a complete bounded navigation packet:
 it adds the scalar-diffusion market projection, contractual time function,
 Black call/put kernels, discount/forward support, the bivariate Gaussian
 kernel, and the bounded root contracts. It states the adapter-owned balance
 equation and date/bracket obligations without importing the retained chooser
-pricing wrapper.
+pricing wrapper. ``compound_option_composition`` supplies the corresponding
+complete packet for European options on European options, adds the univariate
+Gaussian kernel, and states the four subtype, critical-state, strict date, and
+one-time scaling obligations without importing the retained compound wrapper.
+
+Structured lane cards render every selected primitive in these bounded route
+packets. They do not silently truncate the final solver or probability symbol;
+compactness is enforced when the canonical semantic query selects the card,
+not by making a selected composition incomplete.
 
 Neither card enters the quant or model-validator role packets. Those roles
 continue to reason from semantic contracts, quantitative documentation, and
 executed evidence; implementation symbol selection remains builder-owned.
 The quant and model-validator may consult the read-only cookbook catalog after
 typed decomposition, but they cannot promote cookbook entries during task
-execution or use those patterns to override the chooser semantic contract.
+execution or use those patterns to override chooser or compound semantic
+contracts.
 
 The ``path_statistic_composition`` card applies the same rule to path-dependent
 Monte Carlo construction. Semantic aliases such as ``running_extremum``,

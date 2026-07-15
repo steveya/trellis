@@ -314,3 +314,23 @@ def test_current_repository_retires_analytical_chooser_helper_authority():
         if item.path == "trellis/instruments/_agent/chooseroption.py"
         and item.symbol == helper_symbol
     ]
+
+
+def test_current_repository_retires_analytical_compound_helper_authority():
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    root = Path(__file__).resolve().parents[2]
+    report = build_helper_authority_report(root)
+    helper_symbol = "price_equity_compound_option_analytical"
+
+    assert not [
+        item
+        for item in (*report.route_authority, *report.binding_authority)
+        if item.symbol == helper_symbol
+    ]
+    assert not [
+        item
+        for item in report.adapter_calls
+        if item.path == "trellis/instruments/_agent/compoundoption.py"
+        and item.symbol == helper_symbol
+    ]

@@ -1061,6 +1061,96 @@ the pricing formula compatible with the product-neutral central spot-bump
 ``Delta`` measure. The F012 FinancePy binding requests the same generic
 ``bump_and_reprice`` policy; no chooser-specific Greek helper is required.
 
+European compound composition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The admitted European compound lane uses the complete
+``compound_option_composition`` card. Like the chooser lane, it joins one
+scalar-diffusion market projection, contractual time fractions, Black-76
+call/put kernels, discount and forward support, Gaussian probabilities, and
+the typed scalar-root surface. The checked adapter owns the four
+call/put-on-call/put formulas. The retained
+``price_equity_compound_option_analytical`` wrapper is comparison evidence and
+does not appear in route, backend, or deterministic generation authority.
+
+Let :math:`t_o` be the outer expiry, :math:`T_i` the inner expiry,
+:math:`K_o` the outer strike, and :math:`K_i` the inner strike, with
+
+.. math::
+
+   0 < t_o < T_i.
+
+The admitted market projection resolves one constant :math:`r`, :math:`q`,
+and :math:`\sigma` at :math:`T_i`, using :math:`K_i` as the explicit
+volatility coordinate. At :math:`t_o`, the positive critical stock state
+:math:`S^*` solves
+
+.. math::
+
+   V_i(S^*, K_i, T_i-t_o) - K_o = 0,
+
+where :math:`V_i` is the Black-Scholes value of the inner call or put. The
+adapter constructs :math:`V_i` from
+``forward_from_dividend_yield``, ``discount_factor_from_zero_rate``,
+``discounted_value``, and the matching public Black-76 kernel. It verifies a
+sign change over the finite positive bracket
+
+.. math::
+
+   [10^{-8}M, 10^6M], \qquad
+   M = \max(S_0, K_o, K_i, 1),
+
+before submitting one ``root_scalar`` ``SolveRequest`` with the bounded
+Brent solver. A missing sign change is an honest admission failure; it is not
+permission to switch to an unbounded route-local Newton loop.
+
+For the solved state, define
+
+.. math::
+
+   \begin{aligned}
+   a_1 &= \frac{\log(S_0/S^*) + (r-q+\tfrac12\sigma^2)t_o}
+                 {\sigma\sqrt{t_o}},
+   & a_2 &= a_1-\sigma\sqrt{t_o}, \\
+   b_1 &= \frac{\log(S_0/K_i) + (r-q+\tfrac12\sigma^2)T_i}
+                 {\sigma\sqrt{T_i}},
+   & b_2 &= b_1-\sigma\sqrt{T_i}, \\
+   \rho &= \sqrt{t_o/T_i}.
+   \end{aligned}
+
+With :math:`\Phi` and :math:`\Phi_2` denoting the univariate and bivariate
+standard-normal CDFs, the four per-unit-notional values are
+
+.. math::
+
+   \begin{aligned}
+   V_{CC} ={}& S_0e^{-qT_i}\Phi_2(a_1,b_1;\rho)
+      - K_ie^{-rT_i}\Phi_2(a_2,b_2;\rho)
+      - K_oe^{-rt_o}\Phi(a_2), \\
+   V_{PC} ={}& K_ie^{-rT_i}\Phi_2(-a_2,b_2;-\rho)
+      - S_0e^{-qT_i}\Phi_2(-a_1,b_1;-\rho)
+      + K_oe^{-rt_o}\Phi(-a_2), \\
+   V_{CP} ={}& K_ie^{-rT_i}\Phi_2(-a_2,-b_2;\rho)
+      - S_0e^{-qT_i}\Phi_2(-a_1,-b_1;\rho)
+      - K_oe^{-rt_o}\Phi(-a_2), \\
+   V_{PP} ={}& S_0e^{-qT_i}\Phi_2(a_1,-b_1;-\rho)
+      - K_ie^{-rT_i}\Phi_2(a_2,-b_2;-\rho)
+      + K_oe^{-rt_o}\Phi(a_2).
+   \end{aligned}
+
+The first subscript is the outer option type and the second is the inner
+option type. Notional is applied once after selecting the contractual subtype.
+The lane fails closed for invalid option types, non-finite contract scalars,
+non-positive spot, strikes, or volatility, and any date ordering outside
+settlement :math:`< t_o < T_i`. Time-varying coefficient, local-volatility,
+stochastic-volatility, American, and Bermudan compound claims are outside this
+constant-input analytical formula.
+
+The adapter prefers ``MarketState.spot`` over the contract fallback spot, so
+the product-neutral central spot-bump ``Delta`` measure reprices the actual
+runtime state. The F013 FinancePy binding declares the same
+``bump_and_reprice`` fallback; no compound-specific Greek helper is required.
+
 Calibration Surface
 -------------------
 

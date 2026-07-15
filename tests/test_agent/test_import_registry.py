@@ -213,6 +213,11 @@ def test_gaussian_probability_primitives_are_visible_to_import_registry():
     for symbol in symbols:
         assert symbol in registry_text
 
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert symbols <= set(static_registry[module])
+
     scalar_root_module = "trellis.models.calibration.solve_request"
     scalar_root_symbols = {
         "ObjectiveBundle",
@@ -223,6 +228,7 @@ def test_gaussian_probability_primitives_are_visible_to_import_registry():
     assert scalar_root_symbols <= set(list_module_exports(scalar_root_module))
     for symbol in scalar_root_symbols:
         assert is_valid_import(scalar_root_module, symbol)
+    assert scalar_root_symbols <= set(static_registry[scalar_root_module])
 
 
 def test_quoted_observable_helpers_are_visible_to_import_registry():
