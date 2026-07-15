@@ -56,6 +56,7 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1193` | Compound option pricing: retire analytical helper authority | Done |
 | `QUA-1194` | Fixed lookback pricing: retire analytical helper authority | Done |
 | `QUA-1195` | Variance swap pricing: retire analytical helper authority | Done |
+| `QUA-1196` | Swaption pricing: retire European Black76 wrapper authority | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -80,9 +81,13 @@ Status mirror last synced: `2026-07-15`
    analytical smile-slope approximation from time, interpolation, and
    discounting primitives while retaining wrappers only as comparison
    evidence.
-7. Select the next helper-authority family from the machine-readable audit and
+7. Apply the reviewed QUA-1196 European swaption precedent: expose market and
+   schedule projection as a typed resolver, pass only its resolved basis to the
+   raw pricing kernel, and retain the product wrapper only for compatibility
+   and independent reference evidence.
+8. Select the next helper-authority family from the machine-readable audit and
    create a bounded ticket before changing another route.
-8. Run live fresh-generation evidence only with current external-model approval;
+9. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 
