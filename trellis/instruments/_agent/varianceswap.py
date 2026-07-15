@@ -149,9 +149,13 @@ class VarianceSwapPayoff:
 
         atm_volatility = float(linear_interp(spot, strike_grid, volatility_grid))
         strike_span = strike_grid[-1] - strike_grid[0]
-        smile_slope = spot * (
-            volatility_grid[-1] - volatility_grid[0]
-        ) / strike_span
+        smile_slope = (
+            0.0
+            if abs(strike_span) <= 1e-12
+            else spot
+            * (volatility_grid[-1] - volatility_grid[0])
+            / strike_span
+        )
         fair_strike_variance = float(
             atm_volatility**2
             * sqrt(1.0 + 3.0 * maturity * smile_slope * smile_slope)

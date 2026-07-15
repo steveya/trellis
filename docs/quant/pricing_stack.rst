@@ -428,6 +428,11 @@ and computes the FinancePy-compatible smile-slope approximation
    s = S_0\frac{\sigma_{\mathrm{high}}-\sigma_{\mathrm{low}}}
                     {K_{\mathrm{high}}-K_{\mathrm{low}}}.
 
+After strict monotonicity validation, a grid whose endpoint strike span has
+absolute value at most ``1e-12`` uses ``s = 0``.  This preserves the retained
+FinancePy-compatible flat-smile edge behavior instead of amplifying quote noise
+through division by a near-zero span.
+
 Generated adapter code then reports ``fair_strike_variance`` and settles
 
 .. math::

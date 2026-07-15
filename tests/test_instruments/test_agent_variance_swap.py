@@ -102,6 +102,20 @@ def test_checked_variance_swap_adapter_uses_runtime_spot_as_smile_coordinate():
     )
 
 
+def test_checked_variance_swap_adapter_treats_near_zero_span_as_flat_smile():
+    spec = _spec(
+        replication_strikes=(100.0, 100.0 + 5e-13),
+        replication_volatilities=(0.20, 0.30),
+    )
+    market_state = _market_state()
+
+    actual = VarianceSwapPayoff(spec).benchmark_outputs(market_state)
+    expected = equity_variance_swap_outputs_analytical(market_state, spec)
+
+    assert actual == pytest.approx(expected, rel=1e-13, abs=1e-13)
+    assert actual["fair_strike_variance"] == pytest.approx(0.20**2)
+
+
 @pytest.mark.parametrize(
     ("strikes", "volatilities", "message"),
     [

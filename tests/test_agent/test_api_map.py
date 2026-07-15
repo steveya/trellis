@@ -495,6 +495,7 @@ def test_api_map_exposes_variance_swap_smile_slope_composition():
         assert symbol in text
     assert "smile-slope approximation" in text
     assert "strictly increasing" in text
+    assert "1e-12" in text
     assert "log-contract" in text
     assert "price_equity_variance_swap_analytical" not in text
     assert "equity_variance_swap_outputs_analytical" not in text
