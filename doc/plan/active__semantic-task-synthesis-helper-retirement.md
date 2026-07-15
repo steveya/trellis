@@ -52,7 +52,8 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1189` | Fixed lookback Monte Carlo: retire helper authority | Done |
 | `QUA-1190` | Variance swap Monte Carlo: retire helper authority | Done |
 | `QUA-1192` | Semantic computational IR: ignore ambient market capabilities | Done |
-| `QUA-1191` | Chooser option pricing: retire analytical helper authority | Backlog |
+| `QUA-1191` | Chooser option pricing: retire analytical helper authority | Done |
+| `QUA-1193` | Compound option pricing: retire analytical helper authority | Backlog |
 
 ## Current Sequence
 
@@ -62,10 +63,13 @@ Status mirror last synced: `2026-07-15`
 2. Apply the QUA-1192 classifier boundary: only explicit task, target, or
    model-contract evidence may declare stochastic-volatility semantics;
    ambient market capabilities remain non-authoritative.
-3. Complete QUA-1191 by replacing the chooser-option wrapper authority with
-   the reusable Gaussian, scalar-root, market, and Black composition surface
-   while preserving F012 FinancePy parity.
-4. Run live fresh-generation evidence only with current external-model approval;
+3. Apply the reviewed QUA-1191 chooser precedent: retain product wrappers only
+   as independent comparison evidence while checked adapters own bounded
+   formula composition from reusable primitives.
+4. Complete QUA-1193 by replacing compound-option wrapper authority with the
+   reusable Gaussian, scalar-root, market, and Black composition surface while
+   preserving F013 FinancePy parity.
+5. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 
@@ -78,5 +82,6 @@ Each migrated lane must provide:
 - targeted tests plus `make gate-pr`
 - a strict offline replay, and a live fresh-generation replay when agent
   synthesis behavior is the claim being proved
-- official quant, developer, and user documentation updates
+- updates to each relevant official quant, developer, and/or user guide, with
+  an explicit closeout rationale when a documentation surface is unaffected
 - a merged milestone PR and synchronized Linear/plan status
