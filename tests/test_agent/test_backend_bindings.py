@@ -384,6 +384,50 @@ def test_resolve_backend_binding_spec_uses_route_conditionals_for_exact_targets(
     )
 
 
+def test_resolve_backend_binding_spec_composes_european_swaption_monte_carlo():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="swaption",
+            payoff_family="swaption",
+            exercise_style="european",
+            schedule_dependence=True,
+            state_dependence="schedule_state",
+            model_family="interest_rate",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert resolved.market_binding_refs == (
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+    )
+    assert resolved.schedule_builder_refs == (
+        "trellis.core.date_utils.build_payment_timeline",
+    )
+    assert resolved.exact_target_refs == (
+        "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo",
+    )
+    assert resolved.binding_id == (
+        "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo"
+    )
+    assert {primitive.symbol: primitive.role for primitive in resolved.primitives} == {
+        "resolve_swaption_black76_inputs": "market_binding",
+        "build_payment_timeline": "schedule_builder",
+        "resolve_hull_white_monte_carlo_process_inputs": "process_binding",
+        "build_discounted_swap_pv_payload": "settlement_payload",
+        "build_short_rate_discount_reducer": "path_reducer",
+        "EventAwareMonteCarloEvent": "event_contract",
+        "EventAwareMonteCarloProblemSpec": "problem_spec",
+        "build_event_aware_monte_carlo_problem": "problem_builder",
+        "price_event_aware_monte_carlo": "monte_carlo_estimator",
+    }
+
+
 def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
     catalog = load_backend_binding_catalog()
     analytical = find_backend_binding_by_route_id("analytical_black76", catalog)

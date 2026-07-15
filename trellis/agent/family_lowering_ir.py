@@ -806,7 +806,6 @@ _MC_MARKET_MAPPINGS = {
 _MC_HELPER_BINDINGS = {
     ("heston", "vanilla_option", "european"): "price_heston_option_monte_carlo",
     ("hull_white_1f", "period_rate_option_strip", ""): "price_rate_cap_floor_strip_monte_carlo",
-    ("hull_white_1f", "swaption", ""): "price_swaption_monte_carlo",
 }
 
 
@@ -1110,6 +1109,16 @@ def _binding_supports_event_aware_monte_carlo(
         "payoff_primitive",
     ):
         return True
+    if all(
+        _binding_has_role(binding_spec, role)
+        for role in (
+            "monte_carlo_estimator",
+            "problem_builder",
+            "process_binding",
+            "settlement_payload",
+        )
+    ):
+        return True
     if _binding_has_role(binding_spec, "path_simulation") and _binding_has_role(binding_spec, "state_process"):
         return True
     if _binding_has_any_symbol(
@@ -1119,7 +1128,6 @@ def _binding_supports_event_aware_monte_carlo(
         "price_heston_option_monte_carlo",
         "price_rate_cap_floor_strip_monte_carlo",
         "price_vanilla_equity_option_monte_carlo",
-        "price_swaption_monte_carlo",
     ):
         return True
     return False

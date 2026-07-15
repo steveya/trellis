@@ -514,8 +514,32 @@ bindings:
           model_family: [interest_rate, short_rate]
         primitives:
           - module: trellis.models.rate_style_swaption
-            symbol: price_swaption_monte_carlo
-            role: route_helper
+            symbol: resolve_swaption_black76_inputs
+            role: market_binding
+          - module: trellis.core.date_utils
+            symbol: build_payment_timeline
+            role: schedule_builder
+          - module: trellis.models.monte_carlo.event_aware
+            symbol: resolve_hull_white_monte_carlo_process_inputs
+            role: process_binding
+          - module: trellis.models.monte_carlo.event_aware
+            symbol: build_discounted_swap_pv_payload
+            role: settlement_payload
+          - module: trellis.models.monte_carlo.event_aware
+            symbol: build_short_rate_discount_reducer
+            role: path_reducer
+          - module: trellis.models.monte_carlo.event_aware
+            symbol: EventAwareMonteCarloEvent
+            role: event_contract
+          - module: trellis.models.monte_carlo.event_aware
+            symbol: EventAwareMonteCarloProblemSpec
+            role: problem_spec
+          - module: trellis.models.monte_carlo.event_aware
+            symbol: build_event_aware_monte_carlo_problem
+            role: problem_builder
+          - module: trellis.models.monte_carlo.event_aware
+            symbol: price_event_aware_monte_carlo
+            role: monte_carlo_estimator
       - when:
           payoff_family: basket_option
           exercise_style: [european]

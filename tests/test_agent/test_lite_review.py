@@ -346,37 +346,40 @@ def price(spec, market_state):
     assert "lite.hardcoded_black_vol_surface" not in issue_codes
 
 
-def test_lite_review_allows_swaption_monte_carlo_helper_with_explicit_hull_white_comparison_params():
+def test_lite_review_allows_swaption_monte_carlo_process_binding_with_explicit_comparison_params():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.lite_review import review_generated_code
     from trellis.agent.quant import PricingPlan
 
     source = """\
-from trellis.models.rate_style_swaption import price_swaption_monte_carlo
+from trellis.models.monte_carlo.event_aware import resolve_hull_white_monte_carlo_process_inputs
 
 def price(spec, market_state):
-    return float(
-        price_swaption_monte_carlo(
-            market_state,
-            spec,
-            mean_reversion=0.05,
-            sigma=0.01,
-        )
+    return resolve_hull_white_monte_carlo_process_inputs(
+        market_state,
+        option_horizon=5.0,
+        strike=spec.strike,
+        mean_reversion=0.05,
+        sigma=0.01,
     )
 """
 
     plan = GenerationPlan(
         method="monte_carlo",
         instrument_type="swaption",
-        inspected_modules=("trellis.models.rate_style_swaption",),
-        approved_modules=("trellis.models.rate_style_swaption",),
-        symbols_to_reuse=("price_swaption_monte_carlo",),
+        inspected_modules=("trellis.models.monte_carlo.event_aware",),
+        approved_modules=("trellis.models.monte_carlo.event_aware",),
+        symbols_to_reuse=("resolve_hull_white_monte_carlo_process_inputs",),
         proposed_tests=("tests/test_agent/test_build_loop.py",),
         primitive_plan=PrimitivePlan(
             route="monte_carlo_paths",
             engine_family="monte_carlo",
             primitives=(
-                PrimitiveRef("trellis.models.rate_style_swaption", "price_swaption_monte_carlo", "route_helper"),
+                PrimitiveRef(
+                    "trellis.models.monte_carlo.event_aware",
+                    "resolve_hull_white_monte_carlo_process_inputs",
+                    "process_binding",
+                ),
             ),
             adapters=(),
             blockers=(),
@@ -384,7 +387,7 @@ def price(spec, market_state):
     )
     pricing_plan = PricingPlan(
         method="monte_carlo",
-        method_modules=["trellis.models.rate_style_swaption"],
+        method_modules=["trellis.models.monte_carlo.event_aware"],
         required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
         model_to_build="swaption",
         reasoning="test",

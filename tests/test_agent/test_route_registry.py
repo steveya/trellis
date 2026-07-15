@@ -863,6 +863,14 @@ class TestMonteCarloPathsRoutes:
         exercise_style="european",
         model_family="generic",
     )
+    EUROPEAN_SWAPTION_IR = ProductIR(
+        instrument="swaption",
+        payoff_family="swaption",
+        exercise_style="european",
+        state_dependence="schedule_state",
+        schedule_dependence=True,
+        model_family="interest_rate",
+    )
 
     def test_candidate(self, registry):
         new = _new_routes(registry, "monte_carlo", self.EUROPEAN_IR)
@@ -941,6 +949,70 @@ class TestMonteCarloPathsRoutes:
             ),
         }
         assert _prim_set(new_prims) == expected_prims
+
+    def test_european_swaption_primitives_compose_event_aware_hull_white_problem(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
+        new_prims = resolve_route_primitives(spec, self.EUROPEAN_SWAPTION_IR)
+
+        assert _prim_set(new_prims) == {
+            (
+                "trellis.models.rate_style_swaption",
+                "resolve_swaption_black76_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.core.date_utils",
+                "build_payment_timeline",
+                "schedule_builder",
+            ),
+            (
+                "trellis.models.monte_carlo.event_aware",
+                "resolve_hull_white_monte_carlo_process_inputs",
+                "process_binding",
+            ),
+            (
+                "trellis.models.monte_carlo.event_aware",
+                "build_discounted_swap_pv_payload",
+                "settlement_payload",
+            ),
+            (
+                "trellis.models.monte_carlo.event_aware",
+                "build_short_rate_discount_reducer",
+                "path_reducer",
+            ),
+            (
+                "trellis.models.monte_carlo.event_aware",
+                "EventAwareMonteCarloEvent",
+                "event_contract",
+            ),
+            (
+                "trellis.models.monte_carlo.event_aware",
+                "EventAwareMonteCarloProblemSpec",
+                "problem_spec",
+            ),
+            (
+                "trellis.models.monte_carlo.event_aware",
+                "build_event_aware_monte_carlo_problem",
+                "problem_builder",
+            ),
+            (
+                "trellis.models.monte_carlo.event_aware",
+                "price_event_aware_monte_carlo",
+                "monte_carlo_estimator",
+            ),
+        }
+        assert not {
+            "price_swaption_monte_carlo",
+            "resolve_swaption_monte_carlo_problem",
+        } & {primitive.symbol for primitive in new_prims}
+
+        notes = "\n".join(resolve_route_notes(spec, self.EUROPEAN_SWAPTION_IR))
+        assert "explicit `swap_start`" in notes
+        assert "price_event_aware_monte_carlo" in notes
+        assert "compatibility/reference" in notes
 
     def test_heston_primitives_use_stochastic_vol_monte_carlo_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]

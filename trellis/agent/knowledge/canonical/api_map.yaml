@@ -429,6 +429,21 @@ rate_style_swaption_composition:
     - "The product-level price_swaption_black76(...) wrapper remains a compatibility/reference API and is not generated-route construction authority."
     - "Pass Hull-White comparison parameters to the resolver only when the task contract explicitly requests that comparison regime; ordinary Black76 benchmark tasks use the bound market volatility surface."
 
+european_swaption_monte_carlo_composition:
+  module: trellis.models.monte_carlo.event_aware
+  methods: [monte_carlo]
+  navigation:
+    aliases: [swaption, european_swaption, hull_white_swaption_monte_carlo, hw_mc]
+  key_imports:
+    - "from trellis.models.rate_style_swaption import resolve_swaption_black76_inputs"
+    - "from trellis.core.date_utils import build_payment_timeline"
+    - "from trellis.models.monte_carlo.event_aware import resolve_hull_white_monte_carlo_process_inputs, build_discounted_swap_pv_payload, build_short_rate_discount_reducer"
+    - "from trellis.models.monte_carlo.event_aware import EventAwareMonteCarloEvent, EventAwareMonteCarloProblemSpec, build_event_aware_monte_carlo_problem, price_event_aware_monte_carlo"
+  notes:
+    - "price_swaption_monte_carlo(...) and resolve_swaption_monte_carlo_problem(...) remain compatibility/reference APIs and are not generated construction authority."
+    - "For a single-exercise European swaption, resolve the typed expiry basis, build the payment schedule from explicit swap_start, bind the Hull-White process, and assemble the discounted swap-PV payload, discount reducer, expiry events, problem spec, runtime problem, and generic estimator in that order."
+    - "Preserve day count, swap frequency, rate index, explicit comparison parameters, and path/step/seed controls. Do not substitute an equity GBM process."
+
 bermudan_swaption_lower_bound_composition:
   module: trellis.models.rate_style_swaption
   methods: [analytical]

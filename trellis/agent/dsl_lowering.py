@@ -869,6 +869,119 @@ def _build_event_aware_monte_carlo_expr_from_family_ir(
         )
         return helper_atom, ()
 
+    if family_ir.payoff_family == "swaption":
+        required_bindings = {
+            symbol: next(
+                (binding for binding in bindings if binding.symbol == symbol),
+                None,
+            )
+            for symbol in (
+                "resolve_swaption_black76_inputs",
+                "build_payment_timeline",
+                "resolve_hull_white_monte_carlo_process_inputs",
+                "build_discounted_swap_pv_payload",
+                "build_short_rate_discount_reducer",
+                "EventAwareMonteCarloEvent",
+                "EventAwareMonteCarloProblemSpec",
+                "build_event_aware_monte_carlo_problem",
+                "price_event_aware_monte_carlo",
+            )
+        }
+        missing = tuple(
+            symbol for symbol, binding in required_bindings.items() if binding is None
+        )
+        if missing:
+            return None, tuple(
+                _missing_primitive_message(
+                    route_id,
+                    binding_id,
+                    "European swaption Monte Carlo",
+                    symbol,
+                )
+                for symbol in missing
+            )
+
+        stages = (
+            (
+                "market_binding",
+                "resolve_swaption_black76_inputs",
+                market_signature.inputs,
+                ("resolved_swaption:state",),
+                "Resolve the European expiry, schedule basis, and market conventions.",
+            ),
+            (
+                "schedule_builder",
+                "build_payment_timeline",
+                ("resolved_swaption:state",),
+                ("payment_timeline:state",),
+                "Build the underlying swap payment timeline from explicit swap start.",
+            ),
+            (
+                "process_binding",
+                "resolve_hull_white_monte_carlo_process_inputs",
+                ("payment_timeline:state",),
+                ("mc_process_binding:state",),
+                "Bind the Hull-White process to market or explicit comparison parameters.",
+            ),
+            (
+                "settlement_payload",
+                "build_discounted_swap_pv_payload",
+                ("mc_process_binding:state",),
+                ("settlement_payload:state",),
+                "Build the discounted swap-PV settlement payload.",
+            ),
+            (
+                "path_reducer",
+                "build_short_rate_discount_reducer",
+                ("settlement_payload:state",),
+                ("discount_reducer:state",),
+                "Build the reduced-state short-rate discount accumulator.",
+            ),
+            (
+                "event_contract",
+                "EventAwareMonteCarloEvent",
+                ("discount_reducer:state",),
+                ("event_specs:state",),
+                "Declare the expiry observation and settlement events.",
+            ),
+            (
+                "problem_spec",
+                "EventAwareMonteCarloProblemSpec",
+                ("event_specs:state",),
+                ("mc_problem_spec:state",),
+                "Declare the typed event-aware Monte Carlo problem.",
+            ),
+            (
+                "problem_builder",
+                "build_event_aware_monte_carlo_problem",
+                ("mc_problem_spec:state",),
+                ("mc_problem:state",),
+                "Compile process, events, reducer, and payoff into the runtime problem.",
+            ),
+            (
+                "monte_carlo_estimator",
+                "price_event_aware_monte_carlo",
+                ("mc_problem:state",),
+                ("price:scalar",),
+                "Evaluate the compiled problem with explicit path, step, and seed controls.",
+            ),
+        )
+        atoms = tuple(
+            ContractAtom(
+                atom_id=_binding_atom_id(route_id, binding_id, role),
+                primitive_ref=required_bindings[symbol].primitive_ref,
+                description=description,
+                signature=ContractSignature(
+                    inputs=inputs,
+                    outputs=outputs,
+                    timeline_roles=market_signature.timeline_roles,
+                    market_data_requirements=market_signature.market_data_requirements,
+                ),
+            )
+            for role, symbol, inputs, outputs, description in stages
+        )
+        return ThenExpr(terms=atoms), ()
+
     terminal_estimator = next(
         (
             binding

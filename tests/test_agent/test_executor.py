@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from datetime import date, timedelta
 from contextlib import contextmanager
@@ -5794,7 +5795,6 @@ def test_deterministic_exact_binding_module_materializes_credit_loss_distributio
             "price_swaption_black76_raw",
         ),
         ("trellis.models.rate_style_swaption_tree.price_swaption_tree", "price_swaption_tree"),
-        ("trellis.models.rate_style_swaption.price_swaption_monte_carlo", "price_swaption_monte_carlo"),
     ],
 )
 def test_deterministic_exact_binding_module_threads_explicit_swaption_comparison_regime(
@@ -5850,12 +5850,7 @@ def test_deterministic_exact_binding_module_threads_explicit_swaption_comparison
     )
 
     assert generated is not None
-    if expected_call == "price_swaption_monte_carlo":
-        assert (
-            "price_swaption_monte_carlo("
-            "market_state, spec, n_paths=20000, seed=42, mean_reversion=0.05, sigma=0.01)"
-        ) in generated.code
-    elif expected_call == "price_swaption_black76_raw":
+    if expected_call == "price_swaption_black76_raw":
         assert (
             "resolve_swaption_black76_inputs("
             "market_state, spec, mean_reversion=0.05, sigma=0.01)"
@@ -5864,6 +5859,156 @@ def test_deterministic_exact_binding_module_threads_explicit_swaption_comparison
         assert "price_swaption_black76(market_state" not in generated.code
     else:
         assert f"{expected_call}(market_state, spec, mean_reversion=0.05, sigma=0.01)" in generated.code
+
+
+def test_deterministic_exact_binding_module_composes_european_swaption_monte_carlo():
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.valuation_context import (
+        EngineModelSpec,
+        PotentialSpec,
+        RatesCurveRoleSpec,
+        SourceSpec,
+    )
+
+    primitives = (
+        PrimitiveRef(
+            "trellis.models.rate_style_swaption",
+            "resolve_swaption_black76_inputs",
+            "market_binding",
+        ),
+        PrimitiveRef(
+            "trellis.core.date_utils",
+            "build_payment_timeline",
+            "schedule_builder",
+        ),
+        PrimitiveRef(
+            "trellis.models.monte_carlo.event_aware",
+            "resolve_hull_white_monte_carlo_process_inputs",
+            "process_binding",
+        ),
+        PrimitiveRef(
+            "trellis.models.monte_carlo.event_aware",
+            "build_discounted_swap_pv_payload",
+            "settlement_payload",
+        ),
+        PrimitiveRef(
+            "trellis.models.monte_carlo.event_aware",
+            "build_short_rate_discount_reducer",
+            "path_reducer",
+        ),
+        PrimitiveRef(
+            "trellis.models.monte_carlo.event_aware",
+            "EventAwareMonteCarloEvent",
+            "event_contract",
+        ),
+        PrimitiveRef(
+            "trellis.models.monte_carlo.event_aware",
+            "EventAwareMonteCarloProblemSpec",
+            "problem_spec",
+        ),
+        PrimitiveRef(
+            "trellis.models.monte_carlo.event_aware",
+            "build_event_aware_monte_carlo_problem",
+            "problem_builder",
+        ),
+        PrimitiveRef(
+            "trellis.models.monte_carlo.event_aware",
+            "price_event_aware_monte_carlo",
+            "monte_carlo_estimator",
+        ),
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo",
+        ),
+        primitive_plan=SimpleNamespace(
+            route="monte_carlo_paths",
+            primitives=primitives,
+        ),
+        method="monte_carlo",
+        instrument_type="swaption",
+    )
+    semantic_blueprint = SimpleNamespace(
+        valuation_context=SimpleNamespace(
+            engine_model_spec=EngineModelSpec(
+                model_family="rates",
+                model_name="hull_white_1f",
+                state_semantics=("short_rate",),
+                potential=PotentialSpec(discount_term="risk_free_rate"),
+                sources=(SourceSpec(source_kind="coupon_stream"),),
+                calibration_requirements=("bootstrap_curve", "fit_hw_strip"),
+                backend_hints=("monte_carlo",),
+                parameter_overrides={"mean_reversion": 0.05, "sigma": 0.01},
+                rates_curve_roles=RatesCurveRoleSpec(
+                    discount_curve_role="discount_curve",
+                    forecast_curve_role="forward_curve",
+                ),
+            )
+        )
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["swaption"],
+        "European payer swaption under Hull-White Monte Carlo",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        semantic_blueprint=semantic_blueprint,
+        comparison_target="hw_mc",
+    )
+
+    assert generated is not None
+    assert EVALUATE_SENTINEL not in generated.code
+    for symbol in (
+        "resolve_swaption_black76_inputs",
+        "build_payment_timeline",
+        "resolve_hull_white_monte_carlo_process_inputs",
+        "build_discounted_swap_pv_payload",
+        "build_short_rate_discount_reducer",
+        "EventAwareMonteCarloEvent",
+        "EventAwareMonteCarloProblemSpec",
+        "build_event_aware_monte_carlo_problem",
+        "price_event_aware_monte_carlo",
+    ):
+        assert symbol in generated.code
+    assert "swap_start = getattr(spec, \"swap_start\", None) or resolved.expiry_date" in generated.code
+    assert "spec.swap_frequency" in generated.code
+    assert "day_count=spec.day_count" in generated.code
+    assert "forecast_forward_curve(rate_index)" in generated.code
+    assert "n_paths = max(int(getattr(spec, \"n_paths\", 20000)), 2)" in generated.code
+    assert "n_steps = max(int(getattr(spec, \"n_steps\", 64)), 1)" in generated.code
+    assert "seed = spec.seed if hasattr(spec, \"seed\") else 42" in generated.code
+    calls = tuple(
+        node
+        for node in ast.walk(ast.parse(generated.code))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    )
+    expiry_resolution = next(
+        call for call in calls if call.func.id == "resolve_swaption_black76_inputs"
+    )
+    process_resolution = next(
+        call
+        for call in calls
+        if call.func.id == "resolve_hull_white_monte_carlo_process_inputs"
+    )
+    assert {keyword.arg for keyword in expiry_resolution.keywords} == set()
+    assert {keyword.arg for keyword in process_resolution.keywords} == {
+        "option_horizon",
+        "strike",
+        "mean_reversion",
+        "sigma",
+    }
+    assert "price_swaption_monte_carlo(" not in generated.code
+    assert "resolve_swaption_monte_carlo_problem(" not in generated.code
+    assert "GBM(" not in generated.code
 
 
 @pytest.mark.parametrize(

@@ -1661,7 +1661,7 @@ def test_executor_swaption_rate_tree_retry_pins_helper_backed_route():
     assert "swap_start == expiry_date" in text
 
 
-def test_executor_swaption_monte_carlo_retry_pins_event_aware_route():
+def test_executor_swaption_monte_carlo_retry_pins_primitive_composition():
     from types import SimpleNamespace
 
     from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
@@ -1680,11 +1680,18 @@ def test_executor_swaption_monte_carlo_retry_pins_event_aware_route():
 
     text = "\n".join(_route_specific_retry_lines(request))
 
-    assert "price_swaption_monte_carlo" in text
-    assert "thin adapter" in text or "Keep the route thin" in text
+    assert "resolve_swaption_black76_inputs" in text
+    assert "build_payment_timeline" in text
+    assert "resolve_hull_white_monte_carlo_process_inputs" in text
+    assert "build_discounted_swap_pv_payload" in text
+    assert "build_short_rate_discount_reducer" in text
+    assert "build_event_aware_monte_carlo_problem" in text
+    assert "price_event_aware_monte_carlo" in text
     assert "swap_start" in text
     assert "do not hardcode `sigma = 0.01`" in text
     assert "do not synthesize a GBM equity path" in text
+    assert "price_swaption_monte_carlo" in text
+    assert "compatibility/reference" in text
 
 
 def test_executor_zcb_option_analytical_retry_mentions_jamshidian_raw_lane():
