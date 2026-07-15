@@ -287,9 +287,9 @@ The post-build phase markers currently cover:
 - ``decision_checkpoint_emitted``
 - ``consolidation_dispatched``
 
-The dossier renders the latest post-build phase and a per-method checkpoint
-summary so a human can quickly see whether the run failed before build
-completion, during reflection, or after the build returned.
+The dossier renders the latest post-build phase, the top-level task checkpoint,
+and any per-method checkpoints so a human can quickly see whether the run
+failed before build completion, during reflection, or after the build returned.
 
 Post-build execution policy
 ---------------------------

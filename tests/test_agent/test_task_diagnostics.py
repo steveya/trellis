@@ -353,6 +353,56 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert "/tmp/t999_waits.jsonl" in rendered
 
 
+def test_render_task_diagnosis_dossier_surfaces_top_level_policy_skip(tmp_path):
+    from trellis.agent.task_diagnostics import (
+        build_task_diagnosis_packet,
+        render_task_diagnosis_dossier,
+    )
+
+    record = _sample_record(tmp_path)
+    record["post_build"] = {
+        "latest_method": None,
+        "latest_phase": "reflection_completed",
+        "latest_status": "skipped",
+        "active_flags": {"skip_reflection": True},
+        "task": {
+            "latest_phase": "reflection_completed",
+            "latest_status": "skipped",
+            "event_count": 3,
+            "policy": {
+                "execution_mode": "deterministic_replay",
+                "recovery_mode": "strict",
+            },
+            "skipped_stages": [
+                {
+                    "phase": "reflection_completed",
+                    "reason": "execution_mode_deterministic_replay",
+                    "policy_reasons": [
+                        "execution_mode_deterministic_replay",
+                        "recovery_mode_strict",
+                    ],
+                }
+            ],
+        },
+        "methods": {},
+    }
+
+    rendered = render_task_diagnosis_dossier(
+        build_task_diagnosis_packet(record)
+    )
+
+    assert "- Task checkpoint:" in rendered
+    assert "`task`: phase=`reflection_completed`, status=`skipped`" in rendered
+    assert (
+        "`reflection_completed` skipped: `execution_mode_deterministic_replay`"
+        in rendered
+    )
+    assert (
+        "policy reasons=`execution_mode_deterministic_replay, recovery_mode_strict`"
+        in rendered
+    )
+
+
 def test_build_task_diagnosis_packet_preserves_computational_problem(tmp_path):
     from trellis.agent.task_diagnostics import build_task_diagnosis_packet
 
