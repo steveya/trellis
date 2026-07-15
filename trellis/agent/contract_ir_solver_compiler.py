@@ -544,6 +544,7 @@ class ContractIRSolverSelection:
     cashflow_engine_refs: tuple[str, ...] = ()
     market_binding_refs: tuple[str, ...] = ()
     compatibility_alias_policy: str = "operator_visible"
+    generated_route_authority: bool = True
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "match_bindings", _freeze_mapping(self.match_bindings))
@@ -782,6 +783,7 @@ def select_contract_ir_solver(
         cashflow_engine_refs=declaration.provenance.cashflow_engine_refs,
         market_binding_refs=declaration.provenance.market_binding_refs,
         compatibility_alias_policy=declaration.provenance.compatibility_alias_policy,
+        generated_route_authority=declaration.provenance.generated_route_authority,
     )
 
 
@@ -2004,6 +2006,7 @@ def _default_registry() -> ContractIRSolverRegistry:
             provenance=ContractIRSolverProvenance(
                 declaration_id="helper_equity_variance_swap",
                 validation_bundle_id="variance_swap_contract",
+                generated_route_authority=False,
                 helper_refs=("trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical",),
             ),
             precedence=40,

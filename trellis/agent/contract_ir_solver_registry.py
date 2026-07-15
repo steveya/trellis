@@ -121,6 +121,7 @@ class ContractIRSolverProvenance:
     declaration_id: str
     validation_bundle_id: str = ""
     compatibility_alias_policy: str = "operator_visible"
+    generated_route_authority: bool = True
     helper_refs: tuple[str, ...] = ()
     pricing_kernel_refs: tuple[str, ...] = ()
     schedule_builder_refs: tuple[str, ...] = ()

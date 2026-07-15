@@ -887,11 +887,6 @@ def test_semantic_blueprint_summary_preserves_range_accrual_callability_blockers
             "analytical",
             "trellis.models.black.black76_call",
         ),
-        (
-            "F015",
-            "analytical",
-            "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical",
-        ),
     ],
 )
 def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_financepy_tasks(
@@ -969,6 +964,41 @@ def test_compile_build_request_uses_lookback_primitive_composition_for_f011():
     assert not any(
         "price_equity_fixed_lookback_option_analytical" in ref
         for ref in compiled.generation_plan.backend_exact_target_refs
+    )
+
+
+def test_compile_build_request_uses_variance_swap_primitive_composition_for_f015():
+    from trellis.agent.benchmark_contracts import benchmark_request_description
+    from trellis.agent.platform_requests import compile_build_request
+
+    task = _financepy_benchmark_task("F015")
+    compiled = compile_build_request(
+        benchmark_request_description(task),
+        instrument_type=task["instrument_type"],
+        preferred_method="analytical",
+    )
+
+    assert compiled.generation_plan is not None
+    primitive_plan = compiled.generation_plan.primitive_plan
+    assert primitive_plan is not None
+    assert primitive_plan.route == "analytical_black76"
+    assert primitive_plan.route_family == "analytical"
+    primitive_refs = {
+        f"{primitive.module}.{primitive.symbol}"
+        for primitive in primitive_plan.primitives
+    }
+    assert {
+        "trellis.core.date_utils.year_fraction",
+        "trellis.curves.interpolation.linear_interp",
+        "trellis.models.analytical.support.discount_factor_from_zero_rate",
+    } <= primitive_refs
+    assert not any(
+        "variance_swap_outputs_analytical" in ref
+        or "price_equity_variance_swap_analytical" in ref
+        for ref in (
+            *primitive_refs,
+            *compiled.generation_plan.backend_exact_target_refs,
+        )
     )
 
 

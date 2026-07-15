@@ -339,8 +339,8 @@ independent-comparison references, not generated-route construction authority.
 Variance Swap Composition
 -------------------------
 
-The admitted variance-swap Monte Carlo task route is also assembled from
-reusable pieces. It binds spot, maturity, rate, carry, scalar volatility, and
+The admitted variance-swap task routes are assembled from reusable pieces. The
+Monte Carlo lane binds spot, maturity, rate, carry, scalar volatility, and
 discounting with ``resolve_scalar_diffusion_market_inputs(...)``; declares the
 uniform observation grid with ``SquaredLogReturnContract``; and passes the
 matching reducer through ``MonteCarloPathRequirement`` and
@@ -349,6 +349,15 @@ the variance strike, notional, and discounting after evaluating the path
 statistic. The product-level variance-swap functions remain available as
 compatibility and comparison references.
 
+The analytical comparison lane uses ``year_fraction(...)``,
+``linear_interp(...)``, and ``discount_factor_from_zero_rate(...)``. It accepts
+at least two positive volatility quotes on positive, strictly increasing
+strikes, interpolates the at-the-money volatility at runtime spot, and reports
+both price and ``fair_strike_variance`` from the FinancePy-compatible
+smile-slope approximation. When explicit volatility quotes are absent, it
+samples the Black surface at the strike grid. Duplicate, descending,
+non-finite, nonpositive, or mismatched grids are rejected.
+
 This route requires ``annualization_convention="per_year"`` and uses
 ``annualization_factor=1/maturity``. The current admitted surface is a
 single-underlier, constant-scalar-volatility GBM with deterministic rates and
@@ -356,6 +365,12 @@ carry and uniformly spaced observations. A volatility smile, local or
 stochastic volatility, irregular sampling, or a different annualization
 convention needs a different route and fails closed rather than being silently
 collapsed into this approximation.
+
+The analytical lane is also intentionally narrow. It is not full model-free
+log-contract or static option-strip replication, and explicit volatility
+quotes do not move under a separate Black-surface bump. A true replication
+route needs an additional contract for option-price integration, truncation,
+interpolation, and numerical-error evidence.
 
 The P001 Bermudan best-of-two rainbow proof is also exposed this way for
 task compatibility. Its checked-in ``_agent`` adapter delegates to the

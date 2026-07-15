@@ -1,7 +1,7 @@
 # ContractIR Structural Compiler Parity
 
-- Generated at: `2026-07-14T09:57:42.062477+00:00`
-- Repo revision: `a60236cfde6bfa8eed2bdc18e1e92f5e17cd31a3`
+- Generated at: `2026-07-15T09:19:35.932194+00:00`
+- Repo revision: `4cbdc05b33f1e581d9197ae385d26cf9b2a2ded9`
 
 ## Family Summary
 
@@ -12,7 +12,7 @@
 | digital_option | True | True | True | True | True | True | True |
 | rate_style_swaption | True | True | True | True | True | True | True |
 | vanilla_option | True | True | True | True | True | True | True |
-| variance_swap | True | True | True | True | True | True | True |
+| variance_swap | True | True | True | True | True | False | False |
 
 ## asian_option
 
@@ -71,8 +71,9 @@
 
 ## variance_swap
 
+- The direct structural declaration is comparison-only: it remains executable parity evidence but intentionally cannot replace the primitive-composed generated route or qualify this family for Phase 4 exact-authority promotion.
 
 | Case | Source | Shadow | Declaration | Route | Exact-target contains callable | Passed |
 | --- | --- | --- | --- | --- | --- | --- |
-| variance_swap | request_decomposition | bound | helper_equity_variance_swap |  | True | True |
+| variance_swap | request_decomposition | bound | helper_equity_variance_swap | analytical_black76 | None | True |
 - `variance_swap` value parity: structural=`221.11341162672662` reference=`221.11341162672662` abs_diff=`0.0`

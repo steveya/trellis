@@ -415,6 +415,38 @@ contracts.  The retained product-level variance-swap functions are
 compatibility and independent-comparison references, not generated-route
 authority.
 
+The admitted analytical comparison is a separate bounded composition.  It
+parses a finite positive volatility quote at each finite positive, strictly
+increasing strike; uses ``linear_interp(...)`` for the at-the-money volatility;
+and computes the FinancePy-compatible smile-slope approximation
+
+.. math::
+
+   K_{\mathrm{var,fair}}
+   = \sigma_{\mathrm{ATM}}^2 \sqrt{1 + 3 T s^2},
+   \qquad
+   s = S_0\frac{\sigma_{\mathrm{high}}-\sigma_{\mathrm{low}}}
+                    {K_{\mathrm{high}}-K_{\mathrm{low}}}.
+
+After strict monotonicity validation, a grid whose endpoint strike span has
+absolute value at most ``1e-12`` uses ``s = 0``.  This preserves the retained
+FinancePy-compatible flat-smile edge behavior instead of amplifying quote noise
+through division by a near-zero span.
+
+Generated adapter code then reports ``fair_strike_variance`` and settles
+
+.. math::
+
+   PV = N D(0,T)
+        \left(K_{\mathrm{var,fair}}-K_{\mathrm{var,strike}}\right).
+
+When explicit volatility quotes are absent, the adapter samples the admitted
+Black surface at the strike grid.  Explicit quote grids are contractual inputs
+and therefore do not move under a separate surface bump.  This approximation
+is not model-free log-contract replication: Trellis does not yet expose the
+option-strip integration, truncation, interpolation, and error contract needed
+for that claim.  The retained analytical wrapper is comparison evidence only.
+
 Extrema are exact only over the listed discrete observations.  The existing
 ``brownian_bridge(...)`` utility constructs Brownian paths and bridge-ordered
 increments; it does not sample conditional transition extrema.  Continuous
@@ -579,14 +611,15 @@ The first migrated vanilla cases now use that boundary directly:
   When an observation frequency is not supplied, resolution derives it from
   the Monte Carlo grid so analytical and MC monitoring contracts remain
   aligned for task-level comparison.
-- equity variance-swap comparison targets now have a checked Monte Carlo
-  realised-variance route in ``trellis.models.variance_swap``. The MC helper
-  simulates annualised log-return variance under the market state's GBM
-  surface binding and reports both price and fair strike variance, while the
-  analytical route remains the log-contract style replication helper in
-  ``trellis.models.analytical.equity_exotics``. Variance swaps deliberately
-  skip the generic embedded-option flat-vega invariant; their proof contract is
-  price sanity plus cross-method fair-strike/price comparison, not option vega.
+- equity variance-swap comparison targets now have two primitive-composed task
+  lanes. The Monte Carlo lane assembles a scalar market resolver, squared-log-
+  return reducer, GBM, and generic engine. The analytical lane assembles exact
+  time, quote-grid interpolation, discounting, and adapter-owned
+  FinancePy-compatible smile-slope settlement. The retained product wrappers
+  remain independent comparison evidence. Variance swaps deliberately skip
+  the generic embedded-option flat-vega invariant; their proof contract is
+  price sanity plus cross-method fair-strike/price comparison, not option vega
+  or full log-contract replication.
 - CEV European-vanilla proof targets have bounded helper surfaces for the
   retained legacy comparison task: ``price_cev_option_pde(...)`` composes the
   existing ``CEVOperator`` with the theta PDE solver, while

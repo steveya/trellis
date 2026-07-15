@@ -276,7 +276,9 @@ def compile_semantic_contract(
     static_leg_admission_blockers = _compile_static_leg_admission_blockers(
         static_leg_contract_ir
     )
-    if contract_ir_solver_selection is not None:
+    if contract_ir_solver_selection is not None and bool(
+        getattr(contract_ir_solver_selection, "generated_route_authority", True)
+    ):
         primitive_routes = ()
         dsl_lowering = _route_free_lowering_from_structural_selection(
             contract_ir_solver_selection,

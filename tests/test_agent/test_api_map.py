@@ -270,6 +270,15 @@ def test_api_map_semantic_selection_reaches_composition_cards():
         ),
         (
             ApiMapQuery(
+                instrument_type="variance_swap",
+                payoff_family="variance_swap",
+                method="analytical",
+                features=("quote_grid",),
+            ),
+            "variance_swap_smile_slope_composition",
+        ),
+        (
+            ApiMapQuery(
                 description="Price a cliquet with capped interval returns.",
             ),
             "observation_return_composition",
@@ -471,6 +480,25 @@ def test_api_map_prioritizes_product_neutral_path_statistic_composition():
     assert "trellis.models.variance_swap" not in text
     assert "price_equity_fixed_lookback_option_monte_carlo" not in monte_carlo_text
     assert "price_equity_variance_swap_monte_carlo" not in monte_carlo_text
+
+
+def test_api_map_exposes_variance_swap_smile_slope_composition():
+    api_map = get_api_map()
+    section = api_map["variance_swap_smile_slope_composition"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "year_fraction",
+        "linear_interp",
+        "discount_factor_from_zero_rate",
+    ):
+        assert symbol in text
+    assert "smile-slope approximation" in text
+    assert "strictly increasing" in text
+    assert "1e-12" in text
+    assert "log-contract" in text
+    assert "price_equity_variance_swap_analytical" not in text
+    assert "equity_variance_swap_outputs_analytical" not in text
 
 
 def test_api_map_exposes_product_neutral_conditional_extremum_composition():

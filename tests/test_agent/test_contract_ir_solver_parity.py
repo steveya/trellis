@@ -118,6 +118,15 @@ def test_compile_build_request_records_request_decomposition_shadow_for_variance
     assert compiler["shadow_status"] == "bound"
     assert compiler["contract_ir_solver_shadow"]["declaration_id"] == "helper_equity_variance_swap"
     assert compiler["shadow_error"] is None
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == "analytical_black76"
+    assert not any(
+        "variance_swap_analytical" in ref
+        for ref in compiled.generation_plan.backend_exact_target_refs
+    )
+    authority = compiled.request.metadata["route_binding_authority"]
+    assert authority["authority_kind"] == "route_registry_binding"
 
 
 def test_compile_build_request_records_bounded_asian_analytical_shadow():
@@ -190,6 +199,12 @@ def test_contract_ir_solver_parity_report_promotes_bounded_asian_family():
     assert families["digital_option"]["parity_closed"] is True
     assert families["rate_style_swaption"]["parity_closed"] is True
     assert families["variance_swap"]["parity_closed"] is True
+    assert families["variance_swap"]["exact_authority_closed"] is False
+    assert families["variance_swap"]["phase4_candidate"] is False
+    assert any(
+        "comparison-only" in note
+        for note in families["variance_swap"]["notes"]
+    )
     assert families["asian_option"]["blocked"] is False
     assert families["asian_option"]["parity_closed"] is True
     assert families["asian_option"]["exact_authority_closed"] is True
@@ -206,5 +221,5 @@ def test_contract_ir_solver_parity_report_promotes_bounded_asian_family():
     )
     assert put_monte_carlo["reference_price"] > 10.0
     assert put_monte_carlo["rel_diff"] <= 0.02
-    assert report["totals"]["phase4_candidates"] == 6
+    assert report["totals"]["phase4_candidates"] == 5
     assert any("bounded analytical approximation" in note for note in families["asian_option"]["notes"])

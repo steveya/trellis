@@ -786,12 +786,8 @@ def test_resolve_backend_binding_spec_uses_quanto_primitive_composition(
                 model_family="generic",
             ),
             "analytical",
-            (
-                "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical",
-            ),
-            (
-                "trellis.models.analytical.equity_exotics.equity_variance_swap_outputs_analytical",
-            ),
+            (),
+            (),
             id="variance-swap",
         ),
     ],
@@ -812,6 +808,35 @@ def test_resolve_backend_binding_spec_uses_exact_helpers_for_absorbed_black76_eq
     assert resolved.route_family == expected_route_family
     assert resolved.helper_refs == expected_helper_refs
     assert resolved.pricing_kernel_refs == expected_kernel_refs
+
+
+def test_resolve_backend_binding_spec_exposes_complete_variance_swap_composition():
+    catalog = load_backend_binding_catalog()
+    analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
+
+    assert analytical is not None
+
+    resolved = resolve_backend_binding_spec(
+        analytical,
+        product_ir=ProductIR(
+            instrument="variance_swap",
+            payoff_family="variance_swap",
+            payoff_traits=(
+                "discounting",
+                "path_dependent",
+                "vol_surface_dependence",
+            ),
+            exercise_style="none",
+            state_dependence="path_dependent",
+            model_family="generic",
+        ),
+    )
+
+    assert {
+        "trellis.core.date_utils.year_fraction",
+        "trellis.curves.interpolation.linear_interp",
+        "trellis.models.analytical.support.discount_factor_from_zero_rate",
+    } <= set(resolved.primitive_refs)
 
 
 def test_resolve_backend_binding_spec_exposes_complete_chooser_composition():

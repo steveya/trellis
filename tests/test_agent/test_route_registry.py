@@ -2004,20 +2004,25 @@ class TestAnalyticalRoutes:
             ("trellis.core.date_utils", "year_fraction", "time_measure"),
         }
 
-    def test_variance_swap_primitives_use_exact_helper_and_output_kernel(self, registry):
+    def test_variance_swap_primitives_use_raw_analytical_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         new_prims = resolve_route_primitives(spec, self.VARIANCE_SWAP_IR)
         assert resolve_route_family(spec, self.VARIANCE_SWAP_IR) == "analytical"
         assert _prim_set(new_prims) == {
             (
-                "trellis.models.analytical.equity_exotics",
-                "price_equity_variance_swap_analytical",
-                "route_helper",
+                "trellis.core.date_utils",
+                "year_fraction",
+                "time_measure",
             ),
             (
-                "trellis.models.analytical.equity_exotics",
-                "equity_variance_swap_outputs_analytical",
-                "pricing_kernel",
+                "trellis.curves.interpolation",
+                "linear_interp",
+                "interpolation",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "discount_factor_from_zero_rate",
+                "discounting",
             ),
         }
 

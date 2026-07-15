@@ -404,7 +404,14 @@
     - >-
       CONVERGENCE: Use at least 50,000 paths. Realized variance is sum of
       (log(S_{t+1}/S_t))^2 — needs fine time grid for accuracy.
-  reasoning: "Variance swap payoff depends on realized variance — MC simulation."
+    - >-
+      ANALYTICAL COMPARISON: When an analytical quote-grid target is requested,
+      use the bounded FinancePy-compatible smile-slope approximation over
+      year_fraction, linear_interp, and discount_factor_from_zero_rate. Validate
+      the strike/volatility grid and keep fair-strike plus settlement assembly
+      in generated code; do not call a product variance-swap helper or claim a
+      full log-contract integral.
+  reasoning: "Variance swap payoff depends on realized variance; Monte Carlo is the default pathwise method, while the admitted analytical comparison is a bounded quote-grid approximation."
   learned: false
 
 # QUA-852: anchor intent-based requests for analytical exotic pricers on the

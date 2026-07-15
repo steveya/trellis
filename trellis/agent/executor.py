@@ -5917,9 +5917,6 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.equity_option_pde.price_equity_digital_option_pde": (
             "return price_equity_digital_option_pde(market_state, spec)"
         ),
-        "trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical": (
-            "return price_equity_variance_swap_analytical(market_state, spec)"
-        ),
         "trellis.models.analytical.barrier.barrier_option_price": (
             "if market_state.discount is None:\n"
             '    raise ValueError("market_state.discount is required for analytical barrier pricing")\n'
