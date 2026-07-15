@@ -103,6 +103,13 @@ one task compares multiple stochastic-volatility methods, the task-level value
 can be ``stochastic_vol_mixed`` even though each target still has one of the
 stable buckets above.
 
+The block is attached only when task, target, or named model-contract evidence
+explicitly selects a stochastic-volatility family. Ambient market inventories,
+scenario capability names, and ``market_assertions`` do not declare model
+semantics. If a shared scenario exposes a Heston surface or parameter pack to a
+Black-Scholes task, the result and runtime contract omit
+``computational_problem`` rather than recording a false Heston problem.
+
 For the full lifecycle, notation, and route responsibilities for this block,
 see :doc:`stochastic_vol_computational_ir`.
 

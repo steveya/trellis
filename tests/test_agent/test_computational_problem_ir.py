@@ -12,6 +12,15 @@ def _legacy_tasks() -> dict[str, dict]:
     }
 
 
+def _financepy_tasks() -> dict[str, dict]:
+    from trellis.agent.task_manifests import load_task_manifest
+
+    return {
+        str(task["id"]): task
+        for task in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml")
+    }
+
+
 def _target_buckets(report) -> dict[str, str]:
     return {target.target_id: target.bucket for target in report.target_problems}
 
@@ -81,6 +90,84 @@ def test_classifies_recent_stochastic_vol_task_pack_into_stable_buckets():
         report = classify_stochastic_vol_task(tasks[task_id])
         assert report is not None, task_id
         assert _target_buckets(report) == target_expectations
+
+
+def test_ambient_market_capabilities_do_not_declare_stochastic_vol_semantics():
+    from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
+
+    assert classify_stochastic_vol_task(_financepy_tasks()["F012"]) is None
+    assert classify_stochastic_vol_task(_legacy_tasks()["T105"]) is None
+    assert (
+        classify_stochastic_vol_task(
+            {
+                "id": "TAMBIENT",
+                "title": "Black-Scholes European equity option",
+                "construct": "analytical",
+                "market": {
+                    "available_capabilities": [
+                        "discount_curve",
+                        "spx_heston_implied_vol",
+                    ],
+                    "model_parameters": "heston_equity",
+                    "metadata": {"surface_builder": "heston_implied_vol"},
+                },
+                "cross_validate": {"internal": ["black_scholes"]},
+            }
+        )
+        is None
+    )
+
+
+def test_explicit_semantic_model_contract_declares_stochastic_vol_semantics():
+    from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
+
+    for model_family, target_id, expected_bucket, expected_process in (
+        ("heston", "fft", "stochastic_vol_transform", "heston"),
+        ("rough_heston", "fft", "stochastic_vol_transform", "rough_heston"),
+        ("bates", "fft", "stochastic_vol_transform", "bates"),
+        ("slv_lsv", "pde", "slv_lsv", "slv_lsv"),
+    ):
+        report = classify_stochastic_vol_task(
+            {
+                "id": "TEXPLICIT",
+                "title": "European equity option comparison",
+                "semantic_contract": {
+                    "product": {"model_family": model_family},
+                },
+                "cross_validate": {"internal": [target_id]},
+            }
+        )
+
+        assert report is not None
+        target = _target_payload(report, target_id)
+        assert target["bucket"] == expected_bucket
+        assert target["process_family"] == expected_process
+
+
+def test_inherited_bates_model_preserves_route_only_target_shape():
+    from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
+
+    report = classify_stochastic_vol_task(
+        {
+            "id": "TBATESROUTES",
+            "title": "European equity option comparison",
+            "model_contract": {"model_family": "bates"},
+            "cross_validate": {"internal": ["pde", "market_prices"]},
+        }
+    )
+
+    assert report is not None
+    pde = _target_payload(report, "pde")
+    assert pde["bucket"] == "stochastic_vol_pde"
+    assert pde["solver_target"] == "pde"
+    assert pde["process_family"] == "bates"
+    assert pde["validation_bundle"] == "bates:pde"
+
+    calibration = _target_payload(report, "market_prices")
+    assert calibration["bucket"] == "calibration_to_surface"
+    assert calibration["solver_target"] == "surface_calibration"
+    assert calibration["process_family"] == "bates"
+    assert calibration["calibration_problem"]["status"] == "calibration_blocked"
 
 
 def test_heston_parameter_semantics_distinguish_parameters_from_surface_bumps():
