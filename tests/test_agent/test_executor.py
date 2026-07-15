@@ -80,7 +80,8 @@ def test_comparison_execution_binding_metadata_reports_actual_plan_and_semantics
         request_metadata={"comparison_target_contract": target_contract},
     )
 
-    assert binding["comparison_target_contract"] == target_contract
+    assert binding["comparison_target_contract"] == {}
+    assert binding["requested_comparison_target_contract"] == target_contract
     assert binding["selected_method"] == "monte_carlo"
     assert binding["selected_route_id"] == "exercise_monte_carlo"
     assert binding["selected_route_family"] == "exercise"
@@ -157,8 +158,36 @@ def test_comparison_execution_binding_emits_trace_without_mutable_build_metadata
         },
     )
 
-    assert events[0][0][1] == "comparison_target_bound"
+    assert events[0][0][1] == "comparison_target_planned"
+    assert events[0][1]["details"]["comparison_target_contract"] == {}
+    assert events[0][1]["details"]["requested_comparison_target_contract"] == {
+        "target_id": "plain_mc",
+        "method": "monte_carlo",
+    }
     assert events[0][1]["details"]["selected_method"] == "monte_carlo"
+
+
+def test_comparison_execution_binding_does_not_promote_request_to_actual_evidence():
+    from trellis.agent.executor import _record_comparison_execution_binding
+
+    requested_contract = {
+        "target_id": "plain_mc",
+        "method": "monte_carlo",
+    }
+    build_meta = {}
+
+    _record_comparison_execution_binding(
+        build_meta,
+        pricing_plan=SimpleNamespace(method="monte_carlo"),
+        generation_plan=SimpleNamespace(),
+        product_ir=SimpleNamespace(),
+        request_metadata={"comparison_target_contract": requested_contract},
+        emit_event=False,
+    )
+
+    assert build_meta["comparison_target_contract"] == {}
+    assert build_meta["requested_comparison_target_contract"] == requested_contract
+    assert "comparison_binding_evidence_source" not in build_meta
 
 
 def test_reused_execution_artifact_metadata_survives_unimportable_class_module():

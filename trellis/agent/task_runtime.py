@@ -2759,6 +2759,7 @@ def _description_for_comparison_target(
     """Augment a task description with a concrete comparison-target hint."""
     contract_payload = json.dumps(
         target.contract.to_payload(),
+        default=str,
         sort_keys=True,
         separators=(",", ":"),
     )

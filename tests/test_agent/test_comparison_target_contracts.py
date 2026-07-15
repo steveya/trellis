@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 from types import SimpleNamespace
 
 import pytest
@@ -132,6 +133,27 @@ def test_comparison_target_description_carries_typed_executable_obligations():
     assert "exercise every declared variant" in description
     assert "__trellis_comparison_bindings__" in description
     assert '"target_contract"' in description
+
+
+def test_comparison_target_description_serializes_non_json_native_values():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.task_runtime import (
+        ComparisonBuildTarget,
+        _description_for_comparison_target,
+    )
+
+    contract = ComparisonTargetContract(
+        target_id="scheduled_mc",
+        method="monte_carlo",
+        variant_parameters={"observation_date": date(2026, 7, 15)},
+    )
+
+    description = _description_for_comparison_target(
+        "Price a scheduled option.",
+        ComparisonBuildTarget(contract=contract),
+    )
+
+    assert '"observation_date":"2026-07-15"' in description
 
 
 def test_build_result_payload_separates_requested_contract_from_artifact_evidence():

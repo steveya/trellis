@@ -236,7 +236,8 @@ def _comparison_execution_binding_metadata(
         else {}
     )
     return {
-        "comparison_target_contract": target_contract,
+        "comparison_target_contract": {},
+        "requested_comparison_target_contract": target_contract,
         "selected_method": str(getattr(pricing_plan, "method", "") or "").strip(),
         "selected_route_id": route_id,
         "selected_route_family": route_family,
@@ -272,17 +273,17 @@ def _record_comparison_execution_binding(
         ),
         request_metadata=request_metadata,
     )
-    if binding.get("comparison_target_contract"):
-        binding["comparison_binding_evidence_source"] = (
+    if binding.get("requested_comparison_target_contract"):
+        binding["comparison_request_source"] = (
             "compiled_generation_binding"
         )
     if build_meta is not None:
         build_meta.update(binding)
         build_meta["execution_binding"] = dict(binding)
-    if emit_event and binding.get("comparison_target_contract"):
+    if emit_event and binding.get("requested_comparison_target_contract"):
         _record_platform_event(
             compiled_request,
-            "comparison_target_bound",
+            "comparison_target_planned",
             status="ok",
             details=binding,
         )

@@ -465,15 +465,17 @@ the route-selection decision:
   state or only from the fallback route heuristic
 
 Comparison builds add a separate execution-identity trail. The
-``comparison_target_bound`` lifecycle event records the immutable target
-contract together with the method, route, route family, backend binding,
-validation bundle, and semantic axes selected by the compiler. Cached artifacts
-also record the module, class, source file, and admission target actually
-returned. A cached class without its own compatible target-contract declaration
-emits ``comparison_target_binding_unproven`` and retains an empty actual
-contract. Requested target metadata, actual artifact evidence, and validation
-evidence remain separate so trace consumers can detect substitution instead of
-treating the request as execution evidence.
+``comparison_target_planned`` lifecycle event records the requested immutable
+target contract together with the method, route, route family, backend binding,
+validation bundle, and semantic axes selected by the compiler. It does not
+populate actual artifact evidence. After import, ``comparison_target_bound``
+records the independently declared artifact contract. Cached artifacts also
+record the module, class, source file, and admission target actually returned.
+A cached class without its own compatible target-contract declaration emits
+``comparison_target_binding_unproven`` and retains an empty actual contract.
+Requested target metadata, actual artifact evidence, and validation evidence
+remain separate so trace consumers can detect substitution instead of treating
+the request as execution evidence.
 
 Task-Run Telemetry
 ------------------
