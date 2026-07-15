@@ -217,7 +217,7 @@ class LookbackOptionPayoff:
                 + spot * rate_discount * correction
             )
 
-        price = notional * unit_price
+        price = float(notional * unit_price)
         if not isfinite(price):
             raise ValueError("analytical lookback formula returned a non-finite price")
-        return float(price)
+        return price
