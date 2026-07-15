@@ -57,6 +57,7 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1194` | Fixed lookback pricing: retire analytical helper authority | Done |
 | `QUA-1195` | Variance swap pricing: retire analytical helper authority | Done |
 | `QUA-1196` | Swaption pricing: retire European Black76 wrapper authority | Done |
+| `QUA-1197` | Swaption pricing: retire Bermudan Black76 lower-bound helper authority | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -85,9 +86,14 @@ Status mirror last synced: `2026-07-15`
    schedule projection as a typed resolver, pass only its resolved basis to the
    raw pricing kernel, and retain the product wrapper only for compatibility
    and independent reference evidence.
-8. Select the next helper-authority family from the machine-readable audit and
+8. Apply the reviewed QUA-1197 Bermudan comparator precedent: keep the final
+   valid exercise-date rule in the adapter, pass that date through the shared
+   swaption resolver and raw kernel, declare the one-sided lower-bound relation,
+   and identify target-specific deterministic artifacts from their immutable
+   build source when multiple targets share one mutable module path.
+9. Select the next helper-authority family from the machine-readable audit and
    create a bounded ticket before changing another route.
-9. Run live fresh-generation evidence only with current external-model approval;
+10. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 
