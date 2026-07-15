@@ -276,6 +276,25 @@ def test_current_repository_retires_arithmetic_asian_helper_authority():
     ]
 
 
+def test_current_repository_retires_european_swaption_wrapper_authority():
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    root = Path(__file__).resolve().parents[2]
+    report = build_helper_authority_report(root)
+
+    assert not [
+        item
+        for item in (*report.route_authority, *report.binding_authority)
+        if item.symbol == "price_swaption_black76"
+    ]
+    assert not [
+        item
+        for item in report.adapter_calls
+        if item.path == "trellis/instruments/_agent/swaption.py"
+        and item.symbol == "price_swaption_black76"
+    ]
+
+
 def test_current_repository_retires_analytical_digital_helper_authority():
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 

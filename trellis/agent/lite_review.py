@@ -217,7 +217,7 @@ def _capability_literal_issue(
     *,
     generation_plan=None,
 ) -> LiteReviewIssue | None:
-    if _capability_literal_is_subsumed_by_helper(
+    if _capability_literal_is_subsumed_by_route_binding(
         capability,
         signals,
         generation_plan=generation_plan,
@@ -259,25 +259,25 @@ def _capability_literal_issue(
     )
 
 
-def _capability_literal_is_subsumed_by_helper(
+def _capability_literal_is_subsumed_by_route_binding(
     capability: str,
     signals: LiteReviewSignals,
     *,
     generation_plan=None,
 ) -> bool:
-    """Return whether a helper-backed route legitimately owns the literal."""
+    """Return whether an admitted route binding legitimately owns the literal."""
     if capability != "black_vol_surface":
         return False
     primitive_plan = getattr(generation_plan, "primitive_plan", None)
     if primitive_plan is None:
         return False
-    helper_by_route = {
-        "analytical_black76": "price_swaption_black76",
+    binding_by_route = {
+        "analytical_black76": "resolve_swaption_black76_inputs",
         "rate_tree_backward_induction": "price_swaption_tree",
         "monte_carlo_paths": "price_swaption_monte_carlo",
     }
-    helper_name = helper_by_route.get(primitive_plan.route)
-    if helper_name is None or helper_name not in signals.call_names:
+    binding_name = binding_by_route.get(primitive_plan.route)
+    if binding_name is None or binding_name not in signals.call_names:
         return False
     return (
         any(item.startswith("mean_reversion=") for item in signals.literal_assignments)

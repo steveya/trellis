@@ -486,8 +486,16 @@ def test_builds_primitive_plan_for_swaption():
 
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "analytical_black76"
-    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert {"price_swaption_black76"} <= primitive_symbols
+    primitives = {
+        (primitive.symbol, primitive.role)
+        for primitive in plan.primitive_plan.primitives
+    }
+    primitive_symbols = {symbol for symbol, _role in primitives}
+    assert (
+        "resolve_swaption_black76_inputs",
+        "market_binding",
+    ) in primitives
+    assert ("price_swaption_black76_raw", "pricing_kernel") in primitives
     assert "black76_call" not in primitive_symbols
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.notes == ()

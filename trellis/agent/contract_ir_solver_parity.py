@@ -44,7 +44,6 @@ from trellis.models.black import (
     black76_cash_or_nothing_call,
     black76_put,
 )
-from trellis.models.rate_style_swaption import price_swaption_black76
 from trellis.models.vol_surface import FlatVol
 
 
@@ -144,7 +143,18 @@ def _digital_reference(decision, market_state: MarketState, contract_ir) -> floa
 
 
 def _swaption_reference(decision, market_state: MarketState, contract_ir) -> float:
-    return float(price_swaption_black76(market_state, decision.call_kwargs["spec"]))
+    resolved = decision.call_kwargs["resolved"]
+    kernel = black76_call if resolved.is_payer else black76_put
+    return float(
+        resolved.notional
+        * resolved.annuity
+        * kernel(
+            resolved.forward_swap_rate,
+            resolved.strike,
+            resolved.vol,
+            resolved.expiry_years,
+        )
+    )
 
 
 def _basket_reference(decision, market_state: MarketState, contract_ir) -> float:
@@ -261,7 +271,7 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             preferred_method="analytical",
             expected_source="semantic_blueprint",
             expected_shadow_status="bound",
-            expected_declaration_id="helper_swaption_payer_black76",
+            expected_declaration_id="swaption_payer_black76_resolved_kernel",
             reference_price=_swaption_reference,
             market_state_factory=_swaption_market_state,
         ),
@@ -273,7 +283,7 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             preferred_method="analytical",
             expected_source="semantic_blueprint",
             expected_shadow_status="bound",
-            expected_declaration_id="helper_swaption_receiver_black76",
+            expected_declaration_id="swaption_receiver_black76_resolved_kernel",
             reference_price=_swaption_reference,
             market_state_factory=_swaption_market_state,
         ),

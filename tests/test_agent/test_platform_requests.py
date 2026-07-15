@@ -569,7 +569,7 @@ def test_compile_build_request_preserves_swaption_conventions_and_hw_bindings():
 @pytest.mark.parametrize(
     ("preferred_method", "expected_binding"),
     [
-        ("analytical", "trellis.models.rate_style_swaption.price_swaption_black76"),
+        ("analytical", "trellis.models.rate_style_swaption.price_swaption_black76_raw"),
         ("rate_tree", "trellis.models.rate_style_swaption_tree.price_swaption_tree"),
         ("monte_carlo", "trellis.models.rate_style_swaption.price_swaption_monte_carlo"),
     ],
@@ -2197,7 +2197,7 @@ def test_request_contract_ir_compiler_summary_surfaces_binding_diagnostic(monkey
     )
     generation_plan = SimpleNamespace(inspected_modules=("trellis.models.rate_style_swaption",))
     diagnostic = ContractIRSolverBindingDiagnostic(
-        declaration_id="helper_swaption_payer_black76",
+        declaration_id="swaption_payer_black76_resolved_kernel",
         precedence=44,
         error_type="ValueError",
         message="Swaption adapter requires explicit swap_start or a multi-date schedule for structural binding",
@@ -2231,7 +2231,9 @@ def test_request_contract_ir_compiler_summary_surfaces_binding_diagnostic(monkey
     assert summary["source"] == "request_decomposition"
     assert summary["shadow_status"] == "no_match"
     assert summary["shadow_error"]["error_type"] == "ContractIRSolverBindingError"
-    assert summary["shadow_error"]["declaration_id"] == "helper_swaption_payer_black76"
+    assert summary["shadow_error"]["declaration_id"] == (
+        "swaption_payer_black76_resolved_kernel"
+    )
     assert summary["shadow_error"]["adapter_error_type"] == "ValueError"
     assert (
         summary["shadow_error"]["adapter_error_message"]

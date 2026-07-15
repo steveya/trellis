@@ -871,7 +871,7 @@ def test_requested_method_augmentation_adds_exercise_family_for_non_european_mc_
     assert "barrier_option" in augmented.route_families
 
 
-def test_generation_route_card_for_swaption_analytical_stays_helper_only():
+def test_generation_route_card_for_swaption_analytical_exposes_resolved_composition():
     compiled = compile_build_request(
         "European swaption on fixed-for-float swap",
         instrument_type="swaption",
@@ -880,8 +880,9 @@ def test_generation_route_card_for_swaption_analytical_stays_helper_only():
 
     text = render_generation_route_card(compiled.generation_plan)
 
-    assert "price_swaption_black76" in text
-    assert "reuse_checked_in_rate_style_swaption_helper" not in text
+    assert "resolve_swaption_black76_inputs" in text
+    assert "price_swaption_black76_raw" in text
+    assert "Helper authority:" not in text
     assert "Hull-White-implied Black vol" not in text
     assert "Backend notes:" not in text
 
@@ -1026,15 +1027,13 @@ def test_review_contract_card_renders_wrapper_route_and_validation_scope():
     assert "trellis.models.black" in text
 
 
-def test_schedule_dependent_route_card_mentions_shared_schedule_builder():
+def test_schedule_dependent_route_card_mentions_swaption_resolver_kernel_composition():
     plan = _analytical_plan()
     card = render_generation_route_card(plan)
 
-    # Under the current positive-filter Black76 match clause a canonical
-    # European swaption dispatches to the swaption-specific helper, which
-    # owns its schedule construction internally rather than surfacing the
-    # generic ``build_payment_timeline`` fallback primitive.
-    assert "price_swaption_black76" in card
+    assert "resolve_swaption_black76_inputs" in card
+    assert "price_swaption_black76_raw" in card
+    assert "Helper authority:" not in card
     assert "Instruction precedence: follow the lane obligations in this card first." in card
 
 

@@ -118,8 +118,13 @@ _SWAPTION_BERM_PRIMS: tuple[PrimitiveRef, ...] = (
 _SWAPTION_EUR_PRIMS: tuple[PrimitiveRef, ...] = (
     PrimitiveRef(
         "trellis.models.rate_style_swaption",
-        "price_swaption_black76",
-        "route_helper",
+        "resolve_swaption_black76_inputs",
+        "market_binding",
+    ),
+    PrimitiveRef(
+        "trellis.models.rate_style_swaption",
+        "price_swaption_black76_raw",
+        "pricing_kernel",
     ),
 )
 

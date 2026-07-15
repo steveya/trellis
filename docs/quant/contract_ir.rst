@@ -455,7 +455,7 @@ The important boundary rule is unchanged:
 
 - if a field changes structural payoff family or pattern match, it belongs in
   ``ContractIR``
-- if it preserves the structural family but changes helper materialization, it
+- if it preserves the structural family but changes callable materialization, it
   may belong in the generic term environment
 
 Phase 3 Families
@@ -468,7 +468,9 @@ The current bounded structural-solver wave covers:
 2. Cash-or-nothing and asset-or-nothing digitals through the same Black76
    basis family
 3. European payer / receiver swaptions through
-   ``trellis.models.rate_style_swaption.price_swaption_black76``
+   ``resolve_swaption_black76_inputs(...)`` and
+   ``price_swaption_black76_raw(...)`` in
+   ``trellis.models.rate_style_swaption``
 4. Two-asset analytical basket / spread call / put payoffs through
    ``trellis.models.basket_option.price_basket_option_analytical``
 5. Equity variance swaps through the bounded FinancePy-compatible smile-slope
@@ -497,10 +499,16 @@ That is the contract Phase 3 shadow-mode parity defends today. A future
 carry-aware lane will need an explicit market capability and a documented
 carry-source policy before it can replace this basis.
 
-Swaptions also keep the current checked helper conventions. When the semantic
-term surface does not provide a more specific payment frequency, the structural
-adapter defaults the fixed leg to semiannual rather than inheriting a coarse
-annualized decomposition schedule.
+Swaptions keep the checked market-binding conventions without making the
+product wrapper a solver declaration. When the semantic term surface does not
+provide a more specific payment frequency, the structural adapter defaults the
+fixed leg to semiannual rather than inheriting a coarse annualized decomposition
+schedule. It then resolves expiry, annuity, forward swap rate, strike, Black
+volatility, direction, and payment count into
+``ResolvedSwaptionBlack76Inputs`` before applying the raw kernel. Thus the
+economic projection and the numerical formula remain separately inspectable.
+The product-level ``price_swaption_black76(...)`` function is retained only for
+compatibility and independent reference comparison.
 
 For the direct Phase 3 structural-solver shadow, variance swaps reuse the
 retained bounded smile-slope compatibility wrapper. The ``VarianceObservable``

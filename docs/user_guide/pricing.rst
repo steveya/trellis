@@ -534,8 +534,9 @@ When a pricing request goes through the platform compiler, Trellis now tries to
 draft a typed semantic contract first and only falls back to older family-local
 paths when no checked semantic slice exists or the request is too incomplete.
 
-This means helper-backed requests such as vanilla options, callable bonds,
-rate-style swaptions, ranked-observation baskets, single-name CDS, and
+This means previously helper-backed or exact-bound requests such as vanilla
+options, callable bonds, rate-style swaptions, ranked-observation baskets,
+single-name CDS, and
 nth-to-default basket credit now carry explicit contract, market-binding, and
 route-lowering metadata before pricing or code generation starts.
 
@@ -568,6 +569,15 @@ simulation components as appropriate for the selected method. Backend
 ``helper_refs`` remains empty for these lanes. Compatibility wrappers such as
 ``price_quanto_option_analytical_from_market_state(...)`` remain callable by
 existing applications but do not appear as live build authority.
+
+European analytical swaptions follow the same rule. Generated and structural
+paths receive ``resolve_swaption_black76_inputs(...)`` as the market-binding
+primitive and ``price_swaption_black76_raw(...)`` as the pricing kernel. The
+resolver binds the payment schedule, annuity, forward rate, volatility, and
+payer/receiver direction; generated code then passes the typed resolved value
+to the raw kernel. ``price_swaption_black76(...)`` remains usable as a public
+compatibility and reference function, but it is not advertised as construction
+authority.
 
 The trace boundary also exposes a family-first ``construction_identity``
 summary. For operators, that is now the primary readout:

@@ -1712,18 +1712,23 @@ class TestAnalyticalRoutes:
             ),
         }
 
-    def test_default_primitives_without_vanilla(self, registry):
+    def test_swaption_primitives_compose_resolved_inputs_with_raw_kernel(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         new_prims = resolve_route_primitives(spec, self.SWAPTION_IR)
         assert _prim_set(new_prims) == {
             (
                 "trellis.models.rate_style_swaption",
-                "price_swaption_black76",
-                "route_helper",
+                "resolve_swaption_black76_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.rate_style_swaption",
+                "price_swaption_black76_raw",
+                "pricing_kernel",
             ),
         }
 
-    def test_swaption_helper_route_is_thin(self, registry):
+    def test_swaption_composition_route_is_thin(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         assert resolve_route_notes(spec, self.SWAPTION_IR) == ()
         assert resolve_route_adapters(spec, self.SWAPTION_IR) == ()

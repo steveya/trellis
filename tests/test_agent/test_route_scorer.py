@@ -54,7 +54,9 @@ class TestFeatureExtraction:
         assert features["exercise:european"] == 1.0
         assert features["payoff:swaption"] == 1.0
         assert features["family_capability_ok"] == 1.0
-        assert features["binding_role:route_helper"] == 1.0
+        assert features["binding_role:market_binding"] == 1.0
+        assert features["binding_role:pricing_kernel"] == 1.0
+        assert "binding_role:route_helper" not in features
         assert features["binding_has_exact_surface"] == 1.0
         assert "route:analytical_black76" not in features
         assert "route_family:analytical" not in features

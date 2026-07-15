@@ -581,10 +581,10 @@ def _render_family_route_guidance(
     if instrument_type == "swaption" and method == "analytical":
         lines.append("## Family Route Guidance")
         lines.extend([
-            "- For European rate-style swaptions, prefer `price_swaption_black76(market_state, self._spec, ...)` from `trellis.models.rate_style_swaption`.",
-            "- Keep the adapter thin: validate discount/vol access, then delegate to the family helper instead of rebuilding a resolve-plus-kernel split inline.",
-            "- When the request supplies explicit Hull-White comparison parameters, pass `mean_reversion=` and `sigma=` into `price_swaption_black76(...)` so the analytical comparator uses a Hull-White-implied Black vol instead of an unrelated market surface quote.",
-            "- Do not rebuild annuity, forward-swap-rate, expiry year-fraction, payment-count loops, or swaption-vol normalization inline when the checked-in helper already owns that binding.",
+            "- For European rate-style swaptions, import `resolve_swaption_black76_inputs` and `price_swaption_black76_raw` from `trellis.models.rate_style_swaption`.",
+            "- Resolve once with `resolved = resolve_swaption_black76_inputs(market_state, self._spec, ...)`, then return `price_swaption_black76_raw(resolved)`. The resolver owns the market and schedule binding; the raw kernel owns only the Black76 formula and scaling.",
+            "- When the request supplies explicit Hull-White comparison parameters, pass `mean_reversion=` and `sigma=` to `resolve_swaption_black76_inputs(...)` so the resolved inputs carry a Hull-White-implied Black vol instead of an unrelated market surface quote.",
+            "- Do not rebuild annuity, forward-swap-rate, expiry year-fraction, payment-count loops, or swaption-vol normalization inline. Do not use the product-level `price_swaption_black76(...)` compatibility wrapper as generated construction authority.",
         ])
 
     if instrument_type == "swaption" and method == "rate_tree":

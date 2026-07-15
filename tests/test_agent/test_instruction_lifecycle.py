@@ -218,16 +218,15 @@ def test_generation_plan_materializes_resolved_instructions():
 
     assert plan.resolved_instructions is not None
     assert plan.resolved_instructions.route == "analytical_black76"
-    # QUA-909: with a canonical ``payoff_family="swaption"`` +
-    # ``exercise_style="european"`` ProductIR the specific swaption when
-    # clause activates, routing through
-    # ``price_swaption_black76`` as a ``route_helper``. The route-helper
-    # instruction lands first because the specific-helper clause preempts
-    # the shared schedule-builder primitive that only appears on the
-    # ``when: default`` fallback clause.
-    instruction_ids = [
-        instruction.id
-        for instruction in plan.resolved_instructions.effective_instructions
-    ]
-    assert instruction_ids[0] == "analytical_black76:route-helper"
+    primitives = {
+        (primitive.symbol, primitive.role)
+        for primitive in plan.primitive_plan.primitives
+    }
+    assert (
+        "resolve_swaption_black76_inputs",
+        "market_binding",
+    ) in primitives
+    assert ("price_swaption_black76_raw", "pricing_kernel") in primitives
+    assert not any(role == "route_helper" for _symbol, role in primitives)
+    assert plan.resolved_instructions.effective_instructions == ()
     assert plan.resolved_instructions.conflicts == ()

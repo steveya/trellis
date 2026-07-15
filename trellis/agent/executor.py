@@ -6158,9 +6158,10 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.callable_bond_tree.price_callable_bond_tree": (
             'return price_callable_bond_tree(market_state, spec, model="hull_white")'
         ),
-        "trellis.models.rate_style_swaption.price_swaption_black76": (
-            "return price_swaption_black76(market_state, spec"
-            f"{swaption_comparison_kwargs})"
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw": (
+            "resolved = resolve_swaption_black76_inputs(market_state, spec"
+            f"{swaption_comparison_kwargs})\n"
+            "return price_swaption_black76_raw(resolved)"
         ),
         "trellis.models.rate_style_swaption_tree.price_swaption_tree": (
             "return price_swaption_tree(market_state, spec"
@@ -6715,6 +6716,11 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append("from math import sqrt")
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
+    if "resolve_swaption_black76_inputs(" in body:
+        imports.append(
+            "from trellis.models.rate_style_swaption import "
+            "resolve_swaption_black76_inputs"
+        )
     if "price_heston_option_monte_carlo(" in body:
         imports.append(
             "from trellis.models.monte_carlo.stochastic_vol import price_heston_option_monte_carlo"
@@ -8978,11 +8984,11 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
-            "European rate-style swaption analytical routes should stay on the checked helper-backed Black76 surface.",
-            "Prefer `from trellis.models.rate_style_swaption import price_swaption_black76` and delegate to that helper from the adapter.",
-            "When the request supplies explicit Hull-White comparison parameters, pass `mean_reversion=` and `sigma=` into `price_swaption_black76(...)` so the analytical lane uses a Hull-White-implied Black vol instead of drifting to an unrelated market vol surface.",
-            "Do not rebuild annuity, forward-swap-rate, expiry year-fraction, payment-count loops, or swaption-vol normalization inline when the checked helper already owns that binding.",
-            "Keep cap/floor-style period loops separate. This helper-backed shortcut is for single-exercise European swaptions, not for caplet or floorlet strips.",
+            "European rate-style swaption analytical routes should preserve the resolved-input Black76 composition.",
+            "Import `resolve_swaption_black76_inputs` and `price_swaption_black76_raw` from `trellis.models.rate_style_swaption`; resolve once, then pass the typed result to the raw kernel.",
+            "When the request supplies explicit Hull-White comparison parameters, pass `mean_reversion=` and `sigma=` to `resolve_swaption_black76_inputs(...)` so the analytical lane uses a Hull-White-implied Black vol instead of drifting to an unrelated market vol surface.",
+            "Do not rebuild annuity, forward-swap-rate, expiry year-fraction, payment-count loops, or swaption-vol normalization inline, and do not use the product-level compatibility wrapper as construction authority.",
+            "Keep cap/floor-style period loops separate. This composition is for single-exercise European swaptions, not for caplet or floorlet strips.",
         )
     if (
         instrument == "zcb_option"
