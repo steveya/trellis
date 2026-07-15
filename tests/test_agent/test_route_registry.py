@@ -1804,15 +1804,35 @@ class TestAnalyticalRoutes:
             ),
         }
 
-    def test_lookback_primitives_use_exact_helper(self, registry):
+    def test_lookback_primitives_use_raw_analytical_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         new_prims = resolve_route_primitives(spec, self.LOOKBACK_IR)
         assert resolve_route_family(spec, self.LOOKBACK_IR) == "analytical"
         assert _prim_set(new_prims) == {
             (
-                "trellis.models.analytical.equity_exotics",
-                "price_equity_fixed_lookback_option_analytical",
-                "route_helper",
+                "trellis.models.resolution.single_state_diffusion",
+                "resolve_scalar_diffusion_market_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.core.date_utils",
+                "year_fraction",
+                "time_measure",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "normalized_option_type",
+                "payoff_primitive",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "discount_factor_from_zero_rate",
+                "discounting",
+            ),
+            (
+                "trellis.models.analytical.support.probability",
+                "standard_normal_cdf",
+                "probability_kernel",
             ),
         }
 

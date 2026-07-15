@@ -984,6 +984,103 @@ a product pricing helper as construction authority. The semantic API map card
 ``analytical_gaussian_composition`` is the builder's general hot start for
 these probability and root-solving pieces.
 
+Fixed lookback analytical composition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The admitted European fixed-strike continuous-lookback lane uses the dedicated
+``fixed_lookback_analytical_composition`` card. It exposes
+``resolve_scalar_diffusion_market_inputs``, ``year_fraction``,
+``normalized_option_type``, ``discount_factor_from_zero_rate``, and
+``standard_normal_cdf``. A scalar root and bivariate Gaussian probability are
+not part of this formula, so the lookback alias does not select the general
+critical-state card.
+
+Let :math:`S_0` be runtime spot, :math:`K` the fixed strike, :math:`T` time to
+expiry, :math:`r` the continuously compounded rate, :math:`q` dividend carry,
+and :math:`\sigma` the Black volatility resolved at :math:`(T,K)`. Let
+:math:`H_{\max}` be the observed running maximum for a call and
+:math:`H_{\min}` the observed running minimum for a put. Runtime spot remains
+part of the observed path state, so define
+
+.. math::
+
+   M = \max(H_{\max},S_0), \qquad
+   m = \min(H_{\min},S_0), \qquad
+   B_C = \max(K,M), \qquad
+   B_P = \min(K,m).
+
+For either boundary :math:`B`, write :math:`b=r-q` and
+
+.. math::
+
+   d_1(B) =
+   \frac{\log(S_0/B)+(b+\tfrac12\sigma^2)T}{\sigma\sqrt{T}},
+   \qquad
+   d_2(B)=d_1(B)-\sigma\sqrt{T}.
+
+For nonzero carry, the correction terms are
+
+.. math::
+
+   \begin{aligned}
+   A_C(B;b) ={}& \frac{\sigma^2}{2b}
+      \left[-\left(\frac{S_0}{B}\right)^{-2b/\sigma^2}
+      \Phi\!\left(d_1(B)-\frac{2b\sqrt{T}}{\sigma}\right)
+      +e^{bT}\Phi(d_1(B))\right], \\
+   A_P(B;b) ={}& \frac{\sigma^2}{2b}
+      \left[\left(\frac{S_0}{B}\right)^{-2b/\sigma^2}
+      \Phi\!\left(-d_1(B)+\frac{2b\sqrt{T}}{\sigma}\right)
+      -e^{bT}\Phi(-d_1(B))\right].
+   \end{aligned}
+
+The per-unit-notional prices are
+
+.. math::
+
+   \begin{aligned}
+   V_C ={}& e^{-rT}(M-K)^+
+      +S_0e^{-qT}\Phi(d_1(B_C))
+      -B_Ce^{-rT}\Phi(d_2(B_C))
+      +S_0e^{-rT}A_C(B_C;b), \\
+   V_P ={}& e^{-rT}(K-m)^+
+      -S_0e^{-qT}\Phi(-d_1(B_P))
+      +B_Pe^{-rT}\Phi(-d_2(B_P))
+      +S_0e^{-rT}A_P(B_P;b).
+   \end{aligned}
+
+The apparent :math:`1/b` singularity is removable. With
+
+.. math::
+
+   d_1^0(B)=
+   \frac{\log(S_0/B)+\tfrac12\sigma^2T}{\sigma\sqrt{T}},
+
+the checked adapter uses the analytic limits
+
+.. math::
+
+   \begin{aligned}
+   A_C(B;0) ={}&
+      \left(\log(S_0/B)+\tfrac12\sigma^2T\right)\Phi(d_1^0(B))
+      +\sigma\sqrt{T}\,\phi(d_1^0(B)), \\
+   A_P(B;0) ={}&
+      \left(-\log(S_0/B)-\tfrac12\sigma^2T\right)\Phi(-d_1^0(B))
+      +\sigma\sqrt{T}\,\phi(d_1^0(B)).
+   \end{aligned}
+
+The historical maximum must be at least contract spot and the historical
+minimum must be at most contract spot. At expiry the adapter settles
+:math:`(M-K)^+` or :math:`(K-m)^+` directly. It rejects floating strike,
+discrete monitoring, non-European exercise, non-positive spot, strike, or
+volatility, unsupported dynamics, and non-finite formula results. Notional is
+applied once after the selected formula. The retained product wrapper is
+independent comparison evidence, not construction authority.
+
+The adapter prefers ``MarketState.spot`` over the contract fallback and updates
+the effective path extreme with that spot. The F011 FinancePy binding uses the
+same product-neutral central ``bump_and_reprice`` Delta policy; no
+lookback-specific Greek helper is required.
+
 Simple chooser composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~
 

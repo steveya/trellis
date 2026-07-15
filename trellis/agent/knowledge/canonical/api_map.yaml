@@ -60,7 +60,7 @@ analytical_gaussian_composition:
   module: trellis.models.analytical.support.probability
   methods: [analytical]
   navigation:
-    aliases: [gaussian_probability, bivariate_gaussian, critical_state, scalar_root, lookback_option]
+    aliases: [gaussian_probability, bivariate_gaussian, critical_state, scalar_root]
   modules:
     probability: trellis.models.analytical.support.probability
     scalar_root: trellis.models.calibration.solve_request
@@ -72,6 +72,31 @@ analytical_gaussian_composition:
     - "For an implicit critical state, define the derivative-specific scalar objective in adapter code and solve it through a bounded root_scalar SolveRequest; do not introduce route-local Newton loops or product helpers"
     - "The generated adapter owns the contractual formula, critical-state equation, discounting, and notional application; this card supplies navigation and reusable numerical pieces only"
     - "The bivariate kernel admits finite thresholds and correlations in the closed interval [-1, 1], handles exact singular boundaries explicitly, and fails closed outside that domain"
+
+# ---------------------------------------------------------------------------
+# Fixed-strike continuous lookback analytical composition
+# ---------------------------------------------------------------------------
+fixed_lookback_analytical_composition:
+  module: trellis.models.resolution.single_state_diffusion
+  methods: [analytical]
+  navigation:
+    aliases: [lookback_option, fixed_lookback_option, fixed_strike_lookback, continuous_lookback, conze_viswanathan]
+  modules:
+    market_binding: trellis.models.resolution.single_state_diffusion
+    time_measure: trellis.core.date_utils
+    analytical_support: trellis.models.analytical.support
+    probability: trellis.models.analytical.support.probability
+  key_imports:
+    - "from trellis.models.resolution.single_state_diffusion import resolve_scalar_diffusion_market_inputs"
+    - "from trellis.core.date_utils import year_fraction"
+    - "from trellis.models.analytical.support import discount_factor_from_zero_rate, normalized_option_type"
+    - "from trellis.models.analytical.support.probability import standard_normal_cdf"
+  notes:
+    - "Admitted scope is a European fixed-strike continuously monitored call or put under one constant rate, dividend yield, and Black volatility resolved at the expiry and strike coordinate"
+    - "Validate positive finite spot, strike, volatility, and running extreme; a call running maximum must be at least contract spot and a put running minimum must be at most contract spot"
+    - "Use runtime MarketState.spot when present and include it in the effective maximum or minimum so generic spot-bump Delta follows the same payoff contract"
+    - "Generated code owns the Conze-Viswanathan call/put branch, discounting, expiry intrinsic settlement, and one-time notional scaling; use the analytic carry-to-zero limit instead of perturbing dividend yield"
+    - "Reject floating strike, discrete monitoring, non-European exercise, non-scalar or non-constant diffusion dynamics, and non-finite formula outputs; do not call a product lookback helper"
 
 # ---------------------------------------------------------------------------
 # Simple chooser option raw composition

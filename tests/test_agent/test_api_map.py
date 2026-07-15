@@ -290,13 +290,8 @@ def test_api_map_semantic_selection_reaches_composition_cards():
         assert expected_family in selection.selected_families
 
 
-@pytest.mark.parametrize(
-    "payoff_family",
-    ["lookback_option"],
-)
-def test_api_map_semantic_selection_reaches_gaussian_root_composition(
-    payoff_family,
-):
+def test_api_map_exposes_complete_fixed_lookback_analytical_composition():
+    payoff_family = "lookback_option"
     selection = select_api_map_sections(
         ApiMapQuery(
             payoff_family=payoff_family,
@@ -313,12 +308,15 @@ def test_api_map_semantic_selection_reaches_gaussian_root_composition(
         ),
     )
 
-    assert "analytical_gaussian_composition" in selection.selected_families
+    assert "fixed_lookback_analytical_composition" in selection.selected_families
     assert "standard_normal_cdf" in text
-    assert "bivariate_standard_normal_cdf" in text
-    assert "SolveRequest" in text
-    assert "execute_solve_request" in text
-    assert "from trellis.models.calibration.solve_request import" in text
+    assert "resolve_scalar_diffusion_market_inputs" in text
+    assert "year_fraction" in text
+    assert "normalized_option_type" in text
+    assert "discount_factor_from_zero_rate" in text
+    assert "bivariate_standard_normal_cdf" not in text
+    assert "SolveRequest" not in text
+    assert "price_equity_fixed_lookback_option_analytical" not in text
 
 
 def test_api_map_exposes_complete_chooser_raw_composition():
@@ -524,8 +522,9 @@ def test_api_map_exposes_product_neutral_conditional_extremum_composition():
             method="analytical",
         )
     )
-    assert "analytical_gaussian_composition" in analytical_selection.selected_families
+    assert "fixed_lookback_analytical_composition" in analytical_selection.selected_families
     assert "conditional_extremum_composition" not in analytical_selection.selected_families
+    assert "analytical_gaussian_composition" not in analytical_selection.selected_families
 
 
 def test_api_map_exposes_product_neutral_observation_return_composition():

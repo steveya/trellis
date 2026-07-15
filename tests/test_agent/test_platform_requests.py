@@ -878,11 +878,6 @@ def test_semantic_blueprint_summary_preserves_range_accrual_callability_blockers
             "trellis.models.black.black76_cash_or_nothing_call",
         ),
         (
-            "F011",
-            "analytical",
-            "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical",
-        ),
-        (
             "F012",
             "analytical",
             "trellis.models.black.black76_call",
@@ -940,6 +935,41 @@ def test_compile_build_request_preserves_exact_absorbed_black76_binding_for_fina
 
     if task_id == "F009":
         assert set(compiled.product_ir.candidate_engine_families) >= {"analytical", "pde"}
+
+
+def test_compile_build_request_uses_lookback_primitive_composition_for_f011():
+    from trellis.agent.benchmark_contracts import benchmark_request_description
+    from trellis.agent.platform_requests import compile_build_request
+
+    task = _financepy_benchmark_task("F011")
+    compiled = compile_build_request(
+        benchmark_request_description(task),
+        instrument_type=task["instrument_type"],
+        preferred_method="analytical",
+    )
+
+    assert compiled.generation_plan is not None
+    primitive_plan = compiled.generation_plan.primitive_plan
+    assert primitive_plan is not None
+    primitive_refs = {
+        f"{primitive.module}.{primitive.symbol}"
+        for primitive in primitive_plan.primitives
+    }
+    assert {
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.core.date_utils.year_fraction",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.analytical.support.discount_factor_from_zero_rate",
+        "trellis.models.analytical.support.probability.standard_normal_cdf",
+    } <= primitive_refs
+    assert not any(
+        "price_equity_fixed_lookback_option_analytical" in ref
+        for ref in primitive_refs
+    )
+    assert not any(
+        "price_equity_fixed_lookback_option_analytical" in ref
+        for ref in compiled.generation_plan.backend_exact_target_refs
+    )
 
 
 def test_compile_build_request_uses_cliquet_primitive_composition_for_f014():

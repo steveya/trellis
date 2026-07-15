@@ -735,29 +735,23 @@ class TestKnowledgeStore:
             assert symbol in compound_requirements
         assert "price_equity_compound_option_analytical" not in compound_requirements
 
-        for instrument, helper_symbol in (
-            ("lookback_option", "price_equity_fixed_lookback_option_analytical"),
+        lookback = store._decompositions.get("lookback_option")
+        assert lookback is not None
+        assert lookback.method == "analytical"
+        assert set(lookback.method_modules) >= {
+            "trellis.models.resolution.single_state_diffusion",
+            "trellis.models.analytical.support",
+            "trellis.models.analytical.support.probability",
+        }
+        assert "discount_curve" in lookback.required_market_data
+        assert "black_vol_surface" in lookback.required_market_data
+        lookback_requirements = " ".join(lookback.modeling_requirements)
+        for symbol in (
+            "resolve_scalar_diffusion_market_inputs",
+            "standard_normal_cdf",
         ):
-            decomp = store._decompositions.get(instrument)
-            assert decomp is not None, f"missing analytical decomposition for {instrument}"
-            assert decomp.method == "analytical", (
-                f"{instrument} decomposition must anchor on analytical route, "
-                f"got {decomp.method!r}"
-            )
-            assert "trellis.models.analytical.equity_exotics" in decomp.method_modules, (
-                f"{instrument} must list the shared equity-exotics module"
-            )
-            assert "discount_curve" in decomp.required_market_data
-            assert "black_vol_surface" in decomp.required_market_data
-            # QUA-852 PR #597 Codex P1: the modeling-requirement string MUST
-            # keep the helper identifier contiguous (no whitespace inside the
-            # symbol), otherwise folded YAML produces ``foo_ analytical(...)``
-            # and generated adapters reference a non-existent symbol.
-            joined_requirements = " ".join(decomp.modeling_requirements)
-            assert f"{helper_symbol}(market_state, spec)" in joined_requirements, (
-                f"{instrument} modeling requirement must contain the "
-                f"contiguous helper call {helper_symbol}(market_state, spec)"
-            )
+            assert symbol in lookback_requirements
+        assert "price_equity_fixed_lookback_option_analytical" not in lookback_requirements
 
     def test_retrieve_for_task_uses_runtime_cache(self):
         from trellis.agent.knowledge.schema import RetrievalSpec

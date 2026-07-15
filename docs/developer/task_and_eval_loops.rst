@@ -1023,14 +1023,20 @@ Rebate-bearing barriers should remain on the analytical Rubinstein route until
 the PDE/MC rebate contract is implemented.
 
 Digital proof targets retain exact helper wrappers where the checked numerical
-contract still lives at that boundary. Fixed-lookback and arithmetic-Asian
-Monte Carlo targets no longer do. The fixed-lookback target assembles the
-scalar-diffusion resolver, normalized call/put semantics, one conditional
-bridge-extremum contract, exact constant-parameter GBM, and the generic Monte
-Carlo engine. Generated adapter code supplies the prior running extremum and
-owns expiry settlement, strike, notional, discounting, and estimator checks.
-It admits only European fixed-strike continuous monitoring and fails closed
-instead of substituting the discrete running-extremum reducer.
+contract still lives at that boundary. Fixed-lookback analytical and Monte
+Carlo targets, and arithmetic-Asian Monte Carlo targets, no longer do. The
+fixed-lookback analytical target assembles the scalar-diffusion resolver,
+contractual time, normalized call/put semantics, discounting, and the public
+univariate Gaussian CDF. Generated code owns the closed-form branches,
+historical/runtime extreme invariants, analytic zero-carry limit, expiry
+settlement, and notional. Its FinancePy binding requests product-neutral
+``bump_and_reprice`` Delta evidence. The Monte Carlo target assembles the same
+market and option semantics with one conditional bridge-extremum contract,
+exact constant-parameter GBM, and the generic Monte Carlo engine. Generated
+adapter code supplies the prior running extremum and owns expiry settlement,
+strike, notional, discounting, and estimator checks. Both lanes admit only
+European fixed-strike continuous monitoring and fail closed instead of
+substituting a different lookback contract.
 The support-contract pass records missing strike/monitoring semantics and
 known unsupported variants as structured primitive blockers. Those blockers
 stop the build before code generation even when the generic Monte Carlo route

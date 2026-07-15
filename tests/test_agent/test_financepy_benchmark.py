@@ -67,7 +67,7 @@ def test_financepy_benchmark_manifest_includes_tranche_two_families():
     [
         ("F009", ("price",)),
         ("F010", ("price",)),
-        ("F011", ("price",)),
+        ("F011", ("price", "delta")),
         ("F012", ("price", "delta")),
         ("F013", ("price", "delta")),
         ("F014", ("price",)),
@@ -89,6 +89,17 @@ def test_f012_binding_declares_generic_delta_fallback():
 
     binding = load_financepy_bindings(root=ROOT)[
         "financepy.equity.chooser.black_scholes"
+    ]
+
+    assert binding["overlapping_outputs"] == ["price", "delta"]
+    assert binding["greek_fallback"] == {"kind": "bump_and_reprice"}
+
+
+def test_f011_binding_declares_generic_delta_fallback():
+    from trellis.agent.task_manifests import load_financepy_bindings
+
+    binding = load_financepy_bindings(root=ROOT)[
+        "financepy.equity.lookback.fixed"
     ]
 
     assert binding["overlapping_outputs"] == ["price", "delta"]
