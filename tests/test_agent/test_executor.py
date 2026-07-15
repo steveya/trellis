@@ -435,6 +435,18 @@ def test_fresh_artifact_replaces_request_copy_with_its_own_target_contract():
     )
 
 
+def test_artifact_source_text_falls_back_when_module_file_is_unavailable():
+    from trellis.agent.executor import _artifact_source_text
+
+    payoff_cls = type(
+        "DynamicCachedPayoff",
+        (),
+        {"__module__": "trellis.tests.missing_cached_artifact"},
+    )
+
+    assert _artifact_source_text(payoff_cls) == ""
+
+
 def test_reused_comparison_artifact_executes_required_validation(monkeypatch):
     from trellis.agent.comparison_target_contracts import ComparisonTargetContract
     from trellis.agent.executor import _validate_reused_comparison_artifact
