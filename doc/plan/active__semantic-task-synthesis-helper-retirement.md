@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-14`
+Status mirror last synced: `2026-07-15`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
@@ -49,20 +49,17 @@ Status mirror last synced: `2026-07-14`
 | `QUA-1186` | Analytical support: Gaussian probability and scalar-root navigation | Done |
 | `QUA-1187` | Monte Carlo path state: extrema and squared-log-return reducers | Done |
 | `QUA-1188` | Monte Carlo transition state: conditional bridge extrema primitive | Done |
-| `QUA-1189` | Fixed lookback Monte Carlo: retire helper authority | Backlog |
+| `QUA-1189` | Fixed lookback Monte Carlo: retire helper authority | Done |
 | `QUA-1190` | Variance swap Monte Carlo: retire helper authority | Done |
 
 ## Current Sequence
 
-1. Complete QUA-1189 on the QUA-1188 transition-state substrate so
-   fixed-lookback Monte Carlo preserves conditional continuous extrema rather
-   than silently substituting the QUA-1187 discrete-observation reducer.
-2. Complete QUA-1185 before treating cached offline replay as zero-model
+1. Complete QUA-1185 before treating cached offline replay as zero-model
    evidence without explicit reflection/consolidation skip flags.
-3. After each substrate lands, open focused helper-retirement tickets only for
+2. After each substrate lands, open focused helper-retirement tickets only for
    product families whose remaining market, numerical, payoff, and validation
    components are confirmed reusable.
-4. Run live fresh-generation evidence only with current external-model approval;
+3. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 
