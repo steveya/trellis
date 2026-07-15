@@ -45,21 +45,26 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1182` | Semantic agent navigation: bounded knowledge and documentation packets | Done |
 | `QUA-1183` | Digital option pricing: retire analytical helper authority | Done |
 | `QUA-1184` | Semantic agent navigation: render task-relevant canonical composition cards | Done |
-| `QUA-1185` | Task runtime: offline cached replays suppress post-build LLM stages | Backlog |
+| `QUA-1185` | Task runtime: offline cached replays suppress post-build LLM stages | Done |
 | `QUA-1186` | Analytical support: Gaussian probability and scalar-root navigation | Done |
 | `QUA-1187` | Monte Carlo path state: extrema and squared-log-return reducers | Done |
 | `QUA-1188` | Monte Carlo transition state: conditional bridge extrema primitive | Done |
 | `QUA-1189` | Fixed lookback Monte Carlo: retire helper authority | Done |
 | `QUA-1190` | Variance swap Monte Carlo: retire helper authority | Done |
+| `QUA-1192` | Semantic computational IR: ignore ambient market capabilities | Backlog |
+| `QUA-1191` | Chooser option pricing: retire analytical helper authority | Backlog |
 
 ## Current Sequence
 
-1. Complete QUA-1185 before treating cached offline replay as zero-model
-   evidence without explicit reflection/consolidation skip flags.
-2. After each substrate lands, open focused helper-retirement tickets only for
-   product families whose remaining market, numerical, payoff, and validation
-   components are confirmed reusable.
-3. Run live fresh-generation evidence only with current external-model approval;
+1. Use QUA-1185 strict cached replays as zero-model evidence without explicit
+   reflection/consolidation skip flags; persisted policy reasons must explain
+   every skipped post-build stage.
+2. Complete QUA-1192 so ambient market capabilities cannot misclassify an
+   ordinary Black-Scholes task as a Heston computational problem.
+3. Complete QUA-1191 by replacing the chooser-option wrapper authority with
+   the reusable Gaussian, scalar-root, market, and Black composition surface
+   while preserving F012 FinancePy parity.
+4. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 
