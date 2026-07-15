@@ -307,10 +307,12 @@ Run these commands with the repo-standard miniforge interpreter; if your shell
 Canaries whose manifest entry sets
 ``replay_mode: deterministic_exact_binding`` use a different zero-token replay
 lane.  The runner executes the real ``run_task(...)`` surface under the
-offline-local LLM guard and requires the task to complete through deterministic
-exact bindings.  No cassette calls are consumed, so prompt-hash drift in old
-recordings cannot block the replay.  If such a canary attempts a live LLM call,
-the offline guard fails the run.
+``deterministic_replay`` execution policy and the offline-local LLM guard. The
+post-build policy suppresses reflection and consolidation before either stage
+can call a model, while the guard remains a hard backstop for every other live
+LLM path. The task must complete through deterministic exact bindings. No
+cassette calls are consumed, so prompt-hash drift in old recordings cannot
+block the replay.
 
 Unlike the older tier-2 pipeline cassettes, the full-task canary path replays
 the real ``run_task(...)`` surface. That means the replay still exercises the
@@ -326,11 +328,13 @@ planning, binding, or generation calls still make the replay stale and fail the
 run.
 
 Full-task cassette sessions also keep the knowledge store read-only during
-record and replay. The build still performs its normal LLM reflection calls,
-but it does not write new lessons, traces, cookbook candidates, or promotion
-candidates back into the canonical knowledge store. This keeps the replay
-prompt surface aligned with the state that the cassette was recorded against
-instead of letting the recording run mutate later retrieval inputs.
+record and replay. Cassette replay is model-ineligible under the post-build
+policy, so it skips reflection and consolidation rather than consuming optional
+recorded calls. A cassette-record or live run may use those stages only when
+the caller explicitly selects ``assisted`` or ``remediation``; that opt-in may
+review a reused artifact as well as a freshly generated one. Read-only
+knowledge storage still prevents recording runs from mutating later retrieval
+inputs through lessons, cookbook candidates, or promotion candidates.
 
 Every FinancePy benchmark run now also writes append-only timestamped records
 under ``task_runs/financepy_benchmarks/`` with explicit ``run_started_at`` and
@@ -1066,13 +1070,14 @@ comparisons should therefore use the checked helper instead of rebuilding the
 variance grid in generated code.
 
 Offline local-agent reruns can use ``--offline-local-agents`` on
-``scripts/run_tasks.py`` or ``scripts/rerun_ids.py``. That mode sets the
-post-build learning skips, disables LLM-backed critic/model-validator review
-through deterministic review policy, and leaves the LLM override guard active
-as a hard backstop. Batch summaries report expectation semantics separately
-from pricing success: an expected honest block remains fail-closed with no
-price, but prints as ``HONEST_BLOCK`` and counts toward
-``passed_expectation`` rather than actionable failure.
+``scripts/run_tasks.py`` or ``scripts/rerun_ids.py``. That mode marks each task
+as ``deterministic_replay``; the task execution policy then suppresses
+reflection and consolidation without post-build skip environment variables.
+Deterministic review policy disables LLM-backed critic/model-validator review,
+and the LLM override guard remains active as a hard backstop. Batch summaries
+report expectation semantics separately from pricing success: an expected
+honest block remains fail-closed with no price, but prints as ``HONEST_BLOCK``
+and counts toward ``passed_expectation`` rather than actionable failure.
 
 The reference no-LLM closeout pack for the contract-backed task-learning work
 is:

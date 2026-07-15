@@ -146,9 +146,24 @@ def _sample_record(root: Path) -> dict[str, object]:
             "methods": {
                 "psor": {
                     "latest_phase": "reflection_completed",
-                    "latest_status": "error",
+                    "latest_status": "skipped",
                     "event_count": 4,
-                    "active_flags": {"skip_reflection": False},
+                    "active_flags": {"skip_reflection": True},
+                    "policy": {
+                        "execution_mode": "deterministic_replay",
+                        "recovery_mode": "strict",
+                        "run_reflection": False,
+                    },
+                    "skipped_stages": [
+                        {
+                            "phase": "reflection_completed",
+                            "reason": "execution_mode_deterministic_replay",
+                            "policy_reasons": [
+                                "execution_mode_deterministic_replay",
+                                "recovery_mode_strict",
+                            ],
+                        }
+                    ],
                 }
             },
         },
@@ -328,6 +343,7 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert "## Method Outcomes" in rendered
     assert "## Skill Telemetry" in rendered
     assert "## Post-build" in rendered
+    assert "execution_mode_deterministic_replay" in rendered
     assert "## Storage" in rendered
     assert "comparison_insufficient_results" in rendered
     assert "Execution mode: `deterministic_replay`" in rendered

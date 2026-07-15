@@ -82,6 +82,20 @@ def test_run_task_passes_force_rebuild_and_validation():
     assert calls[0]["validation"] == "fast"
     assert calls[0]["force_rebuild"] is False
     assert calls[0]["fresh_build"] is True
+    assert calls[0]["request_metadata"]["post_build_learning_policy"] == {
+        "execution_mode": "live",
+        "artifact_policy": "fresh_generated",
+        "recovery_mode": "strict",
+        "run_reflection": False,
+        "run_consolidation": False,
+        "reflection_reason": "recovery_mode_strict",
+        "consolidation_reason": "recovery_mode_strict",
+        "skip_reasons": ["recovery_mode_strict"],
+        "policy_source": "task_execution_policy",
+    }
+    assert result["post_build_learning_policy"] == calls[0]["request_metadata"][
+        "post_build_learning_policy"
+    ]
     assert result["runtime_controls"]["llm_wait_log_path"] == wait_log_path
     assert result["success"] is True
     assert result["elapsed_seconds"] == 4.5
@@ -185,6 +199,12 @@ def test_run_task_assisted_mode_retries_once_with_candidate_overlay():
     assert result["success"] is True
     assert result["attempts"] == 3
     assert result["recovery_mode"] == "assisted"
+    assert calls[0]["request_metadata"]["post_build_learning_policy"][
+        "run_reflection"
+    ] is True
+    assert calls[0]["request_metadata"]["post_build_learning_policy"][
+        "run_consolidation"
+    ] is True
     assert result["recovery_attempts"][0]["decision"] == "retry_with_candidate_knowledge"
     assert result["recovery_attempts"][0]["recovered"] is True
     retry_attribution = result["recovery_attempts"][0]["retry_attribution"]
@@ -1421,7 +1441,10 @@ def test_run_task_persists_execution_mode_override_metadata(monkeypatch):
         failures = []
         reflection = {}
 
+    build_calls: list[dict] = []
+
     def fake_build(**kwargs):
+        build_calls.append(kwargs)
         return FakeResult()
 
     def fake_persist(task, result, *, root, storage_layout, persisted_at=None):
@@ -1457,6 +1480,14 @@ def test_run_task_persists_execution_mode_override_metadata(monkeypatch):
     )
 
     assert result["execution_mode"] == "deterministic_replay"
+    assert result["post_build_learning_policy"]["run_reflection"] is False
+    assert result["post_build_learning_policy"]["run_consolidation"] is False
+    assert result["post_build_learning_policy"]["reflection_reason"] == (
+        "execution_mode_deterministic_replay"
+    )
+    assert build_calls[0]["request_metadata"]["post_build_learning_policy"] == result[
+        "post_build_learning_policy"
+    ]
     assert result["llm_cassette"] == cassette_metadata
     assert persisted["result"]["execution_mode"] == "deterministic_replay"
     assert persisted["result"]["llm_cassette"] == cassette_metadata

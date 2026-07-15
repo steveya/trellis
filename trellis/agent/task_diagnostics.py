@@ -397,12 +397,26 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
         lines.append("- Method checkpoints:")
         for method, summary in method_post_build.items():
             summary = dict(summary or {})
+            policy = dict(summary.get("policy") or {})
             lines.append(
                 "  - "
                 f"`{method}`: phase=`{summary.get('latest_phase', '')}`, "
                 f"status=`{summary.get('latest_status', '')}`, "
-                f"events=`{summary.get('event_count', '')}`"
+                f"events=`{summary.get('event_count', '')}`, "
+                f"execution=`{policy.get('execution_mode', '')}`, "
+                f"recovery=`{policy.get('recovery_mode', '')}`"
             )
+            for skipped_stage in summary.get("skipped_stages") or []:
+                skipped_stage = dict(skipped_stage or {})
+                policy_reasons = _join_or_none(
+                    skipped_stage.get("policy_reasons")
+                )
+                lines.append(
+                    "    - "
+                    f"`{skipped_stage.get('phase', '')}` skipped: "
+                    f"`{skipped_stage.get('reason', '')}`; "
+                    f"policy reasons=`{policy_reasons}`"
+                )
 
     lines.extend(
         [

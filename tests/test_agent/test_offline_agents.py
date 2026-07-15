@@ -18,7 +18,9 @@ def test_offline_local_agent_guard_blocks_text_and_json_llm_calls():
             llm_generate_json("hello")
 
 
-def test_offline_local_agent_run_scope_sets_and_restores_learning_skip_flags(monkeypatch):
+def test_offline_local_agent_run_scope_sets_execution_policy_without_learning_skip_flags(
+    monkeypatch,
+):
     from trellis.agent.offline_agents import offline_local_agent_run_scope
 
     monkeypatch.delenv("TRELLIS_OFFLINE_LOCAL_AGENTS", raising=False)
@@ -27,8 +29,8 @@ def test_offline_local_agent_run_scope_sets_and_restores_learning_skip_flags(mon
 
     with offline_local_agent_run_scope():
         assert os.environ["TRELLIS_OFFLINE_LOCAL_AGENTS"] == "1"
-        assert os.environ["TRELLIS_SKIP_POST_BUILD_REFLECTION"] == "1"
-        assert os.environ["TRELLIS_SKIP_POST_BUILD_CONSOLIDATION"] == "1"
+        assert "TRELLIS_SKIP_POST_BUILD_REFLECTION" not in os.environ
+        assert os.environ["TRELLIS_SKIP_POST_BUILD_CONSOLIDATION"] == "preserve"
 
     assert "TRELLIS_OFFLINE_LOCAL_AGENTS" not in os.environ
     assert "TRELLIS_SKIP_POST_BUILD_REFLECTION" not in os.environ

@@ -171,6 +171,7 @@ def run_block(
                     knowledge_profile="knowledge_light" if knowledge_light else None,
                     validation=validation,
                     recovery_mode=recovery_mode,
+                    execution_mode_override="deterministic_replay",
                 )
             result["offline_local_agents"] = True
         else:

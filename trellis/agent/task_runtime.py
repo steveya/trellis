@@ -58,6 +58,10 @@ from trellis.agent.knowledge.methods import is_known_method, normalize_method
 from trellis.agent.planner import FieldDef, SpecSchema
 from trellis.agent.planner import plan_build
 from trellis.agent.platform_requests import compile_build_request
+from trellis.agent.post_build_policy import (
+    artifact_policy_for_build,
+    determine_post_build_learning_policy,
+)
 from trellis.agent.quant import select_pricing_method
 from trellis.agent.task_manifests import (
     FRAMEWORK_TASKS_MANIFEST,
@@ -1838,6 +1842,14 @@ def run_task(
         if llm_cassette_metadata is not None
         else (dict(cassette_context) if cassette_context is not None else None)
     )
+    post_build_learning_policy = determine_post_build_learning_policy(
+        execution_mode=execution_mode,
+        artifact_policy=artifact_policy_for_build(
+            force_rebuild=force_rebuild,
+            fresh_build=fresh_build,
+        ),
+        recovery_mode=recovery_mode_value.value,
+    ).to_payload()
 
     print(f"\n{'=' * 60}")
     print(f"  {task_id}: {task['title']}")
@@ -1879,6 +1891,7 @@ def run_task(
         "task_definition_manifest": str(task.get("task_definition_manifest") or ""),
         "market_scenario_id": str(task.get("market_scenario_id") or ""),
         "recovery_mode": recovery_mode_value.value,
+        "post_build_learning_policy": post_build_learning_policy,
         "recovery_attempts": [],
     }
     if computational_problem_payload is not None:
@@ -1910,6 +1923,7 @@ def run_task(
             "instrument_type": instrument_type,
             "instrument_identity_source": instrument_identity.source,
             "runtime_contract": runtime_contract,
+            "post_build_learning_policy": post_build_learning_policy,
         }
         if task_benchmark_spec_overrides:
             base_request_metadata["benchmark_spec_overrides"] = dict(task_benchmark_spec_overrides)
