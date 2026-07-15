@@ -287,6 +287,37 @@ fail closed. The functions in ``trellis.models.asian_option`` remain
 compatibility and independent-comparison references, not generated-route
 construction authority.
 
+Fixed Lookback Composition
+--------------------------
+
+The admitted fixed-strike continuous-lookback Monte Carlo task route is built
+from reusable transition primitives. It binds spot, maturity, rate, carry,
+scalar volatility, and discounting with
+``resolve_scalar_diffusion_market_inputs(...)``; normalizes call or put
+semantics; declares one ``ConditionalBridgeExtremumContract`` over every exact
+GBM transition; and runs the resulting ``StateAwarePayoff`` through
+``MonteCarloEngine``. The reducer starts from the supplied running maximum or
+minimum, or from spot when no prior extremum is supplied.
+
+An integer ``seed`` reproduces both the process and conditional-bridge random
+streams while keeping those streams independent. Passing ``seed=None`` requests
+nondeterministic engine execution. Standard error follows the generic Monte
+Carlo engine convention and is validated internally; the scalar
+``Payoff.evaluate()`` result exposes only the final PV. Comparison with the
+retained structured helper is statistical rather than a same-seed path replay.
+At least two paths are required so the generated route always has meaningful
+estimator evidence.
+
+Generated code applies strike, notional, expiry settlement, discounting, and
+estimator checks. This lane requires ``lookback_type="fixed_strike"``,
+``monitoring_style="continuous"``, European exercise, and exact
+constant-parameter scalar GBM dynamics. Discrete monitoring, floating strike,
+multiple simultaneous stochastic extrema, local or stochastic volatility,
+jumps, and approximate transition schemes need different contracts and fail
+closed. The functions in ``trellis.models.lookback_option`` remain available
+as compatibility and independent-comparison references, not generated-route
+construction authority.
+
 Variance Swap Composition
 -------------------------
 

@@ -2655,12 +2655,17 @@ class TestFallbackRoutes:
                 primitive.symbol for primitive in primitives
             )
 
-    def test_lookback_monte_carlo_primitives_use_checked_helper(self, registry):
+    def test_lookback_monte_carlo_primitives_compose_transition_state(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         ir = ProductIR(
             instrument="lookback_option",
             payoff_family="lookback_option",
-            payoff_traits=("lookback", "path_dependent"),
+            payoff_traits=(
+                "lookback",
+                "path_dependent",
+                "fixed_strike",
+                "continuous_monitoring",
+            ),
             exercise_style="european",
             model_family="equity_diffusion",
             state_dependence="path_dependent",
@@ -2668,12 +2673,105 @@ class TestFallbackRoutes:
         new_prims = resolve_route_primitives(spec, ir)
         expected_prims = {
             (
-                "trellis.models.lookback_option",
-                "price_equity_fixed_lookback_option_monte_carlo",
-                "route_helper",
+                "trellis.models.resolution.single_state_diffusion",
+                "resolve_scalar_diffusion_market_inputs",
+                "market_binding",
             ),
+            (
+                "trellis.models.analytical.support",
+                "normalized_option_type",
+                "payoff_primitive",
+            ),
+            (
+                "trellis.models.monte_carlo.transition_state",
+                "ConditionalBridgeExtremumContract",
+                "payoff_contract",
+            ),
+            (
+                "trellis.models.monte_carlo.transition_state",
+                "build_conditional_bridge_extremum_reducer",
+                "payoff_primitive",
+            ),
+            ("trellis.models.processes.gbm", "GBM", "state_process"),
+            (
+                "trellis.models.monte_carlo.engine",
+                "MonteCarloEngine",
+                "path_simulation",
+            ),
+            (
+                "trellis.models.monte_carlo.path_state",
+                "MonteCarloPathRequirement",
+                "payoff_contract",
+            ),
+            (
+                "trellis.models.monte_carlo.path_state",
+                "StateAwarePayoff",
+                "payoff_contract",
+            ),
+            ("trellis.core.differentiable", "get_numpy", "numerical_backend"),
         }
         assert _prim_set(new_prims) == expected_prims
+        assert all(primitive.role != "route_helper" for primitive in new_prims)
+
+        unsupported_contracts = (
+            ProductIR(
+                instrument="lookback_option",
+                payoff_family="lookback_option",
+                payoff_traits=("lookback", "path_dependent"),
+                exercise_style="european",
+                state_dependence="path_dependent",
+                model_family="equity_diffusion",
+            ),
+            ProductIR(
+                instrument="lookback_option",
+                payoff_family="lookback_option",
+                payoff_traits=(
+                    "lookback",
+                    "path_dependent",
+                    "fixed_strike",
+                    "continuous_monitoring",
+                ),
+                exercise_style="european",
+                state_dependence="path_dependent",
+                model_family="stochastic_volatility",
+            ),
+            ProductIR(
+                instrument="lookback_option",
+                payoff_family="lookback_option",
+                payoff_traits=(
+                    "lookback",
+                    "path_dependent",
+                    "floating_strike",
+                    "continuous_monitoring",
+                ),
+                exercise_style="european",
+                state_dependence="path_dependent",
+                model_family="equity_diffusion",
+            ),
+            ProductIR(
+                instrument="lookback_option",
+                payoff_family="lookback_option",
+                payoff_traits=(
+                    "lookback",
+                    "path_dependent",
+                    "fixed_strike",
+                    "discrete_monitoring",
+                ),
+                exercise_style="european",
+                state_dependence="path_dependent",
+                model_family="equity_diffusion",
+            ),
+        )
+        for unsupported_ir in unsupported_contracts:
+            unsupported_primitives = resolve_route_primitives(spec, unsupported_ir)
+            assert not any(
+                primitive.module == "trellis.models.monte_carlo.transition_state"
+                for primitive in unsupported_primitives
+            )
+            assert not any(
+                primitive.module == "trellis.models.lookback_option"
+                for primitive in unsupported_primitives
+            )
 
     def test_cev_pde_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "cev_theta_pde"][0]

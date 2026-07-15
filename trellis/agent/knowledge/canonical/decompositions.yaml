@@ -409,8 +409,10 @@
 
 # QUA-852: anchor intent-based requests for analytical exotic pricers on the
 # promoted analytical route. QUA-1183 moves the admitted European digital
-# cohort to basis-kernel composition; the remaining exotics still use their
-# checked compatibility implementations.
+# cohort to basis-kernel composition. This table remains one-entry-per-
+# instrument, so method-specific fixed-lookback Monte Carlo composition is
+# selected from routes.yaml/backend_bindings.yaml and must not overwrite the
+# analytical default below.
 - instrument: digital_option
   features: [terminal_markov, discounting, vol_surface_dependence]
   method: analytical
@@ -427,7 +429,7 @@
   learned: false
 
 - instrument: lookback_option
-  features: [path_dependent, discounting, vol_surface_dependence]
+  features: [lookback, path_dependent, discounting, vol_surface_dependence]
   method: analytical
   method_modules:
     - trellis.models.analytical.equity_exotics

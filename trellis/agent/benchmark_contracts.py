@@ -58,6 +58,7 @@ _DIRECT_OVERRIDE_KEYS: tuple[str, ...] = (
     "fixed_coupon",
     "recovery_rate",
     "lookback_type",
+    "monitoring_style",
     "payoff",
     "style",
     "currency_pair",
@@ -825,6 +826,7 @@ def _benchmark_detail_lines(
             f"Strike: {contract.get('strike')}.",
             f"Option type: {contract.get('option_type', 'call')}.",
             f"Lookback type: {contract.get('lookback_type', 'fixed_strike')}.",
+            f"Monitoring style: {contract.get('monitoring_style', 'continuous')}.",
             f"Running extreme: {contract.get('running_extreme', contract.get('spot'))}.",
             f"Expiry date: {expiry_date.isoformat()}.",
         ]
@@ -1021,6 +1023,7 @@ def _lookback_option_overrides(contract: Mapping[str, Any], *, valuation_date: d
         "expiry_date": valuation_date + timedelta(days=round(float(contract.get("expiry_years") or 0.0) * 365.0)),
         "option_type": str(contract.get("option_type") or "call").strip().lower(),
         "lookback_type": str(contract.get("lookback_type") or "fixed_strike").strip().lower(),
+        "monitoring_style": str(contract.get("monitoring_style") or "continuous").strip().lower(),
         "running_extreme": running_extreme if running_extreme is not None else spot,
     }
 

@@ -84,6 +84,51 @@ class TestProductIR:
         }
         assert "fixed_strike" not in floating.payoff_traits
 
+    def test_ir_distinguishes_fixed_continuous_lookback_from_unsupported_variants(self):
+        from trellis.agent.knowledge.decompose import decompose_to_ir
+
+        sparse = decompose_to_ir(
+            "Lookback option: Monte Carlo vs analytical",
+            instrument_type="lookback_option",
+        )
+        fixed_continuous = decompose_to_ir(
+            "Fixed-strike continuously monitored lookback call",
+            instrument_type="lookback_option",
+        )
+        floating = decompose_to_ir(
+            "Floating-strike continuously monitored lookback call",
+            instrument_type="lookback_option",
+        )
+        discrete = decompose_to_ir(
+            "Fixed-strike discretely monitored lookback call",
+            instrument_type="lookback_option",
+        )
+
+        assert set(sparse.payoff_traits) >= {"lookback", "path_dependent"}
+        assert "fixed_strike" not in sparse.payoff_traits
+        assert "floating_strike" not in sparse.payoff_traits
+        assert "continuous_monitoring" not in sparse.payoff_traits
+        assert "discrete_monitoring" not in sparse.payoff_traits
+
+        assert set(fixed_continuous.payoff_traits) >= {
+            "lookback",
+            "path_dependent",
+            "fixed_strike",
+            "continuous_monitoring",
+        }
+        assert "floating_strike" not in fixed_continuous.payoff_traits
+        assert "discrete_monitoring" not in fixed_continuous.payoff_traits
+        for ir in (sparse, fixed_continuous):
+            assert ir.model_family == "equity_diffusion"
+            assert ir.state_dependence == "path_dependent"
+
+        assert "floating_strike" in floating.payoff_traits
+        assert "fixed_strike" not in floating.payoff_traits
+        assert "continuous_monitoring" in floating.payoff_traits
+        assert "discrete_monitoring" in discrete.payoff_traits
+        assert "continuous_monitoring" not in discrete.payoff_traits
+        assert "fixed_strike" in discrete.payoff_traits
+
     def test_ir_for_local_vol_option_uses_local_vol_model_family(self):
         from trellis.agent.knowledge.decompose import decompose_to_ir
 

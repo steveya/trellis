@@ -1106,6 +1106,68 @@ def test_comparison_harness_maps_turnbull_wakeman_target_to_analytical():
     assert methods["turnbull_wakeman_approx"] == "analytical"
 
 
+@pytest.mark.parametrize("task_id", ["T30", "T96"])
+def test_legacy_lookback_tasks_resolve_identity_independently_of_formula_alias(
+    task_id,
+):
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+    from trellis.agent.quant import PricingPlan
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import (
+        _effective_task_description,
+        task_to_instrument_identity,
+    )
+
+    tasks = {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+    }
+    task = tasks[task_id]
+
+    identity = task_to_instrument_identity(task)
+    description = _effective_task_description(task)
+    product_ir = decompose_to_ir(
+        description,
+        instrument_type=identity.instrument_type,
+    )
+    methods = {
+        target.target_id: target.preferred_method
+        for target in build_comparison_harness_plan(task).targets
+    }
+    analytical_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=["trellis.models.analytical.equity_exotics"],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="analytical comparison target",
+        ),
+        instrument_type="lookback_option",
+        inspected_modules=("trellis.models.analytical.equity_exotics",),
+        product_ir=product_ir,
+    )
+
+    assert identity.instrument_type == "lookback_option"
+    assert identity.source == "task.benchmark_contract"
+    assert set(product_ir.payoff_traits) >= {
+        "lookback",
+        "path_dependent",
+        "fixed_strike",
+        "continuous_monitoring",
+    }
+    assert methods == {
+        "mc_lookback": "monte_carlo",
+        "gsg_analytical": "analytical",
+    }
+    assert analytical_plan.primitive_plan is not None
+    assert (
+        "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical"
+        in analytical_plan.lane_exact_binding_refs
+    )
+
+
 def test_build_market_state_for_task_materializes_short_rate_comparison_regime(monkeypatch):
     from trellis.agent.task_runtime import build_market_state_for_task
     from trellis.core.market_state import MarketState

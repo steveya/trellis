@@ -93,6 +93,21 @@
   implies: [path_dependent]
   method_hint: monte_carlo
 
+- id: fixed_strike
+  description: "The contractual strike is fixed independently of the observed path"
+
+- id: floating_strike
+  description: "The contractual strike is determined from a path statistic"
+  implies: [path_dependent]
+
+- id: continuous_monitoring
+  description: "The contractual path condition applies over every instant in the monitoring interval"
+  implies: [path_dependent]
+
+- id: discrete_monitoring
+  description: "The contractual path condition applies only at declared observation times"
+  implies: [path_dependent]
+
 - id: multi_asset
   description: "Payoff depends on multiple underliers jointly"
   method_hint: monte_carlo

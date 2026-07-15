@@ -425,7 +425,7 @@ def test_european_option_family_support_approves_cev_helper_surfaces():
     assert report.ok
 
 
-def test_path_dependent_family_support_approves_asian_primitives_and_lookback_helper():
+def test_path_dependent_family_support_approves_asian_and_lookback_primitives():
     asian_plan = build_generation_plan(
         pricing_plan=PricingPlan(
             method="monte_carlo",
@@ -458,6 +458,29 @@ def test_path_dependent_family_support_approves_asian_primitives_and_lookback_he
         product_ir=ProductIR(
             instrument="lookback_option",
             payoff_family="lookback_option",
+            payoff_traits=(
+                "lookback",
+                "path_dependent",
+                "fixed_strike",
+                "continuous_monitoring",
+            ),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+    analytical_lookback_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="test",
+        ),
+        instrument_type="lookback_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
             payoff_traits=("lookback", "path_dependent"),
             exercise_style="european",
             model_family="equity_diffusion",
@@ -473,7 +496,21 @@ def test_path_dependent_family_support_approves_asian_primitives_and_lookback_he
         "trellis.models.monte_carlo.path_state",
         "trellis.models.processes.gbm",
     } <= set(asian_plan.approved_modules)
-    assert "trellis.models.lookback_option" in lookback_plan.approved_modules
+    assert "trellis.models.lookback_option" not in lookback_plan.approved_modules
+    assert {
+        "trellis.models.analytical.support",
+        "trellis.models.resolution.single_state_diffusion",
+        "trellis.models.monte_carlo.engine",
+        "trellis.models.monte_carlo.path_state",
+        "trellis.models.monte_carlo.transition_state",
+        "trellis.models.processes.gbm",
+        "trellis.core.differentiable",
+    } <= set(lookback_plan.approved_modules)
+    assert "trellis.models.analytical.equity_exotics" not in lookback_plan.approved_modules
+    assert (
+        "trellis.models.analytical.equity_exotics"
+        in analytical_lookback_plan.approved_modules
+    )
     asian_report = validate_generated_imports(
         "from trellis.models.observation_aggregation import "
         "WeightedObservationContract, weighted_observation_payoff\n"
@@ -488,14 +525,55 @@ def test_path_dependent_family_support_approves_asian_primitives_and_lookback_he
         asian_plan,
     )
     lookback_report = validate_generated_imports(
+        "from trellis.models.monte_carlo.transition_state import "
+        "ConditionalBridgeExtremumContract, build_conditional_bridge_extremum_reducer\n"
+        "from trellis.models.monte_carlo.engine import MonteCarloEngine\n"
+        "from trellis.models.monte_carlo.path_state import "
+        "MonteCarloPathRequirement, StateAwarePayoff\n"
+        "from trellis.models.processes.gbm import GBM\n",
+        lookback_plan,
+    )
+    lookback_wrapper_report = validate_generated_imports(
         "from trellis.models.lookback_option import "
         "price_equity_fixed_lookback_option_monte_carlo\n",
+        lookback_plan,
+    )
+    lookback_analytical_report = validate_generated_imports(
+        "from trellis.models.analytical.equity_exotics import "
+        "price_equity_fixed_lookback_option_analytical\n",
         lookback_plan,
     )
 
     assert asian_report.ok
     assert not wrapper_report.ok
     assert lookback_report.ok
+    assert not lookback_wrapper_report.ok
+    assert not lookback_analytical_report.ok
+
+    sparse_lookback_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="ambiguous sparse lookback contract",
+        ),
+        instrument_type="lookback_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=("lookback", "path_dependent"),
+            exercise_style="european",
+            model_family="equity_diffusion",
+        ),
+    )
+    assert not any(
+        "resolve_scalar_diffusion_market_inputs" in ref
+        or "ConditionalBridgeExtremumContract" in ref
+        or "build_conditional_bridge_extremum_reducer" in ref
+        for ref in sparse_lookback_plan.lane_exact_binding_refs
+    )
 
 
 def test_autocallable_generation_plan_approves_event_helper_surface():

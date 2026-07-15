@@ -98,6 +98,19 @@ are not admitted merely from total variance. Other coordinates, approximate
 schemes, vector state, and non-diffusion processes require a separately derived
 kernel.
 
+The fixed-strike continuous-lookback task route uses one independent bridge
+uniform per monitored transition in addition to the process shock. A supplied
+integer seed makes both channels reproducible without making them identical;
+``seed=None`` preserves the Monte Carlo engine's nondeterministic mode. Route
+comparison with the retained product helper is statistical rather than
+pathwise because the transition-state engine owns a separate auxiliary stream.
+The route computes and validates the generic engine convention
+:math:`\operatorname{std}_{\mathrm{ddof}=0}(PV_i)/\sqrt{N}` internally. The
+scalar ``Payoff.evaluate()`` contract returns only the final PV; it does not
+expose that diagnostic. The retained compatibility helper returns a structured
+result and uses ``ddof=1``, a difference that must not be mistaken for a price
+disagreement.
+
 Variance Reduction
 ------------------
 

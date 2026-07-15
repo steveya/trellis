@@ -698,11 +698,19 @@ The first migrated vanilla cases now use that boundary directly:
   reduced-state execution. Product-level Asian functions remain independent
   comparison references and are not generated-route authority.
 - Fixed-lookback MC proof routes use
-  ``trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo``
-  as the current checked compatibility/comparison surface. The product-neutral
-  conditional transition-extremum substrate now exists; route and generated
-  adapter authority migrate separately so product settlement and validation
-  are not moved into the numerical primitive.
+  the scalar-diffusion resolver, normalized call/put semantics,
+  ``ConditionalBridgeExtremumContract``, exact ``GBM``, ``StateAwarePayoff``,
+  and ``MonteCarloEngine``. The route sets every exact transition, initializes
+  the reducer with the contractual running maximum or minimum, and rejects
+  discrete monitoring rather than silently using endpoint extrema. Generated
+  adapter code owns expiry settlement, strike, notional, discounting, and
+  estimator diagnostics. Integer seeds make the independent process and bridge
+  streams reproducible; ``seed=None`` preserves nondeterministic execution.
+  The adapter validates the generic engine's population-dispersion standard
+  error internally, while the scalar ``Payoff.evaluate()`` result remains the
+  final PV. Comparison with the retained structured sample-dispersion helper is
+  statistical, not pathwise. The product-level lookback function remains a
+  compatibility and independent-comparison reference, not route authority.
 - Single-underlier autocallable proof routes now use
   ``trellis.models.autocallable.price_autocallable_monte_carlo_result`` as the
   checked MC/QMC event helper. It owns exact GBM path simulation, fixed

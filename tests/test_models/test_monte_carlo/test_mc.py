@@ -309,6 +309,27 @@ class TestMonteCarloEngine:
         assert "paths" in result
         assert "path_state" in result
 
+    def test_price_standard_error_uses_population_dispersion(self):
+        payoffs = raw_np.array([1.0, 2.0, 4.0, 8.0])
+        engine = MonteCarloEngine(
+            GBM(mu=0.0, sigma=0.0),
+            n_paths=len(payoffs),
+            n_steps=1,
+            seed=1,
+        )
+
+        result = engine.price(
+            100.0,
+            1.0,
+            lambda _paths: payoffs,
+            discount_rate=0.0,
+        )
+
+        expected = raw_np.std(payoffs, ddof=0) / raw_np.sqrt(len(payoffs))
+        sample_based = raw_np.std(payoffs, ddof=1) / raw_np.sqrt(len(payoffs))
+        assert result["std_error"] == pytest.approx(expected)
+        assert result["std_error"] != pytest.approx(sample_based)
+
     def test_exact_scheme_dispatches_to_exact_simulation(self, monkeypatch):
         """Known scheme names should reuse the optimized discretization functions."""
         called = {}

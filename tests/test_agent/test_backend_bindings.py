@@ -879,6 +879,108 @@ def test_resolve_backend_binding_spec_composes_variance_swap_monte_carlo():
     } <= set(resolved.primitive_refs)
 
 
+def test_resolve_backend_binding_spec_composes_fixed_lookback_monte_carlo():
+    catalog = load_backend_binding_catalog()
+    monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
+    product_ir = ProductIR(
+        instrument="lookback_option",
+        payoff_family="lookback_option",
+        payoff_traits=(
+            "discounting",
+            "fixed_strike",
+            "lookback",
+            "path_dependent",
+            "continuous_monitoring",
+            "vol_surface_dependence",
+        ),
+        exercise_style="european",
+        state_dependence="path_dependent",
+        schedule_dependence=False,
+        model_family="equity_diffusion",
+    )
+
+    assert monte_carlo is not None
+
+    resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
+
+    assert resolved.helper_refs == ()
+    assert resolved.pricing_kernel_refs == ()
+    assert {
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.monte_carlo.transition_state.ConditionalBridgeExtremumContract",
+        "trellis.models.monte_carlo.transition_state.build_conditional_bridge_extremum_reducer",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.MonteCarloPathRequirement",
+        "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+        "trellis.core.differentiable.get_numpy",
+    } <= set(resolved.primitive_refs)
+
+    unsupported_contracts = (
+        ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=("lookback", "path_dependent"),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family="equity_diffusion",
+        ),
+        ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=(
+                "lookback",
+                "path_dependent",
+                "fixed_strike",
+                "continuous_monitoring",
+            ),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family="stochastic_volatility",
+        ),
+        ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=(
+                "lookback",
+                "path_dependent",
+                "floating_strike",
+                "continuous_monitoring",
+            ),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family="equity_diffusion",
+        ),
+        ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=(
+                "lookback",
+                "path_dependent",
+                "fixed_strike",
+                "discrete_monitoring",
+            ),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family="equity_diffusion",
+        ),
+    )
+    for product_ir in unsupported_contracts:
+        unsupported = resolve_backend_binding_spec(
+            monte_carlo,
+            product_ir=product_ir,
+        )
+        assert not any(
+            ref.startswith("trellis.models.monte_carlo.transition_state.")
+            for ref in unsupported.primitive_refs
+        )
+        assert not any(
+            ref.startswith("trellis.models.lookback_option.")
+            for ref in unsupported.primitive_refs
+        )
+
+
 def test_resolve_backend_binding_spec_uses_merton_jump_diffusion_helpers():
     catalog = load_backend_binding_catalog()
     monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)

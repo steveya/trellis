@@ -16,6 +16,7 @@ from typing import Any
 import yaml
 
 from trellis.agent.knowledge.import_registry import get_repo_revision
+from trellis.agent.knowledge.methods import normalize_method
 
 
 _KNOWLEDGE_DIR = Path(__file__).parent
@@ -341,6 +342,13 @@ def _score_card(
     section: Mapping[str, Any],
     query: ApiMapQuery,
 ) -> int:
+    allowed_methods = _section_methods(section)
+    if (
+        query.method.strip()
+        and allowed_methods
+        and normalize_method(query.method) not in allowed_methods
+    ):
+        return 0
     aliases = _section_aliases(name, section)
     score = 0
     for cue, weight in _query_cues(query):
@@ -363,6 +371,17 @@ def _score_card(
                     int(weight * overlap / max(len(alias_tokens), 1)),
                 )
     return score
+
+
+def _section_methods(section: Mapping[str, Any]) -> frozenset[str]:
+    """Return canonical method families that are eligible for one API card."""
+    raw = section.get("methods") or ()
+    values = raw if isinstance(raw, (list, tuple)) else (raw,)
+    return frozenset(
+        method
+        for value in values
+        if (method := normalize_method(str(value)))
+    )
 
 
 def _section_aliases(

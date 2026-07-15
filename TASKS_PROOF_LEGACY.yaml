@@ -380,6 +380,16 @@ tasks:
 - id: T30
   title: 'Lookback option: MC vs analytical (Goldman-Sosin-Gatto)'
   construct: monte_carlo
+  benchmark_contract:
+    product: lookback_option
+    notional: 1.0
+    spot: 100.0
+    strike: 100.0
+    option_type: call
+    lookback_type: fixed_strike
+    monitoring_style: continuous
+    running_extreme: 100.0
+    expiry_years: 1.0
   new_component: running_extrema_tracking
   cross_validate:
     internal:
@@ -1211,6 +1221,16 @@ tasks:
   construct:
   - monte_carlo
   - analytical
+  benchmark_contract:
+    product: lookback_option
+    notional: 1.0
+    spot: 100.0
+    strike: 100.0
+    option_type: call
+    lookback_type: fixed_strike
+    monitoring_style: continuous
+    running_extreme: 100.0
+    expiry_years: 1.0
   new_component:
   - lookback_payoff
   - gsg_formula

@@ -4687,6 +4687,163 @@ def _variance_swap_monte_carlo_evaluate_body(
     ).rstrip()
 
 
+def _fixed_lookback_monte_carlo_evaluate_body(
+    refs: set[str],
+    *,
+    normalized_target: str,
+    generation_method: str,
+) -> str | None:
+    """Compose fixed-lookback Monte Carlo from transition-state primitives."""
+    required_refs = {
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.monte_carlo.transition_state.ConditionalBridgeExtremumContract",
+        "trellis.models.monte_carlo.transition_state.build_conditional_bridge_extremum_reducer",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.MonteCarloPathRequirement",
+        "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+        "trellis.core.differentiable.get_numpy",
+    }
+    use_monte_carlo = normalized_target == "mc_lookback" or (
+        normalized_target in {"", "monte_carlo"}
+        and generation_method == "monte_carlo"
+    )
+    if not use_monte_carlo or not required_refs.issubset(refs):
+        return None
+
+    return textwrap.dedent(
+        """\
+        lookback_type = str(
+            getattr(spec, "lookback_type", "fixed_strike")
+            or "fixed_strike"
+        ).strip().lower()
+        if lookback_type != "fixed_strike":
+            raise ValueError(
+                "lookback Monte Carlo composition supports lookback_type='fixed_strike'"
+            )
+        monitoring_style = str(
+            getattr(spec, "monitoring_style", "continuous")
+            or "continuous"
+        ).strip().lower()
+        if monitoring_style != "continuous":
+            raise ValueError(
+                "lookback Monte Carlo composition requires monitoring_style='continuous'"
+            )
+
+        option_type = normalized_option_type(
+            getattr(spec, "option_type", "call")
+        )
+        strike = float(spec.strike)
+        resolved = resolve_scalar_diffusion_market_inputs(
+            market_state,
+            spec,
+            volatility_coordinate=strike,
+        )
+        np = get_numpy()
+        notional = float(spec.notional)
+        if not np.isfinite(notional) or not np.isfinite(strike):
+            raise ValueError("lookback notional and strike must be finite")
+        if resolved.spot <= 0.0:
+            raise ValueError("lookback Monte Carlo requires positive spot")
+
+        running_value = getattr(spec, "running_extreme", None)
+        running_extreme = (
+            resolved.spot
+            if running_value is None
+            else float(running_value)
+        )
+        if not np.isfinite(running_extreme) or running_extreme <= 0.0:
+            raise ValueError(
+                "lookback Monte Carlo requires positive finite running_extreme"
+            )
+
+        def settle(extreme):
+            if option_type == "put":
+                intrinsic = np.maximum(strike - extreme, 0.0)
+            else:
+                intrinsic = np.maximum(extreme - strike, 0.0)
+            return notional * intrinsic
+
+        if resolved.maturity <= 0.0:
+            expiry_extreme = (
+                min(running_extreme, resolved.spot)
+                if option_type == "put"
+                else max(running_extreme, resolved.spot)
+            )
+            return float(np.asarray(settle(expiry_extreme)))
+
+        n_paths_value = getattr(spec, "n_paths", 80000)
+        n_steps_value = getattr(spec, "n_steps", 96)
+        seed_value = getattr(spec, "seed", 42)
+        n_paths = 80000 if n_paths_value is None else int(n_paths_value)
+        n_steps = 96 if n_steps_value is None else int(n_steps_value)
+        seed = None if seed_value is None else int(seed_value)
+        if n_paths < 2:
+            raise ValueError("lookback Monte Carlo requires at least two paths")
+        if n_steps <= 0:
+            raise ValueError("lookback Monte Carlo requires positive n_steps")
+
+        direction = "minimum" if option_type == "put" else "maximum"
+        reducer_name = "continuous_running_extreme"
+        reducer = build_conditional_bridge_extremum_reducer(
+            ConditionalBridgeExtremumContract(
+                n_steps=n_steps,
+                transition_steps=tuple(range(1, n_steps + 1)),
+                direction=direction,
+                initial_extremum=running_extreme,
+            ),
+            name=reducer_name,
+        )
+
+        def reject_discrete_paths(_paths):
+            raise NotImplementedError(
+                "continuous fixed-lookback monitoring requires transition state"
+            )
+
+        payoff = StateAwarePayoff(
+            path_requirement=MonteCarloPathRequirement(
+                transition_reducers=(reducer,)
+            ),
+            evaluate_paths_fn=reject_discrete_paths,
+            evaluate_state_fn=lambda state: settle(
+                state.reduced_value(reducer_name)
+            ),
+            name="fixed_lookback_composed_payoff",
+        )
+        engine_discount_rate = (
+            -float(np.log(resolved.discount_factor))
+            / resolved.maturity
+        )
+        result = MonteCarloEngine(
+            GBM(
+                mu=resolved.rate - resolved.dividend_yield,
+                sigma=resolved.sigma,
+            ),
+            n_paths=n_paths,
+            n_steps=n_steps,
+            seed=seed,
+            method="exact",
+        ).price(
+            resolved.spot,
+            resolved.maturity,
+            payoff,
+            discount_rate=engine_discount_rate,
+            return_paths=False,
+        )
+        price = float(np.asarray(result["price"]))
+        standard_error = float(np.asarray(result["std_error"]))
+        if (
+            not np.isfinite(price)
+            or not np.isfinite(standard_error)
+            or standard_error < 0.0
+        ):
+            raise ValueError("lookback Monte Carlo produced invalid estimator diagnostics")
+        return price
+        """
+    ).rstrip()
+
+
 def _deterministic_exact_binding_evaluate_body(
     generation_plan,
     *,
@@ -4769,6 +4926,14 @@ def _deterministic_exact_binding_evaluate_body(
         )
         if asian_body is not None:
             return asian_body
+    if instrument_type == "lookback_option":
+        lookback_body = _fixed_lookback_monte_carlo_evaluate_body(
+            refs,
+            normalized_target=normalized_target,
+            generation_method=generation_method,
+        )
+        if lookback_body is not None:
+            return lookback_body
     if instrument_type == "variance_swap":
         variance_swap_body = _variance_swap_monte_carlo_evaluate_body(
             refs,
@@ -5332,11 +5497,6 @@ def _deterministic_exact_binding_evaluate_body(
             'n_t=getattr(spec, "n_t", 401))'
         )
     if (
-        normalized_target == "mc_lookback"
-        and "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo" in refs
-    ):
-        return "return price_equity_fixed_lookback_option_monte_carlo(market_state, spec)"
-    if (
         normalized_target in {"digital_fft", "digital_cos"}
         and "trellis.models.equity_option_transforms.price_equity_digital_option_transform" in refs
     ):
@@ -5756,9 +5916,6 @@ def _deterministic_exact_binding_evaluate_body(
         ),
         "trellis.models.analytical.equity_exotics.price_equity_fixed_lookback_option_analytical": (
             "return price_equity_fixed_lookback_option_analytical(market_state, spec)"
-        ),
-        "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo": (
-            "return price_equity_fixed_lookback_option_monte_carlo(market_state, spec)"
         ),
         "trellis.models.equity_option_pde.price_equity_digital_option_pde": (
             "return price_equity_digital_option_pde(market_state, spec)"
@@ -6215,10 +6372,6 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "price_equity_digital_option_transform(" in body:
         imports.append(
             "from trellis.models.equity_option_transforms import price_equity_digital_option_transform"
-        )
-    if "price_equity_fixed_lookback_option_monte_carlo(" in body:
-        imports.append(
-            "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo"
         )
     if "price_fx_barrier_option_analytical(" in body:
         imports.append(

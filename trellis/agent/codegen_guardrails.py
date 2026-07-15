@@ -146,10 +146,6 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.processes.gbm",
         "trellis.models.resolution.single_state_diffusion",
     ),
-    "lookback_option": (
-        "trellis.models.analytical.equity_exotics",
-        "trellis.models.lookback_option",
-    ),
     "barrier_option": (
         "trellis.models.analytical.support.barriers",
         "trellis.models.single_barrier_option",

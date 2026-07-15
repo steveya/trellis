@@ -2336,20 +2336,44 @@ def test_generated_arithmetic_asian_primitive_lanes_execute_and_agree(option_typ
 
 
 def test_deterministic_exact_binding_module_materializes_lookback_mc_target():
+    from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
         _generate_skeleton,
         _materialize_deterministic_exact_binding_module,
     )
+    from trellis.agent.knowledge.schema import ProductIR
     from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.quant import PricingPlan
 
-    helper_ref = "trellis.models.lookback_option.price_equity_fixed_lookback_option_monte_carlo"
-    generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=(helper_ref,),
-        primitive_plan=None,
-        method="monte_carlo",
+    generation_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="compose fixed lookback from transition primitives",
+        ),
         instrument_type="lookback_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=(
+                "lookback",
+                "path_dependent",
+                "fixed_strike",
+                "continuous_monitoring",
+            ),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family="equity_diffusion",
+        ),
     )
+    assert generation_plan.primitive_plan is not None
+    assert generation_plan.primitive_plan.route == "monte_carlo_paths"
+    assert generation_plan.backend_helper_refs == ()
+    assert generation_plan.backend_pricing_kernel_refs == ()
 
     skeleton = _generate_skeleton(
         STATIC_SPECS["lookback_option"],
@@ -2363,9 +2387,375 @@ def test_deterministic_exact_binding_module_materializes_lookback_mc_target():
     )
 
     assert generated is not None
-    assert "from trellis.models.lookback_option import price_equity_fixed_lookback_option_monte_carlo" in generated.code
-    assert "price_equity_fixed_lookback_option_monte_carlo(market_state, spec)" in generated.code
+    for symbol in (
+        "resolve_scalar_diffusion_market_inputs(",
+        "normalized_option_type(",
+        "ConditionalBridgeExtremumContract(",
+        "build_conditional_bridge_extremum_reducer(",
+        "MonteCarloPathRequirement(",
+        "StateAwarePayoff(",
+        "GBM(",
+        "MonteCarloEngine(",
+        "running_extreme",
+        "initial_extremum=running_extreme",
+        "return_paths=False",
+        'result["std_error"]',
+        "seed = None if seed_value is None else int(seed_value)",
+        "continuous fixed-lookback monitoring requires transition state",
+    ):
+        assert symbol in generated.code
+    assert "trellis.models.lookback_option" not in generated.code
+    assert "price_equity_fixed_lookback_option_monte_carlo" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+    unsupported_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="unsupported stochastic-volatility lookback",
+        ),
+        instrument_type="lookback_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=(
+                "lookback",
+                "path_dependent",
+                "fixed_strike",
+                "continuous_monitoring",
+            ),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family="stochastic_volatility",
+        ),
+    )
+    unsupported_skeleton = _generate_skeleton(
+        STATIC_SPECS["lookback_option"],
+        "Unsupported stochastic-volatility lookback",
+        generation_plan=unsupported_plan,
+    )
+    assert (
+        _materialize_deterministic_exact_binding_module(
+            unsupported_skeleton,
+            unsupported_plan,
+            comparison_target="mc_lookback",
+        )
+        is None
+    )
+
+    sparse_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="monte_carlo",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="ambiguous sparse lookback",
+        ),
+        instrument_type="lookback_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=("lookback", "path_dependent"),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family="equity_diffusion",
+        ),
+    )
+    sparse_skeleton = _generate_skeleton(
+        STATIC_SPECS["lookback_option"],
+        "Ambiguous sparse lookback",
+        generation_plan=sparse_plan,
+    )
+    assert (
+        _materialize_deterministic_exact_binding_module(
+            sparse_skeleton,
+            sparse_plan,
+            comparison_target="mc_lookback",
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("option_type", "running_extreme"),
+    [
+        ("call", 125.0),
+        ("put", 78.0),
+    ],
+)
+def test_generated_lookback_monte_carlo_composition_matches_reference(
+    option_type,
+    running_extreme,
+):
+    from datetime import date as _date
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.lookback_option import (
+        price_equity_fixed_lookback_option_monte_carlo_result,
+    )
+    from trellis.models.vol_surface import FlatVol
+
+    primitive_refs = (
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.monte_carlo.transition_state.ConditionalBridgeExtremumContract",
+        "trellis.models.monte_carlo.transition_state.build_conditional_bridge_extremum_reducer",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.MonteCarloPathRequirement",
+        "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+        "trellis.core.differentiable.get_numpy",
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=primitive_refs,
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="lookback_option",
+    )
+    schema = STATIC_SPECS["lookback_option"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Fixed lookback Monte Carlo primitive composition",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="mc_lookback",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1189>", "exec"), namespace)  # noqa: S102
+    spec = namespace[schema.spec_name](
+        notional=2.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=_date(2025, 1, 1),
+        option_type=option_type,
+        lookback_type="fixed_strike",
+        running_extreme=running_extreme,
+        n_paths=20_000,
+        n_steps=48,
+        seed=29,
+    )
+    market_state = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=YieldCurve.flat(0.03),
+        vol_surface=FlatVol(0.20),
+    )
+
+    composed_price = float(namespace[schema.class_name](spec).evaluate(market_state))
+    reference = price_equity_fixed_lookback_option_monte_carlo_result(
+        market_state,
+        spec,
+    )
+
+    assert composed_price == pytest.approx(
+        reference.price,
+        abs=max(8.0 * reference.std_error, 0.08),
+    )
+
+    discrete_spec = namespace[schema.spec_name](
+        notional=2.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=_date(2025, 1, 1),
+        option_type=option_type,
+        lookback_type="fixed_strike",
+        monitoring_style="discrete",
+        running_extreme=running_extreme,
+        n_paths=2_000,
+        n_steps=24,
+        seed=29,
+    )
+    with pytest.raises(ValueError, match="monitoring_style='continuous'"):
+        namespace[schema.class_name](discrete_spec).evaluate(market_state)
+
+    nondeterministic_spec = namespace[schema.spec_name](
+        notional=1.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=_date(2025, 1, 1),
+        option_type=option_type,
+        lookback_type="fixed_strike",
+        running_extreme=running_extreme,
+        n_paths=2_000,
+        n_steps=12,
+        seed=None,
+    )
+    first_unseeded = namespace[schema.class_name](nondeterministic_spec).evaluate(
+        market_state
+    )
+    second_unseeded = namespace[schema.class_name](nondeterministic_spec).evaluate(
+        market_state
+    )
+    assert first_unseeded != second_unseeded
+
+
+@pytest.mark.parametrize(
+    ("option_type", "running_extreme"),
+    [("call", 120.0), ("put", 82.0)],
+)
+def test_generated_lookback_monte_carlo_composition_matches_analytical_with_carry(
+    option_type,
+    running_extreme,
+):
+    from datetime import date as _date
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.analytical.equity_exotics import (
+        price_equity_fixed_lookback_option_analytical,
+    )
+    from trellis.models.vol_surface import FlatVol
+
+    primitive_refs = (
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.monte_carlo.transition_state.ConditionalBridgeExtremumContract",
+        "trellis.models.monte_carlo.transition_state.build_conditional_bridge_extremum_reducer",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.MonteCarloPathRequirement",
+        "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+        "trellis.core.differentiable.get_numpy",
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=primitive_refs,
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="lookback_option",
+    )
+    schema = STATIC_SPECS["lookback_option"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Fixed lookback Monte Carlo carry comparison",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="mc_lookback",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1189_carry>", "exec"), namespace)  # noqa: S102
+    spec = namespace[schema.spec_name](
+        notional=1.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=_date(2025, 1, 1),
+        option_type=option_type,
+        lookback_type="fixed_strike",
+        running_extreme=running_extreme,
+        dividend_yield=0.01,
+        n_paths=120_000,
+        n_steps=48,
+        seed=31,
+    )
+    market_state = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        discount=YieldCurve.flat(0.03),
+        vol_surface=FlatVol(0.20),
+    )
+
+    composed_price = float(namespace[schema.class_name](spec).evaluate(market_state))
+    repeated_price = float(namespace[schema.class_name](spec).evaluate(market_state))
+    analytical_price = price_equity_fixed_lookback_option_analytical(
+        market_state,
+        spec,
+    )
+
+    assert repeated_price == pytest.approx(composed_price, abs=0.0)
+    assert composed_price == pytest.approx(analytical_price, abs=0.12)
+
+
+@pytest.mark.parametrize(
+    ("option_type", "running_extreme", "expected"),
+    [
+        ("call", 120.0, 40.0),
+        ("put", 80.0, 40.0),
+    ],
+)
+def test_generated_lookback_monte_carlo_composition_owns_expiry_settlement(
+    option_type,
+    running_extreme,
+    expected,
+):
+    from datetime import date as _date
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.core.market_state import MarketState
+
+    primitive_refs = (
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.monte_carlo.transition_state.ConditionalBridgeExtremumContract",
+        "trellis.models.monte_carlo.transition_state.build_conditional_bridge_extremum_reducer",
+        "trellis.models.processes.gbm.GBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.monte_carlo.path_state.MonteCarloPathRequirement",
+        "trellis.models.monte_carlo.path_state.StateAwarePayoff",
+        "trellis.core.differentiable.get_numpy",
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=primitive_refs,
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="lookback_option",
+    )
+    schema = STATIC_SPECS["lookback_option"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Fixed lookback expiry settlement",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target="mc_lookback",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1189_expiry>", "exec"), namespace)  # noqa: S102
+    spec = namespace[schema.spec_name](
+        notional=2.0,
+        spot=100.0,
+        strike=100.0,
+        expiry_date=_date(2025, 1, 1),
+        option_type=option_type,
+        lookback_type="fixed_strike",
+        running_extreme=running_extreme,
+    )
+    market_state = MarketState(
+        as_of=_date(2025, 1, 1),
+        settlement=_date(2025, 1, 1),
+    )
+
+    assert namespace[schema.class_name](spec).evaluate(market_state) == pytest.approx(
+        expected
+    )
 
 
 @pytest.mark.parametrize(

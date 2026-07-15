@@ -58,6 +58,7 @@ payoff:
 # ---------------------------------------------------------------------------
 analytical_gaussian_composition:
   module: trellis.models.analytical.support.probability
+  methods: [analytical]
   navigation:
     aliases: [gaussian_probability, bivariate_gaussian, critical_state, scalar_root, chooser_option, compound_option, lookback_option]
   modules:
@@ -192,7 +193,7 @@ monte_carlo:
 path_statistic_composition:
   module: trellis.models.monte_carlo.path_statistics
   navigation:
-    aliases: [path_statistic, running_extremum, running_minimum, running_maximum, squared_log_return, realized_variance, realised_variance, lookback_option, fixed_lookback_option, variance_swap]
+    aliases: [path_statistic, running_extremum, running_minimum, running_maximum, squared_log_return, realized_variance, realised_variance, variance_swap]
   key_imports:
     - "from trellis.models.monte_carlo.path_statistics import RunningExtremumContract, SquaredLogReturnContract, annualized_squared_log_return_sum, build_running_extremum_reducer, build_squared_log_return_reducer, discrete_path_extremum"
     - "from trellis.models.monte_carlo.path_state import MonteCarloPathRequirement, StateAwarePayoff"
@@ -209,8 +210,9 @@ path_statistic_composition:
 
 conditional_extremum_composition:
   module: trellis.models.monte_carlo.transition_state
+  methods: [monte_carlo, qmc]
   navigation:
-    aliases: [conditional_extremum, conditional_bridge_extremum, continuous_extremum, continuous_monitoring, continuous_running_minimum, continuous_running_maximum, continuous_lookback, monte_carlo_continuous_extremum]
+    aliases: [conditional_extremum, conditional_bridge_extremum, continuous_extremum, continuous_monitoring, continuous_running_minimum, continuous_running_maximum, continuous_lookback, fixed_lookback_option, lookback_option, monte_carlo_continuous_extremum]
   key_imports:
     - "from trellis.models.monte_carlo.transition_state import ConditionalBridgeExtremumContract, MonteCarloRandomInputs, ScalarTransitionObservation, ScalarTransitionReducer, build_conditional_bridge_extremum_reducer, conditional_log_bridge_extremum, replay_scalar_transition_reducers"
     - "from trellis.models.monte_carlo.path_state import MonteCarloPathRequirement, StateAwarePayoff"
@@ -226,6 +228,7 @@ conditional_extremum_composition:
     - "Only exact constant-parameter scalar GBM transitions are admitted. Euler, Milstein, custom schemes, piecewise parameter regimes, vector state, jumps, local volatility, stochastic volatility, and processes without an explicit conditional bridge capability fail closed."
     - "Use replay_scalar_transition_reducers(...) for full-path evidence with the same transition uniforms. Existing brownian_bridge(...) and brownian_bridge_increments(...) construct paths or reorder process shocks; they do not sample conditional interval extrema."
     - "The transition primitive owns no derivative settlement. Strike, payoff direction, notional, discounting, prior extrema, output fields, and product validation remain in generated adapter code and semantic contracts."
+    - "For admitted fixed-strike continuous-lookback Monte Carlo, bind scalar market inputs at strike, set direction from normalized call/put semantics, initialize the reducer with the contractual running extremum (or spot), and declare all exact transitions. Generated code owns expiry settlement, notional, discounting, rejection of non-continuous monitoring, and internal validation of the generic engine standard error; the scalar Payoff result remains the final PV. Integer seeds reproduce independent process/bridge streams; seed=None remains nondeterministic; require at least two paths and do not delegate to the product compatibility helper."
 
 scheduled_observation_composition:
   module: trellis.models.observation_aggregation
