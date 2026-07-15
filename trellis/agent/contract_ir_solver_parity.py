@@ -144,6 +144,12 @@ def _digital_reference(decision, market_state: MarketState, contract_ir) -> floa
 
 def _swaption_reference(decision, market_state: MarketState, contract_ir) -> float:
     resolved = decision.call_kwargs["resolved"]
+    if (
+        resolved.expiry_years <= 0.0
+        or resolved.annuity <= 0.0
+        or resolved.payment_count <= 0
+    ):
+        return 0.0
     kernel = black76_call if resolved.is_payer else black76_put
     return float(
         resolved.notional
