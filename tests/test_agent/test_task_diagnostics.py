@@ -353,6 +353,71 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert "/tmp/t999_waits.jsonl" in rendered
 
 
+def test_task_diagnosis_surfaces_semantic_artifact_coherence_failure(tmp_path):
+    from trellis.agent.task_diagnostics import (
+        build_task_diagnosis_packet,
+        render_task_diagnosis_dossier,
+    )
+
+    record = _sample_record(tmp_path)
+    record["summary"]["comparison_status"] = "semantic_artifact_mismatch"
+    record["comparison"]["status"] = "semantic_artifact_mismatch"
+    record["result"]["cross_validation"] = {
+        "status": "semantic_artifact_mismatch",
+        "prices": {},
+        "artifact_coherence": {
+            "plain_mc": {
+                "status": "unbound_shared_artifact",
+                "target_contract": {
+                    "contract_id": "comparison-target:T999:plain_mc:v1",
+                    "method": "monte_carlo",
+                },
+                "selected_method": "monte_carlo",
+                "selected_route_id": "terminal_basket",
+                "artifact": {
+                    "module_name": "trellis.instruments._agent.basket_option",
+                    "class_name": "BasketOptionPayoff",
+                },
+                "failures": [
+                    {
+                        "code": "shared_artifact_without_exercised_target_binding",
+                        "field": "artifact_identity",
+                    }
+                ],
+            }
+        },
+        "artifact_coherence_failures": {
+            "plain_mc": [
+                {
+                    "code": "shared_artifact_without_exercised_target_binding",
+                    "field": "artifact_identity",
+                }
+            ]
+        },
+    }
+
+    packet = build_task_diagnosis_packet(record)
+
+    assert packet["outcome"]["failure_bucket"] == (
+        "comparison_semantic_artifact_mismatch"
+    )
+    assert packet["evidence"]["cross_validation"]["artifact_coherence"][
+        "plain_mc"
+    ]["status"] == "unbound_shared_artifact"
+    assert packet["primary_failure"]["likely_cause"].startswith(
+        "A declared comparison target executed with an unbound"
+    )
+    assert packet["outcome"]["next_action"].startswith(
+        "Bind each comparison target"
+    )
+
+    rendered = render_task_diagnosis_dossier(packet)
+    assert "## Artifact Coherence" in rendered
+    assert "comparison-target:T999:plain_mc:v1" in rendered
+    assert "unbound_shared_artifact" in rendered
+    assert "BasketOptionPayoff" in rendered
+
+
 def test_render_task_diagnosis_dossier_surfaces_top_level_policy_skip(tmp_path):
     from trellis.agent.task_diagnostics import (
         build_task_diagnosis_packet,

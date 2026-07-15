@@ -464,6 +464,17 @@ the route-selection decision:
   show whether critic/model-validator escalation came from compiled contract
   state or only from the fallback route heuristic
 
+Comparison builds add a separate execution-identity trail. The
+``comparison_target_bound`` lifecycle event records the immutable target
+contract together with the method, route, route family, backend binding,
+validation bundle, and semantic axes selected by the compiler. Cached artifacts
+also record the module, class, source file, and admission target actually
+returned. A cached class without its own compatible target-contract declaration
+emits ``comparison_target_binding_unproven`` and retains an empty actual
+contract. Requested target metadata, actual artifact evidence, and validation
+evidence remain separate so trace consumers can detect substitution instead of
+treating the request as execution evidence.
+
 Task-Run Telemetry
 ------------------
 
@@ -481,6 +492,22 @@ These rollups are rebuilt from canonical run records rather than from ad hoc
 trace scraping. Diagnosis dossiers also surface the same telemetry so a human
 can move from batch failure to selected-skill attribution without opening raw
 trace files first.
+
+For comparison tasks, canonical task-run records additionally retain the
+top-level target-contract inventory, each method result's execution binding and
+artifact-binding report, and the complete semantic artifact-coherence result.
+Diagnosis packets project that evidence into a stable
+``comparison_semantic_artifact_mismatch`` bucket before any raw error-text
+classification is needed. Method results also retain
+``comparison_binding_evidence_source`` and
+``validation_binding_evidence_source``; consumers must display those fields
+rather than infer evidence strength from a non-empty contract or bundle id.
+Fresh and cached artifacts both replace the request copy with the full contract
+declared by the returned class. Explicit targets without that declaration fail
+semantic coherence, and a required validation bundle is authoritative only
+when its source is ``executed_validation_bundle``. Standard and thorough cache
+reuse executes that bundle again; fast reuse remains non-authoritative for a
+target that requires bundle evidence.
 
 Route-named helpers remain as compatibility wrappers, but new dashboards and
 maintenance tooling should consume the binding-first APIs.

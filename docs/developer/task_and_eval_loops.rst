@@ -57,6 +57,81 @@ Those calls retain packaged canonical knowledge and record unavailable document
 resources as bounded omissions; invalid indexed children and escaping paths
 still fail closed.
 
+Typed Comparison Target Lifecycle
+---------------------------------
+
+A comparison target name such as ``qe_heston``, ``antithetic_mc``, or
+``spread_fft_2d`` is a label, not proof of what executed. Comparison tasks can
+therefore declare ``cross_validate.target_contracts``. Each entry resolves to
+an immutable ``ComparisonTargetContract`` carrying:
+
+- the target id and canonical method family
+- optional route, route-family, backend-binding, and validation-bundle ids
+- method-variant parameters and target-specific spec overrides
+- expected payoff, exercise, model, observation, and additional semantic axes
+- an optional explicit equivalence group for targets that are intentionally
+  represented by the same executable artifact
+
+The manifest declaration is fail-closed. Unknown methods, malformed entries,
+unused declarations, duplicate target ids, and duplicate non-empty contract ids
+are task-contract errors. An explicit target-contract set must cover every
+resolved target and every canonical method family in ``construct``. A
+comparison harness may resolve at most one reference, and an explicit reference
+target must name one of the resolved targets. Sparse legacy rows still receive a typed
+fallback, but that fallback records ``explicit=false`` and
+``resolution_source=legacy_target_inference`` rather than pretending that an
+inferred target has exact route or variant authority.
+
+The requested contract follows one target through harness planning,
+platform-request compilation, and builder request metadata. Build results keep
+that request in ``requested_comparison_target_contract`` and separately retain
+the contract evidenced by the returned artifact in
+``comparison_target_contract``. The executor also records method, route, route
+family, backend binding, validation bundle, semantic axes, module, class, file,
+and source identity. Cached reuse is subject to the same evidence contract as
+fresh generation: an old class is not restamped with the current request.
+Standard and thorough cached comparison builds re-execute a required validation
+bundle before returning the class. Fast validation does not claim that evidence
+and therefore cannot make a target requiring a bundle coherent.
+
+``comparison_binding_evidence_source`` and
+``validation_binding_evidence_source`` state where the evidence came from.
+Fresh compiler-bound generation, a cached artifact declaration, and the
+deterministic proof artifact declaration are different authorities. Likewise,
+``executed_validation_bundle`` means the bundle ran, while
+``declared_proof_bundle_not_executed`` is only a proof-row label and must not be
+reported as executed validation. If a target requires a validation bundle, any
+source other than ``executed_validation_bundle`` fails semantic coherence even
+when the selected bundle id matches.
+
+Cross-validation applies semantic artifact coherence before constructing or
+pricing the comparison payoffs. A successful build fails with
+``semantic_artifact_mismatch`` when its actual method, route, binding,
+validation bundle, or semantic axes contradict the target contract. Direct
+variant/spec coordinates must reach the instantiated spec with the exact value.
+A behavioral variant that is not a spec field requires a compatible
+``__trellis_comparison_bindings__`` class declaration. Fresh, cached, and
+deterministic proof artifacts use the same full-contract shape::
+
+   __trellis_comparison_bindings__ = {
+       "qe_heston": {"target_contract": comparison_contract_payload}
+   }
+
+Flat method/variant snippets are not sufficient artifact evidence. Reusing one
+class across heterogeneous targets also fails unless either:
+
+- every target declares the same non-empty equivalence group and has identical
+  target-name-independent execution semantics; or
+- the class declares compatible per-target bindings and the runtime verifies
+  that the target-specific spec overrides reached the executable payoff.
+
+Only coherent targets proceed to numerical tolerance or directional-relation
+checks. Identical prices from one unbound artifact are therefore not a green
+comparison. A declared reference that did not produce a price yields
+``insufficient_results`` even when two non-reference targets priced
+successfully. This gate identifies missing method-specific composition or
+numerical primitives without creating a product helper to conceal the gap.
+
 Stage-aware builder retrieval also preserves the compiled generation route.
 Every live refresh scopes shared knowledge by pricing method, exact route id,
 and declared route families before replacing the trace summary. A retry may
@@ -310,9 +385,13 @@ lane.  The runner executes the real ``run_task(...)`` surface under the
 ``deterministic_replay`` execution policy and the offline-local LLM guard. The
 post-build policy suppresses reflection and consolidation before either stage
 can call a model, while the guard remains a hard backstop for every other live
-LLM path. The task must complete through deterministic exact bindings. No
-cassette calls are consumed, so prompt-hash drift in old recordings cannot
-block the replay.
+LLM path. The task must either complete through deterministic exact bindings or,
+for an explicitly curated semantic-guard canary, fail in the one exact
+``expected_failure_bucket`` declared by the canary. The latter keeps the raw
+pricing ``success=false`` and records ``canary_passed_expectation=true`` only
+when the bucket matches; an unexpected success or a different failure still
+fails the canary. No cassette calls are consumed, so prompt-hash drift in old
+recordings cannot block the replay.
 
 Unlike the older tier-2 pipeline cassettes, the full-task canary path replays
 the real ``run_task(...)`` surface. That means the replay still exercises the

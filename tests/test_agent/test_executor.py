@@ -23,8 +23,247 @@ def test_comparison_target_prefers_per_build_metadata():
     ) == "task_target"
 
 
+def test_comparison_execution_binding_metadata_reports_actual_plan_and_semantics():
+    from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
+    from trellis.agent.executor import _comparison_execution_binding_metadata
+    from trellis.agent.knowledge.schema import ProductIR
+    from trellis.agent.quant import PricingPlan
+
+    pricing_plan = PricingPlan(
+        method="monte_carlo",
+        method_modules=["trellis.models.monte_carlo.engine"],
+        required_market_data={"discount_curve"},
+        model_to_build="american_option",
+        reasoning="comparison target",
+    )
+    generation_plan = GenerationPlan(
+        method="monte_carlo",
+        instrument_type="american_option",
+        inspected_modules=(),
+        approved_modules=(),
+        symbols_to_reuse=(),
+        proposed_tests=(),
+        primitive_plan=PrimitivePlan(
+            route="exercise_monte_carlo",
+            route_family="exercise",
+            engine_family="exercise",
+            primitives=(),
+            adapters=(),
+            blockers=(),
+            backend_binding_id="trellis.models.monte_carlo.lsm.longstaff_schwartz",
+        ),
+        backend_binding_id="trellis.models.monte_carlo.lsm.longstaff_schwartz",
+        backend_route_family="exercise",
+        validation_bundle_id="monte_carlo:american_option",
+    )
+    product_ir = ProductIR(
+        instrument="american_option",
+        payoff_family="vanilla_option",
+        exercise_style="american",
+        schedule_dependence=True,
+        model_family="equity_diffusion",
+        derivative_family="option",
+        underlying_asset_class="equity",
+        option_type="put",
+    )
+    target_contract = {
+        "schema_version": 1,
+        "contract_id": "comparison-target:T27:laguerre:v1",
+        "target_id": "laguerre",
+        "method": "monte_carlo",
+    }
+
+    binding = _comparison_execution_binding_metadata(
+        pricing_plan=pricing_plan,
+        generation_plan=generation_plan,
+        product_ir=product_ir,
+        request_metadata={"comparison_target_contract": target_contract},
+    )
+
+    assert binding["comparison_target_contract"] == target_contract
+    assert binding["selected_method"] == "monte_carlo"
+    assert binding["selected_route_id"] == "exercise_monte_carlo"
+    assert binding["selected_route_family"] == "exercise"
+    assert binding["selected_backend_binding_id"] == (
+        "trellis.models.monte_carlo.lsm.longstaff_schwartz"
+    )
+    assert binding["selected_validation_bundle_id"] == (
+        "monte_carlo:american_option"
+    )
+    assert binding["selected_semantic_axes"] == {
+        "derivative_family": "option",
+        "payoff_family": "vanilla_option",
+        "exercise_style": "american",
+        "model_family": "equity_diffusion",
+        "observation_style": "exercise_schedule",
+        "underlying_asset_class": "equity",
+        "option_type": "put",
+    }
+
+
+def test_comparison_execution_binding_ignores_malformed_target_contract_metadata():
+    from trellis.agent.executor import _comparison_execution_binding_metadata
+
+    binding = _comparison_execution_binding_metadata(
+        pricing_plan=SimpleNamespace(method="analytical"),
+        generation_plan=SimpleNamespace(),
+        product_ir=SimpleNamespace(),
+        request_metadata={"comparison_target_contract": "not-a-mapping"},
+    )
+
+    assert binding["comparison_target_contract"] == {}
+
+
+def test_comparison_execution_binding_uses_compiled_validation_contract():
+    from trellis.agent.executor import _comparison_execution_binding_metadata
+
+    binding = _comparison_execution_binding_metadata(
+        pricing_plan=SimpleNamespace(method="monte_carlo"),
+        generation_plan=SimpleNamespace(validation_bundle_id=""),
+        product_ir=SimpleNamespace(),
+        validation_contract=SimpleNamespace(
+            bundle_id="monte_carlo:heston_option"
+        ),
+        request_metadata={},
+    )
+
+    assert binding["selected_validation_bundle_id"] == (
+        "monte_carlo:heston_option"
+    )
+
+
+def test_comparison_execution_binding_emits_trace_without_mutable_build_metadata(
+    monkeypatch,
+):
+    from trellis.agent.executor import _record_comparison_execution_binding
+
+    events = []
+    monkeypatch.setattr(
+        "trellis.agent.executor._record_platform_event",
+        lambda *args, **kwargs: events.append((args, kwargs)),
+    )
+
+    _record_comparison_execution_binding(
+        None,
+        compiled_request=object(),
+        pricing_plan=SimpleNamespace(method="monte_carlo"),
+        generation_plan=SimpleNamespace(),
+        product_ir=SimpleNamespace(),
+        request_metadata={
+            "comparison_target_contract": {
+                "target_id": "plain_mc",
+                "method": "monte_carlo",
+            }
+        },
+    )
+
+    assert events[0][0][1] == "comparison_target_bound"
+    assert events[0][1]["details"]["selected_method"] == "monte_carlo"
+
+
+def test_reused_execution_artifact_metadata_survives_unimportable_class_module():
+    from trellis.agent.executor import _record_reused_execution_artifact
+
+    payoff_cls = type("DetachedPayoff", (), {})
+    payoff_cls.__module__ = "not_a_real_trellis_module"
+    build_meta = {}
+
+    _record_reused_execution_artifact(
+        build_meta,
+        payoff_cls,
+        admission_module_path="instruments/_agent/detached.py",
+    )
+
+    assert build_meta["execution_module_name"] == "not_a_real_trellis_module"
+    assert build_meta["execution_module_path"] == ""
+    assert build_meta["execution_file_path"] == ""
+
+
+def test_comparison_validation_binding_updates_execution_evidence_and_trace(
+    monkeypatch,
+):
+    from trellis.agent.executor import _record_comparison_validation_binding
+
+    target_contract = {
+        "target_id": "qe_heston",
+        "method": "monte_carlo",
+    }
+    build_meta = {
+        "comparison_target_contract": target_contract,
+        "execution_binding": {
+            "comparison_target_contract": target_contract,
+            "selected_method": "monte_carlo",
+            "selected_validation_bundle_id": "",
+        },
+    }
+    events = []
+    monkeypatch.setattr(
+        "trellis.agent.executor._record_platform_event",
+        lambda *args, **kwargs: events.append((args, kwargs)),
+    )
+
+    _record_comparison_validation_binding(
+        build_meta,
+        compiled_request=object(),
+        bundle_id="monte_carlo:heston_option",
+    )
+
+    assert build_meta["selected_validation_bundle_id"] == (
+        "monte_carlo:heston_option"
+    )
+    assert build_meta["execution_binding"]["selected_validation_bundle_id"] == (
+        "monte_carlo:heston_option"
+    )
+    assert build_meta["validation_binding_evidence_source"] == (
+        "executed_validation_bundle"
+    )
+    assert build_meta["execution_binding"][
+        "validation_binding_evidence_source"
+    ] == "executed_validation_bundle"
+    assert events[0][0][1] == "comparison_target_validation_bound"
+    assert events[0][1]["details"]["comparison_target_contract"] == target_contract
+
+
+def test_comparison_validation_event_does_not_promote_requested_contract_to_evidence(
+    monkeypatch,
+):
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import _record_comparison_validation_binding
+
+    requested_contract = {
+        "target_id": "qe_heston",
+        "method": "monte_carlo",
+    }
+    compiled_request = SimpleNamespace(
+        request=SimpleNamespace(
+            metadata={"comparison_target_contract": requested_contract}
+        )
+    )
+    build_meta = {
+        "comparison_target_contract": {},
+        "execution_binding": {"comparison_target_contract": {}},
+    }
+    events = []
+    monkeypatch.setattr(
+        "trellis.agent.executor._record_platform_event",
+        lambda *args, **kwargs: events.append((args, kwargs)),
+    )
+
+    _record_comparison_validation_binding(
+        build_meta,
+        compiled_request=compiled_request,
+        bundle_id="monte_carlo:heston_option",
+    )
+
+    details = events[0][1]["details"]
+    assert details["comparison_target_contract"] == {}
+    assert details["requested_comparison_target_contract"] == requested_contract
+
+
 def test_build_payoff_reuse_branch_attaches_analytical_trace(monkeypatch, tmp_path):
     from trellis.agent.executor import build_payoff
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
 
     build_meta: dict[str, object] = {}
     pricing_plan = SimpleNamespace(
@@ -64,6 +303,10 @@ def test_build_payoff_reuse_branch_attaches_analytical_trace(monkeypatch, tmp_pa
         ),
     )
     existing = type("ExistingPayoff", (), {})
+    target_contract = ComparisonTargetContract(
+        target_id="black_scholes",
+        method="analytical",
+    ).to_payload()
     trace_id = "executor_build_cached_123"
     emitted_kwargs: dict[str, object] = {}
 
@@ -101,6 +344,7 @@ def test_build_payoff_reuse_branch_attaches_analytical_trace(monkeypatch, tmp_pa
             available_capabilities=set(),
         ),
         model="gpt-5-mini",
+        request_metadata={"comparison_target_contract": target_contract},
     )
 
     assert result is existing
@@ -110,6 +354,169 @@ def test_build_payoff_reuse_branch_attaches_analytical_trace(monkeypatch, tmp_pa
     assert emitted_kwargs["context"]["selected_curve_names"] == {
         "discount_curve": "usd_ois",
     }
+    assert build_meta["comparison_target_contract"] == {}
+    assert build_meta["execution_binding"]["comparison_target_contract"] == {}
+    assert build_meta["comparison_binding_evidence_source"] == (
+        "cached_artifact_declaration_missing"
+    )
+
+
+def test_reused_artifact_preserves_its_own_full_target_contract():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _record_reused_comparison_binding
+
+    artifact_contract = ComparisonTargetContract(
+        target_id="plain_mc",
+        method="monte_carlo",
+        variant_parameters={"sampling": "pseudo_random"},
+    ).to_payload()
+
+    class DeclaredPayoff:
+        __trellis_comparison_bindings__ = {
+            "plain_mc": {"target_contract": artifact_contract}
+        }
+
+    build_meta = {
+        "comparison_target_contract": {"target_id": "requested"},
+        "execution_binding": {
+            "comparison_target_contract": {"target_id": "requested"}
+        },
+    }
+
+    _record_reused_comparison_binding(
+        build_meta,
+        DeclaredPayoff,
+        requested_contract=artifact_contract,
+    )
+
+    assert build_meta["comparison_target_contract"] == artifact_contract
+    assert build_meta["execution_binding"]["comparison_target_contract"] == (
+        artifact_contract
+    )
+    assert build_meta["comparison_binding_evidence_source"] == (
+        "cached_artifact_declaration"
+    )
+
+
+def test_fresh_artifact_replaces_request_copy_with_its_own_target_contract():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _record_fresh_comparison_binding
+
+    artifact_contract = ComparisonTargetContract(
+        target_id="plain_mc",
+        method="monte_carlo",
+        route_id="monte_carlo_paths",
+    ).to_payload()
+
+    class DeclaredPayoff:
+        __trellis_comparison_bindings__ = {
+            "plain_mc": {"target_contract": artifact_contract}
+        }
+
+    build_meta = {
+        "comparison_target_contract": {"target_id": "requested"},
+        "execution_binding": {
+            "comparison_target_contract": {"target_id": "requested"}
+        },
+    }
+
+    _record_fresh_comparison_binding(
+        build_meta,
+        DeclaredPayoff,
+        requested_contract=artifact_contract,
+    )
+
+    assert build_meta["comparison_target_contract"] == artifact_contract
+    assert build_meta["execution_binding"]["comparison_target_contract"] == (
+        artifact_contract
+    )
+    assert build_meta["comparison_binding_evidence_source"] == (
+        "fresh_artifact_declaration"
+    )
+
+
+def test_reused_comparison_artifact_executes_required_validation(monkeypatch):
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _validate_reused_comparison_artifact
+
+    contract = ComparisonTargetContract(
+        target_id="plain_mc",
+        method="monte_carlo",
+        validation_bundle_id="monte_carlo:european_option",
+    )
+    calls = []
+
+    def fake_validate(payoff_cls, code, description, spec_schema, **kwargs):
+        calls.append(
+            {
+                "payoff_cls": payoff_cls,
+                "code": code,
+                "description": description,
+                "spec_schema": spec_schema,
+                **kwargs,
+            }
+        )
+        return []
+
+    monkeypatch.setattr("trellis.agent.executor._validate_build", fake_validate)
+    monkeypatch.setattr(
+        "trellis.agent.executor._artifact_source_text",
+        lambda _payoff_cls: "class CachedPayoff: pass",
+    )
+    payoff_cls = type("CachedPayoff", (), {})
+    spec_schema = object()
+
+    failures = _validate_reused_comparison_artifact(
+        payoff_cls,
+        request_metadata={"comparison_target_contract": contract.to_payload()},
+        validation="standard",
+        description="Cached comparison target",
+        spec_schema=spec_schema,
+        model="test-model",
+        compiled_request=object(),
+        pricing_plan=object(),
+        product_ir=object(),
+        build_meta={},
+        knowledge_retriever=None,
+    )
+
+    assert failures == []
+    assert len(calls) == 1
+    assert calls[0]["payoff_cls"] is payoff_cls
+    assert calls[0]["code"] == "class CachedPayoff: pass"
+    assert calls[0]["validation"] == "standard"
+
+
+def test_reused_comparison_artifact_skips_validation_without_required_bundle(
+    monkeypatch,
+):
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _validate_reused_comparison_artifact
+
+    contract = ComparisonTargetContract(
+        target_id="plain_mc",
+        method="monte_carlo",
+    )
+    monkeypatch.setattr(
+        "trellis.agent.executor._validate_build",
+        lambda *_args, **_kwargs: pytest.fail("validation should not run"),
+    )
+
+    failures = _validate_reused_comparison_artifact(
+        type("CachedPayoff", (), {}),
+        request_metadata={"comparison_target_contract": contract.to_payload()},
+        validation="standard",
+        description="Cached comparison target",
+        spec_schema=object(),
+        model=None,
+        compiled_request=None,
+        pricing_plan=None,
+        product_ir=None,
+        build_meta={},
+        knowledge_retriever=None,
+    )
+
+    assert failures == []
 
 
 def test_build_payoff_blocks_on_semantic_clarification(monkeypatch):

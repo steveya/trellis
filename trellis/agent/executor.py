@@ -6,6 +6,7 @@ import ast
 import json
 import re
 import subprocess
+import sys
 import textwrap
 import time
 from dataclasses import MISSING, asdict, dataclass, fields, is_dataclass, replace as replace_dataclass
@@ -129,6 +130,7 @@ def _llm_stage_metadata(
     """Attach stable request metadata to LLM stage logs."""
     request = getattr(compiled_request, "request", None)
     request_metadata = getattr(request, "metadata", None) or {}
+    target_contract = request_metadata.get("comparison_target_contract") or {}
     metadata = {
         "model": model,
         "attempt": attempt,
@@ -137,6 +139,11 @@ def _llm_stage_metadata(
         "task_id": request_metadata.get("task_id"),
         "comparison_target": request_metadata.get("comparison_target"),
         "preferred_method": request_metadata.get("preferred_method"),
+        "comparison_target_contract_id": (
+            target_contract.get("contract_id")
+            if isinstance(target_contract, Mapping)
+            else None
+        ),
     }
     return {
         key: value
@@ -160,6 +167,351 @@ def _comparison_target_from_build_metadata(
     metadata.update(dict(getattr(request, "metadata", None) or {}))
     metadata.update(dict(request_metadata or {}))
     return metadata.get("comparison_target")
+
+
+def _comparison_execution_binding_metadata(
+    *,
+    pricing_plan,
+    generation_plan,
+    product_ir,
+    request_metadata: Mapping[str, object] | None,
+    validation_contract=None,
+) -> dict[str, object]:
+    """Project actual planner/compiler choices for comparison coherence checks."""
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
+    route_id = str(
+        getattr(generation_plan, "lowering_route_id", "")
+        or getattr(primitive_plan, "route", "")
+        or ""
+    ).strip()
+    route_family = str(
+        getattr(generation_plan, "backend_route_family", "")
+        or getattr(primitive_plan, "route_family", "")
+        or ""
+    ).strip()
+    backend_binding_id = str(
+        getattr(generation_plan, "backend_binding_id", "")
+        or getattr(primitive_plan, "backend_binding_id", "")
+        or ""
+    ).strip()
+
+    exercise_style = str(getattr(product_ir, "exercise_style", "") or "").strip()
+    schedule_dependence = bool(
+        getattr(product_ir, "schedule_dependence", False)
+    )
+    state_dependence = str(
+        getattr(product_ir, "state_dependence", "") or ""
+    ).strip()
+    if exercise_style in {"american", "bermudan"}:
+        observation_style = "exercise_schedule"
+    elif schedule_dependence:
+        observation_style = "fixed_schedule"
+    elif state_dependence and state_dependence != "terminal_markov":
+        observation_style = "path_dependent"
+    else:
+        observation_style = "terminal"
+
+    semantic_axes = {
+        key: value
+        for key, value in {
+            "derivative_family": getattr(product_ir, "derivative_family", ""),
+            "payoff_family": getattr(product_ir, "payoff_family", ""),
+            "exercise_style": exercise_style,
+            "model_family": getattr(product_ir, "model_family", ""),
+            "observation_style": observation_style,
+            "underlying_asset_class": getattr(
+                product_ir, "underlying_asset_class", ""
+            ),
+            "option_type": getattr(product_ir, "option_type", ""),
+        }.items()
+        if value not in {None, ""}
+    }
+    raw_target_contract = (request_metadata or {}).get(
+        "comparison_target_contract"
+    )
+    target_contract = (
+        dict(raw_target_contract)
+        if isinstance(raw_target_contract, Mapping)
+        else {}
+    )
+    return {
+        "comparison_target_contract": target_contract,
+        "selected_method": str(getattr(pricing_plan, "method", "") or "").strip(),
+        "selected_route_id": route_id,
+        "selected_route_family": route_family,
+        "selected_backend_binding_id": backend_binding_id,
+        "selected_validation_bundle_id": str(
+            getattr(generation_plan, "validation_bundle_id", "")
+            or getattr(validation_contract, "bundle_id", "")
+            or ""
+        ).strip(),
+        "selected_semantic_axes": semantic_axes,
+    }
+
+
+def _record_comparison_execution_binding(
+    build_meta: dict | None,
+    *,
+    compiled_request=None,
+    pricing_plan,
+    generation_plan,
+    product_ir,
+    request_metadata: Mapping[str, object] | None,
+    emit_event: bool = True,
+) -> None:
+    """Persist comparison binding evidence into the build result metadata."""
+    binding = _comparison_execution_binding_metadata(
+        pricing_plan=pricing_plan,
+        generation_plan=generation_plan,
+        product_ir=product_ir,
+        validation_contract=getattr(
+            compiled_request,
+            "validation_contract",
+            None,
+        ),
+        request_metadata=request_metadata,
+    )
+    if binding.get("comparison_target_contract"):
+        binding["comparison_binding_evidence_source"] = (
+            "compiled_generation_binding"
+        )
+    if build_meta is not None:
+        build_meta.update(binding)
+        build_meta["execution_binding"] = dict(binding)
+    if emit_event and binding.get("comparison_target_contract"):
+        _record_platform_event(
+            compiled_request,
+            "comparison_target_bound",
+            status="ok",
+            details=binding,
+        )
+
+
+def _record_artifact_comparison_binding(
+    build_meta: dict | None,
+    payoff_cls: type,
+    *,
+    requested_contract: Mapping[str, object] | None,
+    artifact_kind: str,
+    compiled_request=None,
+) -> None:
+    """Use only comparison-contract evidence declared by an executable artifact."""
+    if build_meta is None or not isinstance(requested_contract, Mapping):
+        return
+    from trellis.agent.comparison_target_contracts import (
+        declared_comparison_target_contract,
+    )
+
+    requested_payload = dict(requested_contract)
+    target_id = str(requested_payload.get("target_id") or "").strip()
+    declarations = getattr(payoff_cls, "__trellis_comparison_bindings__", None)
+    declared_contract = declared_comparison_target_contract(declarations, target_id)
+    artifact_contract: dict[str, object] = (
+        declared_contract.to_payload() if declared_contract is not None else {}
+    )
+
+    source = f"{artifact_kind}_artifact_declaration"
+    if not artifact_contract:
+        source += "_missing"
+    build_meta["comparison_target_contract"] = artifact_contract
+    build_meta["comparison_binding_evidence_source"] = source
+    execution_binding = dict(build_meta.get("execution_binding") or {})
+    execution_binding["comparison_target_contract"] = artifact_contract
+    execution_binding["comparison_binding_evidence_source"] = source
+    build_meta["execution_binding"] = execution_binding
+
+    details = {
+        **execution_binding,
+        "requested_comparison_target_contract": requested_payload,
+    }
+    _record_platform_event(
+        compiled_request,
+        (
+            "comparison_target_bound"
+            if artifact_contract
+            else "comparison_target_binding_unproven"
+        ),
+        status="ok" if artifact_contract else "error",
+        details=details,
+    )
+
+
+def _record_reused_comparison_binding(
+    build_meta: dict | None,
+    payoff_cls: type,
+    *,
+    requested_contract: Mapping[str, object] | None,
+    compiled_request=None,
+) -> None:
+    """Record the target contract declared by a cached artifact."""
+    _record_artifact_comparison_binding(
+        build_meta,
+        payoff_cls,
+        requested_contract=requested_contract,
+        artifact_kind="cached",
+        compiled_request=compiled_request,
+    )
+
+
+def _record_fresh_comparison_binding(
+    build_meta: dict | None,
+    payoff_cls: type,
+    *,
+    requested_contract: Mapping[str, object] | None,
+    compiled_request=None,
+) -> None:
+    """Record the target contract declared by a newly generated artifact."""
+    _record_artifact_comparison_binding(
+        build_meta,
+        payoff_cls,
+        requested_contract=requested_contract,
+        artifact_kind="fresh",
+        compiled_request=compiled_request,
+    )
+
+
+def _artifact_source_text(payoff_cls: type) -> str:
+    """Read the source module backing an imported payoff class."""
+    module_name = str(getattr(payoff_cls, "__module__", "") or "").strip()
+    module = sys.modules.get(module_name) if module_name else None
+    module_file = getattr(module, "__file__", None) if module is not None else None
+    if module_file:
+        try:
+            return Path(module_file).read_text(encoding="utf-8")
+        except (OSError, UnicodeError):
+            pass
+    try:
+        return inspect.getsource(payoff_cls)
+    except (OSError, TypeError):
+        return ""
+
+
+def _validate_reused_comparison_artifact(
+    payoff_cls: type,
+    *,
+    request_metadata: Mapping[str, object] | None,
+    validation: str,
+    description: str,
+    spec_schema,
+    model: str | None,
+    compiled_request,
+    pricing_plan,
+    product_ir,
+    build_meta: dict | None,
+    knowledge_retriever: Callable[[KnowledgeRetrievalRequest], str | None] | None,
+) -> list[str]:
+    """Run required deterministic validation before returning a cached target."""
+    raw_contract = (request_metadata or {}).get("comparison_target_contract")
+    if not isinstance(raw_contract, Mapping):
+        return []
+    required_bundle = str(
+        raw_contract.get("validation_bundle_id") or ""
+    ).strip()
+    if not required_bundle or validation == "fast":
+        return []
+
+    runtime_spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
+    return _validate_build(
+        payoff_cls,
+        _artifact_source_text(payoff_cls),
+        description,
+        runtime_spec_schema,
+        validation=validation,
+        model=model,
+        compiled_request=compiled_request,
+        pricing_plan=pricing_plan,
+        product_ir=product_ir,
+        build_meta=build_meta,
+        knowledge_retriever=knowledge_retriever,
+    )
+
+
+def _record_reused_execution_artifact(
+    build_meta: dict | None,
+    payoff_cls: type,
+    *,
+    admission_module_path: str,
+) -> None:
+    """Record the class and file actually returned by cached reuse."""
+    if build_meta is None:
+        return
+    module_name = str(getattr(payoff_cls, "__module__", "") or "").strip()
+    module = sys.modules.get(module_name) if module_name else None
+    module_file = getattr(module, "__file__", None) if module is not None else None
+    file_path = str(Path(module_file).resolve()) if module_file else ""
+    try:
+        module_path = str(Path(file_path).relative_to(REPO_ROOT)).replace("\\", "/")
+    except (TypeError, ValueError):
+        module_path = file_path
+    build_meta["execution_module_name"] = module_name
+    build_meta["execution_module_path"] = module_path
+    build_meta["execution_file_path"] = file_path
+    normalized_admission_path = str(admission_module_path or "").replace("\\", "/")
+    build_meta["admission_target_module_path"] = normalized_admission_path
+    build_meta["admission_target_module_name"] = (
+        f"trellis.{normalized_admission_path.replace('/', '.').removesuffix('.py')}"
+        if normalized_admission_path
+        else None
+    )
+    build_meta["admission_target_file_path"] = (
+        str((TRELLIS_PACKAGE_ROOT / normalized_admission_path).resolve())
+        if normalized_admission_path
+        else None
+    )
+
+
+def _record_comparison_validation_binding(
+    build_meta: dict | None,
+    *,
+    compiled_request=None,
+    bundle_id: str,
+) -> None:
+    """Attach the validation bundle that actually executed for one target."""
+    normalized_bundle_id = str(bundle_id or "").strip()
+    execution_binding: dict[str, object] = {}
+    target_contract: dict[str, object] = {}
+    if build_meta is not None:
+        raw_binding = build_meta.get("execution_binding")
+        if isinstance(raw_binding, Mapping):
+            execution_binding = dict(raw_binding)
+        raw_target_contract = (
+            execution_binding.get("comparison_target_contract")
+            or build_meta.get("comparison_target_contract")
+        )
+        if isinstance(raw_target_contract, Mapping):
+            target_contract = dict(raw_target_contract)
+        build_meta["selected_validation_bundle_id"] = normalized_bundle_id
+        validation_source = (
+            "executed_validation_bundle" if normalized_bundle_id else ""
+        )
+        build_meta["validation_binding_evidence_source"] = validation_source
+        execution_binding["selected_validation_bundle_id"] = normalized_bundle_id
+        execution_binding["validation_binding_evidence_source"] = validation_source
+        build_meta["execution_binding"] = execution_binding
+
+    request = getattr(compiled_request, "request", None)
+    request_metadata = getattr(request, "metadata", None) or {}
+    raw_requested_contract = request_metadata.get("comparison_target_contract")
+    requested_contract = (
+        dict(raw_requested_contract)
+        if isinstance(raw_requested_contract, Mapping)
+        else {}
+    )
+
+    if target_contract or requested_contract:
+        _record_platform_event(
+            compiled_request,
+            "comparison_target_validation_bound",
+            status="ok",
+            details={
+                "comparison_target_contract": target_contract,
+                "requested_comparison_target_contract": requested_contract,
+                "selected_validation_bundle_id": normalized_bundle_id,
+                "validation_binding_evidence_source": (
+                    "executed_validation_bundle" if normalized_bundle_id else ""
+                ),
+            },
+        )
 
 
 def _render_spec_default_value(field_type: str, default: str) -> str:
@@ -400,14 +752,7 @@ def _handle_tool_call(name: str, input_data: dict) -> str:
             from trellis.agent.assembly_tools import build_comparison_harness_plan
 
             payload = build_comparison_harness_plan(input_data["task"])
-            return json.dumps(
-                {
-                    "targets": [asdict(target) for target in payload.targets],
-                    "reference_target": payload.reference_target,
-                    "tolerance_pct": payload.tolerance_pct,
-                },
-                indent=2,
-            )
+            return json.dumps(payload.to_payload(), indent=2)
         except Exception as e:
             return f"Error building comparison harness plan: {e}"
 
@@ -627,6 +972,12 @@ def _emit_analytical_trace_metadata(
             "class_name": getattr(spec_schema, "class_name", None),
             "route_card": render_generation_route_card(generation_plan),
             "selected_curve_names": selected_curve_names,
+            "comparison_target_contract": dict(
+                (build_meta or {}).get("comparison_target_contract") or {}
+            ),
+            "execution_binding": dict(
+                (build_meta or {}).get("execution_binding") or {}
+            ),
         },
     )
     if build_meta is not None:
@@ -1157,6 +1508,57 @@ def build_payoff(
             ),
             product_ir=product_ir,
         )
+        _record_comparison_execution_binding(
+            build_meta,
+            compiled_request=compiled_request,
+            pricing_plan=pricing_plan,
+            generation_plan=generation_plan,
+            product_ir=product_ir,
+            request_metadata=request_metadata,
+            emit_event=False,
+        )
+        _record_reused_execution_artifact(
+            build_meta,
+            existing,
+            admission_module_path=(
+                plan.steps[0].module_path if plan.steps else ""
+            ),
+        )
+        _record_reused_comparison_binding(
+            build_meta,
+            existing,
+            requested_contract=(request_metadata or {}).get(
+                "comparison_target_contract"
+            ),
+            compiled_request=compiled_request,
+        )
+        reuse_validation_failures = _validate_reused_comparison_artifact(
+            existing,
+            request_metadata=request_metadata,
+            validation=validation,
+            description=payoff_description,
+            spec_schema=getattr(plan, "spec_schema", None),
+            model=model,
+            compiled_request=compiled_request,
+            pricing_plan=pricing_plan,
+            product_ir=product_ir,
+            build_meta=build_meta,
+            knowledge_retriever=knowledge_retriever,
+        )
+        if reuse_validation_failures:
+            _record_platform_event(
+                compiled_request,
+                "existing_generated_module_validation_failed",
+                status="error",
+                details={
+                    "failure_count": len(reuse_validation_failures),
+                    "failures": reuse_validation_failures[:10],
+                },
+            )
+            raise RuntimeError(
+                "Cached comparison target validation failed: "
+                + "; ".join(reuse_validation_failures[:5])
+            )
         _emit_analytical_trace_metadata(
             build_meta=build_meta,
             generation_plan=generation_plan,
@@ -1280,6 +1682,14 @@ def build_payoff(
             )
         ),
         product_ir=product_ir,
+    )
+    _record_comparison_execution_binding(
+        build_meta,
+        compiled_request=compiled_request,
+        pricing_plan=pricing_plan,
+        generation_plan=generation_plan,
+        product_ir=product_ir,
+        request_metadata=request_metadata,
     )
     _emit_analytical_trace_metadata(
         build_meta=build_meta,
@@ -1728,6 +2138,14 @@ def build_payoff(
         mod = dynamic_import(file_path, module_name)
         payoff_cls = getattr(mod, spec_schema.class_name)
         spec_schema = _resolve_runtime_spec_schema(payoff_cls, spec_schema)
+        _record_fresh_comparison_binding(
+            build_meta,
+            payoff_cls,
+            requested_contract=(request_metadata or {}).get(
+                "comparison_target_contract"
+            ),
+            compiled_request=compiled_request,
+        )
 
         actual_market_failures = _smoke_test_actual_market_state(
             payoff_cls,
@@ -2390,6 +2808,11 @@ def _validate_build(
         reference_factory=reference_factory,
         check_relations=validation_check_relations,
         semantic_blueprint=getattr(compiled_request, "semantic_blueprint", None),
+    )
+    _record_comparison_validation_binding(
+        build_meta,
+        compiled_request=compiled_request,
+        bundle_id=validation_bundle.bundle_id,
     )
     failures.extend(bundle_execution.failures)
     failure_details.extend(bundle_execution.failure_details)

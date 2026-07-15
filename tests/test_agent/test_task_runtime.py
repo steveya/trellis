@@ -1706,7 +1706,7 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
     }
 
     class FakeResult:
-        def __init__(self, target: str, method: str):
+        def __init__(self, target: str, method: str, target_contract: dict):
             self.success = True
             self.attempts = 1
             self.gap_confidence = 0.75
@@ -1714,10 +1714,16 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
             self.payoff_cls = type(f"{target.title()}Payoff", (), {"price": price_map[target]})
             self.failures = []
             self.reflection = {"lesson_captured": f"{target}_001"}
+            self.selected_method = method
+            self.comparison_target_contract = dict(target_contract)
 
     def fake_build(**kwargs):
         calls.append(kwargs)
-        return FakeResult(kwargs["comparison_target"], kwargs["preferred_method"])
+        return FakeResult(
+            kwargs["comparison_target"],
+            kwargs["preferred_method"],
+            kwargs["request_metadata"]["comparison_target_contract"],
+        )
 
     result = run_task(
         {
@@ -1758,6 +1764,12 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
     assert calls[0]["request_metadata"]["task_title"] == "European equity call: 5-way (tree, PDE, MC, FFT, COS)"
     assert calls[0]["request_metadata"]["comparison_target"] == "crr_tree"
     assert calls[0]["request_metadata"]["preferred_method"] == "rate_tree"
+    assert calls[0]["request_metadata"]["comparison_target_contract"]["target_id"] == (
+        "crr_tree"
+    )
+    assert calls[0]["request_metadata"]["comparison_target_contract"]["method"] == (
+        "rate_tree"
+    )
     assert calls[0]["request_metadata"]["runtime_contract"]["snapshot_reference"]["source"] == "default"
     assert "comparison" in calls[0]["request_metadata"]["runtime_contract"]["evaluation_tags"]
     assert calls[-1]["request_metadata"]["task_id"] == "T74"
@@ -1781,6 +1793,10 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
         "cos",
         "black_scholes",
     ]
+    assert [
+        contract["target_id"]
+        for contract in result["comparison_target_contracts"]
+    ] == result["comparison_targets"]
     assert result["cross_validate"] == {
         "internal": ["crr_tree", "bs_pde", "mc_exact", "fft", "cos"],
         "analytical": "black_scholes",
@@ -1794,6 +1810,12 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
         "black_scholes",
     }
     assert result["cross_validation"]["status"] == "passed"
+    assert result["method_results"]["crr_tree"]["comparison_target_contract"][
+        "method"
+    ] == "rate_tree"
+    assert result["method_results"]["crr_tree"]["artifact_binding"]["status"] == (
+        "bound_unique_artifact"
+    )
     assert result["cross_validation"]["reference_target"] == "black_scholes"
     assert result["cross_validation"]["tolerance_pct"] == 5.0
     assert result["success"] is True
@@ -1816,7 +1838,7 @@ def test_run_task_carries_stochastic_vol_problem_metadata_for_comparison_task(mo
     }
 
     class FakeResult:
-        def __init__(self, target: str):
+        def __init__(self, target: str, contract: dict):
             self.success = True
             self.attempts = 1
             self.gap_confidence = 0.9
@@ -1824,10 +1846,29 @@ def test_run_task_carries_stochastic_vol_problem_metadata_for_comparison_task(mo
             self.payoff_cls = type(f"{target.title()}Payoff", (), {"price": price_map[target]})
             self.failures = []
             self.reflection = {}
+            self.comparison_target_contract = contract
+            self.selected_method = contract["method"]
+            self.selected_route_id = contract["route_id"]
+            self.selected_route_family = contract["route_family"]
+            self.selected_backend_binding_id = contract["backend_binding_id"]
+            self.selected_validation_bundle_id = contract["validation_bundle_id"]
+            self.selected_semantic_axes = {
+                key: contract[key]
+                for key in (
+                    "payoff_family",
+                    "exercise_style",
+                    "model_family",
+                    "observation_style",
+                )
+                if contract.get(key)
+            }
 
     def fake_build(**kwargs):
         calls.append(kwargs)
-        return FakeResult(kwargs["comparison_target"])
+        return FakeResult(
+            kwargs["comparison_target"],
+            kwargs["request_metadata"]["comparison_target_contract"],
+        )
 
     monkeypatch.setattr(
         "trellis.agent.task_run_store.persist_task_run_record",
@@ -2223,7 +2264,7 @@ def test_sparse_lsm_basis_proof_row_uses_deterministic_local_targets(monkeypatch
     )
 
     assert calls == []
-    assert result["success"] is True
+    assert result["success"] is False
     assert result["attempts"] == 0
     assert result["instrument_type"] == "american_option"
     assert result["instrument_identity_source"] == "semantic_contract.product.instrument_class"
@@ -2234,15 +2275,9 @@ def test_sparse_lsm_basis_proof_row_uses_deterministic_local_targets(monkeypatch
         "chebyshev",
         "high_step_tree_2000",
     ]
-    assert result["cross_validation"]["status"] == "passed"
+    assert result["cross_validation"]["status"] == "semantic_artifact_mismatch"
     assert result["cross_validation"]["reference_target"] == "high_step_tree_2000"
-    assert set(result["cross_validation"]["successful_targets"]) == {
-        "polynomial",
-        "laguerre",
-        "hermite",
-        "chebyshev",
-        "high_step_tree_2000",
-    }
+    assert result["cross_validation"]["successful_targets"] == []
     assert {
         target_id: payload["payoff_class"]
         for target_id, payload in result["method_results"].items()
@@ -2253,6 +2288,51 @@ def test_sparse_lsm_basis_proof_row_uses_deterministic_local_targets(monkeypatch
         "chebyshev": "ProofAmericanLSMChebyshevPayoff",
         "high_step_tree_2000": "ProofAmericanHighStepTreePayoff",
     }
+    assert all(
+        payload["comparison_binding_evidence_source"]
+        == "deterministic_proof_artifact_declaration"
+        for payload in result["method_results"].values()
+    )
+    assert all(
+        payload["validation_binding_evidence_source"]
+        == "declared_proof_bundle_not_executed"
+        for payload in result["method_results"].values()
+    )
+    assert all(
+        any(
+            failure["code"] == "validation_bundle_not_executed"
+            for failure in binding["failures"]
+        )
+        for binding in result["cross_validation"]["artifact_coherence"].values()
+    )
+
+
+def test_proof_registry_does_not_copy_requested_route_into_execution_evidence():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import (
+        ComparisonBuildTarget,
+        _proof_legacy_comparison_build_result,
+    )
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T27"
+    )
+    target = build_comparison_harness_plan(task).targets[0]
+    requested_payload = target.contract.to_payload()
+    requested_payload["route_id"] = "incorrect_manifest_route"
+    bad_target = ComparisonBuildTarget(
+        contract=ComparisonTargetContract.from_payload(requested_payload)
+    )
+
+    result = _proof_legacy_comparison_build_result(task, bad_target)
+
+    assert result.selected_route_id == "exercise_monte_carlo"
+    assert result.comparison_target_contract["route_id"] == "exercise_monte_carlo"
+    assert result.comparison_target_contract != bad_target.contract.to_payload()
 
 
 def test_sparse_cva_proof_row_uses_deterministic_counterparty_targets(monkeypatch, tmp_path):
@@ -2547,18 +2627,43 @@ def test_cross_validate_comparison_task_prices_reused_fx_modules():
     market_state, _ = build_market_state_for_task(task)
 
     class FakeResult:
-        def __init__(self, payoff_cls):
+        def __init__(self, payoff_cls, contract):
             self.success = True
             self.payoff_cls = payoff_cls
+            self.selected_method = contract.method
+            self.comparison_target_contract = contract.to_payload()
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
 
-    live_results = {
-        "gk_mc": FakeResult(FXVanillaMonteCarloPayoff),
-        "garman_kohlhagen": FakeResult(FXVanillaAnalyticalPayoff),
-    }
     comparison_targets = [
-        ComparisonBuildTarget("gk_mc", "monte_carlo"),
-        ComparisonBuildTarget("garman_kohlhagen", "analytical", is_reference=True),
+        ComparisonBuildTarget(
+            contract=ComparisonTargetContract(
+                "gk_mc",
+                "monte_carlo",
+                resolution_source="legacy_target_inference",
+                explicit=False,
+            )
+        ),
+        ComparisonBuildTarget(
+            contract=ComparisonTargetContract(
+                "garman_kohlhagen",
+                "analytical",
+                resolution_source="legacy_target_inference",
+                explicit=False,
+            ),
+            is_reference=True,
+        ),
     ]
+    live_results = {
+        target.target_id: FakeResult(
+            (
+                FXVanillaMonteCarloPayoff
+                if target.target_id == "gk_mc"
+                else FXVanillaAnalyticalPayoff
+            ),
+            target.contract,
+        )
+        for target in comparison_targets
+    }
 
     result = _cross_validate_comparison_task(
         comparison_targets,
@@ -2591,19 +2696,38 @@ def test_cross_validate_comparison_task_prices_reused_quanto_modules():
         if task["id"] == "T105"
     )
     market_state, _ = build_market_state_for_task(task)
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+
+    def legacy_contract(target_id, method):
+        return ComparisonTargetContract(
+            target_id,
+            method,
+            resolution_source="legacy_target_inference",
+            explicit=False,
+        )
 
     class FakeResult:
-        def __init__(self, payoff_cls):
+        def __init__(self, payoff_cls, method):
             self.success = True
             self.payoff_cls = payoff_cls
+            self.selected_method = method
+            self.comparison_target_contract = legacy_contract(
+                "quanto_bs" if method == "analytical" else "mc_quanto",
+                method,
+            ).to_payload()
 
     live_results = {
-        "quanto_bs": FakeResult(QuantoOptionAnalyticalPayoff),
-        "mc_quanto": FakeResult(QuantoOptionMonteCarloPayoff),
+        "quanto_bs": FakeResult(QuantoOptionAnalyticalPayoff, "analytical"),
+        "mc_quanto": FakeResult(QuantoOptionMonteCarloPayoff, "monte_carlo"),
     }
     comparison_targets = [
-        ComparisonBuildTarget("quanto_bs", "analytical", is_reference=True),
-        ComparisonBuildTarget("mc_quanto", "monte_carlo"),
+        ComparisonBuildTarget(
+            contract=legacy_contract("quanto_bs", "analytical"),
+            is_reference=True,
+        ),
+        ComparisonBuildTarget(
+            contract=legacy_contract("mc_quanto", "monte_carlo")
+        ),
     ]
 
     result = _cross_validate_comparison_task(
@@ -2623,25 +2747,49 @@ def test_cross_validate_comparison_task_prices_reused_quanto_modules():
 
 def test_cross_validate_comparison_task_respects_directional_relations():
     from trellis.agent.task_runtime import ComparisonBuildTarget, _cross_validate_comparison_task
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+
+    def legacy_contract(target_id, method):
+        return ComparisonTargetContract(
+            target_id,
+            method,
+            resolution_source="legacy_target_inference",
+            explicit=False,
+        )
 
     class FakeResult:
-        def __init__(self, payoff_cls):
+        def __init__(self, target, payoff_cls, method):
             self.success = True
             self.payoff_cls = payoff_cls
+            self.selected_method = method
+            self.comparison_target_contract = legacy_contract(
+                target,
+                method,
+            ).to_payload()
 
     reference_cls = type("ReferencePayoff", (), {"price": 100.0})
     upper_bound_cls = type("UpperBoundPayoff", (), {"price": 101.0})
     lower_bound_cls = type("LowerBoundPayoff", (), {"price": 99.7})
 
     live_results = {
-        "black_scholes": FakeResult(reference_cls),
-        "tree_upper": FakeResult(upper_bound_cls),
-        "tree_lower": FakeResult(lower_bound_cls),
+        "black_scholes": FakeResult("black_scholes", reference_cls, "analytical"),
+        "tree_upper": FakeResult("tree_upper", upper_bound_cls, "rate_tree"),
+        "tree_lower": FakeResult("tree_lower", lower_bound_cls, "rate_tree"),
     }
+
     comparison_targets = [
-        ComparisonBuildTarget("black_scholes", "analytical", is_reference=True),
-        ComparisonBuildTarget("tree_upper", "rate_tree", relation="<="),
-        ComparisonBuildTarget("tree_lower", "rate_tree", relation=">="),
+            ComparisonBuildTarget(
+                contract=legacy_contract("black_scholes", "analytical"),
+                is_reference=True,
+            ),
+            ComparisonBuildTarget(
+                contract=legacy_contract("tree_upper", "rate_tree"),
+                relation="<=",
+            ),
+            ComparisonBuildTarget(
+                contract=legacy_contract("tree_lower", "rate_tree"),
+                relation=">=",
+            ),
     ]
 
     result = _cross_validate_comparison_task(
@@ -2734,7 +2882,7 @@ def test_run_task_uses_internal_cross_validate_targets_for_single_construct_fami
     calls: list[dict] = []
 
     class FakeResult:
-        def __init__(self, target: str, method: str):
+        def __init__(self, target: str, method: str, target_contract: dict):
             self.success = True
             self.attempts = 1
             self.gap_confidence = 0.7
@@ -2742,10 +2890,16 @@ def test_run_task_uses_internal_cross_validate_targets_for_single_construct_fami
             self.payoff_cls = type(f"{target.title()}Payoff", (), {"price": 99.5})
             self.failures = []
             self.reflection = {}
+            self.selected_method = method
+            self.comparison_target_contract = dict(target_contract)
 
     def fake_build(**kwargs):
         calls.append(kwargs)
-        return FakeResult(kwargs["comparison_target"], kwargs["preferred_method"])
+        return FakeResult(
+            kwargs["comparison_target"],
+            kwargs["preferred_method"],
+            kwargs["request_metadata"]["comparison_target_contract"],
+        )
 
     result = run_task(
         {
@@ -2778,7 +2932,7 @@ def test_run_task_includes_cross_validate_context_in_comparison_description():
     calls: list[dict] = []
 
     class FakeResult:
-        def __init__(self, target: str, method: str):
+        def __init__(self, target: str, method: str, target_contract: dict):
             self.success = True
             self.attempts = 1
             self.gap_confidence = 0.8
@@ -2986,7 +3140,7 @@ def test_run_task_records_promotion_candidates_for_fresh_build_comparison_succes
     captured: dict[str, object] = {}
 
     class FakeResult:
-        def __init__(self, target: str):
+        def __init__(self, target: str, method: str, target_contract: dict):
             self.success = True
             self.attempts = 1
             self.gap_confidence = 0.7
@@ -3000,9 +3154,15 @@ def test_run_task_records_promotion_candidates_for_fresh_build_comparison_succes
             self.platform_trace_path = f"/tmp/{target}_trace.yaml"
             self.blocker_details = None
             self.reflection = {}
+            self.selected_method = method
+            self.comparison_target_contract = dict(target_contract)
 
     def fake_build(**kwargs):
-        return FakeResult(kwargs["comparison_target"])
+        return FakeResult(
+            kwargs["comparison_target"],
+            kwargs["preferred_method"],
+            kwargs["request_metadata"]["comparison_target_contract"],
+        )
 
     def fake_record_candidates(**kwargs):
         captured.update(kwargs)
@@ -3061,7 +3221,7 @@ def test_run_task_skips_promotion_candidates_without_fresh_build(monkeypatch):
     calls: list[dict[str, object]] = []
 
     class FakeResult:
-        def __init__(self, target: str):
+        def __init__(self, target: str, method: str, target_contract: dict):
             self.success = True
             self.attempts = 1
             self.gap_confidence = 0.7
@@ -3075,9 +3235,15 @@ def test_run_task_skips_promotion_candidates_without_fresh_build(monkeypatch):
             self.platform_trace_path = f"/tmp/{target}_trace.yaml"
             self.blocker_details = None
             self.reflection = {}
+            self.selected_method = method
+            self.comparison_target_contract = dict(target_contract)
 
     def fake_build(**kwargs):
-        return FakeResult(kwargs["comparison_target"])
+        return FakeResult(
+            kwargs["comparison_target"],
+            kwargs["preferred_method"],
+            kwargs["request_metadata"]["comparison_target_contract"],
+        )
 
     monkeypatch.setattr(
         "trellis.agent.task_runtime._record_promotion_candidates",
@@ -3112,7 +3278,13 @@ def test_run_task_skips_promotion_candidates_when_cross_validation_fails(monkeyp
     calls: list[dict[str, object]] = []
 
     class FakeResult:
-        def __init__(self, target: str, price: float):
+        def __init__(
+            self,
+            target: str,
+            method: str,
+            price: float,
+            target_contract: dict,
+        ):
             self.success = True
             self.attempts = 1
             self.gap_confidence = 0.7
@@ -3126,11 +3298,18 @@ def test_run_task_skips_promotion_candidates_when_cross_validation_fails(monkeyp
             self.platform_trace_path = f"/tmp/{target}_trace.yaml"
             self.blocker_details = None
             self.reflection = {}
+            self.selected_method = method
+            self.comparison_target_contract = dict(target_contract)
 
     def fake_build(**kwargs):
         target = kwargs["comparison_target"]
         price = 100.0 if target == "black_scholes" else 130.0
-        return FakeResult(target, price)
+        return FakeResult(
+            target,
+            kwargs["preferred_method"],
+            price,
+            kwargs["request_metadata"]["comparison_target_contract"],
+        )
 
     monkeypatch.setattr(
         "trellis.agent.task_runtime._record_promotion_candidates",

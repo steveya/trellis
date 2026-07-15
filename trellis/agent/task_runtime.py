@@ -37,6 +37,12 @@ from trellis.agent.benchmark_contracts import (
 )
 from trellis.agent.benchmark_greek_fallback import compute_bump_and_reprice_greeks
 from trellis.agent.computational_problem_ir import classify_stochastic_vol_task
+from trellis.agent.comparison_target_contracts import (
+    ComparisonTargetContract,
+    comparison_target_contracts_compatible,
+    comparison_target_execution_identity,
+    declared_comparison_target_contract,
+)
 from trellis.agent.financepy_parity import align_market_state_for_financepy_parity
 from trellis.agent.instrument_identity import (
     InstrumentIdentityResolution,
@@ -340,10 +346,17 @@ class PreparedTask:
 class ComparisonBuildTarget:
     """One pricing method to build and evaluate when a task compares multiple methods side by side."""
 
-    target_id: str
-    preferred_method: str
+    contract: ComparisonTargetContract
     is_reference: bool = False
     relation: str | None = None
+
+    @property
+    def target_id(self) -> str:
+        return self.contract.target_id
+
+    @property
+    def preferred_method(self) -> str:
+        return self.contract.method
 
 
 @dataclass(frozen=True)
@@ -381,6 +394,40 @@ _GENERIC_FALLBACK_AGENT_MODULES: tuple[tuple[tuple[str, ...], str, str], ...] = 
         "FFTvsCOSPricer",
     ),
 )
+
+
+def _proof_comparison_binding(
+    target_id: str,
+    method: str,
+    **contract_fields: Any,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Declare proof-artifact identity independently from a task request."""
+    contract = ComparisonTargetContract(
+        target_id=target_id,
+        method=method,
+        resolution_source="deterministic_proof_artifact",
+        explicit=True,
+        **contract_fields,
+    )
+    return {target_id: {"target_contract": contract.to_payload()}}
+
+
+def _proof_american_lsm_binding(
+    target_id: str,
+    method: str,
+    **contract_fields: Any,
+) -> dict[str, dict[str, dict[str, Any]]]:
+    """Declare the common semantic axes of the American LSM proof artifacts."""
+    return _proof_comparison_binding(
+        target_id,
+        method,
+        route_family="exercise",
+        payoff_family="vanilla_option",
+        exercise_style="american",
+        model_family="equity_diffusion",
+        observation_style="exercise_schedule",
+        **contract_fields,
+    )
 
 
 @dataclass(frozen=True)
@@ -471,28 +518,65 @@ class ProofAmericanLSMPolynomialPayoff(_ProofAmericanLSMBasePayoff):
     """American equity option proof adapter using a polynomial LSM basis."""
 
     basis_name = "polynomial"
+    __trellis_comparison_bindings__ = _proof_american_lsm_binding(
+        "polynomial",
+        "monte_carlo",
+        route_id="exercise_monte_carlo",
+        variant_parameters={"regression_basis": "polynomial"},
+        validation_bundle_id="monte_carlo:american_option",
+    )
 
 
 class ProofAmericanLSMLaguerrePayoff(_ProofAmericanLSMBasePayoff):
     """American equity option proof adapter using a Laguerre LSM basis."""
 
     basis_name = "laguerre"
+    __trellis_comparison_bindings__ = _proof_american_lsm_binding(
+        "laguerre",
+        "monte_carlo",
+        route_id="exercise_monte_carlo",
+        variant_parameters={"regression_basis": "laguerre"},
+        validation_bundle_id="monte_carlo:american_option",
+    )
 
 
 class ProofAmericanLSMHermitePayoff(_ProofAmericanLSMBasePayoff):
     """American equity option proof adapter using a Hermite LSM basis."""
 
     basis_name = "hermite"
+    __trellis_comparison_bindings__ = _proof_american_lsm_binding(
+        "hermite",
+        "monte_carlo",
+        route_id="exercise_monte_carlo",
+        variant_parameters={"regression_basis": "hermite"},
+        validation_bundle_id="monte_carlo:american_option",
+    )
 
 
 class ProofAmericanLSMChebyshevPayoff(_ProofAmericanLSMBasePayoff):
     """American equity option proof adapter using a Chebyshev LSM basis."""
 
     basis_name = "chebyshev"
+    __trellis_comparison_bindings__ = _proof_american_lsm_binding(
+        "chebyshev",
+        "monte_carlo",
+        route_id="exercise_monte_carlo",
+        variant_parameters={"regression_basis": "chebyshev"},
+        validation_bundle_id="monte_carlo:american_option",
+    )
 
 
 class ProofAmericanHighStepTreePayoff:
     """American equity option proof reference adapter using a high-step CRR tree."""
+
+    __trellis_comparison_bindings__ = _proof_american_lsm_binding(
+        "high_step_tree_2000",
+        "rate_tree",
+        route_id="exercise_lattice",
+        variant_parameters={"tree_steps": 2000},
+        spec_overrides={"tree_steps": 2000},
+        validation_bundle_id="rate_tree:american_option",
+    )
 
     def __init__(self, spec: ProofAmericanLSMBasisSpec):
         self._spec = spec
@@ -595,6 +679,10 @@ class _ProofCounterpartyCVABasePayoff:
 class ProofInterestRateSwapMCVAPayoff(_ProofCounterpartyCVABasePayoff):
     """CVA on interest rate swap: MC exposure simulation."""
 
+    __trellis_comparison_bindings__ = _proof_comparison_binding(
+        "mc_cva", "monte_carlo"
+    )
+
     def evaluate(self, market_state) -> float:
         from trellis.analytics.counterparty import price_interest_rate_swap_cva_monte_carlo
 
@@ -603,6 +691,10 @@ class ProofInterestRateSwapMCVAPayoff(_ProofCounterpartyCVABasePayoff):
 
 class ProofInterestRateSwapAnalyticalCVAApproxPayoff(_ProofCounterpartyCVABasePayoff):
     """CVA on interest rate swap: analytical flat-hazard EPE approximation."""
+
+    __trellis_comparison_bindings__ = _proof_comparison_binding(
+        "analytical_cva_approx", "analytical"
+    )
 
     def evaluate(self, market_state) -> float:
         from trellis.analytics.counterparty import (
@@ -620,6 +712,10 @@ class ProofInterestRateSwapAnalyticalCVAApproxPayoff(_ProofCounterpartyCVABasePa
 class ProofInterestRateSwapIndependentCVAPayoff(_ProofCounterpartyCVABasePayoff):
     """Wrong-way risk reference target: independent default and exposure."""
 
+    __trellis_comparison_bindings__ = _proof_comparison_binding(
+        "independent_cva", "monte_carlo"
+    )
+
     def evaluate(self, market_state) -> float:
         from trellis.analytics.counterparty import price_interest_rate_swap_independent_cva
 
@@ -630,6 +726,10 @@ class ProofInterestRateSwapIndependentCVAPayoff(_ProofCounterpartyCVABasePayoff)
 
 class ProofInterestRateSwapWrongWayCVAPayoff(_ProofCounterpartyCVABasePayoff):
     """Wrong-way risk target: default intensity increases with exposure."""
+
+    __trellis_comparison_bindings__ = _proof_comparison_binding(
+        "correlated_cva", "monte_carlo"
+    )
 
     def evaluate(self, market_state) -> float:
         from trellis.analytics.counterparty import price_interest_rate_swap_wrong_way_cva
@@ -658,6 +758,10 @@ class _ProofCreditIndexOptionBasePayoff:
 class ProofCreditIndexBlackOnSpreadPayoff(_ProofCreditIndexOptionBasePayoff):
     """Credit index option target: Black-76 on quoted forward spread."""
 
+    __trellis_comparison_bindings__ = _proof_comparison_binding(
+        "black_on_spread", "analytical"
+    )
+
     def evaluate(self, market_state) -> float:
         from trellis.models.credit_index_option import (
             price_credit_index_option_black_on_spread,
@@ -668,6 +772,10 @@ class ProofCreditIndexBlackOnSpreadPayoff(_ProofCreditIndexOptionBasePayoff):
 
 class ProofCreditIndexMonteCarloPayoff(_ProofCreditIndexOptionBasePayoff):
     """Credit index option target: antithetic lognormal spread MC."""
+
+    __trellis_comparison_bindings__ = _proof_comparison_binding(
+        "mc_credit_index", "monte_carlo"
+    )
 
     def evaluate(self, market_state) -> float:
         from trellis.models.credit_index_option import price_credit_index_option_monte_carlo
@@ -705,6 +813,10 @@ class _ProofLocalVolBasePayoff:
 class ProofLocalVolDupirePDEPayoff(_ProofLocalVolBasePayoff):
     """Local volatility target: Dupire-style one-dimensional PDE."""
 
+    __trellis_comparison_bindings__ = _proof_comparison_binding(
+        "dupire_pde", "pde_solver"
+    )
+
     def evaluate(self, market_state) -> float:
         from trellis.models.local_vol_option import price_local_vol_option_pde
 
@@ -720,6 +832,10 @@ class ProofLocalVolDupirePDEPayoff(_ProofLocalVolBasePayoff):
 
 class ProofLocalVolMonteCarloPayoff(_ProofLocalVolBasePayoff):
     """Local volatility target: terminal vanilla local-vol MC."""
+
+    __trellis_comparison_bindings__ = _proof_comparison_binding(
+        "local_vol_mc", "monte_carlo"
+    )
 
     def evaluate(self, market_state) -> float:
         from trellis.models.local_vol_option import price_local_vol_option_monte_carlo
@@ -757,6 +873,10 @@ class ProofHestonOptionSpec:
 
 class ProofHestonMonteCarloPayoff:
     """Heston target: bounded terminal vanilla Monte Carlo."""
+
+    __trellis_comparison_bindings__ = _proof_comparison_binding(
+        "heston_mc", "monte_carlo"
+    )
 
     @property
     def requirements(self) -> set[str]:
@@ -1451,6 +1571,39 @@ def _proof_legacy_comparison_build_result(
     if payoff_cls is None:
         return None
 
+    artifact_contract = declared_comparison_target_contract(
+        getattr(payoff_cls, "__trellis_comparison_bindings__", None),
+        target.target_id,
+    )
+    if artifact_contract is None:
+        return None
+
+    target_contract_payload = artifact_contract.to_payload()
+    selected_semantic_axes = {
+        key: value
+        for key, value in {
+            "payoff_family": artifact_contract.payoff_family,
+            "exercise_style": artifact_contract.exercise_style,
+            "model_family": artifact_contract.model_family,
+            "observation_style": artifact_contract.observation_style,
+            **dict(artifact_contract.semantic_axes),
+        }.items()
+        if value not in {None, ""}
+    }
+    execution_binding = {
+        "comparison_target_contract": target_contract_payload,
+        "comparison_binding_evidence_source": (
+            "deterministic_proof_artifact_declaration"
+        ),
+        "validation_binding_evidence_source": "declared_proof_bundle_not_executed",
+        "selected_method": artifact_contract.method,
+        "selected_route_id": artifact_contract.route_id,
+        "selected_route_family": artifact_contract.route_family,
+        "selected_backend_binding_id": artifact_contract.backend_binding_id,
+        "selected_validation_bundle_id": artifact_contract.validation_bundle_id,
+        "selected_semantic_axes": selected_semantic_axes,
+    }
+
     return SimpleNamespace(
         success=True,
         attempts=0,
@@ -1486,6 +1639,18 @@ def _proof_legacy_comparison_build_result(
         admission_target_module_name=None,
         admission_target_module_path=None,
         admission_target_file_path=None,
+        comparison_target_contract=target_contract_payload,
+        execution_binding=execution_binding,
+        comparison_binding_evidence_source=(
+            "deterministic_proof_artifact_declaration"
+        ),
+        validation_binding_evidence_source="declared_proof_bundle_not_executed",
+        selected_method=artifact_contract.method,
+        selected_route_id=artifact_contract.route_id,
+        selected_route_family=artifact_contract.route_family,
+        selected_backend_binding_id=artifact_contract.backend_binding_id,
+        selected_validation_bundle_id=artifact_contract.validation_bundle_id,
+        selected_semantic_axes=selected_semantic_axes,
         blocker_details=None,
         post_build_tracking={
             "active_flags": [],
@@ -1813,7 +1978,11 @@ def run_task(
     instrument_type = instrument_identity.instrument_type
     semantic_contract = task_to_semantic_contract(task)
     semantic_instrument_type = _semantic_contract_instrument_type(semantic_contract)
-    if instrument_type is None and semantic_instrument_type is not None:
+    if semantic_instrument_type is not None and (
+        instrument_type is None
+        or instrument_identity.source
+        in {"task.title_or_description", "task.title_description_or_targets"}
+    ):
         instrument_type = semantic_instrument_type
         instrument_identity = InstrumentIdentityResolution(
             instrument_type=instrument_type,
@@ -1883,6 +2052,9 @@ def run_task(
         "comparison_task": comparison_task,
         "construct_methods": construct_methods,
         "comparison_targets": [target.target_id for target in comparison_targets],
+        "comparison_target_contracts": [
+            target.contract.to_payload() for target in comparison_targets
+        ],
         "cross_validate": task.get("cross_validate"),
         "new_component": task.get("new_component"),
         "semantic_contract_id": getattr(getattr(semantic_contract, "product", None), "semantic_id", None),
@@ -1952,6 +2124,7 @@ def run_task(
                         **base_request_metadata,
                         "comparison_target": target.target_id,
                         "preferred_method": target.preferred_method,
+                        "comparison_target_contract": target.contract.to_payload(),
                     },
                     "model": model,
                     "market_state": market_state,
@@ -1987,6 +2160,7 @@ def run_task(
                     preferred_method=target.preferred_method,
                     reference_target=target.is_reference,
                     task_kind="pricing",
+                    comparison_target_contract=target.contract,
                 )
                 result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
                     build_fn=build_fn,
@@ -1999,6 +2173,7 @@ def run_task(
                     task_kind="pricing",
                     instrument_type=instrument_type,
                     recovery_mode=recovery_mode_value,
+                    comparison_target_contract=target.contract,
                 )
                 if recovery_record is not None:
                     result_data.setdefault("recovery_attempts", []).append(recovery_record)
@@ -2037,7 +2212,7 @@ def run_task(
                 configured_targets=task.get("cross_validate") or {},
                 payoff_factory=payoff_factory
                 or (
-                    lambda payoff_cls, spec_schema, settle: _make_test_payoff(
+                    lambda payoff_cls, spec_schema, settle, target_contract: _make_test_payoff(
                         payoff_cls,
                         (
                             spec_schema
@@ -2048,11 +2223,21 @@ def run_task(
                         ),
                         settle,
                         market_state=market_state,
-                        spec_overrides=task_benchmark_spec_overrides,
+                        spec_overrides={
+                            **task_benchmark_spec_overrides,
+                            **dict(target_contract.spec_overrides),
+                        },
                     )
                 ),
                 price_fn=price_fn,
             )
+            for target_id, artifact_binding in dict(
+                cross_validation.get("artifact_coherence") or {}
+            ).items():
+                if target_id in method_results:
+                    method_results[target_id]["artifact_binding"] = dict(
+                        artifact_binding
+                    )
             _write_benchmark_sidecars(method_results, cross_validation)
             promotion_candidates: dict[str, str] = {}
             if (
@@ -2450,8 +2635,7 @@ def _task_comparison_targets(
     if harness_plan.targets:
         return [
             ComparisonBuildTarget(
-                target_id=target.target_id,
-                preferred_method=target.preferred_method,
+                contract=target.contract,
                 is_reference=target.is_reference,
                 relation=target.relation,
             )
@@ -2459,7 +2643,15 @@ def _task_comparison_targets(
         ]
 
     return [
-        ComparisonBuildTarget(target_id=method, preferred_method=method)
+        ComparisonBuildTarget(
+            contract=ComparisonTargetContract(
+                target_id=method,
+                method=method,
+                contract_id=f"comparison-target:{task.get('id', 'task')}:{method}:v1",
+                resolution_source="legacy_construct_method",
+                explicit=False,
+            )
+        )
         for method in construct_methods
     ]
 
@@ -2565,10 +2757,21 @@ def _description_for_comparison_target(
     target: ComparisonBuildTarget,
 ) -> str:
     """Augment a task description with a concrete comparison-target hint."""
+    contract_payload = json.dumps(
+        target.contract.to_payload(),
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return (
         f"{base_description}\n\n"
         f"Implementation target: {target.target_id}\n"
-        f"Preferred method family: {target.preferred_method}"
+        f"Preferred method family: {target.preferred_method}\n"
+        f"Typed comparison-target contract: {contract_payload}\n"
+        "The executable must exercise every declared variant and spec override. "
+        "Declare the exercised artifact contract using the canonical shape "
+        f"__trellis_comparison_bindings__ = "
+        f"{{{json.dumps(target.target_id)}:{{\"target_contract\":"
+        f"{contract_payload}}}}}."
     )
 
 
@@ -2584,6 +2787,7 @@ def _maybe_retry_with_intra_run_learning(
     task_kind: str,
     instrument_type: str | None,
     recovery_mode: RecoveryMode,
+    comparison_target_contract: ComparisonTargetContract | None = None,
 ) -> tuple[Any, dict[str, Any], dict[str, Any] | None]:
     """Retry one failed target with an ephemeral candidate-knowledge overlay."""
     candidate = build_knowledge_patch_candidate(
@@ -2676,6 +2880,7 @@ def _maybe_retry_with_intra_run_learning(
         preferred_method=preferred_method,
         reference_target=reference_target,
         task_kind=task_kind,
+        comparison_target_contract=comparison_target_contract,
     )
     retry_payload["attempts"] = int(initial_payload.get("attempts") or 0) + int(
         retry_payload.get("attempts") or 0
@@ -2902,6 +3107,7 @@ def _build_result_payload(
     preferred_method: str | None = None,
     reference_target: bool = False,
     task_kind: str = "pricing",
+    comparison_target_contract: ComparisonTargetContract | None = None,
 ) -> dict[str, Any]:
     """Project a BuildResult-like object into a stable task result payload."""
     from trellis.agent.task_run_store import summarize_task_learning
@@ -2917,6 +3123,33 @@ def _build_result_payload(
         "payoff_class": result.payoff_cls.__name__ if result.payoff_cls else None,
         "preferred_method": preferred_method,
         "reference_target": reference_target,
+        "comparison_target_contract": dict(
+            getattr(result, "comparison_target_contract", {}) or {}
+        ),
+        "requested_comparison_target_contract": (
+            comparison_target_contract.to_payload()
+            if comparison_target_contract is not None
+            else {}
+        ),
+        "execution_binding": dict(getattr(result, "execution_binding", {}) or {}),
+        "comparison_binding_evidence_source": str(
+            getattr(result, "comparison_binding_evidence_source", "") or ""
+        ),
+        "validation_binding_evidence_source": str(
+            getattr(result, "validation_binding_evidence_source", "") or ""
+        ),
+        "selected_method": getattr(result, "selected_method", None),
+        "selected_route_id": getattr(result, "selected_route_id", None),
+        "selected_route_family": getattr(result, "selected_route_family", None),
+        "selected_backend_binding_id": getattr(
+            result, "selected_backend_binding_id", None
+        ),
+        "selected_validation_bundle_id": getattr(
+            result, "selected_validation_bundle_id", None
+        ),
+        "selected_semantic_axes": dict(
+            getattr(result, "selected_semantic_axes", {}) or {}
+        ),
         "failures": result.failures[:3],
         "agent_observation_count": len(getattr(result, "agent_observations", []) or []),
         "agent_observations": list(getattr(result, "agent_observations", []) or []),
@@ -3658,13 +3891,420 @@ def _normalized_comparison_relations_for_task(
     return resolved
 
 
+_BOUND_ARTIFACT_STATUSES = frozenset(
+    {
+        "bound_unique_artifact",
+        "bound_shared_variant",
+        "bound_explicit_equivalence",
+    }
+)
+
+
+def _comparison_result_binding_value(result: Any, name: str) -> Any:
+    """Read one execution-binding value from a build result."""
+    direct = getattr(result, name, None)
+    if direct is not None and direct != "":
+        return direct
+    persisted_contract = getattr(result, "comparison_target_contract", None)
+    if name == "selected_method" and isinstance(persisted_contract, Mapping):
+        persisted_method = persisted_contract.get("method")
+        if persisted_method:
+            return persisted_method
+    binding = getattr(result, "execution_binding", None)
+    if isinstance(binding, Mapping):
+        return binding.get(name)
+    return None
+
+
+def _comparison_artifact_identity(result: Any) -> tuple[str, dict[str, Any]]:
+    """Return stable executable artifact identity for one build result."""
+    artifact = _generated_artifact_from_result(result)
+    module_name = str(artifact.get("module_name") or "").strip()
+    class_name = str(artifact.get("class_name") or "").strip()
+    code_hash = str(artifact.get("code_hash") or "").strip()
+    identity = "::".join((module_name, class_name, code_hash))
+    return identity, artifact
+
+
+def _declared_class_target_binding(
+    payoff_cls: type,
+    contract: ComparisonTargetContract,
+) -> dict[str, Any] | None:
+    """Return a compatible class-level target binding declaration, if present."""
+    declarations = getattr(payoff_cls, "__trellis_comparison_bindings__", None)
+    declared_contract = declared_comparison_target_contract(
+        declarations,
+        contract.target_id,
+    )
+    if declared_contract is None or not comparison_target_contracts_compatible(
+        contract,
+        declared_contract,
+    ):
+        return None
+    return {"target_contract": declared_contract.to_payload()}
+
+
+def _variant_parameters_bound_by_spec_overrides(
+    contract: ComparisonTargetContract,
+) -> bool:
+    """Return whether every variant coordinate is directly exercised by the spec."""
+    variants = dict(contract.variant_parameters)
+    overrides = dict(contract.spec_overrides)
+    return bool(variants) and all(
+        key in overrides and overrides[key] == value
+        for key, value in variants.items()
+    )
+
+
+def _comparison_contract_execution_identity(
+    contract: ComparisonTargetContract,
+) -> dict[str, Any]:
+    """Return target-name-independent executable semantics for equivalence checks."""
+    return comparison_target_execution_identity(contract)
+
+
+def _comparison_target_binding_report(
+    target: ComparisonBuildTarget,
+    result: Any,
+) -> dict[str, Any]:
+    """Check target contract against method/route/semantic build evidence."""
+    contract = target.contract
+    identity, artifact = _comparison_artifact_identity(result)
+    selected_method = normalize_method(
+        str(_comparison_result_binding_value(result, "selected_method") or "")
+    )
+    selected_route_id = str(
+        _comparison_result_binding_value(result, "selected_route_id") or ""
+    ).strip()
+    selected_route_family = str(
+        _comparison_result_binding_value(result, "selected_route_family") or ""
+    ).strip()
+    selected_backend_binding_id = str(
+        _comparison_result_binding_value(result, "selected_backend_binding_id") or ""
+    ).strip()
+    selected_validation_bundle_id = str(
+        _comparison_result_binding_value(result, "selected_validation_bundle_id")
+        or ""
+    ).strip()
+    validation_binding_evidence_source = str(
+        getattr(result, "validation_binding_evidence_source", "") or ""
+    ).strip()
+    selected_semantic_axes = _comparison_result_binding_value(
+        result, "selected_semantic_axes"
+    )
+    actual_axes = (
+        dict(selected_semantic_axes)
+        if isinstance(selected_semantic_axes, Mapping)
+        else {}
+    )
+
+    failures: list[dict[str, Any]] = []
+    declaration = _declared_class_target_binding(result.payoff_cls, contract)
+    if contract.explicit and declaration is None:
+        failures.append(
+            {
+                "code": "missing_artifact_target_declaration",
+                "field": "__trellis_comparison_bindings__",
+                "expected": {
+                    contract.target_id: {
+                        "target_contract": contract.to_payload(),
+                    }
+                },
+                "actual": {},
+            }
+        )
+
+    def require_match(field: str, expected: str, actual: str) -> None:
+        if not expected:
+            return
+        if not actual:
+            failures.append(
+                {
+                    "code": f"missing_{field}_evidence",
+                    "field": field,
+                    "expected": expected,
+                    "actual": actual,
+                }
+            )
+        elif expected != actual:
+            failures.append(
+                {
+                    "code": f"{field}_mismatch",
+                    "field": field,
+                    "expected": expected,
+                    "actual": actual,
+                }
+            )
+
+    require_match("method", contract.method, selected_method)
+    require_match("route_id", contract.route_id, selected_route_id)
+    require_match("route_family", contract.route_family, selected_route_family)
+    require_match(
+        "backend_binding_id",
+        contract.backend_binding_id,
+        selected_backend_binding_id,
+    )
+    require_match(
+        "validation_bundle_id",
+        contract.validation_bundle_id,
+        selected_validation_bundle_id,
+    )
+    if (
+        contract.validation_bundle_id
+        and validation_binding_evidence_source != "executed_validation_bundle"
+    ):
+        failures.append(
+            {
+                "code": "validation_bundle_not_executed",
+                "field": "validation_binding_evidence_source",
+                "expected": "executed_validation_bundle",
+                "actual": validation_binding_evidence_source,
+            }
+        )
+
+    expected_axes = {
+        key: value
+        for key, value in {
+            "payoff_family": contract.payoff_family,
+            "exercise_style": contract.exercise_style,
+            "model_family": contract.model_family,
+            "observation_style": contract.observation_style,
+            **dict(contract.semantic_axes),
+        }.items()
+        if value not in {None, ""}
+    }
+    for axis, expected in expected_axes.items():
+        actual = actual_axes.get(axis)
+        if actual in {None, ""}:
+            failures.append(
+                {
+                    "code": "missing_semantic_axis_evidence",
+                    "field": axis,
+                    "expected": expected,
+                    "actual": actual,
+                }
+            )
+        elif actual != expected:
+            failures.append(
+                {
+                    "code": "semantic_axis_mismatch",
+                    "field": axis,
+                    "expected": expected,
+                    "actual": actual,
+                }
+            )
+
+    persisted_contract = getattr(result, "comparison_target_contract", None)
+    if not isinstance(persisted_contract, Mapping) or not persisted_contract:
+        failures.append(
+            {
+                "code": "missing_target_contract_evidence",
+                "field": "comparison_target_contract",
+                "expected": contract.to_payload(),
+                "actual": {},
+            }
+        )
+    else:
+        try:
+            actual_contract_object = ComparisonTargetContract.from_payload(
+                persisted_contract
+            )
+            actual_contract = actual_contract_object.to_payload()
+        except (TypeError, ValueError) as exc:
+            failures.append(
+                {
+                    "code": "malformed_target_contract_evidence",
+                    "field": "comparison_target_contract",
+                    "expected": contract.to_payload(),
+                    "actual": str(exc),
+                }
+            )
+        else:
+            if not comparison_target_contracts_compatible(
+                contract,
+                actual_contract_object,
+            ):
+                failures.append(
+                    {
+                        "code": "target_contract_payload_mismatch",
+                        "field": "comparison_target_contract",
+                        "expected": contract.to_payload(),
+                        "actual": actual_contract,
+                    }
+                )
+
+    pending_variant_execution = False
+    if contract.variant_parameters and declaration is None:
+        if _variant_parameters_bound_by_spec_overrides(contract):
+            pending_variant_execution = True
+        else:
+            failures.append(
+                {
+                    "code": "missing_variant_execution_evidence",
+                    "field": "variant_parameters",
+                    "expected": dict(contract.variant_parameters),
+                    "actual": {},
+                }
+            )
+
+    if failures:
+        status = "unbound_artifact"
+    elif pending_variant_execution:
+        status = "pending_variant_execution"
+    else:
+        status = "bound_unique_artifact"
+    return {
+        "status": status,
+        "target_contract": contract.to_payload(),
+        "artifact": artifact,
+        "artifact_identity": identity,
+        "selected_method": selected_method,
+        "selected_route_id": selected_route_id,
+        "selected_route_family": selected_route_family,
+        "selected_backend_binding_id": selected_backend_binding_id,
+        "selected_validation_bundle_id": selected_validation_bundle_id,
+        "selected_semantic_axes": actual_axes,
+        "binding_declaration": declaration,
+        "comparison_binding_evidence_source": str(
+            getattr(result, "comparison_binding_evidence_source", "") or ""
+        ),
+        "validation_binding_evidence_source": validation_binding_evidence_source,
+        "failures": failures,
+    }
+
+
+def _apply_shared_artifact_coherence(
+    comparison_targets: list[ComparisonBuildTarget],
+    live_results: Mapping[str, Any],
+    reports: dict[str, dict[str, Any]],
+) -> None:
+    """Reject one executable artifact silently standing in for many targets."""
+    groups: dict[str, list[ComparisonBuildTarget]] = {}
+    for target in comparison_targets:
+        report = reports.get(target.target_id)
+        if report is None or report["status"] not in {
+            *_BOUND_ARTIFACT_STATUSES,
+            "pending_variant_execution",
+        }:
+            continue
+        groups.setdefault(str(report["artifact_identity"]), []).append(target)
+
+    for grouped_targets in groups.values():
+        if len(grouped_targets) <= 1:
+            continue
+
+        equivalence_groups = {
+            target.contract.equivalence_group
+            for target in grouped_targets
+            if target.contract.equivalence_group
+        }
+        execution_identities = {
+            json.dumps(
+                _comparison_contract_execution_identity(target.contract),
+                sort_keys=True,
+                default=str,
+            )
+            for target in grouped_targets
+        }
+        if len(equivalence_groups) == 1 and len(execution_identities) == 1 and all(
+            target.contract.equivalence_group for target in grouped_targets
+        ):
+            for target in grouped_targets:
+                reports[target.target_id]["status"] = "bound_explicit_equivalence"
+            continue
+
+        declarations: dict[str, dict[str, Any]] = {}
+        declarations_valid = True
+        for target in grouped_targets:
+            result = live_results[target.target_id]
+            declaration = _declared_class_target_binding(
+                result.payoff_cls,
+                target.contract,
+            )
+            if declaration is None or not target.contract.spec_overrides:
+                declarations_valid = False
+                break
+            declarations[target.target_id] = declaration
+
+        if declarations_valid:
+            for target in grouped_targets:
+                report = reports[target.target_id]
+                report["status"] = "pending_shared_variant"
+                report["binding_declaration"] = declarations[target.target_id]
+            continue
+
+        target_ids = [target.target_id for target in grouped_targets]
+        for target in grouped_targets:
+            report = reports[target.target_id]
+            report["status"] = "unbound_shared_artifact"
+            report["failures"].append(
+                {
+                    "code": "shared_artifact_without_exercised_target_binding",
+                    "field": "artifact_identity",
+                    "expected": target.target_id,
+                    "actual": target_ids,
+                }
+            )
+
+
+def _call_comparison_payoff_factory(
+    payoff_factory: Callable[..., Any],
+    payoff_cls: type,
+    spec_schema: object,
+    settle: date,
+    contract: ComparisonTargetContract,
+) -> Any:
+    """Call legacy three-argument or target-aware four-argument factories."""
+    try:
+        signature = inspect.signature(payoff_factory)
+    except (TypeError, ValueError):
+        signature = None
+    if signature is None or any(
+        parameter.kind == inspect.Parameter.VAR_POSITIONAL
+        for parameter in signature.parameters.values()
+    ):
+        return payoff_factory(payoff_cls, spec_schema, settle, contract)
+    positional = [
+        parameter
+        for parameter in signature.parameters.values()
+        if parameter.kind
+        in {inspect.Parameter.POSITIONAL_ONLY, inspect.Parameter.POSITIONAL_OR_KEYWORD}
+    ]
+    if len(positional) >= 4:
+        return payoff_factory(payoff_cls, spec_schema, settle, contract)
+    return payoff_factory(payoff_cls, spec_schema, settle)
+
+
+def _payoff_exercises_spec_overrides(
+    payoff: Any,
+    contract: ComparisonTargetContract,
+) -> tuple[bool, dict[str, Any]]:
+    """Verify that target-specific spec overrides reached the executable payoff."""
+    expected = dict(contract.spec_overrides)
+    if not expected:
+        return False, {}
+    spec = getattr(payoff, "spec", None)
+    if spec is None:
+        spec = getattr(payoff, "_spec", None)
+    actual: dict[str, Any] = {}
+    for name, expected_value in expected.items():
+        if isinstance(spec, Mapping):
+            actual_value = spec.get(name)
+        else:
+            actual_value = getattr(spec, name, None)
+        actual[name] = actual_value
+        if actual_value != expected_value:
+            return False, actual
+    return True, actual
+
+
 def _cross_validate_comparison_task(
     comparison_targets: list[ComparisonBuildTarget],
     live_results: dict[str, Any],
     market_state,
     *,
     configured_targets: dict[str, Any],
-    payoff_factory: Callable[[type, object, date], Any] | None = None,
+    payoff_factory: Callable[..., Any] | None = None,
     price_fn: Callable[[Any, Any], float] | None = None,
 ) -> dict[str, Any]:
     """Instantiate and compare prices across successful comparison builds."""
@@ -3683,9 +4323,37 @@ def _cross_validate_comparison_task(
 
     priced: dict[str, float] = {}
     price_errors: dict[str, str] = {}
+    artifact_coherence: dict[str, dict[str, Any]] = {}
     for target in comparison_targets:
         result = live_results.get(target.target_id)
         if result is None or not result.success or result.payoff_cls is None:
+            continue
+
+        artifact_coherence[target.target_id] = _comparison_target_binding_report(
+            target,
+            result,
+        )
+
+    _apply_shared_artifact_coherence(
+        comparison_targets,
+        live_results,
+        artifact_coherence,
+    )
+
+    payoffs: dict[str, Any] = {}
+    for target in comparison_targets:
+        result = live_results.get(target.target_id)
+        report = artifact_coherence.get(target.target_id)
+        if (
+            result is None
+            or report is None
+            or report["status"]
+            not in {
+                *_BOUND_ARTIFACT_STATUSES,
+                "pending_shared_variant",
+                "pending_variant_execution",
+            }
+        ):
             continue
 
         try:
@@ -3699,11 +4367,60 @@ def _cross_validate_comparison_task(
                     )
                 if spec_schema is None:
                     raise ValueError("Could not infer spec schema for comparison build")
-            payoff = payoff_factory(result.payoff_cls, spec_schema, settle)
-            priced[target.target_id] = float(price_fn(payoff, market_state))
+            payoff = _call_comparison_payoff_factory(
+                payoff_factory,
+                result.payoff_cls,
+                spec_schema,
+                settle,
+                target.contract,
+            )
+            if target.contract.spec_overrides:
+                exercised, actual_overrides = _payoff_exercises_spec_overrides(
+                    payoff,
+                    target.contract,
+                )
+                report["exercised_spec_overrides"] = actual_overrides
+                if exercised:
+                    if report["status"] == "pending_shared_variant":
+                        report["status"] = "bound_shared_variant"
+                    elif report["status"] == "pending_variant_execution":
+                        report["status"] = "bound_unique_artifact"
+                else:
+                    report["status"] = (
+                        "unbound_shared_artifact"
+                        if report["status"] == "pending_shared_variant"
+                        else "unbound_artifact"
+                    )
+                    report["failures"].append(
+                        {
+                            "code": "target_spec_overrides_not_exercised",
+                            "field": "spec_overrides",
+                            "expected": dict(target.contract.spec_overrides),
+                            "actual": actual_overrides,
+                        }
+                    )
+            payoffs[target.target_id] = payoff
         except Exception as exc:
             price_errors[target.target_id] = str(exc)
 
+    coherence_failed = any(
+        report.get("status") not in _BOUND_ARTIFACT_STATUSES
+        for report in artifact_coherence.values()
+    )
+    if not coherence_failed and not price_errors:
+        for target in comparison_targets:
+            payoff = payoffs.get(target.target_id)
+            if payoff is None:
+                continue
+            try:
+                priced[target.target_id] = float(price_fn(payoff, market_state))
+            except Exception as exc:
+                price_errors[target.target_id] = str(exc)
+
+    declared_reference_target = next(
+        (target.target_id for target in comparison_targets if target.is_reference),
+        None,
+    )
     reference_target = next(
         (target.target_id for target in comparison_targets if target.is_reference and target.target_id in priced),
         None,
@@ -3723,7 +4440,12 @@ def _cross_validate_comparison_task(
         relation in {"<=", ">="}
         for relation in comparison_relations.values()
     )
-    if reference_target is None and len(comparable_targets) >= 2 and not requires_explicit_reference:
+    if (
+        reference_target is None
+        and declared_reference_target is None
+        and len(comparable_targets) >= 2
+        and not requires_explicit_reference
+    ):
         reference_price = median(priced[target_id] for target_id in comparable_targets)
         reference_target = "median_internal"
 
@@ -3751,7 +4473,13 @@ def _cross_validate_comparison_task(
             else:
                 failed_targets.append(target_id)
 
-    if reference_price is None and (len(priced) < 2 or requires_explicit_reference):
+    if coherence_failed:
+        status = "semantic_artifact_mismatch"
+    elif reference_price is None and (
+        declared_reference_target is not None
+        or len(priced) < 2
+        or requires_explicit_reference
+    ):
         status = "insufficient_results"
     elif price_errors:
         status = "pricing_error"
@@ -3765,7 +4493,13 @@ def _cross_validate_comparison_task(
         "configured_targets": configured_targets,
         "prices": priced,
         "price_errors": price_errors,
-        "reference_target": reference_target,
+        "artifact_coherence": artifact_coherence,
+        "artifact_coherence_failures": {
+            target_id: list(report.get("failures") or [])
+            for target_id, report in artifact_coherence.items()
+            if report.get("status") not in _BOUND_ARTIFACT_STATUSES
+        },
+        "reference_target": reference_target or declared_reference_target,
         "reference_price": round(reference_price, 10) if reference_price is not None else None,
         "tolerance_pct": tolerance_pct,
         "deviations_pct": deviations,

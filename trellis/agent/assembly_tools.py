@@ -13,6 +13,10 @@ from dataclasses import dataclass
 from typing import Any, Mapping
 
 from trellis.agent.codegen_guardrails import GenerationPlan, PrimitiveRef
+from trellis.agent.comparison_target_contracts import (
+    ComparisonTargetContract,
+    resolve_comparison_target_contract,
+)
 from trellis.agent.family_lowering_ir import EventAwareMonteCarloIR
 from trellis.agent.knowledge.decompose import decompose_to_ir
 from trellis.agent.knowledge.methods import is_known_method, normalize_method
@@ -127,10 +131,27 @@ class InvariantPack:
 class ComparisonHarnessTarget:
     """One concrete comparison target in a deterministic harness plan."""
 
-    target_id: str
-    preferred_method: str
+    contract: ComparisonTargetContract
     is_reference: bool = False
     relation: str | None = None
+
+    @property
+    def target_id(self) -> str:
+        return self.contract.target_id
+
+    @property
+    def preferred_method(self) -> str:
+        return self.contract.method
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return the stable JSON-safe tool and trace representation."""
+        return {
+            "target_id": self.target_id,
+            "preferred_method": self.preferred_method,
+            "contract": self.contract.to_payload(),
+            "is_reference": self.is_reference,
+            "relation": self.relation,
+        }
 
 
 @dataclass(frozen=True)
@@ -140,6 +161,14 @@ class ComparisonHarnessPlan:
     targets: tuple[ComparisonHarnessTarget, ...]
     reference_target: str | None
     tolerance_pct: float
+
+    def to_payload(self) -> dict[str, Any]:
+        """Return the stable JSON-safe harness representation."""
+        return {
+            "targets": [target.to_payload() for target in self.targets],
+            "reference_target": self.reference_target,
+            "tolerance_pct": self.tolerance_pct,
+        }
 
 
 def normalize_comparison_relation(
@@ -421,6 +450,27 @@ def build_comparison_harness_plan(task: Mapping[str, Any]) -> ComparisonHarnessP
 
     cross_validate = task.get("cross_validate") or {}
     relation_overrides = cross_validate.get("relations") or {}
+    raw_target_contracts = cross_validate.get("target_contracts") or {}
+    if not isinstance(raw_target_contracts, Mapping):
+        raise ValueError("comparison target contracts must be a mapping")
+    target_contracts: dict[str, Mapping[str, Any]] = {}
+    for raw_target_id, declaration in raw_target_contracts.items():
+        target_id = str(raw_target_id).strip()
+        if not target_id:
+            raise ValueError("comparison target contract ids must be non-empty")
+        if not isinstance(declaration, Mapping):
+            raise ValueError(
+                f"comparison target contract {target_id!r} must be a mapping"
+            )
+        if not declaration:
+            raise ValueError(
+                f"comparison target contract {target_id!r} must not be empty"
+            )
+        if target_id in target_contracts:
+            raise ValueError(
+                f"duplicate comparison target contract declaration {target_id!r}"
+            )
+        target_contracts[target_id] = declaration
     internal_targets = list(cross_validate.get("internal") or ())
     analytical_target = cross_validate.get("analytical")
     reference_target_override = str(
@@ -448,47 +498,126 @@ def build_comparison_harness_plan(task: Mapping[str, Any]) -> ComparisonHarnessP
                 relation = None
             targets.append(
                 ComparisonHarnessTarget(
-                    target_id=normalized_target_id,
-                    preferred_method=_preferred_method_for_target(normalized_target_id, construct_methods),
+                    contract=resolve_comparison_target_contract(
+                        task_id=str(task.get("id") or ""),
+                        target_id=normalized_target_id,
+                        preferred_method=_preferred_method_for_target(
+                            normalized_target_id,
+                            construct_methods,
+                        ),
+                        declaration=(
+                            target_contracts.get(normalized_target_id)
+                        ),
+                    ),
                     is_reference=is_reference,
                     relation=relation,
                 )
             )
     else:
-        targets.extend(
-            ComparisonHarnessTarget(
-                target_id=method,
-                preferred_method=method,
-                relation=normalize_comparison_relation(
-                    relation_overrides.get(method)
-                    if isinstance(relation_overrides, Mapping)
-                    else None
-                ),
+        for method in construct_methods:
+            is_reference = bool(
+                reference_target_override and method == reference_target_override
             )
-            for method in construct_methods
-        )
+            relation = normalize_comparison_relation(
+                relation_overrides.get(method)
+                if isinstance(relation_overrides, Mapping)
+                else None
+            )
+            if is_reference:
+                relation = None
+            targets.append(
+                ComparisonHarnessTarget(
+                    contract=resolve_comparison_target_contract(
+                        task_id=str(task.get("id") or ""),
+                        target_id=method,
+                        preferred_method=method,
+                        declaration=target_contracts.get(method),
+                    ),
+                    is_reference=is_reference,
+                    relation=relation,
+                )
+            )
 
     if analytical_target:
         targets.append(
             ComparisonHarnessTarget(
-                target_id=str(analytical_target),
-                preferred_method="analytical",
+                contract=resolve_comparison_target_contract(
+                    task_id=str(task.get("id") or ""),
+                    target_id=str(analytical_target),
+                    preferred_method="analytical",
+                    declaration=(
+                        target_contracts.get(str(analytical_target))
+                    ),
+                ),
                 is_reference=True,
             )
         )
 
-    deduped: list[ComparisonHarnessTarget] = []
-    seen: set[str] = set()
-    for target in targets:
-        if target.target_id in seen:
-            continue
-        deduped.append(target)
-        seen.add(target.target_id)
+    target_ids = [target.target_id for target in targets]
+    duplicate_target_ids = sorted(
+        target_id
+        for target_id in set(target_ids)
+        if target_ids.count(target_id) > 1
+    )
+    if duplicate_target_ids:
+        raise ValueError(
+            "duplicate comparison target ids: " + ", ".join(duplicate_target_ids)
+        )
 
-    reference_target = next((target.target_id for target in deduped if target.is_reference), None)
+    target_id_set = set(target_ids)
+    if reference_target_override and reference_target_override not in target_id_set:
+        raise ValueError(
+            "unknown comparison reference target: " + reference_target_override
+        )
+
+    if target_contracts:
+        missing_contracts = sorted(target_id_set - set(target_contracts))
+        if missing_contracts:
+            raise ValueError(
+                "missing comparison target contracts: "
+                + ", ".join(missing_contracts)
+            )
+        declared_methods = {
+            target.contract.method
+            for target in targets
+            if target.target_id in target_contracts
+        }
+        uncovered_methods = sorted(set(construct_methods) - declared_methods)
+        if uncovered_methods:
+            raise ValueError(
+                "comparison target contracts do not cover construct method families: "
+                + ", ".join(uncovered_methods)
+            )
+
+    unreferenced_contracts = sorted(set(target_contracts) - target_id_set)
+    if unreferenced_contracts:
+        raise ValueError(
+            "unreferenced comparison target contracts: "
+            + ", ".join(unreferenced_contracts)
+        )
+
+    contract_ids = [target.contract.contract_id for target in targets]
+    duplicate_contract_ids = sorted(
+        contract_id
+        for contract_id in set(contract_ids)
+        if contract_id and contract_ids.count(contract_id) > 1
+    )
+    if duplicate_contract_ids:
+        raise ValueError(
+            "duplicate comparison target contract ids: "
+            + ", ".join(duplicate_contract_ids)
+        )
+
+    reference_targets = [target.target_id for target in targets if target.is_reference]
+    if len(reference_targets) > 1:
+        raise ValueError(
+            "comparison harness requires exactly one comparison reference target; got: "
+            + ", ".join(reference_targets)
+        )
+    reference_target = reference_targets[0] if reference_targets else None
     tolerance_pct = float(cross_validate.get("tolerance_pct", 5.0))
     return ComparisonHarnessPlan(
-        targets=tuple(deduped),
+        targets=tuple(targets),
         reference_target=reference_target,
         tolerance_pct=tolerance_pct,
     )

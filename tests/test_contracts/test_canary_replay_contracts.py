@@ -74,7 +74,17 @@ def _full_task_replay_test(task_id: str):
             results = json.loads(output_path.read_text())
             assert len(results) == 1
             result = results[0]
-            assert result["success"] is True
+            expected_failure_bucket = canary.get("expected_failure_bucket")
+            if expected_failure_bucket:
+                assert result["success"] is False
+                assert result["failure_bucket"] == expected_failure_bucket
+                assert result["canary_expected_failure_bucket"] == (
+                    expected_failure_bucket
+                )
+                assert result["canary_passed_expectation"] is True
+            else:
+                assert result["success"] is True
+                assert result["canary_passed_expectation"] is True
             expected_execution_mode = (
                 "deterministic_replay"
                 if canary.get("replay_mode") == "deterministic_exact_binding"
