@@ -434,6 +434,31 @@ def test_task_diagnosis_ignores_malformed_artifact_coherence_evidence(tmp_path):
     assert "## Artifact Coherence" not in rendered
 
 
+def test_task_diagnosis_tolerates_malformed_per_target_coherence_reports(tmp_path):
+    from trellis.agent.task_diagnostics import (
+        build_task_diagnosis_packet,
+        render_task_diagnosis_dossier,
+    )
+
+    packet = build_task_diagnosis_packet(_sample_record(tmp_path))
+    packet["evidence"]["cross_validation"] = {
+        "artifact_coherence": {
+            "bad_report": ["malformed"],
+            "bad_nested_evidence": {
+                "status": "unbound_artifact",
+                "target_contract": ["malformed"],
+                "artifact": "malformed",
+            },
+        }
+    }
+
+    rendered = render_task_diagnosis_dossier(packet)
+
+    assert "## Artifact Coherence" in rendered
+    assert "bad_report" in rendered
+    assert "bad_nested_evidence" in rendered
+
+
 def test_render_task_diagnosis_dossier_surfaces_top_level_policy_skip(tmp_path):
     from trellis.agent.task_diagnostics import (
         build_task_diagnosis_packet,

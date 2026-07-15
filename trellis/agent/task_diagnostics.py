@@ -170,6 +170,11 @@ def _diagnosis_failure_bucket(
     return failure_bucket
 
 
+def _dict_if_mapping(value: object) -> dict[str, Any]:
+    """Return a shallow dict for persisted mapping evidence, or an empty dict."""
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
 def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
     """Render one diagnosis packet as a human-readable Markdown dossier."""
     task = dict(packet.get("task") or {})
@@ -238,11 +243,7 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
         if isinstance(cross_validation_evidence, Mapping)
         else None
     )
-    artifact_coherence = (
-        dict(raw_artifact_coherence)
-        if isinstance(raw_artifact_coherence, Mapping)
-        else {}
-    )
+    artifact_coherence = _dict_if_mapping(raw_artifact_coherence)
     if artifact_coherence:
         lines.extend(
             [
@@ -261,16 +262,18 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
                         (
                             target_id,
                             report.get("status"),
-                            dict(report.get("target_contract") or {}).get(
-                                "contract_id"
-                            ),
+                            target_contract.get("contract_id"),
                             report.get("selected_method"),
                             report.get("selected_route_id"),
-                            dict(report.get("artifact") or {}).get("module_name"),
-                            dict(report.get("artifact") or {}).get("class_name"),
+                            artifact.get("module_name"),
+                            artifact.get("class_name"),
                         )
                         for target_id, raw_report in artifact_coherence.items()
-                        for report in [dict(raw_report or {})]
+                        for report in [_dict_if_mapping(raw_report)]
+                        for target_contract in [
+                            _dict_if_mapping(report.get("target_contract"))
+                        ]
+                        for artifact in [_dict_if_mapping(report.get("artifact"))]
                     ],
                 ),
                 "",
