@@ -1829,14 +1829,15 @@ def run_task(
         else None
     )
     cassette_context = current_llm_cassette_context()
+    offline_local_agents = _env_flag("TRELLIS_OFFLINE_LOCAL_AGENTS")
     execution_mode = str(
         execution_mode_override
         or (
             f"cassette_{cassette_context['mode']}"
             if cassette_context is not None
-            else "live"
+            else ("offline_local_agents" if offline_local_agents else "live")
         )
-    ).strip() or "live"
+    ).strip() or ("offline_local_agents" if offline_local_agents else "live")
     llm_cassette_payload = (
         dict(llm_cassette_metadata)
         if llm_cassette_metadata is not None
@@ -2949,6 +2950,7 @@ def _build_result_payload(
                 "distill_run",
                 "skipped",
                 "reason",
+                "policy_reasons",
                 "error",
                 "token_budget_exceeded",
             )
