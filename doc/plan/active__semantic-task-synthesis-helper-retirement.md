@@ -55,6 +55,7 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1191` | Chooser option pricing: retire analytical helper authority | Done |
 | `QUA-1193` | Compound option pricing: retire analytical helper authority | Done |
 | `QUA-1194` | Fixed lookback pricing: retire analytical helper authority | Done |
+| `QUA-1195` | Variance swap pricing: retire analytical helper authority | In Progress |
 
 ## Current Sequence
 
@@ -70,9 +71,12 @@ Status mirror last synced: `2026-07-15`
 4. Apply the reviewed QUA-1194 fixed-lookback precedent: compose the admitted
    analytical formula from scalar market, time, Gaussian, and discounting
    primitives while retaining the product wrapper only as comparison evidence.
-5. Select the next helper-authority family from the machine-readable audit and
+5. Complete QUA-1195 by composing the admitted analytical variance-swap
+   smile-slope approximation from time, interpolation, and discounting
+   primitives while retaining wrappers only as comparison evidence.
+6. Select the next helper-authority family from the machine-readable audit and
    create a bounded ticket before changing another route.
-6. Run live fresh-generation evidence only with current external-model approval;
+7. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 

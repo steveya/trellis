@@ -437,6 +437,9 @@ def _run_case(case: ContractIRSolverParityCase) -> dict[str, object]:
         "legacy_exact_target_refs": list(exact_target_refs),
         "legacy_exact_target_contains_structural_callable": None,
         "selection_declaration_id": selection_declaration_id,
+        "selection_generated_route_authority": selection.get(
+            "generated_route_authority"
+        ),
         "route_free_authority": route_free_authority,
         "selection_matches_structural_declaration": None,
         "authoritative_exact_binding": False,
@@ -523,7 +526,18 @@ def _family_notes(case_results: list[dict[str, object]]) -> list[str]:
         notes.append(
             "Arithmetic Asians now admit bounded analytical approximation and Monte Carlo structural lanes for European schedule-based equity-diffusion payoffs; broader family retirement remains governed by the admitted schedule-driven support contract."
         )
-    if any(
+    comparison_only_selection = any(
+        result.get("selection_generated_route_authority") is False
+        for result in case_results
+    )
+    if comparison_only_selection:
+        notes.append(
+            "The direct structural declaration is comparison-only: it remains "
+            "executable parity evidence but intentionally cannot replace the "
+            "primitive-composed generated route or qualify this family for "
+            "Phase 4 exact-authority promotion."
+        )
+    elif any(
         result.get("shadow_status") == "bound"
         and not bool(result.get("authoritative_exact_binding"))
         for result in case_results

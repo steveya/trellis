@@ -99,6 +99,29 @@ fixed_lookback_analytical_composition:
     - "Reject floating strike, discrete monitoring, non-European exercise, non-scalar or non-constant diffusion dynamics, and non-finite formula outputs; do not call a product lookback helper"
 
 # ---------------------------------------------------------------------------
+# FinancePy-compatible analytical variance-swap approximation
+# ---------------------------------------------------------------------------
+variance_swap_smile_slope_composition:
+  module: trellis.curves.interpolation
+  methods: [analytical]
+  navigation:
+    aliases: [variance_swap, variance_payoff, quote_grid, smile_slope, fair_strike_variance]
+  modules:
+    time_measure: trellis.core.date_utils
+    interpolation: trellis.curves.interpolation
+    analytical_support: trellis.models.analytical.support
+  key_imports:
+    - "from trellis.core.date_utils import year_fraction"
+    - "from trellis.curves.interpolation import linear_interp"
+    - "from trellis.models.analytical.support import discount_factor_from_zero_rate"
+  notes:
+    - "Admitted scope is the FinancePy-compatible smile-slope approximation K_var_fair = sigma_ATM^2 * sqrt(1 + 3 * T * s^2), where s = spot * (sigma_high - sigma_low) / (strike_high - strike_low)"
+    - "Parse finite positive volatility quotes on at least two finite positive strictly increasing strikes; reject duplicate, descending, non-finite, nonpositive, or misaligned grids"
+    - "Use linear_interp for sigma_ATM at runtime MarketState.spot when present, otherwise contract spot; when volatility quotes are absent, sample the Black surface at every admitted strike"
+    - "Generated code owns quote-grid defaults, fair_strike_variance output, zero-maturity behavior, discounting, and one-time notional scaling"
+    - "This is not full model-free log-contract or static option-strip replication; do not call a product variance-swap helper and do not infer quadrature, truncation, or arbitrary surface-integration support"
+
+# ---------------------------------------------------------------------------
 # Simple chooser option raw composition
 # ---------------------------------------------------------------------------
 chooser_option_composition:

@@ -81,7 +81,8 @@ The default Phase 3 registry admits:
 2. Cash-or-nothing and asset-or-nothing digitals
 3. European payer / receiver swaptions via ``price_swaption_black76``
 4. Two-asset analytical basket / spread call / put helpers
-5. Equity variance swaps via ``price_equity_variance_swap_analytical`` and
+5. Equity variance swaps via direct structural-solver compatibility
+   declarations on ``price_equity_variance_swap_analytical`` and
    ``price_equity_variance_swap_monte_carlo``
 6. Bounded arithmetic-Asian analytical call / put composition via the shared
    single-state resolver, weighted-lognormal moments, moment matching, and
@@ -91,6 +92,21 @@ The default Phase 3 registry admits:
    ``resolve_uniform_grid_steps(...)``, ``GBM``, and ``MonteCarloEngine``
 8. Terminal linear curve-spread and surface-spread quoted-observable helpers
    via ``trellis.models.quoted_observable``
+
+The variance-swap declarations above belong to the direct Phase 3 structural
+solver and its parity ledger. They preserve the existing bounded
+FinancePy-compatible smile-slope and realized-variance reference semantics.
+They are not generated-task route authority: analytical task construction now
+receives time, linear interpolation, and discounting primitives, with quote
+validation and settlement owned by generated adapter code. The analytical
+reference is not a full option-strip or log-contract replication.
+
+This boundary is machine-readable. ``ContractIRSolverProvenance`` defaults
+``generated_route_authority`` to true for declarations that may replace route
+selection. The retained analytical variance-swap declaration sets it to false.
+It can therefore execute in direct compiler and parity contexts and appear in
+the additive shadow record, but ``compile_build_request(...)`` cannot promote
+its wrapper into ``backend_exact_target_refs`` or exact-binding authority.
 
 Arithmetic Asians are still only partially admitted. The compiler now binds a
 bounded analytical approximation plus bounded Monte Carlo call / put lanes from

@@ -354,3 +354,26 @@ def test_current_repository_retires_analytical_lookback_helper_authority():
         if item.path == "trellis/instruments/_agent/lookbackoption.py"
         and item.symbol == helper_symbol
     ]
+
+
+def test_current_repository_retires_analytical_variance_swap_helper_authority():
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    root = Path(__file__).resolve().parents[2]
+    report = build_helper_authority_report(root)
+    helper_symbols = {
+        "price_equity_variance_swap_analytical",
+        "equity_variance_swap_outputs_analytical",
+    }
+
+    assert not [
+        item
+        for item in (*report.route_authority, *report.binding_authority)
+        if item.symbol in helper_symbols
+    ]
+    assert not [
+        item
+        for item in report.adapter_calls
+        if item.path == "trellis/instruments/_agent/varianceswap.py"
+        and item.symbol in helper_symbols
+    ]

@@ -731,6 +731,13 @@ class TestContractIRSolverCompiler:
         market_state = _variance_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
 
+        selection = select_contract_ir_solver(
+            contract,
+            term_environment=build_contract_ir_term_environment(None),
+            valuation_context=context,
+            preferred_method="analytical",
+        )
+
         decision = compile_contract_ir_solver(
             contract,
             valuation_context=context,
@@ -739,6 +746,8 @@ class TestContractIRSolverCompiler:
         )
 
         assert decision.declaration_id == "helper_equity_variance_swap"
+        assert selection.declaration_id == decision.declaration_id
+        assert selection.generated_route_authority is False
         spec = decision.call_kwargs["spec"]
         assert execute_contract_ir_solver_decision(decision) == pytest.approx(
             price_equity_variance_swap_analytical(market_state, spec),

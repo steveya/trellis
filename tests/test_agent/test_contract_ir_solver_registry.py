@@ -47,6 +47,16 @@ def _declaration(
 
 
 class TestContractIRSolverRegistry:
+    def test_provenance_defaults_to_generated_route_authority(self):
+        provenance = ContractIRSolverProvenance(declaration_id="default")
+        comparison_only = ContractIRSolverProvenance(
+            declaration_id="comparison_only",
+            generated_route_authority=False,
+        )
+
+        assert provenance.generated_route_authority is True
+        assert comparison_only.generated_route_authority is False
+
     def test_materialization_preserves_ordered_result_path(self):
         materialization = ContractIRSolverMaterialization(
             callable_ref="trellis.models.synthetic.nested_result",

@@ -114,6 +114,17 @@ evidence. Quant and model-validator continue to receive the semantic contract,
 quantitative documentation, and executed price/Delta evidence rather than
 implementation imports, and no cookbook entry is promoted by this route.
 
+The ``variance_swap_smile_slope_composition`` card is another builder-only
+analytical packet. It points to contractual time, autograd-compatible linear
+interpolation, and continuous discounting. The card states the admitted
+FinancePy-compatible fair-strike formula, strict quote-grid obligations,
+surface fallback, expiry outputs, and adapter-owned settlement. It also states
+the negative boundary explicitly: this is not full model-free log-contract or
+option-strip replication, and retained variance-swap wrappers do not count as
+construction evidence. Quant and model-validator still receive product
+semantics, quantitative documentation, and executed comparison evidence rather
+than these import cards; the read-only cookbook catalog is not modified.
+
 The ``path_statistic_composition`` card applies the same rule to path-dependent
 Monte Carlo construction. Semantic aliases such as ``running_extremum``,
 ``squared_log_return``, and ``variance_swap`` lead the builder to exact

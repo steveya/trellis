@@ -471,9 +471,10 @@ The current bounded structural-solver wave covers:
    ``trellis.models.rate_style_swaption.price_swaption_black76``
 4. Two-asset analytical basket / spread call / put payoffs through
    ``trellis.models.basket_option.price_basket_option_analytical``
-5. Equity variance swaps through the analytical log-contract helper
+5. Equity variance swaps through the bounded FinancePy-compatible smile-slope
+   compatibility wrapper
    ``trellis.models.analytical.equity_exotics.price_equity_variance_swap_analytical``
-   and the bounded realised-variance Monte Carlo helper
+   and the bounded realized-variance Monte Carlo helper
    ``trellis.models.variance_swap.price_equity_variance_swap_monte_carlo``
 6. Bounded arithmetic Asians through
    ``resolve_single_state_diffusion_inputs(...)`` plus weighted-lognormal
@@ -501,10 +502,16 @@ term surface does not provide a more specific payment frequency, the structural
 adapter defaults the fixed leg to semiannual rather than inheriting a coarse
 annualized decomposition schedule.
 
-Variance swaps reuse the existing bounded smile-based analytical helper. The
-``VarianceObservable`` node names the contractual observed quantity. Optional
-quote-grid inputs remain helper materialization detail carried through
-``QuoteGridTerms``.
+For the direct Phase 3 structural-solver shadow, variance swaps reuse the
+retained bounded smile-slope compatibility wrapper. The ``VarianceObservable``
+node names the contractual observed quantity, and optional quote-grid inputs
+remain structural materialization detail carried through ``QuoteGridTerms``.
+That direct shadow declaration is not generated-route construction authority.
+The task builder instead composes ``year_fraction(...)``,
+``linear_interp(...)``, and ``discount_factor_from_zero_rate(...)`` and keeps
+quote validation, fair-strike output, and settlement in generated adapter code.
+Both paths preserve the same FinancePy-compatible approximation; neither is a
+full model-free log-contract integral.
 
 Shadow Mode And Provenance
 --------------------------

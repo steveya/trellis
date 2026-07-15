@@ -1022,9 +1022,10 @@ single ``BarrierMonitor``, notional convention, and deterministic discounting.
 Rebate-bearing barriers should remain on the analytical Rubinstein route until
 the PDE/MC rebate contract is implemented.
 
-Digital proof targets retain exact helper wrappers where the checked numerical
+Some proof targets retain exact helper wrappers where the checked numerical
 contract still lives at that boundary. Fixed-lookback analytical and Monte
-Carlo targets, and arithmetic-Asian Monte Carlo targets, no longer do. The
+Carlo targets, arithmetic-Asian Monte Carlo targets, and the admitted
+variance-swap targets no longer do. The
 fixed-lookback analytical target assembles the scalar-diffusion resolver,
 contractual time, normalized call/put semantics, discounting, and the public
 univariate Gaussian CDF. Generated code owns the closed-form branches,
@@ -1041,6 +1042,19 @@ The support-contract pass records missing strike/monitoring semantics and
 known unsupported variants as structured primitive blockers. Those blockers
 stop the build before code generation even when the generic Monte Carlo route
 would otherwise be a candidate.
+
+The variance-swap Monte Carlo target assembles the scalar market resolver,
+squared-log-return reducer, GBM, and generic engine. Its analytical comparison
+target assembles ``year_fraction(...)``, ``linear_interp(...)``, and
+``discount_factor_from_zero_rate(...)``. Generated code parses and validates
+the strike/volatility quote grid, samples the Black surface only when explicit
+volatility quotes are absent, computes the bounded FinancePy-compatible
+smile-slope fair strike, and owns expiry outputs plus one-time discount and
+notional application. Duplicate, descending, non-finite, nonpositive, or
+misaligned grids fail closed. The retained analytical and Monte Carlo wrappers
+remain comparison evidence; they do not count as generated-route
+implementation, and the analytical lane does not claim full log-contract
+replication.
 
 The arithmetic-Asian MC target assembles the single-state resolver, weighted
 observation contract/payoff, GBM, and generic Monte Carlo engine. The

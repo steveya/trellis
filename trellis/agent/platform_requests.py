@@ -841,7 +841,9 @@ def _semantic_blueprint_summary(semantic_blueprint) -> dict[str, object]:
 def _semantic_blueprint_structural_selection(semantic_blueprint):
     """Return the first authoritative structural selection carried by the blueprint."""
     selection = getattr(semantic_blueprint, "contract_ir_solver_selection", None)
-    if selection is not None:
+    if selection is not None and bool(
+        getattr(selection, "generated_route_authority", True)
+    ):
         return selection
     return getattr(semantic_blueprint, "static_leg_lowering_selection", None)
 
@@ -1235,6 +1237,8 @@ def _compile_request_contract_ir_selection(
             requested_outputs=request.requested_outputs,
         )
     except ContractIRSolverCompileError:
+        return contract_ir, None
+    if not bool(getattr(selection, "generated_route_authority", True)):
         return contract_ir, None
     return contract_ir, selection
 

@@ -981,13 +981,15 @@ bindings:
             exercise:
               style: none
         primitives:
-          - module: trellis.models.analytical.equity_exotics
-            symbol: price_equity_variance_swap_analytical
-            role: route_helper
-          - module: trellis.models.analytical.equity_exotics
-            symbol: equity_variance_swap_outputs_analytical
-            role: pricing_kernel
-            required: false
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: time_measure
+          - module: trellis.curves.interpolation
+            symbol: linear_interp
+            role: interpolation
+          - module: trellis.models.analytical.support
+            symbol: discount_factor_from_zero_rate
+            role: discounting
       - when:
           contract_pattern:
             payoff:
