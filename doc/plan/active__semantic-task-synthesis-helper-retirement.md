@@ -82,5 +82,6 @@ Each migrated lane must provide:
 - targeted tests plus `make gate-pr`
 - a strict offline replay, and a live fresh-generation replay when agent
   synthesis behavior is the claim being proved
-- official quant, developer, and user documentation updates
+- updates to each relevant official quant, developer, and/or user guide, with
+  an explicit closeout rationale when a documentation surface is unaffected
 - a merged milestone PR and synchronized Linear/plan status
