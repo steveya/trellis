@@ -54,7 +54,7 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1192` | Semantic computational IR: ignore ambient market capabilities | Done |
 | `QUA-1191` | Chooser option pricing: retire analytical helper authority | Done |
 | `QUA-1193` | Compound option pricing: retire analytical helper authority | Done |
-| `QUA-1194` | Fixed lookback pricing: retire analytical helper authority | Backlog |
+| `QUA-1194` | Fixed lookback pricing: retire analytical helper authority | Done |
 
 ## Current Sequence
 
@@ -67,10 +67,12 @@ Status mirror last synced: `2026-07-15`
 3. Apply the reviewed QUA-1191 chooser and QUA-1193 compound precedents: retain
    product wrappers only as independent comparison evidence while checked
    adapters own bounded formula composition from reusable primitives.
-4. Complete QUA-1194 by replacing analytical fixed-lookback wrapper authority
-   with scalar market, time, Gaussian, discounting, and adapter-owned formula
-   composition while preserving F011 FinancePy price and Delta parity.
-5. Run live fresh-generation evidence only with current external-model approval;
+4. Apply the reviewed QUA-1194 fixed-lookback precedent: compose the admitted
+   analytical formula from scalar market, time, Gaussian, and discounting
+   primitives while retaining the product wrapper only as comparison evidence.
+5. Select the next helper-authority family from the machine-readable audit and
+   create a bounded ticket before changing another route.
+6. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 
