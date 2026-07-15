@@ -1830,14 +1830,15 @@ def run_task(
     )
     cassette_context = current_llm_cassette_context()
     offline_local_agents = _env_flag("TRELLIS_OFFLINE_LOCAL_AGENTS")
+    default_execution_mode = "offline_local_agents" if offline_local_agents else "live"
     execution_mode = str(
         execution_mode_override
         or (
             f"cassette_{cassette_context['mode']}"
             if cassette_context is not None
-            else ("offline_local_agents" if offline_local_agents else "live")
+            else default_execution_mode
         )
-    ).strip() or ("offline_local_agents" if offline_local_agents else "live")
+    ).strip() or default_execution_mode
     llm_cassette_payload = (
         dict(llm_cassette_metadata)
         if llm_cassette_metadata is not None
