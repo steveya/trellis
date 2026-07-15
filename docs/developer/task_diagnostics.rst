@@ -59,8 +59,11 @@ artifact schema.
 For replay stability, record and replay full-task canary cassettes with
 ``PYTHONHASHSEED=0`` and keep them under ``cassettes/full_task/``.
 Canaries that declare ``replay_mode: deterministic_exact_binding`` do not need
-their historical cassette refreshed; they must instead complete with zero live
-LLM calls through deterministic exact bindings.
+their historical cassette refreshed; they must instead run with zero live LLM
+calls through deterministic exact bindings. A curated semantic-guard canary may
+declare one ``expected_failure_bucket``. Its diagnosis remains a failed pricing
+result, while the canary layer separately records
+``canary_passed_expectation=true`` only for an exact bucket match.
 
 How to read one
 ---------------
@@ -70,16 +73,39 @@ Start with the Markdown dossier. It is ordered for diagnosis:
 1. Summary
 2. Primary diagnosis
 3. Comparison summary, if present
-4. Method outcomes
-5. Trace index
-6. Learning summary
-7. Skill telemetry
-8. Evidence
-9. Workflow and storage paths
+4. Artifact coherence, when comparison targets were built
+5. Method outcomes
+6. Trace index
+7. Learning summary
+8. Skill telemetry
+9. Evidence
+10. Workflow and storage paths
 
 If the dossier is still not enough, open the JSON packet next. The packet is
 the canonical structured record and should contain the same evidence in a
 machine-friendly shape.
+
+Comparison artifact evidence
+----------------------------
+
+Comparison diagnoses preserve the full ``cross_validation.artifact_coherence``
+map. Each target entry identifies its typed target contract, selected method,
+route and binding evidence, executable module/class/source identity, and any
+field-level coherence failures. Method results separately identify the
+requested contract, the artifact-evidenced contract, the comparison-binding
+source, and the validation-binding source. In particular,
+``declared_proof_bundle_not_executed`` must not be interpreted as an executed
+deterministic validation bundle. A required bundle with that source produces
+``validation_bundle_not_executed`` and suppresses pricing. The dossier renders
+a compact artifact table; the JSON packet retains the detailed failure
+records.
+
+``comparison_semantic_artifact_mismatch`` is distinct from a numerical
+comparison disagreement. It means the runtime could not prove that one or more
+declared targets executed the promised method, variant, or semantic contract,
+so pricing and tolerance checks were suppressed. The corrective action is to
+repair target binding or the missing reusable composition surface, not to widen
+the tolerance or accept matching numbers.
 
 Computational problem evidence
 ------------------------------

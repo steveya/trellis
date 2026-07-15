@@ -6,6 +6,8 @@ import sys
 import types
 from datetime import date
 
+import pytest
+
 from trellis.agent.ask import TermSheet
 from trellis.book import Book
 from trellis.instruments.bond import Bond
@@ -550,6 +552,133 @@ def test_compile_comparison_request_creates_method_specific_plans():
         "monte_carlo",
         "fft_pricing",
     ]
+
+
+def test_compile_comparison_request_preserves_target_contract_identity():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.platform_requests import (
+        compile_platform_request,
+        make_comparison_request,
+    )
+
+    target_contracts = (
+        ComparisonTargetContract(
+            target_id="plain_mc",
+            method="monte_carlo",
+            variant_parameters={"sampling": "pseudo_random"},
+        ),
+        ComparisonTargetContract(
+            target_id="antithetic_mc",
+            method="monte_carlo",
+            variant_parameters={"sampling": "antithetic"},
+        ),
+    )
+    request = make_comparison_request(
+        description="European equity call: pseudo-random vs antithetic Monte Carlo",
+        instrument_type="european_option",
+        methods=["monte_carlo"],
+        target_contracts=target_contracts,
+    )
+
+    compiled = compile_platform_request(request)
+
+    assert compiled.comparison_spec is not None
+    assert compiled.comparison_spec.target_contracts == target_contracts
+    assert [
+        plan.target_contract.target_id
+        for plan in compiled.comparison_method_plans
+    ] == ["plain_mc", "antithetic_mc"]
+    assert [
+        plan.preferred_method for plan in compiled.comparison_method_plans
+    ] == ["monte_carlo", "monte_carlo"]
+
+
+def test_comparison_request_rejects_target_contracts_that_omit_declared_method():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.platform_requests import make_comparison_request
+
+    with pytest.raises(ValueError, match="do not cover declared method families"):
+        make_comparison_request(
+            description="Compare Monte Carlo and FFT",
+            instrument_type="european_option",
+            methods=["monte_carlo", "fft_pricing"],
+            target_contracts=(
+                ComparisonTargetContract(
+                    target_id="plain_mc",
+                    method="monte_carlo",
+                ),
+            ),
+        )
+
+
+def test_comparison_request_rejects_duplicate_target_contract_identity():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.platform_requests import make_comparison_request
+
+    contracts = (
+        ComparisonTargetContract(
+            target_id="plain_mc",
+            method="monte_carlo",
+            contract_id="shared-contract",
+        ),
+        ComparisonTargetContract(
+            target_id="plain_mc",
+            method="monte_carlo",
+            contract_id="shared-contract",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="duplicate comparison target ids"):
+        make_comparison_request(
+            description="Compare two Monte Carlo variants",
+            instrument_type="european_option",
+            methods=["monte_carlo"],
+            target_contracts=contracts,
+        )
+
+
+def test_comparison_request_rejects_duplicate_contract_ids():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.platform_requests import make_comparison_request
+
+    contracts = (
+        ComparisonTargetContract(
+            target_id="plain_mc",
+            method="monte_carlo",
+            contract_id="shared-contract",
+        ),
+        ComparisonTargetContract(
+            target_id="antithetic_mc",
+            method="monte_carlo",
+            contract_id="shared-contract",
+        ),
+    )
+
+    with pytest.raises(ValueError, match="duplicate comparison target contract ids"):
+        make_comparison_request(
+            description="Compare two Monte Carlo variants",
+            instrument_type="european_option",
+            methods=["monte_carlo"],
+            target_contracts=contracts,
+        )
+
+
+def test_comparison_request_rejects_target_method_outside_declared_families():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.platform_requests import make_comparison_request
+
+    with pytest.raises(ValueError, match="outside declared method families"):
+        make_comparison_request(
+            description="Compare Monte Carlo and FFT",
+            instrument_type="european_option",
+            methods=["monte_carlo"],
+            target_contracts=(
+                ComparisonTargetContract(
+                    target_id="fft",
+                    method="fft_pricing",
+                ),
+            ),
+        )
 
 
 def test_compile_build_request_respects_preferred_method():

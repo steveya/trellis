@@ -27,7 +27,8 @@ from trellis.agent.knowledge import (
     retrieve_for_product_ir,
 )
 from trellis.agent.knowledge.decompose import decompose_to_contract_ir, decompose_to_ir
-from trellis.agent.knowledge.methods import normalize_method
+from trellis.agent.knowledge.methods import is_known_method, normalize_method
+from trellis.agent.comparison_target_contracts import ComparisonTargetContract
 from trellis.agent.semantic_escalation import semantic_role_ownership_summary
 from trellis.agent.market_binding import (
     market_binding_spec_summary,
@@ -134,11 +135,104 @@ class ComparisonSpec:
     method_families: tuple[str, ...]
     reference_method: str | None = None
     validation_targets: Mapping[str, object] = field(default_factory=dict)
+    target_contracts: tuple[ComparisonTargetContract, ...] = ()
 
     def __post_init__(self):
         """Normalize methods and validation targets into immutable containers."""
-        object.__setattr__(self, "method_families", _freeze_tuple(self.method_families))
+        methods = tuple(normalize_method(method) for method in self.method_families)
+        unknown_methods = sorted(
+            method for method in set(methods) if not is_known_method(method)
+        )
+        if unknown_methods:
+            raise ValueError(
+                "unknown comparison method families: " + ", ".join(unknown_methods)
+            )
+        duplicate_methods = sorted(
+            method for method in set(methods) if methods.count(method) > 1
+        )
+        if duplicate_methods:
+            raise ValueError(
+                "duplicate comparison method families: "
+                + ", ".join(duplicate_methods)
+            )
+        reference_method = (
+            normalize_method(self.reference_method)
+            if self.reference_method
+            else None
+        )
+        if reference_method and not is_known_method(reference_method):
+            raise ValueError(
+                f"unknown comparison reference method {reference_method!r}"
+            )
+        object.__setattr__(self, "method_families", methods)
+        object.__setattr__(self, "reference_method", reference_method)
         object.__setattr__(self, "validation_targets", _freeze_mapping(self.validation_targets))
+        contracts = tuple(
+            item
+            if isinstance(item, ComparisonTargetContract)
+            else ComparisonTargetContract.from_payload(item)
+            for item in self.target_contracts
+        )
+        if not contracts:
+            contracts = tuple(
+                ComparisonTargetContract(
+                    target_id=method,
+                    method=method,
+                    contract_id=f"comparison-target:platform:{method}:v1",
+                    resolution_source="platform_method_fallback",
+                    explicit=False,
+                )
+                for method in self.method_families
+            )
+        target_ids = [contract.target_id for contract in contracts]
+        duplicate_target_ids = sorted(
+            target_id
+            for target_id in set(target_ids)
+            if target_ids.count(target_id) > 1
+        )
+        if duplicate_target_ids:
+            raise ValueError(
+                "duplicate comparison target ids: "
+                + ", ".join(duplicate_target_ids)
+            )
+        contract_ids = [contract.contract_id for contract in contracts]
+        duplicate_contract_ids = sorted(
+            contract_id
+            for contract_id in set(contract_ids)
+            if contract_id and contract_ids.count(contract_id) > 1
+        )
+        if duplicate_contract_ids:
+            raise ValueError(
+                "duplicate comparison target contract ids: "
+                + ", ".join(duplicate_contract_ids)
+            )
+        allowed_methods = set(methods)
+        if reference_method:
+            allowed_methods.add(reference_method)
+        out_of_scope_methods = sorted(
+            {
+                contract.method
+                for contract in contracts
+                if contract.method not in allowed_methods
+            }
+        )
+        if out_of_scope_methods:
+            raise ValueError(
+                "comparison target methods outside declared method families: "
+                + ", ".join(out_of_scope_methods)
+            )
+        # The reference method may be an external or analytical validator rather
+        # than a generated method plan. Every generated family still requires a
+        # typed target contract; a reference contract remains optional.
+        missing_methods = sorted(
+            set(methods) - {contract.method for contract in contracts}
+        )
+        if missing_methods:
+            raise ValueError(
+                "comparison target contracts do not cover declared method families: "
+                + ", ".join(missing_methods)
+            )
+        object.__setattr__(self, "target_contracts", contracts)
 
 
 @dataclass(frozen=True)
@@ -147,6 +241,7 @@ class ComparisonMethodPlan:
 
     preferred_method: str
     pricing_plan: PricingPlan
+    target_contract: ComparisonTargetContract | None = None
     semantic_contract: object | None = None
     semantic_blueprint: object | None = None
     generation_plan: Any | None = None
@@ -242,6 +337,11 @@ def make_comparison_request(
     methods: list[str] | tuple[str, ...],
     reference_method: str | None = None,
     validation_targets: Mapping[str, object] | None = None,
+    target_contracts: (
+        tuple[ComparisonTargetContract, ...]
+        | list[ComparisonTargetContract]
+        | None
+    ) = None,
     market_snapshot=None,
     settlement: date | None = None,
     model: str | None = None,
@@ -261,6 +361,7 @@ def make_comparison_request(
             method_families=tuple(normalize_method(method) for method in methods),
             reference_method=normalize_method(reference_method) if reference_method else None,
             validation_targets=validation_targets or {},
+            target_contracts=tuple(target_contracts or ()),
         ),
     )
 
@@ -1877,13 +1978,14 @@ def _compile_comparison_request(request: PlatformRequest) -> CompiledPlatformReq
             request=request,
             product_ir=product_ir,
             instrument_type=request.instrument_type,
-            preferred_method=method,
+            preferred_method=target_contract.method,
+            target_contract=target_contract,
             semantic_contract=semantic_contract,
             knowledge_profile=_knowledge_profile_for_request(request),
             measures=request.measures,
             description=request.description,
         )
-        for method in comparison_spec.method_families
+        for target_contract in comparison_spec.target_contracts
     )
     for plan in method_plans:
         if plan.semantic_blueprint is not None:
@@ -1921,6 +2023,7 @@ def _compile_comparison_method_plan(
     product_ir,
     instrument_type: str | None,
     preferred_method: str,
+    target_contract: ComparisonTargetContract | None = None,
     semantic_contract=None,
     knowledge_profile: str = "default",
     measures: tuple[str, ...] = (),
@@ -1994,6 +2097,7 @@ def _compile_comparison_method_plan(
     return ComparisonMethodPlan(
         preferred_method=preferred_method,
         pricing_plan=pricing_plan,
+        target_contract=target_contract,
         semantic_contract=semantic_contract,
         semantic_blueprint=semantic_blueprint,
         generation_plan=generation_plan,

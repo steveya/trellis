@@ -80,6 +80,48 @@ description-level heuristics silently override it.
 The LLM is not in the pricing hot path. It participates in parsing, planning,
 generation, review, and validation around the deterministic library.
 
+Comparison Evidence
+-------------------
+
+Cross-method validation is meaningful only when each scalar is produced by the
+declared numerical experiment. Trellis represents that experiment with a typed
+comparison-target contract: method family, route and backend identity when
+known, numerical variants, spec overrides, validation bundle, and expected
+product/model axes. The executor independently records the method, route,
+binding, semantic axes, and executable artifact that actually ran.
+
+The semantic artifact-coherence gate compares those two records before prices
+are evaluated. Numerical proximity cannot repair a method mismatch, a Heston
+target using Black-volatility artifacts, a scheduled payoff using terminal
+semantics, or several nominal methods executing one unbound class. A shared
+implementation is valid only when the targets are explicitly equivalent or
+when target-specific typed variants are both declared and exercised.
+
+Artifact declarations carry the full target contract, not only a method or
+variant label. The same declaration is consumed for fresh generation, cached
+reuse, and deterministic proof artifacts. The requested contract and the
+artifact declaration remain independent records, so a malformed task request
+cannot become its own execution evidence. A validation-bundle id is likewise
+not numerical evidence: a required bundle must record
+``executed_validation_bundle`` before the target may be priced. Standard and
+thorough cached comparison builds re-execute that deterministic bundle rather
+than relying on historical validation; fast cache reuse cannot satisfy a
+target that requires bundle evidence.
+
+Variant names are not evidence. Direct numerical coordinates such as
+``tree_steps=2000`` are proven by exact spec instantiation. Behavioral choices
+that are not spec fields, such as selecting a polynomial rather than Laguerre
+LSM basis in class code, require a compatible executable class declaration.
+Equivalence groups cannot waive this rule for contracts with different method,
+route, variant, validation, or semantic identities.
+
+This distinction separates mathematical evidence from adapter reuse. A target
+that declares a genuine two-dimensional transform cannot be certified by an
+analytical spread proxy or by the same basket payoff used for Monte Carlo. If
+the corresponding reusable transform or multi-asset composition surface does
+not exist, the correct result is a precise semantic artifact mismatch or
+implementation gap until that product-neutral numerical work is added.
+
 Shipped Lowering Boundary
 -------------------------
 

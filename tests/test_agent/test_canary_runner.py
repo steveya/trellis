@@ -21,6 +21,7 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 from run_canary import (
     CORE_FAMILIES,
+    _canary_result_passed_expectation,
     check_drift_after_run,
     display_dry_run,
     filter_canaries,
@@ -181,6 +182,28 @@ class TestDryRun:
 # ---------------------------------------------------------------------------
 
 class TestRunCanaries:
+    def test_expected_failure_bucket_is_exact_and_does_not_change_pricing_success(self):
+        canary = {"expected_failure_bucket": "comparison_semantic_artifact_mismatch"}
+
+        assert _canary_result_passed_expectation(
+            {
+                "success": False,
+                "failure_bucket": "comparison_semantic_artifact_mismatch",
+            },
+            canary,
+        ) is True
+        assert _canary_result_passed_expectation(
+            {"success": False, "failure_bucket": "comparison_disagreement"},
+            canary,
+        ) is False
+        assert _canary_result_passed_expectation(
+            {
+                "success": True,
+                "failure_bucket": "comparison_semantic_artifact_mismatch",
+            },
+            canary,
+        ) is False
+
     def test_run_canaries_loads_full_task_registry(self, monkeypatch):
         seen: dict[str, object] = {}
 

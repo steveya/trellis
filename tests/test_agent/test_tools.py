@@ -141,13 +141,28 @@ def test_build_comparison_harness_tool_returns_targets():
                 "cross_validate": {
                     "internal": ["crr_tree", "bs_pde", "mc_exact", "fft", "cos"],
                     "analytical": "black_scholes",
+                    "target_contracts": {
+                        "crr_tree": {"method": "rate_tree"},
+                        "bs_pde": {"method": "pde_solver"},
+                        "mc_exact": {"method": "monte_carlo"},
+                        "fft": {
+                            "method": "fft_pricing",
+                            "variant_parameters": {"dimensions": 1},
+                            "spec_overrides": {"grid": {"points": 256}},
+                        },
+                        "cos": {"method": "fft_pricing"},
+                        "black_scholes": {"method": "analytical"},
+                    },
                 },
             },
         },
     ))
 
     assert payload["reference_target"] == "black_scholes"
-    assert any(target["target_id"] == "fft" for target in payload["targets"])
+    fft = next(target for target in payload["targets"] if target["target_id"] == "fft")
+    assert fft["preferred_method"] == "fft_pricing"
+    assert fft["contract"]["variant_parameters"] == {"dimensions": 1}
+    assert fft["contract"]["spec_overrides"] == {"grid": {"points": 256}}
 
 
 def test_search_repo_tool_finds_source_match():

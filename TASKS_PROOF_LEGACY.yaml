@@ -351,6 +351,58 @@ tasks:
     - hermite
     - chebyshev
     analytical: high_step_tree_2000
+    target_contracts:
+      polynomial:
+        method: monte_carlo
+        route_id: exercise_monte_carlo
+        route_family: exercise
+        variant_parameters: {regression_basis: polynomial}
+        validation_bundle_id: monte_carlo:american_option
+        payoff_family: vanilla_option
+        exercise_style: american
+        model_family: equity_diffusion
+        observation_style: exercise_schedule
+      laguerre:
+        method: monte_carlo
+        route_id: exercise_monte_carlo
+        route_family: exercise
+        variant_parameters: {regression_basis: laguerre}
+        validation_bundle_id: monte_carlo:american_option
+        payoff_family: vanilla_option
+        exercise_style: american
+        model_family: equity_diffusion
+        observation_style: exercise_schedule
+      hermite:
+        method: monte_carlo
+        route_id: exercise_monte_carlo
+        route_family: exercise
+        variant_parameters: {regression_basis: hermite}
+        validation_bundle_id: monte_carlo:american_option
+        payoff_family: vanilla_option
+        exercise_style: american
+        model_family: equity_diffusion
+        observation_style: exercise_schedule
+      chebyshev:
+        method: monte_carlo
+        route_id: exercise_monte_carlo
+        route_family: exercise
+        variant_parameters: {regression_basis: chebyshev}
+        validation_bundle_id: monte_carlo:american_option
+        payoff_family: vanilla_option
+        exercise_style: american
+        model_family: equity_diffusion
+        observation_style: exercise_schedule
+      high_step_tree_2000:
+        method: rate_tree
+        route_id: exercise_lattice
+        route_family: exercise
+        variant_parameters: {tree_steps: 2000}
+        spec_overrides: {tree_steps: 2000}
+        validation_bundle_id: rate_tree:american_option
+        payoff_family: vanilla_option
+        exercise_style: american
+        model_family: equity_diffusion
+        observation_style: exercise_schedule
     external:
     - quantlib
   status: pending
@@ -363,6 +415,39 @@ tasks:
     - euler_heston
     - qe_heston
     analytical: heston_fft
+    target_contracts:
+      euler_heston:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        variant_parameters: {scheme: euler}
+        spec_overrides: {scheme: euler}
+        validation_bundle_id: monte_carlo:heston_option
+        payoff_family: vanilla_option
+        exercise_style: european
+        model_family: stochastic_volatility
+        observation_style: terminal
+      qe_heston:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        variant_parameters: {scheme: heston_qe}
+        spec_overrides: {scheme: heston_qe}
+        validation_bundle_id: monte_carlo:heston_option
+        payoff_family: vanilla_option
+        exercise_style: european
+        model_family: stochastic_volatility
+        observation_style: terminal
+      heston_fft:
+        method: fft_pricing
+        route_id: transform_fft
+        route_family: fft_pricing
+        variant_parameters: {characteristic_family: heston_log_spot, transform: fft}
+        validation_bundle_id: fft_pricing:heston_option
+        payoff_family: vanilla_option
+        exercise_style: european
+        model_family: stochastic_volatility
+        observation_style: terminal
     external:
     - quantlib
   status: pending
@@ -374,6 +459,26 @@ tasks:
     internal:
     - mc_asian
     - turnbull_wakeman_approx
+    target_contracts:
+      mc_asian:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        variant_parameters: {observation_frequency: monthly}
+        validation_bundle_id: monte_carlo:asian_option
+        payoff_family: asian_option
+        exercise_style: european
+        model_family: equity_diffusion
+        observation_style: fixed_schedule
+      turnbull_wakeman_approx:
+        method: analytical
+        route_family: analytical
+        variant_parameters: {approximation: turnbull_wakeman}
+        validation_bundle_id: analytical:asian_option
+        payoff_family: asian_option
+        exercise_style: european
+        model_family: equity_diffusion
+        observation_style: fixed_schedule
     external:
     - quantlib
   status: pending
@@ -450,6 +555,29 @@ tasks:
     internal:
     - mc_basket
     - mc_basket_antithetic
+    target_contracts:
+      mc_basket:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        variant_parameters: {sampling: pseudo_random}
+        spec_overrides: {antithetic: false}
+        validation_bundle_id: monte_carlo:basket_option
+        payoff_family: basket_option
+        exercise_style: european
+        model_family: multi_asset_diffusion
+        observation_style: terminal
+      mc_basket_antithetic:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        variant_parameters: {sampling: antithetic}
+        spec_overrides: {antithetic: true}
+        validation_bundle_id: monte_carlo:basket_option
+        payoff_family: basket_option
+        exercise_style: european
+        model_family: multi_asset_diffusion
+        observation_style: terminal
     external:
     - quantlib
   status: pending
@@ -593,6 +721,27 @@ tasks:
     internal:
     - spread_fft_2d
     - spread_mc
+    target_contracts:
+      spread_fft_2d:
+        method: fft_pricing
+        route_id: transform_fft
+        route_family: fft_pricing
+        variant_parameters: {dimensions: 2, transform: hurd_zhou}
+        validation_bundle_id: fft_pricing:basket_option
+        payoff_family: basket_option
+        exercise_style: european
+        model_family: multi_asset_diffusion
+        observation_style: terminal
+      spread_mc:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        variant_parameters: {dimensions: 2, sampling: pseudo_random}
+        validation_bundle_id: monte_carlo:basket_option
+        payoff_family: basket_option
+        exercise_style: european
+        model_family: multi_asset_diffusion
+        observation_style: terminal
     external:
     - quantlib
   status: pending
@@ -1742,6 +1891,36 @@ tasks:
     - kirk_spread
     - mc_spread_2d
     - fft_spread_2d
+    target_contracts:
+      kirk_spread:
+        method: analytical
+        route_family: analytical
+        variant_parameters: {approximation: kirk, dimensions: 2}
+        validation_bundle_id: analytical:basket_option
+        payoff_family: basket_option
+        exercise_style: european
+        model_family: multi_asset_diffusion
+        observation_style: terminal
+      mc_spread_2d:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        variant_parameters: {dimensions: 2, sampling: pseudo_random}
+        validation_bundle_id: monte_carlo:basket_option
+        payoff_family: basket_option
+        exercise_style: european
+        model_family: multi_asset_diffusion
+        observation_style: terminal
+      fft_spread_2d:
+        method: fft_pricing
+        route_id: transform_fft
+        route_family: fft_pricing
+        variant_parameters: {dimensions: 2, transform: hurd_zhou}
+        validation_bundle_id: fft_pricing:basket_option
+        payoff_family: basket_option
+        exercise_style: european
+        model_family: multi_asset_diffusion
+        observation_style: terminal
     external:
     - quantlib
   status: pending

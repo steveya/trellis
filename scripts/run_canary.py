@@ -97,6 +97,20 @@ def _uses_deterministic_replay(canary: dict) -> bool:
     return _canary_replay_mode(canary) == DETERMINISTIC_EXACT_BINDING_REPLAY
 
 
+def _canary_result_passed_expectation(result: dict, canary: dict) -> bool:
+    """Evaluate one exact curated failure expectation without changing success."""
+    expected_failure_bucket = str(
+        canary.get("expected_failure_bucket") or ""
+    ).strip()
+    if not expected_failure_bucket:
+        return bool(result.get("success"))
+    return (
+        not bool(result.get("success"))
+        and str(result.get("failure_bucket") or "").strip()
+        == expected_failure_bucket
+    )
+
+
 def _canary_batch_execution_mode(results: list[dict], *, replay: bool) -> str:
     """Return the persisted execution-mode label for a canary batch."""
     modes = {
@@ -334,20 +348,32 @@ def run_canaries(
 
         elapsed = time.time() - start
         tokens = int((result.get("token_usage_summary") or {}).get("total_tokens") or 0)
-        success = result.get("success", False)
+        success = bool(result.get("success", False))
+        expected_failure_bucket = str(
+            canary.get("expected_failure_bucket") or ""
+        ).strip()
+        passed_expectation = _canary_result_passed_expectation(result, canary)
         total_tokens += tokens
         total_time += elapsed
 
-        status = "\u2713 PASS" if success else "\u2717 FAIL"
+        if passed_expectation and expected_failure_bucket:
+            status = "\u2713 EXPECTED"
+        elif passed_expectation:
+            status = "\u2713 PASS"
+        else:
+            status = "\u2717 FAIL"
         print(f"  {status}  {elapsed:.1f}s  {tokens}tok")
 
-        if success:
+        if passed_expectation:
             pass_count += 1
 
         # Attach canary metadata to result
         result["canary_id"] = task_id
         result["engine_family"] = canary.get("engine_family")
         result["complexity"] = canary.get("complexity")
+        result["canary_passed_expectation"] = passed_expectation
+        if expected_failure_bucket:
+            result["canary_expected_failure_bucket"] = expected_failure_bucket
         results.append(result)
 
         # Save incrementally
@@ -542,7 +568,11 @@ def main(argv: list[str] | None = None) -> int:
         requested_subset=args.subset,
     )
 
-    all_passed = all(r.get("success", False) for r in results if not r.get("skipped"))
+    all_passed = all(
+        r.get("canary_passed_expectation", r.get("success", False))
+        for r in results
+        if not r.get("skipped")
+    )
 
     # Drift detection (post-run)
     if args.check_drift:

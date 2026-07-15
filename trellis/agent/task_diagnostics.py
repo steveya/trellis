@@ -170,6 +170,11 @@ def _diagnosis_failure_bucket(
     return failure_bucket
 
 
+def _dict_if_mapping(value: object) -> dict[str, Any]:
+    """Return a shallow dict for persisted mapping evidence, or an empty dict."""
+    return dict(value) if isinstance(value, Mapping) else {}
+
+
 def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
     """Render one diagnosis packet as a human-readable Markdown dossier."""
     task = dict(packet.get("task") or {})
@@ -231,6 +236,49 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
             for key, value in deviations.items():
                 lines.append(f"  - `{key}`: `{_format_value(value)}`")
         lines.append("")
+
+    cross_validation_evidence = evidence.get("cross_validation") or {}
+    raw_artifact_coherence = (
+        cross_validation_evidence.get("artifact_coherence")
+        if isinstance(cross_validation_evidence, Mapping)
+        else None
+    )
+    artifact_coherence = _dict_if_mapping(raw_artifact_coherence)
+    if artifact_coherence:
+        lines.extend(
+            [
+                "## Artifact Coherence",
+                *_render_table(
+                    headers=(
+                        "Target",
+                        "Status",
+                        "Contract",
+                        "Method",
+                        "Route",
+                        "Module",
+                        "Class",
+                    ),
+                    rows=[
+                        (
+                            target_id,
+                            report.get("status"),
+                            target_contract.get("contract_id"),
+                            report.get("selected_method"),
+                            report.get("selected_route_id"),
+                            artifact.get("module_name"),
+                            artifact.get("class_name"),
+                        )
+                        for target_id, raw_report in artifact_coherence.items()
+                        for report in [_dict_if_mapping(raw_report)]
+                        for target_contract in [
+                            _dict_if_mapping(report.get("target_contract"))
+                        ]
+                        for artifact in [_dict_if_mapping(report.get("artifact"))]
+                    ],
+                ),
+                "",
+            ]
+        )
 
     if runtime_controls:
         lines.extend(
@@ -1212,6 +1260,12 @@ def _likely_cause(
                 f"broken lanes: {', '.join(str(method) for method in failed_methods if method)}."
             )
         return "One comparison/comparator lane failed to build while the rest of the task completed."
+    if failure_bucket == "comparison_semantic_artifact_mismatch":
+        return (
+            "A declared comparison target executed with an unbound or "
+            "semantically mismatched artifact, so numerical comparison was "
+            "correctly suppressed."
+        )
     if failure_bucket == "comparison_failure" or comparison_status not in {"", "passed"}:
         failed_methods = [item.get("method") for item in method_outcomes if not item.get("success")]
         if failed_methods:
@@ -1249,6 +1303,8 @@ def _confidence_for(*, failure_bucket: str, signals: list[str]) -> str:
         return "high"
     if failure_bucket == "comparator_build_failure":
         return "high"
+    if failure_bucket == "comparison_semantic_artifact_mismatch":
+        return "high"
     if failure_bucket in {"comparison_failure", "validation_failure", "implementation_gap"}:
         return "medium"
     if signals:
@@ -1281,6 +1337,8 @@ def _headline_from_bucket(
         if failing_methods:
             return f"Comparator build failed for {', '.join(str(method) for method in failing_methods if method)}."
         return "Comparator build failed before the task could finish."
+    if failure_bucket == "comparison_semantic_artifact_mismatch":
+        return "Comparison target execution did not match its declared artifact contract."
     if failure_bucket == "comparison_failure":
         failing_methods = [item.get("method") for item in method_outcomes if not item.get("success")]
         if failing_methods:
@@ -1304,6 +1362,11 @@ def _default_next_action(*, failure_bucket: str, decision_stage: str) -> str:
         return "Repair the failing comparator route or scaffold, then rerun the broken comparator lane before rerunning the full task."
     if failure_bucket == "comparison_failure":
         return "Inspect which methods failed to produce valid results, then rerun the narrowest broken route."
+    if failure_bucket == "comparison_semantic_artifact_mismatch":
+        return (
+            "Bind each comparison target to the declared method, route, semantic "
+            "axes, and executable variant before rerunning numerical comparison."
+        )
     if failure_bucket == "implementation_gap":
         return "Fix the missing primitive or symbol in the implementation path and rerun the task."
     if failure_bucket == "missing_market_data":

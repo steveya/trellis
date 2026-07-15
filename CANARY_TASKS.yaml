@@ -16,12 +16,14 @@ canary_set:
     estimated_cost_usd: 0.12
     record_cassette: false
     replay_mode: deterministic_exact_binding
-    rationale: PDE canary retained for zero-token exact-binding contract coverage.
+    expected_failure_bucket: comparison_semantic_artifact_mismatch
+    rationale: Semantic guard proving the stale shared analytical artifact cannot create a false green for distinct PDE and analytical targets.
     covers:
       - pde
       - deterministic_replay
       - exact_binding
-      - regression
+      - semantic_artifact_gate
+      - false_green_prevention
 
   - id: T38
     engine_family: credit

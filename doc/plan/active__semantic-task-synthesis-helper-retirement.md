@@ -56,28 +56,32 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1193` | Compound option pricing: retire analytical helper authority | Done |
 | `QUA-1194` | Fixed lookback pricing: retire analytical helper authority | Done |
 | `QUA-1195` | Variance swap pricing: retire analytical helper authority | Done |
+| `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | In Progress |
 
 ## Current Sequence
 
-1. Use QUA-1185 strict cached replays as zero-model evidence without explicit
+1. Complete QUA-1102 so every helper-retirement comparison proves that each
+   declared method and variant executed a coherent artifact before numerical
+   tolerance is considered.
+2. Use QUA-1185 strict cached replays as zero-model evidence without explicit
    reflection/consolidation skip flags; persisted policy reasons must explain
    every skipped post-build stage.
-2. Apply the QUA-1192 classifier boundary: only explicit task, target, or
+3. Apply the QUA-1192 classifier boundary: only explicit task, target, or
    model-contract evidence may declare stochastic-volatility semantics;
    ambient market capabilities remain non-authoritative.
-3. Apply the reviewed QUA-1191 chooser and QUA-1193 compound precedents: retain
+4. Apply the reviewed QUA-1191 chooser and QUA-1193 compound precedents: retain
    product wrappers only as independent comparison evidence while checked
    adapters own bounded formula composition from reusable primitives.
-4. Apply the reviewed QUA-1194 fixed-lookback precedent: compose the admitted
+5. Apply the reviewed QUA-1194 fixed-lookback precedent: compose the admitted
    analytical formula from scalar market, time, Gaussian, and discounting
    primitives while retaining the product wrapper only as comparison evidence.
-5. Apply the reviewed QUA-1195 variance-swap precedent: compose the admitted
+6. Apply the reviewed QUA-1195 variance-swap precedent: compose the admitted
    analytical smile-slope approximation from time, interpolation, and
    discounting primitives while retaining wrappers only as comparison
    evidence.
-6. Select the next helper-authority family from the machine-readable audit and
+7. Select the next helper-authority family from the machine-readable audit and
    create a bounded ticket before changing another route.
-7. Run live fresh-generation evidence only with current external-model approval;
+8. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 

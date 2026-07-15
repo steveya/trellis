@@ -66,6 +66,16 @@ class BuildResult:
     admission_target_module_name: str | None = None
     admission_target_module_path: str | None = None
     admission_target_file_path: str | None = None
+    comparison_target_contract: dict[str, Any] = field(default_factory=dict)
+    execution_binding: dict[str, Any] = field(default_factory=dict)
+    comparison_binding_evidence_source: str = ""
+    validation_binding_evidence_source: str = ""
+    selected_method: str | None = None
+    selected_route_id: str | None = None
+    selected_route_family: str | None = None
+    selected_backend_binding_id: str | None = None
+    selected_validation_bundle_id: str | None = None
+    selected_semantic_axes: dict[str, Any] = field(default_factory=dict)
     blocker_details: dict[str, Any] | None = None
     token_usage_summary: dict[str, Any] = field(default_factory=dict)
     intra_run_learning: dict[str, Any] = field(default_factory=dict)
@@ -332,6 +342,28 @@ def build_with_knowledge(
             result.admission_target_module_name = build_meta.get("admission_target_module_name")
             result.admission_target_module_path = build_meta.get("admission_target_module_path")
             result.admission_target_file_path = build_meta.get("admission_target_file_path")
+            result.comparison_target_contract = dict(
+                build_meta.get("comparison_target_contract") or {}
+            )
+            result.execution_binding = dict(build_meta.get("execution_binding") or {})
+            result.comparison_binding_evidence_source = str(
+                build_meta.get("comparison_binding_evidence_source") or ""
+            )
+            result.validation_binding_evidence_source = str(
+                build_meta.get("validation_binding_evidence_source") or ""
+            )
+            result.selected_method = build_meta.get("selected_method")
+            result.selected_route_id = build_meta.get("selected_route_id")
+            result.selected_route_family = build_meta.get("selected_route_family")
+            result.selected_backend_binding_id = build_meta.get(
+                "selected_backend_binding_id"
+            )
+            result.selected_validation_bundle_id = build_meta.get(
+                "selected_validation_bundle_id"
+            )
+            result.selected_semantic_axes = dict(
+                build_meta.get("selected_semantic_axes") or {}
+            )
             result.blocker_details = build_meta.get("blocker_details")
             result.intra_run_learning = dict(build_meta.get("intra_run_learning") or {})
         except BuildTrackingFailure as exc:
@@ -351,6 +383,28 @@ def build_with_knowledge(
             result.admission_target_module_name = exc.meta.get("admission_target_module_name")
             result.admission_target_module_path = exc.meta.get("admission_target_module_path")
             result.admission_target_file_path = exc.meta.get("admission_target_file_path")
+            result.comparison_target_contract = dict(
+                exc.meta.get("comparison_target_contract") or {}
+            )
+            result.execution_binding = dict(exc.meta.get("execution_binding") or {})
+            result.comparison_binding_evidence_source = str(
+                exc.meta.get("comparison_binding_evidence_source") or ""
+            )
+            result.validation_binding_evidence_source = str(
+                exc.meta.get("validation_binding_evidence_source") or ""
+            )
+            result.selected_method = exc.meta.get("selected_method")
+            result.selected_route_id = exc.meta.get("selected_route_id")
+            result.selected_route_family = exc.meta.get("selected_route_family")
+            result.selected_backend_binding_id = exc.meta.get(
+                "selected_backend_binding_id"
+            )
+            result.selected_validation_bundle_id = exc.meta.get(
+                "selected_validation_bundle_id"
+            )
+            result.selected_semantic_axes = dict(
+                exc.meta.get("selected_semantic_axes") or {}
+            )
             result.blocker_details = exc.meta.get("blocker_details")
             result.intra_run_learning = dict(exc.meta.get("intra_run_learning") or {})
         except Exception as e:
