@@ -233,13 +233,14 @@ boundary is also stricter here: an explicit ``instrument_type`` such as
 ``vanilla_option`` contract when the prose only happens to contain
 generic ``option`` language.
 
-The analytical / PDE / FFT helper cohort now behaves the same way.
-Helper-backed Black76 swaption routes, vanilla-equity PDE / event-aware PDE
-helper branches, and the vanilla-equity transform helper keep only backend
-binding, admissibility, and signature-validation authority. When generated code
-tries to reconstruct spot/strike/time bundles or call those helpers on the
-wrong surface, semantic validation now fails directly instead of leaning on
-route-card repair prose.
+The analytical / PDE / FFT cohort now behaves the same way. Primitive-composed
+Black76 swaption routes, vanilla-equity PDE / event-aware PDE helper branches,
+and the vanilla-equity transform helper keep only the appropriate backend
+binding, admissibility, primitive, and signature-validation authority. When
+generated code reconstructs already-resolved market bundles, uses product
+wrappers as construction authority, or calls a helper on the wrong surface,
+semantic validation fails directly instead of leaning on route-card repair
+prose.
 
 The Monte Carlo compiler now has the matching bounded family surface for the
 next migration tranche:

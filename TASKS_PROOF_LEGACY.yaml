@@ -80,6 +80,9 @@ tasks:
     internal:
     - hw_tree_bermudan
     - black76_european_lower_bound
+    reference_target: hw_tree_bermudan
+    relations:
+      black76_european_lower_bound: <=
     external:
     - quantlib
     - financepy

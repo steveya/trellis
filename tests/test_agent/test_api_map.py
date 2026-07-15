@@ -55,6 +55,10 @@ def test_api_map_contains_expected_core_entries():
         api_map["rate_monte_carlo_composition"]["module"]
         == "trellis.models.monte_carlo.simulation_substrate"
     )
+    assert (
+        api_map["bermudan_swaption_lower_bound_composition"]["module"]
+        == "trellis.models.rate_style_swaption"
+    )
     assert api_map["equity_tree"]["module"] == "trellis.models.trees.algebra"
     assert api_map["rate_lattice"]["module"] == "trellis.models.trees.lattice"
     assert "utilities" in api_map
@@ -84,6 +88,7 @@ def test_api_map_key_imports_are_registry_valid():
         "digital_option_composition",
         "quanto_option_composition",
         "rate_monte_carlo_composition",
+        "bermudan_swaption_lower_bound_composition",
         "qmc",
         "pde",
         "fft",
@@ -292,11 +297,52 @@ def test_api_map_semantic_selection_reaches_composition_cards():
             ),
             "rate_monte_carlo_composition",
         ),
+        (
+            ApiMapQuery(
+                instrument_type="bermudan_swaption",
+                payoff_family="swaption",
+                method="analytical",
+                features=("black76_european_lower_bound",),
+            ),
+            "bermudan_swaption_lower_bound_composition",
+        ),
     )
 
     for query, expected_family in cases:
         selection = select_api_map_sections(query)
         assert expected_family in selection.selected_families
+
+
+def test_api_map_exposes_bermudan_final_exercise_lower_bound_composition():
+    query = ApiMapQuery(
+        instrument_type="bermudan_swaption",
+        payoff_family="swaption",
+        method="analytical",
+        features=("black76_european_lower_bound",),
+    )
+    selection = select_api_map_sections(query)
+    text = format_api_map_for_prompt(compact=True, query=query)
+
+    assert "bermudan_swaption_lower_bound_composition" in (
+        selection.selected_families
+    )
+    assert selection.selected_families[0] == (
+        "bermudan_swaption_lower_bound_composition"
+    )
+    assert "rate_lattice" not in selection.selected_families
+    assert "rate_monte_carlo_composition" not in selection.selected_families
+    for symbol in (
+        "normalize_explicit_dates",
+        "resolve_swaption_black76_inputs",
+        "price_swaption_black76_raw",
+    ):
+        assert symbol in text
+    assert "final normalized exercise date" in text
+    assert "strictly after settlement and before swap end" in text
+    assert "Return zero when no valid exercise date remains" in text
+    assert "Do not sum or maximize European prices" in text
+    assert "price_bermudan_swaption_black76_lower_bound(...)" in text
+    assert "from trellis.models.rate_style_swaption import " in text
 
 
 def test_api_map_exposes_complete_fixed_lookback_analytical_composition():

@@ -17,10 +17,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import date
 
+from trellis.core.date_utils import normalize_explicit_dates
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound
-
+from trellis.models.rate_style_swaption import (
+    price_swaption_black76_raw,
+    resolve_swaption_black76_inputs,
+)
 
 
 @dataclass(frozen=True)
@@ -76,4 +79,18 @@ Implementation target: black76_european_lower_bound."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        return float(price_bermudan_swaption_black76_lower_bound(market_state, spec))
+        exercise_dates = normalize_explicit_dates(spec.exercise_dates)
+        valid_exercise_dates = tuple(
+            exercise_date
+            for exercise_date in exercise_dates
+            if market_state.settlement < exercise_date < spec.swap_end
+        )
+        if not valid_exercise_dates:
+            return 0.0
+        final_exercise_date = valid_exercise_dates[-1]
+        resolved = resolve_swaption_black76_inputs(
+            market_state,
+            spec,
+            expiry_date=final_exercise_date,
+        )
+        return float(price_swaption_black76_raw(resolved))

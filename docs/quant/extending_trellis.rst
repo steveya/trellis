@@ -100,13 +100,17 @@ For schedule-dependent swaptions, split the stable surfaces by solver role:
 
 - Bermudan tree routes should delegate to
   ``trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree(...)``
-- analytical comparison lanes should delegate to
-  ``trellis.models.rate_style_swaption.price_bermudan_swaption_black76_lower_bound(...)``
+- analytical comparison lanes should normalize explicit exercise dates, select
+  the final date strictly after settlement and before swap end, bind the
+  European claim through ``resolve_swaption_black76_inputs(...)``, and pass its
+  typed result to ``price_swaption_black76_raw(...)``
 
-That analytical helper is intentionally a lower-bound surface. It prices the
-European swaption exercisable only on the final Bermudan date. It is not a
-closed-form Bermudan solver and should not be replaced with an inline loop that
-sums multiple exercise-date European values.
+That analytical composition is intentionally a lower-bound comparator. It
+prices the European swaption exercisable only on the final valid Bermudan date,
+returns zero when no valid date remains, and is not a closed-form Bermudan
+solver. The adapter owns that small schedule-selection rule; it must not sum or
+maximize multiple exercise-date European values. The retained product wrapper
+is compatibility/reference evidence, not generated-route authority.
 
 The same rule now applies to schedule-dependent lattice exercise. Prefer the
 checked-in control helpers in ``trellis.models.trees.control`` over hand-coded

@@ -3729,9 +3729,9 @@ def _augment_ir_with_promoted_route_support(ir: ProductIR) -> ProductIR:
         # first-class candidate engine family against rate-tree / PDE /
         # Monte-Carlo routes that are the true method for those products
         # (e.g. Bermudan swaption selects rate_tree, not the Black76
-        # lower-bound helper). Skip the augmentation contribution for such
-        # routes; their direct ``match_candidate_routes`` dispatch via the
-        # scorer still works.
+        # final-exercise comparison lane). Skip the augmentation contribution
+        # for such routes; their direct ``match_candidate_routes`` dispatch
+        # via the scorer still works.
         if exercise_style and exercise_style != "european":
             score_hints = getattr(route, "score_hints", None) or {}
             non_european_penalty = float(

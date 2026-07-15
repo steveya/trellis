@@ -1940,6 +1940,8 @@ def build_payoff(
                 generation_token_usage = summarize_llm_usage(usage_records)
                 enforce_llm_token_budget(stage="code_generation")
             code = generated_module.code
+            if build_meta is not None:
+                build_meta["code"] = code
         except Exception as exc:
             failure_text = f"attempt {attempt_number}: {type(exc).__name__}: {exc}"
             previous_failures.append(failure_text)
@@ -6142,6 +6144,30 @@ def _deterministic_exact_binding_evaluate_body(
                 raise ValueError(f"Unsupported payout_type {getattr(spec, 'payout_type', None)!r}")
                 """
             ).rstrip()
+    if (
+        instrument_type == "bermudan_swaption"
+        and "trellis.models.rate_style_swaption.price_swaption_black76_raw" in refs
+    ):
+        return textwrap.dedent(
+            """\
+            spec = self._spec
+            exercise_dates = normalize_explicit_dates(spec.exercise_dates)
+            valid_exercise_dates = tuple(
+                exercise_date
+                for exercise_date in exercise_dates
+                if market_state.settlement < exercise_date < spec.swap_end
+            )
+            if not valid_exercise_dates:
+                return 0.0
+            final_exercise_date = valid_exercise_dates[-1]
+            resolved = resolve_swaption_black76_inputs(
+                market_state,
+                spec,
+                expiry_date=final_exercise_date,
+            )
+            return price_swaption_black76_raw(resolved)
+            """
+        ).rstrip()
     helper_bodies = {
         "trellis.models.fx_vanilla.price_fx_vanilla_analytical": (
             "return price_fx_vanilla_analytical(market_state, spec)"
@@ -6716,6 +6742,8 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append("from math import sqrt")
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
+    if "normalize_explicit_dates(" in body:
+        imports.append("from trellis.core.date_utils import normalize_explicit_dates")
     if "resolve_swaption_black76_inputs(" in body:
         imports.append(
             "from trellis.models.rate_style_swaption import "
@@ -8948,11 +8976,11 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
-            "Bermudan swaption analytical comparators should stay on the checked-in lower-bound helper surface.",
-            "Prefer `from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound` and delegate to that helper from the adapter.",
+            "Bermudan swaption analytical comparators should compose the final-exercise European lower bound from public schedule, binding, and kernel surfaces.",
+            "Import `normalize_explicit_dates` from `trellis.core.date_utils` plus `resolve_swaption_black76_inputs` and `price_swaption_black76_raw` from `trellis.models.rate_style_swaption`.",
             "Interpret `black76_european_lower_bound` as the European swaption exercisable only on the final Bermudan date.",
-            "Do not sum one European Black76 price per exercise date, and do not rebuild forward-swap-rate or annuity loops inline when the checked-in helper already owns the route.",
-            "Keep the adapter minimal: validate `market_state.discount` and `market_state.vol_surface`, then call the helper and return `float(...)`.",
+            "Normalize the exercise schedule, keep dates strictly after `market_state.settlement` and before `spec.swap_end`, return zero when none remain, then resolve once with `expiry_date=valid_exercise_dates[-1]` and call the raw kernel.",
+            "Do not sum one European Black76 price per exercise date, do not rebuild forward-swap-rate or annuity loops inline, and do not use the product-level lower-bound helper as construction authority.",
         )
     if (
         instrument == "swaption"

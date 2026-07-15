@@ -903,12 +903,13 @@ bounded Hull-White calibration/model contract now survive into the
 method-specific ``ValuationContext`` and ``MarketBindingSpec`` instead of being
 dropped when a multi-method comparison request is compiled.
 
-For the helper-backed analytical, tree, and Monte Carlo swaption routes, the
-runtime now also preserves those comparison-regime bindings when it materializes
-deterministic exact wrappers. That means the exact helper calls carry the same
-explicit Hull-White comparison parameters, and the Monte Carlo wrapper adds a
-stable comparison-quality sampling control instead of drifting on an unseeded
-default path.
+For the primitive-composed analytical and helper-backed tree and Monte Carlo
+swaption routes, the runtime preserves those comparison-regime bindings when it
+materializes deterministic adapters. The analytical adapter carries the same
+explicit curve/model comparison parameters through the resolver into the raw
+Black76 kernel. Tree and Monte Carlo helper calls preserve those parameters,
+and the Monte Carlo wrapper adds a stable comparison-quality sampling control
+instead of drifting on an unseeded default path.
 
 Within the valuation layer, migrated calibration workflows now carry a bounded
 ``EngineModelSpec`` surface instead of relying only on a free-form
@@ -989,7 +990,7 @@ does not treat equity/Heston model payloads or generic Black-vol surfaces as
 short-rate model parameters.
 
 The analytical / PDE / FFT support cohort now follows the same rule. The
-helper-backed Black76 swaption routes, the primitive-composed vanilla-equity
+primitive-composed Black76 swaption routes, the primitive-composed vanilla-equity
 PDE route, bounded CEV PDE/tree proof helpers, bounded event-aware PDE helper
 branches, Heston ADI diagnostic scaffold, double-barrier payoff primitives,
 and vanilla-equity transform helper keep backend binding, admissibility, and

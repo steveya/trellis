@@ -109,9 +109,20 @@ _BASKET_PRIMS: tuple[PrimitiveRef, ...] = (
 
 _SWAPTION_BERM_PRIMS: tuple[PrimitiveRef, ...] = (
     PrimitiveRef(
+        "trellis.core.date_utils",
+        "normalize_explicit_dates",
+        "schedule_builder",
+        required=False,
+    ),
+    PrimitiveRef(
         "trellis.models.rate_style_swaption",
-        "price_bermudan_swaption_black76_lower_bound",
-        "route_helper",
+        "resolve_swaption_black76_inputs",
+        "market_binding",
+    ),
+    PrimitiveRef(
+        "trellis.models.rate_style_swaption",
+        "price_swaption_black76_raw",
+        "pricing_kernel",
     ),
 )
 

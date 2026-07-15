@@ -572,10 +572,10 @@ def _render_family_route_guidance(
     if instrument_type == "bermudan_swaption" and method == "analytical":
         lines.append("## Family Route Guidance")
         lines.extend([
-            "- For the analytical comparator lane, prefer `price_bermudan_swaption_black76_lower_bound(market_state, spec)` from `trellis.models.rate_style_swaption`.",
+            "- For the analytical comparator lane, import `normalize_explicit_dates` from `trellis.core.date_utils` plus `resolve_swaption_black76_inputs` and `price_swaption_black76_raw` from `trellis.models.rate_style_swaption`.",
             "- Interpret `black76_european_lower_bound` as the European swaption exercisable only on the final Bermudan date.",
-            "- Keep the adapter thin: validate discount/vol access, then delegate to the checked-in helper. Do not sum one European Black76 price per exercise date.",
-            "- Do not rebuild co-terminal swap schedule loops, annuity extraction, or forward-swap-rate assembly inline when the checked-in helper already owns that route.",
+            "- Normalize the exercise schedule, keep dates strictly after `market_state.settlement` and before `self._spec.swap_end`, return zero when none remain, then resolve once with `expiry_date=valid_exercise_dates[-1]` and pass the typed result to the raw kernel.",
+            "- Do not sum or maximize one European Black76 price per exercise date. Do not rebuild co-terminal swap schedule loops, annuity extraction, or forward-swap-rate assembly inline, and do not use the product-level lower-bound helper as construction authority.",
         ])
 
     if instrument_type == "swaption" and method == "analytical":

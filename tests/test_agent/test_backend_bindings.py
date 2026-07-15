@@ -355,6 +355,34 @@ def test_resolve_backend_binding_spec_uses_route_conditionals_for_exact_targets(
         == "trellis.models.rate_style_swaption.price_swaption_black76_raw"
     )
 
+    bermudan_resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="bermudan_swaption",
+            payoff_family="swaption",
+            exercise_style="bermudan",
+            schedule_dependence=True,
+            state_dependence="schedule_state",
+        ),
+    )
+
+    assert bermudan_resolved.helper_refs == ()
+    assert bermudan_resolved.schedule_builder_refs == (
+        "trellis.core.date_utils.normalize_explicit_dates",
+    )
+    assert bermudan_resolved.market_binding_refs == (
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+    )
+    assert bermudan_resolved.pricing_kernel_refs == (
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+    )
+    assert bermudan_resolved.exact_target_refs == (
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+    )
+    assert bermudan_resolved.binding_id == (
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw"
+    )
+
 
 def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
     catalog = load_backend_binding_catalog()
