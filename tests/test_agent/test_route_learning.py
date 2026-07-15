@@ -82,7 +82,9 @@ def test_extract_route_feature_map_matches_minimized_live_scorer_contract():
     )
 
     assert feature_map["family_capability_ok"] == 1.0
-    assert feature_map["binding_role:route_helper"] == 1.0
+    assert feature_map["binding_role:market_binding"] == 1.0
+    assert feature_map["binding_role:pricing_kernel"] == 1.0
+    assert "binding_role:route_helper" not in feature_map
     assert feature_map["binding_has_exact_surface"] == 1.0
     assert "route_family_matches_ir" not in feature_map
     assert "route:analytical_black76" not in feature_map

@@ -528,10 +528,10 @@ def test_vanilla_option_pde_lowers_to_event_aware_primitive_composition():
     )
 
 
-def test_rate_style_swaption_analytical_lowers_to_black76_family_helper():
+def test_rate_style_swaption_analytical_lowers_to_resolver_then_raw_kernel():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
-    from trellis.agent.dsl_algebra import ContractAtom
+    from trellis.agent.dsl_algebra import ThenExpr
 
     contract = make_rate_style_swaption_contract(
         description="5Yx10Y USD payer swaption Black-76",
@@ -543,16 +543,18 @@ def test_rate_style_swaption_analytical_lowers_to_black76_family_helper():
     assert lowering is not None
     assert lowering.route_id == "analytical_black76"
     assert lowering.admissibility_errors == ()
-    assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert lowering.normalized_expr.primitive_ref == (
-        "trellis.models.rate_style_swaption.price_swaption_black76"
+    assert isinstance(lowering.normalized_expr, ThenExpr)
+    assert tuple(term.primitive_ref for term in lowering.normalized_expr.terms) == (
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw",
     )
+    assert lowering.route_helper_refs == ()
 
 
-def test_rate_style_swaption_receiver_analytical_lowers_to_black76_family_helper():
+def test_rate_style_swaption_receiver_analytical_uses_same_resolved_composition():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
-    from trellis.agent.dsl_algebra import ContractAtom
+    from trellis.agent.dsl_algebra import ThenExpr
 
     contract = make_rate_style_swaption_contract(
         description="5Yx10Y USD receiver swaption Black-76",
@@ -562,9 +564,10 @@ def test_rate_style_swaption_receiver_analytical_lowers_to_black76_family_helper
 
     lowering = blueprint.dsl_lowering
     assert lowering is not None
-    assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert lowering.normalized_expr.primitive_ref == (
-        "trellis.models.rate_style_swaption.price_swaption_black76"
+    assert isinstance(lowering.normalized_expr, ThenExpr)
+    assert tuple(term.primitive_ref for term in lowering.normalized_expr.terms) == (
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw",
     )
 
 

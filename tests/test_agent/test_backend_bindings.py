@@ -339,13 +339,20 @@ def test_resolve_backend_binding_spec_uses_route_conditionals_for_exact_targets(
         ),
     )
 
-    assert (
-        swaption_resolved.helper_refs
-        == ("trellis.models.rate_style_swaption.price_swaption_black76",)
+    assert swaption_resolved.helper_refs == ()
+    assert swaption_resolved.market_binding_refs == (
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+    )
+    assert swaption_resolved.pricing_kernel_refs == (
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+    )
+    assert swaption_resolved.primitive_refs == (
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw",
     )
     assert (
         swaption_resolved.binding_id
-        == "trellis.models.rate_style_swaption.price_swaption_black76"
+        == "trellis.models.rate_style_swaption.price_swaption_black76_raw"
     )
 
 

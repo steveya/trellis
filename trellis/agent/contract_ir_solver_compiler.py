@@ -66,6 +66,7 @@ from trellis.agent.valuation_context import ValuationContext
 from trellis.core.date_utils import add_months, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
+from trellis.models.rate_style_swaption import resolve_swaption_black76_inputs
 
 
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
@@ -1120,7 +1121,7 @@ class _StructuralSwaptionSpec:
     is_payer: bool
 
 
-def _swaption_helper_adapter(
+def _swaption_resolved_kernel_adapter(
     *,
     contract_ir: ContractIR,
     term_environment: ContractIRTermEnvironment,
@@ -1136,7 +1137,7 @@ def _swaption_helper_adapter(
     strike = float(bindings["k"])
     inferred_frequency = _rate_curve_frequency(schedule)
     # The current ContractIR decomposition uses coarse yearly coupon dates for
-    # swaptions. Preserve the checked helper contract by defaulting to the
+    # swaptions. Preserve the checked market-binding contract by defaulting to the
     # market-standard semi-annual fixed leg unless a more specific convention is
     # explicitly carried in the generic term environment or the structural
     # schedule is already finer than annual.
@@ -1203,11 +1204,9 @@ def _swaption_helper_adapter(
         coordinates.append(f"discount_curve:{discount_curve_name}")
     if rate_index:
         coordinates.append(f"forecast_curve:{rate_index}")
+    resolved = resolve_swaption_black76_inputs(market_state, spec)
     return {
-        "call_kwargs": {
-            "market_state": market_state,
-            "spec": spec,
-        },
+        "call_kwargs": {"resolved": resolved},
         "value_scale": 1.0,
         "resolved_market_coordinates": tuple(coordinates),
     }
@@ -1842,14 +1841,19 @@ def _default_registry() -> ContractIRSolverRegistry:
                 required_term_groups=("cash_settlement", "accrual_conventions", "floating_rate_reference"),
             ),
             materialization=ContractIRSolverMaterialization(
-                callable_ref="trellis.models.rate_style_swaption.price_swaption_black76",
-                call_style="helper_call",
-                adapter_ref="trellis.agent.contract_ir_solver_compiler._payer_swaption_adapter",
+                callable_ref="trellis.models.rate_style_swaption.price_swaption_black76_raw",
+                call_style="raw_kernel_kwargs",
+                adapter_ref="trellis.agent.contract_ir_solver_compiler._payer_swaption_resolved_kernel_adapter",
             ),
             provenance=ContractIRSolverProvenance(
-                declaration_id="helper_swaption_payer_black76",
+                declaration_id="swaption_payer_black76_resolved_kernel",
                 validation_bundle_id="rate_style_swaption_contract",
-                helper_refs=("trellis.models.rate_style_swaption.price_swaption_black76",),
+                pricing_kernel_refs=(
+                    "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+                ),
+                market_binding_refs=(
+                    "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+                ),
             ),
             precedence=44,
         ),
@@ -1882,14 +1886,19 @@ def _default_registry() -> ContractIRSolverRegistry:
                 required_term_groups=("cash_settlement", "accrual_conventions", "floating_rate_reference"),
             ),
             materialization=ContractIRSolverMaterialization(
-                callable_ref="trellis.models.rate_style_swaption.price_swaption_black76",
-                call_style="helper_call",
-                adapter_ref="trellis.agent.contract_ir_solver_compiler._receiver_swaption_adapter",
+                callable_ref="trellis.models.rate_style_swaption.price_swaption_black76_raw",
+                call_style="raw_kernel_kwargs",
+                adapter_ref="trellis.agent.contract_ir_solver_compiler._receiver_swaption_resolved_kernel_adapter",
             ),
             provenance=ContractIRSolverProvenance(
-                declaration_id="helper_swaption_receiver_black76",
+                declaration_id="swaption_receiver_black76_resolved_kernel",
                 validation_bundle_id="rate_style_swaption_contract",
-                helper_refs=("trellis.models.rate_style_swaption.price_swaption_black76",),
+                pricing_kernel_refs=(
+                    "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+                ),
+                market_binding_refs=(
+                    "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+                ),
             ),
             precedence=43,
         ),
@@ -2232,12 +2241,12 @@ def _digital_asset_put_adapter(**kwargs) -> dict[str, object]:
     return _digital_asset_adapter(call=False, **kwargs)
 
 
-def _payer_swaption_adapter(**kwargs) -> dict[str, object]:
-    return _swaption_helper_adapter(is_payer=True, **kwargs)
+def _payer_swaption_resolved_kernel_adapter(**kwargs) -> dict[str, object]:
+    return _swaption_resolved_kernel_adapter(is_payer=True, **kwargs)
 
 
-def _receiver_swaption_adapter(**kwargs) -> dict[str, object]:
-    return _swaption_helper_adapter(is_payer=False, **kwargs)
+def _receiver_swaption_resolved_kernel_adapter(**kwargs) -> dict[str, object]:
+    return _swaption_resolved_kernel_adapter(is_payer=False, **kwargs)
 
 
 def _basket_call_adapter(**kwargs) -> dict[str, object]:

@@ -224,23 +224,25 @@ def price(spec, market_state):
     assert "lite.analytical_black76_black_vol_surface_access_missing" in issue_codes
 
 
-def test_lite_review_allows_swaption_black76_helper_with_explicit_hull_white_comparison_params():
+def test_lite_review_allows_swaption_black76_binding_with_explicit_hull_white_comparison_params():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.lite_review import review_generated_code
     from trellis.agent.quant import PricingPlan
 
     source = """\
-from trellis.models.rate_style_swaption import price_swaption_black76
+from trellis.models.rate_style_swaption import (
+    price_swaption_black76_raw,
+    resolve_swaption_black76_inputs,
+)
 
 def price(spec, market_state):
-    return float(
-        price_swaption_black76(
-            market_state,
-            spec,
-            mean_reversion=0.05,
-            sigma=0.01,
-        )
+    resolved = resolve_swaption_black76_inputs(
+        market_state,
+        spec,
+        mean_reversion=0.05,
+        sigma=0.01,
     )
+    return price_swaption_black76_raw(resolved)
 """
 
     plan = GenerationPlan(
@@ -248,13 +250,25 @@ def price(spec, market_state):
         instrument_type="swaption",
         inspected_modules=("trellis.models.rate_style_swaption",),
         approved_modules=("trellis.models.rate_style_swaption",),
-        symbols_to_reuse=("price_swaption_black76",),
+        symbols_to_reuse=(
+            "resolve_swaption_black76_inputs",
+            "price_swaption_black76_raw",
+        ),
         proposed_tests=("tests/test_agent/test_build_loop.py",),
         primitive_plan=PrimitivePlan(
             route="analytical_black76",
             engine_family="analytical",
             primitives=(
-                PrimitiveRef("trellis.models.rate_style_swaption", "price_swaption_black76", "route_helper"),
+                PrimitiveRef(
+                    "trellis.models.rate_style_swaption",
+                    "resolve_swaption_black76_inputs",
+                    "market_binding",
+                ),
+                PrimitiveRef(
+                    "trellis.models.rate_style_swaption",
+                    "price_swaption_black76_raw",
+                    "pricing_kernel",
+                ),
             ),
             adapters=(),
             blockers=(),

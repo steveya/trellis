@@ -1,7 +1,7 @@
 # ContractIR Structural Compiler Parity
 
-- Generated at: `2026-07-15T09:19:35.932194+00:00`
-- Repo revision: `4cbdc05b33f1e581d9197ae385d26cf9b2a2ded9`
+- Generated at: `2026-07-15T17:49:57.950596+00:00`
+- Repo revision: `3515cb6b1babd7399754593a01152c7877c2b086`
 
 ## Family Summary
 
@@ -54,9 +54,9 @@
 
 | Case | Source | Shadow | Declaration | Route | Exact-target contains callable | Passed |
 | --- | --- | --- | --- | --- | --- | --- |
-| swaption_payer | semantic_blueprint | bound | helper_swaption_payer_black76 |  | True | True |
+| swaption_payer | semantic_blueprint | bound | swaption_payer_black76_resolved_kernel |  | True | True |
 - `swaption_payer` value parity: structural=`3.782585433884869e-05` reference=`3.782585433884869e-05` abs_diff=`0.0`
-| swaption_receiver | semantic_blueprint | bound | helper_swaption_receiver_black76 |  | True | True |
+| swaption_receiver | semantic_blueprint | bound | swaption_receiver_black76_resolved_kernel |  | True | True |
 - `swaption_receiver` value parity: structural=`0.0899413945129767` reference=`0.0899413945129767` abs_diff=`0.0`
 
 ## vanilla_option

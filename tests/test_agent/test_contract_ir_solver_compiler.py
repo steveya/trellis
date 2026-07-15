@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from datetime import date
 
 import pytest
@@ -61,7 +61,10 @@ from trellis.models.black import (
     black76_put,
     black76_cash_or_nothing_call,
 )
-from trellis.models.rate_style_swaption import price_swaption_black76
+from trellis.models.rate_style_swaption import (
+    price_swaption_black76_raw,
+    resolve_swaption_black76_inputs,
+)
 from trellis.models.analytical.equity_exotics import price_equity_variance_swap_analytical
 from trellis.models.vol_surface import FlatVol
 
@@ -358,6 +361,29 @@ def _swaption_market_state_with_named_forecast_curve() -> MarketState:
     )
 
 
+@dataclass(frozen=True)
+class _SwaptionReferenceSpec:
+    notional: float = 1.0
+    strike: float = 0.05
+    expiry_date: date = date(2025, 11, 15)
+    swap_start: date = date(2025, 11, 15)
+    swap_end: date = date(2030, 11, 15)
+    swap_frequency: Frequency = Frequency.SEMI_ANNUAL
+    day_count: DayCountConvention = DayCountConvention.ACT_360
+    rate_index: str | None = None
+    is_payer: bool = True
+
+
+def _resolved_swaption_reference(
+    market_state: MarketState,
+    **overrides,
+):
+    return resolve_swaption_black76_inputs(
+        market_state,
+        _SwaptionReferenceSpec(**overrides),
+    )
+
+
 def _basket_market_state() -> MarketState:
     return MarketState(
         as_of=date(2025, 1, 1),
@@ -503,10 +529,16 @@ class TestContractIRSolverCompiler:
         assert asset_call_price == pytest.approx(expected_asset_call, rel=1e-12, abs=1e-12)
         assert asset_put_price == pytest.approx(expected_asset_put, rel=1e-12, abs=1e-12)
 
-    def test_swaption_helper_binding_matches_exact_helper(self):
+    def test_swaption_resolver_kernel_binding_exposes_composition_authority(self):
         contract = _swaption_contract_ir()
         market_state = _swaption_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
+
+        selection = select_contract_ir_solver(
+            contract,
+            valuation_context=context,
+            preferred_method="analytical",
+        )
 
         decision = compile_contract_ir_solver(
             contract,
@@ -515,17 +547,23 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        assert decision.declaration_id == "helper_swaption_payer_black76"
-        spec = decision.call_kwargs["spec"]
-        assert spec.swap_frequency == Frequency.SEMI_ANNUAL
-        assert spec.day_count == DayCountConvention.ACT_360
-        assert execute_contract_ir_solver_decision(decision) == pytest.approx(
-            price_swaption_black76(market_state, spec),
-            rel=1e-12,
-            abs=1e-12,
+        assert selection.declaration_id == "swaption_payer_black76_resolved_kernel"
+        assert selection.callable_ref == (
+            "trellis.models.rate_style_swaption.price_swaption_black76_raw"
         )
+        assert selection.call_style == "raw_kernel_kwargs"
+        assert selection.helper_refs == ()
+        assert selection.market_binding_refs == (
+            "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+        )
+        assert selection.pricing_kernel_refs == (
+            "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+        )
+        assert decision.declaration_id == selection.declaration_id
+        assert set(decision.call_kwargs) == {"resolved"}
+        assert execute_contract_ir_solver_decision(decision) > 0.0
 
-    def test_receiver_swaption_helper_binding_matches_exact_helper(self):
+    def test_receiver_swaption_resolver_kernel_binding_matches_resolved_reference(self):
         contract = _receiver_swaption_contract_ir()
         market_state = _swaption_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
@@ -537,16 +575,15 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        assert decision.declaration_id == "helper_swaption_receiver_black76"
-        spec = decision.call_kwargs["spec"]
-        assert spec.is_payer is False
+        assert decision.declaration_id == "swaption_receiver_black76_resolved_kernel"
+        resolved = decision.call_kwargs["resolved"]
+        expected = _resolved_swaption_reference(market_state, is_payer=False)
+        assert resolved == expected
         assert execute_contract_ir_solver_decision(decision) == pytest.approx(
-            price_swaption_black76(market_state, spec),
-            rel=1e-12,
-            abs=1e-12,
+            price_swaption_black76_raw(expected), rel=1e-12, abs=1e-12
         )
 
-    def test_swaption_helper_respects_explicit_swap_start_term_field(self):
+    def test_swaption_binding_respects_explicit_swap_start_term_field(self):
         market_state = _swaption_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
         semantic_contract = make_rate_style_swaption_contract(
@@ -567,15 +604,17 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        spec = decision.call_kwargs["spec"]
-        assert spec.swap_start == date(2026, 5, 15)
+        resolved = decision.call_kwargs["resolved"]
+        expected = _resolved_swaption_reference(
+            market_state,
+            swap_start=date(2026, 5, 15),
+        )
+        assert resolved == expected
         assert execute_contract_ir_solver_decision(decision) == pytest.approx(
-            price_swaption_black76(market_state, spec),
-            rel=1e-12,
-            abs=1e-12,
+            price_swaption_black76_raw(expected), rel=1e-12, abs=1e-12
         )
 
-    def test_swaption_helper_accepts_start_date_alias_and_explicit_swap_end(self):
+    def test_swaption_binding_accepts_start_date_alias_and_explicit_swap_end(self):
         market_state = _swaption_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
         semantic_contract = make_rate_style_swaption_contract(
@@ -597,12 +636,15 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        spec = decision.call_kwargs["spec"]
-        assert spec.swap_start == date(2026, 5, 15)
-        assert spec.swap_end == date(2031, 5, 15)
-        assert spec.swap_frequency == Frequency.SEMI_ANNUAL
+        resolved = decision.call_kwargs["resolved"]
+        expected = _resolved_swaption_reference(
+            market_state,
+            swap_start=date(2026, 5, 15),
+            swap_end=date(2031, 5, 15),
+        )
+        assert resolved == expected
 
-    def test_swaption_helper_infers_forward_start_from_schedule_when_term_field_missing(self):
+    def test_swaption_binding_infers_forward_start_from_schedule_when_term_field_missing(self):
         market_state = _swaption_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
 
@@ -613,15 +655,17 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        spec = decision.call_kwargs["spec"]
-        assert spec.swap_start == date(2026, 11, 15)
+        resolved = decision.call_kwargs["resolved"]
+        expected = _resolved_swaption_reference(
+            market_state,
+            swap_start=date(2026, 11, 15),
+        )
+        assert resolved == expected
         assert execute_contract_ir_solver_decision(decision) == pytest.approx(
-            price_swaption_black76(market_state, spec),
-            rel=1e-12,
-            abs=1e-12,
+            price_swaption_black76_raw(expected), rel=1e-12, abs=1e-12
         )
 
-    def test_swaption_helper_preserves_end_of_month_inferred_start(self):
+    def test_swaption_binding_preserves_end_of_month_inferred_start(self):
         market_state = _swaption_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
 
@@ -632,10 +676,15 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        spec = decision.call_kwargs["spec"]
-        assert spec.swap_start == date(2026, 10, 31)
+        resolved = decision.call_kwargs["resolved"]
+        expected = _resolved_swaption_reference(
+            market_state,
+            swap_start=date(2026, 10, 31),
+            swap_end=date(2028, 10, 31),
+        )
+        assert resolved == expected
 
-    def test_swaption_helper_fails_closed_without_authoritative_start_for_single_payment_schedule(self):
+    def test_swaption_binding_fails_closed_without_authoritative_start_for_single_payment_schedule(self):
         market_state = _swaption_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
 
@@ -650,10 +699,12 @@ class TestContractIRSolverCompiler:
                 preferred_method="analytical",
             )
 
-        assert exc_info.value.best_diagnostic.declaration_id == "helper_swaption_payer_black76"
+        assert exc_info.value.best_diagnostic.declaration_id == (
+            "swaption_payer_black76_resolved_kernel"
+        )
         assert exc_info.value.best_diagnostic.error_type == "ValueError"
 
-    def test_swaption_helper_uses_forecast_curve_name_when_rate_index_missing(self):
+    def test_swaption_binding_uses_forecast_curve_name_when_rate_index_missing(self):
         market_state = _swaption_market_state_with_named_forecast_curve()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
         semantic_contract = make_rate_style_swaption_contract(
@@ -671,16 +722,19 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        spec = decision.call_kwargs["spec"]
+        resolved = decision.call_kwargs["resolved"]
+        expected = _resolved_swaption_reference(
+            market_state,
+            rate_index="USD-SOFR-3M",
+        )
+        fallback = _resolved_swaption_reference(market_state)
         selected_price = execute_contract_ir_solver_decision(decision)
-        fallback_price = price_swaption_black76(market_state, replace(spec, rate_index=None))
+        fallback_price = price_swaption_black76_raw(fallback)
 
-        assert spec.rate_index == "USD-SOFR-3M"
+        assert resolved == expected
         assert "forecast_curve:USD-SOFR-3M" in decision.resolved_market_coordinates
         assert selected_price == pytest.approx(
-            price_swaption_black76(market_state, spec),
-            rel=1e-12,
-            abs=1e-12,
+            price_swaption_black76_raw(expected), rel=1e-12, abs=1e-12
         )
         assert selected_price != pytest.approx(fallback_price, rel=1e-9, abs=1e-9)
 

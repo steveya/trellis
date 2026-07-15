@@ -69,7 +69,7 @@ The design rule is strict:
 
 - do not introduce ``VanillaEconomicTerms`` / ``SwaptionEconomicTerms`` style
   payloads
-- if a helper cannot be bound from ``ContractIR`` plus reusable term groups,
+- if a callable cannot be bound from ``ContractIR`` plus reusable term groups,
   that family is not structurally ready yet
 
 Admitted Families
@@ -79,7 +79,9 @@ The default Phase 3 registry admits:
 
 1. European Black76 call / put ramps
 2. Cash-or-nothing and asset-or-nothing digitals
-3. European payer / receiver swaptions via ``price_swaption_black76``
+3. European payer / receiver swaptions via
+   ``resolve_swaption_black76_inputs(...)`` followed by
+   ``price_swaption_black76_raw(...)``
 4. Two-asset analytical basket / spread call / put helpers
 5. Equity variance swaps via direct structural-solver compatibility
    declarations on ``price_equity_variance_swap_analytical`` and
@@ -100,6 +102,16 @@ They are not generated-task route authority: analytical task construction now
 receives time, linear interpolation, and discounting primitives, with quote
 validation and settlement owned by generated adapter code. The analytical
 reference is not a full option-strip or log-contract replication.
+
+The swaption declarations demonstrate the intended migration shape for a
+previously helper-authoritative family. Structural selection records the raw
+kernel as ``callable_ref``, records the resolver under ``market_binding_refs``,
+and leaves ``helper_refs`` empty. The binding adapter constructs the generic
+rate and accrual terms, calls the public resolver once, and passes only the
+typed ``ResolvedSwaptionBlack76Inputs`` value to the raw kernel. The public
+``price_swaption_black76(...)`` wrapper remains available to compatibility
+callers and independent validation, but it is not structural or generated
+construction authority.
 
 This boundary is machine-readable. ``ContractIRSolverProvenance`` defaults
 ``generated_route_authority`` to true for declarations that may replace route

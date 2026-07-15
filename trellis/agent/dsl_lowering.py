@@ -465,6 +465,14 @@ def _build_expr_for_route(
             market_signature=market_signature,
             bindings=bindings,
         )
+    resolved_kernel_expr = _build_resolved_pricing_kernel_expr(
+        route_id=route_id,
+        binding_id=binding_id,
+        market_signature=market_signature,
+        bindings=bindings,
+    )
+    if resolved_kernel_expr is not None:
+        return resolved_kernel_expr, ()
     if route_helper is None:
         return None, (_missing_helper_target_message(route_id, binding_id),)
 
@@ -523,6 +531,59 @@ def _build_expr_for_route(
         ),
     )
     return helper_atom, ()
+
+
+def _build_resolved_pricing_kernel_expr(
+    *,
+    route_id: str,
+    binding_id: str,
+    market_signature: ContractSignature,
+    bindings: tuple[DslTargetBinding, ...],
+) -> ContractExpr | None:
+    """Compose one required market resolver with one required pricing kernel."""
+    market_bindings = tuple(
+        binding
+        for binding in bindings
+        if binding.required and binding.role == "market_binding"
+    )
+    pricing_kernels = tuple(
+        binding
+        for binding in bindings
+        if binding.required and binding.role == "pricing_kernel"
+    )
+    required_bindings = tuple(binding for binding in bindings if binding.required)
+    if (
+        len(market_bindings) != 1
+        or len(pricing_kernels) != 1
+        or len(required_bindings) != 2
+    ):
+        return None
+
+    market_binding = market_bindings[0]
+    pricing_kernel = pricing_kernels[0]
+    binding_atom = ContractAtom(
+        atom_id=_binding_atom_id(route_id, binding_id, "market_binding"),
+        primitive_ref=market_binding.primitive_ref,
+        description="Resolve contractual and market inputs into a typed pricing basis.",
+        signature=ContractSignature(
+            inputs=market_signature.inputs,
+            outputs=("resolved_state:state",),
+            timeline_roles=market_signature.timeline_roles,
+            market_data_requirements=market_signature.market_data_requirements,
+        ),
+    )
+    kernel_atom = ContractAtom(
+        atom_id=_binding_atom_id(route_id, binding_id, "pricing_kernel"),
+        primitive_ref=pricing_kernel.primitive_ref,
+        description="Evaluate the resolved pricing basis with the selected raw kernel.",
+        signature=ContractSignature(
+            inputs=("resolved_state:state",),
+            outputs=("price:scalar",),
+            timeline_roles=market_signature.timeline_roles,
+            market_data_requirements=market_signature.market_data_requirements,
+        ),
+    )
+    return ThenExpr(terms=(binding_atom, kernel_atom))
 
 
 def _build_black76_expr(

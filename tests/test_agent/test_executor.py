@@ -979,7 +979,7 @@ def test_hydrate_spec_schema_defaults_from_swaption_semantics():
     assert "rate_index: str | None = 'USD-SOFR-3M'" in skeleton
 
 
-def test_deterministic_exact_binding_module_materializes_swaption_helper_wrapper():
+def test_deterministic_exact_binding_module_materializes_swaption_resolver_and_raw_kernel():
     from trellis.agent.comparison_target_contracts import ComparisonTargetContract
     from trellis.agent.executor import (
         _generate_skeleton,
@@ -989,7 +989,9 @@ def test_deterministic_exact_binding_module_materializes_swaption_helper_wrapper
     from trellis.agent.planner import STATIC_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=("trellis.models.rate_style_swaption.price_swaption_black76",),
+        lane_exact_binding_refs=(
+            "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+        ),
         primitive_plan=None,
         method="analytical",
         instrument_type="swaption",
@@ -1012,11 +1014,24 @@ def test_deterministic_exact_binding_module_materializes_swaption_helper_wrapper
     )
 
     assert generated is not None
-    assert "return price_swaption_black76(market_state, spec)" in generated.code
+    assert "resolved = resolve_swaption_black76_inputs(market_state, spec)" in generated.code
+    assert "return price_swaption_black76_raw(resolved)" in generated.code
+    assert "price_swaption_black76(market_state" not in generated.code
     assert "__trellis_comparison_bindings__" in generated.code
     assert repr(target_contract) in generated.code
     assert "sigma=0.01" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_admitted_swaption_adapter_composes_resolved_inputs_with_raw_kernel():
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "trellis/instruments/_agent/swaption.py"
+    ).read_text()
+
+    assert "resolve_swaption_black76_inputs(market_state, spec)" in source
+    assert "price_swaption_black76_raw(resolved)" in source
+    assert "price_swaption_black76(market_state" not in source
 
 
 def test_deterministic_exact_binding_module_materializes_bermudan_tree_compat_wrapper():
@@ -5720,7 +5735,10 @@ def test_deterministic_exact_binding_module_materializes_credit_loss_distributio
 @pytest.mark.parametrize(
     ("helper_ref", "expected_call"),
     [
-        ("trellis.models.rate_style_swaption.price_swaption_black76", "price_swaption_black76"),
+        (
+            "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+            "price_swaption_black76_raw",
+        ),
         ("trellis.models.rate_style_swaption_tree.price_swaption_tree", "price_swaption_tree"),
         ("trellis.models.rate_style_swaption.price_swaption_monte_carlo", "price_swaption_monte_carlo"),
     ],
@@ -5783,6 +5801,13 @@ def test_deterministic_exact_binding_module_threads_explicit_swaption_comparison
             "price_swaption_monte_carlo("
             "market_state, spec, n_paths=20000, seed=42, mean_reversion=0.05, sigma=0.01)"
         ) in generated.code
+    elif expected_call == "price_swaption_black76_raw":
+        assert (
+            "resolve_swaption_black76_inputs("
+            "market_state, spec, mean_reversion=0.05, sigma=0.01)"
+        ) in generated.code
+        assert "return price_swaption_black76_raw(resolved)" in generated.code
+        assert "price_swaption_black76(market_state" not in generated.code
     else:
         assert f"{expected_call}(market_state, spec, mean_reversion=0.05, sigma=0.01)" in generated.code
 

@@ -1524,8 +1524,11 @@ routes:
               style: european
         primitives:
           - module: trellis.models.rate_style_swaption
-            symbol: price_swaption_black76
-            role: route_helper
+            symbol: resolve_swaption_black76_inputs
+            role: market_binding
+          - module: trellis.models.rate_style_swaption
+            symbol: price_swaption_black76_raw
+            role: pricing_kernel
         adapters: []
         notes: []
       - when:

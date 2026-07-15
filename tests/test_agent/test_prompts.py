@@ -1136,7 +1136,7 @@ def test_evaluate_prompt_compact_surface_mentions_fx_route_helper():
     assert "route helper" in prompt
 
 
-def test_evaluate_prompt_compact_surface_mentions_swaption_helper_route():
+def test_evaluate_prompt_compact_surface_mentions_swaption_resolver_kernel_route():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.prompts import evaluate_prompt
     from trellis.agent.quant import PricingPlan
@@ -1147,14 +1147,24 @@ def test_evaluate_prompt_compact_surface_mentions_swaption_helper_route():
         inspected_modules=("trellis.models.rate_style_swaption",),
         approved_modules=("trellis.models.rate_style_swaption",),
         symbols_to_reuse=(
-            "price_swaption_black76",
+            "resolve_swaption_black76_inputs",
+            "price_swaption_black76_raw",
         ),
         proposed_tests=("tests/test_agent/test_build_loop.py",),
         primitive_plan=PrimitivePlan(
             route="analytical_black76",
             engine_family="analytical",
             primitives=(
-                PrimitiveRef("trellis.models.rate_style_swaption", "price_swaption_black76", "route_helper"),
+                PrimitiveRef(
+                    "trellis.models.rate_style_swaption",
+                    "resolve_swaption_black76_inputs",
+                    "market_binding",
+                ),
+                PrimitiveRef(
+                    "trellis.models.rate_style_swaption",
+                    "price_swaption_black76_raw",
+                    "pricing_kernel",
+                ),
             ),
             adapters=(),
             blockers=(),
@@ -1177,7 +1187,9 @@ def test_evaluate_prompt_compact_surface_mentions_swaption_helper_route():
         prompt_surface="compact",
     )
 
-    assert "price_swaption_black76" in prompt
+    assert "resolve_swaption_black76_inputs" in prompt
+    assert "price_swaption_black76_raw" in prompt
+    assert "price_swaption_black76(market_state" not in prompt
     assert "Hull-White-implied Black vol" in prompt
     assert "annuity" in prompt
 
@@ -1596,7 +1608,7 @@ def test_executor_bermudan_swaption_analytical_retry_pins_lower_bound_helper():
     assert "Do not sum one European Black76 price per exercise date" in text
 
 
-def test_executor_swaption_analytical_retry_pins_helper_backed_route():
+def test_executor_swaption_analytical_retry_pins_resolver_kernel_route():
     from types import SimpleNamespace
 
     from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
@@ -1615,7 +1627,9 @@ def test_executor_swaption_analytical_retry_pins_helper_backed_route():
 
     text = "\n".join(_route_specific_retry_lines(request))
 
-    assert "price_swaption_black76" in text
+    assert "resolve_swaption_black76_inputs" in text
+    assert "price_swaption_black76_raw" in text
+    assert "price_swaption_black76(market_state" not in text
     assert "Hull-White-implied Black vol" in text
     assert "annuity" in text
 

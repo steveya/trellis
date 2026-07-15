@@ -414,6 +414,18 @@ rate_monte_carlo_composition:
     - "Until those three capabilities are admitted, Bermudan swaption Monte Carlo must block as a semantic_method_composition_gap instead of falling back to the European swaption helper"
     - "A task-shaped pricing helper is not a substitute for a missing reusable composition capability"
 
+rate_style_swaption_composition:
+  module: trellis.models.rate_style_swaption
+  navigation:
+    aliases: [swaption, european_swaption, black76_swaption, rate_style_swaption]
+  key_imports:
+    - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw"
+  notes:
+    - "For a single-exercise European payer or receiver swaption, resolve the payment timeline, annuity, forward swap rate, strike, Black volatility, and direction with resolve_swaption_black76_inputs(...), then pass the typed result to price_swaption_black76_raw(...)."
+    - "The raw kernel applies notional and annuity exactly once. Do not reapply discounting, notional, or annuity in generated adapter code."
+    - "The product-level price_swaption_black76(...) wrapper remains a compatibility/reference API and is not generated-route construction authority."
+    - "Pass Hull-White comparison parameters to the resolver only when the task contract explicitly requests that comparison regime; ordinary Black76 benchmark tasks use the bound market volatility surface."
+
 qmc:
   module: trellis.models.qmc
   key_imports:
@@ -534,8 +546,10 @@ utilities:
   rate_style_swaption:
     module: trellis.models.rate_style_swaption
     imports:
-      - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw, price_swaption_black76"
+      - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw"
       - "from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound"
+    notes:
+      - "For European Black76 construction, bind with resolve_swaption_black76_inputs(...) and price only the typed result with price_swaption_black76_raw(...); the product wrapper is reference-only"
   jamshidian_zcb_option:
     module: trellis.models.zcb_option
     imports:

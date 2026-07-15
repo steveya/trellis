@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
+from types import SimpleNamespace
 
-from trellis.agent.contract_ir_solver_parity import build_contract_ir_solver_parity_report
+from trellis.agent.contract_ir_solver_parity import (
+    _swaption_reference,
+    build_contract_ir_solver_parity_report,
+)
 from trellis.agent.platform_requests import compile_build_request
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
+from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs
 from trellis.models.vol_surface import FlatVol
 
 
@@ -27,6 +33,29 @@ def _swaption_market_state() -> MarketState:
         discount=YieldCurve.flat(0.03),
         vol_surface=FlatVol(0.20),
     )
+
+
+def test_swaption_parity_reference_preserves_raw_kernel_degenerate_zero_contract():
+    resolved = ResolvedSwaptionBlack76Inputs(
+        expiry_date=date(2025, 11, 15),
+        expiry_years=1.0,
+        annuity=1.0,
+        forward_swap_rate=0.06,
+        strike=0.05,
+        vol=0.20,
+        notional=1.0,
+        is_payer=True,
+        payment_count=10,
+    )
+    degenerate_cases = (
+        replace(resolved, expiry_years=0.0),
+        replace(resolved, annuity=-1.0),
+        replace(resolved, payment_count=0),
+    )
+
+    for case in degenerate_cases:
+        decision = SimpleNamespace(call_kwargs={"resolved": case})
+        assert _swaption_reference(decision, _swaption_market_state(), None) == 0.0
 
 
 def _basket_market_state() -> MarketState:

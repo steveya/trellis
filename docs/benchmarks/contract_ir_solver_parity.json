@@ -1,6 +1,6 @@
 {
-  "generated_at": "2026-07-15T09:19:35.932194+00:00",
-  "repo_revision": "4cbdc05b33f1e581d9197ae385d26cf9b2a2ded9",
+  "generated_at": "2026-07-15T17:49:57.950596+00:00",
+  "repo_revision": "3515cb6b1babd7399754593a01152c7877c2b086",
   "status": "completed",
   "families": [
     {
@@ -373,17 +373,17 @@
           "preferred_method": "analytical",
           "expected_source": "semantic_blueprint",
           "expected_shadow_status": "bound",
-          "expected_declaration_id": "helper_swaption_payer_black76",
+          "expected_declaration_id": "swaption_payer_black76_resolved_kernel",
           "source": "semantic_blueprint",
           "shadow_status": "bound",
           "shadow_error": null,
           "legacy_route_id": null,
           "legacy_route_family": "analytical",
           "legacy_exact_target_refs": [
-            "trellis.models.rate_style_swaption.price_swaption_black76"
+            "trellis.models.rate_style_swaption.price_swaption_black76_raw"
           ],
           "legacy_exact_target_contains_structural_callable": true,
-          "selection_declaration_id": "helper_swaption_payer_black76",
+          "selection_declaration_id": "swaption_payer_black76_resolved_kernel",
           "selection_generated_route_authority": true,
           "route_free_authority": true,
           "selection_matches_structural_declaration": true,
@@ -395,8 +395,8 @@
           "product_ir_payoff_family": "swaption",
           "passed": true,
           "structural_contract_ir": "ContractIR(payoff=Scaled(scalar=Annuity(underlier_id='USD-IRS-5Y', schedule=FiniteSchedule(dates=(datetime.date(2026, 11, 15), datetime.date(2027, 11, 15), datetime.date(2028, 11, 15), datetime.date(2029, 11, 15), datetime.date(2030, 11, 15)))), body=Max(args=(Sub(lhs=SwapRate(underlier_id='USD-IRS-5Y', schedule=FiniteSchedule(dates=(datetime.date(2026, 11, 15), datetime.date(2027, 11, 15), datetime.date(2028, 11, 15), datetime.date(2029, 11, 15), datetime.date(2030, 11, 15)))), rhs=Strike(value=0.05)), Constant(value=0.0)))), exercise=Exercise(style='european', schedule=Singleton(t=datetime.date(2025, 11, 15))), observation=Observation(kind='terminal', schedule=Singleton(t=datetime.date(2025, 11, 15))), underlying=Underlying(spec=ForwardRate(name='USD-IRS-5Y', dynamics='lognormal_forward')))",
-          "declaration_id": "helper_swaption_payer_black76",
-          "callable_ref": "trellis.models.rate_style_swaption.price_swaption_black76",
+          "declaration_id": "swaption_payer_black76_resolved_kernel",
+          "callable_ref": "trellis.models.rate_style_swaption.price_swaption_black76_raw",
           "structural_price": 3.782585433884869e-05,
           "reference_price": 3.782585433884869e-05,
           "abs_diff": 0.0,
@@ -410,17 +410,17 @@
           "preferred_method": "analytical",
           "expected_source": "semantic_blueprint",
           "expected_shadow_status": "bound",
-          "expected_declaration_id": "helper_swaption_receiver_black76",
+          "expected_declaration_id": "swaption_receiver_black76_resolved_kernel",
           "source": "semantic_blueprint",
           "shadow_status": "bound",
           "shadow_error": null,
           "legacy_route_id": null,
           "legacy_route_family": "analytical",
           "legacy_exact_target_refs": [
-            "trellis.models.rate_style_swaption.price_swaption_black76"
+            "trellis.models.rate_style_swaption.price_swaption_black76_raw"
           ],
           "legacy_exact_target_contains_structural_callable": true,
-          "selection_declaration_id": "helper_swaption_receiver_black76",
+          "selection_declaration_id": "swaption_receiver_black76_resolved_kernel",
           "selection_generated_route_authority": true,
           "route_free_authority": true,
           "selection_matches_structural_declaration": true,
@@ -432,8 +432,8 @@
           "product_ir_payoff_family": "swaption",
           "passed": true,
           "structural_contract_ir": "ContractIR(payoff=Scaled(scalar=Annuity(underlier_id='USD-IRS-5Y', schedule=FiniteSchedule(dates=(datetime.date(2026, 11, 15), datetime.date(2027, 11, 15), datetime.date(2028, 11, 15), datetime.date(2029, 11, 15), datetime.date(2030, 11, 15)))), body=Max(args=(Sub(lhs=Strike(value=0.05), rhs=SwapRate(underlier_id='USD-IRS-5Y', schedule=FiniteSchedule(dates=(datetime.date(2026, 11, 15), datetime.date(2027, 11, 15), datetime.date(2028, 11, 15), datetime.date(2029, 11, 15), datetime.date(2030, 11, 15))))), Constant(value=0.0)))), exercise=Exercise(style='european', schedule=Singleton(t=datetime.date(2025, 11, 15))), observation=Observation(kind='terminal', schedule=Singleton(t=datetime.date(2025, 11, 15))), underlying=Underlying(spec=ForwardRate(name='USD-IRS-5Y', dynamics='lognormal_forward')))",
-          "declaration_id": "helper_swaption_receiver_black76",
-          "callable_ref": "trellis.models.rate_style_swaption.price_swaption_black76",
+          "declaration_id": "swaption_receiver_black76_resolved_kernel",
+          "callable_ref": "trellis.models.rate_style_swaption.price_swaption_black76_raw",
           "structural_price": 0.0899413945129767,
           "reference_price": 0.0899413945129767,
           "abs_diff": 0.0,
