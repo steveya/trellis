@@ -978,11 +978,88 @@ surface:
 3. construct ``SolveRequest`` with ``solver_hint="brentq"``
 4. call ``execute_solve_request`` and consume the checked ``SolveResult``
 
-This keeps the numerical policy bounded and auditable. Chooser, compound, and
-other critical-state formulas should not create route-local Newton loops or
-promote a product pricing helper as construction authority. The semantic API
-map card ``analytical_gaussian_composition`` is the builder's hot start for
+This keeps the numerical policy bounded and auditable. Compound and other
+critical-state formulas should not create route-local Newton loops or promote
+a product pricing helper as construction authority. The semantic API map card
+``analytical_gaussian_composition`` is the builder's general hot start for
 these probability and root-solving pieces.
+
+Simple chooser composition
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The admitted European simple-chooser lane uses the more complete
+``chooser_option_composition`` card. It joins the scalar-diffusion market
+resolver, contractual time fractions, Black-76 call/put kernels, discount and
+forward support, bivariate Gaussian probabilities, and the typed scalar-root
+surface. The checked adapter owns the derivative formula; the retained
+``price_equity_chooser_option_analytical`` wrapper is comparison evidence and
+does not appear in promoted route or backend construction authority.
+
+Let :math:`t_c` be the choice time, :math:`T_C` and :math:`T_P` the call and
+put expiries, and :math:`K_C` and :math:`K_P` their strikes. The admitted
+market projection resolves one constant :math:`r`, :math:`q`, and
+:math:`\sigma` at the longest expiry, using :math:`K_C` as the explicit
+volatility coordinate. At the choice date, the critical stock state
+:math:`S^*` solves
+
+.. math::
+
+   C_{BS}(S^*, K_C, T_C-t_c)
+   - P_{BS}(S^*, K_P, T_P-t_c) = 0.
+
+The adapter builds each Black-Scholes value from an equity forward, a discount
+factor, and the public Black-76 kernel. It submits the residual through one
+``root_scalar`` ``SolveRequest``. The checked F012 adapter uses the finite
+positive bracket
+
+.. math::
+
+   [10^{-8}M, 10^6M], \qquad
+   M = \max(S_0, K_C, K_P, 1),
+
+and verifies a sign change before solving. This is a deterministic admission
+policy, not a claim that every chooser contract has a root on that bracket.
+
+For the solved state, define
+
+.. math::
+
+   \begin{aligned}
+   d_1 &= \frac{\log(S_0/S^*) + (r-q+\tfrac12\sigma^2)t_c}
+                 {\sigma\sqrt{t_c}},
+   & d_2 &= d_1-\sigma\sqrt{t_c}, \\
+   y_C &= \frac{\log(S_0/K_C) + (r-q+\tfrac12\sigma^2)T_C}
+                 {\sigma\sqrt{T_C}},
+   & y_P &= \frac{\log(S_0/K_P) + (r-q+\tfrac12\sigma^2)T_P}
+                 {\sigma\sqrt{T_P}}, \\
+   \rho_C &= \sqrt{t_c/T_C},
+   & \rho_P &= \sqrt{t_c/T_P}.
+   \end{aligned}
+
+With :math:`\Phi_2` denoting the bivariate standard-normal CDF, the price per
+unit notional is
+
+.. math::
+
+   \begin{aligned}
+   V ={}& S_0 e^{-qT_C}\Phi_2(d_1,y_C;\rho_C)
+      - K_C e^{-rT_C}\Phi_2(d_2,y_C-\sigma\sqrt{T_C};\rho_C) \\
+      &- S_0 e^{-qT_P}\Phi_2(-d_1,-y_P;\rho_P)
+      + K_P e^{-rT_P}\Phi_2(-d_2,-y_P+\sigma\sqrt{T_P};\rho_P).
+   \end{aligned}
+
+The admitted lane fails closed unless settlement is strictly before the choice
+date and the choice date is strictly before both expiries. Spot, strikes, and
+volatility must be positive and finite. Immediate-choice, choice-at-expiry,
+zero-volatility, time-varying coefficient, local-volatility, and
+stochastic-volatility chooser claims are outside this formula rather than
+silently narrowed onto it.
+
+For risk, the adapter first uses the selected runtime ``MarketState.spot`` and
+falls back to the contract spot only when no runtime spot is bound. That keeps
+the pricing formula compatible with the product-neutral central spot-bump
+``Delta`` measure. The F012 FinancePy binding requests the same generic
+``bump_and_reprice`` policy; no chooser-specific Greek helper is required.
 
 Calibration Surface
 -------------------

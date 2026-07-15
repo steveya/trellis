@@ -409,9 +409,16 @@ def _chooser_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[
     discount_curve = _flat_curve(float(contract["domestic_rate"]), value_dt)
     dividend_curve = _flat_curve(float(contract["dividend_rate"]), value_dt)
     model = BlackScholes(float(contract["volatility"]))
-    return {
-        "price": float(option.value(value_dt, float(contract["spot"]), discount_curve, dividend_curve, model))
-    }
+    args = (
+        value_dt,
+        float(contract["spot"]),
+        discount_curve,
+        dividend_curve,
+        model,
+    )
+    outputs = {"price": float(option.value(*args))}
+    outputs.update(_maybe_method_outputs(option, ["delta"], *args))
+    return outputs
 
 
 def _compound_reference(*, contract: Mapping[str, Any], scenario_inputs: Mapping[str, Any]) -> dict[str, float]:

@@ -1816,15 +1816,58 @@ class TestAnalyticalRoutes:
             ),
         }
 
-    def test_chooser_primitives_use_exact_helper(self, registry):
+    def test_chooser_primitives_use_raw_analytical_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         new_prims = resolve_route_primitives(spec, self.CHOOSER_IR)
         assert resolve_route_family(spec, self.CHOOSER_IR) == "analytical"
         assert _prim_set(new_prims) == {
             (
-                "trellis.models.analytical.equity_exotics",
-                "price_equity_chooser_option_analytical",
-                "route_helper",
+                "trellis.models.resolution.single_state_diffusion",
+                "resolve_scalar_diffusion_market_inputs",
+                "market_binding",
+            ),
+            ("trellis.core.date_utils", "year_fraction", "time_measure"),
+            (
+                "trellis.models.analytical.support",
+                "forward_from_dividend_yield",
+                "forward_builder",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "discount_factor_from_zero_rate",
+                "discounting",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "discounted_value",
+                "discounting",
+            ),
+            ("trellis.models.black", "black76_call", "pricing_kernel"),
+            ("trellis.models.black", "black76_put", "pricing_kernel"),
+            (
+                "trellis.models.analytical.support.probability",
+                "bivariate_standard_normal_cdf",
+                "probability_kernel",
+            ),
+            (
+                "trellis.models.calibration.solve_request",
+                "ObjectiveBundle",
+                "objective_contract",
+            ),
+            (
+                "trellis.models.calibration.solve_request",
+                "SolveBounds",
+                "solver_bounds",
+            ),
+            (
+                "trellis.models.calibration.solve_request",
+                "SolveRequest",
+                "solver_request",
+            ),
+            (
+                "trellis.models.calibration.solve_request",
+                "execute_solve_request",
+                "solver",
             ),
         }
 

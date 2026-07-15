@@ -688,9 +688,31 @@ class TestKnowledgeStore:
             assert kernel in digital_requirements
         assert "price_equity_digital_option_analytical" not in digital_requirements
 
+        chooser = store._decompositions.get("chooser_option")
+        assert chooser is not None
+        assert chooser.method == "analytical"
+        assert set(chooser.method_modules) >= {
+            "trellis.models.resolution.single_state_diffusion",
+            "trellis.models.analytical.support",
+            "trellis.models.analytical.support.probability",
+            "trellis.models.black",
+            "trellis.models.calibration.solve_request",
+        }
+        chooser_requirements = " ".join(chooser.modeling_requirements)
+        for symbol in (
+            "resolve_scalar_diffusion_market_inputs",
+            "year_fraction",
+            "black76_call",
+            "black76_put",
+            "bivariate_standard_normal_cdf",
+            "SolveRequest",
+            "execute_solve_request",
+        ):
+            assert symbol in chooser_requirements
+        assert "price_equity_chooser_option_analytical" not in chooser_requirements
+
         for instrument, helper_symbol in (
             ("lookback_option", "price_equity_fixed_lookback_option_analytical"),
-            ("chooser_option", "price_equity_chooser_option_analytical"),
             ("compound_option", "price_equity_compound_option_analytical"),
         ):
             decomp = store._decompositions.get(instrument)
