@@ -25,7 +25,7 @@ def test_run_task_passes_force_rebuild_and_validation():
         attempts = 2
         gap_confidence = 0.75
         knowledge_gaps = ["vol_surface"]
-        payoff_cls = type("FakePayoff", (), {})
+        payoff_cls = type("FakePayoffClass", (), {})
         failures = []
         reflection = {"lesson_captured": "vol_001"}
 
@@ -82,10 +82,25 @@ def test_run_task_passes_force_rebuild_and_validation():
     assert calls[0]["validation"] == "fast"
     assert calls[0]["force_rebuild"] is False
     assert calls[0]["fresh_build"] is True
+    assert calls[0]["request_metadata"]["post_build_learning_policy"] == {
+        "execution_mode": "live",
+        "artifact_policy": "fresh_generated",
+        "recovery_mode": "strict",
+        "run_reflection": False,
+        "run_consolidation": False,
+        "reflection_reason": "recovery_mode_strict",
+        "consolidation_reason": "recovery_mode_strict",
+        "skip_reasons": ["recovery_mode_strict"],
+        "policy_source": "task_execution_policy",
+    }
+    assert result["post_build_learning_policy"] == calls[0]["request_metadata"][
+        "post_build_learning_policy"
+    ]
+    assert result["execution_mode"] == "live"
     assert result["runtime_controls"]["llm_wait_log_path"] == wait_log_path
     assert result["success"] is True
     assert result["elapsed_seconds"] == 4.5
-    assert result["payoff_class"] == "FakePayoff"
+    assert result["payoff_class"] == "FakePayoffClass"
     monkeypatch.undo()
 
 
@@ -185,6 +200,12 @@ def test_run_task_assisted_mode_retries_once_with_candidate_overlay():
     assert result["success"] is True
     assert result["attempts"] == 3
     assert result["recovery_mode"] == "assisted"
+    assert calls[0]["request_metadata"]["post_build_learning_policy"][
+        "run_reflection"
+    ] is True
+    assert calls[0]["request_metadata"]["post_build_learning_policy"][
+        "run_consolidation"
+    ] is True
     assert result["recovery_attempts"][0]["decision"] == "retry_with_candidate_knowledge"
     assert result["recovery_attempts"][0]["recovered"] is True
     retry_attribution = result["recovery_attempts"][0]["retry_attribution"]
@@ -1249,7 +1270,7 @@ def test_run_task_persists_latest_record(monkeypatch):
         attempts = 1
         gap_confidence = 0.8
         knowledge_gaps = []
-        payoff_cls = type("FakePayoff", (), {})
+        payoff_cls = type("FakeOfflinePayoffClass", (), {})
         failures = []
         reflection = {}
         post_build_tracking = {"last_phase": "consolidation_dispatched", "last_status": "backgrounded"}
@@ -1342,7 +1363,7 @@ def test_run_task_marks_cassette_replay_runs_and_persists_metadata(monkeypatch, 
         attempts = 1
         gap_confidence = 0.8
         knowledge_gaps = []
-        payoff_cls = type("FakePayoff", (), {})
+        payoff_cls = type("FakePolicySkippedPayoffClass", (), {})
         failures = []
         reflection = {}
 
@@ -1421,7 +1442,10 @@ def test_run_task_persists_execution_mode_override_metadata(monkeypatch):
         failures = []
         reflection = {}
 
+    build_calls: list[dict] = []
+
     def fake_build(**kwargs):
+        build_calls.append(kwargs)
         return FakeResult()
 
     def fake_persist(task, result, *, root, storage_layout, persisted_at=None):
@@ -1457,9 +1481,87 @@ def test_run_task_persists_execution_mode_override_metadata(monkeypatch):
     )
 
     assert result["execution_mode"] == "deterministic_replay"
+    assert result["post_build_learning_policy"]["run_reflection"] is False
+    assert result["post_build_learning_policy"]["run_consolidation"] is False
+    assert result["post_build_learning_policy"]["reflection_reason"] == (
+        "execution_mode_deterministic_replay"
+    )
+    assert build_calls[0]["request_metadata"]["post_build_learning_policy"] == result[
+        "post_build_learning_policy"
+    ]
     assert result["llm_cassette"] == cassette_metadata
     assert persisted["result"]["execution_mode"] == "deterministic_replay"
     assert persisted["result"]["llm_cassette"] == cassette_metadata
+
+
+def test_run_task_offline_scope_derives_deterministic_post_build_policy(monkeypatch):
+    from trellis.agent.offline_agents import offline_local_agent_run_scope
+    from trellis.agent.task_runtime import run_task
+
+    persisted: dict[str, object] = {}
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.8
+        knowledge_gaps = []
+        payoff_cls = type("FakePayoff", (), {})
+        failures = []
+        reflection = {
+            "skipped": True,
+            "reason": "execution_mode_offline_local_agents",
+            "policy_reasons": ["execution_mode_offline_local_agents"],
+        }
+
+    build_calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        build_calls.append(kwargs)
+        return FakeResult()
+
+    def fake_persist(task, result, *, root, storage_layout, persisted_at=None):
+        persisted["task"] = task
+        persisted["result"] = dict(result)
+        return {
+            "history_path": "/tmp/task_runs/history/T13/run.json",
+            "latest_path": "/tmp/task_runs/latest/T13.json",
+            "latest_index_path": "/tmp/task_results_latest.json",
+            "diagnosis_packet_path": "/tmp/task_runs/diagnostics/history/T13/run.json",
+            "diagnosis_dossier_path": "/tmp/task_runs/diagnostics/history/T13/run.md",
+            "latest_diagnosis_packet_path": "/tmp/task_runs/diagnostics/latest/T13.json",
+            "latest_diagnosis_dossier_path": "/tmp/task_runs/diagnostics/latest/T13.md",
+            "diagnosis_headline": "Replay task completed successfully.",
+            "diagnosis_failure_bucket": "success",
+            "diagnosis_decision_stage": "completed",
+            "diagnosis_next_action": "No action required.",
+            "diagnosis_persist_error": "",
+            "diagnosis_persist_skipped": "",
+        }
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        fake_persist,
+    )
+
+    with offline_local_agent_run_scope():
+        result = run_task(
+            {"id": "T13", "title": "European call: theta-method convergence order"},
+            market_state=object(),
+            build_fn=fake_build,
+            recovery_mode="assisted",
+        )
+
+    assert result["execution_mode"] == "offline_local_agents"
+    assert result["post_build_learning_policy"]["execution_mode"] == "offline_local_agents"
+    assert result["post_build_learning_policy"]["run_reflection"] is False
+    assert result["post_build_learning_policy"]["run_consolidation"] is False
+    assert result["post_build_learning_policy"]["reflection_reason"] == (
+        "execution_mode_offline_local_agents"
+    )
+    assert build_calls[0]["request_metadata"]["post_build_learning_policy"] == result[
+        "post_build_learning_policy"
+    ]
+    assert persisted["result"]["execution_mode"] == "offline_local_agents"
 
 
 def test_run_task_forwards_isolated_task_run_storage(monkeypatch):
@@ -3340,6 +3442,41 @@ def test_build_result_payload_surfaces_lesson_contract():
     assert payload["reflection"]["lesson_promotion_outcome"] == "skipped"
     assert payload["learning"]["lesson_contract_outcome"] == "validated"
     assert payload["learning"]["lesson_contract_count"] == 1
+
+
+def test_build_result_payload_preserves_policy_skip_reasons():
+    from trellis.agent.task_runtime import _build_result_payload
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 0.9
+        knowledge_gaps = []
+        payoff_cls = type("FakePayoff", (), {})
+        failures = []
+        agent_observations = []
+        knowledge_summary = {}
+        platform_trace_path = None
+        platform_request_id = "executor_build_cached"
+        analytical_trace_path = None
+        analytical_trace_text_path = None
+        blocker_details = None
+        reflection = {
+            "skipped": True,
+            "reason": "execution_mode_deterministic_replay",
+            "policy_reasons": [
+                "execution_mode_deterministic_replay",
+                "recovery_mode_strict",
+            ],
+        }
+
+    payload = _build_result_payload(FakeResult(), preferred_method="analytical")
+
+    assert payload["reflection"]["reason"] == "execution_mode_deterministic_replay"
+    assert payload["reflection"]["policy_reasons"] == [
+        "execution_mode_deterministic_replay",
+        "recovery_mode_strict",
+    ]
 
 
 def test_aggregate_failures_flattens_nested_method_results():

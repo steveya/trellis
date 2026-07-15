@@ -5,7 +5,7 @@ knowledge management.  It wraps build_payoff() with:
 
 1. Pre-flight gap check — audit knowledge readiness
 2. Build — with gap warnings injected into prompt
-3. Post-build reflection — capture lessons, attribute, enrich
+3. Policy-gated post-build reflection — capture lessons, attribute, enrich
 
 Usage:
     from trellis.agent.knowledge.autonomous import build_with_knowledge
@@ -24,6 +24,11 @@ from dataclasses import replace
 from dataclasses import dataclass, field
 import os
 from typing import Any, Mapping, Sequence
+
+from trellis.agent.post_build_policy import (
+    PostBuildLearningPolicy,
+    post_build_policy_from_request_metadata,
+)
 
 
 class BuildTrackingFailure(RuntimeError):
@@ -93,12 +98,40 @@ def _env_flag(name: str) -> bool:
     return raw.strip().lower() in {"1", "true", "yes", "on"}
 
 
-def _post_build_control_flags() -> dict[str, bool]:
-    """Return the active post-build bisection controls."""
+def _post_build_control_flags(
+    policy: PostBuildLearningPolicy,
+) -> dict[str, bool]:
+    """Combine execution policy with explicit operator skip overrides."""
+    reflection_env_override = _env_flag(_SKIP_POST_BUILD_REFLECTION_ENV)
+    consolidation_env_override = _env_flag(_SKIP_POST_BUILD_CONSOLIDATION_ENV)
     return {
-        "skip_reflection": _env_flag(_SKIP_POST_BUILD_REFLECTION_ENV),
-        "skip_consolidation": _env_flag(_SKIP_POST_BUILD_CONSOLIDATION_ENV),
+        "skip_reflection": not policy.run_reflection or reflection_env_override,
+        "skip_consolidation": not policy.run_consolidation or consolidation_env_override,
+        "reflection_policy_allowed": policy.run_reflection,
+        "consolidation_policy_allowed": policy.run_consolidation,
+        "reflection_env_override": reflection_env_override,
+        "consolidation_env_override": consolidation_env_override,
     }
+
+
+def _post_build_skip_reason(
+    stage: str,
+    *,
+    policy: PostBuildLearningPolicy,
+    controls: Mapping[str, object],
+) -> tuple[str, list[str]]:
+    """Return a stable primary reason and complete policy evidence."""
+    if stage == "reflection":
+        if not policy.run_reflection:
+            return policy.reflection_reason, list(policy.skip_reasons)
+        if controls.get("reflection_env_override"):
+            return _SKIP_POST_BUILD_REFLECTION_ENV, []
+        return policy.reflection_reason, list(policy.skip_reasons)
+    if not policy.run_consolidation:
+        return policy.consolidation_reason, list(policy.skip_reasons)
+    if controls.get("consolidation_env_override"):
+        return _SKIP_POST_BUILD_CONSOLIDATION_ENV, []
+    return policy.consolidation_reason, list(policy.skip_reasons)
 
 
 def _record_post_build_phase(
@@ -170,8 +203,8 @@ def build_with_knowledge(
          score (0.0-1.0).  Low confidence triggers extra retries.
       2. Build -- call ``build_payoff()`` with gap warnings injected into the
          LLM prompt so the code generator knows where knowledge is thin.
-      3. Reflect -- after the build (success or failure), run a lightweight
-         LLM pass that attributes outcomes to lessons and captures new ones.
+      3. Reflect -- when task execution policy permits, run a lightweight LLM
+         pass that attributes outcomes to lessons and captures new ones.
 
     Returns a ``BuildResult`` containing the generated payoff class (or None
     on failure), attempt count, gap confidence, captured lessons, and
@@ -197,6 +230,9 @@ def build_with_knowledge(
             f"{description}\n\n"
             f"Implementation target: {comparison_target}"
         )
+
+    post_build_policy = post_build_policy_from_request_metadata(request_metadata)
+    post_build_controls = _post_build_control_flags(post_build_policy)
 
     with llm_usage_session() as usage_records:
         # Phase 1: Decompose and gap check
@@ -234,7 +270,8 @@ def build_with_knowledge(
                 failures=[f"Build gate blocked (pre-flight): {pre_flight_gate.reason}"],
                 gate_decision=pre_flight_gate,
                 post_build_tracking={
-                    "active_flags": _post_build_control_flags(),
+                    "policy": post_build_policy.to_payload(),
+                    "active_flags": post_build_controls,
                     "events": [],
                 },
             )
@@ -252,7 +289,8 @@ def build_with_knowledge(
             knowledge_gaps=gap_report.missing,
             gate_decision=pre_flight_gate,
             post_build_tracking={
-                "active_flags": _post_build_control_flags(),
+                "policy": post_build_policy.to_payload(),
+                "active_flags": post_build_controls,
                 "events": [],
             },
         )
@@ -330,21 +368,30 @@ def build_with_knowledge(
         # Phase 3: Post-build reflection (skip on obvious provider/config failures)
         post_build_flags = dict(result.post_build_tracking.get("active_flags") or {})
         if post_build_flags.get("skip_reflection"):
+            skip_reason, policy_reasons = _post_build_skip_reason(
+                "reflection",
+                policy=post_build_policy,
+                controls=post_build_flags,
+            )
             result.reflection = {
                 "skipped": True,
-                "reason": _SKIP_POST_BUILD_REFLECTION_ENV,
+                "reason": skip_reason,
             }
+            if policy_reasons:
+                result.reflection["policy_reasons"] = policy_reasons
             _record_post_build_phase(
                 result.post_build_tracking,
                 "reflection_started",
                 status="skipped",
-                reason=_SKIP_POST_BUILD_REFLECTION_ENV,
+                reason=skip_reason,
+                policy_reasons=policy_reasons,
             )
             _record_post_build_phase(
                 result.post_build_tracking,
                 "reflection_completed",
                 status="skipped",
-                reason=_SKIP_POST_BUILD_REFLECTION_ENV,
+                reason=skip_reason,
+                policy_reasons=policy_reasons,
             )
         elif _should_skip_reflection(result):
             result.reflection = {
@@ -468,11 +515,17 @@ def build_with_knowledge(
 
     # Phase 4: Post-task consolidation (background, non-blocking)
     if post_build_flags.get("skip_consolidation"):
+        skip_reason, policy_reasons = _post_build_skip_reason(
+            "consolidation",
+            policy=post_build_policy,
+            controls=post_build_flags,
+        )
         _record_post_build_phase(
             result.post_build_tracking,
             "consolidation_dispatched",
             status="skipped",
-            reason=_SKIP_POST_BUILD_CONSOLIDATION_ENV,
+            reason=skip_reason,
+            policy_reasons=policy_reasons,
         )
     else:
         consolidation = _maybe_consolidate(result.reflection, model=model)

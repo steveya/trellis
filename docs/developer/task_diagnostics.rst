@@ -287,9 +287,40 @@ The post-build phase markers currently cover:
 - ``decision_checkpoint_emitted``
 - ``consolidation_dispatched``
 
-The dossier renders the latest post-build phase and a per-method checkpoint
-summary so a human can quickly see whether the run failed before build
-completion, during reflection, or after the build returned.
+The dossier renders the latest post-build phase, the top-level task checkpoint,
+and any per-method checkpoints so a human can quickly see whether the run
+failed before build completion, during reflection, or after the build returned.
+
+Post-build execution policy
+---------------------------
+
+``run_task(...)`` resolves a deterministic ``PostBuildLearningPolicy`` before
+calling the knowledge-aware builder. The policy combines three independent
+facts:
+
+- execution mode: live, cassette record, cassette replay, or deterministic
+  replay
+- artifact policy: fresh generation, forced rebuild, or cached reuse
+- recovery mode: strict, assisted, or remediation
+
+Reflection and consolidation are eligible only for live or cassette-record
+runs whose caller selected ``assisted`` or ``remediation``. That explicit
+model-backed opt-in remains valid when the run reuses an artifact, so assisted
+validation can still learn from cached code. Strict and deterministic/cassette
+replay runs skip both optional model stages. A cached strict replay can
+therefore report zero optional model calls without setting process-wide skip
+variables.
+
+The task result, builder request metadata, and per-method
+``post_build_tracking`` record the resolved policy, primary stage reason, and
+all fail-closed reasons. A policy-skipped phase has status ``skipped``; it is
+not recorded as a failed model call. This distinction matters when a replay is
+used as evidence that a route is deterministic.
+
+The compact persisted diagnosis keeps the execution and recovery policy plus
+the phase, primary reason, and complete policy-reason list for every skipped
+stage. Operators therefore do not need the raw lifecycle log to distinguish a
+policy skip from an attempted model call that returned an error.
 
 Runtime bisection flags
 -----------------------
@@ -301,9 +332,12 @@ debugging:
 - ``TRELLIS_SKIP_POST_BUILD_CONSOLIDATION=1``
 - ``TRELLIS_SKIP_TASK_DIAGNOSIS_PERSIST=1``
 
-These are debugging controls, not normal operating modes. When enabled, the
-task run record and diagnosis packet note the active flags so later diagnosis
-can tell which parts of the runtime were intentionally bypassed.
+These are debugging overrides, not normal operating modes. They can only
+disable stages already admitted by ``PostBuildLearningPolicy``; they cannot
+enable a model stage denied by strict, replay, or offline execution.
+When enabled, lifecycle evidence records the environment-variable reason
+separately from policy reasons so later diagnosis can tell which parts of the
+runtime were intentionally bypassed.
 
 LLM wait logs
 -------------

@@ -392,17 +392,22 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
             f"- Active flags: `{_join_or_none(sorted(flag for flag, enabled in dict(post_build.get('active_flags') or {}).items() if enabled))}`",
         ]
     )
+    task_post_build = dict(post_build.get("task") or {})
+    if any(
+        (
+            task_post_build.get("latest_phase"),
+            task_post_build.get("event_count"),
+            task_post_build.get("policy"),
+            task_post_build.get("skipped_stages"),
+        )
+    ):
+        lines.append("- Task checkpoint:")
+        lines.extend(_render_post_build_checkpoint("task", task_post_build))
     method_post_build = dict(post_build.get("methods") or {})
     if method_post_build:
         lines.append("- Method checkpoints:")
         for method, summary in method_post_build.items():
-            summary = dict(summary or {})
-            lines.append(
-                "  - "
-                f"`{method}`: phase=`{summary.get('latest_phase', '')}`, "
-                f"status=`{summary.get('latest_status', '')}`, "
-                f"events=`{summary.get('event_count', '')}`"
-            )
+            lines.extend(_render_post_build_checkpoint(str(method), summary))
 
     lines.extend(
         [
@@ -423,6 +428,35 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
         ]
     )
     return "\n".join(lines).rstrip() + "\n"
+
+
+def _render_post_build_checkpoint(
+    label: str,
+    summary: Mapping[str, Any] | None,
+) -> list[str]:
+    """Render one compact task or method post-build checkpoint."""
+    summary = dict(summary or {})
+    policy = dict(summary.get("policy") or {})
+    lines = [
+        "  - "
+        f"`{label}`: phase=`{summary.get('latest_phase', '')}`, "
+        f"status=`{summary.get('latest_status', '')}`, "
+        f"events=`{summary.get('event_count', '')}`, "
+        f"execution=`{policy.get('execution_mode', '')}`, "
+        f"recovery=`{policy.get('recovery_mode', '')}`"
+    ]
+    for raw_skipped_stage in summary.get("skipped_stages") or []:
+        if not isinstance(raw_skipped_stage, Mapping):
+            continue
+        skipped_stage = dict(raw_skipped_stage)
+        policy_reasons = _join_or_none(skipped_stage.get("policy_reasons"))
+        lines.append(
+            "    - "
+            f"`{skipped_stage.get('phase', '')}` skipped: "
+            f"`{skipped_stage.get('reason', '')}`; "
+            f"policy reasons=`{policy_reasons}`"
+        )
+    return lines
 
 
 def save_task_diagnosis_artifacts(

@@ -1930,12 +1930,36 @@ def _post_build_snapshot(tracking: Mapping[str, Any] | None) -> dict[str, Any]:
     """Project one post-build tracking payload into a compact summary."""
     tracking = dict(tracking or {})
     events = list(tracking.get("events") or [])
+    raw_policy = tracking.get("policy")
+    policy = dict(raw_policy) if isinstance(raw_policy, Mapping) else {}
+    skipped_stages: list[dict[str, Any]] = []
+    for event in events:
+        if not isinstance(event, Mapping) or event.get("status") != "skipped":
+            continue
+        raw_details = event.get("details")
+        details = dict(raw_details) if isinstance(raw_details, Mapping) else {}
+        raw_policy_reasons = details.get("policy_reasons") or ()
+        if isinstance(raw_policy_reasons, str):
+            raw_policy_reasons = (raw_policy_reasons,)
+        skipped_stages.append(
+            {
+                "phase": str(event.get("phase") or ""),
+                "reason": str(details.get("reason") or ""),
+                "policy_reasons": [
+                    str(reason)
+                    for reason in raw_policy_reasons
+                    if str(reason).strip()
+                ],
+            }
+        )
     return {
         "latest_phase": tracking.get("last_phase"),
         "latest_status": tracking.get("last_status"),
         "updated_at": tracking.get("updated_at"),
         "event_count": len(events),
         "active_flags": dict(tracking.get("active_flags") or {}),
+        "policy": policy,
+        "skipped_stages": skipped_stages,
     }
 
 

@@ -146,9 +146,24 @@ def _sample_record(root: Path) -> dict[str, object]:
             "methods": {
                 "psor": {
                     "latest_phase": "reflection_completed",
-                    "latest_status": "error",
+                    "latest_status": "skipped",
                     "event_count": 4,
-                    "active_flags": {"skip_reflection": False},
+                    "active_flags": {"skip_reflection": True},
+                    "policy": {
+                        "execution_mode": "deterministic_replay",
+                        "recovery_mode": "strict",
+                        "run_reflection": False,
+                    },
+                    "skipped_stages": [
+                        {
+                            "phase": "reflection_completed",
+                            "reason": "execution_mode_deterministic_replay",
+                            "policy_reasons": [
+                                "execution_mode_deterministic_replay",
+                                "recovery_mode_strict",
+                            ],
+                        }
+                    ],
                 }
             },
         },
@@ -328,6 +343,7 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert "## Method Outcomes" in rendered
     assert "## Skill Telemetry" in rendered
     assert "## Post-build" in rendered
+    assert "execution_mode_deterministic_replay" in rendered
     assert "## Storage" in rendered
     assert "comparison_insufficient_results" in rendered
     assert "Execution mode: `deterministic_replay`" in rendered
@@ -335,6 +351,56 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert "route_hint:callable_bond_tree" in rendered
     assert "EventAwarePDEIR" in rendered
     assert "/tmp/t999_waits.jsonl" in rendered
+
+
+def test_render_task_diagnosis_dossier_surfaces_top_level_policy_skip(tmp_path):
+    from trellis.agent.task_diagnostics import (
+        build_task_diagnosis_packet,
+        render_task_diagnosis_dossier,
+    )
+
+    record = _sample_record(tmp_path)
+    record["post_build"] = {
+        "latest_method": None,
+        "latest_phase": "reflection_completed",
+        "latest_status": "skipped",
+        "active_flags": {"skip_reflection": True},
+        "task": {
+            "latest_phase": "reflection_completed",
+            "latest_status": "skipped",
+            "event_count": 3,
+            "policy": {
+                "execution_mode": "deterministic_replay",
+                "recovery_mode": "strict",
+            },
+            "skipped_stages": [
+                {
+                    "phase": "reflection_completed",
+                    "reason": "execution_mode_deterministic_replay",
+                    "policy_reasons": [
+                        "execution_mode_deterministic_replay",
+                        "recovery_mode_strict",
+                    ],
+                }
+            ],
+        },
+        "methods": {},
+    }
+
+    rendered = render_task_diagnosis_dossier(
+        build_task_diagnosis_packet(record)
+    )
+
+    assert "- Task checkpoint:" in rendered
+    assert "`task`: phase=`reflection_completed`, status=`skipped`" in rendered
+    assert (
+        "`reflection_completed` skipped: `execution_mode_deterministic_replay`"
+        in rendered
+    )
+    assert (
+        "policy reasons=`execution_mode_deterministic_replay, recovery_mode_strict`"
+        in rendered
+    )
 
 
 def test_build_task_diagnosis_packet_preserves_computational_problem(tmp_path):

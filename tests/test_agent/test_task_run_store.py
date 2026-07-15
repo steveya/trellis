@@ -751,12 +751,36 @@ def test_persist_task_run_record_summarizes_post_build_markers(tmp_path):
                 "reflection": {},
                 "post_build_tracking": {
                     "last_phase": "reflection_completed",
-                    "last_status": "error",
+                    "last_status": "skipped",
                     "updated_at": "2026-03-31T14:00:30+00:00",
-                    "active_flags": {"skip_reflection": False},
+                    "policy": {
+                        "execution_mode": "deterministic_replay",
+                        "artifact_policy": "cached_existing",
+                        "recovery_mode": "strict",
+                        "run_reflection": False,
+                        "run_consolidation": False,
+                        "reflection_reason": "execution_mode_deterministic_replay",
+                        "consolidation_reason": "execution_mode_deterministic_replay",
+                        "skip_reasons": [
+                            "execution_mode_deterministic_replay",
+                            "recovery_mode_strict",
+                        ],
+                        "policy_source": "task_execution_policy",
+                    },
+                    "active_flags": {"skip_reflection": True},
                     "events": [
                         {"phase": "build_completed", "status": "ok"},
-                        {"phase": "reflection_completed", "status": "error"},
+                        {
+                            "phase": "reflection_completed",
+                            "status": "skipped",
+                            "details": {
+                                "reason": "execution_mode_deterministic_replay",
+                                "policy_reasons": [
+                                    "execution_mode_deterministic_replay",
+                                    "recovery_mode_strict",
+                                ],
+                            },
+                        },
                     ],
                 },
             }
@@ -785,7 +809,20 @@ def test_persist_task_run_record_summarizes_post_build_markers(tmp_path):
 
     assert latest["post_build"]["latest_method"] == "mc_demo"
     assert latest["post_build"]["latest_phase"] == "reflection_completed"
-    assert latest["post_build"]["latest_status"] == "error"
+    assert latest["post_build"]["latest_status"] == "skipped"
+    method_snapshot = latest["post_build"]["methods"]["mc_demo"]
+    assert method_snapshot["policy"]["execution_mode"] == "deterministic_replay"
+    assert method_snapshot["policy"]["run_reflection"] is False
+    assert method_snapshot["skipped_stages"] == [
+        {
+            "phase": "reflection_completed",
+            "reason": "execution_mode_deterministic_replay",
+            "policy_reasons": [
+                "execution_mode_deterministic_replay",
+                "recovery_mode_strict",
+            ],
+        }
+    ]
     assert latest["workflow"]["post_build_latest_phase"] == "reflection_completed"
     assert latest["workflow"]["post_build_latest_method"] == "mc_demo"
 

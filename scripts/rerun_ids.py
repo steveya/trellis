@@ -68,6 +68,7 @@ for i, task in enumerate(tasks):
                 validation=args.validation,
                 force_rebuild=(not args.reuse) or args.fresh_build,
                 fresh_build=args.fresh_build,
+                execution_mode_override="deterministic_replay",
             )
         result["offline_local_agents"] = True
     else:

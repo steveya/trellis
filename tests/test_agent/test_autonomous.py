@@ -732,3 +732,166 @@ def test_build_with_knowledge_can_skip_reflection_via_env(monkeypatch):
     }
     assert phases["reflection_started"] == "skipped"
     assert phases["reflection_completed"] == "skipped"
+
+
+def test_build_with_knowledge_skips_post_build_stages_from_task_policy(monkeypatch):
+    from trellis.agent.knowledge.gap_check import GapReport
+    from trellis.agent.knowledge.schema import ProductDecomposition
+    from trellis.agent.knowledge.autonomous import build_with_knowledge
+    from trellis.agent.post_build_policy import determine_post_build_learning_policy
+
+    decompose_mod = import_module("trellis.agent.knowledge.decompose")
+    decomposition = ProductDecomposition(
+        instrument="european_option",
+        features=("vanilla",),
+        method="analytical",
+        learned=False,
+    )
+    policy = determine_post_build_learning_policy(
+        execution_mode="deterministic_replay",
+        artifact_policy="cached_existing",
+        recovery_mode="strict",
+    )
+
+    monkeypatch.delenv("TRELLIS_SKIP_POST_BUILD_REFLECTION", raising=False)
+    monkeypatch.delenv("TRELLIS_SKIP_POST_BUILD_CONSOLIDATION", raising=False)
+    monkeypatch.setattr(decompose_mod, "decompose", lambda *args, **kwargs: decomposition)
+    monkeypatch.setattr(
+        decompose_mod,
+        "decompose_to_ir",
+        lambda *args, **kwargs: SimpleNamespace(instrument="european_option"),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.gap_check.gap_check",
+        lambda decomposition: GapReport(confidence=0.9, retrieved_lesson_ids=[]),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._build_with_tracking",
+        lambda **kwargs: (
+            type("FakePayoff", (), {}),
+            {
+                "attempts": 1,
+                "failures": [],
+                "code": "pass",
+                "platform_trace_path": None,
+                "platform_request_id": "executor_build_cached",
+            },
+        ),
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._emit_decision_checkpoint",
+        lambda **kwargs: {"status": "ok", "path": "/tmp/checkpoint.yaml"},
+    )
+
+    def fail_reflection(**kwargs):
+        raise AssertionError("policy-skipped reflection must not run")
+
+    def fail_consolidation(*args, **kwargs):
+        raise AssertionError("policy-skipped consolidation must not run")
+
+    monkeypatch.setattr("trellis.agent.knowledge.reflect.reflect_on_build", fail_reflection)
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.autonomous._maybe_consolidate",
+        fail_consolidation,
+    )
+
+    result = build_with_knowledge(
+        "European option",
+        instrument_type="european_option",
+        request_metadata={"post_build_learning_policy": policy.to_payload()},
+    )
+
+    assert result.success is True
+    assert result.token_usage_summary["call_count"] == 0
+    assert result.token_usage_summary["total_tokens"] == 0
+    assert result.reflection == {
+        "skipped": True,
+        "reason": "execution_mode_deterministic_replay",
+        "policy_reasons": [
+            "execution_mode_deterministic_replay",
+            "recovery_mode_strict",
+        ],
+    }
+    tracking = result.post_build_tracking
+    assert tracking["policy"] == policy.to_payload()
+    assert tracking["active_flags"] == {
+        "skip_reflection": True,
+        "skip_consolidation": True,
+        "reflection_policy_allowed": False,
+        "consolidation_policy_allowed": False,
+        "reflection_env_override": False,
+        "consolidation_env_override": False,
+    }
+    events = {event["phase"]: event for event in tracking["events"]}
+    assert events["reflection_started"]["status"] == "skipped"
+    assert events["reflection_started"]["details"]["reason"] == (
+        "execution_mode_deterministic_replay"
+    )
+    assert events["reflection_started"]["details"]["policy_reasons"] == [
+        "execution_mode_deterministic_replay",
+        "recovery_mode_strict",
+    ]
+    assert events["consolidation_dispatched"]["status"] == "skipped"
+    assert events["consolidation_dispatched"]["details"]["reason"] == (
+        "execution_mode_deterministic_replay"
+    )
+
+
+def test_environment_skip_remains_distinct_from_policy_skip(monkeypatch):
+    from trellis.agent.knowledge.autonomous import _post_build_control_flags
+    from trellis.agent.post_build_policy import determine_post_build_learning_policy
+
+    policy = determine_post_build_learning_policy(
+        execution_mode="live",
+        artifact_policy="forced_rebuild",
+        recovery_mode="assisted",
+    )
+    monkeypatch.setenv("TRELLIS_SKIP_POST_BUILD_REFLECTION", "1")
+    monkeypatch.delenv("TRELLIS_SKIP_POST_BUILD_CONSOLIDATION", raising=False)
+
+    controls = _post_build_control_flags(policy)
+
+    assert controls == {
+        "skip_reflection": True,
+        "skip_consolidation": False,
+        "reflection_policy_allowed": True,
+        "consolidation_policy_allowed": True,
+        "reflection_env_override": True,
+        "consolidation_env_override": False,
+    }
+
+
+def test_policy_denial_remains_primary_when_environment_skip_is_also_set(monkeypatch):
+    from trellis.agent.knowledge.autonomous import (
+        _post_build_control_flags,
+        _post_build_skip_reason,
+    )
+    from trellis.agent.post_build_policy import determine_post_build_learning_policy
+
+    policy = determine_post_build_learning_policy(
+        execution_mode="deterministic_replay",
+        artifact_policy="cached_existing",
+        recovery_mode="strict",
+    )
+    monkeypatch.setenv("TRELLIS_SKIP_POST_BUILD_REFLECTION", "1")
+    monkeypatch.setenv("TRELLIS_SKIP_POST_BUILD_CONSOLIDATION", "1")
+    controls = _post_build_control_flags(policy)
+
+    assert _post_build_skip_reason(
+        "reflection",
+        policy=policy,
+        controls=controls,
+    ) == (
+        "execution_mode_deterministic_replay",
+        ["execution_mode_deterministic_replay", "recovery_mode_strict"],
+    )
+    assert _post_build_skip_reason(
+        "consolidation",
+        policy=policy,
+        controls=controls,
+    ) == (
+        "execution_mode_deterministic_replay",
+        ["execution_mode_deterministic_replay", "recovery_mode_strict"],
+    )
+    assert controls["reflection_env_override"] is True
+    assert controls["consolidation_env_override"] is True

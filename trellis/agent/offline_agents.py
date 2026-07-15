@@ -35,8 +35,6 @@ def offline_local_agent_run_scope():
     """Run a task with local deterministic agents and no live-learning side effects."""
     skip_flags = {
         "TRELLIS_OFFLINE_LOCAL_AGENTS": "1",
-        "TRELLIS_SKIP_POST_BUILD_REFLECTION": "1",
-        "TRELLIS_SKIP_POST_BUILD_CONSOLIDATION": "1",
     }
     previous = {name: os.environ.get(name) for name in skip_flags}
     try:
