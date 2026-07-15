@@ -45,7 +45,7 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1182` | Semantic agent navigation: bounded knowledge and documentation packets | Done |
 | `QUA-1183` | Digital option pricing: retire analytical helper authority | Done |
 | `QUA-1184` | Semantic agent navigation: render task-relevant canonical composition cards | Done |
-| `QUA-1185` | Task runtime: offline cached replays suppress post-build LLM stages | Backlog |
+| `QUA-1185` | Task runtime: offline cached replays suppress post-build LLM stages | Done |
 | `QUA-1186` | Analytical support: Gaussian probability and scalar-root navigation | Done |
 | `QUA-1187` | Monte Carlo path state: extrema and squared-log-return reducers | Done |
 | `QUA-1188` | Monte Carlo transition state: conditional bridge extrema primitive | Done |
@@ -54,9 +54,10 @@ Status mirror last synced: `2026-07-15`
 
 ## Current Sequence
 
-1. Complete QUA-1185 before treating cached offline replay as zero-model
-   evidence without explicit reflection/consolidation skip flags.
-2. After each substrate lands, open focused helper-retirement tickets only for
+1. Use QUA-1185 strict cached replays as zero-model evidence without explicit
+   reflection/consolidation skip flags; persisted policy reasons must explain
+   every skipped post-build stage.
+2. Open focused helper-retirement tickets only for
    product families whose remaining market, numerical, payoff, and validation
    components are confirmed reusable.
 3. Run live fresh-generation evidence only with current external-model approval;
