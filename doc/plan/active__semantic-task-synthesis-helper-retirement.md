@@ -51,15 +51,16 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1188` | Monte Carlo transition state: conditional bridge extrema primitive | Done |
 | `QUA-1189` | Fixed lookback Monte Carlo: retire helper authority | Done |
 | `QUA-1190` | Variance swap Monte Carlo: retire helper authority | Done |
+| `QUA-1191` | Chooser option pricing: retire analytical helper authority | Backlog |
 
 ## Current Sequence
 
 1. Use QUA-1185 strict cached replays as zero-model evidence without explicit
    reflection/consolidation skip flags; persisted policy reasons must explain
    every skipped post-build stage.
-2. Open focused helper-retirement tickets only for
-   product families whose remaining market, numerical, payoff, and validation
-   components are confirmed reusable.
+2. Complete QUA-1191 by replacing the chooser-option wrapper authority with
+   the reusable Gaussian, scalar-root, market, and Black composition surface
+   while preserving F012 FinancePy parity.
 3. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
