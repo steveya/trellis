@@ -56,13 +56,14 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1193` | Compound option pricing: retire analytical helper authority | Done |
 | `QUA-1194` | Fixed lookback pricing: retire analytical helper authority | Done |
 | `QUA-1195` | Variance swap pricing: retire analytical helper authority | Done |
-| `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | In Progress |
+| `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
 
-1. Complete QUA-1102 so every helper-retirement comparison proves that each
-   declared method and variant executed a coherent artifact before numerical
-   tolerance is considered.
+1. Use the completed QUA-1102 target contract and artifact-coherence gate so
+   every helper-retirement comparison proves that each declared method and
+   variant executed a coherent artifact before numerical tolerance is
+   considered.
 2. Use QUA-1185 strict cached replays as zero-model evidence without explicit
    reflection/consolidation skip flags; persisted policy reasons must explain
    every skipped post-build stage.
