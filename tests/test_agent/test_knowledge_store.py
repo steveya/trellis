@@ -443,7 +443,7 @@ class TestKnowledgeStore:
         lesson_ids = [lesson.id for lesson in k["lessons"]]
         assert "md_114" in lesson_ids
 
-    def test_retrieve_swaption_ir_includes_helper_backed_black76_guidance(self):
+    def test_retrieve_swaption_ir_includes_composed_black76_guidance(self):
         from trellis.agent.knowledge import retrieve_for_product_ir
         from trellis.agent.knowledge.decompose import build_product_ir
 
@@ -473,7 +473,7 @@ class TestKnowledgeStore:
         assert "price_swaption_black76_raw" in k["cookbook"].template
         assert k["method_requirements"] is not None
         requirements_text = "\n".join(k["method_requirements"].requirements)
-        assert "RATE-STYLE SWAPTION HELPER CONTRACT" in requirements_text
+        assert "RATE-STYLE SWAPTION COMPOSITION CONTRACT" in requirements_text
         assert "price_swaption_black76_raw" in requirements_text
 
     def test_retrieve_zcb_option_ir_includes_jamshidian_raw_guidance(self):

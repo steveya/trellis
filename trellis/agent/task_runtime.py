@@ -3431,7 +3431,12 @@ def _generated_artifact_from_result(result: Any) -> dict[str, Any]:
     module = sys.modules.get(module_name)
     file_path = ""
     module_path = ""
-    code_hash = ""
+    generated_code = str(getattr(result, "code", "") or "")
+    code_hash = (
+        hashlib.sha256(generated_code.encode("utf-8")).hexdigest()
+        if generated_code
+        else ""
+    )
     if module is not None:
         module_file = getattr(module, "__file__", None)
         if module_file:
@@ -3441,15 +3446,11 @@ def _generated_artifact_from_result(result: Any) -> dict[str, Any]:
                 module_path = str(resolved.relative_to(ROOT)).replace("\\", "/")
             except ValueError:
                 module_path = str(resolved)
-            try:
-                code_hash = hashlib.sha256(resolved.read_bytes()).hexdigest()
-            except OSError:
-                code_hash = ""
-
-    if not code_hash:
-        code = str(getattr(result, "code", "") or "")
-        if code:
-            code_hash = hashlib.sha256(code.encode("utf-8")).hexdigest()
+            if not code_hash:
+                try:
+                    code_hash = hashlib.sha256(resolved.read_bytes()).hexdigest()
+                except OSError:
+                    code_hash = ""
 
     normalized_module_path = module_path.replace("\\", "/")
     normalized_file_path = file_path.replace("\\", "/")

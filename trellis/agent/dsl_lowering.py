@@ -608,29 +608,6 @@ def _build_black76_expr(
     )
     if (
         payoff_family == "swaption"
-        and getattr(contract.product, "exercise_style", "") == "bermudan"
-        and route_helper is not None
-    ):
-        return (
-            ContractAtom(
-                atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
-                primitive_ref=route_helper.primitive_ref,
-                description=(
-                    "Checked-in analytical lower-bound helper for a Bermudan "
-                    "rate-style swaption."
-                ),
-                signature=ContractSignature(
-                    inputs=market_signature.inputs,
-                    outputs=("price:scalar",),
-                    timeline_roles=market_signature.timeline_roles,
-                    market_data_requirements=market_signature.market_data_requirements,
-                ),
-            ),
-            (),
-        )
-
-    if (
-        payoff_family == "swaption"
         and getattr(contract.product, "exercise_style", "") == "european"
         and route_helper is not None
     ):

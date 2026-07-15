@@ -809,7 +809,7 @@ def _build_with_tracking(
         )
 
         meta["attempts"] = attempt_count[0]
-        meta["code"] = last_code[0]
+        meta["code"] = last_code[0] or str(meta.get("code") or "")
         meta["platform_trace_path"] = platform_trace_path[0]
         meta["platform_request_id"] = platform_request_id[0]
         return payoff_cls, meta
@@ -817,7 +817,8 @@ def _build_with_tracking(
     except Exception as e:
         meta["attempts"] = attempt_count[0] if 'attempt_count' in dir() else 0
         meta["failures"] = [str(e)]
-        meta["code"] = last_code[0] if 'last_code' in dir() else ""
+        tracked_code = last_code[0] if 'last_code' in dir() else ""
+        meta["code"] = tracked_code or str(meta.get("code") or "")
         meta["platform_trace_path"] = platform_trace_path[0] if 'platform_trace_path' in dir() else None
         meta["platform_request_id"] = platform_request_id[0] if 'platform_request_id' in dir() else None
         raise BuildTrackingFailure(str(e), meta=meta, cause=e) from e

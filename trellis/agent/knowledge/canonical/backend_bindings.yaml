@@ -951,9 +951,16 @@ bindings:
             exercise:
               style: bermudan
         primitives:
+          - module: trellis.core.date_utils
+            symbol: normalize_explicit_dates
+            role: schedule_builder
+            required: false
           - module: trellis.models.rate_style_swaption
-            symbol: price_bermudan_swaption_black76_lower_bound
-            role: route_helper
+            symbol: resolve_swaption_black76_inputs
+            role: market_binding
+          - module: trellis.models.rate_style_swaption
+            symbol: price_swaption_black76_raw
+            role: pricing_kernel
       - when:
           contract_pattern:
             payoff:

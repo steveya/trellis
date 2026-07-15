@@ -96,10 +96,26 @@ _BASKET_PRIMS: tuple[PrimitiveRef, ...] = (
 
 _SWAPTION_BERM_PRIMS: tuple[PrimitiveRef, ...] = (
     PrimitiveRef(
-        "trellis.models.rate_style_swaption",
-        "price_bermudan_swaption_black76_lower_bound",
-        "route_helper",
+        "trellis.core.date_utils",
+        "normalize_explicit_dates",
+        "schedule_builder",
+        required=False,
     ),
+    PrimitiveRef(
+        "trellis.models.rate_style_swaption",
+        "resolve_swaption_black76_inputs",
+        "market_binding",
+    ),
+    PrimitiveRef(
+        "trellis.models.rate_style_swaption",
+        "price_swaption_black76_raw",
+        "pricing_kernel",
+    ),
+)
+_SWAPTION_BERM_NOTES: tuple[str, ...] = (
+    "For the black76_european_lower_bound comparator, normalize the Bermudan exercise dates, keep only dates strictly after settlement and before swap end, and select the final valid date.",
+    "Return zero when no valid exercise date remains; otherwise pass the final date as expiry_date to resolve_swaption_black76_inputs(...) and price the resolved basis once with price_swaption_black76_raw(...).",
+    "Do not sum or maximize European values across exercise dates, and do not use the product-level lower-bound wrapper as generated construction authority.",
 )
 
 _SWAPTION_EUR_PRIMS: tuple[PrimitiveRef, ...] = (
@@ -235,7 +251,7 @@ def _legacy_clauses() -> tuple[ConditionalPrimitive, ...]:
             },
             primitives=_SWAPTION_BERM_PRIMS,
             adapters=(),
-            notes=(),
+            notes=_SWAPTION_BERM_NOTES,
         ),
         ConditionalPrimitive(
             when={
@@ -294,7 +310,7 @@ def _dsl_clauses() -> tuple[ConditionalPrimitive, ...]:
             ),
             primitives=_SWAPTION_BERM_PRIMS,
             adapters=(),
-            notes=(),
+            notes=_SWAPTION_BERM_NOTES,
         ),
         ConditionalPrimitive(
             when={},

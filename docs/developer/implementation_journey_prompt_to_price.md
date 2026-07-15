@@ -73,26 +73,31 @@ practice this is what lets one semantic contract lower cleanly to an
 analytical kernel, a PDE helper, or a lattice helper based on the selected
 method without changing the contract shape.
 
-The practical follow-on is that comparison routes can now target checked-in
-helper surfaces instead of forcing the builder to reassemble the same
-mathematical glue repeatedly. A recent example is Bermudan swaptions:
+The practical follow-on is that comparison routes can expose the smallest
+stable construction surfaces instead of forcing the builder to rediscover
+market binding or hiding the whole target behind a product wrapper. Bermudan
+swaptions now illustrate both cases:
 
 - the tree lane lowers to ``price_bermudan_swaption_tree(...)``
-- the analytical comparison lane lowers to
-  ``price_bermudan_swaption_black76_lower_bound(...)``
+- the analytical comparison lane normalizes the exercise dates, selects the
+  final date strictly after settlement and before swap end, resolves that
+  European swaption with ``resolve_swaption_black76_inputs(...)``, and passes
+  the typed result to ``price_swaption_black76_raw(...)``
 
 That keeps the comparison target explicit and bounded. The analytical lane is
-no longer "write some Black76-like code for a Bermudan swaption"; it is "call
-the checked-in lower-bound helper that represents the intended comparison
-contract". In this case the intended comparison contract is the European
-swaption exercisable only on the final Bermudan date, not an aggregate or
-max-over-schedule analytical surrogate.
+not "write some Black76-like code for a Bermudan swaption" or "call a product
+wrapper". The adapter owns the small derivative-specific rule: return zero if
+no valid date remains, otherwise price the European swaption exercisable only
+on the final Bermudan date. It must not aggregate or maximize European values
+over the schedule. The retained
+``price_bermudan_swaption_black76_lower_bound(...)`` function is comparison and
+compatibility evidence, not generated construction authority.
 
 Compiled request metadata now also carries a compact semantic-blueprint summary
 for downstream tooling. That summary records the canonical lowered route, the
-helper references selected by DSL lowering, and any explicit control styles so
-trace, review, and UI code do not need to reconstruct those details from the
-full compiler objects.
+helper and primitive references selected by DSL lowering, and any explicit
+control styles so trace, review, and UI code do not need to reconstruct those
+details from the full compiler objects.
 
 ## Comparison Tasks Changed the Architecture
 

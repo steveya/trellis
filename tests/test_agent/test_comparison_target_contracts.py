@@ -27,6 +27,17 @@ def _contracts_for(task_id: str):
     }
 
 
+def test_t04_declares_tree_reference_and_european_lower_bound_relation():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    plan = build_comparison_harness_plan(_proof_tasks()["T04"])
+    targets = {target.target_id: target for target in plan.targets}
+
+    assert plan.reference_target == "hw_tree_bermudan"
+    assert targets["hw_tree_bermudan"].is_reference is True
+    assert targets["black76_european_lower_bound"].relation == "<="
+
+
 def test_declared_option_comparison_targets_preserve_method_variants_and_axes():
     t27 = _contracts_for("T27")
     assert t27["polynomial"].method == "monte_carlo"
@@ -805,6 +816,25 @@ def test_cross_validation_rejects_equivalence_group_for_different_contracts():
         report["status"] == "unbound_shared_artifact"
         for report in comparison["artifact_coherence"].values()
     )
+
+
+def test_generated_artifact_identity_prefers_build_source_over_mutable_module_file():
+    from trellis.agent.task_runtime import _comparison_artifact_identity
+
+    class GeneratedPayoff:
+        pass
+
+    first_identity, first_artifact = _comparison_artifact_identity(
+        SimpleNamespace(payoff_cls=GeneratedPayoff, code="first generated target")
+    )
+    second_identity, second_artifact = _comparison_artifact_identity(
+        SimpleNamespace(payoff_cls=GeneratedPayoff, code="second generated target")
+    )
+
+    assert first_artifact["module_name"] == second_artifact["module_name"]
+    assert first_artifact["class_name"] == second_artifact["class_name"]
+    assert first_artifact["code_hash"] != second_artifact["code_hash"]
+    assert first_identity != second_identity
 
 
 def test_cross_validation_uses_persisted_contract_method_for_legacy_result():

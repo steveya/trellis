@@ -312,6 +312,59 @@ def test_build_with_tracking_forwards_retry_overlays_to_build_payoff(monkeypatch
     ]
 
 
+def test_build_with_tracking_preserves_deterministic_source_metadata(monkeypatch):
+    from trellis.agent.knowledge.autonomous import _build_with_tracking
+    from trellis.agent.knowledge.gap_check import GapReport
+    from trellis.agent.knowledge.schema import ProductDecomposition
+
+    decomposition = ProductDecomposition(
+        instrument="bermudan_swaption",
+        features=("bermudan_exercise",),
+        method="analytical",
+        learned=False,
+    )
+    deterministic_source = "class DeterministicPayoff:\n    pass\n"
+
+    def fake_build_payoff(*args, **kwargs):
+        kwargs["build_meta"]["code"] = deterministic_source
+        return type("DeterministicPayoff", (), {})
+
+    monkeypatch.setattr("trellis.agent.executor.build_payoff", fake_build_payoff)
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.retrieve_for_product_ir",
+        lambda *args, **kwargs: [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.build_shared_knowledge_payload",
+        lambda knowledge: {
+            "summary": {},
+            "builder_text_distilled": "",
+            "builder_text": "",
+            "builder_text_expanded": "",
+            "review_text_distilled": "",
+            "review_text_expanded": "",
+        },
+    )
+
+    payoff_cls, meta = _build_with_tracking(
+        description="Bermudan swaption lower bound",
+        instrument_type="bermudan_swaption",
+        decomposition=decomposition,
+        product_ir=SimpleNamespace(instrument="bermudan_swaption"),
+        gap_report=GapReport(confidence=0.8, retrieved_lesson_ids=[]),
+        model="test-model",
+        market_state=None,
+        max_retries=1,
+        validation="standard",
+        force_rebuild=True,
+        preferred_method="analytical",
+    )
+
+    assert payoff_cls.__name__ == "DeterministicPayoff"
+    assert meta["attempts"] == 0
+    assert meta["code"] == deterministic_source
+
+
 def test_build_with_tracking_scopes_live_knowledge_to_compiled_route(monkeypatch):
     from trellis.agent.knowledge.autonomous import _build_with_tracking
     from trellis.agent.knowledge.gap_check import GapReport

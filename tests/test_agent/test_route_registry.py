@@ -1733,20 +1733,41 @@ class TestAnalyticalRoutes:
         assert resolve_route_notes(spec, self.SWAPTION_IR) == ()
         assert resolve_route_adapters(spec, self.SWAPTION_IR) == ()
 
-    def test_bermudan_swaption_primitives_use_lower_bound_helper(self, registry):
+    def test_bermudan_swaption_primitives_compose_final_exercise_resolved_kernel(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         new_prims = resolve_route_primitives(spec, self.BERMUDAN_SWAPTION_IR)
         assert _prim_set(new_prims) == {
             (
+                "trellis.core.date_utils",
+                "normalize_explicit_dates",
+                "schedule_builder",
+            ),
+            (
                 "trellis.models.rate_style_swaption",
-                "price_bermudan_swaption_black76_lower_bound",
-                "route_helper",
+                "resolve_swaption_black76_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.rate_style_swaption",
+                "price_swaption_black76_raw",
+                "pricing_kernel",
             ),
         }
+        normalizer = next(
+            primitive
+            for primitive in new_prims
+            if primitive.symbol == "normalize_explicit_dates"
+        )
+        assert normalizer.required is False
 
-    def test_bermudan_swaption_analytical_route_is_thin(self, registry):
+    def test_bermudan_swaption_analytical_route_records_final_date_obligations(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
-        assert resolve_route_notes(spec, self.BERMUDAN_SWAPTION_IR) == ()
+        notes = "\n".join(resolve_route_notes(spec, self.BERMUDAN_SWAPTION_IR))
+        assert "strictly after settlement and before swap end" in notes
+        assert "Return zero when no valid exercise date remains" in notes
+        assert "resolve_swaption_black76_inputs" in notes
+        assert "price_swaption_black76_raw" in notes
+        assert "Do not sum or maximize European values" in notes
         assert resolve_route_adapters(spec, self.BERMUDAN_SWAPTION_IR) == ()
 
     def test_barrier_primitives_use_exact_helper(self, registry):

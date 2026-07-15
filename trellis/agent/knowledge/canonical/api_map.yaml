@@ -249,6 +249,7 @@ equity_tree:
 
 rate_lattice:
   module: trellis.models.trees.lattice
+  methods: [rate_tree]
   navigation:
     aliases: [rate_tree, callable_bond, puttable_bond, bermudan_swaption]
   key_imports:
@@ -401,6 +402,7 @@ observation_return_composition:
 
 rate_monte_carlo_composition:
   module: trellis.models.monte_carlo.simulation_substrate
+  methods: [monte_carlo]
   navigation:
     aliases: [rate_monte_carlo, bermudan_swaption, callable_rate_product]
   key_imports:
@@ -416,6 +418,7 @@ rate_monte_carlo_composition:
 
 rate_style_swaption_composition:
   module: trellis.models.rate_style_swaption
+  methods: [analytical]
   navigation:
     aliases: [swaption, european_swaption, black76_swaption, rate_style_swaption]
   key_imports:
@@ -425,6 +428,18 @@ rate_style_swaption_composition:
     - "The raw kernel applies notional and annuity exactly once. Do not reapply discounting, notional, or annuity in generated adapter code."
     - "The product-level price_swaption_black76(...) wrapper remains a compatibility/reference API and is not generated-route construction authority."
     - "Pass Hull-White comparison parameters to the resolver only when the task contract explicitly requests that comparison regime; ordinary Black76 benchmark tasks use the bound market volatility surface."
+
+bermudan_swaption_lower_bound_composition:
+  module: trellis.models.rate_style_swaption
+  methods: [analytical]
+  navigation:
+    aliases: [bermudan_swaption, black76_european_lower_bound, final_exercise_lower_bound]
+  key_imports:
+    - "from trellis.core.date_utils import normalize_explicit_dates"
+    - "from trellis.models.rate_style_swaption import resolve_swaption_black76_inputs, price_swaption_black76_raw"
+  notes:
+    - "This comparator is not Bermudan analytical pricing. It is the European swaption exercisable only on the final normalized exercise date strictly after settlement and before swap end."
+    - "Return zero when no valid exercise date remains; otherwise pass the final date as expiry_date to resolve_swaption_black76_inputs(...) and price the resolved basis exactly once with price_swaption_black76_raw(...). Do not sum or maximize European prices across the exercise schedule, and do not use price_bermudan_swaption_black76_lower_bound(...) as generated construction authority."
 
 qmc:
   module: trellis.models.qmc
@@ -511,7 +526,7 @@ analytical:
     - "from trellis.models.analytical.fx import garman_kohlhagen_price_raw"
     - "from trellis.models.fx_barrier_option import resolve_fx_barrier_inputs"
     - "from trellis.models.analytical.barrier import barrier_option_price"
-    - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw, price_bermudan_swaption_black76_lower_bound"
+    - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw"
   notes:
     - "For FX vanilla analytics, resolve spot, domestic/foreign discount factors, volatility, and contract terms, then call `garman_kohlhagen_price_raw(...)` on the resolved basis and apply notional"
     - "For FX single-barrier analytics, resolve FX spot, domestic/foreign rates, volatility, monitoring, and payoff terms, then call `barrier_option_price(...)` with foreign rate as `q` and apply notional"
@@ -547,9 +562,9 @@ utilities:
     module: trellis.models.rate_style_swaption
     imports:
       - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw"
-      - "from trellis.models.rate_style_swaption import price_bermudan_swaption_black76_lower_bound"
     notes:
       - "For European Black76 construction, bind with resolve_swaption_black76_inputs(...) and price only the typed result with price_swaption_black76_raw(...); the product wrapper is reference-only"
+      - "For the Bermudan final-exercise lower-bound comparator, normalize/filter the exercise schedule first and pass only the final valid date to the same resolver/raw-kernel composition"
   jamshidian_zcb_option:
     module: trellis.models.zcb_option
     imports:

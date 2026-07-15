@@ -1584,7 +1584,7 @@ def test_executor_bermudan_swaption_rate_tree_retry_pins_helper_and_bermudan_con
     assert "price_callable_bond_tree" in text
 
 
-def test_executor_bermudan_swaption_analytical_retry_pins_lower_bound_helper():
+def test_executor_bermudan_swaption_analytical_retry_pins_final_exercise_composition():
     from types import SimpleNamespace
 
     from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
@@ -1603,7 +1603,10 @@ def test_executor_bermudan_swaption_analytical_retry_pins_lower_bound_helper():
 
     text = "\n".join(_route_specific_retry_lines(request))
 
-    assert "price_bermudan_swaption_black76_lower_bound" in text
+    assert "normalize_explicit_dates" in text
+    assert "resolve_swaption_black76_inputs" in text
+    assert "price_swaption_black76_raw" in text
+    assert "price_bermudan_swaption_black76_lower_bound" not in text
     assert "European swaption exercisable only on the final Bermudan date" in text
     assert "Do not sum one European Black76 price per exercise date" in text
 

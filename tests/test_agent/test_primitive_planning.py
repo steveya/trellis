@@ -913,7 +913,7 @@ def test_builds_exercise_lattice_plan_for_bermudan_swaption():
     assert plan.primitive_plan.blockers == ()
 
 
-def test_builds_analytical_plan_for_bermudan_swaption_lower_bound():
+def test_builds_analytical_plan_for_bermudan_swaption_lower_bound_composition():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
@@ -938,8 +938,15 @@ def test_builds_analytical_plan_for_bermudan_swaption_lower_bound():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "analytical_black76"
     assert plan.primitive_plan.engine_family == "analytical"
-    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_bermudan_swaption_black76_lower_bound"}
+    primitives = {
+        (primitive.symbol, primitive.role, primitive.required)
+        for primitive in plan.primitive_plan.primitives
+    }
+    assert primitives == {
+        ("normalize_explicit_dates", "schedule_builder", False),
+        ("resolve_swaption_black76_inputs", "market_binding", True),
+        ("price_swaption_black76_raw", "pricing_kernel", True),
+    }
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.blockers == ()
 

@@ -422,20 +422,21 @@ If the generated adapter hard-codes a smaller path count such as ``50000``
 instead of flowing ``spec.n_paths``, expect a route-specific diagnosis packet
 that fails on internal comparison spread long before reviewer escalation.
 
-For analytical rate-style swaption routes, the deterministic bundle now also
-checks helper consistency against the checked-in
-``trellis.models.rate_style_swaption`` Black76 surface. If a generated adapter
-compiles but misbinds annuity, forward swap rate, or notional, the packet
-should now show a route-specific ``check_rate_style_swaption_helper_consistency``
-failure with sampled scenario prices before the run escalates to critic or
-model-validator review.
+For analytical rate-style swaption routes, the deterministic bundle also checks
+composition consistency against the retained
+``trellis.models.rate_style_swaption`` Black76 reference surface. If a generated
+adapter compiles but misbinds annuity, forward swap rate, notional, or the final
+valid Bermudan comparison date, the packet should show a route-specific
+``check_rate_style_swaption_helper_consistency`` failure with sampled scenario
+prices before the run escalates to critic or model-validator review. The legacy
+check id does not grant construction authority to the reference wrapper.
 
 Eligible single-method routes now also emit a post-bundle
 ``reference_oracle_executed`` event before reviewer escalation. This is the
 next checkpoint after the deterministic bundle for helper-backed exact or
 bound-style routes:
 
-- analytical swaptions against the checked-in Black76 helper
+- analytical swaptions against the retained Black76 reference
 - analytical zero-coupon-bond options against the Jamshidian helper
 - callable and puttable rate-tree bonds against the straight-bond bound helper
 

@@ -416,9 +416,11 @@ def _query_cues(query: ApiMapQuery) -> tuple[tuple[str, int], ...]:
         (query.model_family, 40),
         (query.description, 30),
     ]
-    cues.extend((str(item), 100) for item in query.features)
-    cues.extend((str(item), 80) for item in query.route_ids)
-    cues.extend((str(item), 80) for item in query.route_families)
+    # Compiled route identity and typed features are more specific than broad
+    # instrument/payoff labels, so exact specialized cards must rank first.
+    cues.extend((str(item), 160) for item in query.features)
+    cues.extend((str(item), 180) for item in query.route_ids)
+    cues.extend((str(item), 140) for item in query.route_families)
     return tuple((value, weight) for value, weight in cues if value.strip())
 
 

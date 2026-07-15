@@ -579,6 +579,15 @@ to the raw kernel. ``price_swaption_black76(...)`` remains usable as a public
 compatibility and reference function, but it is not advertised as construction
 authority.
 
+The Bermudan ``black76_european_lower_bound`` comparison reuses those same
+surfaces without pretending Black76 is a Bermudan solver. Generated code
+normalizes the exercise schedule, keeps dates strictly after settlement and
+before swap end, returns zero if none remain, and resolves only the final valid
+date before calling ``price_swaption_black76_raw(...)``. It must not sum or
+maximize European values across the schedule. The retained product-level
+lower-bound wrapper is comparison/reference evidence rather than construction
+authority.
+
 The trace boundary also exposes a family-first ``construction_identity``
 summary. For operators, that is now the primary readout:
 

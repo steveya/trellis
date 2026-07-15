@@ -472,12 +472,15 @@ def price_bermudan_swaption_black76_lower_bound(
     market_state: MarketState,
     spec: BermudanSwaptionLowerBoundSpecLike,
 ) -> float:
-    """Return the final-exercise European Black76 lower bound.
+    """Return the compatibility/reference final-exercise Black76 lower bound.
 
     The Bermudan task comparator is defined as the European swaption that may
     only exercise on the final Bermudan date. That keeps the comparison stable
     and guarantees it remains a lower bound to the Bermudan tree price in the
-    checked-in T04 contract.
+    checked-in T04 contract. New generated adapters should compose
+    ``normalize_explicit_dates``, ``resolve_swaption_black76_inputs``, and
+    ``price_swaption_black76_raw`` instead of using this wrapper as construction
+    authority.
     """
     exercise_dates = tuple(
         exercise_date

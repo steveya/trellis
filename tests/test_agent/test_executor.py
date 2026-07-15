@@ -1034,6 +1034,60 @@ def test_admitted_swaption_adapter_composes_resolved_inputs_with_raw_kernel():
     assert "price_swaption_black76(market_state" not in source
 
 
+def test_deterministic_exact_binding_module_materializes_bermudan_lower_bound_composition():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+        ),
+        primitive_plan=SimpleNamespace(route="analytical_black76"),
+        method="analytical",
+        instrument_type="bermudan_swaption",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["bermudan_swaption"],
+        "Bermudan payer swaption analytical lower bound",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="black76_european_lower_bound",
+    )
+
+    assert generated is not None
+    assert "normalize_explicit_dates(spec.exercise_dates)" in generated.code
+    assert "market_state.settlement < exercise_date < spec.swap_end" in generated.code
+    assert "if not valid_exercise_dates:" in generated.code
+    assert "return 0.0" in generated.code
+    assert "final_exercise_date = valid_exercise_dates[-1]" in generated.code
+    assert "expiry_date=final_exercise_date" in generated.code
+    assert "return price_swaption_black76_raw(resolved)" in generated.code
+    assert "price_bermudan_swaption_black76_lower_bound" not in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_admitted_bermudan_swaption_adapter_composes_final_exercise_lower_bound():
+    source = (
+        Path(__file__).resolve().parents[2]
+        / "trellis/instruments/_agent/bermudanswaption.py"
+    ).read_text()
+
+    assert "normalize_explicit_dates(spec.exercise_dates)" in source
+    assert "market_state.settlement < exercise_date < spec.swap_end" in source
+    assert "final_exercise_date = valid_exercise_dates[-1]" in source
+    assert "expiry_date=final_exercise_date" in source
+    assert "price_swaption_black76_raw(resolved)" in source
+    assert "price_bermudan_swaption_black76_lower_bound" not in source
+
+
 def test_deterministic_exact_binding_module_materializes_bermudan_tree_compat_wrapper():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,

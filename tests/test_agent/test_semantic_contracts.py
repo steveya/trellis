@@ -1610,7 +1610,7 @@ class TestAmbiguousResolutionBlocksBuild:
         assert gap.semantic_concept_resolution_kind == "reuse_existing_concept"
 
 
-def test_bermudan_swaption_analytical_contract_uses_lower_bound_target():
+def test_bermudan_swaption_analytical_contract_uses_resolved_lower_bound_composition():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
     from trellis.agent.semantic_contract_validation import validate_semantic_contract
@@ -1629,9 +1629,11 @@ def test_bermudan_swaption_analytical_contract_uses_lower_bound_target():
     assert compiled.primitive_routes == ("analytical_black76",)
     assert "trellis.models.rate_style_swaption" in compiled.target_modules
     assert compiled.dsl_lowering is not None
-    assert (
-        "trellis.models.rate_style_swaption.price_bermudan_swaption_black76_lower_bound"
-        in compiled.dsl_lowering.helper_refs
+    assert compiled.dsl_lowering.route_helper_refs == ()
+    assert compiled.dsl_lowering.target_refs == (
+        "trellis.core.date_utils.normalize_explicit_dates",
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw",
     )
 
 

@@ -213,6 +213,12 @@ Recent analytical routes in Trellis follow the same resolver-to-raw split:
   ``ResolvedSwaptionBlack76Inputs`` ->
   ``price_swaption_black76_raw(...)`` in
   ``trellis.models.rate_style_swaption``.
+- Bermudan final-exercise Black76 comparator: normalize explicit exercise
+  dates, keep only dates strictly after settlement and before swap end, return
+  zero when none remain, then pass the final valid date as ``expiry_date`` to
+  ``resolve_swaption_black76_inputs(...)`` and price the resolved value once
+  with ``price_swaption_black76_raw(...)``. Do not sum or maximize European
+  values across the schedule; the retained product wrapper is reference-only.
 - Jamshidian zero-coupon bond option:
   ``resolve_zcb_option_hw_inputs(...)`` ->
   ``ResolvedJamshidianInputs`` / ``zcb_option_hw_raw(...)`` under the public

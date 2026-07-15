@@ -571,7 +571,7 @@ def test_rate_style_swaption_receiver_analytical_uses_same_resolved_composition(
     )
 
 
-def test_bermudan_swaption_analytical_lowers_to_lower_bound_helper():
+def test_bermudan_swaption_analytical_lowers_to_resolver_then_raw_kernel():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
 
@@ -587,9 +587,16 @@ def test_bermudan_swaption_analytical_lowers_to_lower_bound_helper():
     assert lowering is not None
     assert lowering.route_id == "analytical_black76"
     assert lowering.admissibility_errors == ()
-    assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert lowering.normalized_expr.primitive_ref == (
-        "trellis.models.rate_style_swaption.price_bermudan_swaption_black76_lower_bound"
+    assert isinstance(lowering.normalized_expr, ThenExpr)
+    assert tuple(term.primitive_ref for term in lowering.normalized_expr.terms) == (
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+    )
+    assert lowering.route_helper_refs == ()
+    assert lowering.target_refs == (
+        "trellis.core.date_utils.normalize_explicit_dates",
+        "trellis.models.rate_style_swaption.resolve_swaption_black76_inputs",
+        "trellis.models.rate_style_swaption.price_swaption_black76_raw",
     )
 
 

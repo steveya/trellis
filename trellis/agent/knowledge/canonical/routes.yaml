@@ -1394,7 +1394,7 @@ routes:
       non_european_penalty: -4.0
     match:
       methods: [analytical]
-      # QUA-900 / QUA-909 / QUA-910: Black76 now hosts the helper-backed
+      # QUA-900 / QUA-909 / QUA-910: Black76 now hosts the checked
       # closed-form equity exotics that still live on the same vol-surface-
       # driven analytical lane. The absorbed exotic cohorts expose specific
       # payoff-family labels, so this positive filter stays structural and
@@ -1411,7 +1411,7 @@ routes:
       # IR pricing-method selector to pick ``analytical`` over the true
       # Monte-Carlo / rate-tree / PDE solvers. Black76's ``when`` clauses
       # only handle ``european`` (vanilla, basket, absorbed exotics, swaption),
-      # ``bermudan`` (swaption via the lower-bound helper), and ``none``
+      # ``bermudan`` (swaption final-exercise lower-bound composition), and ``none``
       # (variance swaps), so restricting the match clause to those exercise
       # styles matches the concrete capability surface.
       #
@@ -1511,11 +1511,21 @@ routes:
             exercise:
               style: bermudan
         primitives:
+          - module: trellis.core.date_utils
+            symbol: normalize_explicit_dates
+            role: schedule_builder
+            required: false
           - module: trellis.models.rate_style_swaption
-            symbol: price_bermudan_swaption_black76_lower_bound
-            role: route_helper
+            symbol: resolve_swaption_black76_inputs
+            role: market_binding
+          - module: trellis.models.rate_style_swaption
+            symbol: price_swaption_black76_raw
+            role: pricing_kernel
         adapters: []
-        notes: []
+        notes:
+          - "For the black76_european_lower_bound comparator, normalize the Bermudan exercise dates, keep only dates strictly after settlement and before swap end, and select the final valid date."
+          - "Return zero when no valid exercise date remains; otherwise pass the final date as expiry_date to resolve_swaption_black76_inputs(...) and price the resolved basis once with price_swaption_black76_raw(...)."
+          - "Do not sum or maximize European values across exercise dates, and do not use the product-level lower-bound wrapper as generated construction authority."
       - when:
           contract_pattern:
             payoff:
