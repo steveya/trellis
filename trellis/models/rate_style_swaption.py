@@ -381,7 +381,7 @@ def resolve_swaption_monte_carlo_problem(
         if period.end_date > settlement
     )
     if not payment_timeline:
-        raise ValueError("Rate-style swaption Monte Carlo pricing requires payments after swap start")
+        raise ValueError("Rate-style swaption Monte Carlo pricing requires future payments after settlement")
 
     process_spec, initial_state = resolve_hull_white_monte_carlo_process_inputs(
         market_state,

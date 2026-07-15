@@ -6189,7 +6189,7 @@ def _deterministic_exact_binding_evaluate_body(
 
             resolved = resolve_swaption_black76_inputs(
                 market_state,
-                spec{swaption_comparison_kwargs},
+                spec,
             )
             settlement = getattr(market_state, "settlement", None) or market_state.as_of
             swap_start = getattr(spec, "swap_start", None) or resolved.expiry_date
@@ -6206,7 +6206,7 @@ def _deterministic_exact_binding_evaluate_body(
                 if period.end_date > settlement
             )
             if not payment_timeline:
-                raise ValueError("Rate-style swaption Monte Carlo pricing requires payments after swap start")
+                raise ValueError("Rate-style swaption Monte Carlo pricing requires future payments after settlement")
 
             process_spec, initial_state = resolve_hull_white_monte_carlo_process_inputs(
                 market_state,

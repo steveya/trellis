@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 from dataclasses import dataclass
 from datetime import date, timedelta
 from contextlib import contextmanager
@@ -5985,8 +5986,26 @@ def test_deterministic_exact_binding_module_composes_european_swaption_monte_car
     assert "n_paths = max(int(getattr(spec, \"n_paths\", 20000)), 2)" in generated.code
     assert "n_steps = max(int(getattr(spec, \"n_steps\", 64)), 1)" in generated.code
     assert "seed = spec.seed if hasattr(spec, \"seed\") else 42" in generated.code
-    assert "mean_reversion=0.05" in generated.code
-    assert "sigma=0.01" in generated.code
+    calls = tuple(
+        node
+        for node in ast.walk(ast.parse(generated.code))
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name)
+    )
+    expiry_resolution = next(
+        call for call in calls if call.func.id == "resolve_swaption_black76_inputs"
+    )
+    process_resolution = next(
+        call
+        for call in calls
+        if call.func.id == "resolve_hull_white_monte_carlo_process_inputs"
+    )
+    assert {keyword.arg for keyword in expiry_resolution.keywords} == set()
+    assert {keyword.arg for keyword in process_resolution.keywords} == {
+        "option_horizon",
+        "strike",
+        "mean_reversion",
+        "sigma",
+    }
     assert "price_swaption_monte_carlo(" not in generated.code
     assert "resolve_swaption_monte_carlo_problem(" not in generated.code
     assert "GBM(" not in generated.code

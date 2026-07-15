@@ -309,8 +309,6 @@ def build_price(self, market_state):
     resolved = resolve_swaption_black76_inputs(
         market_state,
         spec,
-        mean_reversion=0.05,
-        sigma=0.01,
     )
     payment_timeline = build_payment_timeline(
         spec.swap_start,
