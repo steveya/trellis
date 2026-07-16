@@ -61,7 +61,7 @@ Status mirror last synced: `2026-07-16`
 | `QUA-1198` | Swaption Monte Carlo: retire European helper and problem-resolver authority | Done |
 | `QUA-1199` | Swaption lattice: retire European tree helper authority | Done |
 | `QUA-1200` | Lattice rollback: observable node-value phases | Done |
-| `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | In Progress |
+| `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | Done |
 | `QUA-1202` | Semantic proving: distinguish fresh artifacts from agent synthesis | Backlog |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
