@@ -199,6 +199,10 @@ def render_task_diagnosis_dossier(packet: Mapping[str, Any]) -> str:
         f"- Run id: `{run.get('run_id', '')}`",
         f"- Persisted at: `{run.get('persisted_at', '')}`",
         f"- Execution mode: `{execution.get('mode', '')}`",
+        f"- Generation policy: `{execution.get('generation_policy', '')}`",
+        f"- Artifact origins: `{_join_or_none(dict(execution.get('generation_evidence') or {}).get('artifact_origins'))}`",
+        f"- Agent synthesis attempted: `{_yes_no(dict(execution.get('generation_evidence') or {}).get('agent_synthesis_attempted'))}`",
+        f"- Agent synthesis observed: `{_yes_no(dict(execution.get('generation_evidence') or {}).get('agent_synthesis_observed'))}`",
         f"- Outcome: `{outcome.get('status', '')}`",
         f"- Failure bucket: `{outcome.get('failure_bucket', '')}`",
         f"- Decision stage: `{outcome.get('decision_stage', '')}`",
@@ -1073,6 +1077,8 @@ def _decision_stage(
         return "task_contract"
     if result.get("blocker_details"):
         return "blocked"
+    if failure_bucket == "generation_policy":
+        return "generation_policy"
     comparison_status = str(summary.get("comparison_status") or "").strip().lower()
     if comparison_status and comparison_status != "passed":
         return "comparison"
@@ -1115,6 +1121,7 @@ def _method_outcomes(method_runs: Mapping[str, Any]) -> list[dict[str, Any]]:
             "failures": list(payload.get("failures") or []),
             "post_build_latest_phase": dict(payload.get("post_build_tracking") or {}).get("last_phase"),
             "post_build_latest_status": dict(payload.get("post_build_tracking") or {}).get("last_status"),
+            "generation_evidence": dict(payload.get("generation_evidence") or {}),
         }
         outcomes.append(outcome)
     return outcomes
@@ -1252,6 +1259,11 @@ def _likely_cause(
         return "The task contract itself is invalid, so the run failed before a usable pricing path could be assembled."
     if result.get("blocker_details"):
         return "The run was intentionally blocked by explicit blocker details."
+    if failure_bucket == "generation_policy":
+        return (
+            "The requested builder-synthesis proof could not be established under "
+            "the configured freshness, recovery, execution, or artifact-origin evidence."
+        )
     if failure_bucket == "comparator_build_failure":
         failed_methods = [item.get("method") for item in method_outcomes if not item.get("success")]
         if failed_methods:
@@ -1299,7 +1311,7 @@ def _likely_cause(
 
 
 def _confidence_for(*, failure_bucket: str, signals: list[str]) -> str:
-    if failure_bucket in {"import_hallucination", "missing_market_data", "llm_response", "timeout", "rate_limit"}:
+    if failure_bucket in {"generation_policy", "import_hallucination", "missing_market_data", "llm_response", "timeout", "rate_limit"}:
         return "high"
     if failure_bucket == "comparator_build_failure":
         return "high"
@@ -1344,6 +1356,8 @@ def _headline_from_bucket(
         if failing_methods:
             return f"Comparison failed after {len(failing_methods)} method failure(s)."
         return "Comparison failed before enough methods returned valid results."
+    if failure_bucket == "generation_policy":
+        return "Builder-synthesis proof failed closed before an unproven success could be reported."
     if failure_bucket == "implementation_gap":
         return f"Implementation gap surfaced during {decision_stage}."
     if failure_bucket == "missing_market_data":
@@ -1369,6 +1383,11 @@ def _default_next_action(*, failure_bucket: str, decision_stage: str) -> str:
         )
     if failure_bucket == "implementation_gap":
         return "Fix the missing primitive or symbol in the implementation path and rerun the task."
+    if failure_bucket == "generation_policy":
+        return (
+            "Use an isolated fresh build with assisted or remediation recovery in "
+            "live or cassette-record mode, then require observed model-generated source."
+        )
     if failure_bucket == "missing_market_data":
         return "Fill in the missing market capability or mock data before rerunning."
     if failure_bucket in {"import_hallucination", "missing_cookbook", "missing_decomposition"}:

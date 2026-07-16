@@ -151,4 +151,5 @@ def test_run_learning_benchmark_seeded_retry_fixture_recovers_without_llm(
     assert report["attribution"]["retry_learning"]["retry_learned_recoveries"][
         "task_ids"
     ] == ["L001"]
+    assert report["passes"][0]["generation_policy"] == "deterministic_allowed"
     assert "Saved learning benchmark report" in stdout

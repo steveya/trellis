@@ -6913,6 +6913,51 @@ def test_build_payoff_fresh_build_still_uses_deterministic_exact_binding(monkeyp
             fresh_build=True,
         )
 
+    def fail_semantic_shim(*args, **kwargs):
+        pytest.fail("semantic shims must be bypassed when builder synthesis is required")
+
+    def fail_deterministic_materializer(*args, **kwargs):
+        pytest.fail(
+            "deterministic exact bindings must be bypassed when builder synthesis is required"
+        )
+
+    def fail_builder(*args, **kwargs):
+        raise RuntimeError("builder synthesis path used")
+
+    monkeypatch.setattr(
+        "trellis.agent.executor._materialize_semantic_execution_shim_module",
+        fail_semantic_shim,
+    )
+    monkeypatch.setattr(
+        "trellis.agent.executor._materialize_deterministic_exact_binding_module",
+        fail_deterministic_materializer,
+    )
+    monkeypatch.setattr("trellis.agent.executor._generate_module", fail_builder)
+    build_meta = {}
+
+    with pytest.raises(RuntimeError, match="builder synthesis path used"):
+        build_payoff(
+            "CDO tranche exact binding synthesis proof",
+            compiled_request=compiled_request,
+            instrument_type="cdo",
+            market_state=SimpleNamespace(
+                selected_curve_names={},
+                available_capabilities={"credit_curve"},
+            ),
+            max_retries=1,
+            model="gpt-5-mini",
+            fresh_build=True,
+            generation_policy="builder_synthesis_required",
+            build_meta=build_meta,
+        )
+
+    assert build_meta["generation_evidence"] == {
+        "policy": "builder_synthesis_required",
+        "artifact_origin": "none",
+        "agent_synthesis_attempted": True,
+        "agent_synthesis_observed": False,
+    }
+
 
 def test_p001_semantic_execution_shim_source_is_thin_adapter():
     from trellis.agent.codegen_guardrails import validate_generated_imports

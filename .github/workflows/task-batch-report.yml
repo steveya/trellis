@@ -63,10 +63,18 @@ on:
         type: boolean
         default: true
       fresh_build:
-        description: Force fresh generation instead of reuse-backed runs.
+        description: Isolate build artifacts and bypass admitted adapter reuse.
         required: true
         type: boolean
         default: false
+      generation_policy:
+        description: Allow deterministic materialization or require observed builder-agent source synthesis.
+        required: true
+        type: choice
+        options:
+          - deterministic_allowed
+          - builder_synthesis_required
+        default: deterministic_allowed
       knowledge_light:
         description: Use the compiler-first minimal knowledge profile.
         required: true
@@ -158,6 +166,7 @@ jobs:
           CORPORA: ${{ inputs.corpora }}
           REUSE: ${{ inputs.reuse }}
           FRESH_BUILD: ${{ inputs.fresh_build }}
+          GENERATION_POLICY: ${{ inputs.generation_policy }}
           KNOWLEDGE_LIGHT: ${{ inputs.knowledge_light }}
           RESULTS_JSON: ${{ steps.paths.outputs.results_json }}
         run: |
@@ -185,6 +194,8 @@ jobs:
               os.environ["TASK_STATUS"],
               "--output",
               os.environ["RESULTS_JSON"],
+              "--generation-policy",
+              os.environ["GENERATION_POLICY"],
           ]
 
           if os.environ.get("REUSE", "").lower() == "true":
@@ -230,6 +241,7 @@ jobs:
           CORPORA: ${{ inputs.corpora }}
           REUSE: ${{ inputs.reuse }}
           FRESH_BUILD: ${{ inputs.fresh_build }}
+          GENERATION_POLICY: ${{ inputs.generation_policy }}
           KNOWLEDGE_LIGHT: ${{ inputs.knowledge_light }}
           RESULTS_JSON: ${{ steps.paths.outputs.results_json }}
           REPORT_JSON: ${{ steps.paths.outputs.report_json }}
@@ -269,6 +281,8 @@ jobs:
               os.environ["REPORT_MD"],
               "--step-summary",
               os.environ["STEP_SUMMARY_PATH"],
+              "--generation-policy",
+              os.environ["GENERATION_POLICY"],
           ]
 
           if os.environ.get("REUSE", "").lower() == "true":

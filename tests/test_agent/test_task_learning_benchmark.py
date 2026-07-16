@@ -18,6 +18,7 @@ def _result(
     promotion_candidate_saved: str | None = None,
     total_tokens: int = 0,
     intra_run_learning: dict | None = None,
+    generation_evidence: dict | None = None,
 ) -> dict:
     return {
         "task_id": task_id,
@@ -53,6 +54,7 @@ def _result(
             "by_provider": {},
         },
         "intra_run_learning": intra_run_learning or {},
+        "generation_evidence": generation_evidence or {},
     }
 
 
@@ -170,12 +172,14 @@ def test_build_task_learning_benchmark_report_tracks_pass_deltas_and_attribution
             {
                 "pass_number": 1,
                 "label": "pass_1",
+                "generation_policy": "builder_synthesis_required",
                 "results": pass_one,
                 "results_path": "/tmp/pass_1.json",
             },
             {
                 "pass_number": 2,
                 "label": "pass_2",
+                "generation_policy": "builder_synthesis_required",
                 "results": pass_two,
                 "results_path": "/tmp/pass_2.json",
             },
@@ -184,6 +188,7 @@ def test_build_task_learning_benchmark_report_tracks_pass_deltas_and_attribution
     )
 
     assert report["passes"][0]["summary"]["totals"]["successes"] == 0
+    assert report["passes"][0]["generation_policy"] == "builder_synthesis_required"
     assert report["passes"][1]["summary"]["totals"]["successes"] == 1
     assert report["pairwise_comparisons"][0]["comparison"]["task_transitions"]["improved"] == 1
     assert report["pairwise_comparisons"][0]["deltas"]["elapsed_seconds_total"] == -11.0
@@ -195,6 +200,7 @@ def test_build_task_learning_benchmark_report_tracks_pass_deltas_and_attribution
     rendered = render_task_learning_benchmark_report(report)
     assert "Task Learning Benchmark" in rendered
     assert "Knowledge-assisted improvements" in rendered
+    assert "Generation policy: `builder_synthesis_required`" in rendered
     assert "Residual implementation gaps" in rendered
 
     artifacts = save_task_learning_benchmark_report(
@@ -284,6 +290,8 @@ def test_build_task_learning_benchmark_report_labels_retry_learned_recovery():
         tasks=[
             _task("L001", "Seeded retry fixture"),
             _task("T13", "First-pass deterministic route"),
+            _task("T16", "First-pass model synthesis"),
+            _task("T17", "First-pass origin unknown"),
             _task("T22", "Failed retry evidence"),
         ],
         pass_runs=[
@@ -297,7 +305,29 @@ def test_build_task_learning_benchmark_report_labels_retry_learned_recovery():
                         attempts=2,
                         intra_run_learning=retry_learning,
                     ),
-                    _result(task_id="T13", success=True, attempts=1),
+                    _result(
+                        task_id="T13",
+                        success=True,
+                        attempts=1,
+                        generation_evidence={
+                            "policy": "deterministic_allowed",
+                            "artifact_origin": "reused_adapter",
+                            "agent_synthesis_attempted": False,
+                            "agent_synthesis_observed": False,
+                        },
+                    ),
+                    _result(
+                        task_id="T16",
+                        success=True,
+                        attempts=1,
+                        generation_evidence={
+                            "policy": "builder_synthesis_required",
+                            "artifact_origin": "model_generated_source",
+                            "agent_synthesis_attempted": True,
+                            "agent_synthesis_observed": True,
+                        },
+                    ),
+                    _result(task_id="T17", success=True, attempts=1),
                     _result(
                         task_id="T22",
                         success=False,
@@ -315,6 +345,8 @@ def test_build_task_learning_benchmark_report_labels_retry_learned_recovery():
     retry_learning_report = report["attribution"]["retry_learning"]
     assert retry_learning_report["retry_learned_recoveries"]["task_ids"] == ["L001"]
     assert retry_learning_report["first_pass_deterministic_reuse"]["task_ids"] == ["T13"]
+    assert retry_learning_report["first_pass_model_synthesis"]["task_ids"] == ["T16"]
+    assert retry_learning_report["first_pass_origin_unknown"]["task_ids"] == ["T17"]
     assert retry_learning_report["failed_or_unvalidated_retry_evidence"]["task_ids"] == [
         "T22"
     ]
@@ -322,4 +354,6 @@ def test_build_task_learning_benchmark_report_labels_retry_learned_recovery():
     rendered = render_task_learning_benchmark_report(report)
     assert "Retry-learned recoveries" in rendered
     assert "First-pass deterministic reuse" in rendered
+    assert "First-pass model synthesis" in rendered
+    assert "First-pass origin unknown" in rendered
     assert "Failed or unvalidated retry evidence" in rendered

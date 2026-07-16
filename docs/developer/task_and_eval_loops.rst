@@ -306,8 +306,11 @@ three selection modes:
 - ``all`` for the full manifest surface after any status/corpus filter
 
 The workflow also accepts optional corpus filters, ``pending`` versus ``all``
-status selection, validation profile, reuse versus fresh-build controls, and
-the knowledge-light profile. The GitHub Actions default model is
+status selection, validation profile, reuse versus fresh-build controls, an
+explicit generation policy, and the knowledge-light profile. Freshness and
+generation are independent: ``fresh_build`` isolates the artifact path, while
+``builder_synthesis_required`` proves that the builder produced model-generated
+source. The GitHub Actions default model is
 ``openai/gpt-4.1`` because GitHub Models expects catalog model IDs such as
 ``openai/gpt-4.1`` rather than direct OpenAI API model names such as
 ``gpt-5.4-mini``. Each manual run emits:
@@ -542,10 +545,13 @@ gate:
 - do elapsed time and token usage fall?
 - do those improvements line up with reused knowledge signals?
 
-The runner defaults to ``fresh_build=True``. That is deliberate. Reusing
-admitted adapters would swamp the signal and turn the benchmark into a warm
-cache measurement instead of a knowledge-carry-forward measurement. Reuse mode
-still exists, but only when you explicitly want warm-path operational data.
+The runner defaults to ``fresh_build=True`` and
+``generation_policy=builder_synthesis_required``. Both controls are necessary
+for this benchmark. Reusing admitted adapters would swamp the signal, while a
+fresh deterministic materialization would prove only compiler replay, not that
+the builder navigated Trellis knowledge and composed source. Reuse mode still
+exists for warm-path operational data, but it is incompatible with the
+synthesis-required policy.
 
 Each pass writes:
 
@@ -930,8 +936,49 @@ writes the result to an isolated fresh-build path. Fresh build does not by
 itself prove agent synthesis: an admitted deterministic exact binding may still
 materialize that isolated adapter with zero model calls. A report may claim
 fresh artifact construction from this mode, but it may claim fresh agent
-synthesis only when its execution policy also bypasses deterministic
-materialization and the trace records an actual code-generation call.
+synthesis only when ``generation_policy=builder_synthesis_required`` bypasses
+semantic shims and deterministic exact materialization and the executor records
+model-generated source.
+
+Artifact freshness and generation origin
+-----------------------------------------
+
+The task runtime persists these as separate contracts:
+
+- ``fresh_build`` controls adapter reuse and output-path isolation only.
+- ``generation_policy=deterministic_allowed`` preserves production-safe reuse,
+  semantic shims, deterministic exact materialization, and model generation as
+  a final fallback.
+- ``generation_policy=builder_synthesis_required`` requires an isolated fresh
+  path and bypasses checked adapters, semantic shims, and deterministic exact
+  materializers before calling the builder.
+- ``artifact_origin`` records ``reused_adapter``, ``semantic_shim``,
+  ``deterministic_materialization``, ``model_generated_source``, or a bounded
+  deterministic proof artifact.
+- ``agent_synthesis_attempted`` and ``agent_synthesis_observed`` distinguish a
+  failed builder call from returned model source. Observed synthesis does not
+  imply that validation passed or that the artifact should be admitted.
+
+Synthesis-required execution fails closed when ``fresh_build`` is false, when
+recovery mode is ``strict``, or when execution mode is offline or cassette
+replay. Live or cassette-record execution remains an explicit assisted or
+remediation action. For example:
+
+.. code-block:: bash
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+       --task-id T20 --status all --fresh-build \
+       --generation-policy builder_synthesis_required \
+       --recovery-mode assisted
+
+Task records, diagnosis packets, batch summaries, and platform events expose
+the policy, origin, and synthesis flags. Promotion candidates are considered
+only for validated fresh artifacts whose origin is
+``model_generated_source`` and whose synthesis was observed. A deterministic
+fresh build remains valid zero-token replay evidence but is never reported as
+model source synthesis or promoted as model-authored source. Learning reports
+separately label first-pass model synthesis, deterministic origin, and unknown
+origin instead of inferring synthesis from freshness or success.
 
 The same rule now applies to tranche-style basket-credit and typed
 loss-distribution comparison routes.

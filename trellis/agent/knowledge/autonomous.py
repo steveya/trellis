@@ -29,6 +29,12 @@ from trellis.agent.post_build_policy import (
     PostBuildLearningPolicy,
     post_build_policy_from_request_metadata,
 )
+from trellis.agent.generation_policy import (
+    GenerationPolicy,
+    GenerationPolicyError,
+    generation_evidence_payload,
+    normalize_generation_policy,
+)
 
 
 class BuildTrackingFailure(RuntimeError):
@@ -81,6 +87,7 @@ class BuildResult:
     intra_run_learning: dict[str, Any] = field(default_factory=dict)
     gate_decision: object | None = None  # BuildGateDecision when gate evaluated
     post_build_tracking: dict[str, Any] = field(default_factory=dict)
+    generation_evidence: dict[str, Any] = field(default_factory=dict)
 
 
 _PROVIDER_FAILURE_MARKERS = (
@@ -204,6 +211,7 @@ def build_with_knowledge(
     request_metadata: Mapping[str, object] | None = None,
     semantic_contract=None,
     knowledge_overlays: Sequence[Mapping[str, object]] | None = None,
+    generation_policy: str | GenerationPolicy = GenerationPolicy.DETERMINISTIC_ALLOWED,
 ) -> BuildResult:
     """Build a payoff class while autonomously managing the knowledge lifecycle.
 
@@ -241,6 +249,18 @@ def build_with_knowledge(
             f"Implementation target: {comparison_target}"
         )
 
+    generation_policy_value = normalize_generation_policy(generation_policy)
+    if (
+        generation_policy_value is GenerationPolicy.BUILDER_SYNTHESIS_REQUIRED
+        and not fresh_build
+    ):
+        raise GenerationPolicyError(
+            "Builder synthesis requires fresh_build=True so model source is isolated from admitted adapters.",
+            reason="fresh_build_required",
+        )
+    initial_generation_evidence = generation_evidence_payload(
+        policy=generation_policy_value
+    )
     post_build_policy = post_build_policy_from_request_metadata(request_metadata)
     post_build_controls = _post_build_control_flags(post_build_policy)
 
@@ -284,6 +304,7 @@ def build_with_knowledge(
                     "active_flags": post_build_controls,
                     "events": [],
                 },
+                generation_evidence=initial_generation_evidence,
             )
 
         # Increase retries if knowledge is thin
@@ -303,6 +324,7 @@ def build_with_knowledge(
                 "active_flags": post_build_controls,
                 "events": [],
             },
+            generation_evidence=initial_generation_evidence,
         )
 
         try:
@@ -319,6 +341,7 @@ def build_with_knowledge(
                 validation=validation,
                 force_rebuild=force_rebuild,
                 fresh_build=fresh_build,
+                generation_policy=generation_policy_value,
                 preferred_method=preferred_method,
                 request_metadata=request_metadata,
                 semantic_contract=semantic_contract,
@@ -366,6 +389,9 @@ def build_with_knowledge(
             )
             result.blocker_details = build_meta.get("blocker_details")
             result.intra_run_learning = dict(build_meta.get("intra_run_learning") or {})
+            result.generation_evidence = dict(
+                build_meta.get("generation_evidence") or initial_generation_evidence
+            )
         except BuildTrackingFailure as exc:
             result.failures = [str(exc.cause)]
             result.attempts = exc.meta.get("attempts", 0)
@@ -407,6 +433,9 @@ def build_with_knowledge(
             )
             result.blocker_details = exc.meta.get("blocker_details")
             result.intra_run_learning = dict(exc.meta.get("intra_run_learning") or {})
+            result.generation_evidence = dict(
+                exc.meta.get("generation_evidence") or initial_generation_evidence
+            )
         except Exception as e:
             result.failures = [str(e)]
         _record_post_build_phase(
@@ -611,6 +640,7 @@ def _build_with_tracking(
     validation: str,
     force_rebuild: bool,
     fresh_build: bool = False,
+    generation_policy: str | GenerationPolicy = GenerationPolicy.DETERMINISTIC_ALLOWED,
     build_description: str | None = None,
     preferred_method: str | None = None,
     request_metadata: Mapping[str, object] | None = None,
@@ -651,6 +681,9 @@ def _build_with_tracking(
     knowledge_payload = build_shared_knowledge_payload(knowledge)
     meta: dict = {
         "knowledge_summary": dict(knowledge_payload.get("summary") or {}),
+        "generation_evidence": generation_evidence_payload(
+            policy=generation_policy
+        ),
     }
     overlay_text = ""
     overlay_payloads = [
@@ -797,6 +830,7 @@ def _build_with_tracking(
             instrument_type=instrument_type,
             force_rebuild=force_rebuild,
             fresh_build=fresh_build,
+            generation_policy=generation_policy,
             validation=validation,
             max_retries=max_retries,
             preferred_method=preferred_method,

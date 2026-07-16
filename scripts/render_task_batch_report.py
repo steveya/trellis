@@ -60,6 +60,11 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     )
     parser.add_argument("--reuse", action="store_true")
     parser.add_argument("--fresh-build", action="store_true")
+    parser.add_argument(
+        "--generation-policy",
+        choices=("deterministic_allowed", "builder_synthesis_required"),
+        default="deterministic_allowed",
+    )
     parser.add_argument("--knowledge-light", action="store_true")
     parser.add_argument("--summary-json", help="Optional precomputed summary JSON path.")
     parser.add_argument("--output-json")
@@ -93,6 +98,7 @@ def main(argv: list[str]) -> int:
         validation=args.validation,
         force_rebuild=not args.reuse,
         fresh_build=args.fresh_build,
+        generation_policy=args.generation_policy,
         knowledge_light=args.knowledge_light,
         selection={
             "selection_mode": args.selection_mode,

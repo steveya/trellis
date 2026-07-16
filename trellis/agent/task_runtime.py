@@ -44,6 +44,14 @@ from trellis.agent.comparison_target_contracts import (
     declared_comparison_target_contract,
 )
 from trellis.agent.financepy_parity import align_market_state_for_financepy_parity
+from trellis.agent.generation_policy import (
+    ArtifactOrigin,
+    GenerationPolicy,
+    GenerationPolicyError,
+    generation_evidence_from_result,
+    normalize_generation_policy,
+    validate_generation_policy_request,
+)
 from trellis.agent.instrument_identity import (
     InstrumentIdentityResolution,
     normalize_instrument_type,
@@ -1652,6 +1660,12 @@ def _proof_legacy_comparison_build_result(
         selected_validation_bundle_id=artifact_contract.validation_bundle_id,
         selected_semantic_axes=selected_semantic_axes,
         blocker_details=None,
+        generation_evidence={
+            "policy": GenerationPolicy.DETERMINISTIC_ALLOWED.value,
+            "artifact_origin": ArtifactOrigin.DETERMINISTIC_PROOF_ARTIFACT.value,
+            "agent_synthesis_attempted": False,
+            "agent_synthesis_observed": False,
+        },
         post_build_tracking={
             "active_flags": [],
             "events": [],
@@ -1944,6 +1958,7 @@ def run_task(
     model: str = "gpt-5.4-mini",
     force_rebuild: bool = True,
     fresh_build: bool = False,
+    generation_policy: str | GenerationPolicy = GenerationPolicy.DETERMINISTIC_ALLOWED,
     validation: str = "standard",
     max_retries: int = 3,
     knowledge_profile: str | None = None,
@@ -1958,7 +1973,7 @@ def run_task(
     execution_mode_override: str | None = None,
     llm_cassette_metadata: Mapping[str, Any] | None = None,
 ) -> dict:
-    """Execute one task through the knowledge-aware build pipeline."""
+    """Execute one task with separate artifact-freshness and source-origin policy."""
     from trellis.agent.cassette import current_llm_cassette_context
     from trellis.agent.evals import (
         task_result_outcome_class,
@@ -1972,6 +1987,7 @@ def run_task(
         build_fn = build_with_knowledge
 
     recovery_mode_value = normalize_recovery_mode(recovery_mode)
+    generation_policy_value = normalize_generation_policy(generation_policy)
     task_id = task["id"]
     description = _effective_task_description(task)
     instrument_identity = task_to_instrument_identity(task)
@@ -2065,6 +2081,13 @@ def run_task(
         "task_definition_manifest": str(task.get("task_definition_manifest") or ""),
         "market_scenario_id": str(task.get("market_scenario_id") or ""),
         "recovery_mode": recovery_mode_value.value,
+        "generation_policy": generation_policy_value.value,
+        "generation_evidence": {
+            "policy": generation_policy_value.value,
+            "artifact_origins": [],
+            "agent_synthesis_attempted": False,
+            "agent_synthesis_observed": False,
+        },
         "post_build_learning_policy": post_build_learning_policy,
         "recovery_attempts": [],
     }
@@ -2078,6 +2101,12 @@ def run_task(
         if expected_honest_block is not None:
             raise ExpectedTaskHonestBlock(expected_honest_block)
         _validate_task_contract(task, instrument_type, construct_methods)
+        validate_generation_policy_request(
+            policy=generation_policy_value,
+            fresh_build=fresh_build,
+            recovery_mode=recovery_mode_value.value,
+            execution_mode=execution_mode,
+        )
         market_state, market_context = build_market_state_for_task(task, market_state)
         runtime_contract = _runtime_contract_metadata(
             task,
@@ -2098,6 +2127,7 @@ def run_task(
             "instrument_identity_source": instrument_identity.source,
             "runtime_contract": runtime_contract,
             "post_build_learning_policy": post_build_learning_policy,
+            "generation_policy": generation_policy_value.value,
         }
         if task_benchmark_spec_overrides:
             base_request_metadata["benchmark_spec_overrides"] = dict(task_benchmark_spec_overrides)
@@ -2132,6 +2162,7 @@ def run_task(
                     "validation": validation,
                     "force_rebuild": force_rebuild,
                     "fresh_build": fresh_build,
+                    "generation_policy": generation_policy_value.value,
                 }
                 if semantic_contract is not None:
                     build_kwargs["semantic_contract"] = semantic_contract
@@ -2144,7 +2175,11 @@ def run_task(
                         repair_packet = None
                 else:
                     repair_packet = None
-                deterministic_result = _proof_legacy_comparison_build_result(task, target)
+                deterministic_result = (
+                    _proof_legacy_comparison_build_result(task, target)
+                    if generation_policy_value is GenerationPolicy.DETERMINISTIC_ALLOWED
+                    else None
+                )
                 if deterministic_result is not None:
                     result = deterministic_result
                 elif repair_packet:
@@ -2152,6 +2187,7 @@ def run_task(
                         target.target_id,
                         repair_packet,
                         preferred_method=target.preferred_method,
+                        generation_policy=generation_policy_value,
                     )
                 else:
                     result = build_fn(**build_kwargs)
@@ -2161,6 +2197,7 @@ def run_task(
                     reference_target=target.is_reference,
                     task_kind="pricing",
                     comparison_target_contract=target.contract,
+                    generation_policy=generation_policy_value,
                 )
                 result, payload, recovery_record = _maybe_retry_with_intra_run_learning(
                     build_fn=build_fn,
@@ -2244,6 +2281,10 @@ def run_task(
                 fresh_build
                 and all(payload["success"] for payload in method_results.values())
                 and cross_validation["status"] == "passed"
+                and any(
+                    _payload_has_observed_model_synthesis(payload)
+                    for payload in method_results.values()
+                )
             ):
                 promotion_candidates = _record_promotion_candidates(
                     task=task,
@@ -2291,6 +2332,10 @@ def run_task(
                 "method_results": method_results,
                 "artifacts": _aggregate_artifacts(method_results),
                 "generated_artifact": _select_generated_artifact(method_results),
+                "generation_evidence": _aggregate_generation_evidence(
+                    method_results,
+                    policy=generation_policy_value,
+                ),
                 "knowledge_summary": _aggregate_knowledge_summaries(method_results),
                 "token_usage_summary": _aggregate_token_usage(method_results),
                 "agent_observation_count": sum(
@@ -2301,6 +2346,16 @@ def run_task(
                 "reflection": reflection_payload,
                 "cross_validation": cross_validation,
             })
+            generation_policy_errors = {
+                target_id: dict(payload.get("generation_policy_error") or {})
+                for target_id, payload in method_results.items()
+                if payload.get("generation_policy_error")
+            }
+            if generation_policy_errors:
+                result_data["generation_policy_error"] = {
+                    "reason": "synthesis_evidence_missing",
+                    "targets": generation_policy_errors,
+                }
             if result_data.get("recovery_attempts"):
                 result_data["intra_run_learning"] = _aggregate_intra_run_learning(
                     method_results
@@ -2334,6 +2389,7 @@ def run_task(
                 "validation": validation,
                 "force_rebuild": force_rebuild,
                 "fresh_build": fresh_build,
+                "generation_policy": generation_policy_value.value,
             }
             if semantic_contract is not None:
                 build_kwargs["semantic_contract"] = semantic_contract
@@ -2348,7 +2404,11 @@ def run_task(
             if task.get("cross_validate") and comparison_targets:
                 build_kwargs["comparison_target"] = comparison_targets[0].target_id
             result = build_fn(**build_kwargs)
-            payload = _build_result_payload(result, preferred_method=preferred_method)
+            payload = _build_result_payload(
+                result,
+                preferred_method=preferred_method,
+                generation_policy=generation_policy_value,
+            )
             target_id = (
                 comparison_targets[0].target_id
                 if comparison_targets
@@ -2376,6 +2436,10 @@ def run_task(
             runtime_contract_result["analytical_trace_text_path"] = getattr(result, "analytical_trace_text_path", None)
             result_data.update({
                 **payload,
+                "generation_evidence": _aggregate_generation_evidence(
+                    {target_id: payload},
+                    policy=generation_policy_value,
+                ),
                 "elapsed_seconds": round(elapsed, 1),
                 "preferred_method": preferred_method,
                 "runtime_contract": runtime_contract_result,
@@ -2452,6 +2516,21 @@ def run_task(
             f"  [{status}] {elapsed:.1f}s, llm_generation_attempts=0, "
             f"confidence={result_data.get('gap_confidence', 0):.0%}"
         )
+    except GenerationPolicyError as exc:
+        elapsed = timer() - t0
+        result_data.update({
+            "success": False,
+            "elapsed_seconds": round(elapsed, 1),
+            "attempts": 0,
+            "gap_confidence": 1.0,
+            "error": str(exc),
+            "failures": [str(exc)],
+            "generation_policy_error": {
+                "reason": exc.reason,
+                "message": str(exc),
+            },
+        })
+        print(f"  [GENERATION POLICY] {elapsed:.1f}s: {exc}")
     except TaskContractError as exc:
         elapsed = timer() - t0
         result_data.update({
@@ -2700,6 +2779,7 @@ def _blocked_result_for_repair_packet(
     repair_packet: Mapping[str, Any],
     *,
     preferred_method: str | None = None,
+    generation_policy: str | GenerationPolicy = GenerationPolicy.DETERMINISTIC_ALLOWED,
 ):
     """Return a BuildResult-like blocked result for unsupported target primitives."""
     summary = str(repair_packet.get("summary") or "Unsupported comparison target").strip()
@@ -2738,6 +2818,12 @@ def _blocked_result_for_repair_packet(
         analytical_trace_text_path=None,
         audit_record_path=None,
         generated_artifact=None,
+        generation_evidence={
+            "policy": normalize_generation_policy(generation_policy).value,
+            "artifact_origin": ArtifactOrigin.NONE.value,
+            "agent_synthesis_attempted": False,
+            "agent_synthesis_observed": False,
+        },
         blocker_details={
             "target_id": target_id,
             "preferred_method": preferred_method,
@@ -2882,6 +2968,10 @@ def _maybe_retry_with_intra_run_learning(
         reference_target=reference_target,
         task_kind=task_kind,
         comparison_target_contract=comparison_target_contract,
+        generation_policy=build_kwargs.get(
+            "generation_policy",
+            GenerationPolicy.DETERMINISTIC_ALLOWED.value,
+        ),
     )
     retry_payload["attempts"] = int(initial_payload.get("attempts") or 0) + int(
         retry_payload.get("attempts") or 0
@@ -3109,6 +3199,7 @@ def _build_result_payload(
     reference_target: bool = False,
     task_kind: str = "pricing",
     comparison_target_contract: ComparisonTargetContract | None = None,
+    generation_policy: str | GenerationPolicy = GenerationPolicy.DETERMINISTIC_ALLOWED,
 ) -> dict[str, Any]:
     """Project a BuildResult-like object into a stable task result payload."""
     from trellis.agent.task_run_store import summarize_task_learning
@@ -3116,8 +3207,25 @@ def _build_result_payload(
     build_observability = _trace_observability(
         getattr(result, "platform_trace_path", None)
     )
+    generation_evidence = generation_evidence_from_result(
+        result,
+        default_policy=generation_policy,
+    )
+    normalized_generation_policy = normalize_generation_policy(generation_policy)
+    synthesis_proof_missing = bool(
+        result.success
+        and normalized_generation_policy
+        is GenerationPolicy.BUILDER_SYNTHESIS_REQUIRED
+        and not generation_evidence.get("agent_synthesis_observed")
+    )
+    result_failures = list(result.failures[:3])
+    if synthesis_proof_missing:
+        result_failures.insert(
+            0,
+            "Builder synthesis was required, but the build returned no observed model-generated source evidence.",
+        )
     payload = {
-        "success": result.success,
+        "success": bool(result.success) and not synthesis_proof_missing,
         "attempts": result.attempts,
         "gap_confidence": result.gap_confidence,
         "knowledge_gaps": result.knowledge_gaps,
@@ -3151,7 +3259,7 @@ def _build_result_payload(
         "selected_semantic_axes": dict(
             getattr(result, "selected_semantic_axes", {}) or {}
         ),
-        "failures": result.failures[:3],
+        "failures": result_failures[:3],
         "agent_observation_count": len(getattr(result, "agent_observations", []) or []),
         "agent_observations": list(getattr(result, "agent_observations", []) or []),
         "knowledge_summary": dict(getattr(result, "knowledge_summary", {}) or {}),
@@ -3163,6 +3271,7 @@ def _build_result_payload(
         "analytical_trace_text_path": getattr(result, "analytical_trace_text_path", None),
         "audit_record_path": getattr(result, "audit_record_path", None),
         "generated_artifact": _generated_artifact_from_result(result),
+        "generation_evidence": generation_evidence,
         "build_observability": build_observability,
         "agent_cycle": dict(build_observability.get("agent_cycle") or {}),
         "blocker_details": getattr(result, "blocker_details", None),
@@ -3191,6 +3300,11 @@ def _build_result_payload(
             )
         },
     }
+    if synthesis_proof_missing:
+        payload["generation_policy_error"] = {
+            "reason": "synthesis_evidence_missing",
+            "message": result_failures[0],
+        }
     payload["artifacts"] = _artifacts_from_payload(payload)
     payload["learning"] = summarize_task_learning(payload, task_kind=task_kind)
     return payload
@@ -3372,6 +3486,34 @@ def _aggregate_intra_run_learning(
     }
 
 
+def _aggregate_generation_evidence(
+    method_payloads: Mapping[str, Mapping[str, Any]],
+    *,
+    policy: str | GenerationPolicy,
+) -> dict[str, Any]:
+    """Merge artifact origins and synthesis evidence across comparison targets."""
+    origins: list[str] = []
+    attempted = False
+    observed = False
+    for payload in method_payloads.values():
+        if not isinstance(payload, Mapping):
+            continue
+        evidence = payload.get("generation_evidence")
+        if not isinstance(evidence, Mapping):
+            continue
+        origin = str(evidence.get("artifact_origin") or "").strip()
+        if origin and origin != ArtifactOrigin.NONE.value and origin not in origins:
+            origins.append(origin)
+        attempted = attempted or bool(evidence.get("agent_synthesis_attempted"))
+        observed = observed or bool(evidence.get("agent_synthesis_observed"))
+    return {
+        "policy": normalize_generation_policy(policy).value,
+        "artifact_origins": origins,
+        "agent_synthesis_attempted": attempted,
+        "agent_synthesis_observed": observed,
+    }
+
+
 def _select_generated_artifact(
     method_payloads: Mapping[str, Mapping[str, Any]],
     *,
@@ -3461,6 +3603,7 @@ def _generated_artifact_from_result(result: Any) -> dict[str, Any]:
         or "/financepy_benchmarks/generated/" in normalized_module_path
         or "/financepy_benchmarks/generated/" in normalized_file_path
     )
+    generation_evidence = generation_evidence_from_result(result)
     return {
         "module_name": module_name,
         "class_name": payoff_cls.__name__,
@@ -3468,6 +3611,14 @@ def _generated_artifact_from_result(result: Any) -> dict[str, Any]:
         "module_path": module_path,
         "code_hash": code_hash,
         "is_fresh_build": is_fresh_build,
+        "origin": generation_evidence["artifact_origin"],
+        "generation_policy": generation_evidence["policy"],
+        "agent_synthesis_attempted": generation_evidence[
+            "agent_synthesis_attempted"
+        ],
+        "agent_synthesis_observed": generation_evidence[
+            "agent_synthesis_observed"
+        ],
         "execution_module_name": str(getattr(result, "execution_module_name", "") or ""),
         "execution_module_path": str(getattr(result, "execution_module_path", "") or ""),
         "execution_file_path": str(getattr(result, "execution_file_path", "") or ""),
@@ -3700,6 +3851,15 @@ def _record_promotion_candidates(
         live_result = live_results.get(target_id)
         if live_result is None or not payload.get("success"):
             continue
+        generation_evidence = payload.get("generation_evidence")
+        if not isinstance(generation_evidence, Mapping):
+            continue
+        if (
+            generation_evidence.get("artifact_origin")
+            != ArtifactOrigin.MODEL_GENERATED_SOURCE.value
+            or not bool(generation_evidence.get("agent_synthesis_observed"))
+        ):
+            continue
         code = str(getattr(live_result, "code", "") or "").strip()
         if not code:
             continue
@@ -3726,6 +3886,17 @@ def _record_promotion_candidates(
         if path:
             candidate_paths[target_id] = path
     return candidate_paths
+
+
+def _payload_has_observed_model_synthesis(payload: Mapping[str, Any]) -> bool:
+    """Return whether one build payload proves model-generated source."""
+    evidence = payload.get("generation_evidence")
+    return bool(
+        isinstance(evidence, Mapping)
+        and evidence.get("artifact_origin")
+        == ArtifactOrigin.MODEL_GENERATED_SOURCE.value
+        and evidence.get("agent_synthesis_observed")
+    )
 
 
 def _aggregate_knowledge_summaries(method_payloads: dict[str, dict[str, Any]]) -> dict[str, Any]:

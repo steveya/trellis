@@ -1157,6 +1157,9 @@ def classify_task_result(result: Mapping[str, Any]) -> str:
     if blocker_details:
         return "blocked"
 
+    if result.get("generation_policy_error"):
+        return "generation_policy"
+
     cross_validation = result.get("cross_validation") or {}
     cross_status = str(cross_validation.get("status") or "").strip().lower()
     if cross_status and cross_status != "passed":
@@ -1254,6 +1257,10 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
     retry_taxonomy_by_stage: dict[str, dict[str, Any]] = {}
     retry_taxonomy_by_task: dict[str, list[str]] = {}
     unattributed_recoveries = 0
+    generation_policy_counts: dict[str, int] = {}
+    artifact_origin_counts: dict[str, int] = {}
+    synthesis_attempted_tasks = 0
+    synthesis_observed_tasks = 0
 
     successes = 0
     expectation_passes = 0
@@ -1327,6 +1334,26 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
 
         _merge_token_usage_summary(token_usage, result.get("token_usage_summary") or {})
 
+        generation_evidence = result.get("generation_evidence")
+        if isinstance(generation_evidence, Mapping):
+            policy = str(generation_evidence.get("policy") or "").strip()
+            if policy:
+                generation_policy_counts[policy] = generation_policy_counts.get(policy, 0) + 1
+            raw_origins = generation_evidence.get("artifact_origins")
+            if raw_origins is None:
+                raw_origins = [generation_evidence.get("artifact_origin")]
+            elif isinstance(raw_origins, str):
+                raw_origins = [raw_origins]
+            for raw_origin in raw_origins or ():
+                origin = str(raw_origin or "").strip()
+                if not origin or origin == "none":
+                    continue
+                artifact_origin_counts[origin] = artifact_origin_counts.get(origin, 0) + 1
+            if bool(generation_evidence.get("agent_synthesis_attempted")):
+                synthesis_attempted_tasks += 1
+            if bool(generation_evidence.get("agent_synthesis_observed")):
+                synthesis_observed_tasks += 1
+
     return {
         "totals": {
             "tasks": len(results),
@@ -1381,6 +1408,12 @@ def summarize_task_results(results: list[Mapping[str, Any]]) -> dict[str, Any]:
         "shared_knowledge": {
             "tasks_with_shared_context": shared_knowledge_tasks,
             "tasks_with_lessons": shared_knowledge_lessons,
+        },
+        "generation_proving": {
+            "policies": dict(sorted(generation_policy_counts.items())),
+            "artifact_origins": dict(sorted(artifact_origin_counts.items())),
+            "synthesis_attempted_tasks": synthesis_attempted_tasks,
+            "synthesis_observed_tasks": synthesis_observed_tasks,
         },
         "promotion_discipline": summarize_promotion_discipline(results),
         "token_usage": token_usage,
