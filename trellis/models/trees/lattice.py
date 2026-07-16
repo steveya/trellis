@@ -11,7 +11,10 @@ This separates the tree structure from the financial model.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 import inspect
+from operator import index as integer_index
+from typing import Iterable
 import warnings
 import numpy as raw_np
 
@@ -107,6 +110,73 @@ class RecombiningLattice:
         else:
             # Trinomial: down, mid, up relative to center
             return [node, node + 1, node + 2]
+
+
+@dataclass(frozen=True)
+class LatticeRollbackObservation:
+    """Immutable node values captured at one rollback step."""
+
+    step: int
+    continuation_values: tuple[float, ...]
+    post_cashflow_values: tuple[float, ...]
+    post_control_values: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class LatticeRollbackResult:
+    """Root value plus bounded, phase-aware rollback observations."""
+
+    root_value: float
+    observations: tuple[LatticeRollbackObservation, ...] = ()
+
+    def observation_at(self, step: int) -> LatticeRollbackObservation:
+        """Return the captured observation for ``step`` or fail closed."""
+        normalized_step = _coerce_observation_step(step)
+        for observation in self.observations:
+            if observation.step == normalized_step:
+                return observation
+        raise KeyError(f"No lattice rollback observation at step {normalized_step}")
+
+
+def _coerce_observation_step(step: object) -> int:
+    """Return one exact integer observation step."""
+    if isinstance(step, bool):
+        raise TypeError("lattice observation steps must be integers, not bool")
+    try:
+        return int(integer_index(step))
+    except TypeError as exc:
+        raise TypeError("lattice observation steps must be integers") from exc
+
+
+def _normalize_observation_steps(
+    observation_steps: Iterable[int],
+    *,
+    n_steps: int,
+) -> tuple[int, ...]:
+    """Validate and deterministically normalize requested rollback steps."""
+    normalized = {_coerce_observation_step(step) for step in observation_steps}
+    invalid = tuple(step for step in sorted(normalized) if step < 0 or step > int(n_steps))
+    if invalid:
+        raise ValueError(
+            f"lattice observation steps must be between 0 and {int(n_steps)} inclusive; "
+            f"received {invalid}"
+        )
+    return tuple(sorted(normalized))
+
+
+def _rollback_observation(
+    step: int,
+    continuation_values,
+    post_cashflow_values,
+    post_control_values,
+) -> LatticeRollbackObservation:
+    """Freeze one set of rollback phase vectors."""
+    return LatticeRollbackObservation(
+        step=int(step),
+        continuation_values=tuple(float(value) for value in continuation_values),
+        post_cashflow_values=tuple(float(value) for value in post_cashflow_values),
+        post_control_values=tuple(float(value) for value in post_control_values),
+    )
 
 
 @maybe_njit(cache=False)
@@ -386,7 +456,7 @@ def _discount_array(
     )
 
 
-def lattice_backward_induction(
+def lattice_backward_induction_result(
     lattice: RecombiningLattice,
     terminal_payoff=None,
     exercise_value=None,
@@ -397,8 +467,9 @@ def lattice_backward_induction(
     exercise_policy: LatticeExercisePolicy | None = None,
     terminal_value: float | None = None,
     exercise_value_fn=None,
-) -> float:
-    """Generic backward induction on a RecombiningLattice.
+    observation_steps: Iterable[int] = (),
+) -> LatticeRollbackResult:
+    """Run generic backward induction and capture requested node-value phases.
 
     Parameters
     ----------
@@ -425,11 +496,16 @@ def lattice_backward_induction(
         Compatibility alias for a constant terminal payoff.
     exercise_value_fn : callable or None
         Compatibility alias for ``exercise_value``.
+    observation_steps : iterable[int]
+        Bounded set of steps to capture. Each observation records discounted
+        continuation values, values after the current node cashflow, and values
+        after exercise/control. At the terminal step all three vectors equal the
+        terminal payoff vector.
 
     Returns
     -------
-    float
-        Price at root node (step=0, node=0).
+    LatticeRollbackResult
+        Root price and immutable observations sorted by step.
     """
     if terminal_payoff is not None and not callable(terminal_payoff):
         if terminal_value is not None:
@@ -458,6 +534,11 @@ def lattice_backward_induction(
     if exercise_fn is None:
         exercise_fn = max
     n = lattice.n_steps
+    requested_steps = _normalize_observation_steps(
+        observation_steps,
+        n_steps=n,
+    )
+    requested_step_set = set(requested_steps)
     branching = lattice.branching
     exercise_set = {int(step) for step in effective_exercise_steps}
     terminal_payoff = _terminal_payoff_adapter(terminal_payoff)
@@ -472,34 +553,86 @@ def lattice_backward_induction(
         n_terminal,
         (terminal_payoff(n, j, lattice) for j in range(n_terminal)),
     )
+    observations: dict[int, LatticeRollbackObservation] = {}
+    if n in requested_step_set:
+        observations[n] = _rollback_observation(n, values, values, values)
 
     # Roll back
     for i in range(n - 1, -1, -1):
         n_nodes_i = lattice.n_nodes(i)
         discounts = lattice._discounts[i, :n_nodes_i]
         probs = lattice._probs[i, :n_nodes_i, :branching]
-        new_values = _rollback_continuation(values, discounts, probs, branching)
+        continuation_values = _rollback_continuation(values, discounts, probs, branching)
 
         if cashflow_at_node is not None:
-            new_values = new_values + _node_values(
+            post_cashflow_values = continuation_values + _node_values(
                 n_nodes_i,
                 (cashflow_at_node(i, j, lattice) for j in range(n_nodes_i)),
             )
+        else:
+            post_cashflow_values = continuation_values
 
         # Exercise decisions
+        post_control_values = post_cashflow_values
         if exercise_value is not None and (
             exercise_type == "american"
             or (exercise_type == "bermudan" and i in exercise_set)
         ):
             exercise = _node_values(
                 n_nodes_i,
-                (exercise_value(i, j, lattice, float(new_values[j])) for j in range(n_nodes_i)),
+                (
+                    exercise_value(i, j, lattice, float(post_cashflow_values[j]))
+                    for j in range(n_nodes_i)
+                ),
             )
-            new_values = _apply_exercise_rule(new_values, exercise, exercise_fn)
+            post_control_values = _apply_exercise_rule(
+                post_cashflow_values,
+                exercise,
+                exercise_fn,
+            )
 
-        values = new_values
+        if i in requested_step_set:
+            observations[i] = _rollback_observation(
+                i,
+                continuation_values,
+                post_cashflow_values,
+                post_control_values,
+            )
 
-    return float(values[0])
+        values = post_control_values
+
+    return LatticeRollbackResult(
+        root_value=float(values[0]),
+        observations=tuple(observations[step] for step in requested_steps),
+    )
+
+
+def lattice_backward_induction(
+    lattice: RecombiningLattice,
+    terminal_payoff=None,
+    exercise_value=None,
+    exercise_type: str = "european",
+    exercise_steps: list[int] | None = None,
+    cashflow_at_node=None,
+    exercise_fn=None,
+    exercise_policy: LatticeExercisePolicy | None = None,
+    terminal_value: float | None = None,
+    exercise_value_fn=None,
+) -> float:
+    """Return the root value from generic lattice backward induction."""
+    result = lattice_backward_induction_result(
+        lattice,
+        terminal_payoff=terminal_payoff,
+        exercise_value=exercise_value,
+        exercise_type=exercise_type,
+        exercise_steps=exercise_steps,
+        cashflow_at_node=cashflow_at_node,
+        exercise_fn=exercise_fn,
+        exercise_policy=exercise_policy,
+        terminal_value=terminal_value,
+        exercise_value_fn=exercise_value_fn,
+    )
+    return float(result.root_value)
 
 
 # ---------------------------------------------------------------------------

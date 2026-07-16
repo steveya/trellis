@@ -4,12 +4,16 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
 from math import exp, log, sqrt
-from typing import Any, Callable, Mapping, Protocol
+from typing import Any, Callable, Iterable, Mapping, Protocol
 import warnings
 
 import numpy as raw_np
 
 from trellis.models._numba import NUMBA_AVAILABLE
+from trellis.models.trees.lattice import (
+    LatticeRollbackResult,
+    lattice_backward_induction_result,
+)
 from trellis.models.trees.models import MODEL_REGISTRY as LEGACY_MODEL_REGISTRY
 
 
@@ -963,6 +967,87 @@ def _price_general_contract(lattice, contract: LatticeContractSpec) -> float:
     return float(values[state_index[initial_state], 0])
 
 
+def value_on_lattice(
+    lattice,
+    contract: LatticeContractSpec,
+    *,
+    observation_steps: Iterable[int] = (),
+) -> LatticeRollbackResult:
+    """Value a one-factor contract and capture bounded rollback phases.
+
+    The observation result is intentionally limited to the one-factor path
+    where continuation, node cashflow, and control phases are unambiguous.
+    Overlay, edge-cashflow, and multidimensional contracts remain available
+    through scalar ``price_on_lattice(...)`` but are not admitted here.
+    """
+    claim = contract.claim
+    control = contract.control
+    if contract.overlay is not None:
+        raise ValueError("value_on_lattice() does not support overlay observations")
+    if claim.edge_cashflow_fn is not None:
+        raise ValueError("value_on_lattice() does not support edge cashflows")
+    if getattr(lattice, "state_dim", 1) != 1:
+        raise ValueError("value_on_lattice() requires a one-factor lattice")
+
+    policy = _control_policy(control)
+
+    def terminal_payoff(step: int, node: int, lattice_):
+        return float(
+            claim.terminal_payoff(
+                step,
+                node,
+                lattice_,
+                _base_observable(lattice_, step, node),
+            )
+        )
+
+    cashflow_at_node = None
+    if claim.node_cashflow_fn is not None:
+
+        def cashflow_at_node(step: int, node: int, lattice_):
+            return float(
+                claim.node_cashflow_fn(
+                    step,
+                    node,
+                    lattice_,
+                    _base_observable(lattice_, step, node),
+                )
+            )
+
+    exercise_value = None
+    if (
+        control is not None
+        and control.objective != "identity"
+        and control.exercise_value_fn is not None
+    ):
+
+        def exercise_value(step: int, node: int, lattice_, continuation):
+            del continuation
+            return float(
+                control.exercise_value_fn(
+                    step,
+                    node,
+                    lattice_,
+                    _base_observable(lattice_, step, node),
+                )
+            )
+
+    lattice._lattice_last_pricing_path = (
+        f"fast_{'obstacle' if control is not None and control.objective != 'identity' else 'linear'}_"
+        f"{'numba' if NUMBA_AVAILABLE else 'numpy'}"
+    )
+    return lattice_backward_induction_result(
+        lattice,
+        terminal_payoff,
+        exercise_value=exercise_value,
+        exercise_type="european" if policy is None else policy["exercise_type"],
+        exercise_steps=None if policy is None else list(policy["exercise_steps"]),
+        cashflow_at_node=cashflow_at_node,
+        exercise_fn=None if policy is None else policy["exercise_fn"],
+        observation_steps=observation_steps,
+    )
+
+
 def price_on_lattice(lattice, contract: LatticeContractSpec) -> float:
     """Price a compiled lattice contract on a built lattice."""
     claim = contract.claim
@@ -1000,37 +1085,7 @@ def price_on_lattice(lattice, contract: LatticeContractSpec) -> float:
         _set_path(path)
         return _price_general_contract(lattice, contract)
 
-    policy = _control_policy(control)
-
-    def terminal_payoff(step: int, node: int, lattice_):
-        return float(claim.terminal_payoff(step, node, lattice_, _base_observable(lattice_, step, node)))
-
-    cashflow_at_node = None
-    if claim.node_cashflow_fn is not None:
-        def cashflow_at_node(step: int, node: int, lattice_):
-            return float(claim.node_cashflow_fn(step, node, lattice_, _base_observable(lattice_, step, node)))
-
-    exercise_value = None
-    if control is not None and control.objective != "identity" and control.exercise_value_fn is not None:
-        def exercise_value(step: int, node: int, lattice_):
-            return float(control.exercise_value_fn(step, node, lattice_, _base_observable(lattice_, step, node)))
-
-    from trellis.models.trees.lattice import lattice_backward_induction
-
-    _set_path(
-        f"fast_{'obstacle' if control is not None and control.objective != 'identity' else 'linear'}_{'numba' if NUMBA_AVAILABLE else 'numpy'}"
-    )
-    return float(
-        lattice_backward_induction(
-            lattice,
-            terminal_payoff,
-            exercise_value=exercise_value,
-            exercise_type="european" if policy is None else policy["exercise_type"],
-            exercise_steps=None if policy is None else list(policy["exercise_steps"]),
-            cashflow_at_node=cashflow_at_node,
-            exercise_fn=None if policy is None else policy["exercise_fn"],
-        )
-    )
+    return float(value_on_lattice(lattice, contract).root_value)
 
 
 def short_rate_tree(
@@ -1276,6 +1331,7 @@ __all__ = [
     "equity_tree",
     "lattice_algebra_eligible",
     "price_on_lattice",
+    "value_on_lattice",
     "short_rate_tree",
     "with_control",
     "with_overlay",

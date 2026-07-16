@@ -196,6 +196,68 @@ def test_price_on_lattice_matches_legacy_american_put():
     assert built == pytest.approx(legacy)
 
 
+def test_value_on_lattice_exposes_bounded_rollback_observations():
+    from trellis.models.trees.algebra import (
+        LatticeContractSpec,
+        LatticeControlSpec,
+        LatticeLinearClaimSpec,
+        value_on_lattice,
+    )
+
+    lattice = RecombiningLattice(2, 1.0, branching=2, state_dim=1)
+    for step in range(3):
+        for node in range(lattice.n_nodes(step)):
+            lattice.set_state(step, node, float(node))
+    lattice.set_probabilities(0, 0, [0.5, 0.5])
+    lattice.set_probabilities(1, 0, [0.5, 0.5])
+    lattice.set_probabilities(1, 1, [0.5, 0.5])
+    lattice.set_discount(0, 0, 1.0)
+    lattice.set_discount(1, 0, 1.0)
+    lattice.set_discount(1, 1, 1.0)
+    contract = LatticeContractSpec(
+        claim=LatticeLinearClaimSpec(
+            terminal_payoff=lambda step, node, lattice_, obs: 100.0 + 10.0 * node,
+            node_cashflow_fn=lambda step, node, lattice_, obs: 5.0 if step == 1 else 0.0,
+        ),
+        control=LatticeControlSpec(
+            objective="holder_max",
+            exercise_steps=(1,),
+            exercise_value_fn=lambda step, node, lattice_, obs: 110.0 if node == 0 else 130.0,
+        ),
+    )
+
+    result = value_on_lattice(lattice, contract, observation_steps=(1,))
+
+    assert result.root_value == pytest.approx(price_on_lattice(lattice, contract))
+    assert result.observation_at(1).continuation_values == pytest.approx((105.0, 115.0))
+    assert result.observation_at(1).post_cashflow_values == pytest.approx((110.0, 120.0))
+    assert result.observation_at(1).post_control_values == pytest.approx((110.0, 130.0))
+
+
+def test_value_on_lattice_rejects_edge_cashflow_observations():
+    from trellis.models.trees.algebra import (
+        LatticeContractSpec,
+        LatticeLinearClaimSpec,
+        value_on_lattice,
+    )
+
+    lattice = RecombiningLattice(1, 1.0, branching=2, state_dim=1)
+    lattice.set_state(0, 0, 0.0)
+    lattice.set_state(1, 0, 0.0)
+    lattice.set_state(1, 1, 0.0)
+    lattice.set_probabilities(0, 0, [0.5, 0.5])
+    lattice.set_discount(0, 0, 1.0)
+    contract = LatticeContractSpec(
+        claim=LatticeLinearClaimSpec(
+            terminal_payoff=lambda step, node, lattice_, obs: 1.0,
+            edge_cashflow_fn=lambda step, parent, child, lattice_, parent_obs, child_obs: 1.0,
+        )
+    )
+
+    with pytest.raises(ValueError, match="edge cashflows"):
+        value_on_lattice(lattice, contract, observation_steps=(0,))
+
+
 def test_price_on_lattice_supports_edge_aware_knock_out_overlay():
     from trellis.models.trees.algebra import (
         EventOverlaySpec,

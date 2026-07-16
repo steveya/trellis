@@ -240,11 +240,12 @@ equity_tree:
     aliases: [equity_tree, american_option, bermudan_option]
   key_imports:
     - "from trellis.models.resolution.single_state_diffusion import resolve_single_state_diffusion_inputs, terminal_intrinsic_from_resolved"
-    - "from trellis.models.trees.algebra import equity_tree, with_control, compile_lattice_recipe, build_lattice, price_on_lattice"
+    - "from trellis.models.trees.algebra import equity_tree, with_control, compile_lattice_recipe, build_lattice, price_on_lattice, value_on_lattice"
     - "from trellis.models.equity_option_tree import price_cev_option_tree"
   notes:
     - "American/Bermudan vanilla equity adapters should compose the neutral market resolver with the declarative lattice recipe, control, compiler, builder, and pricing primitives"
     - "Bermudan adapters map contractual exercise dates to lattice steps before attaching control"
+    - "Use value_on_lattice(..., observation_steps=...) only when node-level continuation, post-cashflow, or post-control evidence is required; price_on_lattice(...) remains the scalar entry point"
     - "CEV tree comparison targets should prefer the checked-in spot-lattice helper `price_cev_option_tree(...)`"
 
 rate_lattice:
@@ -253,11 +254,15 @@ rate_lattice:
   navigation:
     aliases: [rate_tree, callable_bond, puttable_bond, bermudan_swaption]
   key_imports:
-    - "from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction"
+    - "from trellis.models.trees.lattice import LatticeRollbackObservation, LatticeRollbackResult, build_rate_lattice, lattice_backward_induction, lattice_backward_induction_result"
+    - "from trellis.models.trees.algebra import value_on_lattice"
     - "from trellis.models.zcb_option_tree import price_zcb_option_tree"
   notes:
     - "Callable bonds, puttable bonds, and Bermudan swaptions use a calibrated rate lattice from a TreeModel specification such as Hull-White or Black-Derman-Toy"
     - "lattice_backward_induction handles cashflow_at_node and exercise_fn"
+    - "lattice_backward_induction_result(..., observation_steps=...) and value_on_lattice(..., observation_steps=...) capture only requested steps as immutable LatticeRollbackObservation values"
+    - "Each nonterminal observation separates discounted continuation, post-cashflow, and post-control node vectors; terminal observations use the terminal payoff vector for all three phases"
+    - "Use the bounded observation result to compose schedule and exercise state; do not open-code rollback or introduce a product-specific observation helper"
     - "Zero-coupon bond option tree routes should prefer `price_zcb_option_tree(...)` instead of rebuilding nested backward induction inline"
 
 # ---------------------------------------------------------------------------
