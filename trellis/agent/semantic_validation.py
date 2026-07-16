@@ -169,6 +169,17 @@ class _SemanticVisitor(ast.NodeVisitor):
             self.resolved_references.add(resolved)
         self.generic_visit(node)
 
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        """Record qualified references rooted at an imported module alias."""
+        root = node
+        while isinstance(root, ast.Attribute):
+            root = root.value
+        if isinstance(root, ast.Name) and root.id in self.aliases:
+            resolved = _resolve_call_name(node, self.aliases)
+            if resolved:
+                self.resolved_references.add(resolved)
+        self.generic_visit(node)
+
     def visit_Assign(self, node: ast.Assign) -> None:
         """Track variables bound to Monte Carlo engines for later call-site analysis."""
         call_name = _resolve_call_name(node.value, self.aliases)

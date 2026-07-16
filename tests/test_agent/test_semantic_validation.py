@@ -618,6 +618,29 @@ def build(builder):
     )
 
 
+def test_extracts_qualified_declarative_references_through_module_alias():
+    from trellis.agent.semantic_validation import extract_semantic_signals
+
+    signals = extract_semantic_signals(
+        """
+import trellis.models.trees.algebra as lattice_algebra
+
+def build(builder):
+    return builder(
+        lattice_algebra.BINOMIAL_1F_TOPOLOGY,
+        lattice_algebra.UNIFORM_ADDITIVE_MESH,
+    )
+"""
+    )
+
+    assert "trellis.models.trees.algebra.BINOMIAL_1F_TOPOLOGY" in (
+        signals.resolved_references
+    )
+    assert "trellis.models.trees.algebra.UNIFORM_ADDITIVE_MESH" in (
+        signals.resolved_references
+    )
+
+
 def test_extracts_lattice_policy_contract_from_policy_helper():
     from trellis.agent.semantic_validation import extract_semantic_signals
 
