@@ -59,7 +59,7 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1196` | Swaption pricing: retire European Black76 wrapper authority | Done |
 | `QUA-1197` | Swaption pricing: retire Bermudan Black76 lower-bound helper authority | Done |
 | `QUA-1198` | Swaption Monte Carlo: retire European helper and problem-resolver authority | Done |
-| `QUA-1199` | Swaption lattice: retire European tree helper authority | In Progress |
+| `QUA-1199` | Swaption lattice: retire European tree helper authority | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
