@@ -818,7 +818,7 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
         assert any(f.category == "route_helper_signature_mismatch" for f in findings)
 
-    def test_flags_rate_tree_swaption_helper_signature_mismatch(self, registry):
+    def test_flags_rate_tree_swaption_missing_required_composition_primitive(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
         swaption_ir = ProductIR(
             instrument="swaption",
@@ -828,16 +828,25 @@ def evaluate(self, market_state):
         )
         spec = replace(spec, primitives=resolve_route_primitives(spec, swaption_ir))
         source = '''
-from trellis.models.rate_style_swaption_tree import price_swaption_tree
+from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec
 
 def evaluate(self, market_state):
-    return price_swaption_tree(spec=self._spec, market_state=market_state, exercise_steps=12)
+    return BermudanSwaptionTreeSpec(
+        notional=self._spec.notional,
+        strike=self._spec.strike,
+        exercise_dates=(self._spec.expiry_date,),
+        swap_end=self._spec.swap_end,
+    )
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("rate_tree_backward_induction", "lattice"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(
+            f.category == "required_primitive_not_called"
+            and "resolve_swaption_curve_basis_spread" in f.message
+            for f in findings
+        )
 
-    def test_accepts_rate_tree_swaption_helper_surface(self, registry):
+    def test_accepts_rate_tree_swaption_generic_lattice_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
         swaption_ir = ProductIR(
             instrument="swaption",
@@ -847,14 +856,81 @@ def evaluate(self, market_state):
         )
         spec = replace(spec, primitives=resolve_route_primitives(spec, swaption_ir))
         source = '''
-from trellis.models.rate_style_swaption_tree import price_swaption_tree
+from trellis.models.bermudan_swaption_tree import (
+    BermudanSwaptionTreeSpec,
+    compile_bermudan_swaption_contract_spec,
+    resolve_bermudan_swaption_tree_inputs,
+)
+from trellis.models.rate_style_swaption import resolve_swaption_curve_basis_spread
+from trellis.models.trees.algebra import (
+    BINOMIAL_1F_TOPOLOGY,
+    TERM_STRUCTURE_TARGET,
+    UNIFORM_ADDITIVE_MESH,
+    build_lattice,
+    price_on_lattice,
+)
 
 def evaluate(self, market_state):
-    return price_swaption_tree(market_state, self._spec, model="hull_white", mean_reversion=0.05)
+    spread = resolve_swaption_curve_basis_spread(market_state, self._spec)
+    spec = BermudanSwaptionTreeSpec(
+        notional=self._spec.notional,
+        strike=self._spec.strike - spread,
+        exercise_dates=(self._spec.expiry_date,),
+        swap_end=self._spec.swap_end,
+    )
+    resolved = resolve_bermudan_swaption_tree_inputs(market_state, spec)
+    lattice = build_lattice(
+        BINOMIAL_1F_TOPOLOGY,
+        UNIFORM_ADDITIVE_MESH,
+        "hull_white",
+        TERM_STRUCTURE_TARGET(market_state.discount),
+        r0=resolved.r0,
+        sigma=resolved.sigma,
+        a=resolved.mean_reversion,
+        T=resolved.tree_horizon,
+        n_steps=resolved.n_steps,
+    )
+    contract = compile_bermudan_swaption_contract_spec(
+        lattice,
+        spec=spec,
+        settlement=resolved.settlement,
+    )
+    return price_on_lattice(lattice, contract)
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("rate_tree_backward_induction", "lattice"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert not any(f.severity == "error" for f in findings)
+
+    def test_rate_tree_swaption_function_reference_does_not_satisfy_composition(
+        self, registry
+    ):
+        spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
+        swaption_ir = ProductIR(
+            instrument="swaption",
+            payoff_family="swaption",
+            exercise_style="european",
+            model_family="interest_rate",
+        )
+        spec = replace(spec, primitives=resolve_route_primitives(spec, swaption_ir))
+        source = '''
+from trellis.models.trees.algebra import price_on_lattice
+
+def evaluate(self, market_state):
+    unused_kernel = price_on_lattice
+    return 0.0
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            source,
+            _make_plan("rate_tree_backward_induction", "lattice"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "required_primitive_not_called"
+            and "price_on_lattice" in finding.message
+            for finding in findings
+        )
 
     def test_flags_zcb_option_tree_helper_signature_mismatch(self, registry):
         # QUA-915: ZCB-option family collapsed into ``short_rate_bond_option``.

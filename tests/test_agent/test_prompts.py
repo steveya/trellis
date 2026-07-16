@@ -1637,7 +1637,7 @@ def test_executor_swaption_analytical_retry_pins_resolver_kernel_route():
     assert "annuity" in text
 
 
-def test_executor_swaption_rate_tree_retry_pins_helper_backed_route():
+def test_executor_swaption_rate_tree_retry_pins_generic_lattice_composition():
     from types import SimpleNamespace
 
     from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
@@ -1656,7 +1656,13 @@ def test_executor_swaption_rate_tree_retry_pins_helper_backed_route():
 
     text = "\n".join(_route_specific_retry_lines(request))
 
+    assert "BermudanSwaptionTreeSpec" in text
+    assert "resolve_bermudan_swaption_tree_inputs" in text
+    assert "build_lattice" in text
+    assert "compile_bermudan_swaption_contract_spec" in text
+    assert "price_on_lattice" in text
     assert "price_swaption_tree" in text
+    assert "not generated construction authority" in text
     assert "single-exercise European" in text
     assert "swap_start == expiry_date" in text
 

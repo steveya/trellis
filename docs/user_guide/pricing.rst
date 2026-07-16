@@ -590,6 +590,16 @@ and explicit comparison parameters remain visible in that generated source.
 ``resolve_swaption_monte_carlo_problem(...)`` remain callable compatibility and
 reference APIs, but neither is live build authority.
 
+European swaption rate-tree targets use the same primitive-first policy. The
+generated route requires ``swap_start == expiry_date``, constructs a
+one-exercise tree contract, applies the discount/forecast curve basis, resolves
+the Hull-White or BDT inputs, builds the generic calibrated lattice, compiles
+the swaption lattice contract, and calls ``price_on_lattice(...)``. Day count,
+swap frequency, rate index, payer/receiver direction, explicit comparison
+parameters, and tree-step controls remain visible. ``price_swaption_tree(...)``
+and ``build_swaption_tree_spec(...)`` remain callable compatibility/reference
+APIs, but neither is live build authority.
+
 The Bermudan ``black76_european_lower_bound`` comparison reuses those same
 surfaces without pretending Black76 is a Bermudan solver. Generated code
 normalizes the exercise schedule, keeps dates strictly after settlement and

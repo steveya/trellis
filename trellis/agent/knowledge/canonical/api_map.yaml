@@ -444,6 +444,26 @@ european_swaption_monte_carlo_composition:
     - "For a single-exercise European swaption, resolve the typed expiry basis, build the payment schedule from explicit swap_start, bind the Hull-White process, and assemble the discounted swap-PV payload, discount reducer, expiry events, problem spec, runtime problem, and generic estimator in that order."
     - "Preserve day count, swap frequency, rate index, explicit comparison parameters, and path/step/seed controls. Do not substitute an equity GBM process."
 
+european_swaption_rate_lattice_composition:
+  module: trellis.models.trees.algebra
+  methods: [rate_tree]
+  navigation:
+    aliases: [swaption, european_swaption, hull_white_swaption_tree, hw_tree, bdt_tree]
+  modules:
+    contract: trellis.models.bermudan_swaption_tree
+    curve_basis: trellis.models.rate_style_swaption
+    lattice_algebra: trellis.models.trees.algebra
+  key_imports:
+    - "from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, resolve_bermudan_swaption_tree_inputs, compile_bermudan_swaption_contract_spec"
+    - "from trellis.models.rate_style_swaption import resolve_swaption_curve_basis_spread"
+    - "from trellis.models.trees.algebra import BINOMIAL_1F_TOPOLOGY, UNIFORM_ADDITIVE_MESH, TERM_STRUCTURE_TARGET, build_lattice, price_on_lattice"
+  notes:
+    - "Admitted scope is the single-exercise forward-starting European swaption where swap_start equals expiry_date"
+    - "Construct a one-exercise BermudanSwaptionTreeSpec, apply the discount/forecast curve basis to its strike, and resolve schedule, volatility, mean reversion, horizon, and step controls with resolve_bermudan_swaption_tree_inputs(...)"
+    - "Build the calibrated Hull-White or BDT lattice from the generic topology, mesh, term-structure target, and build_lattice(...) surfaces; pass resolved.mean_reversion as `a=`"
+    - "Compile the lattice contract with compile_bermudan_swaption_contract_spec(...) and evaluate it with generic price_on_lattice(...)"
+    - "price_swaption_tree(...) and build_swaption_tree_spec(...) remain compatibility/reference APIs and are not generated construction authority"
+
 bermudan_swaption_lower_bound_composition:
   module: trellis.models.rate_style_swaption
   methods: [analytical]

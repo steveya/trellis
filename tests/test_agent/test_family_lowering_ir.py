@@ -647,6 +647,27 @@ def test_bermudan_swaption_compiles_to_exercise_lattice_family_ir():
     assert "par_rate_bindings" in family_ir.derived_quantities
 
 
+def test_european_swaption_tree_uses_primitive_lowering_without_helper_ir():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
+
+    contract = make_rate_style_swaption_contract(
+        description="European payer swaption on a Hull-White tree",
+        observation_schedule=("2029-11-15",),
+        preferred_method="rate_tree",
+        exercise_style="european",
+    )
+    blueprint = compile_semantic_contract(contract, preferred_method="rate_tree")
+
+    lowering = blueprint.dsl_lowering
+    assert lowering is not None
+    assert lowering.family_ir is None
+    assert lowering.route_helper_refs == ()
+    assert "trellis.models.rate_style_swaption_tree.price_swaption_tree" not in (
+        lowering.target_refs
+    )
+
+
 def test_exercise_lattice_family_ir_ignores_legacy_settlement_rule_mirror():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import (

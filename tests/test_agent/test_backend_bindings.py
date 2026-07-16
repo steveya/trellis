@@ -428,6 +428,45 @@ def test_resolve_backend_binding_spec_composes_european_swaption_monte_carlo():
     }
 
 
+def test_resolve_backend_binding_spec_composes_european_swaption_rate_lattice():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("rate_tree_backward_induction", catalog)
+
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="swaption",
+            payoff_family="swaption",
+            exercise_style="european",
+            schedule_dependence=True,
+            state_dependence="schedule_state",
+            model_family="interest_rate",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert resolved.market_binding_refs == (
+        "trellis.models.bermudan_swaption_tree.resolve_bermudan_swaption_tree_inputs",
+    )
+    assert resolved.exact_target_refs == (
+        "trellis.models.trees.algebra.price_on_lattice",
+    )
+    assert resolved.binding_id == "trellis.models.trees.algebra.price_on_lattice"
+    assert {primitive.symbol: primitive.role for primitive in resolved.primitives} == {
+        "BermudanSwaptionTreeSpec": "contract_spec",
+        "resolve_swaption_curve_basis_spread": "curve_basis_binding",
+        "resolve_bermudan_swaption_tree_inputs": "market_binding",
+        "BINOMIAL_1F_TOPOLOGY": "topology",
+        "UNIFORM_ADDITIVE_MESH": "mesh",
+        "TERM_STRUCTURE_TARGET": "calibration_target",
+        "build_lattice": "lattice_builder",
+        "compile_bermudan_swaption_contract_spec": "contract_compiler",
+        "price_on_lattice": "pricing_kernel",
+    }
+
+
 def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
     catalog = load_backend_binding_catalog()
     analytical = find_backend_binding_by_route_id("analytical_black76", catalog)

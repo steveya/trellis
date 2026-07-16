@@ -4191,6 +4191,19 @@ def _swaption_comparison_helper_kwargs(semantic_blueprint) -> str:
     return f", mean_reversion={float(mean_reversion)!r}, sigma={float(sigma)!r}"
 
 
+def _swaption_tree_model_name(semantic_blueprint, comparison_target: str | None) -> str:
+    """Return the admitted short-rate lattice model for a swaption target."""
+    normalized_target = str(comparison_target or "").strip().lower().replace("-", "_")
+    if normalized_target in {"bdt", "bdt_tree", "black_derman_toy"}:
+        return "bdt"
+    valuation_context = getattr(semantic_blueprint, "valuation_context", None)
+    engine_model_spec = getattr(valuation_context, "engine_model_spec", None)
+    model_name = str(getattr(engine_model_spec, "model_name", "") or "").strip().lower()
+    if model_name in {"bdt", "black_derman_toy"}:
+        return "bdt"
+    return "hull_white"
+
+
 def _vanilla_equity_monte_carlo_helper_kwargs(comparison_target: str | None) -> str:
     """Return deterministic helper kwargs for vanilla-equity Monte Carlo comparison targets."""
     target = str(comparison_target or "").strip().lower()
@@ -5283,6 +5296,7 @@ def _deterministic_exact_binding_evaluate_body(
     refs = set(_exact_binding_refs(generation_plan))
     refs.update(_declared_primitive_refs(generation_plan))
     swaption_comparison_kwargs = _swaption_comparison_helper_kwargs(semantic_blueprint)
+    swaption_tree_model = _swaption_tree_model_name(semantic_blueprint, comparison_target)
     vanilla_equity_mc_kwargs = _vanilla_equity_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_mc_call_kwargs = (
         vanilla_equity_mc_kwargs.lstrip(", ")
@@ -5369,6 +5383,55 @@ def _deterministic_exact_binding_evaluate_body(
         )
         if variance_swap_body is not None:
             return variance_swap_body
+    if (
+        instrument_type == "swaption"
+        and primitive_route == "rate_tree_backward_induction"
+        and "trellis.models.trees.algebra.price_on_lattice" in refs
+    ):
+        return textwrap.dedent(
+            f"""\
+            if spec.swap_start != spec.expiry_date:
+                raise ValueError(
+                    "Rate-tree swaption composition requires swap_start == expiry_date "
+                    "for the single-exercise forward-start contract."
+                )
+            curve_basis_spread = resolve_swaption_curve_basis_spread(market_state, spec)
+            tree_spec = BermudanSwaptionTreeSpec(
+                notional=float(spec.notional),
+                strike=float(spec.strike) - float(curve_basis_spread),
+                exercise_dates=(spec.expiry_date,),
+                swap_end=spec.swap_end,
+                swap_frequency=spec.swap_frequency,
+                day_count=spec.day_count,
+                rate_index=spec.rate_index,
+                is_payer=bool(spec.is_payer),
+            )
+            tree_steps = getattr(spec, "tree_steps", getattr(spec, "n_steps", None))
+            resolved = resolve_bermudan_swaption_tree_inputs(
+                market_state,
+                tree_spec,
+                model="{swaption_tree_model}"{swaption_comparison_kwargs},
+                n_steps=tree_steps,
+            )
+            lattice = build_lattice(
+                BINOMIAL_1F_TOPOLOGY,
+                UNIFORM_ADDITIVE_MESH,
+                "{swaption_tree_model}",
+                calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),
+                r0=resolved.r0,
+                sigma=resolved.sigma,
+                a=resolved.mean_reversion,
+                T=resolved.tree_horizon,
+                n_steps=resolved.n_steps,
+            )
+            lattice_contract = compile_bermudan_swaption_contract_spec(
+                lattice,
+                spec=tree_spec,
+                settlement=resolved.settlement,
+            )
+            return float(price_on_lattice(lattice, lattice_contract))
+            """
+        ).rstrip()
     if (
         primitive_route == "equity_quanto"
         and {
@@ -6296,10 +6359,6 @@ def _deterministic_exact_binding_evaluate_body(
             f"{swaption_comparison_kwargs})\n"
             "return price_swaption_black76_raw(resolved)"
         ),
-        "trellis.models.rate_style_swaption_tree.price_swaption_tree": (
-            "return price_swaption_tree(market_state, spec"
-            f"{swaption_comparison_kwargs})"
-        ),
         "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree": (
             "return price_bermudan_swaption_tree(market_state, spec)"
         ),
@@ -6850,6 +6909,29 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.rate_style_swaption import "
             "resolve_swaption_black76_inputs"
+        )
+    if "resolve_swaption_curve_basis_spread(" in body:
+        imports.append(
+            "from trellis.models.rate_style_swaption import "
+            "resolve_swaption_curve_basis_spread"
+        )
+    if "BermudanSwaptionTreeSpec(" in body:
+        imports.append(
+            "from trellis.models.bermudan_swaption_tree import (\n"
+            "    BermudanSwaptionTreeSpec,\n"
+            "    compile_bermudan_swaption_contract_spec,\n"
+            "    resolve_bermudan_swaption_tree_inputs,\n"
+            ")"
+        )
+    if "BINOMIAL_1F_TOPOLOGY" in body and "price_on_lattice(" in body:
+        imports.append(
+            "from trellis.models.trees.algebra import (\n"
+            "    BINOMIAL_1F_TOPOLOGY,\n"
+            "    TERM_STRUCTURE_TARGET,\n"
+            "    UNIFORM_ADDITIVE_MESH,\n"
+            "    build_lattice,\n"
+            "    price_on_lattice,\n"
+            ")"
         )
     if "price_heston_option_monte_carlo(" in body:
         imports.append(
@@ -9103,10 +9185,13 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
-            "European rate-style swaption tree routes should stay on the checked-in helper-backed surface.",
-            "Prefer `from trellis.models.rate_style_swaption_tree import price_swaption_tree` and delegate to that helper from the adapter.",
-            "This helper-backed tree route is for the single-exercise European comparison surface where `swap_start == expiry_date`.",
-            "Do not rebuild exercise-step selection, swap rollback, or lattice payoff glue inline when the checked-in helper already owns the route.",
+            "European rate-style swaption tree routes should compose the checked public lattice primitives directly.",
+            "Require the single-exercise forward-start boundary `swap_start == expiry_date`, then construct `BermudanSwaptionTreeSpec` with that one exercise date.",
+            "Apply `resolve_swaption_curve_basis_spread(...)` to the tree strike, then call `resolve_bermudan_swaption_tree_inputs(...)` so schedule, volatility, mean reversion, horizon, and step controls stay on one resolved basis.",
+            "Build the calibrated lattice with `build_lattice(BINOMIAL_1F_TOPOLOGY, UNIFORM_ADDITIVE_MESH, model, calibration_target=TERM_STRUCTURE_TARGET(market_state.discount), ...)`.",
+            "Compile the claim with `compile_bermudan_swaption_contract_spec(...)` and evaluate it with generic `price_on_lattice(...)`.",
+            "Preserve model, explicit comparison parameters, tree steps, day count, swap frequency, rate index, and payer/receiver direction.",
+            "`price_swaption_tree(...)` and `build_swaption_tree_spec(...)` remain compatibility/reference APIs, not generated construction authority.",
             "Keep cap/floor-style period loops separate. This route is for a single-exercise European swaption comparison target, not for caplet or floorlet strips.",
         )
     if (

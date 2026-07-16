@@ -133,6 +133,14 @@ ordered derivative-specific composition. The retained product pricing wrapper
 and product-specific problem resolver remain useful comparison evidence but do
 not replace the primitive packet.
 
+The European swaption tree lane follows the same rule through
+``european_swaption_rate_lattice_composition``. Retrieval points the builder
+to the one-exercise contract type, curve-basis binding, resolved schedule and
+Hull-White/BDT inputs, generic topology/mesh/calibration contracts, lattice
+builder, swaption contract compiler, and generic rollback kernel. The retained
+``price_swaption_tree(...)`` wrapper is reference evidence; it does not replace
+that ordered composition packet.
+
 When the available primitives do not yet compose correctly, fail closed with a
 structured capability packet. The packet should distinguish capabilities that
 already exist from the missing glue. For Bermudan swaption Monte Carlo, Trellis

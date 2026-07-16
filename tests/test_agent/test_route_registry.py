@@ -1453,15 +1453,39 @@ class TestRateTreeRoutes:
         notes = resolve_route_notes(spec, self.BERMUDAN_IR)
         assert notes == ()
 
-    def test_rate_tree_swaption_primitives(self, registry):
+    def test_rate_tree_swaption_primitives_are_generic_lattice_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
         new_prims = resolve_route_primitives(spec, self.EUROPEAN_SWAPTION_IR)
         expected_prims = {
-            ("trellis.models.rate_style_swaption_tree", "price_swaption_tree", "route_helper"),
+            (
+                "trellis.models.bermudan_swaption_tree",
+                "BermudanSwaptionTreeSpec",
+                "contract_spec",
+            ),
+            (
+                "trellis.models.rate_style_swaption",
+                "resolve_swaption_curve_basis_spread",
+                "curve_basis_binding",
+            ),
+            (
+                "trellis.models.bermudan_swaption_tree",
+                "resolve_bermudan_swaption_tree_inputs",
+                "market_binding",
+            ),
+            ("trellis.models.trees.algebra", "BINOMIAL_1F_TOPOLOGY", "topology"),
+            ("trellis.models.trees.algebra", "UNIFORM_ADDITIVE_MESH", "mesh"),
+            ("trellis.models.trees.algebra", "TERM_STRUCTURE_TARGET", "calibration_target"),
+            ("trellis.models.trees.algebra", "build_lattice", "lattice_builder"),
+            (
+                "trellis.models.bermudan_swaption_tree",
+                "compile_bermudan_swaption_contract_spec",
+                "contract_compiler",
+            ),
+            ("trellis.models.trees.algebra", "price_on_lattice", "pricing_kernel"),
         }
         assert _prim_set(new_prims) == expected_prims
 
-    def test_rate_tree_swaption_helper_route_is_thin(self, registry):
+    def test_rate_tree_swaption_composition_route_has_no_helper_notes(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]
         notes = resolve_route_notes(spec, self.EUROPEAN_SWAPTION_IR)
         assert notes == ()

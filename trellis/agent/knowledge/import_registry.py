@@ -587,6 +587,9 @@ from trellis.models.short_rate_bond import ResolvedShortRateBondInputs, price_ci
 from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
 
 ### Models — Trees
+from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, compile_bermudan_swaption_contract_spec, resolve_bermudan_swaption_tree_inputs
+from trellis.models.rate_style_swaption import resolve_swaption_curve_basis_spread
+from trellis.models.trees.algebra import BINOMIAL_1F_TOPOLOGY, TERM_STRUCTURE_TARGET, UNIFORM_ADDITIVE_MESH, build_lattice, price_on_lattice
 from trellis.models.equity_option_tree import build_vanilla_equity_lattice, compile_vanilla_equity_contract_spec, price_cev_option_tree, price_vanilla_equity_option_on_lattice, price_vanilla_equity_option_tree, resolve_vanilla_equity_tree_inputs
 from trellis.models.trees.lattice import build_rate_lattice, build_spot_lattice, lattice_backward_induction, build_generic_lattice, calibrate_lattice
 from trellis.models.trees.binomial import BinomialTree

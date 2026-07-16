@@ -598,6 +598,26 @@ def test_extracts_rate_lattice_engine_family_from_rate_lattice_imports():
     assert signals.engine_families == ("rate_lattice",)
 
 
+def test_extracts_resolved_references_to_declarative_lattice_primitives():
+    from trellis.agent.semantic_validation import extract_semantic_signals
+
+    signals = extract_semantic_signals(
+        """
+from trellis.models.trees.algebra import BINOMIAL_1F_TOPOLOGY, UNIFORM_ADDITIVE_MESH
+
+def build(builder):
+    return builder(BINOMIAL_1F_TOPOLOGY, UNIFORM_ADDITIVE_MESH)
+"""
+    )
+
+    assert "trellis.models.trees.algebra.BINOMIAL_1F_TOPOLOGY" in (
+        signals.resolved_references
+    )
+    assert "trellis.models.trees.algebra.UNIFORM_ADDITIVE_MESH" in (
+        signals.resolved_references
+    )
+
+
 def test_extracts_lattice_policy_contract_from_policy_helper():
     from trellis.agent.semantic_validation import extract_semantic_signals
 

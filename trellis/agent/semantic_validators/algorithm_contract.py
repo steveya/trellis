@@ -20,7 +20,14 @@ from trellis.agent.semantic_validators.base import SemanticFinding
 _ENGINE_SIGNATURES = {
     "monte_carlo": ("MonteCarloEngine", "monte_carlo"),
     "exercise": ("MonteCarloEngine", "longstaff_schwartz", "tsitsiklis_van_roy"),
-    "lattice": ("build_rate_lattice", "BinomialTree", "backward_induction", "lattice_backward_induction"),
+    "lattice": (
+        "build_lattice",
+        "price_on_lattice",
+        "build_rate_lattice",
+        "BinomialTree",
+        "backward_induction",
+        "lattice_backward_induction",
+    ),
     "analytical": (
         "black76_call",
         "black76_put",
@@ -56,6 +63,7 @@ _HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({
     "price_double_barrier_option_pde_result",
     "price_double_barrier_option_monte_carlo_result",
 })
+_DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "topology"})
 
 _EXACT_HELPER_SIGNATURES = {
     "price_double_barrier_option_pde_result": {
@@ -290,23 +298,6 @@ _EXACT_HELPER_SIGNATURES = {
             "instead of rebuilding lattice rollback or exercise glue inline."
         ),
     },
-    "price_swaption_tree": {
-        "min_positional_args": 2,
-        "max_positional_args": 2,
-        "required_parameters": ("market_state", "spec"),
-        "required_keyword_groups": (frozenset({"market_state", "spec"}),),
-        "allowed_keywords": frozenset({"market_state", "spec", "model", "mean_reversion", "sigma", "n_steps"}),
-        "required_positional_markers": (
-            frozenset({"market_state"}),
-            frozenset({"spec", "_spec"}),
-        ),
-        "message": (
-            "`price_swaption_tree(...)` expects `(market_state, spec, *, "
-            "model=..., mean_reversion=..., sigma=..., n_steps=...)`. "
-            "Pass the live market state and the original European rate-style swaption spec "
-            "instead of inventing exercise-step or lattice-builder keywords."
-        ),
-    },
     "price_fx_vanilla_analytical": {
         "min_positional_args": 2,
         "max_positional_args": 2,
@@ -517,6 +508,19 @@ def _calls_symbol(source: str, symbol: str) -> bool:
     )
 
 
+def _references_symbol(source: str, symbol: str) -> bool:
+    """Return whether parsed source calls or names ``symbol``."""
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:
+        return False
+    return any(
+        (isinstance(node, ast.Name) and node.id == symbol)
+        or (isinstance(node, ast.Attribute) and node.attr == symbol)
+        for node in ast.walk(tree)
+    )
+
+
 def _calls_checked_route_helper(
     source: str,
     plan: GenerationPlan | None = None,
@@ -702,14 +706,17 @@ class AlgorithmContractValidator:
         exact_surface_primitives,
     ) -> list[SemanticFinding]:
         """Require explicit primitive composition for helper-retired routes."""
-        if route_spec.id != "equity_quanto":
+        if route_spec.id not in {"equity_quanto", "rate_tree_backward_induction"}:
             return []
 
         findings: list[SemanticFinding] = []
         for primitive in exact_surface_primitives:
             if not primitive.required or primitive.excluded:
                 continue
-            if _calls_symbol(source, primitive.symbol):
+            if _calls_symbol(source, primitive.symbol) or (
+                primitive.role in _DECLARATIVE_PRIMITIVE_ROLES
+                and _references_symbol(source, primitive.symbol)
+            ):
                 continue
             findings.append(
                 SemanticFinding(

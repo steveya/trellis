@@ -941,11 +941,14 @@ dependence-family selection on a checked helper path while semantic validation
 treats the helper as the public assembly contract rather than forcing direct
 calls to the lower-level loss-distribution primitives.
 
-For the supported swaption tree slice, the comparison harness now has a
-checked-in helper-backed route for single-exercise European rate-tree
-comparators. That keeps canaries such as ``T65`` on the stable
-``price_swaption_tree(...)`` surface instead of regenerating inline lattice
-exercise code for the comparison target.
+For the supported single-exercise European swaption tree slice, the comparison
+harness now binds an explicit generic lattice composition. The generated
+artifact constructs a one-exercise contract, applies the curve basis, resolves
+the short-rate inputs, builds the calibrated lattice, compiles the swaption
+contract, and calls ``price_on_lattice(...)``. The semantic gate requires
+``swap_start == expiry_date`` and fails closed otherwise. The retained
+``price_swaption_tree(...)`` surface remains independent comparison evidence,
+not the generated artifact identity.
 
 Helper-authority inventory
 --------------------------
