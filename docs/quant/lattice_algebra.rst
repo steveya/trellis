@@ -324,6 +324,51 @@ should use this bounded result when they need schedule or exercise-state
 composition instead of open-coding backward induction or adding a
 product-specific helper.
 
+Bermudan Swaption Composition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The admitted Bermudan swaption tree lane is a concrete example of composing a
+product from the generic lattice boundary. Generated construction follows this
+order:
+
+1. Normalize the live exercise dates and build the underlying fixed-leg payment
+   timeline.
+2. Resolve settlement, model parameters, horizon, and step controls once with
+   ``resolve_bermudan_swaption_tree_inputs(...)``.
+3. Build the calibrated one-factor rate lattice from
+   ``BINOMIAL_1F_TOPOLOGY``, ``UNIFORM_ADDITIVE_MESH``,
+   ``TERM_STRUCTURE_TARGET``, and ``build_lattice(...)``.
+4. Map exercise and payment times with ``lattice_step_from_time(...)``.
+5. Represent fixed coupons and principal as a ``LatticeLinearClaimSpec`` and
+   value that claim with
+   ``value_on_lattice(..., observation_steps=exercise_steps)``.
+6. Form payer or receiver swap values in the generated adapter, attach
+   ``LatticeControlSpec(objective="holder_max", ...)``, and evaluate the option
+   ``LatticeContractSpec`` with ``price_on_lattice(...)``.
+
+Let :math:`C_m^{\mathrm{fixed}}(i)` denote the discounted fixed-leg continuation
+value at exercise step :math:`m`, consistent with the phase notation above.
+Under the admitted par-floating-leg representation, the payer and receiver
+exercise underlyings are
+
+.. math::
+
+   S_m^{\mathrm{payer}}(i) = N - C_m^{\mathrm{fixed}}(i), \qquad
+   S_m^{\mathrm{receiver}}(i) = -S_m^{\mathrm{payer}}(i).
+
+The immediate holder value is :math:`\max(S_m(i), 0)`. The fixed-leg value must
+come from ``LatticeRollbackObservation.continuation_values``. Using
+``post_cashflow_values`` would include a fixed coupon paid at the exercise step
+and can double count that coupon in the exercise underlying.
+
+The builder navigation entry is
+``bermudan_swaption_rate_lattice_composition`` in the canonical API map. The
+retained product pricing wrapper and product contract compiler are compatibility
+and independent reference surfaces only; neither is admitted as generated
+construction authority. The separate Bermudan rates Monte Carlo limitation
+remains unchanged because this composition proves only the one-factor lattice
+lane.
+
 Typed Contract Inputs
 ~~~~~~~~~~~~~~~~~~~~~
 

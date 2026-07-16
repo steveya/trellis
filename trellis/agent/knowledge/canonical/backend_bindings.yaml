@@ -708,9 +708,53 @@ bindings:
           exercise_style: [bermudan]
           model_family: [interest_rate, short_rate]
         primitives:
+          - module: trellis.core.date_utils
+            symbol: normalize_explicit_dates
+            role: schedule_normalizer
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: timeline_mapping
+          - module: trellis.core.date_utils
+            symbol: build_payment_timeline
+            role: payment_timeline_builder
+          - module: trellis.models.bermudan_swaption_tree
+            symbol: resolve_bermudan_swaption_tree_inputs
+            role: market_binding
+          - module: trellis.models.trees.algebra
+            symbol: BINOMIAL_1F_TOPOLOGY
+            role: topology
+          - module: trellis.models.trees.algebra
+            symbol: UNIFORM_ADDITIVE_MESH
+            role: mesh
+          - module: trellis.models.trees.algebra
+            symbol: TERM_STRUCTURE_TARGET
+            role: calibration_target
+          - module: trellis.models.trees.algebra
+            symbol: build_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.control
+            symbol: lattice_step_from_time
+            role: schedule_mapping
+          - module: trellis.models.trees.algebra
+            symbol: LatticeLinearClaimSpec
+            role: linear_claim
+          - module: trellis.models.trees.algebra
+            symbol: LatticeContractSpec
+            role: contract_spec
+          - module: trellis.models.trees.algebra
+            symbol: value_on_lattice
+            role: observation_rollback
+          - module: trellis.models.trees.algebra
+            symbol: LatticeControlSpec
+            role: exercise_control
+          - module: trellis.models.trees.algebra
+            symbol: price_on_lattice
+            role: pricing_kernel
           - module: trellis.models.bermudan_swaption_tree
             symbol: price_bermudan_swaption_tree
-            role: route_helper
+            role: compatibility_reference
+            required: false
+            excluded: true
       - when: default
         primitives:
           - module: trellis.models.trees.lattice

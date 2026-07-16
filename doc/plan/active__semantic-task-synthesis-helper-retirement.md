@@ -61,7 +61,8 @@ Status mirror last synced: `2026-07-16`
 | `QUA-1198` | Swaption Monte Carlo: retire European helper and problem-resolver authority | Done |
 | `QUA-1199` | Swaption lattice: retire European tree helper authority | Done |
 | `QUA-1200` | Lattice rollback: observable node-value phases | Done |
-| `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | Backlog |
+| `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | In Progress |
+| `QUA-1202` | Semantic proving: distinguish fresh artifacts from agent synthesis | Backlog |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -111,7 +112,10 @@ Status mirror last synced: `2026-07-16`
     swaption lane: compose schedule values and holder control from public
     lattice primitives while retaining product wrappers only as compatibility
     and independent reference evidence.
-13. Run live fresh-generation evidence only with current external-model approval;
+13. Apply QUA-1202 to separate isolated fresh-artifact construction from
+    builder-agent synthesis, record artifact origin, and require an explicit
+    synthesis policy before making agent-learning claims.
+14. Run live fresh-generation evidence only with current external-model approval;
     use it to compare first-pass source selection, retrieved documentation,
     retries, and residual validator findings rather than as pricing authority.
 

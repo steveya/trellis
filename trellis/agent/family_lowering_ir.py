@@ -762,10 +762,13 @@ _EXERCISE_LATTICE_PROFILES = (
         ),
         required_observables=("forward_rate", "discount_curve"),
         required_inputs=("discount_curve", "forward_curve", "black_vol_surface"),
-        helper_symbol="price_bermudan_swaption_tree",
+        helper_symbol="",
         market_mapping="discount_curve_forward_par_rate_schedule_to_lattice",
         derived_quantities=(
             "exercise_schedule_steps",
+            "payment_schedule_steps",
+            "fixed_leg_continuation_observations",
+            "payer_receiver_swap_values",
             "schedule_bound_forward_fixings",
             "par_rate_bindings",
             "swap_accrual_fractions",
@@ -1145,9 +1148,9 @@ def _binding_supports_exercise_lattice(
     binding_spec is None`` fallback is dead code and has been retired.
     """
     del route_id
-    if _binding_has_role(binding_spec, "lattice_builder") and _binding_has_role(
-        binding_spec,
-        "backward_induction",
+    if _binding_has_role(binding_spec, "lattice_builder") and (
+        _binding_has_role(binding_spec, "backward_induction")
+        or _binding_has_symbol(binding_spec, "pricing_kernel", "price_on_lattice")
     ):
         return True
     if _binding_has_any_symbol(

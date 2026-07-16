@@ -1444,14 +1444,46 @@ class TestRateTreeRoutes:
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         new_prims = resolve_route_primitives(spec, self.BERMUDAN_IR)
         expected_prims = {
-            ("trellis.models.bermudan_swaption_tree", "price_bermudan_swaption_tree", "route_helper"),
+            ("trellis.core.date_utils", "normalize_explicit_dates", "schedule_normalizer"),
+            ("trellis.core.date_utils", "year_fraction", "timeline_mapping"),
+            ("trellis.core.date_utils", "build_payment_timeline", "payment_timeline_builder"),
+            (
+                "trellis.models.bermudan_swaption_tree",
+                "resolve_bermudan_swaption_tree_inputs",
+                "market_binding",
+            ),
+            ("trellis.models.trees.algebra", "BINOMIAL_1F_TOPOLOGY", "topology"),
+            ("trellis.models.trees.algebra", "UNIFORM_ADDITIVE_MESH", "mesh"),
+            ("trellis.models.trees.algebra", "TERM_STRUCTURE_TARGET", "calibration_target"),
+            ("trellis.models.trees.algebra", "build_lattice", "lattice_builder"),
+            ("trellis.models.trees.control", "lattice_step_from_time", "schedule_mapping"),
+            ("trellis.models.trees.algebra", "LatticeLinearClaimSpec", "linear_claim"),
+            ("trellis.models.trees.algebra", "LatticeContractSpec", "contract_spec"),
+            ("trellis.models.trees.algebra", "value_on_lattice", "observation_rollback"),
+            ("trellis.models.trees.algebra", "LatticeControlSpec", "exercise_control"),
+            ("trellis.models.trees.algebra", "price_on_lattice", "pricing_kernel"),
+            (
+                "trellis.models.bermudan_swaption_tree",
+                "price_bermudan_swaption_tree",
+                "compatibility_reference",
+            ),
         }
         assert _prim_set(new_prims) == expected_prims
+        compatibility = next(
+            primitive
+            for primitive in new_prims
+            if primitive.symbol == "price_bermudan_swaption_tree"
+        )
+        assert not compatibility.required
+        assert compatibility.excluded
 
-    def test_bermudan_swaption_helper_route_is_thin(self, registry):
+    def test_bermudan_swaption_route_documents_explicit_lattice_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         notes = resolve_route_notes(spec, self.BERMUDAN_IR)
-        assert notes == ()
+        text = "\n".join(notes)
+        assert "continuation_values" in text
+        assert "holder_max" in text
+        assert "reference-only" in text
 
     def test_rate_tree_swaption_primitives_are_generic_lattice_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]

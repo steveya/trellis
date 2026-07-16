@@ -293,6 +293,8 @@ def price(spec, market_state):
 
 
 def test_lite_review_allows_swaption_tree_binding_with_explicit_hull_white_comparison_params():
+    from dataclasses import replace
+
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.lite_review import review_generated_code
     from trellis.agent.quant import PricingPlan
@@ -340,14 +342,19 @@ def price(spec, market_state):
         reasoning="test",
     )
 
-    report = review_generated_code(
-        source,
-        pricing_plan=pricing_plan,
-        generation_plan=plan,
-    )
+    for route in ("rate_tree_backward_induction", "exercise_lattice"):
+        route_plan = replace(
+            plan,
+            primitive_plan=replace(plan.primitive_plan, route=route),
+        )
+        report = review_generated_code(
+            source,
+            pricing_plan=pricing_plan,
+            generation_plan=route_plan,
+        )
 
-    issue_codes = {issue.code for issue in report.issues}
-    assert "lite.hardcoded_black_vol_surface" not in issue_codes
+        issue_codes = {issue.code for issue in report.issues}
+        assert "lite.hardcoded_black_vol_surface" not in issue_codes
 
 
 def test_lite_review_allows_swaption_monte_carlo_process_binding_with_explicit_comparison_params():

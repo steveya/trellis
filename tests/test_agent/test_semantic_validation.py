@@ -467,6 +467,36 @@ def build_price(self, market_state):
     return float(price_bermudan_swaption_tree(market_state, spec, model="hull_white"))
 """
 
+
+GENERIC_BERMUDAN_LATTICE_CONTRACT_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.trees.algebra import (
+    LatticeContractSpec,
+    LatticeControlSpec,
+    LatticeLinearClaimSpec,
+    price_on_lattice,
+)
+
+
+def price_swaption(lattice, swap_values, valid_exercise_steps):
+    def exercise_value(step, node, lattice_, obs):
+        del lattice_, obs
+        return max(swap_values[step][node], 0.0)
+
+    contract = LatticeContractSpec(
+        claim=LatticeLinearClaimSpec(
+            terminal_payoff=lambda step, node, lattice_, obs: 0.0,
+        ),
+        control=LatticeControlSpec(
+            objective="holder_max",
+            exercise_steps=valid_exercise_steps,
+            exercise_value_fn=exercise_value,
+        ),
+    )
+    return price_on_lattice(lattice, contract)
+"""
+
 RAW_STRING_BERMUDAN_SPEC_SOURCE = """\
 from __future__ import annotations
 
@@ -945,7 +975,7 @@ def test_rejects_schedule_dependent_lattice_without_exercise_steps():
     assert "lattice.exercise_schedule_missing" in issue_codes
 
 
-def test_accepts_helper_only_bermudan_swaption_route_without_low_level_tree_contract():
+def test_rejects_retired_bermudan_swaption_helper_as_construction_authority():
     from trellis.agent.semantic_validation import validate_semantics
 
     pricing_plan = PricingPlan(
@@ -973,8 +1003,36 @@ def test_accepts_helper_only_bermudan_swaption_route_without_low_level_tree_cont
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "engine.family_incompatible_with_ir" not in issue_codes
+    assert "assembly.excluded_primitive_used" in issue_codes
+    assert "assembly.required_primitive_missing" in issue_codes
+    assert not report.ok
+
+
+def test_accepts_generic_lattice_control_spec_for_bermudan_exercise():
+    from types import SimpleNamespace
+
+    from trellis.agent.semantic_validation import validate_semantics
+
+    report = validate_semantics(
+        GENERIC_BERMUDAN_LATTICE_CONTRACT_SOURCE,
+        product_ir=decompose_to_ir(
+            "Bermudan swaption: tree vs LSM MC",
+            instrument_type="bermudan_swaption",
+        ),
+        generation_plan=SimpleNamespace(
+            method="rate_tree",
+            primitive_plan=SimpleNamespace(
+                route="exercise_lattice",
+                blockers=(),
+                primitives=(),
+            ),
+        ),
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "lattice.exercise_type_mismatch" not in issue_codes
     assert "lattice.exercise_schedule_missing" not in issue_codes
+    assert "lattice.exercise_objective_mismatch" not in issue_codes
     assert report.ok
 
 

@@ -369,6 +369,7 @@ def _target_bindings_for_route(
             required=primitive.required,
         )
         for primitive in primitives
+        if not primitive.excluded
     )
 
 
@@ -1430,6 +1431,18 @@ def _build_exercise_lattice_expr_from_family_ir(
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
     """Build an exercise-lattice lowering from typed family IR."""
+    if (
+        family_ir.product_instrument == "swaption"
+        and family_ir.exercise_style == "bermudan"
+        and not family_ir.helper_symbol
+    ):
+        return _build_bermudan_swaption_lattice_expr_from_family_ir(
+            route_id=route_id,
+            binding_id=binding_id,
+            family_ir=family_ir,
+            bindings=bindings,
+        )
+
     route_helper = next(
         (
             binding
@@ -1493,6 +1506,249 @@ def _build_exercise_lattice_expr_from_family_ir(
         branches=(continuation, exercise),
         label=family_ir.exercise_style or route_id,
     ), ()
+
+
+def _build_bermudan_swaption_lattice_expr_from_family_ir(
+    *,
+    route_id: str,
+    binding_id: str,
+    family_ir: ExerciseLatticeIR,
+    bindings: tuple[DslTargetBinding, ...],
+) -> tuple[ContractExpr | None, tuple[str, ...]]:
+    """Build the explicit generic-lattice composition for a Bermudan swaption."""
+    symbols = (
+        "normalize_explicit_dates",
+        "year_fraction",
+        "build_payment_timeline",
+        "resolve_bermudan_swaption_tree_inputs",
+        "BINOMIAL_1F_TOPOLOGY",
+        "UNIFORM_ADDITIVE_MESH",
+        "TERM_STRUCTURE_TARGET",
+        "build_lattice",
+        "lattice_step_from_time",
+        "LatticeLinearClaimSpec",
+        "LatticeContractSpec",
+        "value_on_lattice",
+        "LatticeControlSpec",
+        "price_on_lattice",
+    )
+    required_bindings = {
+        symbol: next(
+            (binding for binding in bindings if binding.symbol == symbol),
+            None,
+        )
+        for symbol in symbols
+    }
+    missing = tuple(
+        symbol for symbol, binding in required_bindings.items() if binding is None
+    )
+    if missing:
+        return None, tuple(
+            _missing_primitive_message(
+                route_id,
+                binding_id,
+                "Bermudan lattice",
+                symbol,
+            )
+            for symbol in missing
+        )
+
+    market_signature = _market_signature_from_family_ir(family_ir)
+    timeline_roles = market_signature.timeline_roles | {
+        TimelineRole.EXERCISE,
+        TimelineRole.PAYMENT,
+    }
+    requirements = market_signature.market_data_requirements
+
+    def atom(
+        role: str,
+        symbol: str,
+        inputs: tuple[str, ...],
+        outputs: tuple[str, ...],
+        description: str,
+    ) -> ContractAtom:
+        binding = required_bindings[symbol]
+        assert binding is not None
+        return ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, role),
+            primitive_ref=binding.primitive_ref,
+            description=description,
+            signature=ContractSignature(
+                inputs=inputs,
+                outputs=outputs,
+                timeline_roles=timeline_roles,
+                market_data_requirements=requirements,
+            ),
+        )
+
+    ports = (
+        market_signature.inputs,
+        ("normalized_exercise_schedule:schedule",),
+        ("measured_exercise_schedule:schedule",),
+        ("exercise_payment_schedules:schedule",),
+        ("resolved_lattice_inputs:state",),
+        ("lattice_topology:state",),
+        ("lattice_mesh:state",),
+        ("calibrated_lattice_target:state",),
+        ("built_rate_lattice:state",),
+        ("mapped_lattice_schedules:state",),
+        ("fixed_leg_claim:contract",),
+        ("fixed_leg_contract:contract",),
+        ("fixed_leg_observations:state",),
+        ("signed_swap_values:state",),
+        ("exercise_decision:state",),
+        ("option_claim:contract",),
+        ("option_contract:contract",),
+        ("price:scalar",),
+    )
+    stages = (
+        atom(
+            "schedule_normalizer",
+            "normalize_explicit_dates",
+            ports[0],
+            ports[1],
+            "Normalize contractual Bermudan exercise dates before lattice mapping.",
+        ),
+        atom(
+            "timeline_mapping",
+            "year_fraction",
+            ports[1],
+            ports[2],
+            "Measure and quantize live exercise dates from settlement.",
+        ),
+        atom(
+            "payment_timeline_builder",
+            "build_payment_timeline",
+            ports[2],
+            ports[3],
+            "Build the underlying fixed-leg payment timeline from the first exercise date.",
+        ),
+        atom(
+            "market_binding",
+            "resolve_bermudan_swaption_tree_inputs",
+            ports[3],
+            ports[4],
+            "Resolve curve, volatility, Hull-White parameters, horizon, and step controls.",
+        ),
+        atom(
+            "topology",
+            "BINOMIAL_1F_TOPOLOGY",
+            ports[4],
+            ports[5],
+            "Select the admitted one-factor recombining topology.",
+        ),
+        atom(
+            "mesh",
+            "UNIFORM_ADDITIVE_MESH",
+            ports[5],
+            ports[6],
+            "Select the additive short-rate mesh.",
+        ),
+        atom(
+            "calibration_target",
+            "TERM_STRUCTURE_TARGET",
+            ports[6],
+            ports[7],
+            "Bind the discount curve as the lattice calibration target.",
+        ),
+        atom(
+            "lattice_builder",
+            "build_lattice",
+            ports[7],
+            ports[8],
+            "Build and calibrate the generic one-factor rate lattice.",
+        ),
+        atom(
+            "schedule_mapping",
+            "lattice_step_from_time",
+            ports[8],
+            ports[9],
+            "Map exercise and payment times to bounded lattice steps.",
+        ),
+        atom(
+            "fixed_leg_claim",
+            "LatticeLinearClaimSpec",
+            ports[9],
+            ports[10],
+            "Represent fixed coupons and principal as a generic linear lattice claim.",
+        ),
+        atom(
+            "fixed_leg_contract",
+            "LatticeContractSpec",
+            ports[10],
+            ports[11],
+            "Wrap the fixed leg in the generic lattice contract surface.",
+        ),
+        atom(
+            "observation_rollback",
+            "value_on_lattice",
+            ports[11],
+            ports[12],
+            "Capture fixed-leg continuation values only at Bermudan exercise steps.",
+        ),
+        ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, "payer_receiver_algebra"),
+            description=(
+                "Form payer or receiver swap values from par notional and fixed-leg "
+                "continuation observations in adapter-owned algebra."
+            ),
+            signature=ContractSignature(
+                inputs=ports[12],
+                outputs=ports[13],
+                timeline_roles=timeline_roles,
+                market_data_requirements=requirements,
+            ),
+        ),
+    )
+    choice_signature = ContractSignature(
+        inputs=ports[13],
+        outputs=ports[14],
+        timeline_roles=timeline_roles,
+        market_data_requirements=requirements,
+    )
+    holder_choice = ChoiceExpr(
+        style=ControlStyle.HOLDER_MAX,
+        branches=(
+            ContractAtom(
+                atom_id=f"{family_ir.route_family}:continuation",
+                description="Continue the option rollback without exercising.",
+                signature=choice_signature,
+            ),
+            ContractAtom(
+                atom_id=f"{family_ir.route_family}:exercise_now",
+                primitive_ref=required_bindings["LatticeControlSpec"].primitive_ref,
+                description=(
+                    "Exercise into the positive payer/receiver swap value under holder-max control."
+                ),
+                signature=choice_signature,
+            ),
+        ),
+        label="bermudan_swaption_holder_max",
+    )
+    suffix = (
+        atom(
+            "option_claim",
+            "LatticeLinearClaimSpec",
+            ports[14],
+            ports[15],
+            "Represent the option continuation claim with zero terminal payoff.",
+        ),
+        atom(
+            "option_contract",
+            "LatticeContractSpec",
+            ports[15],
+            ports[16],
+            "Attach the holder-max control to the generic option contract.",
+        ),
+        atom(
+            "pricing_kernel",
+            "price_on_lattice",
+            ports[16],
+            ports[17],
+            "Run the generic controlled rollback and return the root price.",
+        ),
+    )
+    return ThenExpr(terms=(*stages, holder_choice, *suffix)), ()
 
 
 def _build_correlated_basket_mc_expr_from_family_ir(

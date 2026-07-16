@@ -1545,6 +1545,57 @@ def test_exercise_lattice_binding_adds_bermudan_schedule_mapping_primitives():
     }.issubset(resolved.primitive_refs)
 
 
+def test_exercise_lattice_binding_resolves_bermudan_swaption_composition():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("exercise_lattice", catalog)
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument="bermudan_swaption",
+            payoff_family="swaption",
+            exercise_style="bermudan",
+            model_family="interest_rate",
+            schedule_dependence=True,
+            state_dependence="schedule_state",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert resolved.market_binding_refs == (
+        "trellis.models.bermudan_swaption_tree.resolve_bermudan_swaption_tree_inputs",
+    )
+    assert resolved.exact_target_refs == (
+        "trellis.models.trees.algebra.price_on_lattice",
+    )
+    assert resolved.binding_id == "trellis.models.trees.algebra.price_on_lattice"
+    assert {primitive.symbol: primitive.role for primitive in resolved.primitives} == {
+        "normalize_explicit_dates": "schedule_normalizer",
+        "year_fraction": "timeline_mapping",
+        "build_payment_timeline": "payment_timeline_builder",
+        "resolve_bermudan_swaption_tree_inputs": "market_binding",
+        "BINOMIAL_1F_TOPOLOGY": "topology",
+        "UNIFORM_ADDITIVE_MESH": "mesh",
+        "TERM_STRUCTURE_TARGET": "calibration_target",
+        "build_lattice": "lattice_builder",
+        "lattice_step_from_time": "schedule_mapping",
+        "LatticeLinearClaimSpec": "linear_claim",
+        "LatticeContractSpec": "contract_spec",
+        "value_on_lattice": "observation_rollback",
+        "LatticeControlSpec": "exercise_control",
+        "price_on_lattice": "pricing_kernel",
+        "price_bermudan_swaption_tree": "compatibility_reference",
+    }
+    retired_helper = next(
+        primitive
+        for primitive in resolved.primitives
+        if primitive.symbol == "price_bermudan_swaption_tree"
+    )
+    assert not retired_helper.required
+    assert retired_helper.excluded
+
+
 def test_binding_catalog_cache_tracks_binding_catalog_freshness(monkeypatch):
     clear_backend_binding_catalog_cache()
 

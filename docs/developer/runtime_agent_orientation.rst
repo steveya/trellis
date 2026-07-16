@@ -84,6 +84,28 @@ reading private rollback loops or delegating construction to a product helper.
 The ordinary scalar ``price_on_lattice(...)`` remains the preferred entry point
 when intermediate node evidence is unnecessary.
 
+The specialized ``bermudan_swaption_rate_lattice_composition`` card is the
+complete small-context packet for the multi-exercise rate-tree lane. It contains
+date normalization, payment scheduling, market/model resolution, topology,
+mesh, term-structure calibration, step mapping, linear-claim and contract
+types, bounded observation rollback, holder control, and scalar pricing. Its
+compact notes identify ``continuation_values`` as the fixed-leg evidence used
+for payer/receiver exercise algebra. Instrument eligibility prevents a
+Bermudan query from also retrieving the single-exercise European swaption card
+and its different contract construction.
+
+The route and backend catalogs keep the retired product pricer only as an
+optional, explicitly excluded compatibility reference. Excluded references do
+not enter DSL target bindings, construction cards, or import/semantic-repair
+cards. Repair prompts list admitted construction primitives before the broader
+public export catalog so a bounded card cannot omit the terminal kernel while
+showing unrelated module exports. Deterministic semantic validation rejects
+generated calls to excluded references with
+``assembly.excluded_primitive_used``. It also recognizes
+``LatticeControlSpec(objective="holder_max", exercise_steps=...)`` as the
+generic Bermudan schedule and objective contract, rather than requiring the
+legacy ``lattice_backward_induction(...)`` keyword surface.
+
 Composition cards may join public primitives from more than one subsystem
 without introducing a new product helper. The general
 ``analytical_gaussian_composition`` card points a builder handling general

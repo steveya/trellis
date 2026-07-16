@@ -4067,6 +4067,7 @@ def _skeleton_exact_binding_import_lines(generation_plan) -> tuple[str, ...]:
                 getattr(primitive, "required", False)
                 or getattr(primitive, "role", "") in {"route_helper", "pricing_kernel", "schedule_builder"}
             )
+            and not getattr(primitive, "excluded", False)
             and getattr(primitive, "module", "")
             and getattr(primitive, "symbol", "")
         )
@@ -4138,6 +4139,7 @@ def _exact_binding_refs(generation_plan) -> tuple[str, ...]:
 
     for attr in (
         "lane_exact_binding_refs",
+        "lane_reusable_primitives",
         "backend_binding_id",
         "backend_exact_target_refs",
         "backend_helper_refs",
@@ -4202,6 +4204,201 @@ def _swaption_tree_model_name(semantic_blueprint, comparison_target: str | None)
     if model_name in {"bdt", "black_derman_toy"}:
         return "bdt"
     return "hull_white"
+
+
+def _bermudan_swaption_lattice_evaluate_body(
+    *,
+    model_name: str,
+    comparison_kwargs: str,
+) -> str:
+    """Return explicit generic-lattice construction for a Bermudan swaption."""
+    return textwrap.dedent(
+        f"""\
+        tree_steps = getattr(spec, "tree_steps", getattr(spec, "n_steps", None))
+        resolved = resolve_bermudan_swaption_tree_inputs(
+            market_state,
+            spec,
+            model="{model_name}"{comparison_kwargs},
+            n_steps=tree_steps,
+        )
+        exercise_dates = tuple(
+            exercise_date
+            for exercise_date in normalize_explicit_dates(spec.exercise_dates)
+            if resolved.settlement < exercise_date < spec.swap_end
+        )
+        if not exercise_dates:
+            return 0.0
+
+        lattice = build_lattice(
+            BINOMIAL_1F_TOPOLOGY,
+            UNIFORM_ADDITIVE_MESH,
+            "{model_name}",
+            calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),
+            r0=resolved.r0,
+            sigma=resolved.sigma,
+            a=resolved.mean_reversion,
+            T=resolved.tree_horizon,
+            n_steps=resolved.n_steps,
+        )
+        exercise_steps = []
+        for exercise_date in exercise_dates:
+            exercise_time = float(
+                year_fraction(resolved.settlement, exercise_date, spec.day_count)
+            )
+            quantized_time = (
+                round(exercise_time * resolved.exercise_frequency)
+                / resolved.exercise_frequency
+            )
+            exercise_step = lattice_step_from_time(
+                quantized_time,
+                dt=lattice.dt,
+                n_steps=lattice.n_steps,
+                allow_terminal_step=False,
+            )
+            if exercise_step is not None:
+                exercise_steps.append(exercise_step)
+        valid_exercise_steps = tuple(sorted(set(exercise_steps)))
+        if not valid_exercise_steps:
+            return 0.0
+
+        swap_start = min(exercise_dates)
+        payment_timeline = build_payment_timeline(
+            swap_start,
+            spec.swap_end,
+            spec.swap_frequency,
+            day_count=spec.day_count,
+            time_origin=resolved.settlement,
+            label="bermudan_swaption_fixed_leg",
+        )
+        frequency_per_year = max(
+            int(getattr(spec.swap_frequency, "value", spec.swap_frequency)),
+            1,
+        )
+        first_exercise_step = min(valid_exercise_steps)
+        swap_tenor = float(
+            year_fraction(swap_start, spec.swap_end, spec.day_count)
+        )
+        quantized_tenor = (
+            round(swap_tenor * frequency_per_year) / frequency_per_year
+        )
+        swap_end_time = (
+            first_exercise_step * lattice.dt + quantized_tenor
+        )
+        swap_end_step = lattice_step_from_time(
+            swap_end_time,
+            dt=lattice.dt,
+            n_steps=lattice.n_steps,
+            allow_terminal_step=True,
+        )
+        if swap_end_step is None or swap_end_step <= first_exercise_step:
+            return 0.0
+        swap_start_time = float(
+            year_fraction(resolved.settlement, swap_start, spec.day_count)
+        )
+        coupon = float(spec.notional) * float(spec.strike) / frequency_per_year
+        coupon_by_step = {{}}
+        for period in payment_timeline:
+            absolute_payment_time = (
+                float(period.t_payment)
+                if period.t_payment is not None
+                else float(
+                    year_fraction(
+                        resolved.settlement,
+                        period.payment_date,
+                        spec.day_count,
+                    )
+                )
+            )
+            payment_tenor = max(absolute_payment_time - swap_start_time, 0.0)
+            quantized_payment_tenor = (
+                round(payment_tenor * frequency_per_year) / frequency_per_year
+            )
+            payment_time = (
+                first_exercise_step * lattice.dt + quantized_payment_tenor
+            )
+            payment_step = lattice_step_from_time(
+                payment_time,
+                dt=lattice.dt,
+                n_steps=lattice.n_steps,
+                allow_terminal_step=True,
+            )
+            if (
+                payment_step is None
+                or payment_step <= first_exercise_step
+                or payment_step > swap_end_step
+            ):
+                continue
+            coupon_by_step[payment_step] = (
+                coupon_by_step.get(payment_step, 0.0) + coupon
+            )
+
+        notional = float(spec.notional)
+
+        def fixed_leg_terminal(step, node, lattice_, obs):
+            del node, lattice_, obs
+            if step != swap_end_step:
+                return 0.0
+            return notional + float(coupon_by_step.get(step, 0.0))
+
+        def fixed_leg_cashflow(step, node, lattice_, obs):
+            del node, obs
+            if step == lattice_.n_steps:
+                return 0.0
+            amount = float(coupon_by_step.get(step, 0.0))
+            if step == swap_end_step:
+                amount += notional
+            return amount
+
+        fixed_leg_claim = LatticeLinearClaimSpec(
+            terminal_payoff=fixed_leg_terminal,
+            node_cashflow_fn=fixed_leg_cashflow,
+            observable_requirements=("rate",),
+        )
+        fixed_leg_contract = LatticeContractSpec(claim=fixed_leg_claim)
+        fixed_leg_result = value_on_lattice(
+            lattice,
+            fixed_leg_contract,
+            observation_steps=valid_exercise_steps,
+        )
+        signed_swap_values = {{}}
+        for exercise_step in valid_exercise_steps:
+            if exercise_step >= swap_end_step:
+                continue
+            fixed_leg_values = fixed_leg_result.observation_at(
+                exercise_step
+            ).continuation_values
+            payer_values = tuple(
+                notional - fixed_leg_value
+                for fixed_leg_value in fixed_leg_values
+            )
+            signed_swap_values[exercise_step] = (
+                payer_values
+                if bool(spec.is_payer)
+                else tuple(-value for value in payer_values)
+            )
+        if not signed_swap_values:
+            return 0.0
+
+        def exercise_value(step, node, lattice_, obs):
+            del lattice_, obs
+            return max(float(signed_swap_values[step][node]), 0.0)
+
+        option_claim = LatticeLinearClaimSpec(
+            terminal_payoff=lambda step, node, lattice_, obs: 0.0,
+            observable_requirements=("rate",),
+        )
+        option_control = LatticeControlSpec(
+            objective="holder_max",
+            exercise_steps=tuple(sorted(signed_swap_values)),
+            exercise_value_fn=exercise_value,
+        )
+        option_contract = LatticeContractSpec(
+            claim=option_claim,
+            control=option_control,
+        )
+        return float(price_on_lattice(lattice, option_contract))
+        """
+    ).rstrip()
 
 
 def _vanilla_equity_monte_carlo_helper_kwargs(comparison_target: str | None) -> str:
@@ -4501,7 +4698,9 @@ def _declared_primitive_refs(generation_plan) -> set[str]:
     return {
         f"{primitive.module}.{primitive.symbol}"
         for primitive in getattr(primitive_plan, "primitives", ()) or ()
-        if getattr(primitive, "module", "") and getattr(primitive, "symbol", "")
+        if not getattr(primitive, "excluded", False)
+        and getattr(primitive, "module", "")
+        and getattr(primitive, "symbol", "")
     }
 
 
@@ -5383,6 +5582,20 @@ def _deterministic_exact_binding_evaluate_body(
         )
         if variance_swap_body is not None:
             return variance_swap_body
+    if (
+        instrument_type in {"swaption", "bermudan_swaption"}
+        and primitive_route == "exercise_lattice"
+        and {
+            "trellis.models.bermudan_swaption_tree.resolve_bermudan_swaption_tree_inputs",
+            "trellis.models.trees.algebra.build_lattice",
+            "trellis.models.trees.algebra.value_on_lattice",
+            "trellis.models.trees.algebra.price_on_lattice",
+        }.issubset(refs)
+    ):
+        return _bermudan_swaption_lattice_evaluate_body(
+            model_name=swaption_tree_model,
+            comparison_kwargs=swaption_comparison_kwargs,
+        )
     if (
         instrument_type == "swaption"
         and primitive_route == "rate_tree_backward_induction"
@@ -6359,9 +6572,6 @@ def _deterministic_exact_binding_evaluate_body(
             f"{swaption_comparison_kwargs})\n"
             "return price_swaption_black76_raw(resolved)"
         ),
-        "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree": (
-            "return price_bermudan_swaption_tree(market_state, spec)"
-        ),
         "trellis.models.monte_carlo.single_state_diffusion.price_single_state_terminal_claim_monte_carlo_result": (
             "result = price_single_state_terminal_claim_monte_carlo_result(\n"
             "    market_state,\n"
@@ -6757,7 +6967,7 @@ def _materialize_deterministic_exact_binding_module(
     request_metadata: Mapping[str, object] | None = None,
     comparison_target: str | None = None,
 ) -> GeneratedModuleResult | None:
-    """Build a thin helper-backed module without invoking the LLM when the route is exact."""
+    """Build an exact-bound adapter module without invoking the LLM."""
     body = _deterministic_exact_binding_evaluate_body(
         generation_plan,
         semantic_blueprint=semantic_blueprint,
@@ -6891,9 +7101,9 @@ def _set_generated_requirements(source: str, requirements: Sequence[str]) -> str
 def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     """Return extra imports required by deterministic exact-binding bodies.
 
-    Exact helper bodies can reference shared support functions that are not part
-    of the exact backend-binding symbol set. Keep those imports explicit here so
-    fresh-generated proof runs exercise the same declared dependency surface as
+    Exact-bound bodies can reference shared support functions that are not part
+    of the terminal backend-binding symbol set. Keep those imports explicit so
+    isolated proof artifacts exercise the same declared dependency surface as
     ordinary generated modules.
     """
     imports: list[str] = []
@@ -6905,6 +7115,8 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append("from trellis.core.date_utils import year_fraction")
     if "normalize_explicit_dates(" in body:
         imports.append("from trellis.core.date_utils import normalize_explicit_dates")
+    if "build_payment_timeline(" in body:
+        imports.append("from trellis.core.date_utils import build_payment_timeline")
     if "resolve_swaption_black76_inputs(" in body:
         imports.append(
             "from trellis.models.rate_style_swaption import "
@@ -6923,15 +7135,37 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             "    resolve_bermudan_swaption_tree_inputs,\n"
             ")"
         )
+    elif "resolve_bermudan_swaption_tree_inputs(" in body:
+        imports.append(
+            "from trellis.models.bermudan_swaption_tree import "
+            "resolve_bermudan_swaption_tree_inputs"
+        )
     if "BINOMIAL_1F_TOPOLOGY" in body and "price_on_lattice(" in body:
+        algebra_symbols = [
+            "BINOMIAL_1F_TOPOLOGY",
+            "TERM_STRUCTURE_TARGET",
+            "UNIFORM_ADDITIVE_MESH",
+            "build_lattice",
+        ]
+        algebra_symbols.extend(
+            symbol
+            for symbol in (
+                "LatticeLinearClaimSpec",
+                "LatticeControlSpec",
+                "LatticeContractSpec",
+                "value_on_lattice",
+            )
+            if symbol in body
+        )
+        algebra_symbols.append("price_on_lattice")
         imports.append(
             "from trellis.models.trees.algebra import (\n"
-            "    BINOMIAL_1F_TOPOLOGY,\n"
-            "    TERM_STRUCTURE_TARGET,\n"
-            "    UNIFORM_ADDITIVE_MESH,\n"
-            "    build_lattice,\n"
-            "    price_on_lattice,\n"
-            ")"
+            + "".join(f"    {symbol},\n" for symbol in algebra_symbols)
+            + ")"
+        )
+    if "lattice_step_from_time(" in body:
+        imports.append(
+            "from trellis.models.trees.control import lattice_step_from_time"
         )
     if "price_heston_option_monte_carlo(" in body:
         imports.append(
@@ -9145,14 +9379,13 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
-            "Bermudan swaption rate-tree routes should stay on the checked-in helper surface.",
-            "Prefer `from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree` and delegate to that helper from the adapter.",
-            "Keep `market_state.vol_surface.black_vol(...)` visible in `evaluate()` before delegating so the route makes its calibration input explicit.",
-            "Read the short-rate seed from `market_state.discount.zero_rate(...)`; do not invent `market_state.zero_rate(...)` or hide the discount curve behind a stale wrapper.",
-            "Treat `trellis.models.trees.control` as the lattice-timeline facade: use `build_exercise_timeline_from_dates(...)`, `lattice_steps_from_timeline(...)`, and `resolve_lattice_exercise_policy(\"bermudan\", exercise_steps=...)`.",
-            "Do not reuse `price_callable_bond_tree(...)` for Bermudan swaptions. Callable bonds and swaptions are separate helper routes with different exercise payoffs.",
-            "If you must build the tree directly, use `build_generic_lattice(MODEL_REGISTRY[\"hull_white\"|\"bdt\"], r0=..., sigma=..., a=..., T=..., n_steps=..., discount_curve=market_state.discount)` and keep the swaption payoff as a Bermudan option on node-wise swap values.",
-            "Keep the route thin: helper-backed lattice builder, explicit exercise schedule, explicit swaption direction (`is_payer`), and no bespoke analytical fallback inside the rate-tree build.",
+            "Bermudan swaption rate-tree routes compose the admitted generic lattice and contract surfaces directly.",
+            "Use `normalize_explicit_dates(...)`, `year_fraction(...)`, `build_payment_timeline(...)`, and `lattice_step_from_time(...)` to bind exercise and fixed-leg schedules.",
+            "Resolve market and Hull-White/BDT controls once with `resolve_bermudan_swaption_tree_inputs(...)`, then compose `BINOMIAL_1F_TOPOLOGY`, `UNIFORM_ADDITIVE_MESH`, `TERM_STRUCTURE_TARGET(...)`, and `build_lattice(...)`.",
+            "Represent coupons and principal with `LatticeLinearClaimSpec` plus `LatticeContractSpec`, and obtain fixed-leg node values with `value_on_lattice(..., observation_steps=exercise_steps)`.",
+            "Use each rollback observation's `continuation_values` for payer/receiver swap algebra so an exercise-time fixed coupon is not double counted.",
+            "Attach `LatticeControlSpec(objective=\"holder_max\", ...)` to the option contract and return `price_on_lattice(...)`.",
+            "Do not delegate to a product-level Bermudan helper, a product contract compiler, or a callable-bond route; they are compatibility/reference or different-product surfaces, not this route's construction authority.",
         )
     if (
         instrument == "bermudan_swaption"

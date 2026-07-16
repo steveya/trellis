@@ -5,7 +5,13 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from trellis.agent.codegen_guardrails import PrimitiveRef
-from trellis.agent.dsl_algebra import ChoiceExpr, ContractAtom, ThenExpr, ControlStyle
+from trellis.agent.dsl_algebra import (
+    ChoiceExpr,
+    ContractAtom,
+    ControlStyle,
+    ThenExpr,
+    collect_primitive_refs,
+)
 from trellis.agent.family_lowering_ir import (
     AnalyticalBlack76IR,
     CorrelatedBasketMonteCarloIR,
@@ -235,7 +241,7 @@ def test_holder_max_equity_pde_lowers_to_event_aware_helper():
     assert "event_transform:project_max" in blueprint.lane_plan.control_obligations
 
 
-def test_bermudan_swaption_lowers_to_explicit_holder_choice_plus_helper_targets():
+def test_bermudan_swaption_lowers_to_explicit_generic_lattice_composition():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
 
@@ -253,17 +259,44 @@ def test_bermudan_swaption_lowers_to_explicit_holder_choice_plus_helper_targets(
     assert lowering.route_family == "rate_lattice"
     assert lowering.admissibility_errors == ()
     assert isinstance(lowering.family_ir, ExerciseLatticeIR)
-    assert lowering.family_ir.helper_symbol == "price_bermudan_swaption_tree"
+    assert lowering.family_ir.helper_symbol == ""
     assert lowering.family_ir.control_style == "holder_max"
-    assert "par_rate_bindings" in lowering.family_ir.derived_quantities
-    assert isinstance(lowering.normalized_expr, ChoiceExpr)
-    assert lowering.normalized_expr.style == ControlStyle.HOLDER_MAX
-    assert lowering.control_styles == (ControlStyle.HOLDER_MAX,)
-    assert (
-        "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree"
-        in lowering.helper_refs
+    assert "fixed_leg_continuation_observations" in (
+        lowering.family_ir.derived_quantities
     )
-    assert "trellis.models.bermudan_swaption_tree" in blueprint.route_modules
+    assert "par_rate_bindings" in lowering.family_ir.derived_quantities
+    assert isinstance(lowering.normalized_expr, ThenExpr)
+    assert lowering.control_styles == (ControlStyle.HOLDER_MAX,)
+    assert lowering.route_helper_refs == ()
+    primitive_refs = set(collect_primitive_refs(lowering.normalized_expr))
+    assert primitive_refs == {
+        "trellis.core.date_utils.normalize_explicit_dates",
+        "trellis.core.date_utils.year_fraction",
+        "trellis.core.date_utils.build_payment_timeline",
+        "trellis.models.bermudan_swaption_tree.resolve_bermudan_swaption_tree_inputs",
+        "trellis.models.trees.algebra.BINOMIAL_1F_TOPOLOGY",
+        "trellis.models.trees.algebra.UNIFORM_ADDITIVE_MESH",
+        "trellis.models.trees.algebra.TERM_STRUCTURE_TARGET",
+        "trellis.models.trees.algebra.build_lattice",
+        "trellis.models.trees.control.lattice_step_from_time",
+        "trellis.models.trees.algebra.LatticeLinearClaimSpec",
+        "trellis.models.trees.algebra.LatticeContractSpec",
+        "trellis.models.trees.algebra.value_on_lattice",
+        "trellis.models.trees.algebra.LatticeControlSpec",
+        "trellis.models.trees.algebra.price_on_lattice",
+    }
+    assert not any(
+        "price_bermudan_swaption_tree" in primitive_ref
+        or "compile_bermudan_swaption_contract_spec" in primitive_ref
+        for primitive_ref in primitive_refs
+    )
+    holder_choice = next(
+        term
+        for term in lowering.normalized_expr.terms
+        if isinstance(term, ChoiceExpr)
+    )
+    assert holder_choice.style == ControlStyle.HOLDER_MAX
+    assert "trellis.models.trees.algebra" in blueprint.route_modules
 
 
 def test_rate_tree_swaption_lowers_to_generic_lattice_composition():

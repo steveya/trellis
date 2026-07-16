@@ -342,6 +342,21 @@ def _score_card(
     section: Mapping[str, Any],
     query: ApiMapQuery,
 ) -> int:
+    allowed_instruments = frozenset(
+        _normalize(str(value))
+        for value in (
+            section.get("instruments")
+            if isinstance(section.get("instruments"), (list, tuple))
+            else (section.get("instruments"),)
+        )
+        if str(value or "").strip()
+    )
+    if (
+        query.instrument_type.strip()
+        and allowed_instruments
+        and _normalize(query.instrument_type) not in allowed_instruments
+    ):
+        return 0
     allowed_methods = _section_methods(section)
     if (
         query.method.strip()

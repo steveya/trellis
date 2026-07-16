@@ -907,8 +907,38 @@ def test_builds_exercise_lattice_plan_for_bermudan_swaption():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "exercise_lattice"
     assert plan.primitive_plan.engine_family == "lattice"
-    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_bermudan_swaption_tree"}
+    required_symbols = {
+        primitive.symbol
+        for primitive in plan.primitive_plan.primitives
+        if primitive.required
+    }
+    assert required_symbols == {
+        "normalize_explicit_dates",
+        "year_fraction",
+        "build_payment_timeline",
+        "resolve_bermudan_swaption_tree_inputs",
+        "BINOMIAL_1F_TOPOLOGY",
+        "UNIFORM_ADDITIVE_MESH",
+        "TERM_STRUCTURE_TARGET",
+        "build_lattice",
+        "lattice_step_from_time",
+        "LatticeLinearClaimSpec",
+        "LatticeContractSpec",
+        "value_on_lattice",
+        "LatticeControlSpec",
+        "price_on_lattice",
+    }
+    retired_helper = next(
+        primitive
+        for primitive in plan.primitive_plan.primitives
+        if primitive.symbol == "price_bermudan_swaption_tree"
+    )
+    assert not retired_helper.required
+    assert retired_helper.excluded
+    assert plan.primitive_plan.backend_exact_target_refs == (
+        "trellis.models.trees.algebra.price_on_lattice",
+    )
+    assert plan.primitive_plan.backend_helper_refs == ()
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.blockers == ()
 

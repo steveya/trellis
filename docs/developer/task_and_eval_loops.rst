@@ -923,12 +923,15 @@ vector vol fields on that generated spec as the volatility authority when it
 runs vega checks, so the proof validates the actual shim inputs instead of a
 market-state flat-vol field the shim does not consume.
 
-Fresh-build proving keeps a stricter boundary than ordinary supported-route
-reuse. When a task or canary is run with ``fresh_build=True``, the executor
-now skips deterministic exact-binding materialization so the run still has to
-exercise live code generation. Ordinary supported-route runs can still reuse
-exact helper wrappers for stability, but fresh-build canaries no longer get a
-free pass from executor-side deterministic module synthesis.
+Fresh-build proving keeps a stricter artifact boundary than ordinary
+supported-route reuse. When a task or canary is run with
+``fresh_build=True``, the executor bypasses the admitted checked-in adapter and
+writes the result to an isolated fresh-build path. Fresh build does not by
+itself prove agent synthesis: an admitted deterministic exact binding may still
+materialize that isolated adapter with zero model calls. A report may claim
+fresh artifact construction from this mode, but it may claim fresh agent
+synthesis only when its execution policy also bypasses deterministic
+materialization and the trace records an actual code-generation call.
 
 The same rule now applies to tranche-style basket-credit and typed
 loss-distribution comparison routes.

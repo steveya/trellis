@@ -642,8 +642,9 @@ def test_bermudan_swaption_compiles_to_exercise_lattice_family_ir():
     assert family_ir.route_id == "exercise_lattice"
     assert family_ir.product_instrument == "swaption"
     assert family_ir.control_style == "holder_max"
-    assert family_ir.helper_symbol == "price_bermudan_swaption_tree"
+    assert family_ir.helper_symbol == ""
     assert "forward_rate" in family_ir.observable_types
+    assert "fixed_leg_continuation_observations" in family_ir.derived_quantities
     assert "par_rate_bindings" in family_ir.derived_quantities
 
 
@@ -709,7 +710,7 @@ def test_exercise_lattice_family_ir_ignores_legacy_settlement_rule_mirror():
     swaption_bp = compile_semantic_contract(swaption_contract, preferred_method="rate_tree")
 
     assert isinstance(swaption_bp.dsl_lowering.family_ir, ExerciseLatticeIR)
-    assert swaption_bp.dsl_lowering.family_ir.helper_symbol == "price_bermudan_swaption_tree"
+    assert swaption_bp.dsl_lowering.family_ir.helper_symbol == ""
 
 
 def test_exercise_lattice_family_ir_rejects_settlement_before_decision_dates():
