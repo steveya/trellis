@@ -59,6 +59,7 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1196` | Swaption pricing: retire European Black76 wrapper authority | Done |
 | `QUA-1197` | Swaption pricing: retire Bermudan Black76 lower-bound helper authority | Done |
 | `QUA-1198` | Swaption Monte Carlo: retire European helper and problem-resolver authority | Done |
+| `QUA-1199` | Swaption lattice: retire European tree helper authority | In Progress |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -97,9 +98,13 @@ Status mirror last synced: `2026-07-15`
    event/problem contracts, problem compiler, and generic estimator as the
    generated construction surface while retaining product wrappers only as
    compatibility and reference APIs.
-10. Select the next helper-authority family from the machine-readable audit and
+10. Apply QUA-1199 to the European swaption tree lane: retain mean reversion in
+    the resolved tree inputs, construct the one-exercise contract explicitly,
+    and expose generic topology, mesh, calibration, lattice construction,
+    contract compilation, and rollback as the generated surface.
+11. Select the next helper-authority family from the machine-readable audit and
    create a bounded ticket before changing another route.
-11. Run live fresh-generation evidence only with current external-model approval;
+12. Run live fresh-generation evidence only with current external-model approval;
    use it to compare first-pass source selection, retrieved documentation,
    retries, and residual validator findings rather than as pricing authority.
 

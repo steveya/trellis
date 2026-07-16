@@ -104,6 +104,16 @@ generation materializes the same sequence. This makes source identity and
 validation evidence describe the estimator that ran rather than a product
 wrapper that hid the assembly.
 
+T73's European rate-tree target is primitive-composed too. The route and exact
+binding identify generic ``price_on_lattice(...)`` as the estimator. Lowering
+records one-exercise contract construction, curve-basis adjustment, resolved
+tree inputs, topology, mesh, calibration target, lattice construction,
+swaption-contract compilation, and rollback as an ordered ``ThenExpr``.
+Deterministic generation preserves the Hull-White/BDT model, explicit
+comparison parameters, conventions, and tree-step controls. The retained
+``price_swaption_tree(...)`` wrapper remains an independent reference rather
+than the source identity of the generated artifact.
+
 Compiled request metadata now also carries a compact semantic-blueprint summary
 for downstream tooling. That summary records the canonical lowered route, the
 helper and primitive references selected by DSL lowering, and any explicit

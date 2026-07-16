@@ -23,6 +23,30 @@ def test_list_module_exports_returns_known_symbols():
     assert "theta_method_1d" in exports
 
 
+def test_registry_includes_local_exported_values_without_package_reexports():
+    algebra_exports = set(list_module_exports("trellis.models.trees.algebra"))
+
+    assert {
+        "BINOMIAL_1F_TOPOLOGY",
+        "TERM_STRUCTURE_TARGET",
+        "UNIFORM_ADDITIVE_MESH",
+    } <= algebra_exports
+    assert "price_himalaya_option_monte_carlo" not in list_module_exports(
+        "trellis.models.monte_carlo"
+    )
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert {
+        "BINOMIAL_1F_TOPOLOGY",
+        "TERM_STRUCTURE_TARGET",
+        "UNIFORM_ADDITIVE_MESH",
+        "build_lattice",
+        "price_on_lattice",
+    } <= set(static_registry["trellis.models.trees.algebra"])
+
+
 def test_find_symbol_modules_returns_known_module():
     modules = find_symbol_modules("theta_method_1d")
     assert "trellis.models.pde.theta_method" in modules

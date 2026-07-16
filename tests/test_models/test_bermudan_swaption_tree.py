@@ -12,6 +12,7 @@ from trellis.models.bermudan_swaption_tree import (
     compile_bermudan_swaption_contract_spec,
     price_bermudan_swaption_on_lattice,
     price_bermudan_swaption_tree,
+    resolve_bermudan_swaption_tree_inputs,
 )
 from trellis.models.vol_surface import FlatVol
 
@@ -133,6 +134,47 @@ def test_compile_bermudan_swaption_contract_spec_matches_helper_price():
         lattice,
         contract_spec=contract,
     )
+
+
+def test_resolved_bermudan_swaption_tree_inputs_retain_mean_reversion():
+    resolved = resolve_bermudan_swaption_tree_inputs(
+        _market_state(),
+        _Spec(),
+        model="hull_white",
+        mean_reversion=0.0375,
+        sigma=0.0125,
+        n_steps=144,
+    )
+
+    assert resolved.mean_reversion == pytest.approx(0.0375)
+    assert resolved.sigma == pytest.approx(0.0125)
+    assert resolved.n_steps == 144
+
+
+def test_bermudan_swaption_lattice_uses_resolved_mean_reversion(monkeypatch):
+    import trellis.models.bermudan_swaption_tree as module
+
+    captured = {}
+
+    def fake_build_lattice(topology, mesh, model, calibration_target=None, **params):
+        captured.update(params)
+        return object()
+
+    monkeypatch.setattr(module, "build_lattice", fake_build_lattice)
+
+    lattice = module.build_bermudan_swaption_lattice(
+        _market_state(),
+        _Spec(),
+        model="hull_white",
+        mean_reversion=0.0625,
+        sigma=0.009,
+        n_steps=96,
+    )
+
+    assert lattice is not None
+    assert captured["a"] == pytest.approx(0.0625)
+    assert captured["sigma"] == pytest.approx(0.009)
+    assert captured["n_steps"] == 96
 
 
 def test_price_bermudan_swaption_tree_ignores_expired_exercise_dates_after_settlement():

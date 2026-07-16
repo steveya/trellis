@@ -63,6 +63,10 @@ def test_api_map_contains_expected_core_entries():
         api_map["european_swaption_monte_carlo_composition"]["module"]
         == "trellis.models.monte_carlo.event_aware"
     )
+    assert (
+        api_map["european_swaption_rate_lattice_composition"]["module"]
+        == "trellis.models.trees.algebra"
+    )
     assert api_map["equity_tree"]["module"] == "trellis.models.trees.algebra"
     assert api_map["rate_lattice"]["module"] == "trellis.models.trees.lattice"
     assert "utilities" in api_map
@@ -94,6 +98,7 @@ def test_api_map_key_imports_are_registry_valid():
         "rate_monte_carlo_composition",
         "bermudan_swaption_lower_bound_composition",
         "european_swaption_monte_carlo_composition",
+        "european_swaption_rate_lattice_composition",
         "qmc",
         "pde",
         "fft",
@@ -388,6 +393,35 @@ def test_api_map_exposes_european_swaption_event_aware_monte_carlo_composition()
     assert "compatibility/reference" in text
     assert "price_swaption_monte_carlo(...)" in text
     assert "resolve_swaption_monte_carlo_problem(...)" in text
+
+
+def test_api_map_exposes_european_swaption_rate_lattice_composition():
+    query = ApiMapQuery(
+        instrument_type="swaption",
+        payoff_family="swaption",
+        method="rate_tree",
+        model_family="interest_rate",
+    )
+    selection = select_api_map_sections(query)
+    text = format_api_map_for_prompt(compact=True, query=query)
+
+    assert selection.selected_families[0] == (
+        "european_swaption_rate_lattice_composition"
+    )
+    for symbol in (
+        "BermudanSwaptionTreeSpec",
+        "resolve_swaption_curve_basis_spread",
+        "resolve_bermudan_swaption_tree_inputs",
+        "build_lattice",
+        "compile_bermudan_swaption_contract_spec",
+        "price_on_lattice",
+    ):
+        assert symbol in text
+    notes = "\n".join(
+        get_api_map()["european_swaption_rate_lattice_composition"]["notes"]
+    )
+    assert "price_swaption_tree(...)" in notes
+    assert "reference" in notes.lower()
 
 
 def test_api_map_exposes_complete_fixed_lookback_analytical_composition():

@@ -590,9 +590,11 @@ def _render_family_route_guidance(
     if instrument_type == "swaption" and method == "rate_tree":
         lines.append("## Family Route Guidance")
         lines.extend([
-            "- For single-exercise European rate-style swaptions on the rate-tree route, prefer `price_swaption_tree(market_state, self._spec, model=\"hull_white\"|\"bdt\")` from `trellis.models.rate_style_swaption_tree`.",
-            "- Treat the generated route as a thin adapter over the checked-in helper; do not rebuild exercise-step selection, swap rollback, or lattice payoff glue inline.",
-            "- This helper-backed route assumes the forward-starting European surface where `spec.swap_start == spec.expiry_date`.",
+            "- For single-exercise European rate-style swaptions, require `spec.swap_start == spec.expiry_date` and construct a one-exercise `BermudanSwaptionTreeSpec` directly.",
+            "- Apply `resolve_swaption_curve_basis_spread(...)`, then bind schedule, Hull-White/BDT parameters, horizon, and tree steps with `resolve_bermudan_swaption_tree_inputs(...)`.",
+            "- Compose `BINOMIAL_1F_TOPOLOGY`, `UNIFORM_ADDITIVE_MESH`, `TERM_STRUCTURE_TARGET(market_state.discount)`, and generic `build_lattice(...)`; preserve explicit comparison parameters and conventions.",
+            "- Compile with `compile_bermudan_swaption_contract_spec(...)` and evaluate with generic `price_on_lattice(...)`.",
+            "- `price_swaption_tree(...)` and `build_swaption_tree_spec(...)` are compatibility/reference APIs, not generated construction authority.",
             "- Keep cap/floor-style period loops separate. This route is for a single-exercise European swaption comparison target, not for caplet or floorlet strips.",
         ])
 

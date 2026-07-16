@@ -266,7 +266,7 @@ def test_bermudan_swaption_lowers_to_explicit_holder_choice_plus_helper_targets(
     assert "trellis.models.bermudan_swaption_tree" in blueprint.route_modules
 
 
-def test_rate_tree_swaption_lowers_to_checked_in_helper_target():
+def test_rate_tree_swaption_lowers_to_generic_lattice_composition():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_rate_style_swaption_contract
 
@@ -284,11 +284,23 @@ def test_rate_tree_swaption_lowers_to_checked_in_helper_target():
     assert lowering.route_family == "rate_lattice"
     assert lowering.family_ir is None
     assert lowering.admissibility_errors == ()
-    assert (
-        "trellis.models.rate_style_swaption_tree.price_swaption_tree"
-        in lowering.helper_refs
+    assert lowering.route_helper_refs == ()
+    assert isinstance(lowering.normalized_expr, ThenExpr)
+    assert tuple(
+        term.primitive_ref for term in lowering.normalized_expr.terms
+    ) == (
+        "trellis.models.bermudan_swaption_tree.BermudanSwaptionTreeSpec",
+        "trellis.models.rate_style_swaption.resolve_swaption_curve_basis_spread",
+        "trellis.models.bermudan_swaption_tree.resolve_bermudan_swaption_tree_inputs",
+        "trellis.models.trees.algebra.BINOMIAL_1F_TOPOLOGY",
+        "trellis.models.trees.algebra.UNIFORM_ADDITIVE_MESH",
+        "trellis.models.trees.algebra.TERM_STRUCTURE_TARGET",
+        "trellis.models.trees.algebra.build_lattice",
+        "trellis.models.bermudan_swaption_tree.compile_bermudan_swaption_contract_spec",
+        "trellis.models.trees.algebra.price_on_lattice",
     )
-    assert "trellis.models.rate_style_swaption_tree" in blueprint.route_modules
+    assert "trellis.models.rate_style_swaption_tree.price_swaption_tree" not in lowering.target_refs
+    assert "trellis.models.trees.algebra" in blueprint.route_modules
 
 
 def test_rate_style_swaption_monte_carlo_lowers_to_event_aware_compilation_steps():

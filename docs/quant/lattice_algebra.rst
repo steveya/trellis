@@ -348,13 +348,39 @@ tree probabilities, topology, and backward induction. The compatibility
 ``price_vanilla_equity_option_tree(...)`` wrapper remains useful as a reference
 and migration surface, but it is not route authority for generated adapters.
 
+Primitive-Composed European Swaption Trees
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The single-exercise European swaption tree lane also uses the general lattice
+algebra directly. Its admitted boundary requires ``swap_start == expiry_date``
+and composes the following public surfaces:
+
+#. construct a one-exercise ``BermudanSwaptionTreeSpec``;
+#. apply ``resolve_swaption_curve_basis_spread(...)`` to the tree strike;
+#. call ``resolve_bermudan_swaption_tree_inputs(...)`` to bind settlement,
+   schedule, short-rate seed, volatility, mean reversion, horizon, and step
+   count;
+#. build a Hull-White or BDT lattice from ``BINOMIAL_1F_TOPOLOGY``,
+   ``UNIFORM_ADDITIVE_MESH``, ``TERM_STRUCTURE_TARGET(...)``, and
+   ``build_lattice(...)``;
+#. compile the one-exercise swap claim with
+   ``compile_bermudan_swaption_contract_spec(...)``; and
+#. evaluate the compiled contract with ``price_on_lattice(...)``.
+
+``ResolvedBermudanSwaptionTreeInputs`` retains both ``mean_reversion`` and
+``sigma`` so callers do not need to re-enter a product-method builder to
+recover model parameters. ``price_swaption_tree(...)`` and
+``build_swaption_tree_spec(...)`` remain compatibility and independent
+reference surfaces, not generated construction authority.
+
 Current Helper-Backed Routes
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 The checked helper-backed lattice routes remain:
 
 - ``trellis.models.callable_bond_tree.price_callable_bond_tree``
-- ``trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree``
+- ``trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree`` for
+  the separate multi-exercise Bermudan lane
 - ``trellis.models.zcb_option_tree.price_zcb_option_tree``
 
 Target API Design

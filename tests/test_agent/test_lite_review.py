@@ -292,17 +292,17 @@ def price(spec, market_state):
     assert "lite.hardcoded_black_vol_surface" not in issue_codes
 
 
-def test_lite_review_allows_swaption_tree_helper_with_explicit_hull_white_comparison_params():
+def test_lite_review_allows_swaption_tree_binding_with_explicit_hull_white_comparison_params():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.lite_review import review_generated_code
     from trellis.agent.quant import PricingPlan
 
     source = """\
-from trellis.models.rate_style_swaption_tree import price_swaption_tree
+from trellis.models.bermudan_swaption_tree import resolve_bermudan_swaption_tree_inputs
 
 def price(spec, market_state):
     return float(
-        price_swaption_tree(
+        resolve_bermudan_swaption_tree_inputs(
             market_state,
             spec,
             mean_reversion=0.05,
@@ -314,15 +314,19 @@ def price(spec, market_state):
     plan = GenerationPlan(
         method="rate_tree",
         instrument_type="swaption",
-        inspected_modules=("trellis.models.rate_style_swaption_tree",),
-        approved_modules=("trellis.models.rate_style_swaption_tree",),
-        symbols_to_reuse=("price_swaption_tree",),
+        inspected_modules=("trellis.models.bermudan_swaption_tree",),
+        approved_modules=("trellis.models.bermudan_swaption_tree",),
+        symbols_to_reuse=("resolve_bermudan_swaption_tree_inputs",),
         proposed_tests=("tests/test_agent/test_build_loop.py",),
         primitive_plan=PrimitivePlan(
             route="rate_tree_backward_induction",
             engine_family="lattice",
             primitives=(
-                PrimitiveRef("trellis.models.rate_style_swaption_tree", "price_swaption_tree", "route_helper"),
+                PrimitiveRef(
+                    "trellis.models.bermudan_swaption_tree",
+                    "resolve_bermudan_swaption_tree_inputs",
+                    "market_binding",
+                ),
             ),
             adapters=(),
             blockers=(),
@@ -330,7 +334,7 @@ def price(spec, market_state):
     )
     pricing_plan = PricingPlan(
         method="rate_tree",
-        method_modules=["trellis.models.rate_style_swaption_tree"],
+        method_modules=["trellis.models.bermudan_swaption_tree"],
         required_market_data={"discount_curve", "black_vol_surface", "forward_curve"},
         model_to_build="swaption",
         reasoning="test",

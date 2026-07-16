@@ -94,6 +94,7 @@ class ResolvedBermudanSwaptionTreeInputs:
     tree_horizon: float
     option_horizon: float
     r0: float
+    mean_reversion: float
     sigma: float
     n_steps: int
 
@@ -158,6 +159,7 @@ def resolve_bermudan_swaption_tree_inputs(
         tree_horizon=tree_horizon,
         option_horizon=option_horizon,
         r0=r0,
+        mean_reversion=float(resolved_mean_reversion),
         sigma=float(resolved_sigma),
         n_steps=step_count,
     )
@@ -189,13 +191,7 @@ def build_bermudan_swaption_lattice(
         calibration_target=lattice_algebra.TERM_STRUCTURE_TARGET(market_state.discount),
         r0=resolved.r0,
         sigma=resolved.sigma,
-        a=float(resolve_hull_white_parameters(
-            market_state,
-            mean_reversion=mean_reversion,
-            sigma=resolved.sigma,
-            default_mean_reversion=0.1,
-            default_sigma=resolved.sigma,
-        )[0]),
+        a=resolved.mean_reversion,
         T=resolved.tree_horizon,
         n_steps=resolved.n_steps,
     )

@@ -453,6 +453,17 @@ def _build_expr_for_route(
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
     """Build the semantic DSL fragment for one resolved route."""
     market_signature = _market_signature(contract)
+    if (
+        route_id == "rate_tree_backward_induction"
+        and getattr(contract.product, "payoff_family", "") == "swaption"
+        and getattr(contract.product, "exercise_style", "") == "european"
+    ):
+        return _build_european_swaption_rate_lattice_expr(
+            route_id=route_id,
+            binding_id=binding_id,
+            market_signature=market_signature,
+            bindings=bindings,
+        )
     route_helper = next(
         (binding for binding in bindings if binding.role == "route_helper"),
         None,
@@ -531,6 +542,153 @@ def _build_expr_for_route(
         ),
     )
     return helper_atom, ()
+
+
+def _build_european_swaption_rate_lattice_expr(
+    *,
+    route_id: str,
+    binding_id: str,
+    market_signature: ContractSignature,
+    bindings: tuple[DslTargetBinding, ...],
+) -> tuple[ContractExpr | None, tuple[str, ...]]:
+    """Build the explicit one-exercise swaption lattice composition."""
+    stages = (
+        (
+            "contract_spec",
+            "BermudanSwaptionTreeSpec",
+            market_signature.inputs,
+            ("tree_contract:state", *market_signature.inputs),
+            "Narrow the European swaption into a one-exercise tree contract.",
+        ),
+        (
+            "curve_basis_binding",
+            "resolve_swaption_curve_basis_spread",
+            ("tree_contract:state", *market_signature.inputs),
+            ("basis_adjusted_contract:state", *market_signature.inputs),
+            "Project the discount/forecast curve basis into the tree strike.",
+        ),
+        (
+            "tree_input_binding",
+            "resolve_bermudan_swaption_tree_inputs",
+            ("basis_adjusted_contract:state", *market_signature.inputs),
+            (
+                "resolved_tree_inputs:state",
+                "basis_adjusted_contract:state",
+                *market_signature.inputs,
+            ),
+            "Resolve schedule, volatility, mean reversion, and lattice horizon inputs.",
+        ),
+        (
+            "topology",
+            "BINOMIAL_1F_TOPOLOGY",
+            (
+                "resolved_tree_inputs:state",
+                "basis_adjusted_contract:state",
+                *market_signature.inputs,
+            ),
+            (
+                "topology:state",
+                "resolved_tree_inputs:state",
+                "basis_adjusted_contract:state",
+                *market_signature.inputs,
+            ),
+            "Select the admitted one-factor binomial topology.",
+        ),
+        (
+            "mesh",
+            "UNIFORM_ADDITIVE_MESH",
+            (
+                "topology:state",
+                "resolved_tree_inputs:state",
+                "basis_adjusted_contract:state",
+                *market_signature.inputs,
+            ),
+            (
+                "mesh:state",
+                "topology:state",
+                "resolved_tree_inputs:state",
+                "basis_adjusted_contract:state",
+                *market_signature.inputs,
+            ),
+            "Select the admitted uniform additive mesh.",
+        ),
+        (
+            "calibration_target",
+            "TERM_STRUCTURE_TARGET",
+            (
+                "mesh:state",
+                "topology:state",
+                "resolved_tree_inputs:state",
+                "basis_adjusted_contract:state",
+                *market_signature.inputs,
+            ),
+            (
+                "calibration_target:state",
+                "mesh:state",
+                "topology:state",
+                "resolved_tree_inputs:state",
+                "basis_adjusted_contract:state",
+            ),
+            "Bind the discount curve as the term-structure calibration target.",
+        ),
+        (
+            "lattice_builder",
+            "build_lattice",
+            (
+                "calibration_target:state",
+                "mesh:state",
+                "topology:state",
+                "resolved_tree_inputs:state",
+                "basis_adjusted_contract:state",
+            ),
+            (
+                "rate_lattice:state",
+                "basis_adjusted_contract:state",
+                "resolved_tree_inputs:state",
+            ),
+            "Build and calibrate the generic short-rate lattice.",
+        ),
+        (
+            "contract_compiler",
+            "compile_bermudan_swaption_contract_spec",
+            (
+                "rate_lattice:state",
+                "basis_adjusted_contract:state",
+                "resolved_tree_inputs:state",
+            ),
+            ("rate_lattice:state", "lattice_contract:state"),
+            "Compile the one-exercise swap claim and holder control contract.",
+        ),
+        (
+            "pricing_kernel",
+            "price_on_lattice",
+            ("rate_lattice:state", "lattice_contract:state"),
+            ("price:scalar",),
+            "Roll the compiled contract back on the calibrated lattice.",
+        ),
+    )
+    by_symbol = {binding.symbol: binding for binding in bindings if binding.required}
+    missing = tuple(symbol for _, symbol, *_ in stages if symbol not in by_symbol)
+    if missing:
+        return None, tuple(
+            _missing_primitive_message(route_id, binding_id, "lattice composition", symbol)
+            for symbol in missing
+        )
+    atoms = tuple(
+        ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, role),
+            primitive_ref=by_symbol[symbol].primitive_ref,
+            description=description,
+            signature=ContractSignature(
+                inputs=inputs,
+                outputs=outputs,
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        for role, symbol, inputs, outputs, description in stages
+    )
+    return ThenExpr(terms=atoms), ()
 
 
 def _build_resolved_pricing_kernel_expr(

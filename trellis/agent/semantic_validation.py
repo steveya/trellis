@@ -52,6 +52,7 @@ _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES = frozenset({
 _CHECKED_ROUTE_HELPER_CALLS = frozenset({
     "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo",
 })
+_DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "topology"})
 
 
 @dataclass(frozen=True)
@@ -73,6 +74,7 @@ class SemanticSignals:
 
     engine_families: tuple[str, ...]
     resolved_calls: tuple[str, ...]
+    resolved_references: tuple[str, ...]
     monte_carlo_methods: tuple[str, ...]
     exercise_control_primitives: tuple[str, ...]
     laguerre_import_modules: tuple[str, ...]
@@ -118,6 +120,7 @@ class _SemanticVisitor(ast.NodeVisitor):
         self.function_defs: dict[str, ast.FunctionDef] = {}
         self.engine_families: set[str] = set()
         self.resolved_calls: set[str] = set()
+        self.resolved_references: set[str] = set()
         self.monte_carlo_methods: list[str] = []
         self.exercise_control_primitives: set[str] = set()
         self.laguerre_import_modules: list[str] = []
@@ -157,6 +160,24 @@ class _SemanticVisitor(ast.NodeVisitor):
         self.function_defs[node.name] = node
         if node.name in {"char_fn", "psi"} and _function_uses_scalar_math(node, self.aliases):
             self.scalar_math_functions.add(node.name)
+        self.generic_visit(node)
+
+    def visit_Name(self, node: ast.Name) -> None:
+        """Record resolved references to imported declarative primitives."""
+        resolved = self.aliases.get(node.id)
+        if resolved:
+            self.resolved_references.add(resolved)
+        self.generic_visit(node)
+
+    def visit_Attribute(self, node: ast.Attribute) -> None:
+        """Record qualified references rooted at an imported module alias."""
+        root = node
+        while isinstance(root, ast.Attribute):
+            root = root.value
+        if isinstance(root, ast.Name) and root.id in self.aliases:
+            resolved = _resolve_call_name(node, self.aliases)
+            if resolved:
+                self.resolved_references.add(resolved)
         self.generic_visit(node)
 
     def visit_Assign(self, node: ast.Assign) -> None:
@@ -289,6 +310,7 @@ def extract_semantic_signals(source: str) -> SemanticSignals:
     return SemanticSignals(
         engine_families=tuple(sorted(visitor.engine_families)),
         resolved_calls=tuple(sorted(visitor.resolved_calls)),
+        resolved_references=tuple(sorted(visitor.resolved_references)),
         monte_carlo_methods=tuple(visitor.monte_carlo_methods),
         exercise_control_primitives=tuple(sorted(visitor.exercise_control_primitives)),
         laguerre_import_modules=tuple(visitor.laguerre_import_modules),
@@ -388,10 +410,16 @@ def validate_semantics(
                 and primitive.role in _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES
             )
         )
+        resolved_calls = set(signals.resolved_calls)
+        resolved_references = set(signals.resolved_references)
         called_primitives = {
             f"{primitive.module}.{primitive.symbol}"
             for primitive in required_primitives
-            if f"{primitive.module}.{primitive.symbol}" in signals.resolved_calls
+            if f"{primitive.module}.{primitive.symbol}" in resolved_calls
+            or (
+                primitive.role in _DECLARATIVE_PRIMITIVE_ROLES
+                and f"{primitive.module}.{primitive.symbol}" in resolved_references
+            )
         }
         role_to_primitives: dict[str, list[object]] = {}
         for primitive in required_primitives:
@@ -421,7 +449,14 @@ def validate_semantics(
             f"{primitive.module}.{primitive.symbol}"
             for primitive in primitive_plan.primitives
             if primitive.excluded
-            and f"{primitive.module}.{primitive.symbol}" in signals.resolved_calls
+            and (
+                f"{primitive.module}.{primitive.symbol}" in resolved_calls
+                or (
+                    primitive.role in _DECLARATIVE_PRIMITIVE_ROLES
+                    and f"{primitive.module}.{primitive.symbol}"
+                    in resolved_references
+                )
+            )
         ]
         if excluded_primitives:
             issues.append(SemanticIssue(
@@ -761,6 +796,7 @@ def _empty_signals() -> SemanticSignals:
     return SemanticSignals(
         engine_families=(),
         resolved_calls=(),
+        resolved_references=(),
         monte_carlo_methods=(),
         exercise_control_primitives=(),
         laguerre_import_modules=(),

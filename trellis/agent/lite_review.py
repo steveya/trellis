@@ -273,7 +273,7 @@ def _capability_literal_is_subsumed_by_route_binding(
         return False
     binding_by_route = {
         "analytical_black76": "resolve_swaption_black76_inputs",
-        "rate_tree_backward_induction": "price_swaption_tree",
+        "rate_tree_backward_induction": "resolve_bermudan_swaption_tree_inputs",
         "monte_carlo_paths": "resolve_hull_white_monte_carlo_process_inputs",
     }
     binding_name = binding_by_route.get(primitive_plan.route)

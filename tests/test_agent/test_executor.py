@@ -5787,20 +5787,7 @@ def test_deterministic_exact_binding_module_materializes_credit_loss_distributio
     assert EVALUATE_SENTINEL not in generated.code
 
 
-@pytest.mark.parametrize(
-    ("helper_ref", "expected_call"),
-    [
-        (
-            "trellis.models.rate_style_swaption.price_swaption_black76_raw",
-            "price_swaption_black76_raw",
-        ),
-        ("trellis.models.rate_style_swaption_tree.price_swaption_tree", "price_swaption_tree"),
-    ],
-)
-def test_deterministic_exact_binding_module_threads_explicit_swaption_comparison_regime(
-    helper_ref,
-    expected_call,
-):
+def test_deterministic_exact_binding_module_threads_explicit_swaption_comparison_regime():
     from trellis.agent.executor import (
         _generate_skeleton,
         _materialize_deterministic_exact_binding_module,
@@ -5814,7 +5801,9 @@ def test_deterministic_exact_binding_module_threads_explicit_swaption_comparison
     )
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=(helper_ref,),
+        lane_exact_binding_refs=(
+            "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+        ),
         primitive_plan=None,
         method="analytical",
         instrument_type="swaption",
@@ -5850,15 +5839,129 @@ def test_deterministic_exact_binding_module_threads_explicit_swaption_comparison
     )
 
     assert generated is not None
-    if expected_call == "price_swaption_black76_raw":
-        assert (
-            "resolve_swaption_black76_inputs("
-            "market_state, spec, mean_reversion=0.05, sigma=0.01)"
-        ) in generated.code
-        assert "return price_swaption_black76_raw(resolved)" in generated.code
-        assert "price_swaption_black76(market_state" not in generated.code
-    else:
-        assert f"{expected_call}(market_state, spec, mean_reversion=0.05, sigma=0.01)" in generated.code
+    assert (
+        "resolve_swaption_black76_inputs("
+        "market_state, spec, mean_reversion=0.05, sigma=0.01)"
+    ) in generated.code
+    assert "return price_swaption_black76_raw(resolved)" in generated.code
+    assert "price_swaption_black76(market_state" not in generated.code
+
+
+def test_deterministic_exact_binding_module_composes_european_swaption_rate_lattice():
+    from trellis.agent.codegen_guardrails import PrimitiveRef
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.valuation_context import (
+        EngineModelSpec,
+        PotentialSpec,
+        RatesCurveRoleSpec,
+        SourceSpec,
+    )
+
+    primitives = (
+        PrimitiveRef(
+            "trellis.models.bermudan_swaption_tree",
+            "BermudanSwaptionTreeSpec",
+            "contract_spec",
+        ),
+        PrimitiveRef(
+            "trellis.models.rate_style_swaption",
+            "resolve_swaption_curve_basis_spread",
+            "curve_basis_binding",
+        ),
+        PrimitiveRef(
+            "trellis.models.bermudan_swaption_tree",
+            "resolve_bermudan_swaption_tree_inputs",
+            "market_binding",
+        ),
+        PrimitiveRef("trellis.models.trees.algebra", "BINOMIAL_1F_TOPOLOGY", "topology"),
+        PrimitiveRef("trellis.models.trees.algebra", "UNIFORM_ADDITIVE_MESH", "mesh"),
+        PrimitiveRef(
+            "trellis.models.trees.algebra",
+            "TERM_STRUCTURE_TARGET",
+            "calibration_target",
+        ),
+        PrimitiveRef("trellis.models.trees.algebra", "build_lattice", "lattice_builder"),
+        PrimitiveRef(
+            "trellis.models.bermudan_swaption_tree",
+            "compile_bermudan_swaption_contract_spec",
+            "contract_compiler",
+        ),
+        PrimitiveRef("trellis.models.trees.algebra", "price_on_lattice", "pricing_kernel"),
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.trees.algebra.price_on_lattice",),
+        primitive_plan=SimpleNamespace(
+            route="rate_tree_backward_induction",
+            primitives=primitives,
+        ),
+        method="rate_tree",
+        instrument_type="swaption",
+    )
+    semantic_blueprint = SimpleNamespace(
+        valuation_context=SimpleNamespace(
+            engine_model_spec=EngineModelSpec(
+                model_family="rates",
+                model_name="hull_white_1f",
+                state_semantics=("short_rate",),
+                potential=PotentialSpec(discount_term="risk_free_rate"),
+                sources=(SourceSpec(source_kind="coupon_stream"),),
+                calibration_requirements=("bootstrap_curve", "fit_hw_strip"),
+                backend_hints=("lattice",),
+                parameter_overrides={"mean_reversion": 0.05, "sigma": 0.01},
+                rates_curve_roles=RatesCurveRoleSpec(
+                    discount_curve_role="discount_curve",
+                    forecast_curve_role="forward_curve",
+                ),
+            )
+        )
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["swaption"],
+        "European payer swaption on a Hull-White tree",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        semantic_blueprint=semantic_blueprint,
+        comparison_target="hw_tree",
+    )
+
+    assert generated is not None
+    assert EVALUATE_SENTINEL not in generated.code
+    for symbol in (
+        "BermudanSwaptionTreeSpec",
+        "resolve_swaption_curve_basis_spread",
+        "resolve_bermudan_swaption_tree_inputs",
+        "BINOMIAL_1F_TOPOLOGY",
+        "UNIFORM_ADDITIVE_MESH",
+        "TERM_STRUCTURE_TARGET",
+        "build_lattice",
+        "compile_bermudan_swaption_contract_spec",
+        "price_on_lattice",
+    ):
+        assert symbol in generated.code
+    assert "if spec.swap_start != spec.expiry_date:" in generated.code
+    assert "strike=float(spec.strike) - float(curve_basis_spread)" in generated.code
+    assert 'model="hull_white"' in generated.code
+    assert "mean_reversion=0.05" in generated.code
+    assert "sigma=0.01" in generated.code
+    assert "a=resolved.mean_reversion" in generated.code
+    assert "n_steps=resolved.n_steps" in generated.code
+    assert "day_count=spec.day_count" in generated.code
+    assert "swap_frequency=spec.swap_frequency" in generated.code
+    assert "rate_index=spec.rate_index" in generated.code
+    assert "is_payer=bool(spec.is_payer)" in generated.code
+    assert "price_swaption_tree(" not in generated.code
+    assert "build_swaption_tree_spec(" not in generated.code
+    assert "price_bermudan_swaption_tree(" not in generated.code
+    assert "build_bermudan_swaption_lattice(" not in generated.code
 
 
 def test_deterministic_exact_binding_module_composes_european_swaption_monte_carlo():

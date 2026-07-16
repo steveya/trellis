@@ -570,7 +570,7 @@ def test_compile_build_request_preserves_swaption_conventions_and_hw_bindings():
     ("preferred_method", "expected_binding"),
     [
         ("analytical", "trellis.models.rate_style_swaption.price_swaption_black76_raw"),
-        ("rate_tree", "trellis.models.rate_style_swaption_tree.price_swaption_tree"),
+        ("rate_tree", "trellis.models.trees.algebra.price_on_lattice"),
         (
             "monte_carlo",
             "trellis.models.monte_carlo.event_aware.price_event_aware_monte_carlo",

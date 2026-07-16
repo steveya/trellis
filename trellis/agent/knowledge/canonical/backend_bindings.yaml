@@ -775,9 +775,33 @@ bindings:
           payoff_family: swaption
           exercise_style: [european]
         primitives:
-          - module: trellis.models.rate_style_swaption_tree
-            symbol: price_swaption_tree
-            role: route_helper
+          - module: trellis.models.bermudan_swaption_tree
+            symbol: BermudanSwaptionTreeSpec
+            role: contract_spec
+          - module: trellis.models.rate_style_swaption
+            symbol: resolve_swaption_curve_basis_spread
+            role: curve_basis_binding
+          - module: trellis.models.bermudan_swaption_tree
+            symbol: resolve_bermudan_swaption_tree_inputs
+            role: market_binding
+          - module: trellis.models.trees.algebra
+            symbol: BINOMIAL_1F_TOPOLOGY
+            role: topology
+          - module: trellis.models.trees.algebra
+            symbol: UNIFORM_ADDITIVE_MESH
+            role: mesh
+          - module: trellis.models.trees.algebra
+            symbol: TERM_STRUCTURE_TARGET
+            role: calibration_target
+          - module: trellis.models.trees.algebra
+            symbol: build_lattice
+            role: lattice_builder
+          - module: trellis.models.bermudan_swaption_tree
+            symbol: compile_bermudan_swaption_contract_spec
+            role: contract_compiler
+          - module: trellis.models.trees.algebra
+            symbol: price_on_lattice
+            role: pricing_kernel
       - when: default
         primitives:
           - module: trellis.models.trees.lattice
