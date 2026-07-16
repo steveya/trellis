@@ -82,6 +82,8 @@ def test_run_task_passes_force_rebuild_and_validation():
     assert calls[0]["validation"] == "fast"
     assert calls[0]["force_rebuild"] is False
     assert calls[0]["fresh_build"] is True
+    assert calls[0]["generation_policy"] == "deterministic_allowed"
+    assert calls[0]["request_metadata"]["generation_policy"] == "deterministic_allowed"
     assert calls[0]["request_metadata"]["post_build_learning_policy"] == {
         "execution_mode": "live",
         "artifact_policy": "fresh_generated",
@@ -97,11 +99,128 @@ def test_run_task_passes_force_rebuild_and_validation():
         "post_build_learning_policy"
     ]
     assert result["execution_mode"] == "live"
+    assert result["generation_policy"] == "deterministic_allowed"
+    assert result["generation_evidence"] == {
+        "policy": "deterministic_allowed",
+        "artifact_origins": [],
+        "agent_synthesis_attempted": False,
+        "agent_synthesis_observed": False,
+    }
     assert result["runtime_controls"]["llm_wait_log_path"] == wait_log_path
     assert result["success"] is True
     assert result["elapsed_seconds"] == 4.5
     assert result["payoff_class"] == "FakePayoffClass"
     monkeypatch.undo()
+
+
+@pytest.mark.parametrize(
+    ("recovery_mode", "execution_mode", "expected_reason"),
+    [
+        ("strict", "live", "recovery_mode_strict"),
+        ("assisted", "offline_local_agents", "execution_mode_offline_local_agents"),
+        ("assisted", "cassette_replay", "execution_mode_cassette_replay"),
+    ],
+)
+def test_run_task_fails_closed_when_builder_synthesis_is_unavailable(
+    recovery_mode,
+    execution_mode,
+    expected_reason,
+):
+    from trellis.agent.task_runtime import run_task
+
+    calls = []
+
+    result = run_task(
+        {"id": "T20", "title": "Heston ADI PDE"},
+        market_state=object(),
+        fresh_build=True,
+        generation_policy="builder_synthesis_required",
+        recovery_mode=recovery_mode,
+        execution_mode_override=execution_mode,
+        build_fn=lambda **kwargs: calls.append(kwargs),
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["attempts"] == 0
+    assert result["generation_policy_error"]["reason"] == expected_reason
+    assert result["task_diagnosis_failure_bucket"] == "generation_policy"
+    assert result["generation_evidence"] == {
+        "policy": "builder_synthesis_required",
+        "artifact_origins": [],
+        "agent_synthesis_attempted": False,
+        "agent_synthesis_observed": False,
+    }
+
+
+def test_run_task_records_observed_builder_synthesis_without_trace_inspection():
+    from trellis.agent.task_runtime import run_task
+
+    calls = []
+
+    class FakeResult:
+        success = True
+        attempts = 1
+        gap_confidence = 1.0
+        knowledge_gaps = []
+        payoff_cls = type("ModelGeneratedPayoff", (), {})
+        failures = []
+        reflection = {}
+        generation_evidence = {
+            "policy": "builder_synthesis_required",
+            "artifact_origin": "model_generated_source",
+            "agent_synthesis_attempted": True,
+            "agent_synthesis_observed": True,
+        }
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        return FakeResult()
+
+    result = run_task(
+        {"id": "T20", "title": "Heston ADI PDE"},
+        market_state=object(),
+        fresh_build=True,
+        generation_policy="builder_synthesis_required",
+        recovery_mode="assisted",
+        execution_mode_override="live",
+        build_fn=fake_build,
+    )
+
+    assert calls[0]["generation_policy"] == "builder_synthesis_required"
+    assert result["generation_evidence"] == {
+        "policy": "builder_synthesis_required",
+        "artifact_origins": ["model_generated_source"],
+        "agent_synthesis_attempted": True,
+        "agent_synthesis_observed": True,
+    }
+
+
+def test_run_task_rejects_unproven_success_when_builder_synthesis_is_required():
+    from trellis.agent.task_runtime import run_task
+
+    class UnprovenResult:
+        success = True
+        attempts = 0
+        gap_confidence = 1.0
+        knowledge_gaps = []
+        payoff_cls = type("DeterministicPayoff", (), {})
+        failures = []
+        reflection = {}
+
+    result = run_task(
+        {"id": "T20", "title": "Heston ADI PDE"},
+        market_state=object(),
+        fresh_build=True,
+        generation_policy="builder_synthesis_required",
+        recovery_mode="assisted",
+        execution_mode_override="live",
+        build_fn=lambda **kwargs: UnprovenResult(),
+    )
+
+    assert result["success"] is False
+    assert result["generation_policy_error"]["reason"] == "synthesis_evidence_missing"
+    assert result["generation_evidence"]["agent_synthesis_observed"] is False
 
 
 def test_run_task_strict_mode_does_not_retry_failed_target():
@@ -3156,6 +3275,12 @@ def test_run_task_records_promotion_candidates_for_fresh_build_comparison_succes
             self.reflection = {}
             self.selected_method = method
             self.comparison_target_contract = dict(target_contract)
+            self.generation_evidence = {
+                "policy": "builder_synthesis_required",
+                "artifact_origin": "model_generated_source",
+                "agent_synthesis_attempted": True,
+                "agent_synthesis_observed": True,
+            }
 
     def fake_build(**kwargs):
         return FakeResult(
@@ -3213,6 +3338,46 @@ def test_run_task_records_promotion_candidates_for_fresh_build_comparison_succes
         result["method_results"]["mc_exact"]["artifacts"]["promotion_candidate_paths"]
         == ["/tmp/mc_exact_candidate.yaml"]
     )
+
+
+def test_record_promotion_candidates_ignores_fresh_deterministic_materialization(
+    monkeypatch,
+):
+    from trellis.agent.task_runtime import _record_promotion_candidates
+
+    calls = []
+    monkeypatch.setattr(
+        "trellis.agent.knowledge.promotion.record_promotion_candidate",
+        lambda **kwargs: calls.append(kwargs) or "/tmp/candidate.yaml",
+    )
+    live_result = SimpleNamespace(
+        success=True,
+        attempts=0,
+        code="class DeterministicPayoff: pass\n",
+        payoff_cls=type("DeterministicPayoff", (), {}),
+    )
+
+    candidates = _record_promotion_candidates(
+        task={"id": "T105", "title": "Quanto proof"},
+        instrument_type="quanto_option",
+        market_context={},
+        live_results={"analytical": live_result},
+        method_results={
+            "analytical": {
+                "success": True,
+                "generation_evidence": {
+                    "policy": "deterministic_allowed",
+                    "artifact_origin": "deterministic_materialization",
+                    "agent_synthesis_attempted": False,
+                    "agent_synthesis_observed": False,
+                },
+            }
+        },
+        cross_validation={"status": "passed"},
+    )
+
+    assert candidates == {}
+    assert calls == []
 
 
 def test_run_task_skips_promotion_candidates_without_fresh_build(monkeypatch):

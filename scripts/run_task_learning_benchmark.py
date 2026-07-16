@@ -71,7 +71,13 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--reuse",
         action="store_true",
-        help="Allow adapter reuse. By default the benchmark uses fresh builds to isolate knowledge carry-forward.",
+        help="Allow adapter reuse. Incompatible with builder_synthesis_required.",
+    )
+    parser.add_argument(
+        "--generation-policy",
+        choices=("deterministic_allowed", "builder_synthesis_required"),
+        default="builder_synthesis_required",
+        help="The learning benchmark defaults to genuine builder-agent source synthesis.",
     )
     parser.add_argument("--list-tasks", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
@@ -161,6 +167,7 @@ def run_learning_benchmark(
     fresh_build: bool,
     knowledge_light: bool,
     seeded_retry_fixture: bool = False,
+    generation_policy: str = "builder_synthesis_required",
 ) -> dict[str, Any]:
     """Run repeated passes for one non-canary task cohort and save the report."""
     output_root.mkdir(parents=True, exist_ok=True)
@@ -170,6 +177,9 @@ def run_learning_benchmark(
     report_root.mkdir(parents=True, exist_ok=True)
 
     git_revision = _git_revision()
+    effective_generation_policy = (
+        "deterministic_allowed" if seeded_retry_fixture else generation_policy
+    )
     pass_runs: list[dict[str, Any]] = []
 
     print(f"\n{'#' * 72}")
@@ -178,6 +188,7 @@ def run_learning_benchmark(
     print(f"# Tasks: {', '.join(task['id'] for task in tasks)}")
     print(f"# Passes: {passes}")
     print(f"# Fresh build: {fresh_build}")
+    print(f"# Generation policy: {effective_generation_policy}")
     print(f"# Knowledge light: {knowledge_light}")
     print(f"# Seeded retry fixture: {seeded_retry_fixture}")
     print(f"# Validation: {validation}")
@@ -200,6 +211,7 @@ def run_learning_benchmark(
             knowledge_light=knowledge_light,
             task_run_storage_root=output_root / "task_run_records" / label,
             seeded_retry_fixture=seeded_retry_fixture,
+            generation_policy=effective_generation_policy,
         )
         output_path.write_text(json.dumps(results, indent=2, default=str))
         summary = summarize_task_results(results)
@@ -209,6 +221,7 @@ def run_learning_benchmark(
                 "pass_number": pass_number,
                 "label": label,
                 "fresh_build": fresh_build,
+                "generation_policy": effective_generation_policy,
                 "knowledge_profile": "knowledge_light" if knowledge_light else "default",
                 "model": model,
                 "validation": validation,
@@ -234,7 +247,7 @@ def run_learning_benchmark(
         notes=[
             note
             for note in (
-                "Fresh-build passes isolate knowledge carry-forward from adapter reuse."
+                "Fresh-build passes isolate output paths and adapter reuse; only observed model-generated origin proves builder synthesis."
                 if fresh_build
                 else "Reuse mode was enabled, so adapter reuse may contribute to improvements.",
                 "This benchmark measures short-term learning evidence, not autonomous code development.",
@@ -272,6 +285,7 @@ def _run_learning_pass(
     knowledge_light: bool,
     task_run_storage_root: Path,
     seeded_retry_fixture: bool,
+    generation_policy: str = "builder_synthesis_required",
 ) -> list[dict[str, Any]]:
     market_state = object() if seeded_retry_fixture else build_market_state()
     results: list[dict[str, Any]] = []
@@ -297,12 +311,15 @@ def _run_learning_pass(
                 validation=validation,
                 task_run_storage_root=task_run_storage_root,
                 task_run_storage_layout="standalone",
+                recovery_mode="assisted",
+                generation_policy=generation_policy,
             )
         payload = dict(result)
         payload["learning_benchmark_name"] = benchmark_name
         payload["learning_benchmark_pass"] = pass_number
         payload["learning_benchmark_git_revision"] = git_revision
         payload["learning_benchmark_fresh_build"] = fresh_build
+        payload["learning_benchmark_generation_policy"] = generation_policy
         payload["learning_benchmark_knowledge_profile"] = (
             "knowledge_light" if knowledge_light else "default"
         )
@@ -452,6 +469,9 @@ def main(argv: list[str]) -> int:
     if args.passes < 1:
         print("Pass count must be at least 1.")
         return 2
+    if args.reuse and args.generation_policy == "builder_synthesis_required":
+        print("--reuse is incompatible with --generation-policy builder_synthesis_required")
+        return 2
     if args.passes < 2 and not args.seeded_retry_fixture:
         print("Pass count must be at least 2 for a learning benchmark.")
         return 2
@@ -479,6 +499,7 @@ def main(argv: list[str]) -> int:
         fresh_build=not args.reuse,
         knowledge_light=args.knowledge_light,
         seeded_retry_fixture=args.seeded_retry_fixture,
+        generation_policy=args.generation_policy,
     )
     return 0
 

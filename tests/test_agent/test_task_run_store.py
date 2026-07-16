@@ -178,6 +178,13 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
         "start_time": "2026-03-25T14:05:00",
         "comparison_task": True,
         "comparison_targets": ["fft", "cos", "black_scholes"],
+        "generation_policy": "builder_synthesis_required",
+        "generation_evidence": {
+            "policy": "builder_synthesis_required",
+            "artifact_origins": ["model_generated_source"],
+            "agent_synthesis_attempted": True,
+            "agent_synthesis_observed": True,
+        },
         "token_usage_summary": {
             "call_count": 3,
             "calls_with_usage": 3,
@@ -290,6 +297,11 @@ def test_persist_task_run_record_writes_latest_and_enriches_traces(tmp_path):
     assert Path(persisted["latest_diagnosis_dossier_path"]).exists()
     assert latest["task_id"] == "T104"
     assert latest["summary"]["comparison_status"] == "failed"
+    assert latest["execution"]["generation_policy"] == "builder_synthesis_required"
+    assert latest["execution"]["generation_evidence"]["artifact_origins"] == [
+        "model_generated_source"
+    ]
+    assert latest["summary"]["generation_evidence"]["agent_synthesis_observed"] is True
     assert latest["summary"]["prices"]["fft"] == 10.12
     assert latest["method_runs"]["fft"]["trace_summary"]["linear_issue"]["identifier"] == "QUA-99"
     assert latest["method_runs"]["fft"]["trace_summary"]["semantic_role_ownership"]["selected_role"] == "quant"

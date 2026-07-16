@@ -35,6 +35,14 @@ from trellis.agent.introspection import (
     search_tests,
 )
 from trellis.agent.analytical_traces import emit_analytical_trace_from_generation_plan
+from trellis.agent.generation_policy import (
+    ArtifactOrigin,
+    GenerationPolicy,
+    GenerationPolicyError,
+    normalize_generation_policy,
+    record_generation_evidence,
+    validate_builder_synthesis_context,
+)
 from trellis.agent.semantic_validation import validate_semantics
 from trellis.agent.builder import write_module, run_tests
 from trellis.agent.knowledge.import_registry import resolve_import_candidates
@@ -1231,6 +1239,7 @@ def build_payoff(
     gap_report=None,
     knowledge_retriever: Callable[[KnowledgeRetrievalRequest], str | None] | None = None,
     knowledge_overlays: Sequence[Mapping[str, object]] | None = None,
+    generation_policy: str | GenerationPolicy = GenerationPolicy.DETERMINISTIC_ALLOWED,
 ) -> type:
     """Build a Payoff class via the multi-agent pipeline.
 
@@ -1241,6 +1250,9 @@ def build_payoff(
     4. **Builder agent** generates the code using the prescribed method
     5. **Critic agent** reviews the code
     6. **Arbiter** validates with invariants
+
+    ``fresh_build`` controls path isolation; ``generation_policy`` separately
+    controls whether deterministic source construction may satisfy the build.
     """
     from trellis.agent.planner import plan_build
     from trellis.agent.quant import (
@@ -1263,6 +1275,23 @@ def build_payoff(
     from trellis.core.market_state import MissingCapabilityError
 
     model = model or get_default_model()
+    generation_policy_value = normalize_generation_policy(generation_policy)
+    record_generation_evidence(
+        build_meta,
+        policy=generation_policy_value,
+    )
+    if (
+        generation_policy_value is GenerationPolicy.BUILDER_SYNTHESIS_REQUIRED
+        and not fresh_build
+    ):
+        raise GenerationPolicyError(
+            "Builder synthesis requires fresh_build=True so model source is isolated from admitted adapters.",
+            reason="fresh_build_required",
+        )
+    validate_builder_synthesis_context(
+        policy=generation_policy_value,
+        request_metadata=request_metadata,
+    )
     product_ir = None
     if compiled_request is None:
         try:
@@ -1486,6 +1515,11 @@ def build_payoff(
         elif not force_rebuild:
             reuse_reason = "cached_generated_module"
     if existing is not None and reuse_reason is not None:
+        record_generation_evidence(
+            build_meta,
+            policy=generation_policy_value,
+            artifact_origin=ArtifactOrigin.REUSED_ADAPTER,
+        )
         _record_platform_event(
             compiled_request,
             "existing_generated_module_reused",
@@ -1494,6 +1528,9 @@ def build_payoff(
                 "module_path": plan.steps[0].module_path if plan.steps else "",
                 "class_name": getattr(existing, "__name__", type(existing).__name__),
                 "reason": reuse_reason,
+                "generation_evidence": dict(
+                    (build_meta or {}).get("generation_evidence") or {}
+                ),
             },
         )
         generation_plan = (
@@ -1830,6 +1867,7 @@ def build_payoff(
             "module_name": module_name,
             "validation": validation,
             "max_retries": max_retries,
+            "generation_policy": generation_policy_value.value,
         },
     )
     if validation != "thorough":
@@ -1883,6 +1921,9 @@ def build_payoff(
                 "retrieval_source": knowledge_context.retrieval_source,
                 "retry_reason": retry_reason,
                 "knowledge_context_chars": len(knowledge_text),
+                "generation_evidence": dict(
+                    (build_meta or {}).get("generation_evidence") or {}
+                ),
             },
         )
         stage_model = get_model_for_stage("code_generation", model)
@@ -1893,25 +1934,43 @@ def build_payoff(
             request_metadata,
         )
         try:
-            generated_module = _materialize_semantic_execution_shim_module(
-                skeleton,
-                generation_plan,
-                request_metadata=request_metadata,
-                comparison_target=comparison_target,
-            )
-            if generated_module is None:
-                generated_module = _materialize_deterministic_exact_binding_module(
+            if generation_policy_value is GenerationPolicy.DETERMINISTIC_ALLOWED:
+                generated_module = _materialize_semantic_execution_shim_module(
                     skeleton,
                     generation_plan,
-                    semantic_blueprint=(
-                        getattr(compiled_request, "semantic_blueprint", None)
-                        if compiled_request is not None
-                        else None
-                    ),
                     request_metadata=request_metadata,
                     comparison_target=comparison_target,
                 )
+                if generated_module is not None:
+                    record_generation_evidence(
+                        build_meta,
+                        policy=generation_policy_value,
+                        artifact_origin=ArtifactOrigin.SEMANTIC_SHIM,
+                    )
+                if generated_module is None:
+                    generated_module = _materialize_deterministic_exact_binding_module(
+                        skeleton,
+                        generation_plan,
+                        semantic_blueprint=(
+                            getattr(compiled_request, "semantic_blueprint", None)
+                            if compiled_request is not None
+                            else None
+                        ),
+                        request_metadata=request_metadata,
+                        comparison_target=comparison_target,
+                    )
+                    if generated_module is not None:
+                        record_generation_evidence(
+                            build_meta,
+                            policy=generation_policy_value,
+                            artifact_origin=ArtifactOrigin.DETERMINISTIC_MATERIALIZATION,
+                        )
             if generated_module is None:
+                record_generation_evidence(
+                    build_meta,
+                    policy=generation_policy_value,
+                    agent_synthesis_attempted=True,
+                )
                 with llm_usage_stage(
                     "code_generation",
                     metadata=_llm_stage_metadata(
@@ -1937,6 +1996,13 @@ def build_payoff(
                             code=source_report.sanitized_source.expandtabs(4),
                             source_report=source_report,
                         )
+                record_generation_evidence(
+                    build_meta,
+                    policy=generation_policy_value,
+                    artifact_origin=ArtifactOrigin.MODEL_GENERATED_SOURCE,
+                    agent_synthesis_attempted=True,
+                    agent_synthesis_observed=True,
+                )
                 generation_token_usage = summarize_llm_usage(usage_records)
                 enforce_llm_token_budget(stage="code_generation")
             code = generated_module.code
@@ -1966,6 +2032,9 @@ def build_payoff(
                     if source_report is not None
                     else None,
                     "token_usage": generation_token_usage,
+                    "generation_evidence": dict(
+                        (build_meta or {}).get("generation_evidence") or {}
+                    ),
                 },
             )
             validation_feedback = (
@@ -1993,6 +2062,9 @@ def build_payoff(
                 if generated_module is not None
                 else None,
                 "token_usage": generation_token_usage,
+                "generation_evidence": dict(
+                    (build_meta or {}).get("generation_evidence") or {}
+                ),
             },
         )
 
@@ -2191,7 +2263,12 @@ def build_payoff(
                 status="ok",
                 success=True if _finalizes_in_executor(compiled_request) else None,
                 outcome="build_completed" if _finalizes_in_executor(compiled_request) else None,
-                details={"attempts": attempt_number},
+                details={
+                    "attempts": attempt_number,
+                    "generation_evidence": dict(
+                        (build_meta or {}).get("generation_evidence") or {}
+                    ),
+                },
             )
             _audit_path = _write_build_audit_record(
                 compiled_request=compiled_request,
@@ -2242,7 +2319,12 @@ def build_payoff(
                 status="ok",
                 success=True if _finalizes_in_executor(compiled_request) else None,
                 outcome="build_completed" if _finalizes_in_executor(compiled_request) else None,
-                details={"attempts": attempt_number},
+                details={
+                    "attempts": attempt_number,
+                    "generation_evidence": dict(
+                        (build_meta or {}).get("generation_evidence") or {}
+                    ),
+                },
             )
             _audit_path = _write_build_audit_record(
                 compiled_request=compiled_request,

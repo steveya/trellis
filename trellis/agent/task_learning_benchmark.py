@@ -99,6 +99,9 @@ def build_task_learning_benchmark_report(
                 "pass_number": int(raw_pass.get("pass_number") or 0),
                 "label": str(raw_pass.get("label") or f"pass_{len(normalized_passes) + 1}"),
                 "fresh_build": bool(raw_pass.get("fresh_build")),
+                "generation_policy": str(
+                    raw_pass.get("generation_policy") or "deterministic_allowed"
+                ),
                 "knowledge_profile": str(raw_pass.get("knowledge_profile") or "default"),
                 "model": str(raw_pass.get("model") or ""),
                 "validation": str(raw_pass.get("validation") or ""),
@@ -186,6 +189,7 @@ def render_task_learning_benchmark_report(report: Mapping[str, Any]) -> str:
     lines.extend(["", "## Pass Summaries"])
     for learning_pass in report.get("passes") or []:
         summary = learning_pass["summary"]
+        generation_proving = dict(summary.get("generation_proving") or {})
         lines.extend(
             [
                 "",
@@ -197,6 +201,9 @@ def render_task_learning_benchmark_report(report: Mapping[str, Any]) -> str:
                 f"- Elapsed seconds: `{learning_pass['elapsed_seconds_total']}`",
                 f"- Token usage: `{summary['token_usage']['total_tokens']}`",
                 f"- Shared-knowledge tasks: `{summary['shared_knowledge']['tasks_with_shared_context']}`",
+                f"- Generation policy: `{learning_pass.get('generation_policy', 'deterministic_allowed')}`",
+                f"- Builder synthesis attempted: `{generation_proving.get('synthesis_attempted_tasks', 0)}`",
+                f"- Builder synthesis observed: `{generation_proving.get('synthesis_observed_tasks', 0)}`",
                 f"- Results path: `{learning_pass.get('results_path', '')}`",
             ]
         )
@@ -230,6 +237,8 @@ def render_task_learning_benchmark_report(report: Mapping[str, Any]) -> str:
             f"- Knowledge-assisted improvements: {', '.join(_format_task_ids(attribution.get('knowledge_assisted_improvements', {}).get('task_ids') or [])) or 'none'}",
             f"- Retry-learned recoveries: {', '.join(_format_task_ids(retry_learning.get('retry_learned_recoveries', {}).get('task_ids') or [])) or 'none'}",
             f"- First-pass deterministic reuse: {', '.join(_format_task_ids(retry_learning.get('first_pass_deterministic_reuse', {}).get('task_ids') or [])) or 'none'}",
+            f"- First-pass model synthesis: {', '.join(_format_task_ids(retry_learning.get('first_pass_model_synthesis', {}).get('task_ids') or [])) or 'none'}",
+            f"- First-pass origin unknown: {', '.join(_format_task_ids(retry_learning.get('first_pass_origin_unknown', {}).get('task_ids') or [])) or 'none'}",
             f"- Failed or unvalidated retry evidence: {', '.join(_format_task_ids(retry_learning.get('failed_or_unvalidated_retry_evidence', {}).get('task_ids') or [])) or 'none'}",
             f"- Residual knowledge gaps: {', '.join(_format_task_ids(attribution.get('residual_knowledge_gaps', {}).get('task_ids') or [])) or 'none'}",
             f"- Residual implementation gaps: {', '.join(_format_task_ids(attribution.get('residual_implementation_gaps', {}).get('task_ids') or [])) or 'none'}",
@@ -377,6 +386,8 @@ def _empty_retry_learning_attribution() -> dict[str, Any]:
     return {
         "retry_learned_recoveries": {"count": 0, "task_ids": []},
         "first_pass_deterministic_reuse": {"count": 0, "task_ids": []},
+        "first_pass_model_synthesis": {"count": 0, "task_ids": []},
+        "first_pass_origin_unknown": {"count": 0, "task_ids": []},
         "failed_or_unvalidated_retry_evidence": {"count": 0, "task_ids": []},
     }
 
@@ -386,6 +397,8 @@ def _build_retry_learning_attribution(
 ) -> dict[str, Any]:
     retry_learned: list[str] = []
     first_pass_reuse: list[str] = []
+    first_pass_model_synthesis: list[str] = []
+    first_pass_origin_unknown: list[str] = []
     unvalidated_retry: list[str] = []
 
     for result in results:
@@ -398,7 +411,13 @@ def _build_retry_learning_attribution(
         elif has_retry_evidence:
             unvalidated_retry.append(task_id)
         elif bool(result.get("success")) and _result_attempts_to_success(result) <= 1:
-            first_pass_reuse.append(task_id)
+            origin_kind = _result_first_pass_origin_kind(result)
+            if origin_kind == "model_synthesis":
+                first_pass_model_synthesis.append(task_id)
+            elif origin_kind == "deterministic":
+                first_pass_reuse.append(task_id)
+            else:
+                first_pass_origin_unknown.append(task_id)
 
     return {
         "retry_learned_recoveries": {
@@ -409,11 +428,56 @@ def _build_retry_learning_attribution(
             "count": len(first_pass_reuse),
             "task_ids": sorted(first_pass_reuse),
         },
+        "first_pass_model_synthesis": {
+            "count": len(first_pass_model_synthesis),
+            "task_ids": sorted(first_pass_model_synthesis),
+        },
+        "first_pass_origin_unknown": {
+            "count": len(first_pass_origin_unknown),
+            "task_ids": sorted(first_pass_origin_unknown),
+        },
         "failed_or_unvalidated_retry_evidence": {
             "count": len(unvalidated_retry),
             "task_ids": sorted(unvalidated_retry),
         },
     }
+
+
+_DETERMINISTIC_ARTIFACT_ORIGINS = frozenset(
+    {
+        "reused_adapter",
+        "semantic_shim",
+        "deterministic_materialization",
+        "deterministic_proof_artifact",
+    }
+)
+
+
+def _result_first_pass_origin_kind(result: Mapping[str, Any]) -> str:
+    origins: set[str] = set()
+    synthesis_observed = False
+    for payload in _iter_result_payloads(result):
+        evidence = payload.get("generation_evidence")
+        if not isinstance(evidence, Mapping):
+            continue
+        synthesis_observed = synthesis_observed or bool(
+            evidence.get("agent_synthesis_observed")
+        )
+        raw_origins = evidence.get("artifact_origins")
+        if raw_origins is None:
+            raw_origins = [evidence.get("artifact_origin")]
+        elif isinstance(raw_origins, str):
+            raw_origins = [raw_origins]
+        for raw_origin in raw_origins or ():
+            origin = str(raw_origin or "").strip()
+            if origin and origin != "none":
+                origins.add(origin)
+
+    if synthesis_observed or "model_generated_source" in origins:
+        return "model_synthesis"
+    if origins and origins.issubset(_DETERMINISTIC_ARTIFACT_ORIGINS):
+        return "deterministic"
+    return "unknown"
 
 
 def _result_has_retry_learned_recovery(result: Mapping[str, Any]) -> bool:

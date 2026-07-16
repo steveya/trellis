@@ -461,6 +461,8 @@ def llm_cassette_session(
         with llm_override_scope(
             generate=generate,
             generate_json=generate_json,
+            source=f"cassette_{mode}",
+            model_source_observable=mode == "record",
         ):
             yield handler
     finally:

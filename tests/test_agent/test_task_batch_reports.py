@@ -17,6 +17,12 @@ def test_build_task_batch_report_normalizes_paths_and_failed_rows():
             "elapsed_seconds": 12.3,
             "token_usage_summary": {"total_tokens": 42},
             "task_run_history_path": str(root / "task_runs" / "history" / "F001" / "run.json"),
+            "generation_evidence": {
+                "policy": "builder_synthesis_required",
+                "artifact_origins": ["model_generated_source"],
+                "agent_synthesis_attempted": True,
+                "agent_synthesis_observed": True,
+            },
         },
         {
             "task_id": "P004",
@@ -42,6 +48,7 @@ def test_build_task_batch_report_normalizes_paths_and_failed_rows():
         validation="standard",
         force_rebuild=False,
         fresh_build=False,
+        generation_policy="builder_synthesis_required",
         knowledge_light=False,
         selection={"selection_mode": "ids", "status": "all", "requested_task_ids": ("F001", "P004")},
         raw_results_path=root / "task_results_manual.json",
@@ -52,6 +59,10 @@ def test_build_task_batch_report_normalizes_paths_and_failed_rows():
     assert report["summary"]["totals"]["tasks"] == 2
     assert report["artifacts"]["raw_results_path"] == "task_results_manual.json"
     assert report["tasks"][0]["history_path"] == "task_runs/history/F001/run.json"
+    assert report["config"]["generation_policy"] == "builder_synthesis_required"
+    assert report["summary"]["generation_proving"]["synthesis_observed_tasks"] == 1
+    assert report["tasks"][0]["artifact_origins"] == ["model_generated_source"]
+    assert report["tasks"][0]["agent_synthesis_observed"] is True
     assert report["failed_tasks"][0]["diagnosis_packet_path"] == "task_runs/diagnostics/history/P004/run.json"
     assert report["failed_tasks"][0]["status_bucket"] == "blocked"
 
@@ -79,6 +90,7 @@ def test_render_task_batch_markdown_includes_selection_and_gap_signals():
         validation="standard",
         force_rebuild=False,
         fresh_build=False,
+        generation_policy="deterministic_allowed",
         knowledge_light=False,
         selection={
             "selection_mode": "ids",
@@ -93,6 +105,8 @@ def test_render_task_batch_markdown_includes_selection_and_gap_signals():
     assert "# Manual batch" in markdown
     assert "- Mode: `ids`" in markdown
     assert "- Corpora: `extension`" in markdown
+    assert "- Generation policy: `deterministic_allowed`" in markdown
+    assert "Observed model synthesis" in markdown
     assert "## Gap Signals" in markdown
     assert "`P004` `blocked`" in markdown
     assert "| `P004` | `extension` | `blocked` |" in markdown

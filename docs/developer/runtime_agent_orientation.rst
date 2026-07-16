@@ -74,6 +74,15 @@ Exact symbols remain the import registry's responsibility after family
 selection. Quant and model-validator regression tests reject API-map imports
 or code templates in their resolved context.
 
+Generation proving does not change these role boundaries. A fresh artifact may
+still come from deterministic materialization, so runtime reports use the
+separate generation policy and artifact-origin evidence described in
+``task_and_eval_loops``. Only ``model_generated_source`` with observed builder
+synthesis proves that the builder returned source while its API-map and
+import-registry context was available; provenance alone does not prove which
+retrieved entries influenced the model. Quant or model-validator prompt
+activity is not source-synthesis evidence.
+
 The ``equity_tree`` and ``rate_lattice`` cards expose the product-neutral
 ``value_on_lattice(..., observation_steps=...)`` surface when generated code
 needs node-level continuation, post-cashflow, and post-control values. The

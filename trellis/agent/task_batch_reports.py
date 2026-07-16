@@ -28,6 +28,7 @@ def build_task_batch_report(
     force_rebuild: bool,
     fresh_build: bool,
     knowledge_light: bool,
+    generation_policy: str = "deterministic_allowed",
     selection: Mapping[str, Any] | None = None,
     raw_results_path: str | Path | None = None,
     summary_path: str | Path | None = None,
@@ -76,6 +77,7 @@ def build_task_batch_report(
             "validation": str(validation).strip(),
             "force_rebuild": bool(force_rebuild),
             "fresh_build": bool(fresh_build),
+            "generation_policy": str(generation_policy).strip(),
             "knowledge_light": bool(knowledge_light),
         },
         "selection": _normalize_selection(selection or {}),
@@ -118,6 +120,7 @@ def render_task_batch_markdown(
     shared_knowledge = dict(summary.get("shared_knowledge") or {})
     retry_recovery = dict(summary.get("retry_recovery") or {})
     token_usage = dict(summary.get("token_usage") or {})
+    generation_proving = dict(summary.get("generation_proving") or {})
     tasks = list(report.get("tasks") or [])
     failed_tasks = list(report.get("failed_tasks") or [])
     displayed_tasks = tasks[:max_task_rows] if max_task_rows is not None else tasks
@@ -130,6 +133,7 @@ def render_task_batch_markdown(
         f"- Validation: `{config.get('validation') or ''}`",
         f"- Force rebuild: `{bool(config.get('force_rebuild'))}`",
         f"- Fresh build: `{bool(config.get('fresh_build'))}`",
+        f"- Generation policy: `{config.get('generation_policy') or 'deterministic_allowed'}`",
         f"- Knowledge light: `{bool(config.get('knowledge_light'))}`",
         "",
         "## Selection",
@@ -178,6 +182,8 @@ def render_task_batch_markdown(
             f"| Tasks with reviewer issues | {reviewer_signals.get('tasks_with_reviewer_issues', 0)} |",
             f"| Tasks with shared context | {shared_knowledge.get('tasks_with_shared_context', 0)} |",
             f"| Total tokens | {token_usage.get('total_tokens', 0)} |",
+            f"| Builder synthesis attempted | {generation_proving.get('synthesis_attempted_tasks', 0)} |",
+            f"| Observed model synthesis | {generation_proving.get('synthesis_observed_tasks', 0)} |",
         ]
     )
 
@@ -221,8 +227,8 @@ def render_task_batch_markdown(
     if displayed_tasks:
         lines.extend(
             [
-                "| Task | Corpus | Outcome | Attempts | Elapsed (s) | Tokens | Diagnosis |",
-                "| --- | --- | --- | ---: | ---: | ---: | --- |",
+                "| Task | Corpus | Outcome | Attempts | Elapsed (s) | Tokens | Diagnosis | Generation origin |",
+                "| --- | --- | --- | ---: | ---: | ---: | --- | --- |",
             ]
         )
         for row in displayed_tasks:
@@ -242,6 +248,9 @@ def render_task_batch_markdown(
                                 str(row.get("diagnosis_headline") or row.get("title") or ""),
                                 limit=120,
                             )
+                        ),
+                        _md_table_cell(
+                            ", ".join(row.get("artifact_origins") or ()) or "none"
                         ),
                     ]
                 )
@@ -267,6 +276,17 @@ def _build_task_row(result: Mapping[str, Any], *, root: Path) -> dict[str, Any]:
     bucket = classify_task_result(result)
     outcome_class = task_result_outcome_class(result)
     passed_expectation = task_result_passed_expectation(result)
+    generation_evidence = dict(result.get("generation_evidence") or {})
+    raw_origins = generation_evidence.get("artifact_origins")
+    if raw_origins is None:
+        raw_origins = [generation_evidence.get("artifact_origin")]
+    elif isinstance(raw_origins, str):
+        raw_origins = [raw_origins]
+    artifact_origins = [
+        str(origin).strip()
+        for origin in (raw_origins or ())
+        if str(origin or "").strip() not in {"", "none"}
+    ]
     return {
         "task_id": str(result.get("task_id") or "").strip(),
         "title": str(result.get("title") or "").strip(),
@@ -281,6 +301,14 @@ def _build_task_row(result: Mapping[str, Any], *, root: Path) -> dict[str, Any]:
         "elapsed_seconds": round(float(result.get("elapsed_seconds") or 0.0), 2),
         "token_usage_total": int(
             dict(result.get("token_usage_summary") or {}).get("total_tokens") or 0
+        ),
+        "generation_policy": str(generation_evidence.get("policy") or "").strip(),
+        "artifact_origins": artifact_origins,
+        "agent_synthesis_attempted": bool(
+            generation_evidence.get("agent_synthesis_attempted")
+        ),
+        "agent_synthesis_observed": bool(
+            generation_evidence.get("agent_synthesis_observed")
         ),
         "diagnosis_failure_bucket": str(
             result.get("task_diagnosis_failure_bucket") or ""

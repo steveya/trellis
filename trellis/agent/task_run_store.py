@@ -512,6 +512,10 @@ def build_task_run_record(
         "execution": {
             "mode": str(result.get("execution_mode") or "live"),
             "llm_cassette": dict(result.get("llm_cassette") or {}),
+            "generation_policy": str(
+                result.get("generation_policy") or "deterministic_allowed"
+            ),
+            "generation_evidence": dict(result.get("generation_evidence") or {}),
         },
         "market": dict(result.get("market_context") or {}),
         "framework": framework,
@@ -556,6 +560,10 @@ def build_task_run_record(
             "knowledge_revision": revisions["knowledge_revision"],
             "framework_outcome": framework.get("outcome_type"),
             "execution_mode": str(result.get("execution_mode") or "live"),
+            "generation_policy": str(
+                result.get("generation_policy") or "deterministic_allowed"
+            ),
+            "generation_evidence": dict(result.get("generation_evidence") or {}),
             "learning": learning,
         },
     }

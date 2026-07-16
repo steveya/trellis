@@ -56,7 +56,16 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     parser.add_argument(
         "--fresh-build",
         action="store_true",
-        help="Bypass deterministic supported-route reuse so tasks exercise live code generation.",
+        help=(
+            "Bypass admitted adapter reuse and isolate the output path. This does not "
+            "by itself require model-generated source."
+        ),
+    )
+    parser.add_argument(
+        "--generation-policy",
+        choices=("deterministic_allowed", "builder_synthesis_required"),
+        default="deterministic_allowed",
+        help="Require observed builder-agent source synthesis or allow deterministic materialization.",
     )
     parser.add_argument(
         "--knowledge-light",
@@ -131,6 +140,7 @@ def run_block(
     model: str = "gpt-5.4-mini",
     force_rebuild: bool = True,
     fresh_build: bool = False,
+    generation_policy: str = "deterministic_allowed",
     knowledge_light: bool = False,
     validation: str = "standard",
     recovery_mode: str = "assisted",
@@ -149,6 +159,7 @@ def run_block(
     print(f"# Model: {model}")
     print(f"# Force rebuild: {force_rebuild}")
     print(f"# Fresh build: {fresh_build}")
+    print(f"# Generation policy: {generation_policy}")
     print(f"# Knowledge light: {knowledge_light}")
     print(f"# Validation: {validation}")
     print(f"# Recovery mode: {recovery_mode}")
@@ -168,6 +179,7 @@ def run_block(
                     model=model,
                     force_rebuild=(force_rebuild or fresh_build),
                     fresh_build=fresh_build,
+                    generation_policy=generation_policy,
                     knowledge_profile="knowledge_light" if knowledge_light else None,
                     validation=validation,
                     recovery_mode=recovery_mode,
@@ -181,6 +193,7 @@ def run_block(
                 model=model,
                 force_rebuild=(force_rebuild or fresh_build),
                 fresh_build=fresh_build,
+                generation_policy=generation_policy,
                 knowledge_profile="knowledge_light" if knowledge_light else None,
                 validation=validation,
                 recovery_mode=recovery_mode,
@@ -226,6 +239,7 @@ def run_block(
     print(f"  Retry recovery: {summary['retry_recovery']}")
     print(f"  Reviewer signals: {summary['reviewer_signals']}")
     print(f"  Shared knowledge: {summary['shared_knowledge']}")
+    print(f"  Generation proving: {summary['generation_proving']}")
     print(f"  Promotion discipline: {summary['promotion_discipline']}")
     print(f"  Token usage: {summary['token_usage']}")
     if batch_token_budget:
@@ -311,6 +325,7 @@ if __name__ == "__main__":
         model=args.model,
         force_rebuild=not args.reuse,
         fresh_build=args.fresh_build,
+        generation_policy=args.generation_policy,
         knowledge_light=args.knowledge_light,
         validation=args.validation,
         recovery_mode=args.recovery_mode,

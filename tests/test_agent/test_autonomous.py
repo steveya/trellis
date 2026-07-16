@@ -3,6 +3,8 @@ from __future__ import annotations
 from importlib import import_module
 from types import SimpleNamespace
 
+import pytest
+
 
 def test_generated_module_code_text_handles_structured_results():
     from trellis.agent.knowledge.autonomous import _generated_module_code_text
@@ -828,6 +830,12 @@ def test_build_with_knowledge_skips_post_build_stages_from_task_policy(monkeypat
                 "code": "pass",
                 "platform_trace_path": None,
                 "platform_request_id": "executor_build_cached",
+                "generation_evidence": {
+                    "policy": "deterministic_allowed",
+                    "artifact_origin": "deterministic_materialization",
+                    "agent_synthesis_attempted": False,
+                    "agent_synthesis_observed": False,
+                },
             },
         ),
     )
@@ -857,6 +865,12 @@ def test_build_with_knowledge_skips_post_build_stages_from_task_policy(monkeypat
     assert result.success is True
     assert result.token_usage_summary["call_count"] == 0
     assert result.token_usage_summary["total_tokens"] == 0
+    assert result.generation_evidence == {
+        "policy": "deterministic_allowed",
+        "artifact_origin": "deterministic_materialization",
+        "agent_synthesis_attempted": False,
+        "agent_synthesis_observed": False,
+    }
     assert result.reflection == {
         "skipped": True,
         "reason": "execution_mode_deterministic_replay",
@@ -888,6 +902,55 @@ def test_build_with_knowledge_skips_post_build_stages_from_task_policy(monkeypat
     assert events["consolidation_dispatched"]["details"]["reason"] == (
         "execution_mode_deterministic_replay"
     )
+
+
+def test_build_with_knowledge_requires_isolated_path_before_synthesis(monkeypatch):
+    from trellis.agent.generation_policy import GenerationPolicyError
+    from trellis.agent.knowledge.autonomous import build_with_knowledge
+
+    decompose_mod = import_module("trellis.agent.knowledge.decompose")
+    monkeypatch.setattr(
+        decompose_mod,
+        "decompose",
+        lambda *args, **kwargs: pytest.fail("decomposition must not run"),
+    )
+
+    with pytest.raises(GenerationPolicyError, match="fresh_build=True"):
+        build_with_knowledge(
+            "European option",
+            instrument_type="european_option",
+            fresh_build=False,
+            generation_policy="builder_synthesis_required",
+        )
+
+
+def test_build_with_knowledge_rejects_untrusted_llm_override_before_decomposition(
+    monkeypatch,
+):
+    from trellis.agent.config import llm_override_scope
+    from trellis.agent.generation_policy import GenerationPolicyError
+    from trellis.agent.knowledge.autonomous import build_with_knowledge
+
+    decompose_mod = import_module("trellis.agent.knowledge.decompose")
+    monkeypatch.setattr(
+        decompose_mod,
+        "decompose",
+        lambda *args, **kwargs: pytest.fail("decomposition must not run"),
+    )
+
+    with llm_override_scope(
+        generate=lambda *_args, **_kwargs: "replayed source",
+        generate_json=lambda *_args, **_kwargs: {},
+    ):
+        with pytest.raises(GenerationPolicyError) as exc_info:
+            build_with_knowledge(
+                "European option",
+                instrument_type="european_option",
+                fresh_build=True,
+                generation_policy="builder_synthesis_required",
+            )
+
+    assert exc_info.value.reason == "llm_override_untrusted"
 
 
 def test_environment_skip_remains_distinct_from_policy_skip(monkeypatch):

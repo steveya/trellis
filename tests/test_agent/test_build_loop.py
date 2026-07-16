@@ -1622,9 +1622,16 @@ class QuantoOptionAnalyticalPayoff:
         mod = ModuleType("trellis.instruments._agent._fresh.quantooptionanalytical")
         setattr(mod, "QuantoOptionAnalyticalPayoff", type("QuantoOptionAnalyticalPayoff", (), {}))
         mock_dynamic_import.return_value = mod
+        build_meta = {}
         with patch(
             "trellis.agent.executor.validate_semantics",
             return_value=SimpleNamespace(ok=True, errors=()),
+        ), patch(
+            "trellis.agent.executor.validate_generated_imports",
+            return_value=SimpleNamespace(ok=True, errors=()),
+        ), patch(
+            "trellis.agent.semantic_validators.validate_generated_semantics",
+            return_value=SimpleNamespace(ok=True, errors=(), findings=[]),
         ), patch(
             "trellis.agent.lite_review.review_generated_code",
             return_value=SimpleNamespace(ok=True, errors=(), issues=[]),
@@ -1636,10 +1643,18 @@ class QuantoOptionAnalyticalPayoff:
                 validation="fast",
                 instrument_type="quanto_option",
                 preferred_method="analytical",
+                generation_policy="builder_synthesis_required",
+                build_meta=build_meta,
             )
 
         write_path = mock_write_module.call_args.args[0]
         assert write_path == "instruments/_agent/_fresh/quantooptionanalytical.py"
+        assert build_meta["generation_evidence"] == {
+            "policy": "builder_synthesis_required",
+            "artifact_origin": "model_generated_source",
+            "agent_synthesis_attempted": True,
+            "agent_synthesis_observed": True,
+        }
 
     @patch("trellis.agent.executor._generate_module")
     def test_build_reuses_existing_quanto_monte_carlo_module(self, mock_gen_mod):

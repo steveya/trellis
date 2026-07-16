@@ -50,6 +50,13 @@ def _sample_record(root: Path) -> dict[str, object]:
         },
         "execution": {
             "mode": "deterministic_replay",
+            "generation_policy": "deterministic_allowed",
+            "generation_evidence": {
+                "policy": "deterministic_allowed",
+                "artifact_origins": ["deterministic_materialization"],
+                "agent_synthesis_attempted": False,
+                "agent_synthesis_observed": False,
+            },
             "llm_cassette": {
                 "mode": "deterministic_replay",
                 "name": "T999",
@@ -347,6 +354,9 @@ def test_build_task_diagnosis_packet_summarizes_failure(tmp_path):
     assert "## Storage" in rendered
     assert "comparison_insufficient_results" in rendered
     assert "Execution mode: `deterministic_replay`" in rendered
+    assert "Generation policy: `deterministic_allowed`" in rendered
+    assert "Artifact origins: `deterministic_materialization`" in rendered
+    assert "Agent synthesis observed: `no`" in rendered
     assert "semantic_validation_failed" in rendered
     assert "route_hint:callable_bond_tree" in rendered
     assert "EventAwarePDEIR" in rendered

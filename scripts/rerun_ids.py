@@ -35,7 +35,16 @@ parser.add_argument(
 parser.add_argument(
     "--fresh-build",
     action="store_true",
-    help="Bypass deterministic supported-route reuse so tasks exercise fresh build paths.",
+    help=(
+        "Bypass admitted adapter reuse and isolate the output path. This does not "
+        "by itself require model-generated source."
+    ),
+)
+parser.add_argument(
+    "--generation-policy",
+    choices=("deterministic_allowed", "builder_synthesis_required"),
+    default="deterministic_allowed",
+    help="Require observed builder-agent source synthesis or allow deterministic materialization.",
 )
 parser.add_argument(
     "--offline-local-agents",
@@ -68,6 +77,7 @@ for i, task in enumerate(tasks):
                 validation=args.validation,
                 force_rebuild=(not args.reuse) or args.fresh_build,
                 fresh_build=args.fresh_build,
+                generation_policy=args.generation_policy,
                 execution_mode_override="deterministic_replay",
             )
         result["offline_local_agents"] = True
@@ -79,6 +89,7 @@ for i, task in enumerate(tasks):
             validation=args.validation,
             force_rebuild=(not args.reuse) or args.fresh_build,
             fresh_build=args.fresh_build,
+            generation_policy=args.generation_policy,
         )
     results.append(result)
     diagnosis_headline = result.get("task_diagnosis_headline")

@@ -26,6 +26,7 @@ def offline_local_agent_llm_guard():
     with llm_override_scope(
         generate=_blocked_llm_text,
         generate_json=_blocked_llm_json,
+        source="offline_local_agents",
     ):
         yield
 
