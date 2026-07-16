@@ -179,6 +179,41 @@ def test_terminal_claim_monte_carlo_fallback_emits_payoff_and_control_steps():
     assert "variance-reduction" in steps
 
 
+def test_fallback_lane_excludes_compatibility_references():
+    primitive_plan = PrimitivePlan(
+        route="exercise_lattice",
+        route_family="rate_tree",
+        engine_family="lattice",
+        primitives=(
+            PrimitiveRef(
+                module="trellis.models.trees.algebra",
+                symbol="price_on_lattice",
+                role="pricing_kernel",
+            ),
+            PrimitiveRef(
+                module="trellis.models.bermudan_swaption_tree",
+                symbol="price_bermudan_swaption_tree",
+                role="compatibility_reference",
+                required=False,
+                excluded=True,
+            ),
+        ),
+        adapters=(),
+        blockers=(),
+    )
+
+    plan = compile_fallback_lane_construction_plan(
+        preferred_method="rate_tree",
+        primitive_plan=primitive_plan,
+        instrument_type="bermudan_swaption",
+    )
+
+    assert plan is not None
+    assert tuple(binding.primitive_ref for binding in plan.reusable_bindings) == (
+        "trellis.models.trees.algebra.price_on_lattice",
+    )
+
+
 def test_transform_lane_plan_emits_terminal_characteristic_contract():
     family_ir = TransformPricingIR(
         route_id="transform_fft",

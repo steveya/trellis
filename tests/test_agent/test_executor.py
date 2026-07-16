@@ -1170,6 +1170,8 @@ def test_deterministic_exact_binding_module_composes_bermudan_swaption_lattice()
     assert 'objective="holder_max"' in generated.code
     assert "notional - fixed_leg_value" in generated.code
     assert "period.t_payment" in generated.code
+    assert "swap_tenor = float(" in generated.code
+    assert "first_exercise_step * lattice.dt + quantized_tenor" in generated.code
     assert "payment_step = lattice_step_from_time" in generated.code
     assert "payment_index * steps_per_coupon" not in generated.code
     assert "price_bermudan_swaption_tree(" not in generated.code
@@ -1210,6 +1212,32 @@ def test_deterministic_exact_binding_module_composes_bermudan_swaption_lattice()
 
     assert payoff.evaluate(market_state) == pytest.approx(
         price_bermudan_swaption_tree(market_state, spec, model="hull_white"),
+        rel=1e-12,
+        abs=1e-12,
+    )
+
+    misaligned_spec = namespace["BermudanSwaptionSpec"](
+        notional=100.0,
+        strike=0.05,
+        exercise_dates=(
+            date(2025, 2, 15),
+            date(2025, 5, 15),
+            date(2025, 8, 15),
+        ),
+        swap_end=date(2030, 8, 15),
+        swap_frequency=Frequency.SEMI_ANNUAL,
+        day_count=DayCountConvention.ACT_360,
+        rate_index=None,
+        is_payer=True,
+    )
+    misaligned_payoff = namespace["BermudanSwaptionPayoff"](misaligned_spec)
+
+    assert misaligned_payoff.evaluate(market_state) == pytest.approx(
+        price_bermudan_swaption_tree(
+            market_state,
+            misaligned_spec,
+            model="hull_white",
+        ),
         rel=1e-12,
         abs=1e-12,
     )
@@ -1352,6 +1380,30 @@ def test_exact_binding_refs_collect_backend_helper_refs_from_mapping_plan():
     assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical" in refs
     assert "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo" in refs
     assert "trellis.models.black.black76_call" in refs
+
+
+def test_exact_binding_refs_collect_fallback_lane_primitives():
+    from trellis.agent.executor import _exact_binding_refs
+
+    refs = _exact_binding_refs(
+        SimpleNamespace(
+            lane_exact_binding_refs=(),
+            lane_reusable_primitives=(
+                "trellis.models.bermudan_swaption_tree.resolve_bermudan_swaption_tree_inputs",
+                "trellis.models.trees.algebra.build_lattice",
+                "trellis.models.trees.algebra.value_on_lattice",
+                "trellis.models.trees.algebra.price_on_lattice",
+            ),
+            primitive_plan=None,
+        )
+    )
+
+    assert refs == (
+        "trellis.models.bermudan_swaption_tree.resolve_bermudan_swaption_tree_inputs",
+        "trellis.models.trees.algebra.build_lattice",
+        "trellis.models.trees.algebra.value_on_lattice",
+        "trellis.models.trees.algebra.price_on_lattice",
+    )
 
 
 def test_deterministic_exact_binding_module_materializes_period_rate_strip_from_backend_refs():

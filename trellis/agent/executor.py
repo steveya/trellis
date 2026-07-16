@@ -4067,6 +4067,7 @@ def _skeleton_exact_binding_import_lines(generation_plan) -> tuple[str, ...]:
                 getattr(primitive, "required", False)
                 or getattr(primitive, "role", "") in {"route_helper", "pricing_kernel", "schedule_builder"}
             )
+            and not getattr(primitive, "excluded", False)
             and getattr(primitive, "module", "")
             and getattr(primitive, "symbol", "")
         )
@@ -4138,6 +4139,7 @@ def _exact_binding_refs(generation_plan) -> tuple[str, ...]:
 
     for attr in (
         "lane_exact_binding_refs",
+        "lane_reusable_primitives",
         "backend_binding_id",
         "backend_exact_target_refs",
         "backend_helper_refs",
@@ -4273,24 +4275,30 @@ def _bermudan_swaption_lattice_evaluate_body(
             1,
         )
         first_exercise_step = min(valid_exercise_steps)
-        swap_end_time = float(
-            year_fraction(resolved.settlement, spec.swap_end, spec.day_count)
+        swap_tenor = float(
+            year_fraction(swap_start, spec.swap_end, spec.day_count)
         )
-        quantized_swap_end_time = (
-            round(swap_end_time * frequency_per_year) / frequency_per_year
+        quantized_tenor = (
+            round(swap_tenor * frequency_per_year) / frequency_per_year
+        )
+        swap_end_time = (
+            first_exercise_step * lattice.dt + quantized_tenor
         )
         swap_end_step = lattice_step_from_time(
-            quantized_swap_end_time,
+            swap_end_time,
             dt=lattice.dt,
             n_steps=lattice.n_steps,
             allow_terminal_step=True,
         )
         if swap_end_step is None or swap_end_step <= first_exercise_step:
             return 0.0
+        swap_start_time = float(
+            year_fraction(resolved.settlement, swap_start, spec.day_count)
+        )
         coupon = float(spec.notional) * float(spec.strike) / frequency_per_year
         coupon_by_step = {{}}
         for period in payment_timeline:
-            payment_time = (
+            absolute_payment_time = (
                 float(period.t_payment)
                 if period.t_payment is not None
                 else float(
@@ -4301,11 +4309,15 @@ def _bermudan_swaption_lattice_evaluate_body(
                     )
                 )
             )
-            quantized_payment_time = (
-                round(payment_time * frequency_per_year) / frequency_per_year
+            payment_tenor = max(absolute_payment_time - swap_start_time, 0.0)
+            quantized_payment_tenor = (
+                round(payment_tenor * frequency_per_year) / frequency_per_year
+            )
+            payment_time = (
+                first_exercise_step * lattice.dt + quantized_payment_tenor
             )
             payment_step = lattice_step_from_time(
-                quantized_payment_time,
+                payment_time,
                 dt=lattice.dt,
                 n_steps=lattice.n_steps,
                 allow_terminal_step=True,
@@ -4686,7 +4698,9 @@ def _declared_primitive_refs(generation_plan) -> set[str]:
     return {
         f"{primitive.module}.{primitive.symbol}"
         for primitive in getattr(primitive_plan, "primitives", ()) or ()
-        if getattr(primitive, "module", "") and getattr(primitive, "symbol", "")
+        if not getattr(primitive, "excluded", False)
+        and getattr(primitive, "module", "")
+        and getattr(primitive, "symbol", "")
     }
 
 

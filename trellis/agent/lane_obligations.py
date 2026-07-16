@@ -634,6 +634,7 @@ def _fallback_reusable_bindings(
             binding_kind=_binding_kind_for_role(str(primitive.role)),
         )
         for primitive in (primitive_plan.primitives or ())
+        if not bool(getattr(primitive, "excluded", False))
     )
 
 
