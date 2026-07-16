@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-15`
+Status mirror last synced: `2026-07-16`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
@@ -60,8 +60,8 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1197` | Swaption pricing: retire Bermudan Black76 lower-bound helper authority | Done |
 | `QUA-1198` | Swaption Monte Carlo: retire European helper and problem-resolver authority | Done |
 | `QUA-1199` | Swaption lattice: retire European tree helper authority | Done |
-| `QUA-1200` | Lattice rollback: observable node-value phases | In Progress |
-| `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | Blocked by QUA-1200 |
+| `QUA-1200` | Lattice rollback: observable node-value phases | Done |
+| `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | Backlog |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
