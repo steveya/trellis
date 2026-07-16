@@ -60,6 +60,8 @@ Status mirror last synced: `2026-07-15`
 | `QUA-1197` | Swaption pricing: retire Bermudan Black76 lower-bound helper authority | Done |
 | `QUA-1198` | Swaption Monte Carlo: retire European helper and problem-resolver authority | Done |
 | `QUA-1199` | Swaption lattice: retire European tree helper authority | Done |
+| `QUA-1200` | Lattice rollback: observable node-value phases | In Progress |
+| `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | Blocked by QUA-1200 |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -102,11 +104,16 @@ Status mirror last synced: `2026-07-15`
     the resolved tree inputs, construct the one-exercise contract explicitly,
     and expose generic topology, mesh, calibration, lattice construction,
     contract compilation, and rollback as the generated surface.
-11. Select the next helper-authority family from the machine-readable audit and
-   create a bounded ticket before changing another route.
-12. Run live fresh-generation evidence only with current external-model approval;
-   use it to compare first-pass source selection, retrieved documentation,
-   retries, and residual validator findings rather than as pricing authority.
+11. Apply QUA-1200 to the shared lattice boundary: expose immutable observations
+    at only the requested rollback steps and distinguish continuation,
+    post-cashflow, and post-control node values without adding product helpers.
+12. After QUA-1200 lands, apply QUA-1201 to the multi-exercise Bermudan
+    swaption lane: compose schedule values and holder control from public
+    lattice primitives while retaining product wrappers only as compatibility
+    and independent reference evidence.
+13. Run live fresh-generation evidence only with current external-model approval;
+    use it to compare first-pass source selection, retrieved documentation,
+    retries, and residual validator findings rather than as pricing authority.
 
 ## Completion Evidence
 

@@ -74,6 +74,16 @@ Exact symbols remain the import registry's responsibility after family
 selection. Quant and model-validator regression tests reject API-map imports
 or code templates in their resolved context.
 
+The ``equity_tree`` and ``rate_lattice`` cards expose the product-neutral
+``value_on_lattice(..., observation_steps=...)`` surface when generated code
+needs node-level continuation, post-cashflow, and post-control values. The
+low-level rate-lattice card also names the immutable rollback result contracts
+and ``lattice_backward_induction_result(...)``. This lets a small builder
+compose schedule and exercise logic from a bounded numerical result without
+reading private rollback loops or delegating construction to a product helper.
+The ordinary scalar ``price_on_lattice(...)`` remains the preferred entry point
+when intermediate node evidence is unnecessary.
+
 Composition cards may join public primitives from more than one subsystem
 without introducing a new product helper. The general
 ``analytical_gaussian_composition`` card points a builder handling general

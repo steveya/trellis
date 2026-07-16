@@ -290,6 +290,40 @@ The lattice lowering validates, at minimum:
 - decision before settlement
 - settlement dates not earlier than decision dates
 
+Bounded Rollback Observations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+The one-factor rollback API can expose node values at an explicit, bounded set
+of lattice steps. This is a numerical composition surface, not a product
+pricer. At each requested nonterminal step it distinguishes:
+
+.. math::
+
+   C_m(i) = \sum_k M_m(i,k)V_{m+1}(k), \qquad
+   U_m(i) = C_m(i) + c_m(i), \qquad
+   V_m(i) = \mathcal{G}_m(U_m(i), E_m(i))
+
+where :math:`C_m` is discounted continuation, :math:`U_m` is the value after
+the current node cashflow, and :math:`V_m` is the value after the holder,
+issuer, or identity control. At the terminal step, all three captured vectors
+equal the terminal payoff vector because no rollback phase has occurred.
+
+``lattice_backward_induction_result(..., observation_steps=...)`` exposes this
+contract at the low-level recombining-lattice boundary.
+``value_on_lattice(..., observation_steps=...)`` exposes the same immutable
+``LatticeRollbackResult`` through the generalized lattice algebra. Requested
+steps are validated, deduplicated, sorted, and are the only node vectors kept;
+ordinary ``lattice_backward_induction(...)`` and ``price_on_lattice(...)``
+continue to return scalar root values.
+
+The shipped observation surface is intentionally limited to one-factor
+contracts with node cashflows and a single controller. Edge cashflows, event
+overlays, and multidimensional contracts remain available through scalar
+``price_on_lattice(...)`` but do not claim phase-aware observations. Agents
+should use this bounded result when they need schedule or exercise-state
+composition instead of open-coding backward induction or adding a
+product-specific helper.
+
 Typed Contract Inputs
 ~~~~~~~~~~~~~~~~~~~~~
 
@@ -425,6 +459,8 @@ Unified entry points:
 
 - ``build_lattice(topology, mesh, model, calibration_target)``
 - ``price_on_lattice(lattice, contract_spec)``
+- ``value_on_lattice(lattice, contract_spec, observation_steps=...)`` for
+  bounded node-phase evidence on the admitted one-factor path
 
 Implemented Advanced Families
 -----------------------------

@@ -824,9 +824,27 @@ def test_equity_tree_api_map_prioritizes_lattice_algebra_primitives():
         "compile_lattice_recipe",
         "build_lattice",
         "price_on_lattice",
+        "value_on_lattice",
     ):
         assert symbol in text
     assert "price_vanilla_equity_option_tree" not in text
+
+
+def test_rate_lattice_api_map_exposes_bounded_rollback_observations():
+    section = get_api_map()["rate_lattice"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "LatticeRollbackObservation",
+        "LatticeRollbackResult",
+        "lattice_backward_induction_result",
+        "value_on_lattice",
+    ):
+        assert symbol in text
+    assert "continuation" in text
+    assert "post-cashflow" in text
+    assert "post-control" in text
+    assert "price_bermudan_swaption_tree" not in text
 
 
 def _assert_import_statements_valid(import_statements: list[str]) -> None:

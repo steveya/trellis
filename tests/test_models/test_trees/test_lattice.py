@@ -1,5 +1,7 @@
 """Tests for the generic recombining lattice."""
 
+from dataclasses import FrozenInstanceError
+
 import numpy as raw_np
 import pytest
 from scipy.stats import norm
@@ -9,6 +11,7 @@ from trellis.models.trees.lattice import (
     build_rate_lattice,
     build_spot_lattice,
     lattice_backward_induction,
+    lattice_backward_induction_result,
 )
 from trellis.models.trees.control import resolve_lattice_exercise_policy
 from tests.lattice_builders import build_equity_lattice, build_short_rate_lattice
@@ -190,6 +193,114 @@ class TestRateLattice:
 
         assert price > 0.0
 
+
+class TestLatticeRollbackObservations:
+    @staticmethod
+    def _two_step_lattice() -> RecombiningLattice:
+        lattice = RecombiningLattice(2, 1.0, branching=2, state_dim=1)
+        for step in range(3):
+            for node in range(lattice.n_nodes(step)):
+                lattice.set_state(step, node, float(node))
+        lattice.set_probabilities(0, 0, [0.5, 0.5])
+        lattice.set_probabilities(1, 0, [0.5, 0.5])
+        lattice.set_probabilities(1, 1, [0.5, 0.5])
+        lattice.set_discount(0, 0, 1.0)
+        lattice.set_discount(1, 0, 1.0)
+        lattice.set_discount(1, 1, 1.0)
+        return lattice
+
+    def test_result_captures_continuation_cashflow_and_control_phases(self):
+        lattice = self._two_step_lattice()
+
+        result = lattice_backward_induction_result(
+            lattice,
+            terminal_payoff=lambda step, node, lattice_: 100.0 + 10.0 * node,
+            cashflow_at_node=lambda step, node, lattice_: 5.0 if step == 1 else 0.0,
+            exercise_value=lambda step, node, lattice_, continuation: (
+                110.0 if node == 0 else 130.0
+            ),
+            exercise_type="bermudan",
+            exercise_steps=[1],
+            observation_steps=[1],
+        )
+
+        observation = result.observation_at(1)
+        assert observation.continuation_values == pytest.approx((105.0, 115.0))
+        assert observation.post_cashflow_values == pytest.approx((110.0, 120.0))
+        assert observation.post_control_values == pytest.approx((110.0, 130.0))
+        assert result.root_value == pytest.approx(120.0)
+
+    def test_result_normalizes_requested_steps_and_captures_terminal_values(self):
+        lattice = self._two_step_lattice()
+
+        result = lattice_backward_induction_result(
+            lattice,
+            terminal_payoff=lambda step, node, lattice_: 100.0 + 10.0 * node,
+            observation_steps=[2, 0, 1, 1],
+        )
+
+        assert tuple(observation.step for observation in result.observations) == (0, 1, 2)
+        terminal = result.observation_at(2)
+        assert terminal.continuation_values == pytest.approx((100.0, 110.0, 120.0))
+        assert terminal.post_cashflow_values == terminal.continuation_values
+        assert terminal.post_control_values == terminal.continuation_values
+
+    @pytest.mark.parametrize("observation_steps", [(-1,), (3,), (0.5,), (True,)])
+    def test_result_rejects_invalid_observation_steps(self, observation_steps):
+        lattice = self._two_step_lattice()
+
+        error = TypeError if observation_steps in {(0.5,), (True,)} else ValueError
+        with pytest.raises(error):
+            lattice_backward_induction_result(
+                lattice,
+                terminal_payoff=0.0,
+                observation_steps=observation_steps,
+            )
+
+    def test_result_is_immutable_and_missing_observations_fail_closed(self):
+        lattice = self._two_step_lattice()
+        result = lattice_backward_induction_result(
+            lattice,
+            terminal_payoff=1.0,
+            observation_steps=(1,),
+        )
+
+        with pytest.raises(FrozenInstanceError):
+            result.root_value = 2.0
+        with pytest.raises(TypeError):
+            result.observation_at(1).continuation_values[0] = 2.0
+        with pytest.raises(KeyError, match="No lattice rollback observation"):
+            result.observation_at(0)
+
+    @pytest.mark.parametrize(
+        ("exercise_fn", "exercise_value"),
+        [
+            (max, 130.0),
+            (min, 90.0),
+        ],
+    )
+    def test_result_root_matches_scalar_backward_induction(self, exercise_fn, exercise_value):
+        lattice = self._two_step_lattice()
+        kwargs = {
+            "terminal_payoff": lambda step, node, lattice_: 100.0 + 10.0 * node,
+            "cashflow_at_node": lambda step, node, lattice_: 2.0 if step == 1 else 0.0,
+            "exercise_value": lambda step, node, lattice_, continuation: exercise_value,
+            "exercise_type": "bermudan",
+            "exercise_steps": [1],
+            "exercise_fn": exercise_fn,
+        }
+
+        result = lattice_backward_induction_result(
+            lattice,
+            observation_steps=(1,),
+            **kwargs,
+        )
+        scalar = lattice_backward_induction(lattice, **kwargs)
+
+        assert result.root_value == pytest.approx(scalar)
+
+
+class TestLatticeBackwardInductionCompatibility:
     @pytest.mark.legacy_compat
     def test_lattice_backward_induction_accepts_legacy_callable_signatures(self):
         lattice = build_rate_lattice(0.05, 0.01, 0.1, 1.0, 4)

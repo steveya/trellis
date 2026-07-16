@@ -44,7 +44,28 @@ def test_registry_includes_local_exported_values_without_package_reexports():
         "UNIFORM_ADDITIVE_MESH",
         "build_lattice",
         "price_on_lattice",
+        "value_on_lattice",
     } <= set(static_registry["trellis.models.trees.algebra"])
+
+
+def test_lattice_rollback_observation_primitives_are_visible_to_import_registry():
+    module = "trellis.models.trees.lattice"
+    symbols = {
+        "LatticeRollbackObservation",
+        "LatticeRollbackResult",
+        "lattice_backward_induction_result",
+    }
+
+    assert module_exists(module)
+    assert symbols <= set(list_module_exports(module))
+    for symbol in symbols:
+        assert module in find_symbol_modules(symbol)
+        assert is_valid_import(module, symbol)
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert symbols <= set(static_registry[module])
 
 
 def test_find_symbol_modules_returns_known_module():
