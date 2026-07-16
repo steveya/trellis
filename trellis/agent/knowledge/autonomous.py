@@ -34,6 +34,7 @@ from trellis.agent.generation_policy import (
     GenerationPolicyError,
     generation_evidence_payload,
     normalize_generation_policy,
+    validate_builder_synthesis_context,
 )
 
 
@@ -258,6 +259,10 @@ def build_with_knowledge(
             "Builder synthesis requires fresh_build=True so model source is isolated from admitted adapters.",
             reason="fresh_build_required",
         )
+    validate_builder_synthesis_context(
+        policy=generation_policy_value,
+        request_metadata=request_metadata,
+    )
     initial_generation_evidence = generation_evidence_payload(
         policy=generation_policy_value
     )

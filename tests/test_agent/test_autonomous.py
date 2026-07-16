@@ -924,6 +924,35 @@ def test_build_with_knowledge_requires_isolated_path_before_synthesis(monkeypatc
         )
 
 
+def test_build_with_knowledge_rejects_untrusted_llm_override_before_decomposition(
+    monkeypatch,
+):
+    from trellis.agent.config import llm_override_scope
+    from trellis.agent.generation_policy import GenerationPolicyError
+    from trellis.agent.knowledge.autonomous import build_with_knowledge
+
+    decompose_mod = import_module("trellis.agent.knowledge.decompose")
+    monkeypatch.setattr(
+        decompose_mod,
+        "decompose",
+        lambda *args, **kwargs: pytest.fail("decomposition must not run"),
+    )
+
+    with llm_override_scope(
+        generate=lambda *_args, **_kwargs: "replayed source",
+        generate_json=lambda *_args, **_kwargs: {},
+    ):
+        with pytest.raises(GenerationPolicyError) as exc_info:
+            build_with_knowledge(
+                "European option",
+                instrument_type="european_option",
+                fresh_build=True,
+                generation_policy="builder_synthesis_required",
+            )
+
+    assert exc_info.value.reason == "llm_override_untrusted"
+
+
 def test_environment_skip_remains_distinct_from_policy_skip(monkeypatch):
     from trellis.agent.knowledge.autonomous import _post_build_control_flags
     from trellis.agent.post_build_policy import determine_post_build_learning_policy

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Mapping
@@ -167,3 +168,68 @@ def validate_generation_policy_request(
             f"{normalized_execution or '<empty>'!r}.",
             reason=f"execution_mode_{normalized_execution or 'unknown'}",
         )
+
+
+def validate_builder_synthesis_context(
+    *,
+    policy: str | GenerationPolicy,
+    request_metadata: Mapping[str, object] | None = None,
+) -> None:
+    """Reject replayed or untrusted override source before proving synthesis."""
+    normalized = normalize_generation_policy(policy)
+    if normalized is GenerationPolicy.DETERMINISTIC_ALLOWED:
+        return
+
+    metadata_mode = _metadata_execution_mode(request_metadata)
+    if metadata_mode and metadata_mode not in {"live", "cassette_record"}:
+        raise GenerationPolicyError(
+            f"Builder synthesis is unavailable in execution mode {metadata_mode!r}.",
+            reason=f"execution_mode_{metadata_mode}",
+        )
+    if os.environ.get("TRELLIS_OFFLINE_LOCAL_AGENTS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        raise GenerationPolicyError(
+            "Builder synthesis is unavailable in offline_local_agents mode.",
+            reason="execution_mode_offline_local_agents",
+        )
+
+    from trellis.agent.cassette import current_llm_cassette_context
+    from trellis.agent.config import current_llm_override_context
+
+    cassette_context = current_llm_cassette_context()
+    cassette_mode = str((cassette_context or {}).get("mode") or "").strip().lower()
+    if cassette_mode and cassette_mode != "record":
+        execution_mode = f"cassette_{cassette_mode}"
+        raise GenerationPolicyError(
+            f"Builder synthesis is unavailable in execution mode {execution_mode!r}.",
+            reason=f"execution_mode_{execution_mode}",
+        )
+
+    override_context = current_llm_override_context()
+    if override_context and not bool(
+        override_context.get("model_source_observable")
+    ):
+        source = str(override_context.get("source") or "custom").strip()
+        raise GenerationPolicyError(
+            "Builder synthesis cannot be proved through untrusted LLM override "
+            f"{source!r}.",
+            reason="llm_override_untrusted",
+        )
+
+
+def _metadata_execution_mode(
+    request_metadata: Mapping[str, object] | None,
+) -> str:
+    if not isinstance(request_metadata, Mapping):
+        return ""
+    direct = str(request_metadata.get("execution_mode") or "").strip().lower()
+    if direct:
+        return direct
+    policy = request_metadata.get("post_build_learning_policy")
+    if isinstance(policy, Mapping):
+        return str(policy.get("execution_mode") or "").strip().lower()
+    return ""

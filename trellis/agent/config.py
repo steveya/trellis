@@ -83,6 +83,8 @@ class LLMOverrideHandlers:
 
     generate: Callable[..., str]
     generate_json: Callable[..., dict]
+    source: str = "custom"
+    model_source_observable: bool = False
 
 
 class TokenBudgetExceeded(RuntimeError):
@@ -377,18 +379,33 @@ def llm_override_scope(
     *,
     generate: Callable[..., str],
     generate_json: Callable[..., dict],
+    source: str = "custom",
+    model_source_observable: bool = False,
 ):
     """Temporarily override LLM text/JSON calls in the current context."""
     token = _LLM_OVERRIDE_HANDLERS.set(
         LLMOverrideHandlers(
             generate=generate,
             generate_json=generate_json,
+            source=str(source).strip() or "custom",
+            model_source_observable=bool(model_source_observable),
         )
     )
     try:
         yield
     finally:
         _LLM_OVERRIDE_HANDLERS.reset(token)
+
+
+def current_llm_override_context() -> dict[str, Any] | None:
+    """Describe the active LLM override and whether it can prove model source."""
+    override = _LLM_OVERRIDE_HANDLERS.get()
+    if override is None:
+        return None
+    return {
+        "source": override.source,
+        "model_source_observable": override.model_source_observable,
+    }
 
 
 def _validate_llm_text_response(text: str | None, *, provider: str, model: str) -> str:

@@ -45,6 +45,28 @@ def _make_cassette_yaml(calls: list[dict], meta: dict | None = None) -> str:
     return yaml.dump({"meta": meta, "calls": calls}, default_flow_style=False)
 
 
+def test_cassette_session_marks_only_record_override_as_model_source_observable(
+    tmp_path,
+):
+    from trellis.agent.cassette import llm_cassette_session
+    from trellis.agent.config import current_llm_override_context
+
+    path = tmp_path / "provenance.yaml"
+    with llm_cassette_session(path, mode="record"):
+        assert current_llm_override_context() == {
+            "source": "cassette_record",
+            "model_source_observable": True,
+        }
+
+    assert current_llm_override_context() is None
+
+    with llm_cassette_session(path, mode="replay"):
+        assert current_llm_override_context() == {
+            "source": "cassette_replay",
+            "model_source_observable": False,
+        }
+
+
 # ---------------------------------------------------------------------------
 # _prompt_hash
 # ---------------------------------------------------------------------------

@@ -41,6 +41,7 @@ from trellis.agent.generation_policy import (
     GenerationPolicyError,
     normalize_generation_policy,
     record_generation_evidence,
+    validate_builder_synthesis_context,
 )
 from trellis.agent.semantic_validation import validate_semantics
 from trellis.agent.builder import write_module, run_tests
@@ -1287,6 +1288,10 @@ def build_payoff(
             "Builder synthesis requires fresh_build=True so model source is isolated from admitted adapters.",
             reason="fresh_build_required",
         )
+    validate_builder_synthesis_context(
+        policy=generation_policy_value,
+        request_metadata=request_metadata,
+    )
     product_ir = None
     if compiled_request is None:
         try:

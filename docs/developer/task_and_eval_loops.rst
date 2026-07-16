@@ -961,8 +961,11 @@ The task runtime persists these as separate contracts:
 
 Synthesis-required execution fails closed when ``fresh_build`` is false, when
 recovery mode is ``strict``, or when execution mode is offline or cassette
-replay. Live or cassette-record execution remains an explicit assisted or
-remediation action. For example:
+replay. Direct builder entry points apply the same rule to active LLM
+overrides: generic/local overrides and cassette replay cannot prove model
+source, while cassette record is explicitly marked as observable because it
+wraps a live provider call. Live or cassette-record execution remains an
+explicit assisted or remediation action. For example:
 
 .. code-block:: bash
 
