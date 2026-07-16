@@ -252,7 +252,7 @@ rate_lattice:
   module: trellis.models.trees.lattice
   methods: [rate_tree]
   navigation:
-    aliases: [rate_tree, callable_bond, puttable_bond, bermudan_swaption]
+    aliases: [rate_tree, callable_bond, puttable_bond]
   key_imports:
     - "from trellis.models.trees.lattice import LatticeRollbackObservation, LatticeRollbackResult, build_rate_lattice, lattice_backward_induction, lattice_backward_induction_result"
     - "from trellis.models.trees.algebra import value_on_lattice"
@@ -451,9 +451,10 @@ european_swaption_monte_carlo_composition:
 
 european_swaption_rate_lattice_composition:
   module: trellis.models.trees.algebra
+  instruments: [swaption]
   methods: [rate_tree]
   navigation:
-    aliases: [swaption, european_swaption, hull_white_swaption_tree, hw_tree, bdt_tree]
+    aliases: [european_swaption, hull_white_swaption_tree, hw_tree, bdt_tree]
   modules:
     contract: trellis.models.bermudan_swaption_tree
     curve_basis: trellis.models.rate_style_swaption
@@ -468,6 +469,29 @@ european_swaption_rate_lattice_composition:
     - "Build the calibrated Hull-White or BDT lattice from the generic topology, mesh, term-structure target, and build_lattice(...) surfaces; pass resolved.mean_reversion as `a=`"
     - "Compile the lattice contract with compile_bermudan_swaption_contract_spec(...) and evaluate it with generic price_on_lattice(...)"
     - "price_swaption_tree(...) and build_swaption_tree_spec(...) remain compatibility/reference APIs and are not generated construction authority"
+
+bermudan_swaption_rate_lattice_composition:
+  module: trellis.models.trees.algebra
+  instruments: [bermudan_swaption]
+  methods: [rate_tree]
+  navigation:
+    aliases: [bermudan_swaption, hull_white_bermudan_swaption_tree, hw_tree_bermudan, bdt_tree_bermudan]
+  modules:
+    schedule: trellis.core.date_utils
+    market_binding: trellis.models.bermudan_swaption_tree
+    lattice_control: trellis.models.trees.control
+    lattice_algebra: trellis.models.trees.algebra
+  key_imports:
+    - "from trellis.core.date_utils import normalize_explicit_dates, year_fraction, build_payment_timeline"
+    - "from trellis.models.bermudan_swaption_tree import resolve_bermudan_swaption_tree_inputs"
+    - "from trellis.models.trees.control import lattice_step_from_time"
+    - "from trellis.models.trees.algebra import BINOMIAL_1F_TOPOLOGY, UNIFORM_ADDITIVE_MESH, TERM_STRUCTURE_TARGET, build_lattice"
+    - "from trellis.models.trees.algebra import LatticeLinearClaimSpec, LatticeContractSpec, value_on_lattice, LatticeControlSpec, price_on_lattice"
+  notes:
+    - "Normalize live exercise dates, build the fixed-leg payment timeline, resolve market/model controls once, and map both schedules onto the calibrated generic one-factor lattice."
+    - "Represent fixed coupons and principal with LatticeLinearClaimSpec and LatticeContractSpec, call value_on_lattice(..., observation_steps=exercise_steps), use continuation_values for adapter-owned payer/receiver algebra, then attach LatticeControlSpec(objective=\"holder_max\") and finish with price_on_lattice(...)."
+    - "Post-cashflow values can double count a coupon coincident with exercise."
+    - "Product-level Bermudan pricing and contract-compilation wrappers remain compatibility/reference APIs and are not generated construction authority."
 
 bermudan_swaption_lower_bound_composition:
   module: trellis.models.rate_style_swaption

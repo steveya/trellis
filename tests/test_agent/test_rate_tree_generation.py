@@ -19,44 +19,6 @@ from trellis.models.vol_surface import FlatVol
 
 ROOT = Path(__file__).resolve().parents[2]
 AGENT_ARTIFACTS = ROOT / "trellis" / "instruments" / "_agent"
-BERMUDAN_RATE_TREE_SOURCE = """
-from __future__ import annotations
-
-from dataclasses import dataclass
-from datetime import date
-
-from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
-from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree
-
-
-@dataclass(frozen=True)
-class BermudanSwaptionSpec:
-    notional: float
-    strike: float
-    exercise_dates: tuple[date, ...]
-    swap_end: date
-    swap_frequency: Frequency = Frequency.SEMI_ANNUAL
-    day_count: DayCountConvention = DayCountConvention.ACT_360
-    rate_index: str | None = None
-    is_payer: bool = True
-
-
-class BermudanSwaptionPayoff:
-    def __init__(self, spec: BermudanSwaptionSpec):
-        self._spec = spec
-
-    @property
-    def requirements(self) -> set[str]:
-        return {"discount_curve", "black_vol_surface", "forward_curve"}
-
-    def evaluate(self, market_state: MarketState) -> float:
-        if market_state.discount is None:
-            raise ValueError("discount curve required")
-        if market_state.vol_surface is None:
-            raise ValueError("black vol surface required")
-        return float(price_bermudan_swaption_tree(market_state, self._spec, model="hull_white"))
-"""
 
 
 def _artifact_source(name: str) -> str:
@@ -99,6 +61,24 @@ def _bermudan_plan():
     )
 
 
+def _bermudan_rate_tree_source() -> str:
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    plan = _bermudan_plan()
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["bermudan_swaption"],
+        "Bermudan payer swaption",
+        generation_plan=plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(skeleton, plan)
+    assert generated is not None
+    return generated.code
+
+
 def test_callable_artifact_is_rate_tree_route_compliant():
     report = validate_semantics(
         _artifact_source("callablebond.py"),
@@ -113,7 +93,7 @@ def test_callable_artifact_is_rate_tree_route_compliant():
 
 def test_bermudan_artifact_is_rate_tree_route_compliant():
     report = validate_semantics(
-        BERMUDAN_RATE_TREE_SOURCE,
+        _bermudan_rate_tree_source(),
         product_ir=decompose_to_ir(
             "Bermudan swaption: tree vs LSM MC",
             instrument_type="bermudan_swaption",
@@ -211,7 +191,6 @@ def test_bermudan_artifact_prices_plausibly_against_reference_tree():
         T_SWAP_TENOR,
         _price_bermudan_swaption_on_tree,
     )
-    from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree
     from trellis.models.trees.lattice import build_generic_lattice
     from trellis.models.trees.models import MODEL_REGISTRY
 
@@ -239,8 +218,21 @@ def test_bermudan_artifact_prices_plausibly_against_reference_tree():
         rate_index = None
         is_payer = True
 
-    spec = _Spec()
-    artifact_price = price_bermudan_swaption_tree(market_state, spec, model="hull_white")
+    namespace: dict[str, object] = {}
+    source = _bermudan_rate_tree_source()
+    exec(compile(source, "<bermudan_rate_tree>", "exec"), namespace)  # noqa: S102
+    spec = namespace["BermudanSwaptionSpec"](
+        notional=_Spec.notional,
+        strike=_Spec.strike,
+        exercise_dates=_Spec.exercise_dates,
+        swap_end=_Spec.swap_end,
+        swap_frequency=_Spec.swap_frequency,
+        day_count=_Spec.day_count,
+        rate_index=_Spec.rate_index,
+        is_payer=_Spec.is_payer,
+    )
+    payoff = namespace["BermudanSwaptionPayoff"](spec)
+    artifact_price = price_payoff(payoff, market_state)
 
     lattice = build_generic_lattice(
         MODEL_REGISTRY["hull_white"],

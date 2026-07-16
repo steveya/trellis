@@ -12,6 +12,7 @@ from trellis.agent.codegen_guardrails import (
     build_generation_plan,
     rank_primitive_routes,
     render_generation_plan,
+    render_import_repair_card,
     render_review_contract_card,
     render_generation_route_card,
     render_semantic_repair_card,
@@ -798,6 +799,35 @@ def test_generation_route_card_for_fx_analytical_composes_resolver_and_kernel():
     assert "garman_kohlhagen_price_raw" in text
     assert "price_fx_vanilla_analytical" not in text
     assert "map_fx_spot_and_curves_to_garman_kohlhagen_inputs" not in text
+
+
+def test_bermudan_builder_cards_hide_excluded_compatibility_reference():
+    compiled = compile_build_request(
+        "Bermudan payer swaption with annual exercise dates under a calibrated rate tree",
+        instrument_type="bermudan_swaption",
+        preferred_method="rate_tree",
+    )
+
+    primitive_plan = compiled.generation_plan.primitive_plan
+    assert primitive_plan is not None
+    compatibility_reference = next(
+        primitive
+        for primitive in primitive_plan.primitives
+        if primitive.role == "compatibility_reference"
+    )
+    assert compatibility_reference.excluded
+
+    for card in (
+        render_generation_plan(compiled.generation_plan),
+        render_generation_route_card(compiled.generation_plan),
+        render_import_repair_card(compiled.generation_plan),
+        render_review_contract_card(compiled.generation_plan),
+        render_semantic_repair_card(compiled.generation_plan),
+    ):
+        assert "price_bermudan_swaption_tree" not in card
+        assert "compatibility_reference" not in card
+        assert "value_on_lattice" in card
+        assert "price_on_lattice" in card
 
 
 def test_requested_method_augmentation_adds_route_family_hints_for_stale_decompositions():

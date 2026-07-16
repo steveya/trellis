@@ -1135,65 +1135,6 @@ class SmokePayoff:
             max_retries=2,
         )
 
-GOOD_BERMUDAN_RATE_TREE_MODULE_CODE = '''\
-"""Agent-generated payoff: Bermudan swaption on HW tree."""
-
-from __future__ import annotations
-
-from dataclasses import dataclass
-from datetime import date
-
-from trellis.core.market_state import MarketState
-from trellis.core.types import DayCountConvention, Frequency
-
-
-@dataclass(frozen=True)
-class BermudanSwaptionSpec:
-    notional: float
-    strike: float
-    exercise_dates: tuple[date, ...]
-    swap_end: date
-    swap_frequency: Frequency = Frequency.SEMI_ANNUAL
-    day_count: DayCountConvention = DayCountConvention.ACT_360
-    rate_index: str | None = None
-    is_payer: bool = True
-
-
-class BermudanSwaptionPayoff:
-    def __init__(self, spec: BermudanSwaptionSpec):
-        self._spec = spec
-
-    @property
-    def spec(self) -> BermudanSwaptionSpec:
-        return self._spec
-
-    @property
-    def requirements(self) -> set[str]:
-        return {"black_vol_surface", "discount_curve", "forward_curve"}
-
-    def evaluate(self, market_state: MarketState) -> float:
-        from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree
-
-        return float(price_bermudan_swaption_tree(market_state, self._spec, model="hull_white"))
-'''
-
-BERMUDAN_SPEC_SCHEMA = SpecSchema(
-    class_name="BermudanSwaptionPayoff",
-    spec_name="BermudanSwaptionSpec",
-    requirements=["black_vol", "discount", "forward_rate"],
-    fields=[
-        FieldDef("notional", "float", "Swaption notional"),
-        FieldDef("strike", "float", "Fixed strike rate"),
-        FieldDef("exercise_dates", "tuple[date, ...]", "Ordered Bermudan exercise dates"),
-        FieldDef("swap_end", "date", "Underlying swap end date"),
-        FieldDef("swap_frequency", "Frequency", "Swap payment frequency", "Frequency.SEMI_ANNUAL"),
-        FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
-        FieldDef("rate_index", "str | None", "Forecast curve key", "None"),
-        FieldDef("is_payer", "bool", "Payer or receiver swaption", "True"),
-    ],
-)
-
-
 class TestBuildLoop:
 
     def _fx_market_state(self) -> MarketState:
@@ -1868,9 +1809,7 @@ class QuantoOptionAnalyticalPayoff:
         mock_gen_mod,
         tmp_path,
     ):
-        """A rebuilt Bermudan swaption follows the rate-tree route and prices near the task reference."""
-        mock_design_spec.return_value = BERMUDAN_SPEC_SCHEMA
-        mock_gen_mod.return_value = GOOD_BERMUDAN_RATE_TREE_MODULE_CODE
+        """A rebuilt Bermudan swaption composes the admitted route without LLM codegen."""
 
         from trellis.agent.executor import build_payoff
 
@@ -1909,3 +1848,5 @@ class QuantoOptionAnalyticalPayoff:
         pv = price_payoff(payoff_cls(spec), market_state)
         assert pv > 1.0
         assert pv < 4.0
+        mock_design_spec.assert_not_called()
+        mock_gen_mod.assert_not_called()

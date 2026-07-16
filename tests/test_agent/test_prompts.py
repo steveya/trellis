@@ -1558,7 +1558,7 @@ def test_executor_callable_bond_rate_tree_retry_pins_vol_surface_and_control_pol
     assert 'resolve_lattice_exercise_policy("issuer_call"' in text
 
 
-def test_executor_bermudan_swaption_rate_tree_retry_pins_helper_and_bermudan_control():
+def test_executor_bermudan_swaption_rate_tree_retry_pins_explicit_lattice_composition():
     from types import SimpleNamespace
 
     from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
@@ -1577,11 +1577,24 @@ def test_executor_bermudan_swaption_rate_tree_retry_pins_helper_and_bermudan_con
 
     text = "\n".join(_route_specific_retry_lines(request))
 
-    assert "price_bermudan_swaption_tree" in text
-    assert "market_state.vol_surface.black_vol" in text
-    assert "market_state.discount.zero_rate" in text
-    assert 'resolve_lattice_exercise_policy("bermudan"' in text
-    assert "price_callable_bond_tree" in text
+    for symbol in (
+        "normalize_explicit_dates",
+        "build_payment_timeline",
+        "resolve_bermudan_swaption_tree_inputs",
+        "lattice_step_from_time",
+        "LatticeLinearClaimSpec",
+        "LatticeContractSpec",
+        "value_on_lattice",
+        "LatticeControlSpec",
+        "price_on_lattice",
+    ):
+        assert symbol in text
+    assert "continuation_values" in text
+    assert "holder_max" in text
+    assert "payer/receiver" in text
+    assert "price_bermudan_swaption_tree" not in text
+    assert "compile_bermudan_swaption_contract_spec" not in text
+    assert "price_callable_bond_tree" not in text
 
 
 def test_executor_bermudan_swaption_analytical_retry_pins_final_exercise_composition():

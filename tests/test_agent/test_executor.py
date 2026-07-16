@@ -1089,7 +1089,8 @@ def test_admitted_bermudan_swaption_adapter_composes_final_exercise_lower_bound(
     assert "price_bermudan_swaption_black76_lower_bound" not in source
 
 
-def test_deterministic_exact_binding_module_materializes_bermudan_tree_compat_wrapper():
+def test_deterministic_exact_binding_module_composes_bermudan_swaption_lattice():
+    from trellis.agent.codegen_guardrails import PrimitiveRef
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
         _generate_skeleton,
@@ -1097,13 +1098,43 @@ def test_deterministic_exact_binding_module_materializes_bermudan_tree_compat_wr
     )
     from trellis.agent.planner import STATIC_SPECS
 
+    primitives = (
+        PrimitiveRef("trellis.core.date_utils", "normalize_explicit_dates", "schedule_normalizer"),
+        PrimitiveRef("trellis.core.date_utils", "year_fraction", "timeline_mapping"),
+        PrimitiveRef("trellis.core.date_utils", "build_payment_timeline", "payment_timeline_builder"),
+        PrimitiveRef(
+            "trellis.models.bermudan_swaption_tree",
+            "resolve_bermudan_swaption_tree_inputs",
+            "market_binding",
+        ),
+        PrimitiveRef("trellis.models.trees.algebra", "BINOMIAL_1F_TOPOLOGY", "topology"),
+        PrimitiveRef("trellis.models.trees.algebra", "UNIFORM_ADDITIVE_MESH", "mesh"),
+        PrimitiveRef("trellis.models.trees.algebra", "TERM_STRUCTURE_TARGET", "calibration_target"),
+        PrimitiveRef("trellis.models.trees.algebra", "build_lattice", "lattice_builder"),
+        PrimitiveRef("trellis.models.trees.control", "lattice_step_from_time", "schedule_mapping"),
+        PrimitiveRef("trellis.models.trees.algebra", "LatticeLinearClaimSpec", "linear_claim"),
+        PrimitiveRef("trellis.models.trees.algebra", "LatticeContractSpec", "contract_spec"),
+        PrimitiveRef("trellis.models.trees.algebra", "value_on_lattice", "observation_rollback"),
+        PrimitiveRef("trellis.models.trees.algebra", "LatticeControlSpec", "exercise_control"),
+        PrimitiveRef("trellis.models.trees.algebra", "price_on_lattice", "pricing_kernel"),
+        PrimitiveRef(
+            "trellis.models.bermudan_swaption_tree",
+            "price_bermudan_swaption_tree",
+            "compatibility_reference",
+            required=False,
+            excluded=True,
+        ),
+    )
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(
-            "trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree",
+            "trellis.models.trees.algebra.price_on_lattice",
         ),
-        primitive_plan=SimpleNamespace(route="exercise_lattice"),
+        primitive_plan=SimpleNamespace(
+            route="exercise_lattice",
+            primitives=primitives,
+        ),
         method="rate_tree",
-        instrument_type="swaption",
+        instrument_type="bermudan_swaption",
     )
 
     skeleton = _generate_skeleton(
@@ -1117,8 +1148,71 @@ def test_deterministic_exact_binding_module_materializes_bermudan_tree_compat_wr
     )
 
     assert generated is not None
-    assert "return price_bermudan_swaption_tree(market_state, spec)" in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+    for symbol in (
+        "normalize_explicit_dates",
+        "year_fraction",
+        "build_payment_timeline",
+        "resolve_bermudan_swaption_tree_inputs",
+        "BINOMIAL_1F_TOPOLOGY",
+        "UNIFORM_ADDITIVE_MESH",
+        "TERM_STRUCTURE_TARGET",
+        "build_lattice",
+        "lattice_step_from_time",
+        "LatticeLinearClaimSpec",
+        "LatticeContractSpec",
+        "value_on_lattice",
+        "LatticeControlSpec",
+        "price_on_lattice",
+    ):
+        assert symbol in generated.code
+    assert "continuation_values" in generated.code
+    assert 'objective="holder_max"' in generated.code
+    assert "notional - fixed_leg_value" in generated.code
+    assert "period.t_payment" in generated.code
+    assert "payment_step = lattice_step_from_time" in generated.code
+    assert "payment_index * steps_per_coupon" not in generated.code
+    assert "price_bermudan_swaption_tree(" not in generated.code
+    assert "compile_bermudan_swaption_contract_spec(" not in generated.code
+    assert "BermudanSwaptionTreeSpec(" not in generated.code
+
+    from trellis.core.market_state import MarketState
+    from trellis.core.types import DayCountConvention, Frequency
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.bermudan_swaption_tree import price_bermudan_swaption_tree
+    from trellis.models.vol_surface import FlatVol
+
+    namespace: dict[str, object] = {}
+    exec(compile(generated.code, "<qua_1201_bermudan>", "exec"), namespace)  # noqa: S102
+    spec = namespace["BermudanSwaptionSpec"](
+        notional=100.0,
+        strike=0.05,
+        exercise_dates=(
+            date(2025, 11, 15),
+            date(2026, 11, 15),
+            date(2027, 11, 15),
+            date(2028, 11, 15),
+            date(2029, 11, 15),
+        ),
+        swap_end=date(2030, 11, 15),
+        swap_frequency=Frequency.SEMI_ANNUAL,
+        day_count=DayCountConvention.ACT_360,
+        rate_index=None,
+        is_payer=True,
+    )
+    market_state = MarketState(
+        as_of=date(2024, 11, 15),
+        settlement=date(2024, 11, 15),
+        discount=YieldCurve.flat(0.05, max_tenor=31.0),
+        vol_surface=FlatVol(0.20),
+    )
+    payoff = namespace["BermudanSwaptionPayoff"](spec)
+
+    assert payoff.evaluate(market_state) == pytest.approx(
+        price_bermudan_swaption_tree(market_state, spec, model="hull_white"),
+        rel=1e-12,
+        abs=1e-12,
+    )
 
 
 def test_deterministic_exact_binding_module_materializes_cap_strip_helper_wrapper():

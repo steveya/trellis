@@ -644,6 +644,65 @@ def _exact_binding_signature_lines(plan: GenerationPlan, *, compact: bool) -> li
     return lines
 
 
+def _construction_primitives(plan: GenerationPlan) -> tuple[PrimitiveRef, ...]:
+    """Return backend primitives that generated construction may use."""
+    primitive_plan = plan.primitive_plan
+    if primitive_plan is None:
+        return ()
+    return tuple(
+        primitive
+        for primitive in primitive_plan.primitives
+        if not primitive.excluded
+    )
+
+
+def _mentions_excluded_primitive(plan: GenerationPlan, text: str) -> bool:
+    """Return whether prompt text names an audit-only excluded primitive."""
+    primitive_plan = plan.primitive_plan
+    if primitive_plan is None:
+        return False
+    return any(
+        primitive.excluded
+        and (
+            primitive.symbol in text
+            or f"{primitive.module}.{primitive.symbol}" in text
+        )
+        for primitive in primitive_plan.primitives
+    )
+
+
+def _construction_notes(plan: GenerationPlan) -> tuple[str, ...]:
+    """Return route notes that do not advertise excluded compatibility paths."""
+    primitive_plan = plan.primitive_plan
+    if primitive_plan is None:
+        return ()
+    return tuple(
+        note
+        for note in primitive_plan.notes
+        if not _mentions_excluded_primitive(plan, note)
+    )
+
+
+def _construction_symbols(plan: GenerationPlan) -> tuple[str, ...]:
+    """Return route primitives first, excluding audit-only references."""
+    excluded_symbols = {
+        primitive.symbol
+        for primitive in (plan.primitive_plan.primitives if plan.primitive_plan else ())
+        if primitive.excluded
+    }
+    ordered: list[str] = []
+    seen: set[str] = set()
+    for symbol in (
+        *(primitive.symbol for primitive in _construction_primitives(plan)),
+        *plan.symbols_to_reuse,
+    ):
+        if symbol in excluded_symbols or symbol in seen:
+            continue
+        seen.add(symbol)
+        ordered.append(symbol)
+    return tuple(ordered)
+
+
 def _render_backend_binding_lines(plan: GenerationPlan, *, compact: bool) -> list[str]:
     """Render route/helper bindings as a secondary backend-binding section."""
     if plan.primitive_plan is None:
@@ -660,20 +719,30 @@ def _render_backend_binding_lines(plan: GenerationPlan, *, compact: bool) -> lis
         lines.append(f"  - Route family: `{display_route_family}`")
     if not compact:
         lines.append(f"  - Route score: `{plan.primitive_plan.score:.2f}`")
-    if plan.primitive_plan.primitives:
+    construction_primitives = _construction_primitives(plan)
+    if construction_primitives:
         lines.append("  - Selected primitives:")
         lines.extend(
             f"    - `{primitive.module}.{primitive.symbol}` ({primitive.role})"
-            for primitive in plan.primitive_plan.primitives
+            for primitive in construction_primitives
         )
     resolved_instructions = _resolve_generation_instructions(plan)
-    if resolved_instructions.effective_instructions:
+    visible_instructions = tuple(
+        instruction
+        for instruction in resolved_instructions.effective_instructions
+        if not _mentions_excluded_primitive(plan, instruction.statement)
+    )
+    if visible_instructions:
         lines.append("  - Resolved instructions:")
         lines.extend(
             f"    - [{instruction.instruction_type}] {instruction.statement}"
-            for instruction in resolved_instructions.effective_instructions[: (8 if compact else 12)]
+            for instruction in visible_instructions[: (8 if compact else 12)]
         )
-        schedule_instructions = _schedule_related_instructions(resolved_instructions)
+        schedule_instructions = tuple(
+            instruction
+            for instruction in _schedule_related_instructions(resolved_instructions)
+            if not _mentions_excluded_primitive(plan, instruction.statement)
+        )
         if schedule_instructions:
             lines.append("  - Schedule construction:")
             lines.extend(
@@ -692,9 +761,10 @@ def _render_backend_binding_lines(plan: GenerationPlan, *, compact: bool) -> lis
             f"    - `{adapter}`"
             for adapter in plan.primitive_plan.adapters[: (6 if compact else 10)]
         )
-    if plan.primitive_plan.notes and compact:
+    construction_notes = _construction_notes(plan)
+    if construction_notes and compact:
         lines.append("  - Backend notes:")
-        lines.extend(f"    - {note}" for note in plan.primitive_plan.notes[:4])
+        lines.extend(f"    - {note}" for note in construction_notes[:4])
     return lines
 
 
@@ -774,16 +844,17 @@ def render_generation_plan(plan: GenerationPlan) -> str:
     lines.extend(f"  - `{module}`" for module in plan.inspected_modules)
     lines.append("- Approved Trellis modules for imports:")
     lines.extend(f"  - `{module}`" for module in plan.approved_modules)
-    if plan.symbols_to_reuse:
+    construction_symbols = _construction_symbols(plan)
+    if construction_symbols:
         symbol_limit = 24 if plan.lane_family else 80
         lines.append("- Public symbols available from the approved modules:")
-        lines.extend(f"  - `{symbol}`" for symbol in plan.symbols_to_reuse[:symbol_limit])
+        lines.extend(f"  - `{symbol}`" for symbol in construction_symbols[:symbol_limit])
     if plan.proposed_tests:
         lines.append("- Tests to run after generation:")
         lines.extend(f"  - `{target}`" for target in plan.proposed_tests)
-    if plan.test_map is not None and plan.symbols_to_reuse:
+    if plan.test_map is not None and construction_symbols:
         likely_test_lines = []
-        for symbol in plan.symbols_to_reuse[:8]:
+        for symbol in construction_symbols[:8]:
             likely = suggest_tests_for_symbol(symbol)
             if likely:
                 likely_test_lines.append(f"  - `{symbol}` -> {', '.join(likely[:4])}")
@@ -900,7 +971,7 @@ def _build_instruction_records(plan: GenerationPlan) -> tuple[InstructionRecord,
     route_helpers = [
         primitive
         for primitive in primitive_plan.primitives
-        if primitive.role == "route_helper"
+        if primitive.role == "route_helper" and not primitive.excluded
     ]
     if route_helpers:
         helper = route_helpers[0]
@@ -928,7 +999,11 @@ def _build_instruction_records(plan: GenerationPlan) -> tuple[InstructionRecord,
         (
             primitive
             for primitive in primitive_plan.primitives
-            if primitive.role == "schedule_builder" or primitive.symbol == "generate_schedule"
+            if not primitive.excluded
+            and (
+                primitive.role == "schedule_builder"
+                or primitive.symbol == "generate_schedule"
+            )
         ),
         None,
     )
@@ -968,8 +1043,9 @@ def _build_instruction_records(plan: GenerationPlan) -> tuple[InstructionRecord,
             )
         )
 
-    if primitive_plan.notes:
-        for index, note in enumerate(primitive_plan.notes, 1):
+    construction_notes = _construction_notes(plan)
+    if construction_notes:
+        for index, note in enumerate(construction_notes, 1):
             records.append(
                 InstructionRecord(
                     id=f"{route}:note:{index}",
@@ -1010,9 +1086,10 @@ def render_import_repair_card(plan: GenerationPlan) -> str:
         "- Approved Trellis modules:",
     ]
     lines.extend(f"  - `{module}`" for module in plan.approved_modules[:18])
-    if plan.symbols_to_reuse:
+    construction_symbols = _construction_symbols(plan)
+    if construction_symbols:
         lines.append("- Approved public symbols to reuse:")
-        lines.extend(f"  - `{symbol}`" for symbol in plan.symbols_to_reuse[:40])
+        lines.extend(f"  - `{symbol}`" for symbol in construction_symbols[:40])
     lines.append("- Use only modules and symbols listed above.")
     lines.append("- Do not invent imports, aliases, or wildcard imports.")
     return "\n".join(lines)
@@ -1035,18 +1112,20 @@ def render_semantic_repair_card(plan: GenerationPlan) -> str:
         )
         if display_route_family:
             lines.append(f"- Route family: `{display_route_family}`")
-        if plan.primitive_plan.primitives:
+        construction_primitives = _construction_primitives(plan)
+        if construction_primitives:
             lines.append("- Required primitives:")
             lines.extend(
                 f"  - `{primitive.module}.{primitive.symbol}` ({primitive.role})"
-                for primitive in plan.primitive_plan.primitives[:10]
+                for primitive in construction_primitives
             )
         if plan.primitive_plan.adapters:
             lines.append("- Required adapters:")
             lines.extend(f"  - `{adapter}`" for adapter in plan.primitive_plan.adapters[:8])
-        if plan.primitive_plan.notes:
+        construction_notes = _construction_notes(plan)
+        if construction_notes:
             lines.append("- Route notes:")
-            lines.extend(f"  - {note}" for note in plan.primitive_plan.notes[:4])
+            lines.extend(f"  - {note}" for note in construction_notes[:4])
     if plan.uncertainty_flags:
         lines.append("- Active uncertainty flags:")
         lines.extend(f"  - `{flag}`" for flag in plan.uncertainty_flags[:6])

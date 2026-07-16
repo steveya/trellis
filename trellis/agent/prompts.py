@@ -560,13 +560,13 @@ def _render_family_route_guidance(
     if instrument_type == "bermudan_swaption" and method == "rate_tree":
         lines.append("## Family Route Guidance")
         lines.extend([
-            "- Prefer the checked-in Bermudan swaption helper surface in `trellis.models.bermudan_swaption_tree`: `price_bermudan_swaption_tree(market_state, spec, model=\"hull_white\"|\"bdt\")` or the lower-level `build_bermudan_swaption_lattice(...)` + `price_bermudan_swaption_on_lattice(...)`.",
-            "- Treat `trellis.models.trees.control` as the lattice-timeline facade. Build Bermudan exercise timing with `build_exercise_timeline_from_dates(...)` and `lattice_steps_from_timeline(...)`; do not reconstruct step schedules inline from raw integers.",
-            "- Keep rate-vol access explicit in the body: bind `black_vol = float(market_state.vol_surface.black_vol(max(T_option, 1e-6), max(abs(spec.strike), 1e-6)))` before delegating to the helper.",
-            "- Read the short-rate seed from `market_state.discount.zero_rate(...)`. Do not invent `market_state.zero_rate(...)` or a separate curve accessor.",
-            "- For explicit BDT / Hull-White comparison routes, prefer `price_bermudan_swaption_tree(..., model=\"bdt\"|\"hull_white\")`. If you must build the tree directly, use `build_generic_lattice(...)` with `MODEL_REGISTRY[\"bdt\"]` or `MODEL_REGISTRY[\"hull_white\"]`.",
-            "- Resolve Bermudan exercise with `exercise_policy = resolve_lattice_exercise_policy(\"bermudan\", exercise_steps=...)`; do not drift to issuer-call semantics or `exercise_fn=min`.",
-            "- The checked-in helper already owns the fixed-leg coupon map, node-wise swap valuation, and Bermudan rollback. Keep the generated route as a thin adapter over that helper rather than rebuilding swap valuation loops inline.",
+            "- Normalize live exercise dates with `normalize_explicit_dates(...)`, build the underlying fixed-leg schedule with `build_payment_timeline(...)`, and map measured dates with `year_fraction(...)` plus `lattice_step_from_time(...)`.",
+            "- Resolve curve, volatility, Hull-White/BDT parameters, horizon, and step controls once with `resolve_bermudan_swaption_tree_inputs(...)`.",
+            "- Compose `BINOMIAL_1F_TOPOLOGY`, `UNIFORM_ADDITIVE_MESH`, `TERM_STRUCTURE_TARGET(market_state.discount)`, and generic `build_lattice(...)`; pass `resolved.mean_reversion` as `a=`.",
+            "- Represent fixed coupons and principal with `LatticeLinearClaimSpec` and `LatticeContractSpec`, then call `value_on_lattice(..., observation_steps=exercise_steps)`.",
+            "- Form payer/receiver swap values from each observation's `continuation_values`; using post-cashflow values would double count any exercise-time coupon.",
+            "- Attach `LatticeControlSpec(objective=\"holder_max\", ...)` to the option `LatticeContractSpec` and finish with `price_on_lattice(...)`.",
+            "- Product-level Bermudan pricing wrappers and contract compilers are compatibility/reference APIs, not generated construction authority.",
         ])
 
     if instrument_type == "bermudan_swaption" and method == "analytical":

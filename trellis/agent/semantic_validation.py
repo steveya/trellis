@@ -241,6 +241,23 @@ class _SemanticVisitor(ast.NodeVisitor):
                 )
                 self.lattice_exercise_functions.append(exercise_policy.exercise_objective)
 
+        if call_name.endswith("LatticeControlSpec"):
+            self.engine_families.add("lattice")
+            objective = _literal_keyword(node, "objective")
+            has_exercise_steps = any(
+                keyword.arg == "exercise_steps" for keyword in node.keywords
+            )
+            if has_exercise_steps:
+                self.lattice_has_exercise_steps = True
+                self.lattice_exercise_types.append("bermudan")
+            if isinstance(objective, str):
+                normalized_objective = objective.strip().lower()
+                self.lattice_exercise_styles.append(normalized_objective)
+                if normalized_objective == "holder_max":
+                    self.lattice_exercise_functions.append("max")
+                elif normalized_objective == "issuer_min":
+                    self.lattice_exercise_functions.append("min")
+
         if call_name.endswith("resolve_lattice_exercise_policy"):
             invalid_kwargs = sorted(
                 keyword.arg
@@ -546,7 +563,8 @@ def validate_semantics(
                     code="lattice.exercise_type_mismatch",
                     message=(
                         "Schedule-dependent lattice exercise products must use "
-                        "`exercise_type=\"bermudan\"` in lattice_backward_induction(...)."
+                        "a Bermudan exercise schedule in `LatticeControlSpec(...)` "
+                        "or `lattice_backward_induction(...)`."
                     ),
                 ))
             if product_ir.schedule_dependence and not signals.lattice_has_exercise_steps:
@@ -554,7 +572,7 @@ def validate_semantics(
                     code="lattice.exercise_schedule_missing",
                     message=(
                         "Schedule-dependent lattice exercise products must pass "
-                        "`exercise_steps=...` to lattice_backward_induction(...)."
+                        "`exercise_steps=...` to their lattice control."
                     ),
                 ))
             expected_objective = "min" if product_ir.exercise_style == "issuer_call" else "max"
@@ -563,7 +581,7 @@ def validate_semantics(
                     code="lattice.exercise_objective_mismatch",
                     message=(
                         "Lattice exercise objective does not match the product semantics. "
-                        f"Expected `exercise_fn={expected_objective}` for "
+                        f"Expected `{expected_objective}` control semantics for "
                         f"`{product_ir.exercise_style}` products."
                     ),
                 ))
