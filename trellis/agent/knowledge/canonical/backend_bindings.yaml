@@ -1076,6 +1076,7 @@ bindings:
           - module: trellis.models.analytical.barrier
             symbol: barrier_option_price
             role: pricing_kernel
+            owns_engine_family: true
       - when:
           contract_pattern:
             payoff:
@@ -1307,6 +1308,7 @@ bindings:
       - module: trellis.models.analytical.barrier
         symbol: barrier_option_price
         role: pricing_kernel
+        owns_engine_family: true
 
   - route_id: analytical_garman_kohlhagen
     engine_family: analytical

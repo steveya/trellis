@@ -693,6 +693,12 @@ def test_resolve_backend_binding_spec_uses_fx_barrier_primitive_composition(
     assert resolved.exact_target_refs == (expected_ref,)
     assert resolved.market_binding_refs == (expected_market_binding,)
     assert resolved.helper_refs == ()
+    target = next(
+        primitive
+        for primitive in resolved.primitives
+        if f"{primitive.module}.{primitive.symbol}" == expected_ref
+    )
+    assert target.owns_engine_family is (route_id == "analytical_fx_barrier")
 
 
 @pytest.mark.parametrize(

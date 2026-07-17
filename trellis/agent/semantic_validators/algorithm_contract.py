@@ -71,10 +71,6 @@ _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
 _EXPLICIT_COMPOSITION_PRIMITIVES = frozenset({
     ("analytical_black76", "barrier_option_price"),
 })
-_ENGINE_OWNING_PRICING_KERNELS = frozenset({
-    ("analytical_black76", "barrier_option_price"),
-})
-
 _EXACT_HELPER_SIGNATURES = {
     "price_double_barrier_option_pde_result": {
         "min_positional_args": 2,
@@ -666,7 +662,7 @@ class AlgorithmContractValidator:
             if prim.required
             and (
                 prim.role == "route_helper"
-                or (route_spec.id, prim.symbol) in _ENGINE_OWNING_PRICING_KERNELS
+                or prim.owns_engine_family
             )
         )
         if engine_owning_symbols and any(

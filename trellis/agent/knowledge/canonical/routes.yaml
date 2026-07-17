@@ -1700,6 +1700,7 @@ routes:
           - module: trellis.models.analytical.barrier
             symbol: barrier_option_price
             role: pricing_kernel
+            owns_engine_family: true
           - module: trellis.models.analytical.support.barriers
             symbol: terminal_double_barrier_payoff
             role: terminal_payoff
@@ -2138,6 +2139,7 @@ routes:
       - module: trellis.models.analytical.barrier
         symbol: barrier_option_price
         role: pricing_kernel
+        owns_engine_family: true
     adapters: []
     notes:
       - "Resolve FX spot, domestic/foreign rates, volatility, monitoring, and payoff terms, then call `barrier_option_price(...)` with foreign rate as `q` and apply notional."

@@ -911,6 +911,13 @@ direction, and settlement binding. Required-primitive validation still rejects
 an analytical F009 artifact that omits the kernel; changing the role does not
 turn it into an optional hint.
 
+The equity and FX route/binding records also mark this scalar formula with
+``owns_engine_family: true``. That flag is narrower than ``pricing_kernel``:
+it means a call is itself complete evidence for the selected numerical method.
+Terminal or inner kernels used inside Monte Carlo and PDE construction leave
+the flag false, so they cannot hide a missing path engine, mesh, operator, or
+time-stepping implementation from semantic validation.
+
 The deterministic digital spec schema includes ``dividend_yield``. Benchmark
 ``dividend_rate`` aliases therefore survive spec-override filtering when an
 adapter is regenerated, rather than silently reverting the analytical forward
