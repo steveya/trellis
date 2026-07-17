@@ -1019,6 +1019,16 @@ contract, and calls ``price_on_lattice(...)``. The semantic gate requires
 ``price_swaption_tree(...)`` surface remains independent comparison evidence,
 not the generated artifact identity.
 
+The underlying market binding is now product-neutral. The ``rate_lattice`` API
+card exposes ``resolve_short_rate_lattice_inputs(...)`` together with
+``MODEL_REGISTRY``, ``TERM_STRUCTURE_TARGET(...)``, and ``build_lattice(...)``.
+The resolver records canonical model and volatility units, gives explicit or
+calibrated parameters precedence over surface-derived defaults, and fails
+closed when discount or volatility evidence is absent. Callable-bond and
+Bermudan-swaption builders share this binding, so a later route migration can
+remove product-wrapper authority without asking generated code to recreate
+normal-versus-lognormal volatility conversion.
+
 Helper-authority inventory
 --------------------------
 

@@ -530,6 +530,24 @@ def test_short_rate_bond_helpers_are_visible_to_import_registry():
         assert symbol in registry_text
 
 
+def test_short_rate_lattice_binding_is_visible_to_import_registry():
+    module = "trellis.models.short_rate_lattice"
+    symbols = {
+        "ResolvedShortRateLatticeInputs",
+        "resolve_short_rate_lattice_inputs",
+    }
+
+    assert module_exists(module)
+    assert symbols <= set(list_module_exports(module))
+    registry_text = get_import_registry()
+    assert f"from {module} import" in registry_text
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert symbols <= set(static_registry[module])
+
+
 def test_cev_helpers_are_visible_to_import_registry():
     pde_module = "trellis.models.equity_option_pde"
     tree_module = "trellis.models.equity_option_tree"

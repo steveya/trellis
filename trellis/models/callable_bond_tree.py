@@ -14,12 +14,12 @@ from trellis.core.date_utils import (
 )
 import trellis.models.trees.algebra as lattice_algebra
 import trellis.models.trees.models as tree_models
+from trellis.models.short_rate_lattice import resolve_short_rate_lattice_inputs
 from trellis.models.trees.lattice import (
     RecombiningLattice,
     build_lattice,
     price_on_lattice,
 )
-from trellis.models.hull_white_parameters import resolve_hull_white_parameters
 from trellis.models.short_rate_fixed_income import (
     build_embedded_fixed_income_coupon_step_map,
     build_embedded_fixed_income_event_timeline,
@@ -45,32 +45,28 @@ def build_callable_bond_lattice(
     if maturity <= 0.0:
         raise ValueError("Callable bond maturity must be after settlement")
 
-    r0 = float(market_state.discount.zero_rate(max(maturity / 2.0, 1e-6)))
-    default_sigma = None
-    if market_state.vol_surface is not None:
-        black_vol = float(market_state.vol_surface.black_vol(max(maturity / 2.0, 1e-6), max(r0, 1e-6)))
-        default_sigma = black_vol * max(abs(r0), 1e-6)
-    step_count = int(n_steps or min(200, max(50, int(maturity * 50))))
-    model_key = str(model).strip().lower()
-
-    tree_model = tree_models.MODEL_REGISTRY[model_key]
-    resolved_mean_reversion, resolved_sigma = resolve_hull_white_parameters(
+    resolved = resolve_short_rate_lattice_inputs(
         market_state,
+        horizon=maturity,
+        model=model,
         mean_reversion=mean_reversion,
         sigma=sigma,
-        default_mean_reversion=0.1,
-        default_sigma=default_sigma if tree_model.vol_type != "lognormal" else black_vol if market_state.vol_surface is not None else None,
+        n_steps=n_steps,
+        minimum_steps=50,
+        maximum_steps=200,
+        steps_per_year=50.0,
     )
+    tree_model = tree_models.MODEL_REGISTRY[resolved.model_name]
     return build_lattice(
         lattice_algebra.BINOMIAL_1F_TOPOLOGY,
         lattice_algebra.UNIFORM_ADDITIVE_MESH,
         tree_model.as_lattice_model_spec(),
         calibration_target=lattice_algebra.TERM_STRUCTURE_TARGET(market_state.discount),
-        r0=r0,
-        sigma=resolved_sigma,
-        a=resolved_mean_reversion,
-        T=maturity,
-        n_steps=step_count,
+        r0=resolved.r0,
+        sigma=resolved.sigma,
+        a=resolved.mean_reversion,
+        T=resolved.horizon,
+        n_steps=resolved.n_steps,
     )
 
 

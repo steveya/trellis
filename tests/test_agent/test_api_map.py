@@ -889,6 +889,23 @@ def test_rate_lattice_api_map_exposes_bounded_rollback_observations():
     assert "price_bermudan_swaption_tree" not in text
 
 
+def test_rate_lattice_api_map_exposes_product_neutral_market_binding():
+    section = get_api_map()["rate_lattice"]
+    text = "\n".join((*section["key_imports"], *section["notes"]))
+
+    for symbol in (
+        "ResolvedShortRateLatticeInputs",
+        "resolve_short_rate_lattice_inputs",
+        "MODEL_REGISTRY",
+        "TERM_STRUCTURE_TARGET",
+        "build_lattice",
+    ):
+        assert symbol in text
+    assert "absolute rate volatility" in text
+    assert "lognormal" in text.lower()
+    assert "build_rate_lattice" not in "\n".join(section["key_imports"])
+
+
 def _assert_import_statements_valid(import_statements: list[str]) -> None:
     for statement in import_statements:
         cleaned = statement.split("#", 1)[0].strip()

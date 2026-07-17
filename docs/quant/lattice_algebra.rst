@@ -324,6 +324,42 @@ should use this bounded result when they need schedule or exercise-state
 composition instead of open-coding backward induction or adding a
 product-specific helper.
 
+Short-Rate Lattice Market Binding
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``resolve_short_rate_lattice_inputs(...)`` is the product-neutral boundary
+between market evidence and one-factor rate-lattice construction. Given a
+positive horizon, a model name, optional volatility quote coordinates, and a
+bounded discretization policy, it returns the frozen
+``ResolvedShortRateLatticeInputs`` value:
+
+- canonical ``model_name`` and ``volatility_type``;
+- horizon and initial short rate :math:`r_0`;
+- mean reversion and lattice volatility :math:`\sigma`;
+- the resolved lattice step count.
+
+Explicit parameters and calibrated model-parameter payloads associated with
+the selected lattice model take precedence. A payload for another model family
+is not reused as short-rate calibration evidence.
+If neither supplies :math:`\sigma`, the resolver may bind a Black-style
+volatility surface quote. For a normal model it converts that quote to absolute
+rate volatility using
+
+.. math::
+
+   \sigma_{\mathrm{rate}}
+   = \sigma_{\mathrm{Black}}\max\!\left(\lvert r_0\rvert, 10^{-6}\right),
+
+whereas a lognormal model retains :math:`\sigma_{\mathrm{Black}}`. Missing
+discount or volatility evidence, unsupported model names, non-positive
+horizons, and invalid step policies fail closed.
+
+The callable-bond and Bermudan-swaption lattice builders consume this same
+binding while retaining their own schedule and payoff semantics. Generated
+construction can therefore use the resolver with ``MODEL_REGISTRY``,
+``TERM_STRUCTURE_TARGET(...)``, and ``build_lattice(...)`` without copying
+market-default conventions or invoking a product pricer.
+
 Bermudan Swaption Composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
