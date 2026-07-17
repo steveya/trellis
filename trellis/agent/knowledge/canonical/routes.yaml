@@ -1699,7 +1699,8 @@ routes:
         primitives:
           - module: trellis.models.analytical.barrier
             symbol: barrier_option_price
-            role: route_helper
+            role: pricing_kernel
+            owns_engine_family: true
           - module: trellis.models.analytical.support.barriers
             symbol: terminal_double_barrier_payoff
             role: terminal_payoff
@@ -1708,7 +1709,7 @@ routes:
             role: payoff_primitive
         adapters: []
         notes:
-          - "Use `barrier_option_price` directly with scalar spot/strike/barrier/rate/sigma/T inputs instead of instantiating `ResolvedBarrierInputs` in generated adapters."
+          - "Treat `barrier_option_price` as a scalar pricing kernel: generated adapters must bind spot, strike, barrier, rate/carry, volatility, time, monitoring, rebate, payoff direction, and notional explicitly."
           - "For double-barrier targets with lower and upper barriers, compose the PDE grid or MC path estimator using the shared payoff primitives instead of adapting the single-barrier formula."
           - "When the contract carries discrete monitoring or non-zero dividend carry, pass `observations_per_year` and `q` through explicitly."
       - when:
@@ -2138,6 +2139,7 @@ routes:
       - module: trellis.models.analytical.barrier
         symbol: barrier_option_price
         role: pricing_kernel
+        owns_engine_family: true
     adapters: []
     notes:
       - "Resolve FX spot, domestic/foreign rates, volatility, monitoring, and payoff terms, then call `barrier_option_price(...)` with foreign rate as `q` and apply notional."

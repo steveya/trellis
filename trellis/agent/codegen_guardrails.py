@@ -204,6 +204,7 @@ class PrimitiveRef:
     role: str
     required: bool = True
     excluded: bool = False  # if True, generated code must NOT call this symbol
+    owns_engine_family: bool = False
 
 
 @dataclass(frozen=True)

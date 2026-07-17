@@ -1207,7 +1207,7 @@ def test_barrier_option_route_card_mentions_grid_operator_and_rannacher():
     assert "rannacher_timesteps" in card
 
 
-def test_barrier_option_analytical_route_uses_absorbed_black76_helper_binding():
+def test_barrier_option_analytical_route_uses_scalar_pricing_kernel_binding():
     pricing_plan = PricingPlan(
         method="analytical",
         method_modules=["trellis.models.analytical.barrier"],
@@ -1237,7 +1237,14 @@ def test_barrier_option_analytical_route_uses_absorbed_black76_helper_binding():
         f"{primitive.module}.{primitive.symbol}" for primitive in plan.primitive_plan.primitives
     }
     assert "trellis.models.analytical.barrier.barrier_option_price" in primitive_refs
-    assert "instantiating `ResolvedBarrierInputs` in generated adapters" in card
+    barrier_kernel = next(
+        primitive
+        for primitive in plan.primitive_plan.primitives
+        if primitive.symbol == "barrier_option_price"
+    )
+    assert barrier_kernel.role == "pricing_kernel"
+    assert "scalar pricing kernel" in card
+    assert "generated adapters must bind spot" in card
     assert "barrier_option_price" in card
 
 

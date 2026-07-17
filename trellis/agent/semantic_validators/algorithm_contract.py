@@ -64,7 +64,10 @@ _HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({
     "price_double_barrier_option_monte_carlo_result",
 })
 _DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "topology"})
-
+_EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
+    "equity_quanto",
+    "rate_tree_backward_induction",
+})
 _EXACT_HELPER_SIGNATURES = {
     "price_double_barrier_option_pde_result": {
         "min_positional_args": 2,
@@ -650,12 +653,18 @@ class AlgorithmContractValidator:
         if not signatures:
             return []
 
-        helper_symbols = tuple(
+        engine_owning_symbols = tuple(
             prim.symbol
             for prim in exact_surface_primitives
-            if prim.role == "route_helper" and prim.required
+            if prim.required
+            and (
+                prim.role == "route_helper"
+                or prim.owns_engine_family
+            )
         )
-        if helper_symbols and any(_calls_symbol(source, symbol) for symbol in helper_symbols):
+        if engine_owning_symbols and any(
+            _calls_symbol(source, symbol) for symbol in engine_owning_symbols
+        ):
             return []
 
         found = any(sig in source for sig in signatures)
@@ -706,11 +715,18 @@ class AlgorithmContractValidator:
         exact_surface_primitives,
     ) -> list[SemanticFinding]:
         """Require explicit primitive composition for helper-retired routes."""
-        if route_spec.id not in {"equity_quanto", "rate_tree_backward_induction"}:
+        enforce_whole_route = route_spec.id in _EXPLICIT_COMPOSITION_ROUTE_IDS
+        required_primitives = tuple(
+            primitive
+            for primitive in exact_surface_primitives
+            if enforce_whole_route
+            or primitive.owns_engine_family
+        )
+        if not required_primitives:
             return []
 
         findings: list[SemanticFinding] = []
-        for primitive in exact_surface_primitives:
+        for primitive in required_primitives:
             if not primitive.required or primitive.excluded:
                 continue
             if _calls_symbol(source, primitive.symbol) or (

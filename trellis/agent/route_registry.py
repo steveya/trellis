@@ -289,6 +289,7 @@ def _parse_primitive(raw: dict) -> PrimitiveRef:
         role=raw["role"],
         required=raw.get("required", True),
         excluded=raw.get("excluded", False),
+        owns_engine_family=raw.get("owns_engine_family", False),
     )
 
 

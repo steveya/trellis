@@ -204,6 +204,198 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("equity_quanto"), spec)
         assert any(f.category == "required_primitive_not_called" for f in findings)
 
+    def test_flags_missing_equity_barrier_pricing_kernel(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        barrier_ir = ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier", "terminal_markov"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        )
+        primitives = resolve_route_primitives(spec, barrier_ir)
+        source = '''
+def evaluate(self, market_state):
+    return 0.0
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "analytical_black76",
+                instrument_type="barrier_option",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert any(
+            finding.category == "required_primitive_not_called"
+            and "barrier_option_price" in finding.message
+            for finding in findings
+        )
+
+    def test_barrier_pricing_kernel_satisfies_analytical_engine_family(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        barrier_ir = ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier", "terminal_markov"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        )
+        primitives = resolve_route_primitives(spec, barrier_ir)
+        source = '''
+def evaluate(self, market_state):
+    return barrier_option_price(spot, strike, barrier, rate, vol, time, q=carry)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "analytical_black76",
+                instrument_type="barrier_option",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert not any(
+            finding.category == "engine_family_mismatch"
+            for finding in findings
+        )
+
+    def test_fx_barrier_pricing_kernel_satisfies_analytical_engine_family(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_fx_barrier"][0]
+        barrier_ir = ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier", "terminal_markov"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="fx",
+        )
+        primitives = resolve_route_primitives(spec, barrier_ir)
+        source = '''
+def evaluate(self, market_state):
+    return barrier_option_price(spot, strike, barrier, rate, vol, time, q=carry)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "analytical_fx_barrier",
+                instrument_type="barrier_option",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert not any(
+            finding.category == "engine_family_mismatch"
+            for finding in findings
+        )
+
+    def test_fx_barrier_rejects_substituted_analytical_kernel(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_fx_barrier"][0]
+        barrier_ir = ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier", "terminal_markov"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="fx",
+        )
+        primitives = resolve_route_primitives(spec, barrier_ir)
+        source = '''
+def evaluate(self, market_state):
+    return garman_kohlhagen_price_raw(resolved)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "analytical_fx_barrier",
+                instrument_type="barrier_option",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert any(
+            finding.category == "required_primitive_not_called"
+            and "barrier_option_price" in finding.message
+            for finding in findings
+        )
+
+    def test_non_owning_pricing_kernel_does_not_hide_missing_engine(self, registry):
+        spec = [r for r in registry.routes if r.id == "local_vol_monte_carlo"][0]
+        local_vol_ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("terminal_markov",),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="local_volatility",
+        )
+        primitives = resolve_route_primitives(spec, local_vol_ir)
+        source = '''
+def evaluate(self, market_state):
+    return local_vol_european_vanilla_price(spot, strike, rate, vol, time)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "local_vol_monte_carlo",
+                engine_family="monte_carlo",
+                instrument_type="european_option",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert any(
+            finding.category == "engine_family_mismatch"
+            for finding in findings
+        )
+
+    def test_analytical_black76_helper_owned_rate_strip_does_not_require_internal_kernels(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        rate_strip_ir = ProductIR(
+            instrument="cap",
+            payoff_family="period_rate_option_strip",
+            exercise_style="none",
+            schedule_dependence=True,
+            state_dependence="schedule_dependent",
+            model_family="interest_rate",
+        )
+        primitives = resolve_route_primitives(spec, rate_strip_ir)
+        source = '''
+def evaluate(self, market_state):
+    return price_rate_cap_floor_strip_analytical(market_state, self._spec)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "analytical_black76",
+                instrument_type="cap",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert not any(
+            finding.category == "required_primitive_not_called"
+            for finding in findings
+        )
+
     def test_rejects_autocallable_shortcut_for_monte_carlo_paths(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         source = '''
