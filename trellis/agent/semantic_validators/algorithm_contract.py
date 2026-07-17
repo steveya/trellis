@@ -68,9 +68,6 @@ _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
     "equity_quanto",
     "rate_tree_backward_induction",
 })
-_EXPLICIT_COMPOSITION_PRIMITIVES = frozenset({
-    ("analytical_black76", "barrier_option_price"),
-})
 _EXACT_HELPER_SIGNATURES = {
     "price_double_barrier_option_pde_result": {
         "min_positional_args": 2,
@@ -723,7 +720,7 @@ class AlgorithmContractValidator:
             primitive
             for primitive in exact_surface_primitives
             if enforce_whole_route
-            or (route_spec.id, primitive.symbol) in _EXPLICIT_COMPOSITION_PRIMITIVES
+            or primitive.owns_engine_family
         )
         if not required_primitives:
             return []

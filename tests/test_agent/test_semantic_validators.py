@@ -298,6 +298,38 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_fx_barrier_rejects_substituted_analytical_kernel(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_fx_barrier"][0]
+        barrier_ir = ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier", "terminal_markov"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="fx",
+        )
+        primitives = resolve_route_primitives(spec, barrier_ir)
+        source = '''
+def evaluate(self, market_state):
+    return garman_kohlhagen_price_raw(resolved)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "analytical_fx_barrier",
+                instrument_type="barrier_option",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert any(
+            finding.category == "required_primitive_not_called"
+            and "barrier_option_price" in finding.message
+            for finding in findings
+        )
+
     def test_non_owning_pricing_kernel_does_not_hide_missing_engine(self, registry):
         spec = [r for r in registry.routes if r.id == "local_vol_monte_carlo"][0]
         local_vol_ir = ProductIR(
