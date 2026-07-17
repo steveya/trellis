@@ -108,9 +108,69 @@ def test_resolve_short_rate_lattice_inputs_prefers_model_parameter_payload() -> 
     assert resolved.sigma == pytest.approx(0.012)
 
 
+@pytest.mark.parametrize(
+    ("model", "model_family", "calibrated_mean_reversion", "calibrated_sigma"),
+    [
+        ("bdt", "black_derman_toy", 0.0, 0.17),
+        ("black_karasinski", "black-karasinski", 0.06, 0.11),
+    ],
+)
+def test_resolve_short_rate_lattice_inputs_selects_calibration_for_requested_model(
+    model: str,
+    model_family: str,
+    calibrated_mean_reversion: float,
+    calibrated_sigma: float,
+) -> None:
+    market_state = _market_state(
+        volatility=None,
+        model_parameters={
+            "model_family": "hull_white",
+            "mean_reversion": 0.03,
+            "sigma": 0.012,
+        },
+    )
+    market_state.model_parameter_sets = {
+        "hull_white": market_state.model_parameters,
+        f"{model}_short_rate": {
+            "model_family": model_family,
+            "mean_reversion": calibrated_mean_reversion,
+            "sigma": calibrated_sigma,
+        },
+    }
+
+    resolved = resolve_short_rate_lattice_inputs(
+        market_state,
+        horizon=2.0,
+        model=model,
+    )
+
+    assert resolved.model_name == model
+    assert resolved.mean_reversion == pytest.approx(calibrated_mean_reversion)
+    assert resolved.sigma == pytest.approx(calibrated_sigma)
+
+
 def test_resolve_short_rate_lattice_inputs_accepts_explicit_sigma_without_surface() -> None:
     resolved = resolve_short_rate_lattice_inputs(
         _market_state(volatility=None),
+        horizon=2.0,
+        mean_reversion=0.07,
+        sigma=0.009,
+    )
+
+    assert resolved.mean_reversion == pytest.approx(0.07)
+    assert resolved.sigma == pytest.approx(0.009)
+
+
+def test_resolve_short_rate_lattice_inputs_explicit_values_override_invalid_payload() -> None:
+    resolved = resolve_short_rate_lattice_inputs(
+        _market_state(
+            volatility=None,
+            model_parameters={
+                "model_family": "hull_white",
+                "mean_reversion": "invalid",
+                "sigma": "invalid",
+            },
+        ),
         horizon=2.0,
         mean_reversion=0.07,
         sigma=0.009,

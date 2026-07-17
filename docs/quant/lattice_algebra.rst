@@ -338,7 +338,9 @@ bounded discretization policy, it returns the frozen
 - mean reversion and lattice volatility :math:`\sigma`;
 - the resolved lattice step count.
 
-Explicit parameters and calibrated model-parameter payloads take precedence.
+Explicit parameters and calibrated model-parameter payloads associated with
+the selected lattice model take precedence. A payload for another model family
+is not reused as short-rate calibration evidence.
 If neither supplies :math:`\sigma`, the resolver may bind a Black-style
 volatility surface quote. For a normal model it converts that quote to absolute
 rate volatility using

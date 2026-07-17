@@ -2,15 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from math import isfinite
 from operator import index as integer_index
-from typing import Protocol, SupportsIndex, cast
+from typing import Protocol, SupportsFloat, SupportsIndex, cast
 
-from trellis.models.hull_white_parameters import (
-    extract_hull_white_parameter_payload,
-    resolve_hull_white_parameters,
-)
 from trellis.models.trees.models import MODEL_REGISTRY
 
 
@@ -55,6 +52,84 @@ class ResolvedShortRateLatticeInputs:
     mean_reversion: float
     sigma: float
     n_steps: int
+
+
+_MODEL_FAMILY_ALIASES = {
+    "black_derman_toy": "bdt",
+    "blackdermantoy": "bdt",
+    "blackkarasinski": "black_karasinski",
+    "hullwhite": "hull_white",
+    "holee": "ho_lee",
+}
+
+
+def _normalize_model_family(value: object) -> str:
+    normalized = str(value or "").strip().lower().replace("-", "_").replace(" ", "_")
+    for alias, canonical in _MODEL_FAMILY_ALIASES.items():
+        if normalized == alias or normalized.startswith(f"{alias}_"):
+            return f"{canonical}{normalized[len(alias):]}"
+    return normalized
+
+
+def _model_parameter_payload(
+    market_state: ShortRateLatticeMarketStateLike,
+    *,
+    model_key: str,
+) -> Mapping[str, object]:
+    """Return calibrated parameters associated with the selected tree model."""
+    candidates: list[tuple[str, Mapping[str, object]]] = []
+    direct = getattr(market_state, "model_parameters", None)
+    if isinstance(direct, Mapping):
+        nested = direct.get(model_key)
+        if isinstance(nested, Mapping):
+            candidates.append((model_key, nested))
+        candidates.append(("", direct))
+
+    parameter_sets = getattr(market_state, "model_parameter_sets", None)
+    if isinstance(parameter_sets, Mapping):
+        candidates.extend(
+            (str(name), payload)
+            for name, payload in parameter_sets.items()
+            if isinstance(payload, Mapping)
+        )
+
+    for _, payload in candidates:
+        family = _normalize_model_family(
+            payload.get("model_family") or payload.get("model_name") or payload.get("family")
+        )
+        if family == model_key:
+            return payload
+
+    for name, payload in candidates:
+        normalized_name = _normalize_model_family(name)
+        family = _normalize_model_family(
+            payload.get("model_family") or payload.get("model_name") or payload.get("family")
+        )
+        if not family and (
+            normalized_name == model_key or normalized_name.startswith(f"{model_key}_")
+        ):
+            return payload
+
+    for name, payload in candidates:
+        family = _normalize_model_family(
+            payload.get("model_family") or payload.get("model_name") or payload.get("family")
+        )
+        if not name and not family and (
+            payload.get("sigma") is not None or payload.get("mean_reversion") is not None
+        ):
+            return payload
+    return {}
+
+
+def _parameter_float(
+    payload: Mapping[str, object],
+    *names: str,
+) -> float | None:
+    for name in names:
+        value = payload.get(name)
+        if value is not None:
+            return float(cast(str | SupportsFloat | SupportsIndex, value))
+    return None
 
 
 def _positive_integer(value: object, *, name: str) -> int:
@@ -111,12 +186,19 @@ def resolve_short_rate_lattice_inputs(
     resolved_r0 = float(discount_curve.zero_rate(max(resolved_horizon / 2.0, 1e-6)))
     if not isfinite(resolved_r0):
         raise ValueError("short-rate lattice initial rate must be finite")
-    parameter_payload = extract_hull_white_parameter_payload(market_state)
-    has_parameter_sigma = (
-        parameter_payload is not None and parameter_payload.get("sigma") is not None
+    parameter_payload = _model_parameter_payload(market_state, model_key=model_key)
+    parameter_sigma = (
+        None
+        if sigma is not None
+        else _parameter_float(
+            parameter_payload,
+            "sigma",
+            "volatility",
+            "short_rate_vol",
+        )
     )
     fallback_sigma: float | None = None
-    if sigma is None and not has_parameter_sigma:
+    if sigma is None and parameter_sigma is None:
         vol_surface = market_state.vol_surface
         if vol_surface is None:
             raise ValueError(
@@ -148,13 +230,30 @@ def resolve_short_rate_lattice_inputs(
             else black_vol * max(abs(resolved_r0), 1e-6)
         )
 
-    resolved_mean_reversion, resolved_sigma = resolve_hull_white_parameters(
-        market_state,
-        mean_reversion=mean_reversion,
-        sigma=sigma,
-        default_mean_reversion=default_mean_reversion,
-        default_sigma=fallback_sigma,
+    parameter_mean_reversion = (
+        None
+        if mean_reversion is not None
+        else _parameter_float(
+            parameter_payload,
+            "mean_reversion",
+            "a",
+        )
     )
+    resolved_mean_reversion = (
+        float(mean_reversion)
+        if mean_reversion is not None
+        else parameter_mean_reversion
+        if parameter_mean_reversion is not None
+        else float(default_mean_reversion)
+    )
+    resolved_sigma = float(sigma) if sigma is not None else parameter_sigma
+    if resolved_sigma is None:
+        resolved_sigma = fallback_sigma
+    if resolved_sigma is None:
+        raise ValueError(
+            "short-rate lattice sigma must be provided explicitly, through model parameters, "
+            "or through market_state.vol_surface"
+        )
 
     if not isfinite(float(resolved_mean_reversion)):
         raise ValueError("short-rate lattice mean reversion must be finite")
