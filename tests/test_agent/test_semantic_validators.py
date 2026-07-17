@@ -249,7 +249,7 @@ def evaluate(self, market_state):
         primitives = resolve_route_primitives(spec, barrier_ir)
         source = '''
 def evaluate(self, market_state):
-    return barrier_option_price(spot, strike, barrier, rate, carry, vol, time)
+    return barrier_option_price(spot, strike, barrier, rate, vol, time, q=carry)
 '''
 
         findings = AlgorithmContractValidator().validate(
