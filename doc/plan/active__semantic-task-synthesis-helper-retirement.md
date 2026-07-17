@@ -63,7 +63,7 @@ Status mirror last synced: `2026-07-16`
 | `QUA-1200` | Lattice rollback: observable node-value phases | Done |
 | `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | Done |
 | `QUA-1202` | Semantic proving: distinguish fresh artifacts from agent synthesis | Done |
-| `QUA-1203` | Semantic authority: classify scalar barrier formula as pricing kernel | In Progress |
+| `QUA-1203` | Semantic authority: classify scalar barrier formula as pricing kernel | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
