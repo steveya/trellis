@@ -71,6 +71,9 @@ _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
 _EXPLICIT_COMPOSITION_PRIMITIVES = frozenset({
     ("analytical_black76", "barrier_option_price"),
 })
+_ENGINE_OWNING_PRICING_KERNELS = frozenset({
+    ("analytical_black76", "barrier_option_price"),
+})
 
 _EXACT_HELPER_SIGNATURES = {
     "price_double_barrier_option_pde_result": {
@@ -657,13 +660,17 @@ class AlgorithmContractValidator:
         if not signatures:
             return []
 
-        admitted_pricing_symbols = tuple(
+        engine_owning_symbols = tuple(
             prim.symbol
             for prim in exact_surface_primitives
-            if prim.role in {"route_helper", "pricing_kernel"} and prim.required
+            if prim.required
+            and (
+                prim.role == "route_helper"
+                or (route_spec.id, prim.symbol) in _ENGINE_OWNING_PRICING_KERNELS
+            )
         )
-        if admitted_pricing_symbols and any(
-            _calls_symbol(source, symbol) for symbol in admitted_pricing_symbols
+        if engine_owning_symbols and any(
+            _calls_symbol(source, symbol) for symbol in engine_owning_symbols
         ):
             return []
 

@@ -267,6 +267,38 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_non_owning_pricing_kernel_does_not_hide_missing_engine(self, registry):
+        spec = [r for r in registry.routes if r.id == "local_vol_monte_carlo"][0]
+        local_vol_ir = ProductIR(
+            instrument="european_option",
+            payoff_family="vanilla_option",
+            payoff_traits=("terminal_markov",),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="local_volatility",
+        )
+        primitives = resolve_route_primitives(spec, local_vol_ir)
+        source = '''
+def evaluate(self, market_state):
+    return local_vol_european_vanilla_price(spot, strike, rate, vol, time)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "local_vol_monte_carlo",
+                engine_family="monte_carlo",
+                instrument_type="european_option",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert any(
+            finding.category == "engine_family_mismatch"
+            for finding in findings
+        )
+
     def test_analytical_black76_helper_owned_rate_strip_does_not_require_internal_kernels(
         self,
         registry,
