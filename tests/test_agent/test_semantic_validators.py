@@ -236,6 +236,37 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_barrier_pricing_kernel_satisfies_analytical_engine_family(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        barrier_ir = ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier", "terminal_markov"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        )
+        primitives = resolve_route_primitives(spec, barrier_ir)
+        source = '''
+def evaluate(self, market_state):
+    return barrier_option_price(spot, strike, barrier, rate, carry, vol, time)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "analytical_black76",
+                instrument_type="barrier_option",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert not any(
+            finding.category == "engine_family_mismatch"
+            for finding in findings
+        )
+
     def test_analytical_black76_helper_owned_rate_strip_does_not_require_internal_kernels(
         self,
         registry,

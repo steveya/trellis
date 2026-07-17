@@ -657,12 +657,14 @@ class AlgorithmContractValidator:
         if not signatures:
             return []
 
-        helper_symbols = tuple(
+        admitted_pricing_symbols = tuple(
             prim.symbol
             for prim in exact_surface_primitives
-            if prim.role == "route_helper" and prim.required
+            if prim.role in {"route_helper", "pricing_kernel"} and prim.required
         )
-        if helper_symbols and any(_calls_symbol(source, symbol) for symbol in helper_symbols):
+        if admitted_pricing_symbols and any(
+            _calls_symbol(source, symbol) for symbol in admitted_pricing_symbols
+        ):
             return []
 
         found = any(sig in source for sig in signatures)
