@@ -15,6 +15,7 @@ from trellis.core.differentiable import get_numpy
 from trellis.core.types import ContractTimeline, DayCountConvention, Frequency
 import trellis.models.trees.algebra as lattice_algebra
 import trellis.models.trees.models as tree_models
+from trellis.models.short_rate_lattice import resolve_short_rate_lattice_inputs
 from trellis.models.trees.control import (
     lattice_step_from_time,
     lattice_steps_from_timeline,
@@ -25,7 +26,6 @@ from trellis.models.trees.lattice import (
     build_lattice,
     price_on_lattice,
 )
-from trellis.models.hull_white_parameters import resolve_hull_white_parameters
 
 
 class DiscountCurveLike(Protocol):
@@ -135,22 +135,19 @@ def resolve_bermudan_swaption_tree_inputs(
     if tenor <= 0.0:
         raise ValueError("swap_end must be after the first Bermudan exercise date")
 
-    r0 = float(discount_curve.zero_rate(max(tree_horizon / 2.0, 1e-6)))
-    tree_model = tree_models.MODEL_REGISTRY[str(model).strip().lower()]
-    default_sigma = None
-    if market_state.vol_surface is not None:
-        black_vol = float(
-            market_state.vol_surface.black_vol(max(option_horizon, 1e-6), max(abs(float(spec.strike)), 1e-6))
-        )
-        default_sigma = black_vol if tree_model.vol_type == "lognormal" else black_vol * max(abs(r0), 1e-6)
-    resolved_mean_reversion, resolved_sigma = resolve_hull_white_parameters(
+    lattice_inputs = resolve_short_rate_lattice_inputs(
         market_state,
+        horizon=tree_horizon,
+        model=model,
+        volatility_time=max(option_horizon, 1e-6),
+        volatility_strike=max(abs(float(spec.strike)), 1e-6),
         mean_reversion=mean_reversion,
         sigma=sigma,
-        default_mean_reversion=0.1,
-        default_sigma=default_sigma,
+        n_steps=n_steps,
+        minimum_steps=100,
+        maximum_steps=400,
+        steps_per_year=20.0,
     )
-    step_count = int(n_steps or min(400, max(100, int(tree_horizon * 20.0))))
     return ResolvedBermudanSwaptionTreeInputs(
         settlement=settlement,
         swap_start=swap_start,
@@ -158,10 +155,10 @@ def resolve_bermudan_swaption_tree_inputs(
         exercise_frequency=exercise_frequency,
         tree_horizon=tree_horizon,
         option_horizon=option_horizon,
-        r0=r0,
-        mean_reversion=float(resolved_mean_reversion),
-        sigma=float(resolved_sigma),
-        n_steps=step_count,
+        r0=lattice_inputs.r0,
+        mean_reversion=lattice_inputs.mean_reversion,
+        sigma=lattice_inputs.sigma,
+        n_steps=lattice_inputs.n_steps,
     )
 
 

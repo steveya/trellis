@@ -254,11 +254,16 @@ rate_lattice:
   navigation:
     aliases: [rate_tree, callable_bond, puttable_bond]
   key_imports:
-    - "from trellis.models.trees.lattice import LatticeRollbackObservation, LatticeRollbackResult, build_rate_lattice, lattice_backward_induction, lattice_backward_induction_result"
-    - "from trellis.models.trees.algebra import value_on_lattice"
+    - "from trellis.models.short_rate_lattice import ResolvedShortRateLatticeInputs, resolve_short_rate_lattice_inputs"
+    - "from trellis.models.trees.models import MODEL_REGISTRY"
+    - "from trellis.models.trees.algebra import BINOMIAL_1F_TOPOLOGY, UNIFORM_ADDITIVE_MESH, TERM_STRUCTURE_TARGET, build_lattice, value_on_lattice"
+    - "from trellis.models.trees.lattice import LatticeRollbackObservation, LatticeRollbackResult, lattice_backward_induction, lattice_backward_induction_result"
     - "from trellis.models.zcb_option_tree import price_zcb_option_tree"
   notes:
     - "Callable bonds, puttable bonds, and Bermudan swaptions use a calibrated rate lattice from a TreeModel specification such as Hull-White or Black-Derman-Toy"
+    - "Resolve product-neutral market inputs with resolve_short_rate_lattice_inputs(...), then select the returned model_name from MODEL_REGISTRY and build against TERM_STRUCTURE_TARGET(discount_curve)"
+    - "Normal models receive absolute rate volatility; when only a Black-style surface quote exists the resolver multiplies it by abs(r0). Lognormal models retain the Black-style quote"
+    - "Explicit sigma or a calibrated model-parameter payload takes precedence; missing discount or volatility evidence fails closed"
     - "lattice_backward_induction handles cashflow_at_node and exercise_fn"
     - "lattice_backward_induction_result(..., observation_steps=...) and value_on_lattice(..., observation_steps=...) capture only requested steps as immutable LatticeRollbackObservation values"
     - "Each nonterminal observation separates discounted continuation, post-cashflow, and post-control node vectors; terminal observations use the terminal payoff vector for all three phases"

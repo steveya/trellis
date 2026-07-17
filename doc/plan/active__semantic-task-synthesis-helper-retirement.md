@@ -64,6 +64,9 @@ Status mirror last synced: `2026-07-16`
 | `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | Done |
 | `QUA-1202` | Semantic proving: distinguish fresh artifacts from agent synthesis | Done |
 | `QUA-1203` | Semantic authority: classify scalar barrier formula as pricing kernel | Done |
+| `QUA-1204` | Short-rate lattice: reusable market calibration inputs | In Progress |
+| `QUA-1206` | Semantic comparison: bind callable fixed-income target variants | Backlog |
+| `QUA-1205` | Callable fixed income: raw lattice primitive assembly | Blocked by QUA-1204, QUA-1206 |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -122,6 +125,14 @@ Status mirror last synced: `2026-07-16`
 15. Apply QUA-1203 to classify the shared scalar barrier formula consistently
     as a pricing kernel for F009, while requiring generated code to retain
     market binding and settlement responsibility.
+16. Apply QUA-1204 to expose product-neutral short-rate lattice calibration
+    inputs, including model-specific volatility units and bounded step policy.
+17. Apply QUA-1206 to bind T02, T05, and T17 comparison targets explicitly
+    and require target-specific artifact evidence instead of legacy label
+    inference.
+18. After QUA-1204 and QUA-1206 land, apply QUA-1205 to retire
+    callable/puttable tree wrapper authority through explicit event, contract,
+    lattice, and bound composition.
 
 ## Completion Evidence
 
