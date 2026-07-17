@@ -236,6 +236,40 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_analytical_black76_helper_owned_rate_strip_does_not_require_internal_kernels(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        rate_strip_ir = ProductIR(
+            instrument="cap",
+            payoff_family="period_rate_option_strip",
+            exercise_style="none",
+            schedule_dependence=True,
+            state_dependence="schedule_dependent",
+            model_family="interest_rate",
+        )
+        primitives = resolve_route_primitives(spec, rate_strip_ir)
+        source = '''
+def evaluate(self, market_state):
+    return price_rate_cap_floor_strip_analytical(market_state, self._spec)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "analytical_black76",
+                instrument_type="cap",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert not any(
+            finding.category == "required_primitive_not_called"
+            for finding in findings
+        )
+
     def test_rejects_autocallable_shortcut_for_monte_carlo_paths(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         source = '''

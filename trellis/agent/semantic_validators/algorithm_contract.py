@@ -64,6 +64,13 @@ _HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({
     "price_double_barrier_option_monte_carlo_result",
 })
 _DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "topology"})
+_EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
+    "equity_quanto",
+    "rate_tree_backward_induction",
+})
+_EXPLICIT_COMPOSITION_PRIMITIVES = frozenset({
+    ("analytical_black76", "barrier_option_price"),
+})
 
 _EXACT_HELPER_SIGNATURES = {
     "price_double_barrier_option_pde_result": {
@@ -706,15 +713,18 @@ class AlgorithmContractValidator:
         exact_surface_primitives,
     ) -> list[SemanticFinding]:
         """Require explicit primitive composition for helper-retired routes."""
-        if route_spec.id not in {
-            "analytical_black76",
-            "equity_quanto",
-            "rate_tree_backward_induction",
-        }:
+        enforce_whole_route = route_spec.id in _EXPLICIT_COMPOSITION_ROUTE_IDS
+        required_primitives = tuple(
+            primitive
+            for primitive in exact_surface_primitives
+            if enforce_whole_route
+            or (route_spec.id, primitive.symbol) in _EXPLICIT_COMPOSITION_PRIMITIVES
+        )
+        if not required_primitives:
             return []
 
         findings: list[SemanticFinding] = []
-        for primitive in exact_surface_primitives:
+        for primitive in required_primitives:
             if not primitive.required or primitive.excluded:
                 continue
             if _calls_symbol(source, primitive.symbol) or (
