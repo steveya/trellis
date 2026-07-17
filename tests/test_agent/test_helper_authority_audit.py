@@ -276,6 +276,27 @@ def test_current_repository_retires_arithmetic_asian_helper_authority():
     ]
 
 
+def test_current_repository_classifies_scalar_barrier_formula_as_pricing_kernel():
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    root = Path(__file__).resolve().parents[2]
+    report = build_helper_authority_report(root)
+    kernel_symbol = "barrier_option_price"
+
+    assert not [
+        item
+        for item in (*report.route_authority, *report.binding_authority)
+        if item.symbol == kernel_symbol
+    ]
+    assert not [
+        item
+        for item in report.adapter_calls
+        if item.path == "trellis/instruments/_agent/barrieroption.py"
+        and item.symbol == kernel_symbol
+        and item.matches_authority
+    ]
+
+
 def test_current_repository_retires_european_swaption_wrapper_authority():
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 

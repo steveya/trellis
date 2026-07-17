@@ -879,6 +879,14 @@ Those exact helper/kernel facts are now materialized through
 ``trellis.agent.backend_bindings`` as a separate canonical binding catalog, and
 the route registry derives its backend-binding authority summary from that
 catalog rather than acting as the only source of exact backend identity.
+The scalar single-barrier closed form follows this kernel/helper distinction.
+``barrier_option_price(...)`` evaluates explicitly supplied
+spot/strike/barrier/rate/carry/volatility/time and barrier-payoff controls; it
+does not own market lookup or derivative settlement. Equity and FX analytical
+lanes therefore classify it as a ``pricing_kernel`` and keep market binding,
+monitoring convention, rebate, payoff direction, and notional in the composed
+adapter. A market-state-taking product wrapper would remain ``route_helper``
+authority until separately retired.
 The runtime plans now also carry that identity directly: ``PrimitivePlan`` and
 ``GenerationPlan`` persist ``backend_binding_id`` plus exact helper/kernel and
 schedule-builder refs, so later validation, traces, and replay do not need to

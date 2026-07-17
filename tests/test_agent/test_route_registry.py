@@ -1898,12 +1898,12 @@ class TestAnalyticalRoutes:
         assert "Do not sum or maximize European values" in notes
         assert resolve_route_adapters(spec, self.BERMUDAN_SWAPTION_IR) == ()
 
-    def test_barrier_primitives_use_exact_helper(self, registry):
+    def test_barrier_primitives_use_scalar_pricing_kernel(self, registry):
         spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
         new_prims = resolve_route_primitives(spec, self.BARRIER_IR)
         assert resolve_route_family(spec, self.BARRIER_IR) == "analytical"
         assert _prim_set(new_prims) == {
-            ("trellis.models.analytical.barrier", "barrier_option_price", "route_helper"),
+            ("trellis.models.analytical.barrier", "barrier_option_price", "pricing_kernel"),
         }
 
     def test_digital_primitives_use_black76_basis_kernels(self, registry):

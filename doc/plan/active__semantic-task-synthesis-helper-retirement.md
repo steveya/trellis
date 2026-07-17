@@ -63,6 +63,7 @@ Status mirror last synced: `2026-07-16`
 | `QUA-1200` | Lattice rollback: observable node-value phases | Done |
 | `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | Done |
 | `QUA-1202` | Semantic proving: distinguish fresh artifacts from agent synthesis | Done |
+| `QUA-1203` | Semantic authority: classify scalar barrier formula as pricing kernel | In Progress |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -118,6 +119,9 @@ Status mirror last synced: `2026-07-16`
 14. Run live fresh-generation evidence only with current external-model approval;
     use it to compare first-pass source selection, retrieved documentation,
     retries, and residual validator findings rather than as pricing authority.
+15. Apply QUA-1203 to classify the shared scalar barrier formula consistently
+    as a pricing kernel for F009, while requiring generated code to retain
+    market binding and settlement responsibility.
 
 ## Completion Evidence
 

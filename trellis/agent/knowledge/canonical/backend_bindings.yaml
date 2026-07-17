@@ -1075,7 +1075,7 @@ bindings:
         primitives:
           - module: trellis.models.analytical.barrier
             symbol: barrier_option_price
-            role: route_helper
+            role: pricing_kernel
       - when:
           contract_pattern:
             payoff:

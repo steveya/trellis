@@ -802,8 +802,8 @@ def test_resolve_backend_binding_spec_uses_quanto_primitive_composition(
                 model_family="equity_diffusion",
             ),
             "analytical",
-            ("trellis.models.analytical.barrier.barrier_option_price",),
             (),
+            ("trellis.models.analytical.barrier.barrier_option_price",),
             id="barrier",
         ),
         pytest.param(

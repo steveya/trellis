@@ -902,6 +902,15 @@ helper-authority audit must therefore find no analytical digital helper in the
 route, binding, or checked adapter, while route and adapter tests preserve
 cash/asset and call/put basis selection.
 
+F009 uses the same boundary for the scalar Reiner-Rubinstein barrier formula.
+``barrier_option_price(...)`` is a ``pricing_kernel``, not a ``route_helper``:
+it consumes explicit scalar inputs and does not resolve a market state, choose
+the contractual barrier direction, or apply notional. The generated adapter
+therefore owns spot, rate/carry, volatility, time, monitoring, rebate, payoff
+direction, and settlement binding. Required-primitive validation still rejects
+an analytical F009 artifact that omits the kernel; changing the role does not
+turn it into an optional hint.
+
 The deterministic digital spec schema includes ``dividend_yield``. Benchmark
 ``dividend_rate`` aliases therefore survive spec-override filtering when an
 adapter is regenerated, rather than silently reverting the analytical forward

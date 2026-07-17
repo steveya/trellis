@@ -204,6 +204,38 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("equity_quanto"), spec)
         assert any(f.category == "required_primitive_not_called" for f in findings)
 
+    def test_flags_missing_equity_barrier_pricing_kernel(self, registry):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        barrier_ir = ProductIR(
+            instrument="barrier_option",
+            payoff_family="barrier_option",
+            payoff_traits=("barrier", "single_barrier", "terminal_markov"),
+            exercise_style="european",
+            state_dependence="terminal_markov",
+            model_family="equity_diffusion",
+        )
+        primitives = resolve_route_primitives(spec, barrier_ir)
+        source = '''
+def evaluate(self, market_state):
+    return 0.0
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan(
+                "analytical_black76",
+                instrument_type="barrier_option",
+                primitives=primitives,
+            ),
+            spec,
+        )
+
+        assert any(
+            finding.category == "required_primitive_not_called"
+            and "barrier_option_price" in finding.message
+            for finding in findings
+        )
+
     def test_rejects_autocallable_shortcut_for_monte_carlo_paths(self, registry):
         spec = [r for r in registry.routes if r.id == "monte_carlo_paths"][0]
         source = '''

@@ -706,7 +706,11 @@ class AlgorithmContractValidator:
         exact_surface_primitives,
     ) -> list[SemanticFinding]:
         """Require explicit primitive composition for helper-retired routes."""
-        if route_spec.id not in {"equity_quanto", "rate_tree_backward_induction"}:
+        if route_spec.id not in {
+            "analytical_black76",
+            "equity_quanto",
+            "rate_tree_backward_induction",
+        }:
             return []
 
         findings: list[SemanticFinding] = []
