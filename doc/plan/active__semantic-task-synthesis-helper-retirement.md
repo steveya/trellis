@@ -64,7 +64,7 @@ Status mirror last synced: `2026-07-16`
 | `QUA-1201` | Bermudan swaption lattice: retire helper and compiler authority | Done |
 | `QUA-1202` | Semantic proving: distinguish fresh artifacts from agent synthesis | Done |
 | `QUA-1203` | Semantic authority: classify scalar barrier formula as pricing kernel | Done |
-| `QUA-1204` | Short-rate lattice: reusable market calibration inputs | In Progress |
+| `QUA-1204` | Short-rate lattice: reusable market calibration inputs | Done |
 | `QUA-1206` | Semantic comparison: bind callable fixed-income target variants | Backlog |
 | `QUA-1205` | Callable fixed income: raw lattice primitive assembly | Blocked by QUA-1204, QUA-1206 |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
