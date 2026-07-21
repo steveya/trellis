@@ -73,13 +73,38 @@ content fails with
 ``external_import:source_reference_resolution_unsupported``. Missing source
 declarations and payload/envelope conflicts produce stable
 ``missing_contract_field:*`` and ``contract_conflict:*`` blockers.
+After inspection, any caller-supplied document id, trade id, trade date, or
+party set is also compared with the identity extracted from the XML. A
+contradiction fails closed as ``contract_conflict:fpml_*`` before product
+normalization.
 
-This request seam does not yet parse XML or claim FpML product support. A
-coherent inline request currently fails closed with
-``external_import:fpml_importer_unavailable``. Secure namespace-aware XML
-inspection and product normalization belong to the dedicated importer; only
-that importer may convert an admitted FpML product into Trellis semantic and
-execution artifacts.
+``trellis.io.fpml.inspect_fpml_document(...)`` is the bounded inspection stage.
+Its first admitted profile is an inline UTF-8 FpML 5.13 ``dataDocument`` in the
+confirmation namespace, containing exactly one direct ``trade``. Before
+extracting identity, the inspector rejects DTD and entity declarations,
+malformed or non-UTF-8 XML, and documents that exceed configured byte,
+element-count, or nesting-depth limits. It performs no network access and does
+not treat XML inspection as complete XSD validation.
+
+The immutable ``FpMLImportReport`` carries the matched profile, document
+digest and identity, direct product element names, trade provenance, and stable
+blockers without retaining XML text or parser nodes. Missing or ambiguous
+trade/product structure also produces a caller-facing clarification projection.
+The first cohort requires a single party-qualified trade id and a single valid
+XML Schema trade date when those fields are present; timezone suffixes are
+normalized to the calendar date, while duplicate identity fields or malformed
+dates are blocked instead of selected or dropped by XML order.
+Lifecycle content and the incomplete ``genericProduct``, ``nonSchemaProduct``,
+and ``standardProduct`` wrappers fail closed rather than being interpreted as
+current complete economics.
+
+Inspection is deliberately separate from product support. A structurally
+admitted document is attached to ``CompiledPlatformRequest.import_report`` and
+currently stops with
+``external_import:fpml_product_normalizer_unavailable``. Product-specific
+normalizers must convert admitted economics into Trellis semantic and execution
+artifacts before an FpML request can reach pricing; raw XML never enters the
+natural-language parser or code-generation path.
 
 The plain fixed-income pricing path now also carries desk-readable bond
 reporting outputs. ``price_instrument(...)`` and the ``Session.price(...)``

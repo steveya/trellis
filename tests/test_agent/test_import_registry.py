@@ -18,6 +18,28 @@ def test_registry_snapshot_contains_known_modules():
     assert "trellis.core.market_state" in snapshot
 
 
+def test_fpml_import_surface_is_visible_to_import_registry():
+    module = "trellis.io.fpml"
+    symbols = {
+        "FPML_5_13_CONFIRMATION",
+        "FpMLImportReport",
+        "FpMLInspectionLimits",
+        "fpml_import_report_summary",
+        "inspect_fpml_document",
+    }
+
+    assert module_exists(module)
+    assert symbols <= set(list_module_exports(module))
+    for symbol in symbols:
+        assert module in find_symbol_modules(symbol)
+        assert is_valid_import(module, symbol)
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert symbols <= set(static_registry[module])
+
+
 def test_list_module_exports_returns_known_symbols():
     exports = list_module_exports("trellis.models.pde.theta_method")
     assert "theta_method_1d" in exports
