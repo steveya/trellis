@@ -78,10 +78,13 @@ Pricing requests also require a deterministic valuation date. Until the
 static-leg runtime consumes historical fixing histories, Trellis rejects a
 swap with an unpaid floating coupon whose fixing date is on or before that
 valuation date. Build-only normalization remains independent of valuation
-date. When an admitted fixed-float request declares ``analytics`` or
-``greeks`` without explicit outputs, the normalized request receives the
+date. When an admitted fixed-float or swaption request declares ``analytics``
+or ``greeks`` without explicit outputs, the normalized request receives the
 bounded rates defaults before execution planning: price/DV01/duration for
-analytics and DV01/duration/convexity for Greeks.
+analytics and DV01/duration/convexity for Greeks. Structural solver selection
+still requests only ``price`` from the normalized payoff; the executor derives
+the requested sensitivities through its governed bump-and-reprice analytics
+path.
 
 Supported business-day conventions are ``NONE``, ``FOLLOWING``,
 ``MODFOLLOWING``, ``PRECEDING``, and ``MODPRECEDING``. Adjusted dates require
@@ -91,12 +94,14 @@ corresponding Trellis calendars for ``AUSY``, ``BRSP``, ``CATO``, ``CHZU``,
 
 The swaption cohort additionally requires exactly one European exercise date,
 physical settlement, absent or false ``swaptionStraddle``, one complete admitted
-fixed-float underlying swap, and expiry before the swap effective date. The
-fixed-leg direction determines payer versus receiver orientation; exact
-notional, strike, fixed payment schedule, day counts, frequencies, and
-floating index are taken from the nested swap. The imported contract selects
-the existing resolved Black-76 swaption declaration. No FpML-specific pricing
-helper, generated adapter, or cookbook route is introduced.
+fixed-float underlying swap between exactly the swaption buyer and seller, and
+expiry before the swap effective date. A documented third party cannot replace
+either option counterparty on the underlying swap. The fixed-leg direction
+determines payer versus receiver orientation; exact notional, strike, fixed
+payment schedule, day counts, frequencies, and floating index are taken from
+the nested swap. The imported contract selects the existing resolved Black-76
+swaption declaration. No FpML-specific pricing helper, generated adapter, or
+cookbook route is introduced.
 
 A premium settled before the valuation date is reported separately in
 ``FpMLImportReport.premium_metadata``. It is excluded from canonical contract

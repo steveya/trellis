@@ -252,6 +252,34 @@ def test_compile_fpml_european_swaption_uses_existing_contract_ir_route(monkeypa
     }
 
 
+def test_compile_fpml_swaption_analytics_selects_price_solver_for_bump_analytics():
+    from trellis.agent.platform_requests import compile_platform_request, make_fpml_request
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    compiled = compile_platform_request(
+        make_fpml_request(
+            NORMALIZABLE_SWAPTION_FPML,
+            source_view="confirmation",
+            source_version="5-13",
+            trade_envelope=TradeEnvelope(
+                source_format="fpml",
+                source_view="confirmation",
+                source_version="5-13",
+                parties=(TradeParty("PARTY-A", role="valuation_party"),),
+            ),
+            settlement=date(2025, 1, 15),
+            request_type="analytics",
+        )
+    )
+
+    assert compiled.blocker_report is None
+    assert compiled.request.requested_outputs == ("price", "dv01", "duration")
+    assert compiled.request.instrument.requested_outputs == ("price",)
+    assert compiled.request.metadata["external_contract"][
+        "structural_declaration_id"
+    ] == "swaption_payer_black76_resolved_kernel"
+
+
 @pytest.mark.parametrize(
     ("request_type", "expected_outputs"),
     (

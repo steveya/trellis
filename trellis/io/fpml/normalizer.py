@@ -665,6 +665,7 @@ def _normalize_european_swaption(
         namespace=namespace,
         valuation_party_id=buyer,
         known_party_ids=known_party_ids,
+        required_party_pair=frozenset((buyer, seller)),
         xml_base_path="/dataDocument/trade/swaption/swap",
     )
     underlying_provenance = tuple(
@@ -857,6 +858,7 @@ def _normalize_fixed_float_swap(
     namespace: str | None,
     valuation_party_id: str,
     known_party_ids: tuple[str, ...],
+    required_party_pair: frozenset[str] | None = None,
     xml_base_path: str = "/dataDocument/trade/swap",
 ) -> tuple[StaticLegContractIR, tuple[FpMLFieldProvenance, ...]]:
     _reject_unadmitted_direct_children(
@@ -972,11 +974,18 @@ def _normalize_fixed_float_swap(
             "contract_conflict",
             "A swap stream references a party not identified by the FpML document.",
         )
-    if {fixed.payer, fixed.receiver} != {floating.payer, floating.receiver}:
+    stream_party_pair = {fixed.payer, fixed.receiver}
+    if stream_party_pair != {floating.payer, floating.receiver}:
         _fail(
             "contract_conflict:fpml_swap_stream_counterparties",
             "contract_conflict",
             "Both admitted swap streams must reference the same counterparty pair.",
+        )
+    if required_party_pair is not None and stream_party_pair != required_party_pair:
+        _fail(
+            "contract_conflict:fpml_swaption_underlying_counterparties",
+            "contract_conflict",
+            "The underlying swap must reference the swaption buyer and seller.",
         )
     if fixed.currency != floating.currency:
         _fail(

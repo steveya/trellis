@@ -356,3 +356,28 @@ def test_swaption_normalization_requires_buyer_and_seller_counterparties():
         "missing_contract_field:fpml_buyer_party_reference",
     )
     assert report.clarification.missing_fields == ("buyer_party_reference",)
+
+
+def test_swaption_normalization_rejects_third_party_underlying_counterparty():
+    xml = FIXTURE.read_text()
+    xml = xml.replace(
+        '<receiverPartyReference href="PARTY-B" />',
+        '<receiverPartyReference href="PARTY-C" />',
+        1,
+    )
+    xml = xml.replace(
+        '<payerPartyReference href="PARTY-B" />',
+        '<payerPartyReference href="PARTY-C" />',
+        1,
+    )
+    xml = xml.replace(
+        "</dataDocument>",
+        """  <party id="PARTY-C">
+    <partyId partyIdScheme="urn:trellis:test:party-id">PARTY-C-ID</partyId>
+  </party>
+</dataDocument>""",
+    ).encode()
+
+    assert _blocker_ids(_normalize(xml)) == (
+        "contract_conflict:fpml_swaption_underlying_counterparties",
+    )

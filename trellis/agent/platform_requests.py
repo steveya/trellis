@@ -653,15 +653,16 @@ def _compile_imported_document_request(
             validation_bundle_id = source_metadata.get("validation_bundle_id")
             callable_ref = source_metadata.get("callable_ref")
         elif isinstance(normalized_contract, ContractIR):
+            solver_outputs = ("price",)
             instrument = ContractIRPricingPayoff(
                 normalized_contract,
                 preferred_method=request.model,
-                requested_outputs=normalized_outputs or ("price",),
+                requested_outputs=solver_outputs,
             )
             selection = select_contract_ir_solver(
                 normalized_contract,
                 preferred_method=request.model,
-                requested_outputs=normalized_outputs or ("price",),
+                requested_outputs=solver_outputs,
             )
             route_method = "structural_contract_ir"
             structural_declaration_id = selection.declaration_id
