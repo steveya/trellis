@@ -2,13 +2,15 @@
 
 ## Status
 
-Draft. Cross-cutting roadmap for external interoperability. Not yet an
-execution mirror.
+Active execution mirror for the bounded first FpML interoperability cohort.
 
-No linked Linear umbrella exists yet. The `FPI.*` queue ids below are
-repo-local placeholders until the implementation program is filed.
+Linear umbrella: `QUA-1207` — Semantic FpML import: canonical trade
+interoperability.
 
-Status snapshot as of `2026-04-23`.
+The `FPI.*` labels below remain architectural cohort names. The live ticket
+queue for the first cohort is recorded under **First Cohort Execution Queue**.
+
+Status snapshot as of `2026-07-19`.
 
 ## Linked Context
 
@@ -154,6 +156,22 @@ of silently coercing it into a nearby product family.
 | `FPI.4` | Proposed | lifecycle-state and alternate-view normalization | `FPI.2`, `FPI.3` |
 | `FPI.5` | Proposed | dynamic and stateful imported exotics | `FPI.4` plus executable dynamic lowering inside Trellis |
 | `FPI.6` | Proposed | industrial interoperability closeout | `FPI.5` |
+
+## First Cohort Execution Queue
+
+Linear is the source of truth for ticket state. This table is the repository
+execution mirror and stays ordered by implementation dependency.
+
+| Ticket | Status | Objective | Hard prerequisites |
+| --- | --- | --- | --- |
+| `QUA-1208` | In Progress | immutable trade envelope and selection-invariance contract | none |
+| `QUA-1209` | Backlog | explicit FpML platform-request entry point | `QUA-1208` |
+| `QUA-1210` | Backlog | secure XML inspection and stable blocker contract | `QUA-1209` |
+| `QUA-1211` | Backlog | confirmation-view fixed-float swap normalization | `QUA-1210` |
+| `QUA-1212` | Backlog | European swaption normalization | `QUA-1210`, `QUA-1211` |
+| `QUA-1213` | Backlog | scheduled cap/floor strip normalization | `QUA-1210`, `QUA-1211` |
+| `QUA-1214` | Backlog | paired FpML/native conformance task corpus | `QUA-1211`, `QUA-1212`, `QUA-1213` |
+| `QUA-1215` | Backlog | support matrix, maintenance review, and epic closeout | `QUA-1214` |
 
 ## Cohort Details
 

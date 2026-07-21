@@ -2,7 +2,9 @@
 
 ## Status
 
-Draft. Cross-cutting design document. Not yet an execution mirror.
+Approved design boundary. The first implementation slice is tracked by
+`QUA-1208` under the FpML interoperability umbrella `QUA-1207`; later position
+and result-path work remains planning-only.
 
 ## Linked Context
 
@@ -222,6 +224,14 @@ Acceptance:
 - at least one workflow, such as bounded FpML confirmation import, can
   carry external ids or trade date separately from contract meaning
 - route-free selection remains invariant under envelope-only changes
+
+Implementation status:
+
+- `QUA-1208` implements the immutable, format-neutral trade-envelope value,
+  request propagation, stable diagnostic summary, and route/backend/validation
+  invariance tests.
+- FpML parsing and product normalization remain in downstream `QUA-1209`
+  through `QUA-1214`; the envelope alone is not an import-support claim.
 
 ### T3 — Position context and result-path alignment
 
