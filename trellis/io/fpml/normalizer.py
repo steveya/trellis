@@ -735,6 +735,8 @@ def _normalize_stream(
     frequency, frequency_name = _frequency(
         calculation_frequency_element,
         namespace=namespace,
+        scope="calculation_period_frequency",
+        allow_roll_convention=True,
     )
     payment_frequency_element = _required_child(
         payment_dates,
@@ -745,6 +747,7 @@ def _normalize_stream(
     payment_frequency, _ = _frequency(
         payment_frequency_element,
         namespace=namespace,
+        scope="payment_frequency",
     )
     if payment_frequency != frequency:
         _fail(
@@ -1151,7 +1154,11 @@ def _floating_fixing_dates(
         namespace=namespace,
         missing_field="reset_frequency",
     )
-    parsed_reset_frequency, _ = _frequency(reset_frequency, namespace=namespace)
+    parsed_reset_frequency, _ = _frequency(
+        reset_frequency,
+        namespace=namespace,
+        scope="reset_frequency",
+    )
     if parsed_reset_frequency != frequency:
         _fail(
             "external_import:fpml_reset_frequency_unsupported",
@@ -1359,7 +1366,22 @@ def _date_adjustment(element, *, namespace: str | None):
     return bda, calendar
 
 
-def _frequency(element, *, namespace: str | None):
+def _frequency(
+    element,
+    *,
+    namespace: str | None,
+    scope: str,
+    allow_roll_convention: bool = False,
+):
+    allowed = {"periodMultiplier", "period"}
+    if allow_roll_convention:
+        allowed.add("rollConvention")
+    _reject_unadmitted_direct_children(
+        element,
+        allowed=allowed,
+        scope=scope,
+        namespace=namespace,
+    )
     multiplier = _integer_text(
         element,
         "periodMultiplier",
@@ -1383,6 +1405,12 @@ def _frequency(element, *, namespace: str | None):
 
 
 def _period_label(element, *, namespace: str | None) -> str:
+    _reject_unadmitted_direct_children(
+        element,
+        allowed={"periodMultiplier", "period"},
+        scope="index_tenor",
+        namespace=namespace,
+    )
     multiplier = _integer_text(
         element,
         "periodMultiplier",

@@ -527,6 +527,26 @@ def test_normalization_rejects_unconsumed_swap_economics():
             "          <paymentDatesAdjustments>",
             "external_import:fpml_payment_dates_feature_unsupported",
         ),
+        (
+            "</calculationPeriodFrequency>",
+            "<periodRule>unsupported</periodRule></calculationPeriodFrequency>",
+            "external_import:fpml_calculation_period_frequency_feature_unsupported",
+        ),
+        (
+            "</paymentFrequency>",
+            "<periodRule>unsupported</periodRule></paymentFrequency>",
+            "external_import:fpml_payment_frequency_feature_unsupported",
+        ),
+        (
+            "</resetFrequency>",
+            "<periodRule>unsupported</periodRule></resetFrequency>",
+            "external_import:fpml_reset_frequency_feature_unsupported",
+        ),
+        (
+            "</indexTenor>",
+            "<periodRule>unsupported</periodRule></indexTenor>",
+            "external_import:fpml_index_tenor_feature_unsupported",
+        ),
     ),
 )
 def test_normalization_rejects_unconsumed_nested_economics(old, new, expected_id):
