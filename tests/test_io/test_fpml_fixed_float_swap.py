@@ -557,6 +557,51 @@ def test_normalization_rejects_fixed_and_floating_economics_on_one_stream():
     )
 
 
+def test_normalization_rejects_index_tenor_mismatched_to_coupon_frequency():
+    xml = FIXTURE.read_text().replace(
+        "<indexTenor>\n"
+        "                <periodMultiplier>3</periodMultiplier>\n"
+        "                <period>M</period>\n"
+        "              </indexTenor>",
+        "<indexTenor>\n"
+        "                <periodMultiplier>6</periodMultiplier>\n"
+        "                <period>M</period>\n"
+        "              </indexTenor>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_index_tenor_frequency_mismatch",
+    )
+
+
+def test_normalization_records_spread_and_gearing_provenance_when_supplied():
+    xml = FIXTURE.read_text().replace(
+        "            </floatingRateCalculation>",
+        "              <spreadSchedule><initialValue>0.0015</initialValue>"
+        "</spreadSchedule>\n"
+        "              <floatingRateMultiplierSchedule><initialValue>1.25"
+        "</initialValue></floatingRateMultiplierSchedule>\n"
+        "            </floatingRateCalculation>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert report.status == "normalized"
+    provenance = {item.semantic_field: item for item in report.mapping_provenance}
+    assert provenance["legs[1].coupon_formula.spread"].normalized_value == "0.0015"
+    assert provenance["legs[1].coupon_formula.spread"].xml_path.endswith(
+        "/spreadSchedule/initialValue"
+    )
+    assert provenance["legs[1].coupon_formula.gearing"].normalized_value == "1.25"
+    assert provenance["legs[1].coupon_formula.gearing"].xml_path.endswith(
+        "/floatingRateMultiplierSchedule/initialValue"
+    )
+
+
 def test_normalization_rejects_duplicate_floating_spread_schedules():
     spread = "<spreadSchedule><initialValue>0.001</initialValue></spreadSchedule>"
     xml = FIXTURE.read_text().replace(

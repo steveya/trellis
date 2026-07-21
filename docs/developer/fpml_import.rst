@@ -55,8 +55,8 @@ The first fixed-float cohort requires:
 - regular annual, semiannual, quarterly, or monthly calculation and payment
   schedules with one calculation period per payment
 - payer/receiver references to parties declared in the document
-- fixed rate, supported day counts, and a term floating-rate index with one
-  index tenor
+- fixed rate, supported day counts, and a term floating-rate index whose one
+  index tenor matches the calculation and reset frequency
 - reset dates relative to calculation-period starts
 - fixed and floating rate schedules without steps; a constant spread or
   multiplier may be represented

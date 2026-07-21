@@ -79,6 +79,12 @@ _FREQUENCIES = {
     (3, "M"): (Frequency.QUARTERLY, "quarterly"),
     (1, "M"): (Frequency.MONTHLY, "monthly"),
 }
+_INDEX_TENORS_BY_FREQUENCY = {
+    Frequency.ANNUAL: frozenset({"1Y", "12M"}),
+    Frequency.SEMI_ANNUAL: frozenset({"6M"}),
+    Frequency.QUARTERLY: frozenset({"3M"}),
+    Frequency.MONTHLY: frozenset({"1M"}),
+}
 _DAY_COUNTS = {
     "ACT/360": "ACT/360",
     "ACT/365.FIXED": "ACT/365",
@@ -180,6 +186,8 @@ class _LegTerms:
     rate_index: TermRateIndex | None = None
     spread: float = 0.0
     gearing: float = 1.0
+    spread_supplied: bool = False
+    gearing_supplied: bool = False
 
 
 class _NormalizationBlocked(Exception):
@@ -584,6 +592,24 @@ def _normalize_fixed_float_swap(
             f"{floating.rate_index.name}:{floating.rate_index.tenor}",
         ),
     )
+    if floating.spread_supplied:
+        provenance += (
+            _provenance(
+                f"{floating_base}/calculationPeriodAmount/calculation/"
+                "floatingRateCalculation/spreadSchedule/initialValue",
+                "legs[1].coupon_formula.spread",
+                floating.spread,
+            ),
+        )
+    if floating.gearing_supplied:
+        provenance += (
+            _provenance(
+                f"{floating_base}/calculationPeriodAmount/calculation/"
+                "floatingRateCalculation/floatingRateMultiplierSchedule/initialValue",
+                "legs[1].coupon_formula.gearing",
+                floating.gearing,
+            ),
+        )
     return contract, provenance
 
 
@@ -886,6 +912,8 @@ def _normalize_stream(
     rate_index = None
     spread = 0.0
     gearing = 1.0
+    spread_supplied = False
+    gearing_supplied = False
     if kind == "fixed":
         schedule = _required_child(
             calculation,
@@ -941,6 +969,13 @@ def _normalize_stream(
                 "The admitted term-rate cohort requires exactly one index tenor.",
             )
         tenor = _period_label(tenors[0], namespace=namespace)
+        if tenor not in _INDEX_TENORS_BY_FREQUENCY[frequency]:
+            _fail(
+                "external_import:fpml_index_tenor_frequency_mismatch",
+                "unsupported_contract",
+                "The admitted term-rate cohort requires index tenor to match "
+                "calculation and reset frequency.",
+            )
         rate_index = TermRateIndex(index_name, tenor)
         spread_schedules = _direct_children(
             floating,
@@ -956,6 +991,7 @@ def _normalize_stream(
             )
         spread_schedule = spread_schedules[0] if spread_schedules else None
         if spread_schedule is not None:
+            spread_supplied = True
             if _direct_children(spread_schedule, "step", namespace=namespace):
                 _fail(
                     "external_import:fpml_step_spread_schedule_unsupported",
@@ -993,6 +1029,7 @@ def _normalize_stream(
             multiplier_schedules[0] if multiplier_schedules else None
         )
         if multiplier_schedule is not None:
+            gearing_supplied = True
             if _direct_children(multiplier_schedule, "step", namespace=namespace):
                 _fail(
                     "external_import:fpml_step_multiplier_schedule_unsupported",
@@ -1032,6 +1069,8 @@ def _normalize_stream(
         rate_index=rate_index,
         spread=spread,
         gearing=gearing,
+        spread_supplied=spread_supplied,
+        gearing_supplied=gearing_supplied,
     )
 
 
