@@ -96,8 +96,8 @@ class PlatformRequest:
     comparison_spec: Any | None = None
     instrument: Any | None = None
     book: Any | None = None
-    trade_envelope: TradeEnvelope | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
+    trade_envelope: TradeEnvelope | None = None
 
     def __post_init__(self):
         """Freeze mutable metadata so requests remain hash- and trace-stable."""

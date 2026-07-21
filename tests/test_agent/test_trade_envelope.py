@@ -124,3 +124,31 @@ def test_platform_request_requires_typed_trade_envelope():
             entry_point="executor",
             trade_envelope={"source_format": "fpml"},
         )
+
+
+def test_platform_request_preserves_legacy_positional_metadata_argument():
+    from trellis.agent.platform_requests import PlatformRequest
+
+    request = PlatformRequest(
+        "request-legacy",
+        "build",
+        "executor",
+        None,
+        None,
+        None,
+        None,
+        (),
+        (),
+        (),
+        {},
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        {"task_id": "E23"},
+    )
+
+    assert request.metadata == {"task_id": "E23"}
+    assert request.trade_envelope is None
