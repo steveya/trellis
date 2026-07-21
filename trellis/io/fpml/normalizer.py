@@ -1085,7 +1085,10 @@ def _floating_fixing_dates(
         "id",
         missing_field="reset_dates_id",
     )
-    if _first_direct_child(reset_dates, "initialFixingDate", namespace=namespace):
+    if (
+        _first_direct_child(reset_dates, "initialFixingDate", namespace=namespace)
+        is not None
+    ):
         _fail(
             "external_import:fpml_initial_fixing_override_unsupported",
             "unsupported_contract",
@@ -1363,8 +1366,16 @@ def _period_label(element, *, namespace: str | None) -> str:
 
 
 def _validate_roll_convention(element, start: date, *, namespace: str | None) -> None:
+    roll_elements = _direct_children(element, "rollConvention", namespace=namespace)
+    if len(roll_elements) > 1:
+        _fail(
+            "contract_ambiguity:fpml_roll_convention",
+            "contract_ambiguity",
+            "FpML normalization found multiple roll conventions for one schedule.",
+            ambiguous_fields=("roll_convention",),
+        )
     roll = _optional_text(
-        getattr(_first_direct_child(element, "rollConvention", namespace=namespace), "text", None)
+        roll_elements[0].text if roll_elements else None
     )
     if roll is None or roll.upper() == "NONE":
         return

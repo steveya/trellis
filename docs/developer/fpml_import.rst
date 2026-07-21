@@ -87,9 +87,10 @@ Fail-Closed Boundary
 Unsupported amortization, compounding, stubs, cross-currency legs, stepped
 rates or spreads, mismatched schedules or notionals, non-term floating-rate
 forms, duplicate optional rate schedules, unpaid seasoned floating coupons,
-end-of-month or clamped high-day rolls, foreign-namespaced extension children, unsupported
-calendars/conventions, lifecycle content, and missing schedule or
-valuation-date terms produce exact ``external_import:*``,
+duplicate roll declarations, initial-fixing overrides, end-of-month or clamped
+high-day rolls, foreign-namespaced extension children, unsupported
+calendars/conventions, lifecycle content, and missing schedule or valuation-date
+terms produce exact ``external_import:*``,
 ``missing_contract_field:*``, ``contract_ambiguity:*``, or
 ``contract_conflict:*`` blockers. The report carries clarification fields when
 the caller can supply missing or disambiguating information.

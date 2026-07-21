@@ -359,6 +359,36 @@ def test_normalization_rejects_clamped_high_day_schedule():
     )
 
 
+def test_normalization_rejects_duplicate_roll_conventions():
+    xml = FIXTURE.read_text().replace(
+        "<rollConvention>30</rollConvention>",
+        "<rollConvention>30</rollConvention>\n"
+        "            <rollConvention>31</rollConvention>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "contract_ambiguity:fpml_roll_convention",
+    )
+
+
+def test_normalization_rejects_initial_fixing_override_leaf():
+    xml = FIXTURE.read_text().replace(
+        "<resetRelativeTo>CalculationPeriodStartDate</resetRelativeTo>",
+        "<initialFixingDate>2025-06-27</initialFixingDate>\n"
+        "          <resetRelativeTo>CalculationPeriodStartDate</resetRelativeTo>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_initial_fixing_override_unsupported",
+    )
+
+
 def test_normalization_rejects_conflicting_supplied_adjusted_date():
     xml = FIXTURE.read_text().replace(
         "            </dateAdjustments>\n          </effectiveDate>",
