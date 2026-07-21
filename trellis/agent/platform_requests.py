@@ -29,6 +29,10 @@ from trellis.agent.knowledge import (
 from trellis.agent.knowledge.decompose import decompose_to_contract_ir, decompose_to_ir
 from trellis.agent.knowledge.methods import is_known_method, normalize_method
 from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+from trellis.agent.imported_documents import (
+    ImportedDocumentPayload,
+    imported_document_blocker_report,
+)
 from trellis.agent.semantic_escalation import semantic_role_ownership_summary
 from trellis.agent.market_binding import (
     market_binding_spec_summary,
@@ -98,6 +102,7 @@ class PlatformRequest:
     book: Any | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
     trade_envelope: TradeEnvelope | None = None
+    imported_document: ImportedDocumentPayload | None = None
 
     def __post_init__(self):
         """Freeze mutable metadata so requests remain hash- and trace-stable."""
@@ -112,6 +117,11 @@ class PlatformRequest:
             TradeEnvelope,
         ):
             raise TypeError("trade_envelope must be a TradeEnvelope")
+        if self.imported_document is not None and not isinstance(
+            self.imported_document,
+            ImportedDocumentPayload,
+        ):
+            raise TypeError("imported_document must be an ImportedDocumentPayload")
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
 
@@ -297,6 +307,11 @@ class CompiledPlatformRequest:
         """Expose request provenance without duplicating it into semantic state."""
         return self.request.trade_envelope
 
+    @property
+    def imported_document(self) -> ImportedDocumentPayload | None:
+        """Expose the request-owned external document without copying its bytes."""
+        return self.request.imported_document
+
 
 def make_term_sheet_request(
     description: str,
@@ -339,6 +354,51 @@ def make_user_defined_request(
         measure_specs=_freeze_tuple(measures),
         model=model,
         product_spec=spec,
+    )
+
+
+def make_fpml_request(
+    fpml: bytes | str | bytearray | memoryview | None,
+    *,
+    source_view: str | None,
+    source_version: str | None,
+    source_reference: str | None = None,
+    trade_envelope: TradeEnvelope | None = None,
+    market_snapshot=None,
+    settlement: date | None = None,
+    measures: list | tuple | None = None,
+    measure_context: Mapping[str, object] | None = None,
+    model: str | None = None,
+    request_type: str = "price",
+    metadata: Mapping[str, object] | None = None,
+) -> PlatformRequest:
+    """Create an explicit, inline FpML request without parsing its XML."""
+
+    payload = ImportedDocumentPayload(
+        source_format="fpml",
+        content=fpml,
+        declared_view=source_view,
+        declared_version=source_version,
+        source_reference=source_reference,
+    )
+    envelope = trade_envelope or TradeEnvelope(
+        source_format="fpml",
+        source_view=source_view,
+        source_version=source_version,
+    )
+    return PlatformRequest(
+        request_id=_new_request_id("fpml", request_type),
+        request_type=request_type,
+        entry_point="fpml",
+        settlement=settlement,
+        market_snapshot=market_snapshot,
+        measures=_normalize_measures(measures),
+        measure_specs=_freeze_tuple(measures),
+        measure_context=measure_context or {},
+        model=model,
+        metadata=metadata or {},
+        trade_envelope=envelope,
+        imported_document=payload,
     )
 
 
@@ -439,6 +499,8 @@ def make_pipeline_request(
 
 def compile_platform_request(request: PlatformRequest) -> CompiledPlatformRequest:
     """Compile any front-door request into semantic execution artifacts."""
+    if request.imported_document is not None or request.entry_point == "fpml":
+        return _compile_imported_document_request(request)
     if request.comparison_spec is not None:
         return _compile_comparison_request(request)
     if request.product_spec is not None:
@@ -463,6 +525,28 @@ def compile_platform_request(request: PlatformRequest) -> CompiledPlatformReques
             execution_plan=_direct_instrument_execution_plan(request),
         )
     raise ValueError("PlatformRequest has no compilable payload")
+
+
+def _compile_imported_document_request(
+    request: PlatformRequest,
+) -> CompiledPlatformRequest:
+    """Stop external documents at the dedicated fail-closed import boundary."""
+
+    blocker_report = imported_document_blocker_report(
+        request.imported_document,
+        trade_envelope=request.trade_envelope,
+    )
+    return _finalize_compiled_request(
+        request=request,
+        market_snapshot=request.market_snapshot,
+        execution_plan=_execution_plan_for_request(
+            request,
+            action="block",
+            reason="fpml_import_boundary",
+            requires_build=False,
+        ),
+        blocker_report=blocker_report,
+    )
 
 
 def _direct_instrument_execution_plan(request: PlatformRequest) -> ExecutionPlan:

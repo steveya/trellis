@@ -54,6 +54,33 @@ envelope itself does not parse XML and does not imply that an imported product
 is supported. Importers must normalize economics separately and fail closed
 when the internal semantic and executable support contract is incomplete.
 
+Imported Document Ingress
+-------------------------
+
+``trellis.agent.imported_documents.ImportedDocumentPayload`` is the explicit
+request-owned container for imported document bytes. The first constructor,
+``make_fpml_request(...)``, accepts inline FpML plus a caller-declared view and
+version and attaches a matching ``TradeEnvelope`` when the caller does not
+provide one. The imported body is not copied into free-form request metadata,
+``SemanticContract``, or diagnostic summaries. Instead,
+``imported_document_summary(...)`` reports bounded identity evidence: media
+type, declarations, byte length, and SHA-256 digest.
+
+Compilation recognizes this typed entry point before any natural-language or
+generic semantic drafting path. External ``source_reference`` values are
+provenance only: Trellis never fetches them, and a request without inline
+content fails with
+``external_import:source_reference_resolution_unsupported``. Missing source
+declarations and payload/envelope conflicts produce stable
+``missing_contract_field:*`` and ``contract_conflict:*`` blockers.
+
+This request seam does not yet parse XML or claim FpML product support. A
+coherent inline request currently fails closed with
+``external_import:fpml_importer_unavailable``. Secure namespace-aware XML
+inspection and product normalization belong to the dedicated importer; only
+that importer may convert an admitted FpML product into Trellis semantic and
+execution artifacts.
+
 The plain fixed-income pricing path now also carries desk-readable bond
 reporting outputs. ``price_instrument(...)`` and the ``Session.price(...)``
 projection solve a coupon-frequency nominal ``ytm`` from the reported dirty
