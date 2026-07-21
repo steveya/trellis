@@ -698,6 +698,45 @@ def test_normalization_rejects_ambiguous_or_malformed_business_centers(
     assert _blocker_ids(report) == (expected_id,)
 
 
+@pytest.mark.parametrize(
+    ("old", "new", "expected_id"),
+    (
+        (
+            "<initialValue>1000000</initialValue>",
+            "<initialValue>1e6</initialValue>",
+            "external_import:fpml_malformed_notional",
+        ),
+        (
+            "<initialValue>0.04</initialValue>",
+            "<initialValue>4e-2</initialValue>",
+            "external_import:fpml_malformed_fixed_rate",
+        ),
+        (
+            "<periodMultiplier>6</periodMultiplier>",
+            "<periodMultiplier>6_0</periodMultiplier>",
+            "external_import:fpml_malformed_period_multiplier",
+        ),
+    ),
+)
+def test_normalization_rejects_non_xml_numeric_lexical_forms(old, new, expected_id):
+    report = _normalize(FIXTURE.read_text().replace(old, new, 1).encode())
+
+    assert _blocker_ids(report) == (expected_id,)
+
+
+@pytest.mark.parametrize("fixed_rate", ("+0.04", ".04", "4."))
+def test_normalization_accepts_xml_decimal_lexical_forms(fixed_rate):
+    xml = FIXTURE.read_text().replace(
+        "<initialValue>0.04</initialValue>",
+        f"<initialValue>{fixed_rate}</initialValue>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert report.status == "normalized"
+
+
 def test_normalization_rejects_fixed_and_floating_economics_on_one_stream():
     xml = FIXTURE.read_text()
     fixed_rate = """<fixedRateSchedule>

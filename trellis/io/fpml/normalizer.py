@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 import hashlib
 import math
+import re
 
 from trellis.agent.static_leg_contract import (
     CouponLeg,
@@ -85,6 +86,8 @@ _INDEX_TENORS_BY_FREQUENCY = {
     Frequency.QUARTERLY: frozenset({"3M"}),
     Frequency.MONTHLY: frozenset({"1M"}),
 }
+_XML_DECIMAL_PATTERN = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
+_XML_INTEGER_PATTERN = re.compile(r"[+-]?[0-9]+")
 _DAY_COUNTS = {
     "ACT/360": "ACT/360",
     "ACT/365.FIXED": "ACT/365",
@@ -1714,28 +1717,27 @@ def _integer_text(parent, name: str, *, namespace: str | None, missing_field: st
         namespace=namespace,
         missing_field=missing_field,
     )
-    try:
-        return int(text)
-    except ValueError:
+    if _XML_INTEGER_PATTERN.fullmatch(text) is None:
         _fail(
             f"external_import:fpml_malformed_{missing_field}",
             "malformed_document",
-            f"FpML {missing_field.replace('_', ' ')} must be an integer.",
+            f"FpML {missing_field.replace('_', ' ')} must use XML integer syntax.",
         )
+    return int(text)
 
 
 def _finite_float(value: str, *, field_name: str, positive: bool = False) -> float:
-    try:
-        parsed = float(value)
-    except ValueError:
+    if _XML_DECIMAL_PATTERN.fullmatch(value) is None:
         parsed = math.nan
+    else:
+        parsed = float(value)
     if not math.isfinite(parsed) or (positive and parsed <= 0.0):
         _fail(
             f"external_import:fpml_malformed_{field_name}",
             "malformed_document",
             f"FpML {field_name.replace('_', ' ')} must be a finite"
             + (" positive" if positive else "")
-            + " number.",
+            + " XML decimal.",
         )
     return parsed
 
