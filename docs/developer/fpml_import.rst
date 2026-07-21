@@ -75,6 +75,12 @@ an admitted explicit business center. The current center map is bounded to the
 corresponding Trellis calendars for ``AUSY``, ``BRSP``, ``CATO``, ``CHZU``,
 ``EUTA``, ``GBLO``, ``JPTO``, and ``USNY``.
 
+When FpML supplies an ``adjustedDate`` for an effective or termination date,
+the normalizer requires it to equal the date recomputed from the unadjusted
+date and declared adjustments. Payment dates relative to
+``CalculationPeriodEndDate`` are anchored to adjusted calculation-period ends
+before their own payment-date adjustment is applied.
+
 Fail-Closed Boundary
 --------------------
 

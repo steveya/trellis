@@ -359,6 +359,79 @@ def test_normalization_rejects_clamped_high_day_schedule():
     )
 
 
+def test_normalization_rejects_conflicting_supplied_adjusted_date():
+    xml = FIXTURE.read_text().replace(
+        "            </dateAdjustments>\n          </effectiveDate>",
+        "            </dateAdjustments>\n"
+        "            <adjustedDate>2025-07-01</adjustedDate>\n"
+        "          </effectiveDate>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "contract_conflict:fpml_effective_date_adjusted_date",
+    )
+
+
+def test_normalization_accepts_matching_supplied_adjusted_date():
+    xml = FIXTURE.read_text().replace(
+        "            </dateAdjustments>\n          </effectiveDate>",
+        "            </dateAdjustments>\n"
+        "            <adjustedDate>2025-06-30</adjustedDate>\n"
+        "          </effectiveDate>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert report.status == "normalized"
+
+
+def test_payment_dates_are_anchored_to_adjusted_calculation_period_ends():
+    xml = (
+        FIXTURE.read_text()
+        .replace("2025-06-30", "2025-06-29")
+        .replace("2027-06-30", "2027-06-29")
+        .replace(
+            "<rollConvention>30</rollConvention>",
+            "<rollConvention>29</rollConvention>",
+        )
+        .replace(
+            "<dateAdjustments>\n"
+            "              <businessDayConvention>NONE</businessDayConvention>\n"
+            "            </dateAdjustments>",
+            "<dateAdjustments>\n"
+            "              <businessDayConvention>FOLLOWING</businessDayConvention>\n"
+            "              <businessCenters><businessCenter>USNY</businessCenter>"
+            "</businessCenters>\n"
+            "            </dateAdjustments>",
+        )
+        .replace(
+            "<calculationPeriodDatesAdjustments>\n"
+            "            <businessDayConvention>NONE</businessDayConvention>\n"
+            "          </calculationPeriodDatesAdjustments>",
+            "<calculationPeriodDatesAdjustments>\n"
+            "            <businessDayConvention>FOLLOWING</businessDayConvention>\n"
+            "            <businessCenters><businessCenter>USNY</businessCenter>"
+            "</businessCenters>\n"
+            "          </calculationPeriodDatesAdjustments>",
+        )
+    )
+
+    report = _normalize(xml.encode())
+
+    assert report.status == "normalized"
+    periods = tuple(
+        period
+        for signed_leg in report.normalized_contract.legs
+        for period in signed_leg.leg.coupon_periods
+    )
+    assert all(period.payment_date == period.accrual_end for period in periods)
+    assert any(period.accrual_end == date(2026, 3, 30) for period in periods)
+
+
 def test_normalization_rejects_unknown_stream_party_reference():
     xml = FIXTURE.read_text().replace('href="PARTY-B"', 'href="PARTY-Z"', 1)
 

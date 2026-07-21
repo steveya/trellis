@@ -117,6 +117,11 @@ _ALLOWED_CALCULATION_DATES_CHILDREN = {
     "effectiveDate",
     "terminationDate",
 }
+_ALLOWED_ADJUSTABLE_DATE_CHILDREN = {
+    "adjustedDate",
+    "dateAdjustments",
+    "unadjustedDate",
+}
 _ALLOWED_PAYMENT_DATES_CHILDREN = {
     "calculationPeriodDatesReference",
     "payRelativeTo",
@@ -784,7 +789,7 @@ def _normalize_stream(
         payment_calendar.adjust(item, payment_bda)
         if payment_bda != BusinessDayAdjustment.UNADJUSTED
         else item
-        for item in unadjusted_ends
+        for item in adjusted_ends
     )
     if any(
         payment_date < accrual_end
@@ -1197,11 +1202,21 @@ def _floating_fixing_dates(
 
 
 def _adjustable_date(parent, name: str, *, namespace: str | None) -> tuple[date, date]:
+    blocker_field = {
+        "effectiveDate": "effective_date",
+        "terminationDate": "termination_date",
+    }.get(name, name)
     element = _required_child(
         parent,
         name,
         namespace=namespace,
         missing_field=name,
+    )
+    _reject_unadmitted_direct_children(
+        element,
+        allowed=_ALLOWED_ADJUSTABLE_DATE_CHILDREN,
+        scope=f"{name}_adjustable_date",
+        namespace=namespace,
     )
     value = _required_text(
         element,
@@ -1225,6 +1240,37 @@ def _adjustable_date(parent, name: str, *, namespace: str | None) -> tuple[date,
     )
     bda, calendar = _date_adjustment(adjustments, namespace=namespace)
     adjusted = calendar.adjust(unadjusted, bda)
+    supplied_adjusted = _direct_children(element, "adjustedDate", namespace=namespace)
+    if len(supplied_adjusted) > 1:
+        _fail(
+            f"contract_ambiguity:fpml_{blocker_field}_adjusted_date",
+            "contract_ambiguity",
+            f"FpML {name} contains multiple supplied adjusted dates.",
+            ambiguous_fields=(f"{name}.adjusted_date",),
+        )
+    if supplied_adjusted:
+        supplied_value = _optional_text(supplied_adjusted[0].text)
+        if supplied_value is None:
+            _fail(
+                f"missing_contract_field:fpml_{blocker_field}_adjusted_date",
+                "contract_gap",
+                f"FpML {name} adjusted date cannot be empty.",
+                missing_fields=(f"{name}.adjusted_date",),
+            )
+        try:
+            declared_adjusted = _parse_xsd_date(supplied_value)
+        except ValueError:
+            _fail(
+                "external_import:fpml_malformed_economic_date",
+                "malformed_document",
+                f"FpML {name} adjusted date must be a valid XML Schema date.",
+            )
+        if declared_adjusted != adjusted:
+            _fail(
+                f"contract_conflict:fpml_{blocker_field}_adjusted_date",
+                "contract_conflict",
+                f"FpML {name} supplied adjusted date conflicts with its date adjustments.",
+            )
     return unadjusted, adjusted
 
 
