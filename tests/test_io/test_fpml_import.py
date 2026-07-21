@@ -86,6 +86,21 @@ def test_inspect_fpml_document_recognizes_profile_and_extracts_provenance():
             "<dataDocument/>".encode("utf-16"),
             "external_import:fpml_unsupported_encoding",
         ),
+        (
+            (
+                '<?xml version="1.0" encoding="UTF-16"?>'
+                "<dataDocument/>"
+            ).encode("utf-16-le"),
+            "external_import:fpml_unsupported_encoding",
+        ),
+        (
+            (
+                '<?xml version="1.0" encoding="UTF-16"?>'
+                "<!DOCTYPE dataDocument [<!ENTITY xxe SYSTEM "
+                '"file:///etc/passwd">]><dataDocument>&xxe;</dataDocument>'
+            ).encode("utf-16-be"),
+            "external_import:fpml_unsupported_encoding",
+        ),
     ],
 )
 def test_inspect_fpml_document_rejects_unsafe_or_malformed_xml(xml, expected_id):

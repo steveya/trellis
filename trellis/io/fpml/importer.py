@@ -264,6 +264,8 @@ def _content_bytes(content: bytes | str | bytearray | memoryview) -> bytes:
 def _encoding_blocker(content: bytes) -> FpMLImportBlocker | None:
     if content.startswith((b"\xff\xfe", b"\xfe\xff", b"\x00\x00\xfe\xff", b"\xff\xfe\x00\x00")):
         return _unsupported_encoding_blocker()
+    if b"\x00" in content:
+        return _unsupported_encoding_blocker()
     match = _XML_ENCODING.search(content[:512])
     if match is not None:
         encoding = match.group(1).decode("ascii", errors="ignore").lower().replace("_", "-")

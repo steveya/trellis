@@ -243,6 +243,7 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
         "trellis.core.",
         "trellis.curves.",
         "trellis.execution",
+        "trellis.io.",
     )
     exclude_prefixes = (
         "trellis.instruments._agent.",
@@ -274,7 +275,7 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
         if symbols:
             registry[modname] = tuple(sorted(symbols))
 
-    for modname in ("trellis.execution",):
+    for modname in ("trellis.execution", "trellis.io.fpml"):
         try:
             mod = importlib.import_module(modname)
         except Exception:
@@ -439,6 +440,7 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
     # Group by top-level category
     groups = {
         "Core": [],
+        "I/O": [],
         "Curves": [],
         "Models — Payoff Composition": [],
         "Models — Analytical": [],
@@ -464,6 +466,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Analytics"].append(line)
         elif "trellis.core." in mod:
             groups["Core"].append(line)
+        elif "trellis.io." in mod:
+            groups["I/O"].append(line)
         elif "trellis.curves." in mod:
             groups["Curves"].append(line)
         elif mod in {
@@ -554,6 +558,7 @@ from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention, Frequency
+from trellis.io.fpml import DEFAULT_FPML_INSPECTION_LIMITS, FPML_5_13_CONFIRMATION, SUPPORTED_FPML_PROFILES, FpMLClarification, FpMLDocumentIdentity, FpMLImportBlocker, FpMLImportReport, FpMLInspectionLimits, FpMLProfile, FpMLTradeIdentity, fpml_import_report_summary, inspect_fpml_document
 
 ### Curves
 from trellis.curves.yield_curve import YieldCurve
