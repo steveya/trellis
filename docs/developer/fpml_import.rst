@@ -68,7 +68,10 @@ Pricing requests also require a deterministic valuation date. Until the
 static-leg runtime consumes historical fixing histories, Trellis rejects a
 swap with an unpaid floating coupon whose fixing date is on or before that
 valuation date. Build-only normalization remains independent of valuation
-date.
+date. When an admitted fixed-float request declares ``analytics`` or
+``greeks`` without explicit outputs, the normalized request receives the
+bounded rates defaults before execution planning: price/DV01/duration for
+analytics and DV01/duration/convexity for Greeks.
 
 Supported business-day conventions are ``NONE``, ``FOLLOWING``,
 ``MODFOLLOWING``, ``PRECEDING``, and ``MODPRECEDING``. Adjusted dates require

@@ -66,6 +66,12 @@ if TYPE_CHECKING:
     from trellis.agent.knowledge.schema import ProductIR
 
 
+_NORMALIZED_FPML_DEFAULT_OUTPUTS = {
+    "analytics": ("price", "dv01", "duration"),
+    "greeks": ("dv01", "duration", "convexity"),
+}
+
+
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
     """Convert a mutable dict (or None) into a read-only MappingProxyType for use in frozen dataclasses."""
     return MappingProxyType(dict(mapping or {}))
@@ -642,6 +648,10 @@ def _compile_imported_document_request(
             request,
             instrument=ExecutionBackedPayoff(execution_ir),
             metadata=metadata,
+            requested_outputs=(
+                request.requested_outputs
+                or _NORMALIZED_FPML_DEFAULT_OUTPUTS.get(request.request_type, ())
+            ),
         )
         action = (
             "compile_only"

@@ -206,6 +206,41 @@ def test_compile_fpml_fixed_float_swap_uses_structural_execution_ir(monkeypatch)
     )
 
 
+@pytest.mark.parametrize(
+    ("request_type", "expected_outputs"),
+    (
+        ("analytics", ("price", "dv01", "duration")),
+        ("greeks", ("dv01", "duration", "convexity")),
+    ),
+)
+def test_compile_fpml_defaults_non_price_request_outputs(
+    request_type,
+    expected_outputs,
+):
+    from trellis.agent.platform_requests import compile_platform_request, make_fpml_request
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    compiled = compile_platform_request(
+        make_fpml_request(
+            NORMALIZABLE_FPML,
+            source_view="confirmation",
+            source_version="5-13",
+            trade_envelope=TradeEnvelope(
+                source_format="fpml",
+                source_view="confirmation",
+                source_version="5-13",
+                parties=(TradeParty("PARTY-A", role="valuation_party"),),
+            ),
+            settlement=date(2025, 1, 15),
+            request_type=request_type,
+        )
+    )
+
+    assert compiled.execution_plan.action == "price_normalized_payoff"
+    assert compiled.request.requested_outputs == expected_outputs
+    assert compiled.execution_plan.requested_outputs == expected_outputs
+
+
 def test_compile_complete_fpml_swap_requests_valuation_party_clarification():
     from trellis.agent.platform_requests import compile_platform_request, make_fpml_request
 
