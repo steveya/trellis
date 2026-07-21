@@ -102,6 +102,7 @@ _STUB_FIELDS = {
     "firstPaymentDate",
     "lastRegularPaymentDate",
 }
+_ALLOWED_TRADE_CHILDREN = {"swap", "tradeHeader"}
 _ALLOWED_SWAP_CHILDREN = {
     "assetClass",
     "primaryAssetClass",
@@ -269,6 +270,15 @@ def _normalize_inspected_fpml_document(
                 "The inspected FpML product is outside the admitted normalization cohort.",
             ),
         )
+    try:
+        _reject_unadmitted_direct_children(
+            trade,
+            allowed=_ALLOWED_TRADE_CHILDREN,
+            scope="trade",
+            namespace=namespace,
+        )
+    except _NormalizationBlocked as exc:
+        return _blocked_from(inspected, exc.blocker)
     swap = _first_direct_child(trade, "swap", namespace=namespace)
     if swap is None:
         raise AssertionError("inspected swap product is missing its element")

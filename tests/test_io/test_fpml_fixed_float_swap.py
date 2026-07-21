@@ -548,6 +548,22 @@ def test_normalization_rejects_unconsumed_swap_economics():
     )
 
 
+def test_normalization_rejects_unconsumed_trade_level_payments():
+    xml = FIXTURE.read_text().replace(
+        "  </trade>",
+        "    <otherPartyPayment><paymentAmount><currency>USD</currency>"
+        "<amount>100</amount></paymentAmount></otherPartyPayment>\n"
+        "  </trade>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_trade_feature_unsupported",
+    )
+
+
 @pytest.mark.parametrize(
     ("old", "new", "expected_id"),
     (
