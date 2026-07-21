@@ -25,6 +25,7 @@ def test_fpml_import_surface_is_visible_to_import_registry():
         "FpMLFieldProvenance",
         "FpMLImportReport",
         "FpMLInspectionLimits",
+        "FpMLPremiumMetadata",
         "fpml_import_report_summary",
         "inspect_fpml_document",
         "normalize_fpml_document",
@@ -61,6 +62,30 @@ def test_static_leg_economic_identity_is_visible_to_import_registry():
     )
     assert symbols <= set(static_registry[module])
     assert f"from {module} import" in get_import_registry()
+
+
+def test_contract_ir_identity_and_generic_pricing_payoff_are_visible_to_registry():
+    symbols_by_module = {
+        "trellis.agent.contract_ir": {
+            "ContractIR",
+            "contract_ir_economic_identity",
+            "contract_ir_economic_summary",
+        },
+        "trellis.agent.contract_ir_solver_compiler": {
+            "ContractIRPricingPayoff",
+        },
+    }
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    for module, symbols in symbols_by_module.items():
+        assert symbols <= set(list_module_exports(module))
+        assert symbols <= set(static_registry[module])
+        for symbol in symbols:
+            assert module in find_symbol_modules(symbol)
+            assert is_valid_import(module, symbol)
+            assert symbol in get_import_registry()
 
 
 def test_list_module_exports_returns_known_symbols():

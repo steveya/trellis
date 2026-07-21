@@ -10,6 +10,8 @@ Phase 3 and Phase 4 actually need for route-free fresh builds:
 - the exercise surface
 - the observation surface
 - the underlier specification
+- the signed holder position and settlement rule
+- an optional complete nested underlying contract
 
 Why It Exists
 -------------
@@ -172,7 +174,17 @@ Top-level contract:
        exercise=Exercise(...),
        observation=Observation(...),
        underlying=Underlying(...),
+       position="long",
+       settlement=SettlementRule(...),
+       underlying_contract=...,
    )
+
+``position`` is ``long`` or ``short`` and changes value sign without rewriting
+the payoff tree. ``settlement`` carries the generic settlement contract.
+``underlying_contract`` may hold another ``ContractIR`` or a complete
+``StaticLegContractIR`` when payoff structure alone is not enough to bind exact
+economics. A physically settled swaption uses this field to preserve its full
+fixed/float swap while the outer tree represents the option payoff.
 
 Schedules:
 
@@ -226,6 +238,20 @@ The constructors enforce the local Phase 2 invariants:
   explicit quote conventions
 - European exercise uses ``Singleton``
 - terminal observation uses ``Singleton``
+- position is exactly ``long`` or ``short``
+- settlement is a ``SettlementRule`` when supplied
+- nested underlying contracts are typed ``ContractIR`` or
+  ``StaticLegContractIR`` values
+
+Economic Identity
+-----------------
+
+``contract_ir_economic_identity(...)`` hashes a versioned, source-neutral
+projection containing payoff, exercise, observation, underlier, position,
+settlement, and complete nested underlying economics. Labels and source
+metadata are excluded. Consequently, a native contract and an equivalent
+normalized external contract share one identity, while long and short
+positions do not.
 
 Phase 2 intentionally does not introduce top-level heterogeneous composites.
 If multiple legs can share one root surface, they stay inside ``payoff`` via
@@ -509,6 +535,14 @@ volatility, direction, and payment count into
 economic projection and the numerical formula remain separately inspectable.
 The product-level ``price_swaption_black76(...)`` function is retained only for
 compatibility and independent reference comparison.
+
+When a swaption carries a complete fixed-float ``underlying_contract``, the
+structural adapter binds notional, strike, effective/termination dates, fixed
+payment count and frequency, fixed/float day counts, and floating index from
+that contract instead of heuristic term fields. The fixed-leg direction must
+agree with the matched payer/receiver payoff. A generic
+``ContractIRPricingPayoff`` exposes this existing selection/execution path to
+normalized external contracts; it is not a derivative-specific helper.
 
 For the direct Phase 3 structural-solver shadow, variance swaps reuse the
 retained bounded smile-slope compatibility wrapper. The ``VarianceObservable``

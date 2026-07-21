@@ -2,9 +2,11 @@ FpML Import And Normalization
 =============================
 
 Trellis treats FpML as an explicit external contract source, not as its
-internal derivative representation. The first executable cohort is deliberately
-small: one FpML 5.13 confirmation-view ``dataDocument`` containing one regular,
-single-currency, constant-notional fixed-float interest-rate swap.
+internal derivative representation. The executable surface is deliberately
+small: one FpML 5.13 confirmation-view ``dataDocument`` containing either one
+regular, single-currency, constant-notional fixed-float interest-rate swap or
+one physically settled European payer/receiver swaption on that same swap
+cohort.
 
 Lifecycle
 ---------
@@ -18,16 +20,18 @@ The governed request path is deterministic:
 3. ``inspect_fpml_document(...)`` applies the secure XML limits and extracts
    body-free document/trade identity.
 4. caller and document provenance are reconciled before economics are used.
-5. ``normalize_fpml_document(...)`` maps the admitted economics into
-   ``StaticLegContractIR`` and records XML-path mapping provenance.
-6. the ordinary static-leg structural selector lowers that contract to
-   ``ContractExecutionIR``.
-7. ``ExecutionBackedPayoff`` prices the execution artifact through the generic
-   ``price_normalized_payoff`` platform action.
+5. ``normalize_fpml_document(...)`` maps an admitted swap into
+   ``StaticLegContractIR`` or an admitted swaption into ``ContractIR`` with the
+   complete swap contract nested under ``underlying_contract``.
+6. the ordinary structural selector chooses the existing static-leg or
+   ContractIR declaration from normalized semantics.
+7. the generic ``ExecutionBackedPayoff`` or ``ContractIRPricingPayoff`` adapter
+   prices through the shared ``price_normalized_payoff`` platform action.
 
-The FpML ``swap`` wrapper is only a normalizer dispatch fact. It does not select
-``static_leg_fixed_float_swap``, ``SwapPayoff``, a validation bundle, a model,
-or a solver. Those artifacts are selected from the normalized leg structure.
+The FpML ``swap`` or ``swaption`` wrapper is only a normalizer dispatch fact.
+It does not select ``static_leg_fixed_float_swap``, the payer/receiver
+swaption declaration, a validation bundle, a model, or a solver. Those
+artifacts are selected from normalized structure.
 The admitted path performs no natural-language parsing, LLM call, code
 generation, cookbook update, or model-validator review.
 
@@ -38,6 +42,12 @@ An FpML swap stream identifies its payer and receiver, but the document does
 not choose whose NPV a caller wants. A pricing request must therefore identify
 exactly one ``TradeParty`` with ``role="valuation_party"``. The normalizer maps
 each stream to ``pay`` or ``receive`` relative to that party.
+
+A swap maps leg direction relative to the valuation party. A swaption instead
+normalizes its underlying swap from the buyer's perspective, preserving payer
+or receiver option orientation, and records the requested buyer/seller value
+as ``ContractIR.position = "long"`` or ``"short"``. Seller valuation therefore
+does not reverse the underlying swap or change the selected declaration.
 
 A missing valuation party produces
 ``missing_contract_field:fpml_valuation_party_id``. A party that is not in the
@@ -68,16 +78,35 @@ Pricing requests also require a deterministic valuation date. Until the
 static-leg runtime consumes historical fixing histories, Trellis rejects a
 swap with an unpaid floating coupon whose fixing date is on or before that
 valuation date. Build-only normalization remains independent of valuation
-date. When an admitted fixed-float request declares ``analytics`` or
-``greeks`` without explicit outputs, the normalized request receives the
+date. When an admitted fixed-float or swaption request declares ``analytics``
+or ``greeks`` without explicit outputs, the normalized request receives the
 bounded rates defaults before execution planning: price/DV01/duration for
-analytics and DV01/duration/convexity for Greeks.
+analytics and DV01/duration/convexity for Greeks. Structural solver selection
+still requests only ``price`` from the normalized payoff; the executor derives
+the requested sensitivities through its governed bump-and-reprice analytics
+path.
 
 Supported business-day conventions are ``NONE``, ``FOLLOWING``,
 ``MODFOLLOWING``, ``PRECEDING``, and ``MODPRECEDING``. Adjusted dates require
 an admitted explicit business center. The current center map is bounded to the
 corresponding Trellis calendars for ``AUSY``, ``BRSP``, ``CATO``, ``CHZU``,
 ``EUTA``, ``GBLO``, ``JPTO``, and ``USNY``.
+
+The swaption cohort additionally requires exactly one European exercise date,
+physical settlement, absent or false ``swaptionStraddle``, one complete admitted
+fixed-float underlying swap between exactly the swaption buyer and seller, and
+expiry before the swap effective date. A documented third party cannot replace
+either option counterparty on the underlying swap. The fixed-leg direction
+determines payer versus receiver orientation; exact notional, strike, fixed
+payment schedule, day counts, frequencies, and floating index are taken from
+the nested swap. The imported contract selects the existing resolved Black-76
+swaption declaration. No FpML-specific pricing helper, generated adapter, or
+cookbook route is introduced.
+
+A premium settled before the valuation date is reported separately in
+``FpMLImportReport.premium_metadata``. It is excluded from canonical contract
+identity and structural selection. An unsettled premium blocks pricing because
+the current normalized payoff path does not model that cashflow.
 
 When FpML supplies an ``adjustedDate`` for an effective or termination date,
 the normalizer requires it to equal the date recomputed from the unadjusted
@@ -91,6 +120,8 @@ Fail-Closed Boundary
 Unsupported amortization, compounding, stubs, cross-currency legs, stepped
 rates or spreads, mismatched schedules or notionals, non-term floating-rate
 forms, duplicate optional rate schedules, unpaid seasoned floating coupons,
+cash-settled, Bermudan, American, partial-exercise, automatic-exercise, or
+straddle swaptions, unsettled premiums,
 document/package siblings, trade-level payments, duplicate roll declarations,
 fixed-leg reset schedules, initial-fixing overrides, mismatched counterparty
 pairs, end-of-month or clamped high-day rolls, foreign-namespaced extension
@@ -105,18 +136,20 @@ and missing schedule or valuation-date terms produce exact
 the caller can supply missing or disambiguating information.
 
 The importer is not a complete FpML schema validator. It supports one view,
-version, root, trade count, and product cohort; it does not claim package,
-lifecycle, recordkeeping, basis, cross-currency, OIS compounding, inflation,
-swaption, or cap/floor coverage.
+version, root, trade count, and bounded product cohorts; it does not claim
+package, lifecycle, recordkeeping, basis, cross-currency, OIS compounding,
+inflation, cash/Bermudan/American swaption, or cap/floor coverage.
 
 Identity And Provenance
 -----------------------
 
-``static_leg_economic_identity(...)`` hashes a versioned canonical projection
-of the normalized static-leg economics. Labels, metadata, XML paths, document
-ids, and source format are excluded, so an equivalent native contract and FpML
-contract have the same identity. Signed leg direction, schedules, notionals,
-coupon formulas, indices, and settlement remain part of the identity.
+``static_leg_economic_identity(...)`` and
+``contract_ir_economic_identity(...)`` hash versioned canonical projections of
+normalized economics. Labels, metadata, XML paths, document ids, source format,
+and separately reported premium metadata are excluded, so equivalent native
+and FpML contracts have the same identity. Position, settlement, nested
+underlying economics, signed leg direction, schedules, notionals, coupon
+formulas, and indices remain part of the relevant identity.
 
 ``FpMLImportReport.mapping_provenance`` separately records XML paths and their
 normalized semantic fields. ``fpml_import_report_summary(...)`` exposes the

@@ -15,6 +15,9 @@ VALID_FPML = (FPML_FIXTURES / "confirmation_5_13_swap.xml").read_bytes()
 NORMALIZABLE_FPML = (
     FPML_FIXTURES / "confirmation_5_13_fixed_float_swap.xml"
 ).read_bytes()
+NORMALIZABLE_SWAPTION_FPML = (
+    FPML_FIXTURES / "confirmation_5_13_european_swaption.xml"
+).read_bytes()
 
 
 def _blocker_ids(compiled) -> tuple[str, ...]:
@@ -204,6 +207,77 @@ def test_compile_fpml_fixed_float_swap_uses_structural_execution_ir(monkeypatch)
     assert compiled.request.metadata["external_contract"]["economic_identity"] == (
         compiled.import_report.economic_identity
     )
+
+
+def test_compile_fpml_european_swaption_uses_existing_contract_ir_route(monkeypatch):
+    import trellis.agent.platform_requests as platform_requests
+    from trellis.agent.contract_ir_solver_compiler import ContractIRPricingPayoff
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    request = platform_requests.make_fpml_request(
+        NORMALIZABLE_SWAPTION_FPML,
+        source_view="confirmation",
+        source_version="5-13",
+        trade_envelope=TradeEnvelope(
+            source_format="fpml",
+            source_view="confirmation",
+            source_version="5-13",
+            parties=(TradeParty("PARTY-A", role="valuation_party"),),
+        ),
+        settlement=date(2025, 1, 15),
+    )
+
+    def _unexpected(*args, **kwargs):
+        raise AssertionError("generic semantic text parsing must not run for FpML")
+
+    monkeypatch.setattr(platform_requests, "_draft_semantic_contract", _unexpected)
+    monkeypatch.setattr(platform_requests, "decompose_to_ir", _unexpected)
+
+    compiled = platform_requests.compile_platform_request(request)
+
+    assert compiled.execution_plan.action == "price_normalized_payoff"
+    assert compiled.execution_plan.reason == "normalized_external_contract"
+    assert compiled.execution_plan.requires_build is False
+    assert compiled.execution_plan.route_method == "structural_contract_ir"
+    assert compiled.blocker_report is None
+    assert compiled.import_report.economic_identity.startswith("contract_ir:v1:")
+    assert isinstance(compiled.request.instrument, ContractIRPricingPayoff)
+    assert compiled.request.metadata["external_contract"] == {
+        "source_format": "fpml",
+        "economic_identity": compiled.import_report.economic_identity,
+        "structural_declaration_id": "swaption_payer_black76_resolved_kernel",
+        "validation_bundle_id": "rate_style_swaption_contract",
+        "callable_ref": "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+        "mapping_provenance_count": len(compiled.import_report.mapping_provenance),
+    }
+
+
+def test_compile_fpml_swaption_analytics_selects_price_solver_for_bump_analytics():
+    from trellis.agent.platform_requests import compile_platform_request, make_fpml_request
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    compiled = compile_platform_request(
+        make_fpml_request(
+            NORMALIZABLE_SWAPTION_FPML,
+            source_view="confirmation",
+            source_version="5-13",
+            trade_envelope=TradeEnvelope(
+                source_format="fpml",
+                source_view="confirmation",
+                source_version="5-13",
+                parties=(TradeParty("PARTY-A", role="valuation_party"),),
+            ),
+            settlement=date(2025, 1, 15),
+            request_type="analytics",
+        )
+    )
+
+    assert compiled.blocker_report is None
+    assert compiled.request.requested_outputs == ("price", "dv01", "duration")
+    assert compiled.request.instrument.requested_outputs == ("price",)
+    assert compiled.request.metadata["external_contract"][
+        "structural_declaration_id"
+    ] == "swaption_payer_black76_resolved_kernel"
 
 
 @pytest.mark.parametrize(
