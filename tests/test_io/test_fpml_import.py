@@ -313,6 +313,31 @@ def test_inspect_fpml_document_never_treats_incomplete_wrappers_as_economics(
     assert report.trade.product_names
 
 
+def test_inspect_fpml_document_excludes_trade_metadata_from_product_candidates():
+    from trellis.io.fpml import inspect_fpml_document
+
+    report = inspect_fpml_document(
+        _document(
+            "<trade>"
+            "<tradeHeader />"
+            "<partyTradeIdentifier />"
+            "<partyTradeInformation />"
+            "<tradeSummary />"
+            "<productSummary />"
+            "<originatingPackage />"
+            "<tradeDate>2026-07-01</tradeDate>"
+            "<clearedDate>2026-07-02</clearedDate>"
+            "<swap />"
+            "</trade>"
+        ),
+        declared_view="confirmation",
+        declared_version="5-13",
+    )
+
+    assert report.status == "inspected"
+    assert report.trade.product_names == ("swap",)
+
+
 def test_inspect_fpml_document_blocks_lifecycle_content_before_product_mapping():
     from trellis.io.fpml import inspect_fpml_document
 

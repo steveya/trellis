@@ -43,13 +43,20 @@ _NON_PRODUCT_TRADE_CHILDREN = {
     "brokerPartyReference",
     "calculationAgent",
     "calculationAgentBusinessCenter",
+    "clearedDate",
     "collateral",
     "determiningParty",
     "documentation",
     "governingLaw",
     "hedgingParty",
+    "originatingPackage",
     "otherPartyPayment",
+    "partyTradeIdentifier",
+    "partyTradeInformation",
+    "productSummary",
+    "tradeDate",
     "tradeHeader",
+    "tradeSummary",
 }
 _INCOMPLETE_PRODUCT_BLOCKERS = {
     "genericProduct": (
