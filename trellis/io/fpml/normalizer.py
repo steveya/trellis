@@ -103,7 +103,10 @@ _STUB_FIELDS = {
     "lastRegularPaymentDate",
 }
 _ALLOWED_DOCUMENT_CHILDREN = {"party", "trade"}
+_ALLOWED_PARTY_CHILDREN = {"partyId"}
 _ALLOWED_TRADE_CHILDREN = {"swap", "tradeHeader"}
+_ALLOWED_TRADE_HEADER_CHILDREN = {"partyTradeIdentifier", "tradeDate"}
+_ALLOWED_PARTY_TRADE_IDENTIFIER_CHILDREN = {"partyReference", "tradeId"}
 _ALLOWED_SWAP_CHILDREN = {
     "assetClass",
     "primaryAssetClass",
@@ -112,6 +115,7 @@ _ALLOWED_SWAP_CHILDREN = {
     "secondaryAssetClass",
     "swapStream",
 }
+_SWAP_METADATA_CHILDREN = _ALLOWED_SWAP_CHILDREN - {"swapStream"}
 _ALLOWED_STREAM_CHILDREN = {
     "calculationPeriodAmount",
     "calculationPeriodDates",
@@ -122,6 +126,7 @@ _ALLOWED_STREAM_CHILDREN = {
     "receiverPartyReference",
     "resetDates",
 }
+_STREAM_METADATA_REFERENCES = {"payerAccountReference", "receiverAccountReference"}
 _ALLOWED_CALCULATION_DATES_CHILDREN = {
     "calculationPeriodDatesAdjustments",
     "calculationPeriodFrequency",
@@ -284,6 +289,11 @@ def _normalize_inspected_fpml_document(
             scope="trade",
             namespace=namespace,
         )
+        _validate_document_metadata(
+            root,
+            trade,
+            namespace=namespace,
+        )
     except _NormalizationBlocked as exc:
         return _blocked_from(inspected, exc.blocker)
     swap = _first_direct_child(trade, "swap", namespace=namespace)
@@ -369,6 +379,55 @@ def _normalize_inspected_fpml_document(
     )
 
 
+def _validate_document_metadata(root, trade, *, namespace: str | None) -> None:
+    for party in _direct_children(root, "party", namespace=namespace):
+        _reject_unadmitted_direct_children(
+            party,
+            allowed=_ALLOWED_PARTY_CHILDREN,
+            scope="party",
+            namespace=namespace,
+        )
+        _reject_nested_metadata_children(
+            party,
+            names=_ALLOWED_PARTY_CHILDREN,
+            namespace=namespace,
+        )
+
+    trade_header = _required_child(
+        trade,
+        "tradeHeader",
+        namespace=namespace,
+        missing_field="trade_header",
+    )
+    _reject_unadmitted_direct_children(
+        trade_header,
+        allowed=_ALLOWED_TRADE_HEADER_CHILDREN,
+        scope="trade_header",
+        namespace=namespace,
+    )
+    _reject_nested_metadata_children(
+        trade_header,
+        names={"tradeDate"},
+        namespace=namespace,
+    )
+    for identifier in _direct_children(
+        trade_header,
+        "partyTradeIdentifier",
+        namespace=namespace,
+    ):
+        _reject_unadmitted_direct_children(
+            identifier,
+            allowed=_ALLOWED_PARTY_TRADE_IDENTIFIER_CHILDREN,
+            scope="party_trade_identifier",
+            namespace=namespace,
+        )
+        _reject_nested_metadata_children(
+            identifier,
+            names=_ALLOWED_PARTY_TRADE_IDENTIFIER_CHILDREN,
+            namespace=namespace,
+        )
+
+
 def _normalize_fixed_float_swap(
     swap,
     *,
@@ -380,6 +439,11 @@ def _normalize_fixed_float_swap(
         swap,
         allowed=_ALLOWED_SWAP_CHILDREN,
         scope="swap",
+        namespace=namespace,
+    )
+    _reject_nested_metadata_children(
+        swap,
+        names=_SWAP_METADATA_CHILDREN,
         namespace=namespace,
     )
     streams = _direct_children(swap, "swapStream", namespace=namespace)
@@ -413,6 +477,11 @@ def _normalize_fixed_float_swap(
             stream,
             allowed=_ALLOWED_STREAM_CHILDREN,
             scope="swap_stream",
+            namespace=namespace,
+        )
+        _reject_nested_metadata_children(
+            stream,
+            names=_STREAM_METADATA_REFERENCES,
             namespace=namespace,
         )
         notional_schedule = _descendant(stream, "notionalStepSchedule", namespace=namespace)
@@ -1778,6 +1847,22 @@ def _contains_any(parent, names: set[str], *, namespace: str | None) -> bool:
         for element in parent.iter()
         for element_namespace, local_name in (_split_tag(element.tag),)
     )
+
+
+def _reject_nested_metadata_children(
+    parent,
+    *,
+    names: set[str],
+    namespace: str | None,
+) -> None:
+    for name in names:
+        for element in _direct_children(parent, name, namespace=namespace):
+            _reject_unadmitted_direct_children(
+                element,
+                allowed=_ALLOWED_LEAF_CHILDREN,
+                scope=_snake_case(name),
+                namespace=namespace,
+            )
 
 
 def _reject_unadmitted_direct_children(

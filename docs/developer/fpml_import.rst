@@ -93,12 +93,12 @@ rates or spreads, mismatched schedules or notionals, non-term floating-rate
 forms, duplicate optional rate schedules, unpaid seasoned floating coupons,
 document/package siblings, trade-level payments, duplicate roll declarations,
 fixed-leg reset schedules, initial-fixing overrides, mismatched counterparty
-pairs, end-of-month or clamped high-day
-rolls, foreign-namespaced extension children, unsupported
-children in frequency, tenor, date-adjustment, or business-center containers,
-children nested inside scalar or reference leaves, unsupported
-numeric lexical forms outside XML decimal/integer syntax, calendars/conventions,
-lifecycle content, and missing schedule or valuation-date terms produce exact
+pairs, end-of-month or clamped high-day rolls, foreign-namespaced extension
+children, unsupported children in trade-header, party, product-metadata,
+frequency, tenor, date-adjustment, or business-center containers, children
+nested inside scalar or reference leaves, unsupported numeric lexical forms
+outside XML decimal/integer syntax, calendars/conventions, lifecycle content,
+and missing schedule or valuation-date terms produce exact
 ``external_import:*``,
 ``missing_contract_field:*``, ``contract_ambiguity:*``, or
 ``contract_conflict:*`` blockers. The report carries clarification fields when

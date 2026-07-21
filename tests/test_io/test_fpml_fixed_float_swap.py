@@ -564,6 +564,57 @@ def test_normalization_rejects_unconsumed_trade_level_payments():
     )
 
 
+def test_normalization_rejects_unconsumed_trade_header_economics():
+    xml = FIXTURE.read_text().replace(
+        "    </tradeHeader>",
+        "      <otherPartyPayment><paymentAmount><currency>USD</currency>"
+        "<amount>100</amount></paymentAmount></otherPartyPayment>\n"
+        "    </tradeHeader>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_trade_header_feature_unsupported",
+    )
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "expected_id"),
+    (
+        (
+            "  </party>",
+            "    <otherPartyPayment />\n  </party>",
+            "external_import:fpml_party_feature_unsupported",
+        ),
+        (
+            '      <swapStream id="FIXED-LEG">',
+            "      <productType><otherPartyPayment /></productType>\n"
+            '      <swapStream id="FIXED-LEG">',
+            "external_import:fpml_product_type_feature_unsupported",
+        ),
+        (
+            '        <payerPartyReference href="PARTY-A" />',
+            '        <payerAccountReference href="ACCOUNT-A">'
+            "<otherPartyPayment /></payerAccountReference>\n"
+            '        <payerPartyReference href="PARTY-A" />',
+            "external_import:fpml_payer_account_reference_feature_unsupported",
+        ),
+    ),
+)
+def test_normalization_rejects_economics_nested_in_metadata(
+    old: str,
+    new: str,
+    expected_id: str,
+):
+    xml = FIXTURE.read_text().replace(old, new, 1)
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (expected_id,)
+
+
 def test_normalization_rejects_unconsumed_document_level_content():
     xml = FIXTURE.read_text().replace(
         '  <party id="PARTY-A">',
