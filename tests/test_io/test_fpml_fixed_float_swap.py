@@ -435,6 +435,22 @@ def test_normalization_rejects_duplicate_floating_spread_schedules():
     assert report.clarification.ambiguous_fields == ("floating_spread_schedule",)
 
 
+def test_normalization_rejects_foreign_namespaced_economics():
+    xml = FIXTURE.read_text().replace(
+        "            </floatingRateCalculation>",
+        "              <vendor:couponOverride xmlns:vendor=\"urn:vendor\">"
+        "0.02</vendor:couponOverride>\n"
+        "            </floatingRateCalculation>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_floating_rate_calculation_feature_unsupported",
+    )
+
+
 def test_economic_identity_ignores_labels_and_source_provenance():
     from trellis.agent.static_leg_contract import static_leg_economic_identity
 

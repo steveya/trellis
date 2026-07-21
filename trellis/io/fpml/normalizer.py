@@ -1520,10 +1520,14 @@ def _reject_unadmitted_direct_children(
     unsupported = tuple(
         sorted(
             {
-                local_name
+                (
+                    local_name
+                    if child_namespace == namespace
+                    else f"foreign_namespace:{local_name}"
+                )
                 for child in tuple(parent)
                 for child_namespace, local_name in (_split_tag(child.tag),)
-                if child_namespace == namespace and local_name not in allowed
+                if child_namespace != namespace or local_name not in allowed
             }
         )
     )
