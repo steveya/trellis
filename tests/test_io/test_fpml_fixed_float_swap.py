@@ -323,6 +323,24 @@ def test_normalization_rejects_implicit_stub_schedule():
     )
 
 
+def test_normalization_rejects_unimplemented_end_of_month_roll():
+    xml = (
+        FIXTURE.read_text()
+        .replace("2025-06-30", "2025-02-28")
+        .replace("2027-06-30", "2025-08-31")
+        .replace(
+            "<rollConvention>30</rollConvention>",
+            "<rollConvention>NONE</rollConvention>",
+        )
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_stub_period_unsupported",
+    )
+
+
 def test_normalization_rejects_unknown_stream_party_reference():
     xml = FIXTURE.read_text().replace('href="PARTY-B"', 'href="PARTY-Z"', 1)
 

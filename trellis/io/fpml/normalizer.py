@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, timedelta
-import calendar as _calendar
 import hashlib
 import math
 
@@ -1335,19 +1334,16 @@ def _validate_roll_convention(element, start: date, *, namespace: str | None) ->
 def _validate_regular_schedule(start: date, end: date, frequency: Frequency) -> None:
     months_per_period = 12 // frequency.value
     month_span = (end.year - start.year) * 12 + end.month - start.month
-    both_month_end = (
-        start.day == _calendar.monthrange(start.year, start.month)[1]
-        and end.day == _calendar.monthrange(end.year, end.month)[1]
-    )
     if (
         month_span <= 0
         or month_span % months_per_period
-        or (start.day != end.day and not both_month_end)
+        or start.day != end.day
     ):
         _fail(
             "external_import:fpml_stub_period_unsupported",
             "unsupported_contract",
-            "The effective and termination dates imply an unsupported stub period.",
+            "The effective and termination dates imply an unsupported stub or "
+            "end-of-month roll.",
         )
 
 

@@ -92,11 +92,12 @@ economics to ``StaticLegContractIR``, and prices the shared execution IR. It
 does not ask an LLM to interpret the XML or generate pricing code. Missing
 valuation perspective returns a clarification blocker instead of choosing a
 party. Amortizing, compounding, stubbed, cross-currency, lifecycle-rich, and
-other unsupported trades remain blocked, as do unclassified vendor extension
-elements. Pricing also requires a deterministic valuation date and rejects
-unpaid floating coupons that already require a historical fixing, because the
-current static-leg runtime does not consume that fixing history. This is
-bounded interoperability, not general FpML pricing coverage.
+other unsupported trades remain blocked, as do end-of-month rolls and
+unclassified vendor extension elements. Pricing also requires a deterministic
+valuation date and rejects unpaid floating coupons that already require a
+historical fixing, because the current static-leg runtime does not consume that
+fixing history. This is bounded interoperability, not general FpML pricing
+coverage.
 
 The Payoff Framework
 --------------------
