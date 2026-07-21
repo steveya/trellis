@@ -88,7 +88,13 @@ def _native_contract():
     )
 
 
-def _normalize(xml: bytes | None = None, *, valuation_party_id: str | None = "PARTY-A"):
+def _normalize(
+    xml: bytes | None = None,
+    *,
+    valuation_party_id: str | None = "PARTY-A",
+    valuation_date: date | None = None,
+    require_valuation_date: bool = False,
+):
     from trellis.io.fpml import normalize_fpml_document
 
     return normalize_fpml_document(
@@ -96,6 +102,8 @@ def _normalize(xml: bytes | None = None, *, valuation_party_id: str | None = "PA
         declared_view="confirmation",
         declared_version="5-13",
         valuation_party_id=valuation_party_id,
+        valuation_date=valuation_date,
+        require_valuation_date=require_valuation_date,
     )
 
 
@@ -184,6 +192,26 @@ def test_opposite_valuation_party_reverses_signed_position():
         "pay",
     )
     assert party_a.economic_identity != party_b.economic_identity
+
+
+def test_normalization_blocks_seasoned_floating_coupon_before_runtime_pricing():
+    report = _normalize(
+        valuation_date=date(2025, 7, 1),
+        require_valuation_date=True,
+    )
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_historical_fixing_runtime_unsupported",
+    )
+
+
+def test_normalization_requires_valuation_date_when_requested_for_pricing():
+    report = _normalize(require_valuation_date=True)
+
+    assert _blocker_ids(report) == (
+        "missing_contract_field:fpml_valuation_date",
+    )
+    assert report.clarification.missing_fields == ("valuation_date",)
 
 
 def test_normalized_report_summary_is_body_free_and_machine_readable():
@@ -388,6 +416,23 @@ def test_normalization_rejects_fixed_and_floating_economics_on_one_stream():
     assert _blocker_ids(report) == (
         "external_import:fpml_fixed_float_leg_shape_unsupported",
     )
+
+
+def test_normalization_rejects_duplicate_floating_spread_schedules():
+    spread = "<spreadSchedule><initialValue>0.001</initialValue></spreadSchedule>"
+    xml = FIXTURE.read_text().replace(
+        "            </floatingRateCalculation>",
+        f"              {spread}\n              {spread}\n"
+        "            </floatingRateCalculation>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "contract_ambiguity:fpml_floating_spread_schedule",
+    )
+    assert report.clarification.ambiguous_fields == ("floating_spread_schedule",)
 
 
 def test_economic_identity_ignores_labels_and_source_provenance():

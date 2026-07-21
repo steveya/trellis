@@ -63,6 +63,12 @@ The first fixed-float cohort requires:
 - internal FpML schedule references that identify the schedule they claim to
   reference
 
+Pricing requests also require a deterministic valuation date. Until the
+static-leg runtime consumes historical fixing histories, Trellis rejects a
+swap with an unpaid floating coupon whose fixing date is on or before that
+valuation date. Build-only normalization remains independent of valuation
+date.
+
 Supported business-day conventions are ``NONE``, ``FOLLOWING``,
 ``MODFOLLOWING``, ``PRECEDING``, and ``MODPRECEDING``. Adjusted dates require
 an admitted explicit business center. The current center map is bounded to the
@@ -74,8 +80,9 @@ Fail-Closed Boundary
 
 Unsupported amortization, compounding, stubs, cross-currency legs, stepped
 rates or spreads, mismatched schedules or notionals, non-term floating-rate
-forms, unsupported calendars/conventions, lifecycle content, and missing
-schedule terms produce exact ``external_import:*``,
+forms, duplicate optional rate schedules, unpaid seasoned floating coupons,
+unsupported calendars/conventions, lifecycle content, and missing schedule or
+valuation-date terms produce exact ``external_import:*``,
 ``missing_contract_field:*``, ``contract_ambiguity:*``, or
 ``contract_conflict:*`` blockers. The report carries clarification fields when
 the caller can supply missing or disambiguating information.

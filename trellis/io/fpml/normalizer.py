@@ -190,6 +190,8 @@ def normalize_fpml_document(
     declared_view: str | None,
     declared_version: str | None,
     valuation_party_id: str | None,
+    valuation_date: date | None = None,
+    require_valuation_date: bool = False,
     limits: FpMLInspectionLimits = DEFAULT_FPML_INSPECTION_LIMITS,
 ) -> FpMLImportReport:
     """Normalize one admitted FpML product without using XML names as route authority."""
@@ -207,6 +209,8 @@ def normalize_fpml_document(
         content,
         inspected=inspected,
         valuation_party_id=valuation_party_id,
+        valuation_date=valuation_date,
+        require_valuation_date=require_valuation_date,
         limits=limits,
     )
 
@@ -216,6 +220,8 @@ def _normalize_inspected_fpml_document(
     *,
     inspected: FpMLImportReport,
     valuation_party_id: str | None,
+    valuation_date: date | None = None,
+    require_valuation_date: bool = False,
     limits: FpMLInspectionLimits = DEFAULT_FPML_INSPECTION_LIMITS,
 ) -> FpMLImportReport:
     """Normalize content that has already passed the bounded FpML inspection."""
@@ -286,6 +292,30 @@ def _normalize_inspected_fpml_document(
         )
     except _NormalizationBlocked as exc:
         return _blocked_from(inspected, exc.blocker)
+
+    if require_valuation_date and valuation_date is None:
+        return _blocked_from(
+            inspected,
+            _blocker(
+                "missing_contract_field:fpml_valuation_date",
+                "contract_gap",
+                "FpML pricing requires an explicit deterministic valuation date.",
+                missing_fields=("valuation_date",),
+            ),
+        )
+    if valuation_date is not None:
+        if not isinstance(valuation_date, date):
+            raise TypeError("valuation_date must be a date")
+        if _has_seasoned_floating_coupon(contract, valuation_date):
+            return _blocked_from(
+                inspected,
+                _blocker(
+                    "external_import:fpml_historical_fixing_runtime_unsupported",
+                    "implementation_gap",
+                    "The static-leg runtime does not yet consume historical fixings "
+                    "for unpaid seasoned floating coupons.",
+                ),
+            )
 
     return FpMLImportReport(
         status="normalized",
@@ -908,11 +938,19 @@ def _normalize_stream(
             )
         tenor = _period_label(tenors[0], namespace=namespace)
         rate_index = TermRateIndex(index_name, tenor)
-        spread_schedule = _first_direct_child(
+        spread_schedules = _direct_children(
             floating,
             "spreadSchedule",
             namespace=namespace,
         )
+        if len(spread_schedules) > 1:
+            _fail(
+                "contract_ambiguity:fpml_floating_spread_schedule",
+                "contract_ambiguity",
+                "FpML normalization found multiple floating spread schedules.",
+                ambiguous_fields=("floating_spread_schedule",),
+            )
+        spread_schedule = spread_schedules[0] if spread_schedules else None
         if spread_schedule is not None:
             if _direct_children(spread_schedule, "step", namespace=namespace):
                 _fail(
@@ -935,10 +973,20 @@ def _normalize_stream(
                 ),
                 field_name="floating_spread",
             )
-        multiplier_schedule = _first_direct_child(
+        multiplier_schedules = _direct_children(
             floating,
             "floatingRateMultiplierSchedule",
             namespace=namespace,
+        )
+        if len(multiplier_schedules) > 1:
+            _fail(
+                "contract_ambiguity:fpml_floating_rate_multiplier_schedule",
+                "contract_ambiguity",
+                "FpML normalization found multiple floating rate multiplier schedules.",
+                ambiguous_fields=("floating_rate_multiplier_schedule",),
+            )
+        multiplier_schedule = (
+            multiplier_schedules[0] if multiplier_schedules else None
         )
         if multiplier_schedule is not None:
             if _direct_children(multiplier_schedule, "step", namespace=namespace):
@@ -981,6 +1029,25 @@ def _normalize_stream(
         spread=spread,
         gearing=gearing,
     )
+
+
+def _has_seasoned_floating_coupon(
+    contract: StaticLegContractIR,
+    valuation_date: date,
+) -> bool:
+    """Return whether an unpaid floating coupon already requires a known fixing."""
+
+    for signed_leg in contract.legs:
+        leg = signed_leg.leg
+        if not isinstance(leg.coupon_formula, FloatingCouponFormula):
+            continue
+        for period in leg.coupon_periods:
+            if (
+                period.fixing_date is not None
+                and period.fixing_date <= valuation_date < period.payment_date
+            ):
+                return True
+    return False
 
 
 def _floating_fixing_dates(

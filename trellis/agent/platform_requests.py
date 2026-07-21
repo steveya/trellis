@@ -607,6 +607,8 @@ def _compile_imported_document_request(
         bytes(payload.content),
         inspected=inspection_report,
         valuation_party_id=_valuation_party_id(request.trade_envelope),
+        valuation_date=_fpml_valuation_date(request),
+        require_valuation_date=request.request_type != "build",
     )
     if import_report.blockers:
         blocker_report = fpml_import_blocker_report(import_report)
@@ -683,6 +685,20 @@ def _valuation_party_id(envelope: TradeEnvelope | None) -> str | None:
         if str(party.role or "").strip().lower() == "valuation_party"
     )
     return matches[0] if len(matches) == 1 else None
+
+
+def _fpml_valuation_date(request: PlatformRequest) -> date | None:
+    """Resolve the deterministic valuation date used by imported-contract gates."""
+
+    settlement = request.settlement
+    if isinstance(settlement, datetime):
+        return settlement.date()
+    if isinstance(settlement, date):
+        return settlement
+    as_of = getattr(request.market_snapshot, "as_of", None)
+    if isinstance(as_of, datetime):
+        return as_of.date()
+    return as_of if isinstance(as_of, date) else None
 
 
 def _direct_instrument_execution_plan(request: PlatformRequest) -> ExecutionPlan:

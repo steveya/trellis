@@ -173,6 +173,7 @@ def test_compile_fpml_fixed_float_swap_uses_structural_execution_ir(monkeypatch)
             source_version="5-13",
             parties=(TradeParty("PARTY-A", role="valuation_party"),),
         ),
+        settlement=date(2025, 1, 15),
     )
 
     def _unexpected(*args, **kwargs):
@@ -222,6 +223,78 @@ def test_compile_complete_fpml_swap_requests_valuation_party_clarification():
     )
     assert compiled.import_report.clarification.missing_fields == (
         "valuation_party_id",
+    )
+
+
+def test_compile_fpml_swap_requests_a_deterministic_valuation_date():
+    from trellis.agent.platform_requests import compile_platform_request, make_fpml_request
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    compiled = compile_platform_request(
+        make_fpml_request(
+            NORMALIZABLE_FPML,
+            source_view="confirmation",
+            source_version="5-13",
+            trade_envelope=TradeEnvelope(
+                source_format="fpml",
+                source_view="confirmation",
+                source_version="5-13",
+                parties=(TradeParty("PARTY-A", role="valuation_party"),),
+            ),
+        )
+    )
+
+    assert compiled.execution_plan.action == "block"
+    assert _blocker_ids(compiled) == (
+        "missing_contract_field:fpml_valuation_date",
+    )
+
+
+def test_compile_only_fpml_swap_remains_independent_of_valuation_date():
+    from trellis.agent.platform_requests import compile_platform_request, make_fpml_request
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    compiled = compile_platform_request(
+        make_fpml_request(
+            NORMALIZABLE_FPML,
+            source_view="confirmation",
+            source_version="5-13",
+            trade_envelope=TradeEnvelope(
+                source_format="fpml",
+                source_view="confirmation",
+                source_version="5-13",
+                parties=(TradeParty("PARTY-A", role="valuation_party"),),
+            ),
+            request_type="build",
+        )
+    )
+
+    assert compiled.execution_plan.action == "compile_only"
+    assert compiled.import_report.status == "normalized"
+
+
+def test_compile_fpml_swap_blocks_seasoned_coupon_without_runtime_fixing_support():
+    from trellis.agent.platform_requests import compile_platform_request, make_fpml_request
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    compiled = compile_platform_request(
+        make_fpml_request(
+            NORMALIZABLE_FPML,
+            source_view="confirmation",
+            source_version="5-13",
+            trade_envelope=TradeEnvelope(
+                source_format="fpml",
+                source_view="confirmation",
+                source_version="5-13",
+                parties=(TradeParty("PARTY-A", role="valuation_party"),),
+            ),
+            settlement=date(2025, 7, 1),
+        )
+    )
+
+    assert compiled.execution_plan.action == "block"
+    assert _blocker_ids(compiled) == (
+        "external_import:fpml_historical_fixing_runtime_unsupported",
     )
 
 
