@@ -90,6 +90,9 @@ The immutable ``FpMLImportReport`` carries the matched profile, document
 digest and identity, direct product element names, trade provenance, and stable
 blockers without retaining XML text or parser nodes. Missing or ambiguous
 trade/product structure also produces a caller-facing clarification projection.
+The first cohort requires a single party-qualified trade id and a single valid
+trade date when those fields are present; it blocks duplicate identity fields
+or malformed dates instead of selecting or dropping values by XML order.
 Lifecycle content and the incomplete ``genericProduct``, ``nonSchemaProduct``,
 and ``standardProduct`` wrappers fail closed rather than being interpreted as
 current complete economics.

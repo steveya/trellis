@@ -288,6 +288,70 @@ def test_inspect_fpml_document_blocks_root_trade_and_product_shape_gaps(
         assert report.clarification.messages
 
 
+def test_inspect_fpml_document_blocks_ambiguous_party_trade_ids():
+    from trellis.io.fpml import inspect_fpml_document
+
+    report = inspect_fpml_document(
+        _document(
+            "<trade id='TRADE-ELEMENT-001'>"
+            "<tradeHeader>"
+            "<partyTradeIdentifier><tradeId>TRADE-A</tradeId>"
+            "</partyTradeIdentifier>"
+            "<partyTradeIdentifier><tradeId>TRADE-B</tradeId>"
+            "</partyTradeIdentifier>"
+            "<tradeDate>2026-07-01</tradeDate>"
+            "</tradeHeader>"
+            "<swap />"
+            "</trade>"
+        ),
+        declared_view="confirmation",
+        declared_version="5-13",
+    )
+
+    assert report.status == "blocked"
+    assert _blocker_ids(report) == (
+        "contract_ambiguity:fpml_multiple_trade_ids",
+    )
+    assert report.trade.business_id is None
+    assert report.clarification.ambiguous_fields == ("trade_id",)
+
+
+@pytest.mark.parametrize(
+    ("trade_dates", "expected_id"),
+    [
+        (("not-a-date",), "external_import:fpml_malformed_trade_date"),
+        (
+            ("2026-07-01", "2026-07-02"),
+            "contract_ambiguity:fpml_multiple_trade_dates",
+        ),
+    ],
+)
+def test_inspect_fpml_document_blocks_invalid_trade_date_identity(
+    trade_dates,
+    expected_id,
+):
+    from trellis.io.fpml import inspect_fpml_document
+
+    date_elements = "".join(
+        f"<tradeDate>{trade_date}</tradeDate>" for trade_date in trade_dates
+    )
+    report = inspect_fpml_document(
+        _document(
+            "<trade><tradeHeader>"
+            "<partyTradeIdentifier><tradeId>TRADE-001</tradeId>"
+            "</partyTradeIdentifier>"
+            f"{date_elements}"
+            "</tradeHeader><swap /></trade>"
+        ),
+        declared_view="confirmation",
+        declared_version="5-13",
+    )
+
+    assert report.status == "blocked"
+    assert _blocker_ids(report) == (expected_id,)
+    assert report.trade.trade_date is None
+
+
 @pytest.mark.parametrize(
     ("xml", "expected_id"),
     [

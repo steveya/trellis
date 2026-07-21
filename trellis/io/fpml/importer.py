@@ -218,7 +218,12 @@ def inspect_fpml_document(
         )
 
     trade_element = direct_trades[0]
-    trade = _trade_identity(root, trade_element, namespace=namespace)
+    trade, identity_blockers = _trade_identity(
+        root,
+        trade_element,
+        namespace=namespace,
+    )
+    blockers.extend(identity_blockers)
     envelope = _trade_envelope(document, trade, profile=profile)
     if not trade.product_names:
         blockers.append(
@@ -455,16 +460,53 @@ def _root_blocker(root_name: str, *, profile: FpMLProfile | None):
     )
 
 
-def _trade_identity(root, trade, *, namespace: str | None) -> FpMLTradeIdentity:
+def _trade_identity(
+    root,
+    trade,
+    *,
+    namespace: str | None,
+) -> tuple[FpMLTradeIdentity, tuple[FpMLImportBlocker, ...]]:
     trade_header = _first_direct_child(trade, "tradeHeader", namespace=namespace)
-    business_id = _first_descendant_text(trade_header, "tradeId", namespace=namespace)
-    trade_date_text = _first_descendant_text(trade_header, "tradeDate", namespace=namespace)
+    blockers: list[FpMLImportBlocker] = []
+
+    trade_ids = _descendant_texts(trade_header, "tradeId", namespace=namespace)
+    business_id = trade_ids[0] if len(trade_ids) == 1 else None
+    if len(trade_ids) > 1:
+        blockers.append(
+            _blocker(
+                "contract_ambiguity:fpml_multiple_trade_ids",
+                "contract_ambiguity",
+                "The FpML trade contains multiple party-qualified trade ids.",
+                ambiguous_fields=("trade_id",),
+            )
+        )
+
+    trade_dates = _descendant_texts(
+        trade_header,
+        "tradeDate",
+        namespace=namespace,
+    )
     parsed_trade_date = None
-    if trade_date_text:
+    if len(trade_dates) > 1:
+        blockers.append(
+            _blocker(
+                "contract_ambiguity:fpml_multiple_trade_dates",
+                "contract_ambiguity",
+                "The FpML trade contains multiple trade dates.",
+                ambiguous_fields=("trade_date",),
+            )
+        )
+    elif trade_dates:
         try:
-            parsed_trade_date = date.fromisoformat(trade_date_text)
+            parsed_trade_date = date.fromisoformat(trade_dates[0] or "")
         except ValueError:
-            parsed_trade_date = None
+            blockers.append(
+                _blocker(
+                    "external_import:fpml_malformed_trade_date",
+                    "malformed_document",
+                    "The FpML tradeDate must be a valid ISO calendar date.",
+                )
+            )
     party_ids = tuple(
         sorted(
             {
@@ -483,12 +525,15 @@ def _trade_identity(root, trade, *, namespace: str | None) -> FpMLTradeIdentity:
             and local_name not in _NON_PRODUCT_TRADE_CHILDREN
         )
     )
-    return FpMLTradeIdentity(
-        element_id=_optional_text(trade.attrib.get("id")),
-        business_id=business_id,
-        trade_date=parsed_trade_date,
-        party_ids=party_ids,
-        product_names=product_names,
+    return (
+        FpMLTradeIdentity(
+            element_id=_optional_text(trade.attrib.get("id")),
+            business_id=business_id,
+            trade_date=parsed_trade_date,
+            party_ids=party_ids,
+            product_names=product_names,
+        ),
+        tuple(blockers),
     )
 
 
@@ -521,14 +566,20 @@ def _has_lifecycle_content(root, *, namespace: str | None) -> bool:
     )
 
 
-def _first_descendant_text(element, local_name: str, *, namespace: str | None):
+def _descendant_texts(
+    element,
+    local_name: str,
+    *,
+    namespace: str | None,
+) -> tuple[str | None, ...]:
     if element is None:
-        return None
-    for child in element.iter():
-        child_namespace, child_name = _split_tag(child.tag)
-        if child_namespace == namespace and child_name == local_name:
-            return _optional_text(child.text)
-    return None
+        return ()
+    return tuple(
+        _optional_text(child.text)
+        for child in element.iter()
+        for child_namespace, child_name in (_split_tag(child.tag),)
+        if child_namespace == namespace and child_name == local_name
+    )
 
 
 def _direct_children(element, local_name: str, *, namespace: str | None):
