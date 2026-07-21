@@ -39,6 +39,7 @@ from trellis.agent.quant import (
     select_pricing_method_for_product_ir,
 )
 from trellis.agent.sensitivity_support import normalize_requested_outputs
+from trellis.agent.trade_envelope import TradeEnvelope
 from trellis.agent.valuation_context import (
     EngineModelSpec,
     PotentialSpec,
@@ -95,6 +96,7 @@ class PlatformRequest:
     comparison_spec: Any | None = None
     instrument: Any | None = None
     book: Any | None = None
+    trade_envelope: TradeEnvelope | None = None
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self):
@@ -105,6 +107,11 @@ class PlatformRequest:
         object.__setattr__(self, "measures", normalized_measures)
         object.__setattr__(self, "measure_specs", _freeze_tuple(self.measure_specs))
         object.__setattr__(self, "measure_context", _freeze_mapping(self.measure_context))
+        if self.trade_envelope is not None and not isinstance(
+            self.trade_envelope,
+            TradeEnvelope,
+        ):
+            raise TypeError("trade_envelope must be a TradeEnvelope")
         object.__setattr__(self, "metadata", _freeze_mapping(self.metadata))
 
 
@@ -284,6 +291,11 @@ class CompiledPlatformRequest:
     def __post_init__(self):
         """Freeze knowledge summaries carried on the compiled request envelope."""
         object.__setattr__(self, "knowledge_summary", _freeze_mapping(self.knowledge_summary))
+
+    @property
+    def trade_envelope(self) -> TradeEnvelope | None:
+        """Expose request provenance without duplicating it into semantic state."""
+        return self.request.trade_envelope
 
 
 def make_term_sheet_request(
@@ -1792,6 +1804,7 @@ def compile_build_request(
     preferred_method: str | None = None,
     measures: list | None = None,
     knowledge_profile: str | None = None,
+    trade_envelope: TradeEnvelope | None = None,
     metadata: Mapping[str, object] | None = None,
     semantic_contract=None,
     knowledge_overlays: Any = None,
@@ -1821,6 +1834,7 @@ def compile_build_request(
         instrument_type=instrument_type,
         measures=_normalize_measures(measures),
         model=model,
+        trade_envelope=trade_envelope,
         metadata={
             **request_metadata,
             **(

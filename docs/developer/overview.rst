@@ -28,6 +28,32 @@ The canonical request/compiler layer lives in ``trellis.agent.platform_requests`
 It normalizes these surfaces into ``PlatformRequest`` and ``CompiledPlatformRequest``
 objects with execution plans, method selection, knowledge payloads, and blocker reports.
 
+Trade Envelope Boundary
+-----------------------
+
+``trellis.agent.trade_envelope.TradeEnvelope`` is the immutable home for
+operational identity and imported-document provenance surrounding one economic
+contract. It carries fields such as source format/view/version, document and
+trade ids, trade date, package id, parties, external identifiers, lifecycle
+state, and bounded metadata. ``TradeParty`` provides the corresponding
+external party-identity record, and ``trade_envelope_summary(...)`` emits a
+stable serializable diagnostic projection.
+
+The envelope is deliberately outside ``SemanticContract``, ``ContractIR``,
+``ProductIR``, valuation context, and market binding. It may identify and
+reconcile a request, but it cannot select a structural declaration, backend,
+validation bundle, or pricing model. ``PlatformRequest.trade_envelope`` carries
+the value through compilation, and ``CompiledPlatformRequest.trade_envelope``
+exposes the same request-owned value without duplicating it into semantic
+metadata. Tests compare materially different envelopes over the same contract
+and require identical semantic, pricing-plan, backend-binding, and validation
+artifacts.
+
+This boundary is format-neutral. FpML is the first planned importer, but the
+envelope itself does not parse XML and does not imply that an imported product
+is supported. Importers must normalize economics separately and fail closed
+when the internal semantic and executable support contract is incomplete.
+
 The plain fixed-income pricing path now also carries desk-readable bond
 reporting outputs. ``price_instrument(...)`` and the ``Session.price(...)``
 projection solve a coupon-frequency nominal ``ytm`` from the reported dirty

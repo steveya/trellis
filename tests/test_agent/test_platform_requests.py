@@ -1771,6 +1771,62 @@ def test_compile_build_request_ignores_non_semantic_wrapper_metadata_for_route_f
     assert compiled_b.validation_contract.route_id is None
 
 
+def test_compile_build_request_preserves_trade_envelope_without_selection_authority():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    description = "European call on AAPL strike 150 expiring 2025-11-15"
+    envelope_a = TradeEnvelope(
+        source_format="fpml",
+        source_view="confirmation",
+        source_version="5-13",
+        document_id="DOC-A",
+        trade_id="TRADE-A",
+        parties=(TradeParty(party_id="PARTY-A"),),
+        metadata={"desk": "equity-derivatives"},
+    )
+    envelope_b = TradeEnvelope(
+        source_format="trellis_contract",
+        source_view="native",
+        source_version="1",
+        document_id="DOC-Z",
+        trade_id="TRADE-Z",
+        parties=(TradeParty(party_id="PARTY-Z"),),
+        metadata={"desk": "manual-rebook"},
+    )
+
+    compiled_a = compile_build_request(
+        description,
+        instrument_type="european_option",
+        preferred_method="analytical",
+        trade_envelope=envelope_a,
+    )
+    compiled_b = compile_build_request(
+        description,
+        instrument_type="european_option",
+        preferred_method="analytical",
+        trade_envelope=envelope_b,
+    )
+
+    assert compiled_a.request.trade_envelope is envelope_a
+    assert compiled_a.trade_envelope is envelope_a
+    assert compiled_b.request.trade_envelope is envelope_b
+    assert compiled_b.trade_envelope is envelope_b
+    assert compiled_a.semantic_contract == compiled_b.semantic_contract
+    assert compiled_a.product_ir == compiled_b.product_ir
+    assert compiled_a.pricing_plan == compiled_b.pricing_plan
+    assert compiled_a.generation_plan.backend_binding_id == (
+        compiled_b.generation_plan.backend_binding_id
+    )
+    assert compiled_a.validation_contract == compiled_b.validation_contract
+    assert compiled_a.request.metadata["contract_ir_compiler"] == (
+        compiled_b.request.metadata["contract_ir_compiler"]
+    )
+    assert compiled_a.request.metadata["route_binding_authority"] == (
+        compiled_b.request.metadata["route_binding_authority"]
+    )
+
+
 def test_compile_build_request_ignores_non_semantic_wrapper_metadata_for_route_free_basket():
     from trellis.agent.platform_requests import compile_build_request
 
