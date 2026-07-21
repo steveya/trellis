@@ -4,11 +4,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import math
 from typing import TYPE_CHECKING
 
 from trellis.agent.trade_envelope import TradeEnvelope, trade_envelope_summary
 
 if TYPE_CHECKING:
+    from trellis.agent.contract_ir import ContractIR
     from trellis.agent.static_leg_contract import StaticLegContractIR
 
 
@@ -114,6 +116,35 @@ class FpMLFieldProvenance:
 
 
 @dataclass(frozen=True)
+class FpMLPremiumMetadata:
+    """A separately reported historical premium from the source confirmation."""
+
+    payer_party_id: str
+    receiver_party_id: str
+    payment_date: date
+    currency: str
+    amount: float
+
+    def __post_init__(self) -> None:
+        payer = str(self.payer_party_id or "").strip()
+        receiver = str(self.receiver_party_id or "").strip()
+        currency = str(self.currency or "").strip().upper()
+        amount = float(self.amount)
+        if not payer or not receiver or payer == receiver:
+            raise ValueError("premium payer and receiver must be distinct parties")
+        if not isinstance(self.payment_date, date):
+            raise TypeError("premium payment_date must be a date")
+        if not currency:
+            raise ValueError("premium currency must be non-empty")
+        if not math.isfinite(amount) or amount <= 0.0:
+            raise ValueError("premium amount must be finite and positive")
+        object.__setattr__(self, "payer_party_id", payer)
+        object.__setattr__(self, "receiver_party_id", receiver)
+        object.__setattr__(self, "currency", currency)
+        object.__setattr__(self, "amount", amount)
+
+
+@dataclass(frozen=True)
 class FpMLImportReport:
     """Body-free result of bounded FpML inspection or normalization."""
 
@@ -124,11 +155,15 @@ class FpMLImportReport:
     trade_envelope: TradeEnvelope | None
     blockers: tuple[FpMLImportBlocker, ...]
     clarification: FpMLClarification
-    normalized_contract: StaticLegContractIR | None = None
+    normalized_contract: ContractIR | StaticLegContractIR | None = None
     economic_identity: str | None = None
     mapping_provenance: tuple[FpMLFieldProvenance, ...] = ()
+    premium_metadata: tuple[FpMLPremiumMetadata, ...] = ()
 
     def __post_init__(self) -> None:
+        from trellis.agent.contract_ir import ContractIR
+        from trellis.agent.static_leg_contract import StaticLegContractIR
+
         if self.status not in {"inspected", "normalized", "blocked"}:
             raise ValueError(
                 "FpML import status must be 'inspected', 'normalized', or 'blocked'"
@@ -146,10 +181,23 @@ class FpMLImportReport:
                 "a normalized FpML report requires a contract, economic identity, "
                 "and mapping provenance"
             )
+        if self.normalized_contract is not None and not isinstance(
+            self.normalized_contract,
+            (ContractIR, StaticLegContractIR),
+        ):
+            raise TypeError(
+                "normalized_contract must be a ContractIR or StaticLegContractIR"
+            )
+        if any(
+            not isinstance(item, FpMLPremiumMetadata)
+            for item in self.premium_metadata
+        ):
+            raise TypeError("premium_metadata must contain FpMLPremiumMetadata values")
         if self.status != "normalized" and (
             self.normalized_contract is not None
             or self.economic_identity is not None
             or self.mapping_provenance
+            or self.premium_metadata
         ):
             raise ValueError(
                 "only a normalized FpML report may carry normalized artifacts"
@@ -166,9 +214,22 @@ def fpml_import_report_summary(report: FpMLImportReport) -> dict[str, object]:
     trade = report.trade
     normalized_summary = None
     if report.normalized_contract is not None:
-        from trellis.agent.static_leg_contract import static_leg_economic_summary
+        from trellis.agent.contract_ir import ContractIR, contract_ir_economic_summary
+        from trellis.agent.static_leg_contract import (
+            StaticLegContractIR,
+            static_leg_economic_summary,
+        )
 
-        normalized_summary = static_leg_economic_summary(report.normalized_contract)
+        if isinstance(report.normalized_contract, ContractIR):
+            normalized_summary = contract_ir_economic_summary(
+                report.normalized_contract
+            )
+        elif isinstance(report.normalized_contract, StaticLegContractIR):
+            normalized_summary = static_leg_economic_summary(
+                report.normalized_contract
+            )
+        else:  # pragma: no cover - guarded by the report type contract
+            raise TypeError("normalized_contract has an unsupported type")
     return {
         "status": report.status,
         "profile": (
@@ -218,6 +279,16 @@ def fpml_import_report_summary(report: FpMLImportReport) -> dict[str, object]:
             }
             for item in report.mapping_provenance
         ],
+        "premium_metadata": [
+            {
+                "payer_party_id": item.payer_party_id,
+                "receiver_party_id": item.receiver_party_id,
+                "payment_date": item.payment_date.isoformat(),
+                "currency": item.currency,
+                "amount": item.amount,
+            }
+            for item in report.premium_metadata
+        ],
         "blockers": [
             {
                 "id": blocker.id,
@@ -247,6 +318,7 @@ __all__ = [
     "FpMLImportBlocker",
     "FpMLImportReport",
     "FpMLInspectionLimits",
+    "FpMLPremiumMetadata",
     "FpMLProfile",
     "FpMLTradeIdentity",
     "fpml_import_report_summary",

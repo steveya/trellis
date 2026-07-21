@@ -622,36 +622,67 @@ def _compile_imported_document_request(
     else:
         if import_report.trade_envelope is None or request.trade_envelope is None:
             raise AssertionError("admitted FpML normalization has no trade envelope")
-        from trellis.core.payoff import ExecutionBackedPayoff
-        from trellis.execution import compile_static_leg_execution_ir
+        from trellis.agent.contract_ir import ContractIR
+        from trellis.agent.contract_ir_solver_compiler import (
+            ContractIRPricingPayoff,
+            select_contract_ir_solver,
+        )
+        from trellis.agent.static_leg_contract import StaticLegContractIR
 
         normalized_contract = import_report.normalized_contract
         if normalized_contract is None:
             raise AssertionError("normalized FpML report has no contract")
-        execution_ir = compile_static_leg_execution_ir(
-            normalized_contract,
-            fail_on_unsupported=True,
+        normalized_outputs = (
+            request.requested_outputs
+            or _NORMALIZED_FPML_DEFAULT_OUTPUTS.get(request.request_type, ())
         )
-        source_metadata = dict(execution_ir.source_track.source_metadata)
+        if isinstance(normalized_contract, StaticLegContractIR):
+            from trellis.core.payoff import ExecutionBackedPayoff
+            from trellis.execution import compile_static_leg_execution_ir
+
+            execution_ir = compile_static_leg_execution_ir(
+                normalized_contract,
+                fail_on_unsupported=True,
+            )
+            source_metadata = dict(execution_ir.source_track.source_metadata)
+            instrument = ExecutionBackedPayoff(execution_ir)
+            route_method = "structural_execution_ir"
+            structural_declaration_id = source_metadata.get(
+                "static_leg_lowering_declaration_id"
+            )
+            validation_bundle_id = source_metadata.get("validation_bundle_id")
+            callable_ref = source_metadata.get("callable_ref")
+        elif isinstance(normalized_contract, ContractIR):
+            instrument = ContractIRPricingPayoff(
+                normalized_contract,
+                preferred_method=request.model,
+                requested_outputs=normalized_outputs or ("price",),
+            )
+            selection = select_contract_ir_solver(
+                normalized_contract,
+                preferred_method=request.model,
+                requested_outputs=normalized_outputs or ("price",),
+            )
+            route_method = "structural_contract_ir"
+            structural_declaration_id = selection.declaration_id
+            validation_bundle_id = selection.validation_bundle_id
+            callable_ref = selection.callable_ref
+        else:  # pragma: no cover - normalized reports enforce this boundary
+            raise TypeError("normalized FpML contract has an unsupported type")
         metadata = dict(request.metadata or {})
         metadata["external_contract"] = {
             "source_format": "fpml",
             "economic_identity": import_report.economic_identity,
-            "structural_declaration_id": source_metadata.get(
-                "static_leg_lowering_declaration_id"
-            ),
-            "validation_bundle_id": source_metadata.get("validation_bundle_id"),
-            "callable_ref": source_metadata.get("callable_ref"),
+            "structural_declaration_id": structural_declaration_id,
+            "validation_bundle_id": validation_bundle_id,
+            "callable_ref": callable_ref,
             "mapping_provenance_count": len(import_report.mapping_provenance),
         }
         request = replace(
             request,
-            instrument=ExecutionBackedPayoff(execution_ir),
+            instrument=instrument,
             metadata=metadata,
-            requested_outputs=(
-                request.requested_outputs
-                or _NORMALIZED_FPML_DEFAULT_OUTPUTS.get(request.request_type, ())
-            ),
+            requested_outputs=normalized_outputs,
         )
         action = (
             "compile_only"
@@ -665,7 +696,7 @@ def _compile_imported_document_request(
                 request,
                 action=action,
                 reason="normalized_external_contract",
-                route_method="structural_execution_ir",
+                route_method=route_method,
                 requires_build=False,
             ),
             import_report=import_report,

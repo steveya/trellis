@@ -111,6 +111,61 @@ def test_execute_compiled_request_prices_normalized_fpml_payoff():
     assert result.audit_summary["adapter"] == "normalized_execution_payoff"
 
 
+def test_execute_compiled_request_prices_normalized_fpml_swaption():
+    from pathlib import Path
+
+    from trellis.agent.platform_requests import (
+        compile_platform_request,
+        make_fpml_request,
+    )
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.vol_surface import FlatVol
+    from trellis.platform.executor import execute_compiled_request
+    from trellis.session import Session
+
+    fixture = (
+        Path(__file__).parents[1]
+        / "test_io"
+        / "fixtures"
+        / "fpml"
+        / "confirmation_5_13_european_swaption.xml"
+    )
+    session = Session(
+        curve=YieldCurve.flat(0.035),
+        settlement=date(2025, 1, 15),
+        vol_surface=FlatVol(0.20),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.038)},
+    )
+    compiled = compile_platform_request(
+        make_fpml_request(
+            fixture.read_bytes(),
+            source_view="confirmation",
+            source_version="5-13",
+            trade_envelope=TradeEnvelope(
+                source_format="fpml",
+                source_view="confirmation",
+                source_version="5-13",
+                parties=(TradeParty("PARTY-A", role="valuation_party"),),
+            ),
+            market_snapshot=session.market_snapshot,
+            settlement=date(2025, 1, 15),
+            measures=["price"],
+        )
+    )
+
+    result = execute_compiled_request(
+        compiled,
+        session.to_execution_context(run_mode="sandbox"),
+    )
+
+    assert result.status == "succeeded"
+    assert result.action == "price_normalized_payoff"
+    assert result.result_payload["price"] > 0.0
+    assert result.result_payload["payoff_class"] == "ContractIRPricingPayoff"
+    assert result.audit_summary["adapter"] == "normalized_execution_payoff"
+
+
 @pytest.mark.parametrize(
     ("request_type", "expected_outputs"),
     (

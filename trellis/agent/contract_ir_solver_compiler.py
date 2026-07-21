@@ -133,8 +133,8 @@ def _normalized_frequency(value: object | None, *, default: Frequency | None) ->
 def _normalized_day_count(
     value: object | None,
     *,
-    default: DayCountConvention,
-) -> DayCountConvention:
+    default: DayCountConvention | None,
+) -> DayCountConvention | None:
     if value in {None, ""}:
         return default
     if isinstance(value, DayCountConvention):
@@ -461,6 +461,53 @@ class ContractIRTermEnvironment:
             "floating_rate_reference",
             "quote_grid",
         )
+
+
+@dataclass(frozen=True)
+class ContractIRPricingPayoff:
+    """Generic payoff adapter for one structurally selected ContractIR solver."""
+
+    contract_ir: ContractIR
+    term_environment: ContractIRTermEnvironment | None = None
+    valuation_context: ValuationContext | None = None
+    preferred_method: str | None = None
+    requested_outputs: tuple[str, ...] = ("price",)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.contract_ir, ContractIR):
+            raise TypeError("contract_ir must be a ContractIR")
+        if self.term_environment is not None and not isinstance(
+            self.term_environment,
+            ContractIRTermEnvironment,
+        ):
+            raise TypeError("term_environment must be a ContractIRTermEnvironment or None")
+        object.__setattr__(
+            self,
+            "requested_outputs",
+            _string_tuple(self.requested_outputs) or ("price",),
+        )
+
+    @property
+    def requirements(self) -> set[str]:
+        selection = select_contract_ir_solver(
+            self.contract_ir,
+            term_environment=self.term_environment,
+            valuation_context=self.valuation_context,
+            preferred_method=self.preferred_method,
+            requested_outputs=self.requested_outputs,
+        )
+        return set(selection.required_capabilities)
+
+    def evaluate(self, market_state: MarketState) -> float:
+        decision = compile_contract_ir_solver(
+            self.contract_ir,
+            term_environment=self.term_environment,
+            valuation_context=self.valuation_context,
+            market_state=market_state,
+            preferred_method=self.preferred_method,
+            requested_outputs=self.requested_outputs,
+        )
+        return execute_contract_ir_solver_decision(decision)
 
 
 def build_contract_ir_term_environment(contract=None) -> ContractIRTermEnvironment:
@@ -892,7 +939,10 @@ def compile_contract_ir_solver(
         call_style=declaration.materialization.call_style,
         result_path=tuple(result_path or ()),
         call_kwargs=dict(adapter_payload.get("call_kwargs") or {}),
-        value_scale=float(adapter_payload.get("value_scale", 1.0)),
+        value_scale=(
+            -1.0 if contract_ir.position == "short" else 1.0
+        )
+        * float(adapter_payload.get("value_scale", 1.0)),
         match_bindings=dict(bindings),
         consumed_term_groups=declaration.authority.required_term_groups,
         market_identity=_market_identity(valuation_context, market_state),
@@ -1121,6 +1171,172 @@ class _StructuralSwaptionSpec:
     is_payer: bool
 
 
+def _embedded_fixed_float_swaption_terms(
+    contract_ir: ContractIR,
+    *,
+    schedule: FiniteSchedule,
+    strike: float,
+    is_payer: bool,
+) -> dict[str, object] | None:
+    """Resolve swaption terms from a complete embedded static-leg contract."""
+
+    from trellis.agent.static_leg_contract import (
+        CouponLeg,
+        FixedCouponFormula,
+        FloatingCouponFormula,
+        StaticLegContractIR,
+        TermRateIndex,
+    )
+
+    underlying = contract_ir.underlying_contract
+    if underlying is None:
+        return None
+    if not isinstance(underlying, StaticLegContractIR):
+        raise ValueError(
+            "Swaption structural binding currently requires a StaticLegContractIR underlying"
+        )
+    settlement = contract_ir.settlement
+    if settlement is None or settlement.settlement_kind != "physical":
+        raise ValueError(
+            "Swaption structural binding requires explicit physical settlement"
+        )
+    if len(underlying.legs) != 2:
+        raise ValueError(
+            "Swaption structural binding requires exactly two underlying swap legs"
+        )
+    coupon_legs = tuple(
+        signed_leg
+        for signed_leg in underlying.legs
+        if isinstance(signed_leg.leg, CouponLeg)
+    )
+    if len(coupon_legs) != 2:
+        raise ValueError(
+            "Swaption structural binding requires two coupon legs"
+        )
+    fixed_matches = tuple(
+        signed_leg
+        for signed_leg in coupon_legs
+        if isinstance(signed_leg.leg.coupon_formula, FixedCouponFormula)
+    )
+    floating_matches = tuple(
+        signed_leg
+        for signed_leg in coupon_legs
+        if isinstance(signed_leg.leg.coupon_formula, FloatingCouponFormula)
+    )
+    if len(fixed_matches) != 1 or len(floating_matches) != 1:
+        raise ValueError(
+            "Swaption structural binding requires one fixed and one floating leg"
+        )
+    fixed_signed = fixed_matches[0]
+    floating_signed = floating_matches[0]
+    if {fixed_signed.direction, floating_signed.direction} != {"pay", "receive"}:
+        raise ValueError(
+            "Swaption structural binding requires opposite underlying leg directions"
+        )
+    embedded_is_payer = fixed_signed.direction == "pay"
+    if embedded_is_payer is not is_payer:
+        raise ValueError(
+            "Swaption payoff direction conflicts with the embedded underlying swap"
+        )
+
+    fixed_leg = fixed_signed.leg
+    floating_leg = floating_signed.leg
+    if fixed_leg.currency != floating_leg.currency:
+        raise ValueError(
+            "Swaption structural binding requires one underlying swap currency"
+        )
+    if (
+        settlement.payout_currency
+        and settlement.payout_currency != fixed_leg.currency
+    ):
+        raise ValueError(
+            "Swaption settlement currency conflicts with the embedded underlying swap"
+        )
+    fixed_steps = fixed_leg.notional_schedule.steps
+    floating_steps = floating_leg.notional_schedule.steps
+    if len(fixed_steps) != 1 or len(floating_steps) != 1:
+        raise ValueError(
+            "Swaption structural binding requires constant underlying notionals"
+        )
+    fixed_step = fixed_steps[0]
+    floating_step = floating_steps[0]
+    if (
+        fixed_step.start_date != floating_step.start_date
+        or fixed_step.end_date != floating_step.end_date
+        or not isclose(fixed_step.amount, floating_step.amount)
+    ):
+        raise ValueError(
+            "Swaption structural binding requires matching underlying leg notionals and dates"
+        )
+    if not isclose(float(fixed_leg.coupon_formula.rate), float(strike)):
+        raise ValueError(
+            "Swaption strike conflicts with the embedded fixed-leg coupon"
+        )
+    fixed_payment_dates = tuple(period.payment_date for period in fixed_leg.coupon_periods)
+    if fixed_payment_dates != schedule.dates:
+        raise ValueError(
+            "Swaption annuity schedule conflicts with embedded fixed-leg payment dates"
+        )
+    def periods_span_notional(leg, step) -> bool:
+        periods = leg.coupon_periods
+        return (
+            periods[0].accrual_start == step.start_date
+            and periods[-1].accrual_end == step.end_date
+            and all(
+                left.accrual_end == right.accrual_start
+                for left, right in zip(periods, periods[1:])
+            )
+        )
+
+    if not periods_span_notional(fixed_leg, fixed_step) or not periods_span_notional(
+        floating_leg,
+        floating_step,
+    ):
+        raise ValueError(
+            "Swaption embedded coupon periods must span each constant notional interval"
+        )
+    floating_formula = floating_leg.coupon_formula
+    if not isclose(float(floating_formula.spread), 0.0) or not isclose(
+        float(floating_formula.gearing),
+        1.0,
+    ):
+        raise ValueError(
+            "Swaption structural binding does not yet admit floating spread or gearing"
+        )
+    if not isinstance(floating_formula.rate_index, TermRateIndex):
+        raise ValueError(
+            "Swaption structural binding currently requires a term floating-rate index"
+        )
+    frequency = _normalized_frequency(
+        fixed_leg.payment_frequency,
+        default=None,
+    )
+    if frequency is None:
+        raise ValueError(
+            "Swaption structural binding could not resolve fixed-leg payment frequency"
+        )
+    day_count = _normalized_day_count(
+        fixed_leg.day_count,
+        default=None,
+    )
+    if day_count is None:
+        raise ValueError(
+            "Swaption structural binding could not resolve fixed-leg day count"
+        )
+    rate_index = (
+        f"{floating_formula.rate_index.name}-{floating_formula.rate_index.tenor}"
+    )
+    return {
+        "notional": float(fixed_step.amount),
+        "swap_start": fixed_step.start_date,
+        "swap_end": fixed_step.end_date,
+        "swap_frequency": frequency,
+        "day_count": day_count,
+        "rate_index": rate_index,
+        "discount_curve_name": "",
+    }
+
+
 def _swaption_resolved_kernel_adapter(
     *,
     contract_ir: ContractIR,
@@ -1135,6 +1351,33 @@ def _swaption_resolved_kernel_adapter(
     if not isinstance(expiry, Singleton) or not isinstance(schedule, FiniteSchedule):
         raise ValueError("Swaption adapter requires European exercise and a finite annuity schedule")
     strike = float(bindings["k"])
+    embedded_terms = _embedded_fixed_float_swaption_terms(
+        contract_ir,
+        schedule=schedule,
+        strike=strike,
+        is_payer=is_payer,
+    )
+    if embedded_terms is not None:
+        spec = _StructuralSwaptionSpec(
+            notional=float(embedded_terms["notional"]),
+            strike=strike,
+            expiry_date=expiry.t,
+            swap_start=embedded_terms["swap_start"],
+            swap_end=embedded_terms["swap_end"],
+            swap_frequency=embedded_terms["swap_frequency"],
+            day_count=embedded_terms["day_count"],
+            rate_index=str(embedded_terms["rate_index"]),
+            is_payer=is_payer,
+        )
+        coordinates = ["discount_curve", "black_vol_surface", "forward_curve"]
+        if spec.rate_index:
+            coordinates.append(f"forecast_curve:{spec.rate_index}")
+        resolved = resolve_swaption_black76_inputs(market_state, spec)
+        return {
+            "call_kwargs": {"resolved": resolved},
+            "value_scale": 1.0,
+            "resolved_market_coordinates": tuple(coordinates),
+        }
     inferred_frequency = _rate_curve_frequency(schedule)
     # The current ContractIR decomposition uses coarse yearly coupon dates for
     # swaptions. Preserve the checked market-binding contract by defaulting to the
@@ -1845,6 +2088,10 @@ def _default_registry() -> ContractIRSolverRegistry:
                 call_style="raw_kernel_kwargs",
                 adapter_ref="trellis.agent.contract_ir_solver_compiler._payer_swaption_resolved_kernel_adapter",
             ),
+            market_requirements=ContractIRSolverMarketRequirements(
+                required_capabilities=("discount_curve", "black_vol_surface"),
+                optional_capabilities=("forward_curve",),
+            ),
             provenance=ContractIRSolverProvenance(
                 declaration_id="swaption_payer_black76_resolved_kernel",
                 validation_bundle_id="rate_style_swaption_contract",
@@ -1889,6 +2136,10 @@ def _default_registry() -> ContractIRSolverRegistry:
                 callable_ref="trellis.models.rate_style_swaption.price_swaption_black76_raw",
                 call_style="raw_kernel_kwargs",
                 adapter_ref="trellis.agent.contract_ir_solver_compiler._receiver_swaption_resolved_kernel_adapter",
+            ),
+            market_requirements=ContractIRSolverMarketRequirements(
+                required_capabilities=("discount_curve", "black_vol_surface"),
+                optional_capabilities=("forward_curve",),
             ),
             provenance=ContractIRSolverProvenance(
                 declaration_id="swaption_receiver_black76_resolved_kernel",
@@ -2293,6 +2544,7 @@ __all__ = [
     "AccrualConventionTerms",
     "CashSettlementTerms",
     "ContractIRCompilerDecision",
+    "ContractIRPricingPayoff",
     "ContractIRSolverAmbiguityError",
     "ContractIRSolverCompileError",
     "ContractIRSolverBindingDiagnostic",

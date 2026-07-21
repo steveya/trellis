@@ -7,8 +7,11 @@ without changing any existing route selection paths.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import date
+from enum import Enum
+import hashlib
+import json
 import math
 from types import MappingProxyType
 from typing import Any, Mapping
@@ -661,11 +664,101 @@ class ContractIR:
     exercise: Exercise
     observation: Observation
     underlying: Underlying
+    position: str = "long"
+    settlement: object | None = None
+    underlying_contract: object | None = None
 
     def __post_init__(self):
+        position = _require_non_empty_text(
+            self.position,
+            label="ContractIR.position",
+        ).lower()
+        if position not in {"long", "short"}:
+            raise ContractIRWellFormednessError(
+                "ContractIR.position must be 'long' or 'short'"
+            )
+        object.__setattr__(self, "position", position)
+        from trellis.agent.static_leg_contract import SettlementRule, StaticLegContractIR
+
+        if self.settlement is not None and not isinstance(self.settlement, SettlementRule):
+            raise ContractIRWellFormednessError(
+                "ContractIR.settlement must be a SettlementRule or None"
+            )
+        if self.underlying_contract is not None and not isinstance(
+            self.underlying_contract,
+            (ContractIR, StaticLegContractIR),
+        ):
+            raise ContractIRWellFormednessError(
+                "ContractIR.underlying_contract must be a ContractIR, "
+                "StaticLegContractIR, or None"
+            )
         namespace = _underlier_namespace(self.underlying.spec)
         _validate_payoff_expr(self.payoff, namespace=namespace)
         _validate_schedule_alignment(self)
+
+
+def _economic_value(value: object) -> object:
+    """Project immutable contract values without labels or source metadata."""
+
+    from trellis.agent.static_leg_contract import (
+        StaticLegContractIR,
+        static_leg_economic_summary,
+    )
+
+    if isinstance(value, ContractIR):
+        return contract_ir_economic_summary(value)
+    if isinstance(value, StaticLegContractIR):
+        return static_leg_economic_summary(value)
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if is_dataclass(value):
+        return {
+            "type": type(value).__name__,
+            **{
+                item.name: _economic_value(getattr(value, item.name))
+                for item in fields(value)
+                if item.name not in {"label", "metadata"}
+            },
+        }
+    if isinstance(value, Mapping):
+        return {
+            str(key): _economic_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (tuple, list)):
+        return [_economic_value(item) for item in value]
+    return value
+
+
+def contract_ir_economic_summary(contract: ContractIR) -> dict[str, object]:
+    """Return a canonical, source-neutral projection of ContractIR economics."""
+
+    if not isinstance(contract, ContractIR):
+        raise TypeError("contract must be a ContractIR")
+    return {
+        "contract_type": "ContractIR",
+        "position": contract.position,
+        "payoff": _economic_value(contract.payoff),
+        "exercise": _economic_value(contract.exercise),
+        "observation": _economic_value(contract.observation),
+        "underlying": _economic_value(contract.underlying),
+        "underlying_contract": _economic_value(contract.underlying_contract),
+        "settlement": _economic_value(contract.settlement),
+    }
+
+
+def contract_ir_economic_identity(contract: ContractIR) -> str:
+    """Return the versioned SHA-256 identity of ContractIR economics."""
+
+    encoded = json.dumps(
+        contract_ir_economic_summary(contract),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return f"contract_ir:v1:{hashlib.sha256(encoded).hexdigest()}"
 
 
 def _underlier_namespace(spec: UnderlyingSpec) -> tuple[str, ...]:
@@ -1281,6 +1374,8 @@ __all__ = [
     "VolPoint",
     "ZeroRateTenor",
     "canonicalize",
+    "contract_ir_economic_identity",
+    "contract_ir_economic_summary",
     "evaluate_payoff_expr",
     "evaluate_predicate",
 ]

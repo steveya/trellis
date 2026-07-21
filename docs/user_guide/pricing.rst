@@ -48,13 +48,14 @@ Convenience market-data helpers such as ``Session(data_source="mock")`` still
 work, but they now normalize into an explicit sandbox execution context behind
 the scenes instead of defining a separate runtime path.
 
-Bounded FpML Swap Pricing
--------------------------
+Bounded FpML Rates Pricing
+--------------------------
 
-The internal platform request API can price the first admitted FpML cohort: one
-FpML 5.13 confirmation ``dataDocument`` containing a regular, single-currency,
-constant-notional fixed-float swap. The request must identify the party whose
-NPV is required:
+The internal platform request API can price two admitted FpML rates cohorts:
+one FpML 5.13 confirmation ``dataDocument`` containing either a regular,
+single-currency, constant-notional fixed-float swap or a physically settled
+European payer/receiver swaption on that swap. The request must identify the
+party whose NPV is required:
 
 .. code-block:: python
 
@@ -87,17 +88,21 @@ NPV is required:
        session.to_execution_context(run_mode="sandbox"),
    )
 
-The compiler securely inspects the XML, reconciles document identity, maps the
-economics to ``StaticLegContractIR``, and prices the shared execution IR. It
-does not ask an LLM to interpret the XML or generate pricing code. Missing
+The compiler securely inspects the XML, reconciles document identity, and maps
+the economics to ``StaticLegContractIR`` or ``ContractIR`` with a complete
+nested swap. The swaption reuses the ordinary structural Black-76 path; it does
+not introduce an FpML-specific pricing helper. The compiler does not ask an LLM
+to interpret the XML or generate pricing code. Missing
 valuation perspective returns a clarification blocker instead of choosing a
 party. Amortizing, compounding, stubbed, cross-currency, lifecycle-rich, and
 other unsupported trades remain blocked, as do end-of-month rolls and
 unclassified vendor extension elements. Pricing also requires a deterministic
 valuation date and rejects unpaid floating coupons that already require a
 historical fixing, because the current static-leg runtime does not consume that
-fixing history. This is bounded interoperability, not general FpML pricing
-coverage.
+fixing history. Cash-settled, Bermudan/American, straddle, partial-exercise,
+and unsettled-premium swaptions remain blocked. A historical settled premium is
+reported separately and is not included in the option value or route identity.
+This is bounded interoperability, not general FpML pricing coverage.
 
 The Payoff Framework
 --------------------

@@ -33,6 +33,7 @@ from trellis.agent.contract_ir import (
     VarianceObservable,
 )
 from trellis.agent.contract_ir_solver_compiler import (
+    ContractIRPricingPayoff,
     ContractIRCompilerDecision,
     ContractIRTermEnvironment,
     ContractIRSolverBindingError,
@@ -41,6 +42,18 @@ from trellis.agent.contract_ir_solver_compiler import (
     compile_contract_ir_solver,
     execute_contract_ir_solver_decision,
     select_contract_ir_solver,
+)
+from trellis.agent.static_leg_contract import (
+    CouponLeg,
+    CouponPeriod,
+    FixedCouponFormula,
+    FloatingCouponFormula,
+    NotionalSchedule,
+    NotionalStep,
+    SettlementRule,
+    SignedLeg,
+    StaticLegContractIR,
+    TermRateIndex,
 )
 from trellis.agent.platform_requests import compile_build_request
 from trellis.agent.semantic_contract_compiler import compile_semantic_contract
@@ -177,6 +190,89 @@ def _receiver_swaption_contract_ir() -> ContractIR:
     )
 
 
+def _embedded_swaption_contract_ir(*, position: str = "long") -> ContractIR:
+    expiry = _singleton("2025-11-15")
+    fixed_dates = _finite_schedule(
+        "2026-05-15",
+        "2026-11-15",
+        "2027-05-15",
+        "2027-11-15",
+        "2028-05-15",
+        "2028-11-15",
+        "2029-05-15",
+        "2029-11-15",
+        "2030-05-15",
+        "2030-11-15",
+    )
+    start = date(2025, 11, 15)
+    fixed_starts = (start, *fixed_dates.dates[:-1])
+    floating_ends = tuple(
+        date(year, month, 15)
+        for year in range(2026, 2031)
+        for month in (2, 5, 8, 11)
+    )
+    floating_starts = (start, *floating_ends[:-1])
+    notional = NotionalSchedule(
+        (NotionalStep(start, date(2030, 11, 15), 1_000_000.0),)
+    )
+    underlying_contract = StaticLegContractIR(
+        legs=(
+            SignedLeg(
+                "pay",
+                CouponLeg(
+                    currency="USD",
+                    notional_schedule=notional,
+                    coupon_periods=tuple(
+                        CouponPeriod(left, right, right)
+                        for left, right in zip(fixed_starts, fixed_dates.dates)
+                    ),
+                    coupon_formula=FixedCouponFormula(0.05),
+                    day_count="30/360",
+                    payment_frequency="semiannual",
+                ),
+            ),
+            SignedLeg(
+                "receive",
+                CouponLeg(
+                    currency="USD",
+                    notional_schedule=notional,
+                    coupon_periods=tuple(
+                        CouponPeriod(left, right, right, fixing_date=left)
+                        for left, right in zip(floating_starts, floating_ends)
+                    ),
+                    coupon_formula=FloatingCouponFormula(
+                        TermRateIndex("USD-SOFR", "3M")
+                    ),
+                    day_count="ACT/360",
+                    payment_frequency="quarterly",
+                ),
+            ),
+        ),
+        settlement=SettlementRule(payout_currency="USD"),
+        metadata={"semantic_family": "fixed_float_swap"},
+    )
+    return ContractIR(
+        payoff=Scaled(
+            Annuity("USD-IRS-5Y", fixed_dates),
+            Max(
+                (
+                    Sub(SwapRate("USD-IRS-5Y", fixed_dates), Strike(0.05)),
+                    Constant(0.0),
+                )
+            ),
+        ),
+        exercise=Exercise(style="european", schedule=expiry),
+        observation=Observation(kind="terminal", schedule=expiry),
+        underlying=Underlying(
+            spec=ForwardRate("USD-IRS-5Y", "lognormal_forward")
+        ),
+        position=position,
+        settlement=SettlementRule(
+            settlement_kind="physical",
+            payout_currency="USD",
+        ),
+        underlying_contract=underlying_contract,
+    )
 def _forward_starting_swaption_contract_ir() -> ContractIR:
     expiry = _singleton("2025-11-15")
     schedule = _finite_schedule(
@@ -562,6 +658,89 @@ class TestContractIRSolverCompiler:
         assert decision.declaration_id == selection.declaration_id
         assert set(decision.call_kwargs) == {"resolved"}
         assert execute_contract_ir_solver_decision(decision) > 0.0
+
+    def test_embedded_swap_contract_drives_existing_swaption_binding_and_position_sign(self):
+        market_state = _swaption_market_state_with_named_forecast_curve()
+        context = build_valuation_context(
+            market_snapshot=market_state,
+            requested_outputs=("price",),
+        )
+        long_contract = _embedded_swaption_contract_ir(position="long")
+        short_contract = replace(long_contract, position="short")
+
+        long_decision = compile_contract_ir_solver(
+            long_contract,
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="analytical",
+        )
+        short_decision = compile_contract_ir_solver(
+            short_contract,
+            valuation_context=context,
+            market_state=market_state,
+            preferred_method="analytical",
+        )
+
+        assert long_decision.declaration_id == "swaption_payer_black76_resolved_kernel"
+        assert short_decision.declaration_id == long_decision.declaration_id
+        resolved = long_decision.call_kwargs["resolved"]
+        assert resolved.notional == pytest.approx(1_000_000.0)
+        assert resolved.strike == pytest.approx(0.05)
+        assert resolved.payment_count == 10
+        assert execute_contract_ir_solver_decision(short_decision) == pytest.approx(
+            -execute_contract_ir_solver_decision(long_decision),
+            rel=1e-12,
+            abs=1e-12,
+        )
+
+    def test_contract_ir_pricing_payoff_exposes_structural_requirements_and_executes(self):
+        market_state = _swaption_market_state_with_named_forecast_curve()
+        payoff = ContractIRPricingPayoff(
+            _embedded_swaption_contract_ir(),
+            preferred_method="analytical",
+        )
+
+        assert payoff.requirements == {
+            "black_vol_surface",
+            "discount_curve",
+        }
+        assert payoff.evaluate(market_state) > 0.0
+
+    def test_embedded_swaption_binding_fails_closed_on_unresolved_day_count(self):
+        contract = _embedded_swaption_contract_ir()
+        underlying = contract.underlying_contract
+        fixed_signed = underlying.legs[0]
+        malformed_fixed_leg = replace(
+            fixed_signed.leg,
+            day_count="unsupported-day-count",
+        )
+        malformed_underlying = replace(
+            underlying,
+            legs=(replace(fixed_signed, leg=malformed_fixed_leg), underlying.legs[1]),
+        )
+
+        with pytest.raises(ValueError, match="fixed-leg day count"):
+            compile_contract_ir_solver(
+                replace(contract, underlying_contract=malformed_underlying),
+                market_state=_swaption_market_state_with_named_forecast_curve(),
+                preferred_method="analytical",
+            )
+
+    def test_embedded_swaption_binding_fails_closed_on_cash_settlement(self):
+        contract = _embedded_swaption_contract_ir()
+
+        with pytest.raises(ValueError, match="explicit physical settlement"):
+            compile_contract_ir_solver(
+                replace(
+                    contract,
+                    settlement=SettlementRule(
+                        settlement_kind="cash",
+                        payout_currency="USD",
+                    ),
+                ),
+                market_state=_swaption_market_state_with_named_forecast_curve(),
+                preferred_method="analytical",
+            )
 
     def test_receiver_swaption_resolver_kernel_binding_matches_resolved_reference(self):
         contract = _receiver_swaption_contract_ir()

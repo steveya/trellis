@@ -42,7 +42,16 @@ from trellis.agent.contract_ir import (
     VolDeltaPoint,
     VolPoint,
     ZeroRateTenor,
+    contract_ir_economic_identity,
+    contract_ir_economic_summary,
     evaluate_payoff_expr,
+)
+from trellis.agent.static_leg_contract import (
+    KnownCashflow,
+    KnownCashflowLeg,
+    SettlementRule,
+    SignedLeg,
+    StaticLegContractIR,
 )
 
 
@@ -141,6 +150,27 @@ def _digital_fixture() -> ContractIR:
     )
 
 
+def _underlying_contract_fixture() -> StaticLegContractIR:
+    return StaticLegContractIR(
+        legs=(
+            SignedLeg(
+                "receive",
+                KnownCashflowLeg(
+                    currency="USD",
+                    cashflows=(
+                        KnownCashflow(
+                            payment_date=date(2030, 11, 15),
+                            amount=1_000_000.0,
+                            currency="USD",
+                        ),
+                    ),
+                ),
+            ),
+        ),
+        settlement=SettlementRule(payout_currency="USD"),
+    )
+
+
 def _asian_fixture() -> ContractIR:
     expiry = _singleton("2025-12-31")
     averaging = _finite_schedule(
@@ -170,6 +200,82 @@ class TestContractIRTypes:
         assert _asian_fixture() == _asian_fixture()
         assert _quoted_curve_fixture() == _quoted_curve_fixture()
         assert _quoted_surface_fixture() == _quoted_surface_fixture()
+
+    def test_contract_can_preserve_position_settlement_and_complete_underlying_contract(self):
+        base = _equity_call_fixture()
+        underlying_contract = _underlying_contract_fixture()
+        settlement = SettlementRule(
+            settlement_kind="physical",
+            payout_currency="USD",
+        )
+
+        contract = ContractIR(
+            payoff=base.payoff,
+            exercise=base.exercise,
+            observation=base.observation,
+            underlying=base.underlying,
+            position="short",
+            settlement=settlement,
+            underlying_contract=underlying_contract,
+        )
+
+        assert contract.position == "short"
+        assert contract.settlement == settlement
+        assert contract.underlying_contract == underlying_contract
+
+    def test_contract_economic_identity_includes_position_settlement_and_underlying_economics(self):
+        base = _equity_call_fixture()
+        underlying_contract = _underlying_contract_fixture()
+        long_contract = ContractIR(
+            payoff=base.payoff,
+            exercise=base.exercise,
+            observation=base.observation,
+            underlying=base.underlying,
+            position="long",
+            settlement=SettlementRule(
+                settlement_kind="physical",
+                payout_currency="USD",
+            ),
+            underlying_contract=underlying_contract,
+        )
+        short_contract = ContractIR(
+            payoff=base.payoff,
+            exercise=base.exercise,
+            observation=base.observation,
+            underlying=base.underlying,
+            position="short",
+            settlement=long_contract.settlement,
+            underlying_contract=underlying_contract,
+        )
+
+        summary = contract_ir_economic_summary(long_contract)
+
+        assert summary["contract_type"] == "ContractIR"
+        assert summary["position"] == "long"
+        assert summary["underlying_contract"]["contract_type"] == "StaticLegContractIR"
+        assert contract_ir_economic_identity(long_contract).startswith("contract_ir:v1:")
+        assert contract_ir_economic_identity(long_contract) != contract_ir_economic_identity(
+            short_contract
+        )
+
+    def test_contract_rejects_unknown_position_or_underlying_contract_type(self):
+        base = _equity_call_fixture()
+        with pytest.raises(ContractIRWellFormednessError, match="position"):
+            ContractIR(
+                payoff=base.payoff,
+                exercise=base.exercise,
+                observation=base.observation,
+                underlying=base.underlying,
+                position="payer",
+            )
+        with pytest.raises(ContractIRWellFormednessError, match="underlying_contract"):
+            ContractIR(
+                payoff=base.payoff,
+                exercise=base.exercise,
+                observation=base.observation,
+                underlying=base.underlying,
+                underlying_contract="not-a-contract",
+            )
 
     def test_rule_1_duplicate_underlying_names_are_rejected(self):
         expiry = _singleton("2025-11-15")
