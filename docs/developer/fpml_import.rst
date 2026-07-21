@@ -91,9 +91,9 @@ Fail-Closed Boundary
 Unsupported amortization, compounding, stubs, cross-currency legs, stepped
 rates or spreads, mismatched schedules or notionals, non-term floating-rate
 forms, duplicate optional rate schedules, unpaid seasoned floating coupons,
-trade-level payments, duplicate roll declarations, fixed-leg reset schedules,
-initial-fixing
-overrides, mismatched counterparty pairs, end-of-month or clamped high-day
+document/package siblings, trade-level payments, duplicate roll declarations,
+fixed-leg reset schedules, initial-fixing overrides, mismatched counterparty
+pairs, end-of-month or clamped high-day
 rolls, foreign-namespaced extension children, unsupported
 children in frequency, tenor, date-adjustment, or business-center containers,
 children nested inside scalar or reference leaves, unsupported

@@ -102,6 +102,7 @@ _STUB_FIELDS = {
     "firstPaymentDate",
     "lastRegularPaymentDate",
 }
+_ALLOWED_DOCUMENT_CHILDREN = {"party", "trade"}
 _ALLOWED_TRADE_CHILDREN = {"swap", "tradeHeader"}
 _ALLOWED_SWAP_CHILDREN = {
     "assetClass",
@@ -271,6 +272,12 @@ def _normalize_inspected_fpml_document(
             ),
         )
     try:
+        _reject_unadmitted_direct_children(
+            root,
+            allowed=_ALLOWED_DOCUMENT_CHILDREN,
+            scope="document",
+            namespace=namespace,
+        )
         _reject_unadmitted_direct_children(
             trade,
             allowed=_ALLOWED_TRADE_CHILDREN,

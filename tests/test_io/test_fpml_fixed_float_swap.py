@@ -564,6 +564,21 @@ def test_normalization_rejects_unconsumed_trade_level_payments():
     )
 
 
+def test_normalization_rejects_unconsumed_document_level_content():
+    xml = FIXTURE.read_text().replace(
+        '  <party id="PARTY-A">',
+        "  <portfolio><portfolioName>EXTRA</portfolioName></portfolio>\n"
+        '  <party id="PARTY-A">',
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_document_feature_unsupported",
+    )
+
+
 @pytest.mark.parametrize(
     ("old", "new", "expected_id"),
     (
