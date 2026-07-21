@@ -176,6 +176,43 @@ def test_compile_fpml_request_carries_deterministic_import_rejection():
     assert compiled.product_ir is None
 
 
+def test_compile_fpml_request_rejects_parsed_provenance_conflicts():
+    from trellis.agent.platform_requests import (
+        compile_platform_request,
+        make_fpml_request,
+    )
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    request = make_fpml_request(
+        VALID_FPML,
+        source_view="confirmation",
+        source_version="5-13",
+        trade_envelope=TradeEnvelope(
+            source_format="fpml",
+            source_view="confirmation",
+            source_version="5-13",
+            document_id="DOC-OTHER",
+            trade_id="TRADE-OTHER",
+            trade_date=date(2026, 7, 2),
+            parties=(TradeParty("PARTY-C"),),
+        ),
+    )
+
+    compiled = compile_platform_request(request)
+
+    assert compiled.execution_plan.action == "block"
+    assert compiled.execution_plan.reason == "fpml_import_rejected"
+    assert _blocker_ids(compiled) == (
+        "contract_conflict:fpml_document_id",
+        "contract_conflict:fpml_trade_id",
+        "contract_conflict:fpml_trade_date",
+        "contract_conflict:fpml_parties",
+    )
+    assert compiled.import_report.status == "inspected"
+    assert compiled.import_report.trade_envelope.document_id == "DOC-001"
+    assert compiled.trade_envelope.document_id == "DOC-OTHER"
+
+
 def test_compile_fpml_request_runs_preflight_before_xml_inspection(monkeypatch):
     import trellis.agent.platform_requests as platform_requests
 

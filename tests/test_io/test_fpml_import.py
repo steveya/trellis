@@ -101,6 +101,15 @@ def test_inspect_fpml_document_recognizes_profile_and_extracts_provenance():
             ).encode("utf-16-be"),
             "external_import:fpml_unsupported_encoding",
         ),
+        (
+            (
+                b'<?xml version="1.0" '
+                + (b" " * 600)
+                + b'encoding="ISO-8859-1"?>'
+                + _document("<trade><swap /></trade>")
+            ),
+            "external_import:fpml_unsupported_encoding",
+        ),
     ],
 )
 def test_inspect_fpml_document_rejects_unsafe_or_malformed_xml(xml, expected_id):

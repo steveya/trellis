@@ -273,7 +273,13 @@ def _encoding_blocker(content: bytes) -> FpMLImportBlocker | None:
         return _unsupported_encoding_blocker()
     if b"\x00" in content:
         return _unsupported_encoding_blocker()
-    match = _XML_ENCODING.search(content[:512])
+    declaration = content[3:] if content.startswith(b"\xef\xbb\xbf") else content
+    declaration_end = declaration.find(b"?>")
+    if declaration.startswith(b"<?xml") and declaration_end >= 0:
+        declaration = declaration[: declaration_end + 2]
+    else:
+        declaration = b""
+    match = _XML_ENCODING.search(declaration)
     if match is not None:
         encoding = match.group(1).decode("ascii", errors="ignore").lower().replace("_", "-")
         if encoding not in {"utf-8", "utf8"}:

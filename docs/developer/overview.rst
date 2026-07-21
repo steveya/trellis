@@ -73,6 +73,10 @@ content fails with
 ``external_import:source_reference_resolution_unsupported``. Missing source
 declarations and payload/envelope conflicts produce stable
 ``missing_contract_field:*`` and ``contract_conflict:*`` blockers.
+After inspection, any caller-supplied document id, trade id, trade date, or
+party set is also compared with the identity extracted from the XML. A
+contradiction fails closed as ``contract_conflict:fpml_*`` before product
+normalization.
 
 ``trellis.io.fpml.inspect_fpml_document(...)`` is the bounded inspection stage.
 Its first admitted profile is an inline UTF-8 FpML 5.13 ``dataDocument`` in the

@@ -34,6 +34,7 @@ from trellis.agent.imported_documents import (
     ImportedDocumentPayload,
     fpml_import_blocker_report,
     fpml_product_normalizer_blocker_report,
+    fpml_trade_envelope_conflict_report,
     imported_document_blocker_report,
 )
 from trellis.agent.semantic_escalation import semantic_role_ownership_summary
@@ -566,8 +567,17 @@ def _compile_imported_document_request(
         blocker_report = fpml_import_blocker_report(import_report)
         reason = "fpml_import_rejected"
     else:
-        blocker_report = fpml_product_normalizer_blocker_report()
-        reason = "fpml_product_normalization_boundary"
+        if import_report.trade_envelope is None or request.trade_envelope is None:
+            raise AssertionError("admitted FpML inspection has no trade envelope")
+        blocker_report = fpml_trade_envelope_conflict_report(
+            request.trade_envelope,
+            import_report.trade_envelope,
+        )
+        if blocker_report is not None:
+            reason = "fpml_import_rejected"
+        else:
+            blocker_report = fpml_product_normalizer_blocker_report()
+            reason = "fpml_product_normalization_boundary"
     return _finalize_compiled_request(
         request=request,
         market_snapshot=request.market_snapshot,

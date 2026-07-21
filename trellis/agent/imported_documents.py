@@ -226,6 +226,60 @@ def fpml_import_blocker_report(report) -> BlockerReport:
     return _report(blockers)
 
 
+def fpml_trade_envelope_conflict_report(
+    request_envelope: TradeEnvelope,
+    imported_envelope: TradeEnvelope,
+) -> BlockerReport | None:
+    """Reject caller provenance that conflicts with inspected FpML identity."""
+
+    if not isinstance(request_envelope, TradeEnvelope):
+        raise TypeError("request_envelope must be a TradeEnvelope")
+    if not isinstance(imported_envelope, TradeEnvelope):
+        raise TypeError("imported_envelope must be a TradeEnvelope")
+
+    blockers: list[PrimitiveBlocker] = []
+    for field_name in ("document_id", "trade_id", "trade_date"):
+        requested = getattr(request_envelope, field_name)
+        imported = getattr(imported_envelope, field_name)
+        if requested is not None and imported is not None and requested != imported:
+            blockers.append(
+                _blocker(
+                    f"contract_conflict:fpml_{field_name}",
+                    category="contract_conflict",
+                    summary=(
+                        f"The caller-provided FpML {field_name} conflicts with "
+                        "the identity inspected from the document."
+                    ),
+                    target_package="trellis.io.fpml",
+                )
+            )
+
+    requested_parties = tuple(
+        party.party_id for party in request_envelope.parties
+    )
+    imported_parties = tuple(
+        party.party_id for party in imported_envelope.parties
+    )
+    if (
+        requested_parties
+        and imported_parties
+        and requested_parties != imported_parties
+    ):
+        blockers.append(
+            _blocker(
+                "contract_conflict:fpml_parties",
+                category="contract_conflict",
+                summary=(
+                    "The caller-provided FpML parties conflict with the parties "
+                    "inspected from the document."
+                ),
+                target_package="trellis.io.fpml",
+            )
+        )
+
+    return _report(blockers) if blockers else None
+
+
 def fpml_product_normalizer_blocker_report() -> BlockerReport:
     """Report the deliberate boundary after successful document inspection."""
 
@@ -273,6 +327,7 @@ __all__ = [
     "ImportedDocumentPayload",
     "fpml_import_blocker_report",
     "fpml_product_normalizer_blocker_report",
+    "fpml_trade_envelope_conflict_report",
     "imported_document_blocker_report",
     "imported_document_summary",
 ]
