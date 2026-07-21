@@ -472,6 +472,43 @@ def test_normalization_rejects_unknown_stream_party_reference():
     )
 
 
+def test_normalization_rejects_different_counterparty_pairs_across_streams():
+    xml = FIXTURE.read_text().replace(
+        '<swapStream id="FLOAT-LEG">\n'
+        '        <payerPartyReference href="PARTY-B" />',
+        '<swapStream id="FLOAT-LEG">\n'
+        '        <payerPartyReference href="PARTY-C" />',
+        1,
+    )
+    xml = xml.replace(
+        "</dataDocument>",
+        '  <party id="PARTY-C"><partyId>PARTY-C-ID</partyId></party>\n'
+        "</dataDocument>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "contract_conflict:fpml_swap_stream_counterparties",
+    )
+
+
+def test_normalization_rejects_reset_schedule_on_fixed_stream():
+    xml = FIXTURE.read_text().replace(
+        "        <calculationPeriodAmount>",
+        '        <resetDates id="FIXED-RESET-DATES" />\n'
+        "        <calculationPeriodAmount>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_fixed_stream_reset_dates_unsupported",
+    )
+
+
 def test_normalization_is_invariant_to_fpml_stream_order():
     from xml.etree import ElementTree
 

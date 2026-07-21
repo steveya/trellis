@@ -424,6 +424,12 @@ def _normalize_fixed_float_swap(
             "unsupported_contract",
             "Fixed and floating economics must belong to distinct swap streams.",
         )
+    if _direct_children(fixed_streams[0], "resetDates", namespace=namespace):
+        _fail(
+            "external_import:fpml_fixed_stream_reset_dates_unsupported",
+            "unsupported_contract",
+            "Reset-date schedules are not consumed on the admitted fixed stream.",
+        )
 
     fixed_position = streams.index(fixed_streams[0]) + 1
     floating_position = streams.index(floating_streams[0]) + 1
@@ -446,6 +452,12 @@ def _normalize_fixed_float_swap(
             "contract_conflict:fpml_swap_stream_party_reference",
             "contract_conflict",
             "A swap stream references a party not identified by the FpML document.",
+        )
+    if {fixed.payer, fixed.receiver} != {floating.payer, floating.receiver}:
+        _fail(
+            "contract_conflict:fpml_swap_stream_counterparties",
+            "contract_conflict",
+            "Both admitted swap streams must reference the same counterparty pair.",
         )
     if fixed.currency != floating.currency:
         _fail(

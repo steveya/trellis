@@ -54,7 +54,8 @@ The first fixed-float cohort requires:
 - matching effective and termination dates
 - regular annual, semiannual, quarterly, or monthly calculation and payment
   schedules with one calculation period per payment
-- payer/receiver references to parties declared in the document
+- matching payer/receiver counterparty pairs that reference parties declared
+  in the document
 - fixed rate, supported day counts, and a term floating-rate index whose one
   index tenor matches the calculation and reset frequency
 - reset dates relative to calculation-period starts
@@ -87,8 +88,9 @@ Fail-Closed Boundary
 Unsupported amortization, compounding, stubs, cross-currency legs, stepped
 rates or spreads, mismatched schedules or notionals, non-term floating-rate
 forms, duplicate optional rate schedules, unpaid seasoned floating coupons,
-duplicate roll declarations, initial-fixing overrides, end-of-month or clamped
-high-day rolls, foreign-namespaced extension children, unsupported
+duplicate roll declarations, fixed-leg reset schedules, initial-fixing
+overrides, mismatched counterparty pairs, end-of-month or clamped high-day
+rolls, foreign-namespaced extension children, unsupported
 frequency or tenor children, calendars/conventions, lifecycle content, and
 missing schedule or valuation-date terms produce exact ``external_import:*``,
 ``missing_contract_field:*``, ``contract_ambiguity:*``, or
