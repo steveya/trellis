@@ -94,7 +94,8 @@ forms, duplicate optional rate schedules, unpaid seasoned floating coupons,
 duplicate roll declarations, fixed-leg reset schedules, initial-fixing
 overrides, mismatched counterparty pairs, end-of-month or clamped high-day
 rolls, foreign-namespaced extension children, unsupported
-frequency, tenor, date-adjustment, or business-center children,
+children in frequency, tenor, date-adjustment, or business-center containers,
+children nested inside scalar or reference leaves, unsupported
 calendars/conventions, lifecycle content, and missing schedule or valuation-date
 terms produce exact ``external_import:*``,
 ``missing_contract_field:*``, ``contract_ambiguity:*``, or

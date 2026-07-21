@@ -133,7 +133,7 @@ _ALLOWED_DATE_ADJUSTMENT_CHILDREN = {
     "businessDayConvention",
 }
 _ALLOWED_BUSINESS_CENTERS_CHILDREN = {"businessCenter"}
-_ALLOWED_BUSINESS_CENTER_CHILDREN: set[str] = set()
+_ALLOWED_LEAF_CHILDREN: set[str] = set()
 _ALLOWED_PAYMENT_DATES_CHILDREN = {
     "calculationPeriodDatesReference",
     "payRelativeTo",
@@ -1335,6 +1335,12 @@ def _adjustable_date(parent, name: str, *, namespace: str | None) -> tuple[date,
             ambiguous_fields=(f"{name}.adjusted_date",),
         )
     if supplied_adjusted:
+        _reject_unadmitted_direct_children(
+            supplied_adjusted[0],
+            allowed=_ALLOWED_LEAF_CHILDREN,
+            scope=f"{blocker_field}_adjusted_date",
+            namespace=namespace,
+        )
         supplied_value = _optional_text(supplied_adjusted[0].text)
         if supplied_value is None:
             _fail(
@@ -1419,7 +1425,7 @@ def _date_adjustment(
     for center in center_elements:
         _reject_unadmitted_direct_children(
             center,
-            allowed=_ALLOWED_BUSINESS_CENTER_CHILDREN,
+            allowed=_ALLOWED_LEAF_CHILDREN,
             scope="business_center",
             namespace=namespace,
         )
@@ -1537,6 +1543,13 @@ def _validate_roll_convention(element, start: date, *, namespace: str | None) ->
             "FpML normalization found multiple roll conventions for one schedule.",
             ambiguous_fields=("roll_convention",),
         )
+    if roll_elements:
+        _reject_unadmitted_direct_children(
+            roll_elements[0],
+            allowed=_ALLOWED_LEAF_CHILDREN,
+            scope="roll_convention",
+            namespace=namespace,
+        )
     roll = _optional_text(
         roll_elements[0].text if roll_elements else None
     )
@@ -1597,6 +1610,12 @@ def _required_text(parent, name: str, *, namespace: str | None, missing_field: s
         namespace=namespace,
         missing_field=missing_field,
     )
+    _reject_unadmitted_direct_children(
+        element,
+        allowed=_ALLOWED_LEAF_CHILDREN,
+        scope=missing_field,
+        namespace=namespace,
+    )
     text = _optional_text(element.text)
     if text is None:
         _fail(
@@ -1614,6 +1633,12 @@ def _required_href(parent, name: str, *, namespace: str | None, missing_field: s
         name,
         namespace=namespace,
         missing_field=missing_field,
+    )
+    _reject_unadmitted_direct_children(
+        element,
+        allowed=_ALLOWED_LEAF_CHILDREN,
+        scope=missing_field,
+        namespace=namespace,
     )
     href = _optional_text(element.attrib.get("href"))
     if href is None:
@@ -1650,6 +1675,12 @@ def _require_reference(
         name,
         namespace=namespace,
         missing_field=_snake_case(name),
+    )
+    _reject_unadmitted_direct_children(
+        reference,
+        allowed=_ALLOWED_LEAF_CHILDREN,
+        scope=_snake_case(name),
+        namespace=namespace,
     )
     href = _optional_text(reference.attrib.get("href"))
     if href is None:

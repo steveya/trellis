@@ -604,6 +604,37 @@ def test_normalization_rejects_unconsumed_swap_economics():
             "<periodRule>unsupported</periodRule></resetDatesAdjustments>",
             "external_import:fpml_reset_dates_adjustments_feature_unsupported",
         ),
+        (
+            "</initialValue>",
+            '<vendor:override xmlns:vendor="urn:vendor" /></initialValue>',
+            "external_import:fpml_notional_feature_unsupported",
+        ),
+        (
+            '<payerPartyReference href="PARTY-A" />',
+            '<payerPartyReference href="PARTY-A"><vendor:override '
+            'xmlns:vendor="urn:vendor" /></payerPartyReference>',
+            "external_import:fpml_payer_party_reference_feature_unsupported",
+        ),
+        (
+            '<calculationPeriodDatesReference href="FIXED-CALC-DATES" />',
+            '<calculationPeriodDatesReference href="FIXED-CALC-DATES">'
+            '<vendor:override xmlns:vendor="urn:vendor" />'
+            "</calculationPeriodDatesReference>",
+            "external_import:fpml_calculation_period_dates_reference_feature_unsupported",
+        ),
+        (
+            "<unadjustedDate>2025-06-30</unadjustedDate>",
+            "<unadjustedDate>2025-06-30</unadjustedDate>"
+            '<adjustedDate>2025-06-30<vendor:override xmlns:vendor="urn:vendor" />'
+            "</adjustedDate>",
+            "external_import:fpml_effective_date_adjusted_date_feature_unsupported",
+        ),
+        (
+            "<rollConvention>30</rollConvention>",
+            '<rollConvention>30<vendor:override xmlns:vendor="urn:vendor" />'
+            "</rollConvention>",
+            "external_import:fpml_roll_convention_feature_unsupported",
+        ),
     ),
 )
 def test_normalization_rejects_unconsumed_nested_economics(old, new, expected_id):
