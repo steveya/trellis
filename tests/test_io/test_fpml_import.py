@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import FrozenInstanceError
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -320,6 +321,7 @@ def test_inspect_fpml_document_blocks_ambiguous_party_trade_ids():
     ("trade_dates", "expected_id"),
     [
         (("not-a-date",), "external_import:fpml_malformed_trade_date"),
+        (("2026-07-01+15:00",), "external_import:fpml_malformed_trade_date"),
         (
             ("2026-07-01", "2026-07-02"),
             "contract_ambiguity:fpml_multiple_trade_dates",
@@ -350,6 +352,29 @@ def test_inspect_fpml_document_blocks_invalid_trade_date_identity(
     assert report.status == "blocked"
     assert _blocker_ids(report) == (expected_id,)
     assert report.trade.trade_date is None
+
+
+@pytest.mark.parametrize(
+    "trade_date",
+    ["2026-07-01Z", "2026-07-01+00:00", "2026-07-01-05:00"],
+)
+def test_inspect_fpml_document_accepts_schema_date_timezone_suffixes(trade_date):
+    from trellis.io.fpml import inspect_fpml_document
+
+    report = inspect_fpml_document(
+        _document(
+            "<trade><tradeHeader>"
+            "<partyTradeIdentifier><tradeId>TRADE-001</tradeId>"
+            "</partyTradeIdentifier>"
+            f"<tradeDate>{trade_date}</tradeDate>"
+            "</tradeHeader><swap /></trade>"
+        ),
+        declared_view="confirmation",
+        declared_version="5-13",
+    )
+
+    assert report.status == "inspected"
+    assert report.trade.trade_date == date(2026, 7, 1)
 
 
 @pytest.mark.parametrize(

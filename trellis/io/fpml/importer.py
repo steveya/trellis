@@ -25,6 +25,9 @@ _XML_ENCODING = re.compile(
     br"<\?xml[^>]*\bencoding\s*=\s*['\"]([^'\"]+)['\"]",
     re.IGNORECASE,
 )
+_XSD_DATE = re.compile(
+    r"^(?P<calendar>\d{4}-\d{2}-\d{2})(?P<timezone>Z|[+-]\d{2}:\d{2})?$"
+)
 _FPML_NAMESPACE = re.compile(r"^http://www\.fpml\.org/FpML-5/([^/]+)$")
 _FORBIDDEN_DECLARATIONS = ("<!DOCTYPE", "<!ENTITY")
 _LIFECYCLE_NAMES = {
@@ -498,13 +501,13 @@ def _trade_identity(
         )
     elif trade_dates:
         try:
-            parsed_trade_date = date.fromisoformat(trade_dates[0] or "")
+            parsed_trade_date = _parse_xsd_date(trade_dates[0] or "")
         except ValueError:
             blockers.append(
                 _blocker(
                     "external_import:fpml_malformed_trade_date",
                     "malformed_document",
-                    "The FpML tradeDate must be a valid ISO calendar date.",
+                    "The FpML tradeDate must be a valid XML Schema date.",
                 )
             )
     party_ids = tuple(
@@ -535,6 +538,18 @@ def _trade_identity(
         ),
         tuple(blockers),
     )
+
+
+def _parse_xsd_date(value: str) -> date:
+    match = _XSD_DATE.fullmatch(value)
+    if match is None:
+        raise ValueError("invalid XML Schema date")
+    timezone = match.group("timezone")
+    if timezone and timezone != "Z":
+        hours, minutes = (int(part) for part in timezone[1:].split(":"))
+        if hours > 14 or minutes > 59 or (hours == 14 and minutes != 0):
+            raise ValueError("invalid XML Schema timezone")
+    return date.fromisoformat(match.group("calendar"))
 
 
 def _trade_envelope(
