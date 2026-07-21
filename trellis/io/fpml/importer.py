@@ -85,7 +85,6 @@ def inspect_fpml_document(
     if not isinstance(limits, FpMLInspectionLimits):
         raise TypeError("limits must be an FpMLInspectionLimits")
     content_bytes = _content_bytes(content)
-    digest = hashlib.sha256(content_bytes).hexdigest()
     if len(content_bytes) > limits.max_document_bytes:
         return _blocked_report(
             _blocker(
@@ -97,6 +96,7 @@ def inspect_fpml_document(
                 ),
             )
         )
+    digest = hashlib.sha256(content_bytes).hexdigest()
 
     encoding_blocker = _encoding_blocker(content_bytes)
     if encoding_blocker is not None:

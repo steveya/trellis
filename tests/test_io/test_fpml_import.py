@@ -152,6 +152,29 @@ def test_inspect_fpml_document_enforces_resource_limits(xml, limits, expected_id
     assert _blocker_ids(report) == (expected_id,)
 
 
+def test_inspect_fpml_document_rejects_oversize_before_hashing(monkeypatch):
+    import trellis.io.fpml.importer as importer
+    from trellis.io.fpml import FpMLInspectionLimits
+
+    def _unexpected_digest(*args, **kwargs):
+        raise AssertionError("oversized FpML must be rejected before hashing")
+
+    monkeypatch.setattr(importer.hashlib, "sha256", _unexpected_digest)
+
+    report = importer.inspect_fpml_document(
+        b"x" * 65,
+        declared_view="confirmation",
+        declared_version="5-13",
+        limits=FpMLInspectionLimits(
+            max_document_bytes=64,
+            max_elements=100,
+            max_depth=20,
+        ),
+    )
+
+    assert _blocker_ids(report) == ("external_import:fpml_document_too_large",)
+
+
 @pytest.mark.parametrize(
     ("xml", "declared_view", "declared_version", "expected_ids"),
     [
