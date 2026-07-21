@@ -167,7 +167,7 @@ execution mirror and stays ordered by implementation dependency.
 | `QUA-1208` | Done | immutable trade envelope and selection-invariance contract | none |
 | `QUA-1209` | Done | explicit FpML platform-request entry point | `QUA-1208` |
 | `QUA-1210` | Done | secure XML inspection and stable blocker contract | `QUA-1209` |
-| `QUA-1211` | Backlog | confirmation-view fixed-float swap normalization | `QUA-1210` |
+| `QUA-1211` | In Progress | confirmation-view fixed-float swap normalization | `QUA-1210` |
 | `QUA-1212` | Backlog | European swaption normalization | `QUA-1210`, `QUA-1211` |
 | `QUA-1213` | Backlog | scheduled cap/floor strip normalization | `QUA-1210`, `QUA-1211` |
 | `QUA-1214` | Backlog | paired FpML/native conformance task corpus | `QUA-1211`, `QUA-1212`, `QUA-1213` |

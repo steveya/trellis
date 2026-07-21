@@ -22,10 +22,12 @@ def test_fpml_import_surface_is_visible_to_import_registry():
     module = "trellis.io.fpml"
     symbols = {
         "FPML_5_13_CONFIRMATION",
+        "FpMLFieldProvenance",
         "FpMLImportReport",
         "FpMLInspectionLimits",
         "fpml_import_report_summary",
         "inspect_fpml_document",
+        "normalize_fpml_document",
     }
 
     assert module_exists(module)
@@ -38,6 +40,27 @@ def test_fpml_import_surface_is_visible_to_import_registry():
         import_registry._STATIC_REGISTRY
     )
     assert symbols <= set(static_registry[module])
+
+
+def test_static_leg_economic_identity_is_visible_to_import_registry():
+    module = "trellis.agent.static_leg_contract"
+    symbols = {
+        "StaticLegContractIR",
+        "static_leg_economic_identity",
+        "static_leg_economic_summary",
+    }
+
+    assert module_exists(module)
+    assert symbols <= set(list_module_exports(module))
+    for symbol in symbols:
+        assert module in find_symbol_modules(symbol)
+        assert is_valid_import(module, symbol)
+
+    static_registry = import_registry._parse_static_registry(
+        import_registry._STATIC_REGISTRY
+    )
+    assert symbols <= set(static_registry[module])
+    assert f"from {module} import" in get_import_registry()
 
 
 def test_list_module_exports_returns_known_symbols():

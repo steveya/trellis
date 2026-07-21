@@ -33,7 +33,6 @@ from trellis.agent.comparison_target_contracts import ComparisonTargetContract
 from trellis.agent.imported_documents import (
     ImportedDocumentPayload,
     fpml_import_blocker_report,
-    fpml_product_normalizer_blocker_report,
     fpml_trade_envelope_conflict_report,
     imported_document_blocker_report,
 )
@@ -57,10 +56,20 @@ from trellis.agent.valuation_context import (
     canonical_engine_model_name,
     valuation_context_summary,
 )
-from trellis.io.fpml import FpMLImportReport, inspect_fpml_document
+from trellis.io.fpml import (
+    FpMLImportReport,
+    inspect_fpml_document,
+)
+from trellis.io.fpml.normalizer import _normalize_inspected_fpml_document
 
 if TYPE_CHECKING:
     from trellis.agent.knowledge.schema import ProductIR
+
+
+_NORMALIZED_FPML_DEFAULT_OUTPUTS = {
+    "analytics": ("price", "dv01", "duration"),
+    "greeks": ("dv01", "duration", "convexity"),
+}
 
 
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
@@ -536,7 +545,7 @@ def compile_platform_request(request: PlatformRequest) -> CompiledPlatformReques
 def _compile_imported_document_request(
     request: PlatformRequest,
 ) -> CompiledPlatformRequest:
-    """Stop external documents at the dedicated fail-closed import boundary."""
+    """Normalize admitted external documents before structural execution."""
 
     preflight_report = imported_document_blocker_report(
         request.imported_document,
@@ -558,26 +567,109 @@ def _compile_imported_document_request(
     payload = request.imported_document
     if payload is None:  # Guarded by the deterministic preflight above.
         raise AssertionError("FpML preflight admitted a missing payload")
-    import_report = inspect_fpml_document(
+    inspection_report = inspect_fpml_document(
         bytes(payload.content),
         declared_view=payload.declared_view,
         declared_version=payload.declared_version,
+    )
+    if inspection_report.blockers:
+        return _finalize_compiled_request(
+            request=request,
+            market_snapshot=request.market_snapshot,
+            execution_plan=_execution_plan_for_request(
+                request,
+                action="block",
+                reason="fpml_import_rejected",
+                requires_build=False,
+            ),
+            blocker_report=fpml_import_blocker_report(inspection_report),
+            import_report=inspection_report,
+        )
+
+    envelope_conflict_report = None
+    if (
+        inspection_report.trade_envelope is not None
+        and request.trade_envelope is not None
+    ):
+        envelope_conflict_report = fpml_trade_envelope_conflict_report(
+            request.trade_envelope,
+            inspection_report.trade_envelope,
+        )
+    if envelope_conflict_report is not None:
+        return _finalize_compiled_request(
+            request=request,
+            market_snapshot=request.market_snapshot,
+            execution_plan=_execution_plan_for_request(
+                request,
+                action="block",
+                reason="fpml_import_rejected",
+                requires_build=False,
+            ),
+            blocker_report=envelope_conflict_report,
+            import_report=inspection_report,
+        )
+
+    import_report = _normalize_inspected_fpml_document(
+        bytes(payload.content),
+        inspected=inspection_report,
+        valuation_party_id=_valuation_party_id(request.trade_envelope),
+        valuation_date=_fpml_valuation_date(request),
+        require_valuation_date=request.request_type != "build",
     )
     if import_report.blockers:
         blocker_report = fpml_import_blocker_report(import_report)
         reason = "fpml_import_rejected"
     else:
         if import_report.trade_envelope is None or request.trade_envelope is None:
-            raise AssertionError("admitted FpML inspection has no trade envelope")
-        blocker_report = fpml_trade_envelope_conflict_report(
-            request.trade_envelope,
-            import_report.trade_envelope,
+            raise AssertionError("admitted FpML normalization has no trade envelope")
+        from trellis.core.payoff import ExecutionBackedPayoff
+        from trellis.execution import compile_static_leg_execution_ir
+
+        normalized_contract = import_report.normalized_contract
+        if normalized_contract is None:
+            raise AssertionError("normalized FpML report has no contract")
+        execution_ir = compile_static_leg_execution_ir(
+            normalized_contract,
+            fail_on_unsupported=True,
         )
-        if blocker_report is not None:
-            reason = "fpml_import_rejected"
-        else:
-            blocker_report = fpml_product_normalizer_blocker_report()
-            reason = "fpml_product_normalization_boundary"
+        source_metadata = dict(execution_ir.source_track.source_metadata)
+        metadata = dict(request.metadata or {})
+        metadata["external_contract"] = {
+            "source_format": "fpml",
+            "economic_identity": import_report.economic_identity,
+            "structural_declaration_id": source_metadata.get(
+                "static_leg_lowering_declaration_id"
+            ),
+            "validation_bundle_id": source_metadata.get("validation_bundle_id"),
+            "callable_ref": source_metadata.get("callable_ref"),
+            "mapping_provenance_count": len(import_report.mapping_provenance),
+        }
+        request = replace(
+            request,
+            instrument=ExecutionBackedPayoff(execution_ir),
+            metadata=metadata,
+            requested_outputs=(
+                request.requested_outputs
+                or _NORMALIZED_FPML_DEFAULT_OUTPUTS.get(request.request_type, ())
+            ),
+        )
+        action = (
+            "compile_only"
+            if request.request_type == "build"
+            else "price_normalized_payoff"
+        )
+        return _finalize_compiled_request(
+            request=request,
+            market_snapshot=request.market_snapshot,
+            execution_plan=_execution_plan_for_request(
+                request,
+                action=action,
+                reason="normalized_external_contract",
+                route_method="structural_execution_ir",
+                requires_build=False,
+            ),
+            import_report=import_report,
+        )
     return _finalize_compiled_request(
         request=request,
         market_snapshot=request.market_snapshot,
@@ -590,6 +682,33 @@ def _compile_imported_document_request(
         blocker_report=blocker_report,
         import_report=import_report,
     )
+
+
+def _valuation_party_id(envelope: TradeEnvelope | None) -> str | None:
+    """Return the sole explicitly declared valuation party, if present."""
+
+    if envelope is None:
+        return None
+    matches = tuple(
+        party.party_id
+        for party in envelope.parties
+        if str(party.role or "").strip().lower() == "valuation_party"
+    )
+    return matches[0] if len(matches) == 1 else None
+
+
+def _fpml_valuation_date(request: PlatformRequest) -> date | None:
+    """Resolve the deterministic valuation date used by imported-contract gates."""
+
+    settlement = request.settlement
+    if isinstance(settlement, datetime):
+        return settlement.date()
+    if isinstance(settlement, date):
+        return settlement
+    as_of = getattr(request.market_snapshot, "as_of", None)
+    if isinstance(as_of, datetime):
+        return as_of.date()
+    return as_of if isinstance(as_of, date) else None
 
 
 def _direct_instrument_execution_plan(request: PlatformRequest) -> ExecutionPlan:

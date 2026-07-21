@@ -4,8 +4,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import TYPE_CHECKING
 
 from trellis.agent.trade_envelope import TradeEnvelope, trade_envelope_summary
+
+if TYPE_CHECKING:
+    from trellis.agent.static_leg_contract import StaticLegContractIR
 
 
 @dataclass(frozen=True)
@@ -101,8 +105,17 @@ class FpMLTradeIdentity:
 
 
 @dataclass(frozen=True)
+class FpMLFieldProvenance:
+    """One deterministic XML-path to normalized-field mapping."""
+
+    xml_path: str
+    semantic_field: str
+    normalized_value: str
+
+
+@dataclass(frozen=True)
 class FpMLImportReport:
-    """Body-free result of bounded FpML document inspection."""
+    """Body-free result of bounded FpML inspection or normalization."""
 
     status: str
     profile: FpMLProfile | None
@@ -111,14 +124,36 @@ class FpMLImportReport:
     trade_envelope: TradeEnvelope | None
     blockers: tuple[FpMLImportBlocker, ...]
     clarification: FpMLClarification
+    normalized_contract: StaticLegContractIR | None = None
+    economic_identity: str | None = None
+    mapping_provenance: tuple[FpMLFieldProvenance, ...] = ()
 
     def __post_init__(self) -> None:
-        if self.status not in {"inspected", "blocked"}:
-            raise ValueError("FpML import status must be 'inspected' or 'blocked'")
-        if self.status == "inspected" and self.blockers:
-            raise ValueError("an inspected FpML report cannot carry blockers")
+        if self.status not in {"inspected", "normalized", "blocked"}:
+            raise ValueError(
+                "FpML import status must be 'inspected', 'normalized', or 'blocked'"
+            )
+        if self.status in {"inspected", "normalized"} and self.blockers:
+            raise ValueError(f"a {self.status} FpML report cannot carry blockers")
         if self.status == "blocked" and not self.blockers:
             raise ValueError("a blocked FpML report requires at least one blocker")
+        if self.status == "normalized" and (
+            self.normalized_contract is None
+            or not self.economic_identity
+            or not self.mapping_provenance
+        ):
+            raise ValueError(
+                "a normalized FpML report requires a contract, economic identity, "
+                "and mapping provenance"
+            )
+        if self.status != "normalized" and (
+            self.normalized_contract is not None
+            or self.economic_identity is not None
+            or self.mapping_provenance
+        ):
+            raise ValueError(
+                "only a normalized FpML report may carry normalized artifacts"
+            )
 
 
 def fpml_import_report_summary(report: FpMLImportReport) -> dict[str, object]:
@@ -129,6 +164,11 @@ def fpml_import_report_summary(report: FpMLImportReport) -> dict[str, object]:
     profile = report.profile
     document = report.document
     trade = report.trade
+    normalized_summary = None
+    if report.normalized_contract is not None:
+        from trellis.agent.static_leg_contract import static_leg_economic_summary
+
+        normalized_summary = static_leg_economic_summary(report.normalized_contract)
     return {
         "status": report.status,
         "profile": (
@@ -168,6 +208,16 @@ def fpml_import_report_summary(report: FpMLImportReport) -> dict[str, object]:
             else None
         ),
         "trade_envelope": trade_envelope_summary(report.trade_envelope),
+        "economic_identity": report.economic_identity,
+        "normalized_contract": normalized_summary,
+        "mapping_provenance": [
+            {
+                "xml_path": item.xml_path,
+                "semantic_field": item.semantic_field,
+                "normalized_value": item.normalized_value,
+            }
+            for item in report.mapping_provenance
+        ],
         "blockers": [
             {
                 "id": blocker.id,
@@ -193,6 +243,7 @@ __all__ = [
     "SUPPORTED_FPML_PROFILES",
     "FpMLClarification",
     "FpMLDocumentIdentity",
+    "FpMLFieldProvenance",
     "FpMLImportBlocker",
     "FpMLImportReport",
     "FpMLInspectionLimits",

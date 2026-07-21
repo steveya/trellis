@@ -163,6 +163,22 @@ def imported_document_blocker_report(
             )
         )
     else:
+        valuation_party_ids = tuple(
+            party.party_id
+            for party in trade_envelope.parties
+            if str(party.role or "").strip().lower() == "valuation_party"
+        )
+        if len(valuation_party_ids) > 1:
+            blockers.append(
+                _blocker(
+                    "contract_ambiguity:fpml_valuation_party_id",
+                    category="contract_ambiguity",
+                    summary=(
+                        "The FpML request declares multiple valuation parties; "
+                        "select exactly one NPV perspective."
+                    ),
+                )
+            )
         if trade_envelope.source_format != payload.source_format:
             blockers.append(
                 _blocker(
@@ -263,7 +279,7 @@ def fpml_trade_envelope_conflict_report(
     if (
         requested_parties
         and imported_parties
-        and requested_parties != imported_parties
+        and not set(requested_parties).issubset(set(imported_parties))
     ):
         blockers.append(
             _blocker(

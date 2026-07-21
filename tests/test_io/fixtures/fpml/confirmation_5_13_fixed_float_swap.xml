@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataDocument
+    xmlns="http://www.fpml.org/FpML-5/confirmation"
+    fpmlVersion="5-13"
+    id="DOC-IRS-001">
+  <trade id="TRADE-ELEMENT-IRS-001">
+    <tradeHeader>
+      <partyTradeIdentifier>
+        <partyReference href="PARTY-A" />
+        <tradeId tradeIdScheme="urn:trellis:test:trade-id">IRS-001</tradeId>
+      </partyTradeIdentifier>
+      <tradeDate>2025-01-15</tradeDate>
+    </tradeHeader>
+    <swap id="SWAP-IRS-001">
+      <swapStream id="FIXED-LEG">
+        <payerPartyReference href="PARTY-A" />
+        <receiverPartyReference href="PARTY-B" />
+        <calculationPeriodDates id="FIXED-CALC-DATES">
+          <effectiveDate>
+            <unadjustedDate>2025-06-30</unadjustedDate>
+            <dateAdjustments>
+              <businessDayConvention>NONE</businessDayConvention>
+            </dateAdjustments>
+          </effectiveDate>
+          <terminationDate>
+            <unadjustedDate>2027-06-30</unadjustedDate>
+            <dateAdjustments>
+              <businessDayConvention>NONE</businessDayConvention>
+            </dateAdjustments>
+          </terminationDate>
+          <calculationPeriodDatesAdjustments>
+            <businessDayConvention>NONE</businessDayConvention>
+          </calculationPeriodDatesAdjustments>
+          <calculationPeriodFrequency>
+            <periodMultiplier>6</periodMultiplier>
+            <period>M</period>
+            <rollConvention>30</rollConvention>
+          </calculationPeriodFrequency>
+        </calculationPeriodDates>
+        <paymentDates>
+          <calculationPeriodDatesReference href="FIXED-CALC-DATES" />
+          <paymentFrequency>
+            <periodMultiplier>6</periodMultiplier>
+            <period>M</period>
+          </paymentFrequency>
+          <payRelativeTo>CalculationPeriodEndDate</payRelativeTo>
+          <paymentDatesAdjustments>
+            <businessDayConvention>NONE</businessDayConvention>
+          </paymentDatesAdjustments>
+        </paymentDates>
+        <calculationPeriodAmount>
+          <calculation>
+            <notionalSchedule>
+              <notionalStepSchedule>
+                <initialValue>1000000</initialValue>
+                <currency>USD</currency>
+              </notionalStepSchedule>
+            </notionalSchedule>
+            <fixedRateSchedule>
+              <initialValue>0.04</initialValue>
+            </fixedRateSchedule>
+            <dayCountFraction>30/360</dayCountFraction>
+          </calculation>
+        </calculationPeriodAmount>
+      </swapStream>
+      <swapStream id="FLOAT-LEG">
+        <payerPartyReference href="PARTY-B" />
+        <receiverPartyReference href="PARTY-A" />
+        <calculationPeriodDates id="FLOAT-CALC-DATES">
+          <effectiveDate>
+            <unadjustedDate>2025-06-30</unadjustedDate>
+            <dateAdjustments>
+              <businessDayConvention>NONE</businessDayConvention>
+            </dateAdjustments>
+          </effectiveDate>
+          <terminationDate>
+            <unadjustedDate>2027-06-30</unadjustedDate>
+            <dateAdjustments>
+              <businessDayConvention>NONE</businessDayConvention>
+            </dateAdjustments>
+          </terminationDate>
+          <calculationPeriodDatesAdjustments>
+            <businessDayConvention>NONE</businessDayConvention>
+          </calculationPeriodDatesAdjustments>
+          <calculationPeriodFrequency>
+            <periodMultiplier>3</periodMultiplier>
+            <period>M</period>
+            <rollConvention>30</rollConvention>
+          </calculationPeriodFrequency>
+        </calculationPeriodDates>
+        <paymentDates>
+          <calculationPeriodDatesReference href="FLOAT-CALC-DATES" />
+          <paymentFrequency>
+            <periodMultiplier>3</periodMultiplier>
+            <period>M</period>
+          </paymentFrequency>
+          <payRelativeTo>CalculationPeriodEndDate</payRelativeTo>
+          <paymentDatesAdjustments>
+            <businessDayConvention>NONE</businessDayConvention>
+          </paymentDatesAdjustments>
+        </paymentDates>
+        <resetDates id="FLOAT-RESET-DATES">
+          <calculationPeriodDatesReference href="FLOAT-CALC-DATES" />
+          <resetRelativeTo>CalculationPeriodStartDate</resetRelativeTo>
+          <fixingDates>
+            <periodMultiplier>0</periodMultiplier>
+            <period>D</period>
+            <dayType>Calendar</dayType>
+            <businessDayConvention>NONE</businessDayConvention>
+            <dateRelativeTo href="FLOAT-RESET-DATES" />
+          </fixingDates>
+          <resetFrequency>
+            <periodMultiplier>3</periodMultiplier>
+            <period>M</period>
+          </resetFrequency>
+          <resetDatesAdjustments>
+            <businessDayConvention>NONE</businessDayConvention>
+          </resetDatesAdjustments>
+        </resetDates>
+        <calculationPeriodAmount>
+          <calculation>
+            <notionalSchedule>
+              <notionalStepSchedule>
+                <initialValue>1000000</initialValue>
+                <currency>USD</currency>
+              </notionalStepSchedule>
+            </notionalSchedule>
+            <floatingRateCalculation>
+              <floatingRateIndex>USD-SOFR</floatingRateIndex>
+              <indexTenor>
+                <periodMultiplier>3</periodMultiplier>
+                <period>M</period>
+              </indexTenor>
+            </floatingRateCalculation>
+            <dayCountFraction>ACT/360</dayCountFraction>
+          </calculation>
+        </calculationPeriodAmount>
+      </swapStream>
+    </swap>
+  </trade>
+  <party id="PARTY-A">
+    <partyId partyIdScheme="urn:trellis:test:party-id">PARTY-A-ID</partyId>
+  </party>
+  <party id="PARTY-B">
+    <partyId partyIdScheme="urn:trellis:test:party-id">PARTY-B-ID</partyId>
+  </party>
+</dataDocument>

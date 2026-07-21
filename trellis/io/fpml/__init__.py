@@ -6,6 +6,7 @@ from trellis.io.fpml.contracts import (
     SUPPORTED_FPML_PROFILES,
     FpMLClarification,
     FpMLDocumentIdentity,
+    FpMLFieldProvenance,
     FpMLImportBlocker,
     FpMLImportReport,
     FpMLInspectionLimits,
@@ -14,6 +15,7 @@ from trellis.io.fpml.contracts import (
     fpml_import_report_summary,
 )
 from trellis.io.fpml.importer import inspect_fpml_document
+from trellis.io.fpml.normalizer import normalize_fpml_document
 
 __all__ = [
     "DEFAULT_FPML_INSPECTION_LIMITS",
@@ -21,6 +23,7 @@ __all__ = [
     "SUPPORTED_FPML_PROFILES",
     "FpMLClarification",
     "FpMLDocumentIdentity",
+    "FpMLFieldProvenance",
     "FpMLImportBlocker",
     "FpMLImportReport",
     "FpMLInspectionLimits",
@@ -28,4 +31,5 @@ __all__ = [
     "FpMLTradeIdentity",
     "fpml_import_report_summary",
     "inspect_fpml_document",
+    "normalize_fpml_document",
 ]
