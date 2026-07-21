@@ -558,7 +558,7 @@ from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention, Frequency
-from trellis.io.fpml import DEFAULT_FPML_INSPECTION_LIMITS, FPML_5_13_CONFIRMATION, SUPPORTED_FPML_PROFILES, FpMLClarification, FpMLDocumentIdentity, FpMLImportBlocker, FpMLImportReport, FpMLInspectionLimits, FpMLProfile, FpMLTradeIdentity, fpml_import_report_summary, inspect_fpml_document
+from trellis.io.fpml import DEFAULT_FPML_INSPECTION_LIMITS, FPML_5_13_CONFIRMATION, SUPPORTED_FPML_PROFILES, FpMLClarification, FpMLDocumentIdentity, FpMLFieldProvenance, FpMLImportBlocker, FpMLImportReport, FpMLInspectionLimits, FpMLProfile, FpMLTradeIdentity, fpml_import_report_summary, inspect_fpml_document, normalize_fpml_document
 
 ### Curves
 from trellis.curves.yield_curve import YieldCurve

@@ -64,6 +64,53 @@ def test_default_execution_handlers_cover_current_action_space():
     assert set(default_execution_handlers()) == set(REQUIRED_EXECUTION_ACTIONS)
 
 
+def test_execute_compiled_request_prices_normalized_fpml_payoff():
+    from pathlib import Path
+
+    from trellis.agent.platform_requests import (
+        compile_platform_request,
+        make_fpml_request,
+    )
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+    from trellis.platform.executor import execute_compiled_request
+    from trellis.session import Session
+
+    fixture = (
+        Path(__file__).parents[1]
+        / "test_io"
+        / "fixtures"
+        / "fpml"
+        / "confirmation_5_13_fixed_float_swap.xml"
+    )
+    session = Session(curve=_curve(), settlement=date(2025, 1, 15))
+    compiled = compile_platform_request(
+        make_fpml_request(
+            fixture.read_bytes(),
+            source_view="confirmation",
+            source_version="5-13",
+            trade_envelope=TradeEnvelope(
+                source_format="fpml",
+                source_view="confirmation",
+                source_version="5-13",
+                parties=(TradeParty("PARTY-A", role="valuation_party"),),
+            ),
+            market_snapshot=session.market_snapshot,
+            settlement=date(2025, 1, 15),
+            measures=["price"],
+        )
+    )
+
+    result = execute_compiled_request(
+        compiled,
+        session.to_execution_context(run_mode="sandbox"),
+    )
+
+    assert result.status == "succeeded"
+    assert result.action == "price_normalized_payoff"
+    assert isinstance(result.result_payload["price"], float)
+    assert result.audit_summary["adapter"] == "normalized_execution_payoff"
+
+
 def test_execute_compiled_request_dispatches_registered_handler_and_returns_stable_envelope():
     from trellis.platform.context import build_execution_context
     from trellis.platform.executor import execute_compiled_request

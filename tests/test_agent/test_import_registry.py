@@ -22,10 +22,12 @@ def test_fpml_import_surface_is_visible_to_import_registry():
     module = "trellis.io.fpml"
     symbols = {
         "FPML_5_13_CONFIRMATION",
+        "FpMLFieldProvenance",
         "FpMLImportReport",
         "FpMLInspectionLimits",
         "fpml_import_report_summary",
         "inspect_fpml_document",
+        "normalize_fpml_document",
     }
 
     assert module_exists(module)

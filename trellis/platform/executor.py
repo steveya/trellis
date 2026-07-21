@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from datetime import date, datetime, timezone
-from typing import Any, Mapping
+from typing import Mapping
 from uuid import uuid4
 
 from trellis.platform.context import ExecutionContext
@@ -18,6 +18,7 @@ REQUIRED_EXECUTION_ACTIONS = (
     "compute_greeks",
     "analyze_existing_instrument",
     "price_existing_payoff",
+    "price_normalized_payoff",
     "build_then_price",
     "compile_only",
     "block",
@@ -137,6 +138,7 @@ def default_execution_handlers() -> dict[str, ExecutionHandler]:
         "compute_greeks": _compute_greeks_handler,
         "analyze_existing_instrument": _analyze_existing_instrument_handler,
         "price_existing_payoff": _price_existing_payoff_handler,
+        "price_normalized_payoff": _price_normalized_payoff_handler,
         "build_then_price": _build_then_price_handler,
         "compile_only": _compile_only_handler,
         "block": _block_handler,
@@ -345,6 +347,42 @@ def _price_existing_payoff_handler(compiled_request, execution_context: Executio
         },
         "audit_summary": {
             "adapter": "matched_existing_payoff",
+            "payoff_class": type(payoff).__name__,
+        },
+    }
+
+
+def _price_normalized_payoff_handler(
+    compiled_request,
+    execution_context: ExecutionContext,
+    run_id: str,
+):
+    """Price a deterministic payoff produced by an admitted contract normalizer."""
+
+    from trellis.engine.payoff_pricer import price_payoff
+
+    request = compiled_request.request
+    payoff = request.instrument
+    if payoff is None:
+        raise ValueError("Compiled normalized-contract request has no payoff")
+    price = float(price_payoff(payoff, _market_state(compiled_request)))
+    analytics = None
+    if any(output != "price" for output in request.requested_outputs):
+        analytics = _analyze_instrument(
+            payoff,
+            compiled_request,
+            requested_outputs=request.requested_outputs,
+        )
+    return {
+        "status": "succeeded",
+        "result_payload": {
+            "price": price,
+            "analytics": analytics,
+            "payoff": payoff,
+            "payoff_class": type(payoff).__name__,
+        },
+        "audit_summary": {
+            "adapter": "normalized_execution_payoff",
             "payoff_class": type(payoff).__name__,
         },
     }

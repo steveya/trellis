@@ -58,6 +58,22 @@ The current bounded scope is intentionally static:
 - no running target state
 - no holder or issuer control
 
+Canonical Economic Identity
+---------------------------
+
+``static_leg_economic_summary(...)`` projects a ``StaticLegContractIR`` onto
+its source-neutral economics, and ``static_leg_economic_identity(...)`` hashes
+that projection under the versioned ``static_leg:v1:`` namespace. The
+projection includes signed leg direction, dates, notionals, formulas, indices,
+and settlement terms. It excludes labels and metadata so source provenance,
+document identifiers, and adapter labels cannot change economic identity.
+
+The identity is intentionally product-neutral. The bounded FpML importer uses
+it to prove that an imported fixed-float swap and an equivalent native
+``StaticLegContractIR`` are the same economic position before both enter the
+ordinary structural selector. XML mapping provenance remains in
+``FpMLImportReport`` and never participates in identity or route selection.
+
 ``ConditionalAccrualLeg`` does not change that boundary. It represents an
 automatic scheduled coupon whose amount is gated by a predicate over observed
 or projected quantities. A plain single-index range accrual therefore belongs

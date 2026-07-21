@@ -20,6 +20,7 @@ Core Developer Topics
    hosting_and_configuration
    audit_and_observability
    runtime_agent_orientation
+   fpml_import
    contract_ir_solver_compiler
    stochastic_vol_computational_ir
    task_and_eval_loops

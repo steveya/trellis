@@ -12,6 +12,9 @@ import pytest
 FPML_TEXT = "<dataDocument xmlns='http://www.fpml.org/FpML-5/confirmation'/>"
 FPML_FIXTURES = Path(__file__).parents[1] / "test_io" / "fixtures" / "fpml"
 VALID_FPML = (FPML_FIXTURES / "confirmation_5_13_swap.xml").read_bytes()
+NORMALIZABLE_FPML = (
+    FPML_FIXTURES / "confirmation_5_13_fixed_float_swap.xml"
+).read_bytes()
 
 
 def _blocker_ids(compiled) -> tuple[str, ...]:
@@ -114,7 +117,7 @@ def test_imported_document_preflight_admits_a_coherent_fpml_request():
     assert report.summary == "FpML request preflight admitted."
 
 
-def test_compile_fpml_request_inspects_document_then_blocks_at_product_normalizer(
+def test_compile_incomplete_fpml_swap_blocks_on_missing_product_economics(
     monkeypatch,
 ):
     import trellis.agent.platform_requests as platform_requests
@@ -137,13 +140,13 @@ def test_compile_fpml_request_inspects_document_then_blocks_at_product_normalize
     assert compiled.imported_document is request.imported_document
     assert compiled.trade_envelope is request.trade_envelope
     assert compiled.execution_plan.action == "block"
-    assert compiled.execution_plan.reason == "fpml_product_normalization_boundary"
+    assert compiled.execution_plan.reason == "fpml_import_rejected"
     assert compiled.execution_plan.requires_build is False
     assert compiled.execution_plan.requested_outputs == ()
     assert _blocker_ids(compiled) == (
-        "external_import:fpml_product_normalizer_unavailable",
+        "missing_contract_field:fpml_swap_stream",
     )
-    assert compiled.import_report.status == "inspected"
+    assert compiled.import_report.status == "blocked"
     assert compiled.import_report.profile.id == "fpml_5_13_confirmation"
     assert compiled.import_report.trade.product_names == ("swap",)
     assert compiled.import_report.trade_envelope.trade_id == "TRADE-001"
@@ -152,6 +155,102 @@ def test_compile_fpml_request_inspects_document_then_blocks_at_product_normalize
     assert compiled.generation_plan is None
     assert compiled.validation_contract is None
     assert "imported_document" not in compiled.request.metadata
+
+
+def test_compile_fpml_fixed_float_swap_uses_structural_execution_ir(monkeypatch):
+    import trellis.agent.platform_requests as platform_requests
+    import trellis.io.fpml.normalizer as fpml_normalizer
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+    from trellis.core.payoff import ExecutionBackedPayoff
+
+    request = platform_requests.make_fpml_request(
+        NORMALIZABLE_FPML,
+        source_view="confirmation",
+        source_version="5-13",
+        trade_envelope=TradeEnvelope(
+            source_format="fpml",
+            source_view="confirmation",
+            source_version="5-13",
+            parties=(TradeParty("PARTY-A", role="valuation_party"),),
+        ),
+    )
+
+    def _unexpected(*args, **kwargs):
+        raise AssertionError("generic semantic text parsing must not run for FpML")
+
+    monkeypatch.setattr(platform_requests, "_draft_semantic_contract", _unexpected)
+    monkeypatch.setattr(platform_requests, "decompose_to_ir", _unexpected)
+    monkeypatch.setattr(fpml_normalizer, "inspect_fpml_document", _unexpected)
+
+    compiled = platform_requests.compile_platform_request(request)
+
+    assert compiled.execution_plan.action == "price_normalized_payoff"
+    assert compiled.execution_plan.reason == "normalized_external_contract"
+    assert compiled.execution_plan.requires_build is False
+    assert compiled.execution_plan.route_method == "structural_execution_ir"
+    assert compiled.blocker_report is None
+    assert compiled.import_report.status == "normalized"
+    assert compiled.import_report.economic_identity.startswith("static_leg:v1:")
+    assert isinstance(compiled.request.instrument, ExecutionBackedPayoff)
+    execution_ir = compiled.request.instrument.execution_ir
+    assert execution_ir.source_track.product_family == "fixed_float_swap"
+    assert dict(execution_ir.source_track.source_metadata) == {
+        "static_leg_lowering_declaration_id": "static_leg_fixed_float_swap",
+        "validation_bundle_id": "static_leg_fixed_float_swap_contract",
+        "requested_method": "",
+        "callable_ref": "trellis.instruments.swap.SwapPayoff",
+    }
+    assert compiled.request.metadata["external_contract"]["economic_identity"] == (
+        compiled.import_report.economic_identity
+    )
+
+
+def test_compile_complete_fpml_swap_requests_valuation_party_clarification():
+    from trellis.agent.platform_requests import compile_platform_request, make_fpml_request
+
+    compiled = compile_platform_request(
+        make_fpml_request(
+            NORMALIZABLE_FPML,
+            source_view="confirmation",
+            source_version="5-13",
+        )
+    )
+
+    assert compiled.execution_plan.action == "block"
+    assert _blocker_ids(compiled) == (
+        "missing_contract_field:fpml_valuation_party_id",
+    )
+    assert compiled.import_report.clarification.missing_fields == (
+        "valuation_party_id",
+    )
+
+
+def test_compile_fpml_swap_rejects_multiple_valuation_parties_at_preflight():
+    from trellis.agent.platform_requests import compile_platform_request, make_fpml_request
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+
+    compiled = compile_platform_request(
+        make_fpml_request(
+            NORMALIZABLE_FPML,
+            source_view="confirmation",
+            source_version="5-13",
+            trade_envelope=TradeEnvelope(
+                source_format="fpml",
+                source_view="confirmation",
+                source_version="5-13",
+                parties=(
+                    TradeParty("PARTY-A", role="valuation_party"),
+                    TradeParty("PARTY-B", role="valuation_party"),
+                ),
+            ),
+        )
+    )
+
+    assert compiled.execution_plan.reason == "fpml_import_boundary"
+    assert _blocker_ids(compiled) == (
+        "contract_ambiguity:fpml_valuation_party_id",
+    )
+    assert compiled.import_report is None
 
 
 def test_compile_fpml_request_carries_deterministic_import_rejection():
@@ -226,6 +325,11 @@ def test_compile_fpml_request_runs_preflight_before_xml_inspection(monkeypatch):
         raise AssertionError("XML inspection must not run before request preflight passes")
 
     monkeypatch.setattr(platform_requests, "inspect_fpml_document", _unexpected)
+    monkeypatch.setattr(
+        platform_requests,
+        "_normalize_inspected_fpml_document",
+        _unexpected,
+    )
 
     compiled = platform_requests.compile_platform_request(request)
 

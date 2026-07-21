@@ -98,13 +98,21 @@ Lifecycle content and the incomplete ``genericProduct``, ``nonSchemaProduct``,
 and ``standardProduct`` wrappers fail closed rather than being interpreted as
 current complete economics.
 
-Inspection is deliberately separate from product support. A structurally
-admitted document is attached to ``CompiledPlatformRequest.import_report`` and
-currently stops with
-``external_import:fpml_product_normalizer_unavailable``. Product-specific
-normalizers must convert admitted economics into Trellis semantic and execution
-artifacts before an FpML request can reach pricing; raw XML never enters the
-natural-language parser or code-generation path.
+Inspection is deliberately separate from product support. The first product
+normalizer now admits one regular, single-currency, constant-notional
+fixed-float interest-rate swap cohort. It lowers the XML economics into
+``StaticLegContractIR`` and then uses the same structural selection,
+``ContractExecutionIR``, and ``ExecutionBackedPayoff`` runtime as an equivalent
+native contract. The FpML product wrapper is not route authority, and raw XML
+never enters natural-language parsing, code generation, or model-validator
+review.
+
+The caller must explicitly identify one ``TradeParty`` with
+``role="valuation_party"`` because FpML payer/receiver references do not choose
+whose NPV to return. Missing perspective, unsupported schedules or economics,
+and products outside the first cohort remain fail-closed. See
+:doc:`fpml_import` for the exact lifecycle, admitted closure, identity contract,
+and blocker policy.
 
 The plain fixed-income pricing path now also carries desk-readable bond
 reporting outputs. ``price_instrument(...)`` and the ``Session.price(...)``

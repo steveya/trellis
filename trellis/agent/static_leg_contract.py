@@ -8,8 +8,11 @@ state. Dynamic wrappers belong in the later event/state/control layer.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from datetime import date
+from enum import Enum
+import hashlib
+import json
 from types import MappingProxyType
 from typing import Mapping
 
@@ -624,6 +627,58 @@ class StaticLegContractIR:
         return tuple(seen)
 
 
+def _economic_value(value: object) -> object:
+    """Project semantic values without labels, metadata, or source provenance."""
+
+    if isinstance(value, date):
+        return value.isoformat()
+    if isinstance(value, Enum):
+        return value.value
+    if is_dataclass(value):
+        payload = {
+            item.name: _economic_value(getattr(value, item.name))
+            for item in fields(value)
+            if item.name not in {"label", "metadata"}
+        }
+        return {"type": type(value).__name__, **payload}
+    if isinstance(value, Mapping):
+        return {
+            str(key): _economic_value(item)
+            for key, item in sorted(value.items(), key=lambda pair: str(pair[0]))
+        }
+    if isinstance(value, (tuple, list)):
+        return [_economic_value(item) for item in value]
+    return value
+
+
+def static_leg_economic_summary(contract: StaticLegContractIR) -> dict[str, object]:
+    """Return a canonical, source-neutral economic projection of a static contract."""
+
+    if not isinstance(contract, StaticLegContractIR):
+        raise TypeError("contract must be a StaticLegContractIR")
+    leg_summaries = [_economic_value(leg) for leg in contract.legs]
+    return {
+        "contract_type": "StaticLegContractIR",
+        "legs": sorted(
+            leg_summaries,
+            key=lambda item: json.dumps(item, sort_keys=True, separators=(",", ":")),
+        ),
+        "settlement": _economic_value(contract.settlement),
+    }
+
+
+def static_leg_economic_identity(contract: StaticLegContractIR) -> str:
+    """Return the versioned SHA-256 identity of static-leg contract economics."""
+
+    encoded = json.dumps(
+        static_leg_economic_summary(contract),
+        sort_keys=True,
+        separators=(",", ":"),
+        allow_nan=False,
+    ).encode("utf-8")
+    return f"static_leg:v1:{hashlib.sha256(encoded).hexdigest()}"
+
+
 __all__ = [
     "CmsRateIndex",
     "CouponFormula",
@@ -648,4 +703,6 @@ __all__ = [
     "StaticLegContractIR",
     "StaticLegIRWellFormednessError",
     "TermRateIndex",
+    "static_leg_economic_identity",
+    "static_leg_economic_summary",
 ]
