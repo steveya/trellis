@@ -1334,10 +1334,14 @@ def _validate_roll_convention(element, start: date, *, namespace: str | None) ->
 def _validate_regular_schedule(start: date, end: date, frequency: Frequency) -> None:
     months_per_period = 12 // frequency.value
     month_span = (end.year - start.year) * 12 + end.month - start.month
+    generated_dates = tuple(generate_schedule(start, end, frequency))
+    expected_periods = month_span // months_per_period if month_span > 0 else 0
     if (
         month_span <= 0
         or month_span % months_per_period
         or start.day != end.day
+        or len(generated_dates) != expected_periods
+        or any(item.day != start.day for item in generated_dates)
     ):
         _fail(
             "external_import:fpml_stub_period_unsupported",

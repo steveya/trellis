@@ -341,6 +341,24 @@ def test_normalization_rejects_unimplemented_end_of_month_roll():
     )
 
 
+def test_normalization_rejects_clamped_high_day_schedule():
+    xml = (
+        FIXTURE.read_text()
+        .replace("2025-06-30", "2025-01-31")
+        .replace("2027-06-30", "2026-01-31")
+        .replace(
+            "<rollConvention>30</rollConvention>",
+            "<rollConvention>31</rollConvention>",
+        )
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_stub_period_unsupported",
+    )
+
+
 def test_normalization_rejects_unknown_stream_party_reference():
     xml = FIXTURE.read_text().replace('href="PARTY-B"', 'href="PARTY-Z"', 1)
 
