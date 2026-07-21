@@ -128,6 +128,12 @@ _ALLOWED_ADJUSTABLE_DATE_CHILDREN = {
     "dateAdjustments",
     "unadjustedDate",
 }
+_ALLOWED_DATE_ADJUSTMENT_CHILDREN = {
+    "businessCenters",
+    "businessDayConvention",
+}
+_ALLOWED_BUSINESS_CENTERS_CHILDREN = {"businessCenter"}
+_ALLOWED_BUSINESS_CENTER_CHILDREN: set[str] = set()
 _ALLOWED_PAYMENT_DATES_CHILDREN = {
     "calculationPeriodDatesReference",
     "payRelativeTo",
@@ -789,6 +795,8 @@ def _normalize_stream(
     calc_bda, calc_calendar = _date_adjustment(
         calc_adjustments,
         namespace=namespace,
+        scope="calculation_period_dates_adjustments",
+        allowed=_ALLOWED_DATE_ADJUSTMENT_CHILDREN,
     )
     payment_adjustments = _required_child(
         payment_dates,
@@ -799,6 +807,8 @@ def _normalize_stream(
     payment_bda, payment_calendar = _date_adjustment(
         payment_adjustments,
         namespace=namespace,
+        scope="payment_dates_adjustments",
+        allowed=_ALLOWED_DATE_ADJUSTMENT_CHILDREN,
     )
     _validate_roll_convention(
         calculation_frequency_element,
@@ -1183,7 +1193,12 @@ def _floating_fixing_dates(
         namespace=namespace,
         missing_field="reset_dates_adjustments",
     )
-    reset_bda, _ = _date_adjustment(reset_adjustments, namespace=namespace)
+    reset_bda, _ = _date_adjustment(
+        reset_adjustments,
+        namespace=namespace,
+        scope="reset_dates_adjustments",
+        allowed=_ALLOWED_DATE_ADJUSTMENT_CHILDREN,
+    )
     if reset_bda != BusinessDayAdjustment.UNADJUSTED:
         _fail(
             "external_import:fpml_reset_date_adjustment_unsupported",
@@ -1243,7 +1258,12 @@ def _floating_fixing_dates(
             "Business-day fixing offsets require explicit admitted business centers.",
             missing_fields=("business_centers",),
         )
-    bda, calendar = _date_adjustment(fixing, namespace=namespace)
+    bda, calendar = _date_adjustment(
+        fixing,
+        namespace=namespace,
+        scope="fixing_dates",
+        allowed=_ALLOWED_FIXING_DATES_CHILDREN,
+    )
     values = []
     for period_start in adjusted_starts:
         if day_type == "Business":
@@ -1299,7 +1319,12 @@ def _adjustable_date(parent, name: str, *, namespace: str | None) -> tuple[date,
         namespace=namespace,
         missing_field=f"{name}.date_adjustments",
     )
-    bda, calendar = _date_adjustment(adjustments, namespace=namespace)
+    bda, calendar = _date_adjustment(
+        adjustments,
+        namespace=namespace,
+        scope=f"{blocker_field}_adjustments",
+        allowed=_ALLOWED_DATE_ADJUSTMENT_CHILDREN,
+    )
     adjusted = calendar.adjust(unadjusted, bda)
     supplied_adjusted = _direct_children(element, "adjustedDate", namespace=namespace)
     if len(supplied_adjusted) > 1:
@@ -1335,7 +1360,19 @@ def _adjustable_date(parent, name: str, *, namespace: str | None) -> tuple[date,
     return unadjusted, adjusted
 
 
-def _date_adjustment(element, *, namespace: str | None):
+def _date_adjustment(
+    element,
+    *,
+    namespace: str | None,
+    scope: str,
+    allowed: set[str],
+):
+    _reject_unadmitted_direct_children(
+        element,
+        allowed=allowed,
+        scope=scope,
+        namespace=namespace,
+    )
     token = _required_text(
         element,
         "businessDayConvention",
@@ -1350,11 +1387,58 @@ def _date_adjustment(element, *, namespace: str | None):
             "unsupported_contract",
             f"Business-day convention {token!r} is outside the admitted closure.",
         )
-    center_values = tuple(
-        text
-        for center in _descendants(element, "businessCenter", namespace=namespace)
-        if (text := _optional_text(center.text)) is not None
+    business_centers = _direct_children(
+        element,
+        "businessCenters",
+        namespace=namespace,
     )
+    if len(business_centers) > 1:
+        _fail(
+            "contract_ambiguity:fpml_business_centers",
+            "contract_ambiguity",
+            "FpML date adjustments contain multiple business-center containers.",
+            ambiguous_fields=("business_centers",),
+        )
+    if business_centers:
+        _reject_unadmitted_direct_children(
+            business_centers[0],
+            allowed=_ALLOWED_BUSINESS_CENTERS_CHILDREN,
+            scope="business_centers",
+            namespace=namespace,
+        )
+    center_elements = (
+        _direct_children(
+            business_centers[0],
+            "businessCenter",
+            namespace=namespace,
+        )
+        if business_centers
+        else ()
+    )
+    center_values = []
+    for center in center_elements:
+        _reject_unadmitted_direct_children(
+            center,
+            allowed=_ALLOWED_BUSINESS_CENTER_CHILDREN,
+            scope="business_center",
+            namespace=namespace,
+        )
+        text = _optional_text(center.text)
+        if text is None:
+            _fail(
+                "missing_contract_field:fpml_business_center",
+                "contract_gap",
+                "FpML business-center values cannot be empty.",
+                missing_fields=("business_center",),
+            )
+        center_values.append(text)
+    if business_centers and not center_values:
+        _fail(
+            "missing_contract_field:fpml_business_center",
+            "contract_gap",
+            "FpML business-center containers require at least one center.",
+            missing_fields=("business_center",),
+        )
     if not center_values:
         if bda != BusinessDayAdjustment.UNADJUSTED:
             _fail(

@@ -584,10 +584,85 @@ def test_normalization_rejects_unconsumed_swap_economics():
             "<periodRule>unsupported</periodRule></indexTenor>",
             "external_import:fpml_index_tenor_feature_unsupported",
         ),
+        (
+            "</dateAdjustments>",
+            "<periodRule>unsupported</periodRule></dateAdjustments>",
+            "external_import:fpml_effective_date_adjustments_feature_unsupported",
+        ),
+        (
+            "</calculationPeriodDatesAdjustments>",
+            "<periodRule>unsupported</periodRule></calculationPeriodDatesAdjustments>",
+            "external_import:fpml_calculation_period_dates_adjustments_feature_unsupported",
+        ),
+        (
+            "</paymentDatesAdjustments>",
+            "<periodRule>unsupported</periodRule></paymentDatesAdjustments>",
+            "external_import:fpml_payment_dates_adjustments_feature_unsupported",
+        ),
+        (
+            "</resetDatesAdjustments>",
+            "<periodRule>unsupported</periodRule></resetDatesAdjustments>",
+            "external_import:fpml_reset_dates_adjustments_feature_unsupported",
+        ),
     ),
 )
 def test_normalization_rejects_unconsumed_nested_economics(old, new, expected_id):
     report = _normalize(FIXTURE.read_text().replace(old, new, 1).encode())
+
+    assert _blocker_ids(report) == (expected_id,)
+
+
+def test_normalization_rejects_unconsumed_business_center_children():
+    xml = FIXTURE.read_text().replace(
+        "<calculationPeriodDatesAdjustments>\n"
+        "            <businessDayConvention>NONE</businessDayConvention>",
+        "<calculationPeriodDatesAdjustments>\n"
+        "            <businessDayConvention>NONE</businessDayConvention>\n"
+        "            <businessCenters><calendarRule>unsupported</calendarRule>"
+        "</businessCenters>",
+        1,
+    )
+
+    report = _normalize(xml.encode())
+
+    assert _blocker_ids(report) == (
+        "external_import:fpml_business_centers_feature_unsupported",
+    )
+
+
+@pytest.mark.parametrize(
+    ("business_centers", "expected_id"),
+    (
+        (
+            "<businessCenters><businessCenter><calendarRule>unsupported</calendarRule>"
+            "</businessCenter></businessCenters>",
+            "external_import:fpml_business_center_feature_unsupported",
+        ),
+        (
+            "<businessCenters><businessCenter> </businessCenter></businessCenters>",
+            "missing_contract_field:fpml_business_center",
+        ),
+        (
+            "<businessCenters><businessCenter>USNY</businessCenter></businessCenters>"
+            "<businessCenters><businessCenter>GBLO</businessCenter></businessCenters>",
+            "contract_ambiguity:fpml_business_centers",
+        ),
+    ),
+)
+def test_normalization_rejects_ambiguous_or_malformed_business_centers(
+    business_centers,
+    expected_id,
+):
+    xml = FIXTURE.read_text().replace(
+        "<calculationPeriodDatesAdjustments>\n"
+        "            <businessDayConvention>NONE</businessDayConvention>",
+        "<calculationPeriodDatesAdjustments>\n"
+        "            <businessDayConvention>NONE</businessDayConvention>\n"
+        f"            {business_centers}",
+        1,
+    )
+
+    report = _normalize(xml.encode())
 
     assert _blocker_ids(report) == (expected_id,)
 
