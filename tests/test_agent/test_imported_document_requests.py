@@ -4,11 +4,14 @@ from __future__ import annotations
 
 from datetime import date
 import hashlib
+from pathlib import Path
 
 import pytest
 
 
 FPML_TEXT = "<dataDocument xmlns='http://www.fpml.org/FpML-5/confirmation'/>"
+FPML_FIXTURES = Path(__file__).parents[1] / "test_io" / "fixtures" / "fpml"
+VALID_FPML = (FPML_FIXTURES / "confirmation_5_13_swap.xml").read_bytes()
 
 
 def _blocker_ids(compiled) -> tuple[str, ...]:
@@ -91,13 +94,33 @@ def test_make_fpml_request_preserves_request_intent_outside_document_payload():
     assert request.imported_document.declared_version == "5-13"
 
 
-def test_compile_fpml_request_blocks_at_dedicated_importer_without_semantic_text_parsing(
+def test_imported_document_preflight_admits_a_coherent_fpml_request():
+    from trellis.agent.imported_documents import imported_document_blocker_report
+    from trellis.agent.platform_requests import make_fpml_request
+
+    request = make_fpml_request(
+        VALID_FPML,
+        source_view="confirmation",
+        source_version="5-13",
+    )
+
+    report = imported_document_blocker_report(
+        request.imported_document,
+        trade_envelope=request.trade_envelope,
+    )
+
+    assert report.blockers == ()
+    assert report.should_block is False
+    assert report.summary == "FpML request preflight admitted."
+
+
+def test_compile_fpml_request_inspects_document_then_blocks_at_product_normalizer(
     monkeypatch,
 ):
     import trellis.agent.platform_requests as platform_requests
 
     request = platform_requests.make_fpml_request(
-        FPML_TEXT,
+        VALID_FPML,
         source_view="confirmation",
         source_version="5-13",
     )
@@ -114,15 +137,67 @@ def test_compile_fpml_request_blocks_at_dedicated_importer_without_semantic_text
     assert compiled.imported_document is request.imported_document
     assert compiled.trade_envelope is request.trade_envelope
     assert compiled.execution_plan.action == "block"
-    assert compiled.execution_plan.reason == "fpml_import_boundary"
+    assert compiled.execution_plan.reason == "fpml_product_normalization_boundary"
     assert compiled.execution_plan.requires_build is False
     assert compiled.execution_plan.requested_outputs == ()
-    assert _blocker_ids(compiled) == ("external_import:fpml_importer_unavailable",)
+    assert _blocker_ids(compiled) == (
+        "external_import:fpml_product_normalizer_unavailable",
+    )
+    assert compiled.import_report.status == "inspected"
+    assert compiled.import_report.profile.id == "fpml_5_13_confirmation"
+    assert compiled.import_report.trade.product_names == ("swap",)
+    assert compiled.import_report.trade_envelope.trade_id == "TRADE-001"
     assert compiled.product_ir is None
     assert compiled.semantic_contract is None
     assert compiled.generation_plan is None
     assert compiled.validation_contract is None
     assert "imported_document" not in compiled.request.metadata
+
+
+def test_compile_fpml_request_carries_deterministic_import_rejection():
+    from trellis.agent.platform_requests import (
+        compile_platform_request,
+        make_fpml_request,
+    )
+
+    request = make_fpml_request(
+        b"<dataDocument>",
+        source_view="confirmation",
+        source_version="5-13",
+    )
+
+    compiled = compile_platform_request(request)
+
+    assert compiled.execution_plan.action == "block"
+    assert compiled.execution_plan.reason == "fpml_import_rejected"
+    assert _blocker_ids(compiled) == ("external_import:fpml_malformed_xml",)
+    assert compiled.import_report.status == "blocked"
+    assert compiled.import_report.document is None
+    assert compiled.product_ir is None
+
+
+def test_compile_fpml_request_runs_preflight_before_xml_inspection(monkeypatch):
+    import trellis.agent.platform_requests as platform_requests
+
+    request = platform_requests.make_fpml_request(
+        VALID_FPML,
+        source_view=None,
+        source_version=None,
+    )
+
+    def _unexpected(*args, **kwargs):
+        raise AssertionError("XML inspection must not run before request preflight passes")
+
+    monkeypatch.setattr(platform_requests, "inspect_fpml_document", _unexpected)
+
+    compiled = platform_requests.compile_platform_request(request)
+
+    assert compiled.execution_plan.reason == "fpml_import_boundary"
+    assert compiled.import_report is None
+    assert _blocker_ids(compiled) == (
+        "missing_contract_field:fpml_source_view",
+        "missing_contract_field:fpml_source_version",
+    )
 
 
 @pytest.mark.parametrize(

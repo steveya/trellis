@@ -198,16 +198,47 @@ def imported_document_blocker_report(
 
     if blockers:
         return _report(blockers)
+    return BlockerReport(
+        blockers=(),
+        should_block=False,
+        summary="FpML request preflight admitted.",
+    )
+
+
+def fpml_import_blocker_report(report) -> BlockerReport:
+    """Project bounded FpML inspection blockers onto the task blocker contract."""
+
+    from trellis.io.fpml import FpMLImportReport
+
+    if not isinstance(report, FpMLImportReport):
+        raise TypeError("report must be an FpMLImportReport")
+    blockers = [
+        _blocker(
+            blocker.id,
+            category=blocker.category,
+            summary=blocker.summary,
+            target_package="trellis.io.fpml",
+        )
+        for blocker in report.blockers
+    ]
+    if not blockers:
+        raise ValueError("an inspected FpML report has no import blockers")
+    return _report(blockers)
+
+
+def fpml_product_normalizer_blocker_report() -> BlockerReport:
+    """Report the deliberate boundary after successful document inspection."""
+
     return _report(
         [
             _blocker(
-                "external_import:fpml_importer_unavailable",
+                "external_import:fpml_product_normalizer_unavailable",
                 category="implementation_gap",
                 summary=(
-                    "The FpML request is coherent, but the secure importer is not "
-                    "implemented yet."
+                    "The FpML document passed bounded inspection, but its product "
+                    "economics cannot yet be normalized into a Trellis contract."
                 ),
-                target_package="trellis.io.fpml",
+                target_package="trellis.io.fpml.products",
             )
         ]
     )
@@ -240,6 +271,8 @@ def _report(blockers: list[PrimitiveBlocker]) -> BlockerReport:
 
 __all__ = [
     "ImportedDocumentPayload",
+    "fpml_import_blocker_report",
+    "fpml_product_normalizer_blocker_report",
     "imported_document_blocker_report",
     "imported_document_summary",
 ]

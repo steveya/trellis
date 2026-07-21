@@ -6,6 +6,7 @@ This module unifies the front-door request surfaces:
 - direct Session price/greeks/analytics requests
 - Pipeline book requests
 - structured user-defined product requests
+- typed imported-document requests
 
 All of them compile to the same internal shape before execution.
 """
@@ -31,6 +32,8 @@ from trellis.agent.knowledge.methods import is_known_method, normalize_method
 from trellis.agent.comparison_target_contracts import ComparisonTargetContract
 from trellis.agent.imported_documents import (
     ImportedDocumentPayload,
+    fpml_import_blocker_report,
+    fpml_product_normalizer_blocker_report,
     imported_document_blocker_report,
 )
 from trellis.agent.semantic_escalation import semantic_role_ownership_summary
@@ -53,6 +56,7 @@ from trellis.agent.valuation_context import (
     canonical_engine_model_name,
     valuation_context_summary,
 )
+from trellis.io.fpml import FpMLImportReport, inspect_fpml_document
 
 if TYPE_CHECKING:
     from trellis.agent.knowledge.schema import ProductIR
@@ -297,6 +301,7 @@ class CompiledPlatformRequest:
     knowledge_summary: Mapping[str, object] = field(default_factory=dict)
     comparison_spec: ComparisonSpec | None = None
     comparison_method_plans: tuple[ComparisonMethodPlan, ...] = ()
+    import_report: FpMLImportReport | None = None
 
     def __post_init__(self):
         """Freeze knowledge summaries carried on the compiled request envelope."""
@@ -532,20 +537,48 @@ def _compile_imported_document_request(
 ) -> CompiledPlatformRequest:
     """Stop external documents at the dedicated fail-closed import boundary."""
 
-    blocker_report = imported_document_blocker_report(
+    preflight_report = imported_document_blocker_report(
         request.imported_document,
         trade_envelope=request.trade_envelope,
     )
+    if preflight_report.should_block:
+        return _finalize_compiled_request(
+            request=request,
+            market_snapshot=request.market_snapshot,
+            execution_plan=_execution_plan_for_request(
+                request,
+                action="block",
+                reason="fpml_import_boundary",
+                requires_build=False,
+            ),
+            blocker_report=preflight_report,
+        )
+
+    payload = request.imported_document
+    if payload is None:  # Guarded by the deterministic preflight above.
+        raise AssertionError("FpML preflight admitted a missing payload")
+    import_report = inspect_fpml_document(
+        bytes(payload.content),
+        declared_view=payload.declared_view,
+        declared_version=payload.declared_version,
+    )
+    if import_report.blockers:
+        blocker_report = fpml_import_blocker_report(import_report)
+        reason = "fpml_import_rejected"
+    else:
+        blocker_report = fpml_product_normalizer_blocker_report()
+        reason = "fpml_product_normalization_boundary"
     return _finalize_compiled_request(
         request=request,
         market_snapshot=request.market_snapshot,
         execution_plan=_execution_plan_for_request(
             request,
             action="block",
-            reason="fpml_import_boundary",
+            reason=reason,
             requires_build=False,
         ),
         blocker_report=blocker_report,
+        import_report=import_report,
     )
 
 
@@ -1500,6 +1533,7 @@ def _finalize_compiled_request(
     knowledge_bundle: dict[str, Any] | None = None,
     comparison_spec: ComparisonSpec | None = None,
     comparison_method_plans: tuple[ComparisonMethodPlan, ...] = (),
+    import_report: FpMLImportReport | None = None,
 ) -> CompiledPlatformRequest:
     """Construct a compiled request with the standard knowledge and plan fields."""
     bundle = knowledge_bundle or {}
@@ -1615,6 +1649,7 @@ def _finalize_compiled_request(
         knowledge_summary=bundle.get("summary", {}),
         comparison_spec=comparison_spec,
         comparison_method_plans=comparison_method_plans,
+        import_report=import_report,
     )
 
 
