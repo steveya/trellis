@@ -440,6 +440,7 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
     # Group by top-level category
     groups = {
         "Core": [],
+        "Contract IR": [],
         "I/O": [],
         "Curves": [],
         "Models — Payoff Composition": [],
@@ -466,6 +467,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
             groups["Analytics"].append(line)
         elif "trellis.core." in mod:
             groups["Core"].append(line)
+        elif mod == "trellis.agent.static_leg_contract":
+            groups["Contract IR"].append(line)
         elif "trellis.io." in mod:
             groups["I/O"].append(line)
         elif "trellis.curves." in mod:
@@ -558,6 +561,11 @@ from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention, Frequency
+
+### Contract IR
+from trellis.agent.static_leg_contract import StaticLegContractIR, static_leg_economic_identity, static_leg_economic_summary
+
+### I/O
 from trellis.io.fpml import DEFAULT_FPML_INSPECTION_LIMITS, FPML_5_13_CONFIRMATION, SUPPORTED_FPML_PROFILES, FpMLClarification, FpMLDocumentIdentity, FpMLFieldProvenance, FpMLImportBlocker, FpMLImportReport, FpMLInspectionLimits, FpMLProfile, FpMLTradeIdentity, fpml_import_report_summary, inspect_fpml_document, normalize_fpml_document
 
 ### Curves
