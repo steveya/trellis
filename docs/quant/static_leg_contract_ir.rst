@@ -75,6 +75,16 @@ before both enter the ordinary structural selector. XML mapping provenance
 remains in ``FpMLImportReport`` and never participates in identity or route
 selection.
 
+The deterministic FpML conformance corpus strengthens that identity check
+without adding another pricing layer. For fixed-float swaps and scheduled cap
+strips it independently constructs the native ``StaticLegContractIR``, then
+requires the imported and native contracts to produce the same canonical
+projection, lowering declaration, compiled execution binding, and price under
+one market scenario. The physical European swaption pair applies the same
+contract through ``ContractIR``. These comparisons are evidence about
+normalization coherence; the native oracle is not a product helper or route
+authority.
+
 ``ConditionalAccrualLeg`` does not change that boundary. It represents an
 automatic scheduled coupon whose amount is gated by a predicate over observed
 or projected quantities. A plain single-index range accrual therefore belongs

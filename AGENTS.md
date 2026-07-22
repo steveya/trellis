@@ -46,6 +46,7 @@ the miniforge interpreter.
 **Task:** Execute pricing tasks via `build_with_knowledge()`, analyze failures, trigger remediation.
 **Rules:**
 - Use `python scripts/run_tasks.py T13 T24` to run task blocks
+- Use `python scripts/run_tasks.py --corpus fpml_conformance --status all --offline-local-agents all` for deterministic imported/native evidence
 - Use `python scripts/remediate.py` to analyze failures + fix knowledge + re-run
 - Use `python scripts/rerun_ids.py T54 T62` for specific re-runs
 - Results saved to `task_results_*.json` (not committed)
@@ -84,6 +85,7 @@ the miniforge interpreter.
 | `TASKS_BENCHMARK_FINANCEPY.yaml` | Task Runner | FinancePy parity benchmark tasks |
 | `TASKS_EXTENSION.yaml` | Task Runner | Trellis-only extension tasks |
 | `TASKS_NEGATIVE.yaml` | Task Runner | Clarification / honest-block tasks |
+| `TASKS_FPML_CONFORMANCE.yaml` | Task Runner | Deterministic paired FpML/native conformance and exact honest-block tasks |
 | `TASKS_PROOF_LEGACY.yaml` | Task Runner | Legacy proof-task inventory retained for replay and regression |
 | `MARKET_SCENARIOS.yaml` | Task Runner | Shared benchmark market scenarios |
 | `FINANCEPY_BINDINGS.yaml` | Task Runner | FinancePy binding catalog |
@@ -576,7 +578,7 @@ Every completed review ticket should leave behind:
 
 ## Current State (March 2026)
 
-- **Split pricing task corpora** across FinancePy parity, Trellis extension, negative, and legacy proof manifests
+- **Split pricing task corpora** across FinancePy parity, Trellis extension, market construction, FpML conformance, negative, and legacy proof manifests
 - **23 framework/meta tasks** in `FRAMEWORK_TASKS.yaml`
 - **~110 attempted**, ~99 succeeded (90%)
 - **46 lessons** in knowledge system (21 promoted, 17 archived, 8 candidate)
@@ -601,10 +603,11 @@ Every completed review ticket should leave behind:
 3. `TASKS_BENCHMARK_FINANCEPY.yaml` — FinancePy parity benchmark tasks
 4. `TASKS_EXTENSION.yaml` — Trellis-only extension tasks
 5. `TASKS_NEGATIVE.yaml` — Clarification / honest-block tasks
-6. `TASKS_PROOF_LEGACY.yaml` — Legacy proof-task inventory
-7. `MARKET_SCENARIOS.yaml` — Shared benchmark market scenarios
-8. `FINANCEPY_BINDINGS.yaml` — FinancePy binding catalog
-9. `trellis/agent/knowledge/canonical/features.yaml` — Feature taxonomy
-10. `trellis/agent/knowledge/canonical/decompositions.yaml` — Product → feature mappings
-11. `trellis/agent/knowledge/canonical/api_map.yaml` — Small family-level API navigation map
-12. `trellis/agent/knowledge/import_registry.py` — All valid imports
+6. `TASKS_FPML_CONFORMANCE.yaml` — Paired imported/native conformance tasks
+7. `TASKS_PROOF_LEGACY.yaml` — Legacy proof-task inventory
+8. `MARKET_SCENARIOS.yaml` — Shared benchmark market scenarios
+9. `FINANCEPY_BINDINGS.yaml` — FinancePy binding catalog
+10. `trellis/agent/knowledge/canonical/features.yaml` — Feature taxonomy
+11. `trellis/agent/knowledge/canonical/decompositions.yaml` — Product → feature mappings
+12. `trellis/agent/knowledge/canonical/api_map.yaml` — Small family-level API navigation map
+13. `trellis/agent/knowledge/import_registry.py` — All valid imports

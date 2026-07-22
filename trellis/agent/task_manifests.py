@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FRAMEWORK_TASKS_MANIFEST = "FRAMEWORK_TASKS.yaml"
 CANARY_TASKS_MANIFEST = "CANARY_TASKS.yaml"
 NEGATIVE_TASKS_MANIFEST = "TASKS_NEGATIVE.yaml"
+FPML_CONFORMANCE_TASKS_MANIFEST = "TASKS_FPML_CONFORMANCE.yaml"
 MARKET_SCENARIOS_MANIFEST = "MARKET_SCENARIOS.yaml"
 FINANCEPY_BINDINGS_MANIFEST = "FINANCEPY_BINDINGS.yaml"
 
@@ -24,6 +25,7 @@ PRICING_TASK_CORPORA: tuple[str, ...] = (
     "TASKS_EXTENSION.yaml",
     "TASKS_MARKET_CONSTRUCTION.yaml",
     "TASKS_PROOF_LEGACY.yaml",
+    FPML_CONFORMANCE_TASKS_MANIFEST,
 )
 
 
@@ -41,6 +43,12 @@ def load_pricing_tasks(
 def load_negative_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:
     """Load the clarification / honest-block task corpus."""
     return load_task_manifest(NEGATIVE_TASKS_MANIFEST, root=root)
+
+
+def load_fpml_conformance_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:
+    """Load deterministic paired FpML/native conformance tasks."""
+
+    return load_task_manifest(FPML_CONFORMANCE_TASKS_MANIFEST, root=root)
 
 
 def load_framework_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:

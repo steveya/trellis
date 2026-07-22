@@ -11,6 +11,8 @@ The pricing-task surface is split across:
 
 - ``TASKS_BENCHMARK_FINANCEPY.yaml`` for FinancePy parity tasks
 - ``TASKS_EXTENSION.yaml`` for Trellis-only nearby variants
+- ``TASKS_MARKET_CONSTRUCTION.yaml`` for market-construction tasks
+- ``TASKS_FPML_CONFORMANCE.yaml`` for deterministic imported/native evidence
 - ``TASKS_NEGATIVE.yaml`` for clarification / honest-block tasks
 - ``TASKS_PROOF_LEGACY.yaml`` for retained proof-only legacy tasks
 
@@ -18,6 +20,40 @@ The pricing-task surface is split across:
 ``trellis.agent.task_runtime`` turns pricing-task entries into offline-ready
 execution contexts, market states, method plans, and benchmarkable generated
 modules.
+
+FpML Conformance Tasks
+----------------------
+
+``task_kind="fpml_conformance"`` branches before the ordinary builder,
+code-generation, quant-review, model-validator, and recovery loop. The task
+runner compiles the declared FpML fixture through ``make_fpml_request(...)``
+and ``compile_platform_request(...)``, constructs an independent native oracle
+using existing ``StaticLegContractIR`` or ``ContractIR`` values, and compares:
+
+- versioned economic identity and the complete source-neutral projection
+- structural declaration, callable, validation bundle, and market binding
+- deterministic price under the same named market scenario
+- invariance under non-economic trade-envelope labels, identifiers, and
+  metadata
+
+The positive cohort covers the currently admitted fixed-float swap, physical
+European payer swaption, and scheduled cap strip. The negative cohort requires
+exact blockers for missing valuation perspective, unsupported view/version,
+incomplete swap economics, ``genericProduct``, and ``nonSchemaProduct``.
+Expected blocks remain fail-closed with no price, but set
+``passed_expectation=true`` only when the observed blocker ids exactly match
+the manifest. Their persisted import summaries include content identity,
+mapping provenance, and clarification evidence without retaining XML bodies.
+
+Run the bounded pack without external model calls with::
+
+   /Users/steveyang/miniforge3/bin/python3 scripts/run_tasks.py \
+       --corpus fpml_conformance --status all --offline-local-agents all
+
+Then scope remediation to that result file. Certified honest blocks must not
+appear as actionable failures. This corpus is conformance evidence for the
+published import cohort; it does not add product support, a pricing helper, a
+cookbook entry, or a new route.
 
 The runtime helpers cover:
 

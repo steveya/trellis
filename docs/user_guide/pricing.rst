@@ -110,6 +110,16 @@ compounding, amortization, extra payments, early termination, and unsettled
 premiums remain blocked.
 This is bounded interoperability, not general FpML pricing coverage.
 
+The checked-in ``TASKS_FPML_CONFORMANCE.yaml`` pack provides reproducible
+evidence for this boundary. It compares each admitted FpML cohort with an
+independently specified native Trellis contract across economic identity,
+structural route, market binding, and price, and verifies that operational
+envelope labels do not change economics. Its negative cases require exact
+clarification or unsupported-contract blockers. The pack is deterministic and
+does not call the builder, code generator, quant reviewer, model validator, or
+recovery agent; passing it does not imply support beyond the cohorts listed
+above.
+
 The Payoff Framework
 --------------------
 

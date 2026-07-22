@@ -15,6 +15,16 @@ def test_load_pricing_tasks_aggregates_new_corpora_and_preserves_legacy_ids():
     assert "P001" in task_ids
     assert "T01" in task_ids
     assert "E21" in task_ids
+    assert "FPC001" in task_ids
+
+
+def test_load_fpml_conformance_tasks_reads_dedicated_corpus():
+    from trellis.agent.task_manifests import load_fpml_conformance_tasks
+
+    tasks = load_fpml_conformance_tasks(root=Path(__file__).resolve().parents[2])
+    task_ids = {task["id"] for task in tasks}
+
+    assert {"FPC001", "FPC002", "FPC003", "FPC101", "FPC106"} <= task_ids
 
 
 def test_load_negative_tasks_reads_dedicated_negative_corpus():
