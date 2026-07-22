@@ -1059,7 +1059,7 @@ _DECLARATIONS = (
         callable_ref="trellis.instruments.swap.SwapPayoff",
         adapter_ref="trellis.agent.static_leg_admission._fixed_float_swap_adapter",
         validation_bundle_id="static_leg_fixed_float_swap_contract",
-        required_capabilities=("discount_curve", "forward_curve"),
+        required_capabilities=("discount_curve", "forward_curve", "fixing_history"),
         helper_refs=("trellis.instruments.swap.SwapPayoff", "trellis.instruments.swap.SwapSpec"),
         precedence=30,
     ),
@@ -1091,7 +1091,7 @@ _DECLARATIONS = (
         callable_ref="trellis.models.rate_basis_swap.price_rate_basis_swap",
         adapter_ref="trellis.agent.static_leg_admission._basis_swap_adapter",
         validation_bundle_id="static_leg_basis_swap_contract",
-        required_capabilities=("discount_curve", "forward_curve"),
+        required_capabilities=("discount_curve", "forward_curve", "fixing_history"),
         helper_refs=(
             "trellis.models.rate_basis_swap.price_rate_basis_swap",
             "trellis.models.contingent_cashflows.coupon_cashflow_pv",

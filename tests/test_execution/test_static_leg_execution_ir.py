@@ -402,7 +402,11 @@ def test_static_leg_compile_emits_route_free_execution_ir_for_fixed_float_swap()
     assert ir.source_track.source_kind == "static_leg_contract_ir"
     assert ir.source_track.product_family == "fixed_float_swap"
     assert ir.requirement_hints.market_inputs == frozenset(
-        {"discount_curve:USD", "forward_curve:SOFR"}
+        {
+            "discount_curve:USD",
+            "forward_curve:SOFR",
+            "fixing_history:SOFR",
+        }
     )
     assert {obligation.obligation_kind for obligation in ir.obligations} == {
         "coupon_leg"
@@ -810,17 +814,36 @@ def test_static_leg_runtime_matches_existing_checked_helpers(contract_factory, l
 
 def test_execution_backed_payoff_prices_static_leg_ir_through_public_payoff_boundary():
     contract = _fixed_float_swap()
-    market = _market_state()
+    market = replace(_market_state(), fixing_histories={"SOFR": {}})
     ir = compile_static_leg_execution_ir(contract)
     payoff = ExecutionBackedPayoff(ir)
 
     assert payoff.execution_ir is ir
-    assert payoff.requirements == {"discount_curve", "forward_curve"}
+    assert payoff.requirements == {
+        "discount_curve",
+        "fixing_history",
+        "forward_curve",
+    }
     assert price_payoff(payoff, market) == pytest.approx(
         price_static_leg_execution_ir(ir, market),
         rel=1e-12,
         abs=1e-8,
     )
+
+
+def test_regular_fixed_float_payoff_preflights_fixing_history():
+    ir = compile_static_leg_execution_ir(_fixed_float_swap())
+    payoff = ExecutionBackedPayoff(ir)
+    settlement = date(2025, 7, 15)
+    market = replace(
+        _market_state(),
+        as_of=settlement,
+        settlement=settlement,
+        fixing_histories={},
+    )
+
+    with pytest.raises(MissingCapabilityError, match="fixing_history"):
+        price_payoff(payoff, market)
 
 
 def test_static_leg_runtime_matches_basis_swap_helper_with_date_aware_curves():

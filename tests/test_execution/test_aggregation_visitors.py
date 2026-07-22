@@ -167,7 +167,11 @@ def test_discounted_execution_summary_matches_runtime_price():
     assert summary.source_kind == "static_leg_contract_ir"
     assert summary.product_family == "fixed_float_swap"
     assert summary.currency == "USD"
-    assert summary.market_inputs == ("discount_curve:USD", "forward_curve:SOFR")
+    assert summary.market_inputs == (
+        "discount_curve:USD",
+        "fixing_history:SOFR",
+        "forward_curve:SOFR",
+    )
     assert summary.timeline_roles == ("fixing_dates", "payment_dates")
     assert summary.obligation_kinds == ("coupon_leg",)
     assert summary.present_value == pytest.approx(

@@ -160,6 +160,7 @@ main labels are:
 
 - ``discount_curve``
 - ``forward_curve``
+- ``fixing_history``
 - ``black_vol_surface``
 - ``credit_curve``
 - ``fx_rates``
@@ -177,6 +178,10 @@ public execution boundary now also supports the bounded callable-bond dynamic
 execution slice, so an admitted callable-bond ``DynamicContractIR`` can execute
 through the shared payoff surface once it has been lowered into
 ``ContractExecutionIR``.
+Floating coupon execution artifacts with explicit fixing dates declare
+``fixing_history`` during capability preflight. Before the first fixing, bind
+an empty history for the relevant index; after a fixing becomes historical,
+the history must contain that exact date or pricing fails closed.
 
 Task Diagnostics And Honest Blocks
 ----------------------------------

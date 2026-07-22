@@ -224,6 +224,11 @@ the execution IR. It remains bounded to one currency, cash settlement with no
 additional lag, one positive constant notional step per leg, and supported day
 counts. A fixing strictly before settlement is historical and must be present
 in ``MarketState.fixing_histories``; a fixing on settlement remains projected.
+Every floating ``CouponLegExecution`` with explicit fixing dates advertises
+both its forward curve and indexed fixing history, including regular swap and
+basis-swap declarations. Execution IR is valuation-date independent, so a
+future-only contract may bind an empty history for capability preflight; exact
+historical-date coverage is enforced when the artifact is priced.
 
 Range-accrual admission is intentionally exact. The checked declaration
 admits only a receive-side ``ConditionalAccrualLeg`` with fixed coupon,

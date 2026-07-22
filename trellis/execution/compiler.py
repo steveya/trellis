@@ -183,12 +183,10 @@ def lower_static_leg_contract_ir_to_execution_ir(
         observables = _static_leg_execution_observables(
             static_leg_contract_ir,
             currency,
-            declaration_id=selection.declaration_id,
         )
         requirement_hints = _static_leg_requirement_hints(
             static_leg_contract_ir,
             currency=currency,
-            declaration_id=selection.declaration_id,
         )
         settlement_steps = _static_leg_settlement_steps(static_leg_contract_ir)
     except (NotImplementedError, UnsupportedExecutionSemantics) as exc:
@@ -562,8 +560,6 @@ def _static_leg_execution_events(
 def _static_leg_execution_observables(
     contract: object,
     currency: str,
-    *,
-    declaration_id: str,
 ) -> tuple[object, ...]:
     from trellis.agent.static_leg_contract import (
         ConditionalAccrualLeg,
@@ -595,9 +591,7 @@ def _static_leg_execution_observables(
                     metadata={"rate_index": index_name},
                 )
             ]
-            if declaration_id == "static_leg_coupon_obligations" and any(
-                period.fixing_date is not None for period in leg.coupon_periods
-            ):
+            if any(period.fixing_date is not None for period in leg.coupon_periods):
                 floating_observables.append(
                     ObservableBinding(
                         observable_id=f"fixing_history:{index_name}",
@@ -666,7 +660,6 @@ def _static_leg_requirement_hints(
     contract: object,
     *,
     currency: str,
-    declaration_id: str,
 ) -> RequirementHints:
     from trellis.agent.static_leg_contract import (
         ConditionalAccrualLeg,
@@ -684,9 +677,7 @@ def _static_leg_requirement_hints(
         if isinstance(leg, CouponLeg) and isinstance(leg.coupon_formula, FloatingCouponFormula):
             index_name = _rate_index_identifier(leg.coupon_formula.rate_index)
             market_inputs.add(f"forward_curve:{index_name}")
-            if declaration_id == "static_leg_coupon_obligations" and any(
-                period.fixing_date is not None for period in leg.coupon_periods
-            ):
+            if any(period.fixing_date is not None for period in leg.coupon_periods):
                 market_inputs.add(f"fixing_history:{index_name}")
             timeline_roles.add("fixing_dates")
         if isinstance(leg, PeriodRateOptionStripLeg):

@@ -50,6 +50,7 @@ def _market_state() -> MarketState:
             "discount_curve": "usd_ois",
             "forecast_curve": "SOFR",
         },
+        fixing_histories={"SOFR": {}},
     )
 
 
@@ -196,8 +197,18 @@ def test_fixed_float_swap_execution_ir_compiles_to_factor_state_simulation_ir():
     assert family_ir.route_family == "simulation"
     assert family_ir.product_instrument == "interest_rate_swap"
     assert family_ir.payoff_family == "conditional_valuation"
-    assert family_ir.required_input_ids == ("discount_curve:USD", "forward_curve:SOFR")
-    assert family_ir.market_data_requirements == frozenset({"discount_curve:USD", "forward_curve:SOFR"})
+    assert family_ir.required_input_ids == (
+        "discount_curve:USD",
+        "fixing_history:SOFR",
+        "forward_curve:SOFR",
+    )
+    assert family_ir.market_data_requirements == frozenset(
+        {
+            "discount_curve:USD",
+            "fixing_history:SOFR",
+            "forward_curve:SOFR",
+        }
+    )
     assert family_ir.state_spec.dimension == 1
     assert family_ir.state_spec.state_layout == "scalar"
     assert family_ir.factor_names == ("short_rate",)
@@ -205,6 +216,7 @@ def test_fixed_float_swap_execution_ir_compiles_to_factor_state_simulation_ir():
     assert family_ir.projection_spec.projection_family == "hull_white_1f_rate_projection"
     assert family_ir.observation_program.observable_ids == (
         "discount_curve:USD",
+        "fixing_history:SOFR",
         "forward_curve:SOFR",
     )
     assert family_ir.observation_program.terminal_value_symbol == "clean_future_value"
