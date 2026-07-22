@@ -190,7 +190,7 @@ normalization, package result cardinality, and support closeout.
 | `QUA-1229` | Done | cap/floor mapping extraction | `QUA-1226` |
 | `QUA-1228` | Done | swaption mapping extraction | `QUA-1226`, `QUA-1227` |
 | `QUA-1230` | Done | facade and modularity closeout | `QUA-1227`, `QUA-1228`, `QUA-1229` |
-| `QUA-1222` | Backlog | reusable irregular-period static coupon execution | none |
+| `QUA-1222` | In Progress | reusable irregular-period static coupon execution | none |
 | `QUA-1223` | Backlog | bounded basis-swap normalization | `QUA-1220` |
 | `QUA-1224` | Backlog | bounded irregular schedule normalization | `QUA-1220`, `QUA-1222` |
 | `QUA-1221` | Backlog | document/package/trade result axes | `QUA-1220` |

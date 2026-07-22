@@ -1048,6 +1048,17 @@ def _compile_static_leg_admission_blockers(static_leg_contract_ir):
 
     if static_leg_contract_ir is None:
         return ()
+    from trellis.agent.static_leg_contract import CouponLeg
+
+    if any(
+        isinstance(getattr(signed_leg, "leg", None), CouponLeg)
+        for signed_leg in getattr(static_leg_contract_ir, "legs", ()) or ()
+    ):
+        from trellis.agent.static_leg_admission import (
+            static_coupon_obligation_admission_blockers,
+        )
+
+        return static_coupon_obligation_admission_blockers(static_leg_contract_ir)
     if not _is_range_accrual_static_leg_contract_ir(static_leg_contract_ir):
         return ()
 

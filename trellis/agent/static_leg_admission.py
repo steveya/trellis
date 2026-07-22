@@ -8,6 +8,7 @@ from importlib import import_module
 from typing import Callable
 
 from trellis.conventions.day_count import DayCountConvention
+from trellis.core.date_utils import build_payment_timeline
 from trellis.core.types import Frequency
 from trellis.instruments.swap import SwapSpec
 from trellis.agent.static_leg_contract import (
@@ -77,8 +78,10 @@ def _is_fixed_float_swap(contract: StaticLegContractIR) -> bool:
     if not all(isinstance(signed_leg.leg, CouponLeg) for signed_leg in contract.legs):
         return False
     formulas = [signed_leg.leg.coupon_formula for signed_leg in contract.legs]
-    return any(isinstance(formula, FixedCouponFormula) for formula in formulas) and any(
-        isinstance(formula, FloatingCouponFormula) for formula in formulas
+    return (
+        any(isinstance(formula, FixedCouponFormula) for formula in formulas)
+        and any(isinstance(formula, FloatingCouponFormula) for formula in formulas)
+        and not static_coupon_obligation_admission_blockers(contract)
     )
 
 
@@ -99,7 +102,7 @@ def _is_basis_swap(contract: StaticLegContractIR) -> bool:
         formula = leg.coupon_formula
         if not isinstance(formula.rate_index, (OvernightRateIndex, TermRateIndex)):
             return False
-    return True
+    return not static_coupon_obligation_admission_blockers(contract)
 
 
 def _is_fixed_coupon_bond(contract: StaticLegContractIR) -> bool:
@@ -116,7 +119,11 @@ def _is_fixed_coupon_bond(contract: StaticLegContractIR) -> bool:
         isinstance(signed_leg.leg, KnownCashflowLeg)
         for signed_leg in contract.legs
     )
-    return has_fixed_coupon_leg and has_redemption_leg
+    return (
+        has_fixed_coupon_leg
+        and has_redemption_leg
+        and not static_coupon_obligation_admission_blockers(contract)
+    )
 
 
 def _is_period_rate_option_strip(contract: StaticLegContractIR) -> bool:
@@ -239,6 +246,202 @@ def _admission_blocker(
         reason=reason,
         required_ticket=required_ticket,
     )
+
+
+def static_coupon_obligation_admission_blockers(
+    contract: StaticLegContractIR,
+) -> tuple[StaticLegAdmissionBlocker, ...]:
+    """Return exact blockers for bounded explicit coupon obligations."""
+
+    coupon_legs = tuple(
+        signed_leg.leg
+        for signed_leg in contract.legs
+        if isinstance(signed_leg.leg, CouponLeg)
+    )
+    if not coupon_legs:
+        return ()
+
+    blockers: list[StaticLegAdmissionBlocker] = []
+    if any(
+        not isinstance(signed_leg.leg, (CouponLeg, KnownCashflowLeg))
+        for signed_leg in contract.legs
+    ):
+        blockers.append(
+            _admission_blocker(
+                "static_coupon_obligation_extra_leg_unsupported",
+                "Explicit coupon execution admits coupon legs and known cashflows only.",
+            )
+        )
+
+    currencies = set(contract.currencies)
+    if len(currencies) != 1:
+        blockers.append(
+            _admission_blocker(
+                "static_coupon_obligation_single_currency_required",
+                "Explicit coupon execution requires one contract currency.",
+            )
+        )
+    if contract.settlement.settlement_kind != "cash":
+        blockers.append(
+            _admission_blocker(
+                "static_coupon_obligation_cash_settlement_required",
+                "Explicit coupon execution admits cash settlement only.",
+            )
+        )
+    if contract.settlement.settlement_lag_days != 0:
+        blockers.append(
+            _admission_blocker(
+                "static_coupon_obligation_zero_settlement_lag_required",
+                "Coupon payment dates must include settlement lag explicitly.",
+            )
+        )
+
+    for leg in coupon_legs:
+        steps = tuple(leg.notional_schedule.steps)
+        if len(steps) != 1:
+            blockers.append(
+                _admission_blocker(
+                    "static_coupon_obligation_constant_notional_required",
+                    "Explicit coupon execution requires one constant notional step per leg.",
+                )
+            )
+        else:
+            step = steps[0]
+            first_period = leg.coupon_periods[0]
+            last_period = leg.coupon_periods[-1]
+            if float(step.amount) <= 0.0:
+                blockers.append(
+                    _admission_blocker(
+                        "static_coupon_obligation_positive_notional_required",
+                        "Explicit coupon execution requires positive notionals.",
+                    )
+                )
+            if (
+                step.start_date > first_period.accrual_start
+                or step.end_date < last_period.accrual_end
+            ):
+                blockers.append(
+                    _admission_blocker(
+                        "static_coupon_obligation_notional_coverage_required",
+                        "The constant notional step must cover every explicit coupon period.",
+                    )
+                )
+
+        try:
+            _day_count_enum(leg.day_count)
+        except NotImplementedError:
+            blockers.append(
+                _admission_blocker(
+                    "static_coupon_obligation_day_count_unsupported",
+                    f"Unsupported explicit coupon day count {leg.day_count!r}.",
+                )
+            )
+
+        formula = leg.coupon_formula
+        if isinstance(formula, FixedCouponFormula):
+            continue
+        if not isinstance(formula, FloatingCouponFormula):
+            blockers.append(
+                _admission_blocker(
+                    "static_coupon_obligation_formula_unsupported",
+                    "Explicit coupon execution admits fixed and floating coupon formulas only.",
+                )
+            )
+            continue
+        index = formula.rate_index
+        if isinstance(index, TermRateIndex):
+            continue
+        if isinstance(index, OvernightRateIndex):
+            if index.compounding != "simple":
+                blockers.append(
+                    _admission_blocker(
+                        "static_coupon_obligation_simple_overnight_required",
+                        "Overnight coupon execution currently admits simple period rates only.",
+                    )
+                )
+            continue
+        blockers.append(
+            _admission_blocker(
+                "static_coupon_obligation_rate_index_unsupported",
+                "Explicit floating coupons require a term or overnight rate index.",
+            )
+        )
+
+    unique: dict[str, StaticLegAdmissionBlocker] = {}
+    for blocker in blockers:
+        unique.setdefault(blocker.blocker_id, blocker)
+    return tuple(unique.values())
+
+
+def _coupon_leg_requires_explicit_period_execution(leg: CouponLeg) -> bool:
+    try:
+        timeline = build_payment_timeline(
+            leg.coupon_periods[0].accrual_start,
+            leg.coupon_periods[-1].accrual_end,
+            _frequency_enum(leg.payment_frequency),
+            day_count=_day_count_enum(leg.day_count),
+        )
+    except (NotImplementedError, ValueError):
+        return True
+
+    explicit_periods = tuple(
+        (period.accrual_start, period.accrual_end, period.payment_date)
+        for period in leg.coupon_periods
+    )
+    regular_periods = tuple(
+        (period.start_date, period.end_date, period.payment_date)
+        for period in timeline.periods
+    )
+    if explicit_periods != regular_periods:
+        return True
+    if isinstance(leg.coupon_formula, FloatingCouponFormula):
+        return any(
+            period.fixing_date is not None
+            and period.fixing_date != period.accrual_start
+            for period in leg.coupon_periods
+        )
+    return False
+
+
+def _is_explicit_coupon_obligation_contract(contract: StaticLegContractIR) -> bool:
+    if static_coupon_obligation_admission_blockers(contract):
+        return False
+    coupon_legs = tuple(
+        signed_leg.leg
+        for signed_leg in contract.legs
+        if isinstance(signed_leg.leg, CouponLeg)
+    )
+    if not coupon_legs or not all(
+        isinstance(signed_leg.leg, (CouponLeg, KnownCashflowLeg))
+        for signed_leg in contract.legs
+    ):
+        return False
+    if _is_basis_swap(contract):
+        return False
+    if _is_fixed_float_swap(contract):
+        return any(
+            _coupon_leg_requires_explicit_period_execution(leg)
+            for leg in coupon_legs
+        )
+    if _is_fixed_coupon_bond(contract):
+        return any(
+            _coupon_leg_requires_explicit_period_execution(leg)
+            for leg in coupon_legs
+        )
+    return True
+
+
+def _coupon_obligation_required_capabilities(
+    contract: StaticLegContractIR,
+) -> tuple[str, ...]:
+    capabilities = ["discount_curve"]
+    if any(
+        isinstance(signed_leg.leg, CouponLeg)
+        and isinstance(signed_leg.leg.coupon_formula, FloatingCouponFormula)
+        for signed_leg in contract.legs
+    ):
+        capabilities.append("forward_curve")
+    return tuple(capabilities)
 
 
 def _observable_support_admission_blockers(
@@ -614,6 +817,24 @@ def _basis_swap_adapter(
     }
 
 
+def _coupon_obligation_execution_adapter(
+    contract: StaticLegContractIR,
+    *,
+    normalized_terms: Mapping[str, object] | None = None,
+) -> dict[str, object]:
+    from trellis.execution import compile_static_leg_execution_ir
+
+    call_kwargs: dict[str, object] = {
+        "execution_ir": compile_static_leg_execution_ir(
+            contract,
+            fail_on_unsupported=True,
+        )
+    }
+    if normalized_terms:
+        call_kwargs["execution_terms"] = dict(normalized_terms)
+    return {"call_kwargs": call_kwargs}
+
+
 def _period_rate_option_strip_call_kwargs(
     contract: StaticLegContractIR,
     *,
@@ -794,6 +1015,20 @@ def _unimplemented_static_leg_materialization(
 
 _DECLARATIONS = (
     StaticLegLoweringDeclaration(
+        declaration_id="static_leg_coupon_obligations",
+        matcher=_is_explicit_coupon_obligation_contract,
+        callable_ref="trellis.core.payoff.ExecutionBackedPayoff",
+        adapter_ref=(
+            "trellis.agent.static_leg_admission._coupon_obligation_execution_adapter"
+        ),
+        validation_bundle_id="static_coupon_obligation_execution_v1",
+        helper_refs=(
+            "trellis.execution.compile_static_leg_execution_ir",
+            "trellis.execution.price_static_leg_execution_ir",
+        ),
+        precedence=40,
+    ),
+    StaticLegLoweringDeclaration(
         declaration_id="static_leg_range_accrual_discounted",
         matcher=_is_conditional_range_accrual,
         callable_ref="trellis.models.range_accrual.price_range_accrual",
@@ -889,6 +1124,12 @@ def select_static_leg_lowering(
         )
     ]
     if not matches:
+        coupon_blockers = static_coupon_obligation_admission_blockers(contract_ir)
+        if coupon_blockers:
+            details = "; ".join(
+                f"{blocker.blocker_id}: {blocker.reason}" for blocker in coupon_blockers
+            )
+            raise StaticLegLoweringNoMatchError(details)
         raise StaticLegLoweringNoMatchError(
             "No admissible static-leg lowering declaration was found."
         )
@@ -899,12 +1140,15 @@ def select_static_leg_lowering(
             f"Multiple static-leg lowering declarations remained admissible: {[item.declaration_id for item in top]}"
         )
     chosen = top[0]
+    required_capabilities = chosen.required_capabilities
+    if chosen.declaration_id == "static_leg_coupon_obligations":
+        required_capabilities = _coupon_obligation_required_capabilities(contract_ir)
     return StaticLegLoweringSelection(
         declaration_id=chosen.declaration_id,
         callable_ref=chosen.callable_ref,
         adapter_ref=chosen.adapter_ref,
         validation_bundle_id=chosen.validation_bundle_id,
-        required_capabilities=chosen.required_capabilities,
+        required_capabilities=required_capabilities,
         cashflow_engine_refs=chosen.cashflow_engine_refs,
         helper_refs=chosen.helper_refs,
         method=normalized_method or (chosen.supported_methods[0] if chosen.supported_methods else None),
@@ -944,4 +1188,5 @@ __all__ = [
     "default_static_leg_lowering_declarations",
     "materialize_static_leg_lowering",
     "select_static_leg_lowering",
+    "static_coupon_obligation_admission_blockers",
 ]

@@ -244,6 +244,19 @@ def _validate_static_leg_execution_terms(contract: object, declaration_id: str) 
         KnownCashflowLeg,
     )
 
+    if declaration_id == "static_leg_coupon_obligations":
+        from trellis.agent.static_leg_admission import (
+            static_coupon_obligation_admission_blockers,
+        )
+
+        blockers = static_coupon_obligation_admission_blockers(contract)
+        if blockers:
+            details = "; ".join(
+                f"{blocker.blocker_id}: {blocker.reason}" for blocker in blockers
+            )
+            raise UnsupportedExecutionSemantics(details)
+        return
+
     if declaration_id == "static_leg_fixed_float_swap":
         notionals = tuple(
             _constant_notional(signed_leg.leg)
@@ -369,7 +382,6 @@ def _conditional_range_accrual_execution_obligation(contract: object) -> Conditi
     from trellis.agent.static_leg_contract import (
         ConditionalAccrualLeg,
         FixedCouponFormula,
-        KnownCashflowLeg,
     )
 
     signed_leg = next(

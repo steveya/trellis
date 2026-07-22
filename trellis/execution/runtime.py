@@ -267,10 +267,12 @@ def _price_coupon_leg(
     total = 0.0
     for period in periods:
         accrual_start, accrual_end, payment_date, fixing_date = period
-        del fixing_date
         if payment_date <= market_state.settlement:
             continue
-        if ir.source_track.product_family == "fixed_coupon_bond" and formula_kind == "fixed":
+        if (
+            ir.source_track.product_family == "fixed_coupon_bond"
+            and formula_kind == "fixed"
+        ):
             accrual = 1.0 / _frequency_per_year(metadata.get("payment_frequency"))
         else:
             accrual = year_fraction(accrual_start, accrual_end, day_count)
@@ -279,25 +281,40 @@ def _price_coupon_leg(
             rate = float(metadata["fixed_rate"])
         elif formula_kind == "floating":
             rate_index = str(metadata.get("rate_index") or "")
-            forward_curve = market_state.forecast_forward_curve(rate_index or None)
-            time_based_forward_day_count = (
-                DayCountConvention.ACT_365
-                if ir.source_track.product_family == "basis_swap"
-                else day_count
-            )
-            forward_rate_dates = getattr(forward_curve, "forward_rate_dates", None)
-            if callable(forward_rate_dates):
-                try:
-                    # Date-aware checked rate helpers use the leg accrual day count.
-                    # The basis-swap ACT/365 override matches their time-based fallback.
-                    forward = float(
-                        forward_rate_dates(
+            if fixing_date is not None and fixing_date < market_state.settlement:
+                forward = _required_historical_fixing(
+                    market_state,
+                    rate_index=rate_index,
+                    fixing_date=fixing_date,
+                )
+            else:
+                forward_curve = market_state.forecast_forward_curve(rate_index or None)
+                time_based_forward_day_count = (
+                    DayCountConvention.ACT_365
+                    if ir.source_track.product_family == "basis_swap"
+                    else day_count
+                )
+                forward_rate_dates = getattr(forward_curve, "forward_rate_dates", None)
+                if callable(forward_rate_dates):
+                    try:
+                        # Date-aware checked rate helpers use the leg accrual day count.
+                        # The basis-swap ACT/365 override matches their time-based fallback.
+                        forward = float(
+                            forward_rate_dates(
+                                accrual_start,
+                                accrual_end,
+                                day_count=day_count,
+                            )
+                        )
+                    except AttributeError:
+                        forward = _forward_rate_by_time(
+                            forward_curve,
+                            market_state,
                             accrual_start,
                             accrual_end,
-                            day_count=day_count,
+                            day_count=time_based_forward_day_count,
                         )
-                    )
-                except AttributeError:
+                else:
                     forward = _forward_rate_by_time(
                         forward_curve,
                         market_state,
@@ -305,25 +322,43 @@ def _price_coupon_leg(
                         accrual_end,
                         day_count=time_based_forward_day_count,
                     )
-            else:
-                forward = _forward_rate_by_time(
-                    forward_curve,
-                    market_state,
-                    accrual_start,
-                    accrual_end,
-                    day_count=time_based_forward_day_count,
-                )
-            rate = float(metadata.get("gearing", 1.0)) * forward + float(metadata.get("spread", 0.0))
+            rate = float(metadata.get("gearing", 1.0)) * forward + float(
+                metadata.get("spread", 0.0)
+            )
         else:
             raise ValueError(f"Unsupported coupon formula kind {formula_kind!r}")
 
         discount_day_count = _discount_day_count(ir, fallback=day_count)
-        total += sign * notional * rate * accrual * _discount_factor(
-            market_state,
-            payment_date,
-            day_count=discount_day_count,
+        total += (
+            sign
+            * notional
+            * rate
+            * accrual
+            * _discount_factor(
+                market_state,
+                payment_date,
+                day_count=discount_day_count,
+            )
         )
     return float(total)
+
+
+def _required_historical_fixing(
+    market_state: MarketState,
+    *,
+    rate_index: str,
+    fixing_date: date,
+) -> float:
+    histories = market_state.fixing_histories or {}
+    keys = tuple(dict.fromkeys((rate_index, *_rate_index_lookup_keys(rate_index))))
+    for key in keys:
+        history = histories.get(key)
+        if history is not None and fixing_date in history:
+            return float(history[fixing_date])
+    raise ValueError(
+        "Floating coupon requires historical fixing "
+        f"{rate_index!r} on {fixing_date.isoformat()}."
+    )
 
 
 def _price_period_rate_option_strip(

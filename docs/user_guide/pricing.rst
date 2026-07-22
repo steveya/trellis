@@ -106,8 +106,10 @@ party. Amortizing, compounding, stubbed, cross-currency, lifecycle-rich, and
 other unsupported trades remain blocked, as do end-of-month rolls and
 unclassified vendor extension elements. Pricing also requires a deterministic
 valuation date and rejects unpaid floating coupons that already require a
-historical fixing, because the current static-leg runtime does not consume that
-fixing history. Cash-settled, Bermudan/American, straddle, partial-exercise,
+historical fixing. The reusable static-leg execution runtime can consume such
+fixings for explicit coupon obligations, but the bounded FpML mapper does not
+yet admit seasoned or irregular imported schedules into that lane.
+Cash-settled, Bermudan/American, straddle, partial-exercise,
 and unsettled-premium swaptions remain blocked. A historical settled premium is
 reported separately and is not included in the option value or route identity.
 Cap/floor collars, stepped strikes, spreads, nonunit gearing, averaging,

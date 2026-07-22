@@ -196,6 +196,7 @@ surface for this track.
 
 The current declarations are:
 
+- ``static_leg_coupon_obligations``
 - ``static_leg_fixed_float_swap``
 - ``static_leg_period_rate_option_strip_analytical``
 - ``static_leg_period_rate_option_strip_monte_carlo``
@@ -205,12 +206,24 @@ The current declarations are:
 
 All of those declarations can now materialize checked repository engines:
 
+- explicit fixed/floating coupon obligations ->
+  ``trellis.core.payoff.ExecutionBackedPayoff`` over compiled execution IR
 - fixed-float IRS -> ``trellis.instruments.swap.SwapPayoff`` via ``SwapSpec``
 - scheduled rate-option strips -> ``trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical``
 - scheduled rate-option strips -> ``trellis.models.rate_cap_floor.price_rate_cap_floor_strip_monte_carlo``
 - float-float basis swaps -> ``trellis.models.rate_basis_swap.price_rate_basis_swap``
 - fixed coupon bond -> ``trellis.instruments.bond.Bond`` kwargs
 - single-index range accrual -> ``trellis.models.range_accrual.price_range_accrual``
+
+The generic coupon-obligation declaration is structural rather than
+product-specific. It is selected when explicit coupon periods or fixing dates
+would be changed by a regular product adapter. The first admitted slice
+preserves each accrual start, accrual end, fixing date, and payment date and
+prices fixed coupons or simple term/overnight floating coupons directly from
+the execution IR. It remains bounded to one currency, cash settlement with no
+additional lag, one positive constant notional step per leg, and supported day
+counts. A fixing strictly before settlement is historical and must be present
+in ``MarketState.fixing_histories``; a fixing on settlement remains projected.
 
 Range-accrual admission is intentionally exact. The checked declaration
 admits only a receive-side ``ConditionalAccrualLeg`` with fixed coupon,
@@ -221,6 +234,9 @@ and at most one receive-side maturity principal cashflow.
 Unsupported neighbors produce ``StaticLegAdmissionBlocker`` records rather
 than falling through to the checked route. Current blocker ids include:
 
+- ``static_coupon_obligation_constant_notional_required``
+- ``static_coupon_obligation_simple_overnight_required``
+- ``static_coupon_obligation_formula_unsupported``
 - ``conditional_range_accrual_callability_pending``
 - ``conditional_range_accrual_interruption_state_pending``
 - ``conditional_range_accrual_barrier_state_pending``
@@ -272,8 +288,11 @@ The first visitor/runtime set is intentionally small:
 
 This runtime is still a checked static proving lane, but the admitted
 cap/floor ``_agent`` wrappers now use it as thin compatibility shells.
-Richer static-leg wrapper families and generic dynamic-wrapper execution
-remain later work.
+The exact-period coupon lane no longer needs a derivative-specific helper: it
+executes the generic coupon obligations already present in the IR. Scheduled
+notionals, compounded overnight coupons, unsupported formula nodes, and generic
+dynamic-wrapper execution remain later work and fail closed before route
+selection.
 
 The checked single-index range-accrual route now has both static-leg admission
 and execution-IR repricing. It binds ``ConditionalAccrualLeg`` evidence to a

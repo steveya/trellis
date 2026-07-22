@@ -169,7 +169,7 @@ class KnownCashflowObligation:
 
 @dataclass(frozen=True)
 class CouponLegExecution:
-    """Placeholder for a future lowered coupon-leg execution program."""
+    """Exact-period execution obligation for one fixed or floating coupon leg."""
 
     obligation_id: str
     leg_id: str = ""
