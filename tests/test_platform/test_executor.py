@@ -166,6 +166,69 @@ def test_execute_compiled_request_prices_normalized_fpml_swaption():
     assert result.audit_summary["adapter"] == "normalized_execution_payoff"
 
 
+def test_execute_compiled_request_prices_signed_normalized_fpml_cap_floor():
+    from pathlib import Path
+
+    from trellis.agent.platform_requests import (
+        compile_platform_request,
+        make_fpml_request,
+    )
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.vol_surface import FlatVol
+    from trellis.platform.executor import execute_compiled_request
+    from trellis.session import Session
+
+    fixture = (
+        Path(__file__).parents[1]
+        / "test_io"
+        / "fixtures"
+        / "fpml"
+        / "confirmation_5_13_cap_floor.xml"
+    )
+    session = Session(
+        curve=YieldCurve.flat(0.035),
+        settlement=date(2025, 1, 15),
+        vol_surface=FlatVol(0.20),
+        forecast_curves={"USD-SOFR-3M": YieldCurve.flat(0.038)},
+    )
+
+    def execute_for(party_id):
+        compiled = compile_platform_request(
+            make_fpml_request(
+                fixture.read_bytes(),
+                source_view="confirmation",
+                source_version="5-13",
+                trade_envelope=TradeEnvelope(
+                    source_format="fpml",
+                    source_view="confirmation",
+                    source_version="5-13",
+                    parties=(TradeParty(party_id, role="valuation_party"),),
+                ),
+                market_snapshot=session.market_snapshot,
+                settlement=date(2025, 1, 15),
+                measures=["price"],
+            )
+        )
+        return execute_compiled_request(
+            compiled,
+            session.to_execution_context(run_mode="sandbox"),
+        )
+
+    buyer = execute_for("PARTY-A")
+    seller = execute_for("PARTY-B")
+
+    assert buyer.status == "succeeded"
+    assert buyer.result_payload["price"] > 0.0
+    assert seller.status == "succeeded"
+    assert seller.result_payload["price"] == pytest.approx(
+        -buyer.result_payload["price"],
+        rel=1e-12,
+        abs=1e-8,
+    )
+    assert buyer.audit_summary["adapter"] == "normalized_execution_payoff"
+
+
 @pytest.mark.parametrize(
     ("request_type", "expected_outputs"),
     (

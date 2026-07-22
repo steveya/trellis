@@ -3,10 +3,10 @@ FpML Import And Normalization
 
 Trellis treats FpML as an explicit external contract source, not as its
 internal derivative representation. The executable surface is deliberately
-small: one FpML 5.13 confirmation-view ``dataDocument`` containing either one
-regular, single-currency, constant-notional fixed-float interest-rate swap or
-one physically settled European payer/receiver swaption on that same swap
-cohort.
+small: one FpML 5.13 confirmation-view ``dataDocument`` containing one regular,
+single-currency, constant-notional fixed-float interest-rate swap, one
+physically settled European payer/receiver swaption on that swap cohort, or one
+scheduled single-currency cap or floor strip.
 
 Lifecycle
 ---------
@@ -20,15 +20,16 @@ The governed request path is deterministic:
 3. ``inspect_fpml_document(...)`` applies the secure XML limits and extracts
    body-free document/trade identity.
 4. caller and document provenance are reconciled before economics are used.
-5. ``normalize_fpml_document(...)`` maps an admitted swap into
-   ``StaticLegContractIR`` or an admitted swaption into ``ContractIR`` with the
-   complete swap contract nested under ``underlying_contract``.
+5. ``normalize_fpml_document(...)`` maps an admitted swap or cap/floor into
+   ``StaticLegContractIR``, or an admitted swaption into ``ContractIR`` with
+   the complete swap contract nested under ``underlying_contract``.
 6. the ordinary structural selector chooses the existing static-leg or
    ContractIR declaration from normalized semantics.
 7. the generic ``ExecutionBackedPayoff`` or ``ContractIRPricingPayoff`` adapter
    prices through the shared ``price_normalized_payoff`` platform action.
 
-The FpML ``swap`` or ``swaption`` wrapper is only a normalizer dispatch fact.
+The FpML ``swap``, ``swaption``, or ``capFloor`` wrapper is only a normalizer
+dispatch fact.
 It does not select ``static_leg_fixed_float_swap``, the payer/receiver
 swaption declaration, a validation bundle, a model, or a solver. Those
 artifacts are selected from normalized structure.
@@ -48,6 +49,11 @@ normalizes its underlying swap from the buyer's perspective, preserving payer
 or receiver option orientation, and records the requested buyer/seller value
 as ``ContractIR.position = "long"`` or ``"short"``. Seller valuation therefore
 does not reverse the underlying swap or change the selected declaration.
+
+A cap or floor uses the ``buyer`` and ``seller`` roles on its strike schedule
+to identify the option position. The stream maps those ``Payer`` / ``Receiver``
+roles to document parties. Buyer valuation produces a receive-side strip;
+seller valuation preserves the same strip economics with a pay-side sign.
 
 A missing valuation party produces
 ``missing_contract_field:fpml_valuation_party_id``. A party that is not in the
@@ -103,10 +109,21 @@ the nested swap. The imported contract selects the existing resolved Black-76
 swaption declaration. No FpML-specific pricing helper, generated adapter, or
 cookbook route is introduced.
 
+The cap/floor cohort requires one complete ``capFloorStream``, exactly one
+constant ``capRateSchedule`` or ``floorRateSchedule``, explicit and opposite
+``Payer`` / ``Receiver`` buyer and seller roles, a positive constant notional,
+zero spread, unit gearing, and the same bounded regular term-index schedule
+discipline as the floating swap cohort. A cap maps to a call strip and a floor
+to a put strip. Both normalize directly to the existing
+``PeriodRateOptionStripLeg`` semantic contract and select the existing
+``static_leg_period_rate_option_strip_analytical`` declaration. No
+FpML-specific helper, generated adapter, cookbook, or route is introduced.
+
 A premium settled before the valuation date is reported separately in
-``FpMLImportReport.premium_metadata``. It is excluded from canonical contract
-identity and structural selection. An unsettled premium blocks pricing because
-the current normalized payoff path does not model that cashflow.
+``FpMLImportReport.premium_metadata`` for swaptions and cap/floors. It is
+excluded from canonical contract identity and structural selection. An
+unsettled premium blocks pricing because the current normalized payoff path
+does not model that cashflow.
 
 When FpML supplies an ``adjustedDate`` for an effective or termination date,
 the normalizer requires it to equal the date recomputed from the unadjusted
@@ -121,7 +138,9 @@ Unsupported amortization, compounding, stubs, cross-currency legs, stepped
 rates or spreads, mismatched schedules or notionals, non-term floating-rate
 forms, duplicate optional rate schedules, unpaid seasoned floating coupons,
 cash-settled, Bermudan, American, partial-exercise, automatic-exercise, or
-straddle swaptions, unsettled premiums,
+straddle swaptions, unsettled premiums, cap/floor collars, stepped strikes,
+nonzero cap/floor spreads, nonunit gearing, averaging, fixed coupons,
+additional payments, or early termination,
 document/package siblings, trade-level payments, duplicate roll declarations,
 fixed-leg reset schedules, initial-fixing overrides, mismatched counterparty
 pairs, end-of-month or clamped high-day rolls, foreign-namespaced extension
@@ -138,7 +157,8 @@ the caller can supply missing or disambiguating information.
 The importer is not a complete FpML schema validator. It supports one view,
 version, root, trade count, and bounded product cohorts; it does not claim
 package, lifecycle, recordkeeping, basis, cross-currency, OIS compounding,
-inflation, cash/Bermudan/American swaption, or cap/floor coverage.
+inflation, cash/Bermudan/American swaption, or cap/floor forms outside the
+scheduled constant-strike strip cohort.
 
 Identity And Provenance
 -----------------------

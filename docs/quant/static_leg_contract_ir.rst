@@ -69,10 +69,11 @@ and settlement terms. It excludes labels and metadata so source provenance,
 document identifiers, and adapter labels cannot change economic identity.
 
 The identity is intentionally product-neutral. The bounded FpML importer uses
-it to prove that an imported fixed-float swap and an equivalent native
-``StaticLegContractIR`` are the same economic position before both enter the
-ordinary structural selector. XML mapping provenance remains in
-``FpMLImportReport`` and never participates in identity or route selection.
+it to prove that an imported fixed-float swap or scheduled cap/floor strip and
+an equivalent native ``StaticLegContractIR`` are the same economic position
+before both enter the ordinary structural selector. XML mapping provenance
+remains in ``FpMLImportReport`` and never participates in identity or route
+selection.
 
 ``ConditionalAccrualLeg`` does not change that boundary. It represents an
 automatic scheduled coupon whose amount is gated by a predicate over observed
@@ -94,6 +95,11 @@ leg level:
 
 In other words, a schedule-driven cap or floor is represented here as a
 strip of period rate options rather than as a helper-shaped wrapper name.
+The bounded FpML mapping follows the same rule: ``capRateSchedule`` becomes a
+call strip, ``floorRateSchedule`` becomes a put strip, and strike-schedule
+buyer/seller roles determine the ``SignedLeg`` direction. XML product labels,
+party identifiers, and premium provenance do not create another semantic
+family or pricing route.
 
 Conditional Accrual Legs
 ------------------------
@@ -267,8 +273,10 @@ For the scheduled strip family, the lowering boundary is:
 - non-structural pricing knobs such as ``model`` / ``shift`` / ``sabr``
   arrive through the generic normalized-term surface rather than a
   wrapper route id
-- the current executable lane still assumes a single receive-side,
-  constant-notional strip, but that bounded family now does execute on
+- the current executable lane assumes a single signed, constant-notional strip;
+  receive-side materialization has multiplier ``+1`` and pay-side
+  materialization has multiplier ``-1``
+- that bounded family now executes on
   the fresh-build exact-binding path and has closed the `F003`-`F005`
   parity slice
 

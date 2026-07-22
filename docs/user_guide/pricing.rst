@@ -51,11 +51,11 @@ the scenes instead of defining a separate runtime path.
 Bounded FpML Rates Pricing
 --------------------------
 
-The internal platform request API can price two admitted FpML rates cohorts:
+The internal platform request API can price three admitted FpML rates cohorts:
 one FpML 5.13 confirmation ``dataDocument`` containing either a regular,
 single-currency, constant-notional fixed-float swap or a physically settled
-European payer/receiver swaption on that swap. The request must identify the
-party whose NPV is required:
+European payer/receiver swaption on that swap, or a regular single-currency
+cap or floor strip. The request must identify the party whose NPV is required:
 
 .. code-block:: python
 
@@ -90,9 +90,12 @@ party whose NPV is required:
 
 The compiler securely inspects the XML, reconciles document identity, and maps
 the economics to ``StaticLegContractIR`` or ``ContractIR`` with a complete
-nested swap. The swaption reuses the ordinary structural Black-76 path; it does
-not introduce an FpML-specific pricing helper. The compiler does not ask an LLM
-to interpret the XML or generate pricing code. Missing
+nested swap. The swaption reuses the ordinary structural Black-76 path. A cap
+or floor maps to the existing ``PeriodRateOptionStripLeg`` and its existing
+analytical declaration; buyer value is receive-side and seller value is the
+opposite signed result. Neither product introduces an FpML-specific pricing
+helper. The compiler does not ask an LLM to interpret the XML or generate
+pricing code. Missing
 valuation perspective returns a clarification blocker instead of choosing a
 party. Amortizing, compounding, stubbed, cross-currency, lifecycle-rich, and
 other unsupported trades remain blocked, as do end-of-month rolls and
@@ -102,6 +105,9 @@ historical fixing, because the current static-leg runtime does not consume that
 fixing history. Cash-settled, Bermudan/American, straddle, partial-exercise,
 and unsettled-premium swaptions remain blocked. A historical settled premium is
 reported separately and is not included in the option value or route identity.
+Cap/floor collars, stepped strikes, spreads, nonunit gearing, averaging,
+compounding, amortization, extra payments, early termination, and unsettled
+premiums remain blocked.
 This is bounded interoperability, not general FpML pricing coverage.
 
 The Payoff Framework

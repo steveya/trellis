@@ -18,6 +18,9 @@ NORMALIZABLE_FPML = (
 NORMALIZABLE_SWAPTION_FPML = (
     FPML_FIXTURES / "confirmation_5_13_european_swaption.xml"
 ).read_bytes()
+NORMALIZABLE_CAP_FLOOR_FPML = (
+    FPML_FIXTURES / "confirmation_5_13_cap_floor.xml"
+).read_bytes()
 
 
 def _blocker_ids(compiled) -> tuple[str, ...]:
@@ -248,6 +251,48 @@ def test_compile_fpml_european_swaption_uses_existing_contract_ir_route(monkeypa
         "structural_declaration_id": "swaption_payer_black76_resolved_kernel",
         "validation_bundle_id": "rate_style_swaption_contract",
         "callable_ref": "trellis.models.rate_style_swaption.price_swaption_black76_raw",
+        "mapping_provenance_count": len(compiled.import_report.mapping_provenance),
+    }
+
+
+def test_compile_fpml_cap_floor_uses_existing_static_strip_route(monkeypatch):
+    import trellis.agent.platform_requests as platform_requests
+    from trellis.agent.trade_envelope import TradeEnvelope, TradeParty
+    from trellis.core.payoff import ExecutionBackedPayoff
+
+    request = platform_requests.make_fpml_request(
+        NORMALIZABLE_CAP_FLOOR_FPML,
+        source_view="confirmation",
+        source_version="5-13",
+        trade_envelope=TradeEnvelope(
+            source_format="fpml",
+            source_view="confirmation",
+            source_version="5-13",
+            parties=(TradeParty("PARTY-A", role="valuation_party"),),
+        ),
+        settlement=date(2025, 1, 15),
+    )
+
+    def _unexpected(*args, **kwargs):
+        raise AssertionError("generic semantic text parsing must not run for FpML")
+
+    monkeypatch.setattr(platform_requests, "_draft_semantic_contract", _unexpected)
+    monkeypatch.setattr(platform_requests, "decompose_to_ir", _unexpected)
+
+    compiled = platform_requests.compile_platform_request(request)
+
+    assert compiled.execution_plan.action == "price_normalized_payoff"
+    assert compiled.execution_plan.route_method == "structural_execution_ir"
+    assert compiled.blocker_report is None
+    assert isinstance(compiled.request.instrument, ExecutionBackedPayoff)
+    assert compiled.request.metadata["external_contract"] == {
+        "source_format": "fpml",
+        "economic_identity": compiled.import_report.economic_identity,
+        "structural_declaration_id": "static_leg_period_rate_option_strip_analytical",
+        "validation_bundle_id": "static_leg_period_rate_option_strip_contract",
+        "callable_ref": (
+            "trellis.models.rate_cap_floor.price_rate_cap_floor_strip_analytical"
+        ),
         "mapping_provenance_count": len(compiled.import_report.mapping_provenance),
     }
 

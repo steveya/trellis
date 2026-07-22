@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<dataDocument
+    xmlns="http://www.fpml.org/FpML-5/confirmation"
+    fpmlVersion="5-13"
+    id="DOC-CAP-001">
+  <trade id="TRADE-ELEMENT-CAP-001">
+    <tradeHeader>
+      <partyTradeIdentifier>
+        <partyReference href="PARTY-A" />
+        <tradeId tradeIdScheme="urn:trellis:test:trade-id">CAP-001</tradeId>
+      </partyTradeIdentifier>
+      <tradeDate>2025-01-15</tradeDate>
+    </tradeHeader>
+    <capFloor id="CAP-001">
+      <capFloorStream id="CAP-STREAM-001">
+        <payerPartyReference href="PARTY-A" />
+        <receiverPartyReference href="PARTY-B" />
+        <calculationPeriodDates id="CAP-CALC-DATES">
+          <effectiveDate>
+            <unadjustedDate>2025-06-30</unadjustedDate>
+            <dateAdjustments>
+              <businessDayConvention>NONE</businessDayConvention>
+            </dateAdjustments>
+          </effectiveDate>
+          <terminationDate>
+            <unadjustedDate>2027-06-30</unadjustedDate>
+            <dateAdjustments>
+              <businessDayConvention>NONE</businessDayConvention>
+            </dateAdjustments>
+          </terminationDate>
+          <calculationPeriodDatesAdjustments>
+            <businessDayConvention>NONE</businessDayConvention>
+          </calculationPeriodDatesAdjustments>
+          <calculationPeriodFrequency>
+            <periodMultiplier>3</periodMultiplier>
+            <period>M</period>
+            <rollConvention>30</rollConvention>
+          </calculationPeriodFrequency>
+        </calculationPeriodDates>
+        <paymentDates>
+          <calculationPeriodDatesReference href="CAP-CALC-DATES" />
+          <paymentFrequency>
+            <periodMultiplier>3</periodMultiplier>
+            <period>M</period>
+          </paymentFrequency>
+          <payRelativeTo>CalculationPeriodEndDate</payRelativeTo>
+          <paymentDatesAdjustments>
+            <businessDayConvention>NONE</businessDayConvention>
+          </paymentDatesAdjustments>
+        </paymentDates>
+        <resetDates id="CAP-RESET-DATES">
+          <calculationPeriodDatesReference href="CAP-CALC-DATES" />
+          <resetRelativeTo>CalculationPeriodStartDate</resetRelativeTo>
+          <fixingDates>
+            <periodMultiplier>0</periodMultiplier>
+            <period>D</period>
+            <dayType>Calendar</dayType>
+            <businessDayConvention>NONE</businessDayConvention>
+            <dateRelativeTo href="CAP-RESET-DATES" />
+          </fixingDates>
+          <resetFrequency>
+            <periodMultiplier>3</periodMultiplier>
+            <period>M</period>
+          </resetFrequency>
+          <resetDatesAdjustments>
+            <businessDayConvention>NONE</businessDayConvention>
+          </resetDatesAdjustments>
+        </resetDates>
+        <calculationPeriodAmount>
+          <calculation>
+            <notionalSchedule>
+              <notionalStepSchedule>
+                <initialValue>1000000</initialValue>
+                <currency>USD</currency>
+              </notionalStepSchedule>
+            </notionalSchedule>
+            <floatingRateCalculation>
+              <floatingRateIndex>USD-SOFR</floatingRateIndex>
+              <indexTenor>
+                <periodMultiplier>3</periodMultiplier>
+                <period>M</period>
+              </indexTenor>
+              <capRateSchedule>
+                <initialValue>0.04</initialValue>
+                <buyer>Payer</buyer>
+                <seller>Receiver</seller>
+              </capRateSchedule>
+            </floatingRateCalculation>
+            <dayCountFraction>ACT/360</dayCountFraction>
+          </calculation>
+        </calculationPeriodAmount>
+      </capFloorStream>
+    </capFloor>
+  </trade>
+  <party id="PARTY-A">
+    <partyId partyIdScheme="urn:trellis:test:party-id">PARTY-A-ID</partyId>
+  </party>
+  <party id="PARTY-B">
+    <partyId partyIdScheme="urn:trellis:test:party-id">PARTY-B-ID</partyId>
+  </party>
+</dataDocument>
