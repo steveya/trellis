@@ -185,7 +185,7 @@ normalization, package result cardinality, and support closeout.
 | `QUA-1216` | In Progress | expansion umbrella for FPI.2 through FPI.4 | `QUA-1207` |
 | `QUA-1217` | In Progress | FPI.2 rates and package umbrella | `QUA-1207` |
 | `QUA-1220` | In Progress | modular normalizer umbrella | `QUA-1207` |
-| `QUA-1226` | In Progress | shared parsing and stream-normalization boundary | `QUA-1207` |
+| `QUA-1226` | Done | shared parsing and stream-normalization boundary | `QUA-1207` |
 | `QUA-1227` | Backlog | fixed-float swap mapping extraction | `QUA-1226` |
 | `QUA-1229` | Backlog | cap/floor mapping extraction | `QUA-1226` |
 | `QUA-1228` | Backlog | swaption mapping extraction | `QUA-1226`, `QUA-1227` |
