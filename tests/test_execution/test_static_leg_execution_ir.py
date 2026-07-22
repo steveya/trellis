@@ -558,6 +558,75 @@ def test_irregular_floating_coupon_uses_required_historical_fixing():
     )
 
 
+def test_irregular_fixed_bond_uses_exact_stub_accruals():
+    contract = _fixed_coupon_bond()
+    coupon_leg, redemption_leg = contract.legs
+    irregular_periods = _periods(
+        ("2025-01-15", "2025-08-15"),
+        ("2025-08-15", "2026-01-15"),
+        ("2026-01-15", "2026-07-15"),
+        ("2026-07-15", "2027-01-15"),
+    )
+    contract = replace(
+        contract,
+        legs=(
+            replace(
+                coupon_leg,
+                leg=replace(coupon_leg.leg, coupon_periods=irregular_periods),
+            ),
+            redemption_leg,
+        ),
+    )
+    market = _market_state()
+
+    ir = compile_static_leg_execution_ir(contract, fail_on_unsupported=True)
+    price = price_static_leg_execution_ir(ir, market)
+
+    coupon_pv = sum(
+        1_000_000.0
+        * 0.05
+        * year_fraction(
+            period.accrual_start,
+            period.accrual_end,
+            DayCountConvention.ACT_ACT,
+        )
+        * market.discount.discount(
+            year_fraction(
+                market.settlement,
+                period.payment_date,
+                DayCountConvention.ACT_ACT,
+            )
+        )
+        for period in irregular_periods
+    )
+    principal_pv = 1_000_000.0 * market.discount.discount(
+        year_fraction(
+            market.settlement,
+            date(2027, 1, 15),
+            DayCountConvention.ACT_ACT,
+        )
+    )
+    regular_frequency_shortcut = sum(
+        1_000_000.0
+        * 0.05
+        * 0.5
+        * market.discount.discount(
+            year_fraction(
+                market.settlement,
+                period.payment_date,
+                DayCountConvention.ACT_ACT,
+            )
+        )
+        for period in irregular_periods
+    ) + principal_pv
+
+    assert dict(ir.source_track.source_metadata)[
+        "static_leg_lowering_declaration_id"
+    ] == "static_leg_coupon_obligations"
+    assert price == pytest.approx(coupon_pv + principal_pv, rel=1e-12, abs=1e-8)
+    assert price != pytest.approx(regular_frequency_shortcut, rel=1e-10, abs=1e-6)
+
+
 def test_static_leg_compile_emits_conditional_accrual_execution_ir_for_range_accrual():
     ir = compile_static_leg_execution_ir(_range_accrual_contract())
 

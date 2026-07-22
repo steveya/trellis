@@ -264,15 +264,18 @@ def _price_coupon_leg(
     formula_kind = str(metadata.get("formula_kind") or "")
     day_count = _day_count(metadata.get("day_count"))
     periods = tuple(metadata.get("periods") or ())
+    source_metadata = _metadata_dict(ir.source_track.source_metadata)
+    uses_regular_bond_accrual = (
+        ir.source_track.product_family == "fixed_coupon_bond"
+        and source_metadata.get("static_leg_lowering_declaration_id")
+        == "static_leg_fixed_coupon_bond"
+    )
     total = 0.0
     for period in periods:
         accrual_start, accrual_end, payment_date, fixing_date = period
         if payment_date <= market_state.settlement:
             continue
-        if (
-            ir.source_track.product_family == "fixed_coupon_bond"
-            and formula_kind == "fixed"
-        ):
+        if uses_regular_bond_accrual and formula_kind == "fixed":
             accrual = 1.0 / _frequency_per_year(metadata.get("payment_frequency"))
         else:
             accrual = year_fraction(accrual_start, accrual_end, day_count)
