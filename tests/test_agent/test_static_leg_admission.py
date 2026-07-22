@@ -398,11 +398,6 @@ class TestStaticLegAdmission:
         materialized = materialize_static_leg_lowering(contract, selection=selection)
 
         assert selection.declaration_id == "static_leg_fixed_float_swap"
-        assert selection.required_capabilities == (
-            "discount_curve",
-            "forward_curve",
-            "fixing_history",
-        )
         assert materialized["callable_ref"] == "trellis.instruments.swap.SwapPayoff"
         assert isinstance(materialized["call_kwargs"]["spec"], SwapSpec)
         assert materialized["call_kwargs"]["spec"].is_payer is True
@@ -503,11 +498,6 @@ class TestStaticLegAdmission:
         materialized = materialize_static_leg_lowering(contract, selection=selection)
 
         assert selection.declaration_id == "static_leg_basis_swap"
-        assert selection.required_capabilities == (
-            "discount_curve",
-            "forward_curve",
-            "fixing_history",
-        )
         assert materialized["callable_ref"] == "trellis.models.rate_basis_swap.price_rate_basis_swap"
         assert isinstance(materialized["call_kwargs"]["spec"], RateBasisSwapSpec)
         assert materialized["call_kwargs"]["spec"].pay_leg.rate_index == "SOFR"

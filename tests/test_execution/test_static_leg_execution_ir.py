@@ -656,6 +656,12 @@ def test_static_leg_compile_emits_conditional_accrual_execution_ir_for_range_acc
     assert ir.requirement_hints.market_inputs == frozenset(
         {"discount_curve:USD", "fixing_history:SOFR", "forward_curve:SOFR"}
     )
+    assert derive_requirement_hints(
+        ir,
+        valuation_date=SETTLE,
+    ).market_inputs == frozenset(
+        {"discount_curve:USD", "fixing_history:SOFR", "forward_curve:SOFR"}
+    )
     summary = contract_execution_summary(ir)
     assert summary["unsupported_reasons"] == ()
     assert summary["event_kinds"] == ("observation", "payment")
@@ -814,16 +820,15 @@ def test_static_leg_runtime_matches_existing_checked_helpers(contract_factory, l
 
 def test_execution_backed_payoff_prices_static_leg_ir_through_public_payoff_boundary():
     contract = _fixed_float_swap()
-    market = replace(_market_state(), fixing_histories={"SOFR": {}})
+    market = _market_state()
     ir = compile_static_leg_execution_ir(contract)
-    payoff = ExecutionBackedPayoff(ir)
+    payoff = ExecutionBackedPayoff(
+        ir,
+        execution_terms={"valuation_date": market.settlement},
+    )
 
     assert payoff.execution_ir is ir
-    assert payoff.requirements == {
-        "discount_curve",
-        "fixing_history",
-        "forward_curve",
-    }
+    assert payoff.requirements == {"discount_curve", "forward_curve"}
     assert price_payoff(payoff, market) == pytest.approx(
         price_static_leg_execution_ir(ir, market),
         rel=1e-12,
@@ -833,8 +838,11 @@ def test_execution_backed_payoff_prices_static_leg_ir_through_public_payoff_boun
 
 def test_regular_fixed_float_payoff_preflights_fixing_history():
     ir = compile_static_leg_execution_ir(_fixed_float_swap())
-    payoff = ExecutionBackedPayoff(ir)
     settlement = date(2025, 7, 15)
+    payoff = ExecutionBackedPayoff(
+        ir,
+        execution_terms={"valuation_date": settlement},
+    )
     market = replace(
         _market_state(),
         as_of=settlement,
@@ -843,6 +851,17 @@ def test_regular_fixed_float_payoff_preflights_fixing_history():
     )
 
     with pytest.raises(MissingCapabilityError, match="fixing_history"):
+        price_payoff(payoff, market)
+
+
+def test_execution_backed_payoff_rejects_mismatched_valuation_date():
+    market = _market_state()
+    payoff = ExecutionBackedPayoff(
+        compile_static_leg_execution_ir(_fixed_float_swap()),
+        execution_terms={"valuation_date": date(2025, 1, 1)},
+    )
+
+    with pytest.raises(ValueError, match="must match market_state.settlement"):
         price_payoff(payoff, market)
 
 

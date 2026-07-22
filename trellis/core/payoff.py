@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from datetime import date
 from types import MappingProxyType
 from typing import Any, Generic, Mapping, Protocol, TypeAlias, TypeVar, runtime_checkable
 
@@ -286,7 +285,10 @@ class ExecutionBackedPayoff:
     def requirements(self) -> set[str]:
         from trellis.execution.visitors.requirements import derive_requirement_hints
 
-        hints = derive_requirement_hints(self.execution_ir)
+        hints = derive_requirement_hints(
+            self.execution_ir,
+            valuation_date=self.execution_terms.get("valuation_date"),
+        )
         return {
             _normalize_execution_requirement(requirement)
             for requirement in hints.market_inputs
@@ -294,6 +296,12 @@ class ExecutionBackedPayoff:
         }
 
     def evaluate(self, market_state: MarketState) -> PricingValue:
+        valuation_date = self.execution_terms.get("valuation_date")
+        if valuation_date is not None and valuation_date != market_state.settlement:
+            raise ValueError(
+                "ExecutionBackedPayoff valuation_date must match "
+                "market_state.settlement"
+            )
         source_kind = self.execution_ir.source_track.source_kind
         if source_kind == "static_leg_contract_ir":
             from trellis.execution.runtime import price_static_leg_execution_ir

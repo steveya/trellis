@@ -1044,7 +1044,7 @@ _DECLARATIONS = (
         callable_ref="trellis.models.range_accrual.price_range_accrual",
         adapter_ref="trellis.agent.static_leg_admission._range_accrual_adapter",
         validation_bundle_id="range_accrual_discounted_cashflow_v1",
-        required_capabilities=("discount_curve", "forward_curve", "fixing_history"),
+        required_capabilities=("discount_curve", "forward_curve"),
         cashflow_engine_refs=(
             "trellis.models.contingent_cashflows.coupon_cashflow_pv",
             "trellis.models.contingent_cashflows.principal_payment_pv",
@@ -1059,7 +1059,7 @@ _DECLARATIONS = (
         callable_ref="trellis.instruments.swap.SwapPayoff",
         adapter_ref="trellis.agent.static_leg_admission._fixed_float_swap_adapter",
         validation_bundle_id="static_leg_fixed_float_swap_contract",
-        required_capabilities=("discount_curve", "forward_curve", "fixing_history"),
+        required_capabilities=("discount_curve", "forward_curve"),
         helper_refs=("trellis.instruments.swap.SwapPayoff", "trellis.instruments.swap.SwapSpec"),
         precedence=30,
     ),

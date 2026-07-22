@@ -226,9 +226,13 @@ counts. A fixing strictly before settlement is historical and must be present
 in ``MarketState.fixing_histories``; a fixing on settlement remains projected.
 Every floating ``CouponLegExecution`` with explicit fixing dates advertises
 both its forward curve and indexed fixing history, including regular swap and
-basis-swap declarations. Execution IR is valuation-date independent, so a
-future-only contract may bind an empty history for capability preflight; exact
-historical-date coverage is enforced when the artifact is priced.
+basis-swap declarations. Execution IR itself is valuation-date independent.
+An ``ExecutionBackedPayoff`` with a ``valuation_date`` execution term omits a
+coupon fixing-history requirement only when every unpaid fixing is still
+future; a valuation-agnostic payoff remains conservative. Exact historical-date
+coverage is enforced when the artifact is priced. Non-coupon fixing inputs,
+such as range-accrual observation histories, are never removed by this
+projection.
 
 Range-accrual admission is intentionally exact. The checked declaration
 admits only a receive-side ``ConditionalAccrualLeg`` with fixed coupon,

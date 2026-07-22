@@ -645,7 +645,10 @@ def _compile_imported_document_request(
                 fail_on_unsupported=True,
             )
             source_metadata = dict(execution_ir.source_track.source_metadata)
-            instrument = ExecutionBackedPayoff(execution_ir)
+            instrument = ExecutionBackedPayoff(
+                execution_ir,
+                execution_terms={"valuation_date": _fpml_valuation_date(request)},
+            )
             route_method = "structural_execution_ir"
             structural_declaration_id = source_metadata.get(
                 "static_leg_lowering_declaration_id"

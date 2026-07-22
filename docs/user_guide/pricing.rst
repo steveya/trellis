@@ -179,9 +179,12 @@ execution slice, so an admitted callable-bond ``DynamicContractIR`` can execute
 through the shared payoff surface once it has been lowered into
 ``ContractExecutionIR``.
 Floating coupon execution artifacts with explicit fixing dates declare
-``fixing_history`` during capability preflight. Before the first fixing, bind
-an empty history for the relevant index; after a fixing becomes historical,
-the history must contain that exact date or pricing fails closed.
+``fixing_history`` in their complete execution requirements. When
+``ExecutionBackedPayoff`` receives a ``valuation_date`` execution term, its
+capability preflight omits that requirement while every unpaid fixing remains
+future. After a fixing becomes historical, the history must contain that exact
+date or pricing fails closed. Without a valuation date, preflight remains
+conservative and requires the indexed history binding.
 
 Task Diagnostics And Honest Blocks
 ----------------------------------
