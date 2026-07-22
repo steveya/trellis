@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FRAMEWORK_TASKS_MANIFEST = "FRAMEWORK_TASKS.yaml"
 CANARY_TASKS_MANIFEST = "CANARY_TASKS.yaml"
 NEGATIVE_TASKS_MANIFEST = "TASKS_NEGATIVE.yaml"
+FPML_CONFORMANCE_TASKS_MANIFEST = "TASKS_FPML_CONFORMANCE.yaml"
 MARKET_SCENARIOS_MANIFEST = "MARKET_SCENARIOS.yaml"
 FINANCEPY_BINDINGS_MANIFEST = "FINANCEPY_BINDINGS.yaml"
 
@@ -24,6 +26,7 @@ PRICING_TASK_CORPORA: tuple[str, ...] = (
     "TASKS_EXTENSION.yaml",
     "TASKS_MARKET_CONSTRUCTION.yaml",
     "TASKS_PROOF_LEGACY.yaml",
+    FPML_CONFORMANCE_TASKS_MANIFEST,
 )
 
 
@@ -41,6 +44,12 @@ def load_pricing_tasks(
 def load_negative_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:
     """Load the clarification / honest-block task corpus."""
     return load_task_manifest(NEGATIVE_TASKS_MANIFEST, root=root)
+
+
+def load_fpml_conformance_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:
+    """Load deterministic paired FpML/native conformance tasks."""
+
+    return load_task_manifest(FPML_CONFORMANCE_TASKS_MANIFEST, root=root)
 
 
 def load_framework_tasks(*, root: Path = ROOT) -> list[dict[str, Any]]:
@@ -189,17 +198,52 @@ def filter_loaded_tasks(
         return [by_id[task_id] for task_id in requested_task_ids if task_id in by_id]
 
     if start_id and end_id:
-        start_num = int(start_id.lstrip("TEFPN"))
-        end_num = int(end_id.lstrip("TEFPN"))
-        prefix = start_id[0]
+        start_prefix, start_num = _parse_numeric_task_id(start_id)
+        end_prefix, end_num = _parse_numeric_task_id(end_id)
+        if start_prefix != end_prefix:
+            raise ValueError(
+                "task range endpoints must use the same corpus prefix: "
+                f"{start_id!r}, {end_id!r}"
+            )
         filtered = [
             task
             for task in filtered
-            if str(task.get("id") or "").startswith(prefix)
-            and start_num <= int(str(task["id"]).lstrip("TEFPN")) <= end_num
+            if _task_id_is_in_range(
+                str(task.get("id") or ""),
+                prefix=start_prefix,
+                start_num=start_num,
+                end_num=end_num,
+            )
         ]
 
     return filtered
+
+
+_NUMERIC_TASK_ID = re.compile(r"(?P<prefix>[A-Za-z]+)(?P<number>[0-9]+)")
+
+
+def _parse_numeric_task_id(task_id: str) -> tuple[str, int]:
+    match = _NUMERIC_TASK_ID.fullmatch(str(task_id).strip())
+    if match is None:
+        raise ValueError(
+            "task range ids must contain an alphabetic corpus prefix followed "
+            f"by a numeric sequence: {task_id!r}"
+        )
+    return match.group("prefix"), int(match.group("number"))
+
+
+def _task_id_is_in_range(
+    task_id: str,
+    *,
+    prefix: str,
+    start_num: int,
+    end_num: int,
+) -> bool:
+    try:
+        task_prefix, task_num = _parse_numeric_task_id(task_id)
+    except ValueError:
+        return False
+    return task_prefix == prefix and start_num <= task_num <= end_num
 
 
 def _load_yaml_mapping(path: Path) -> dict[str, Any]:

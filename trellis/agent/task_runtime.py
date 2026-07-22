@@ -1974,6 +1974,19 @@ def run_task(
     llm_cassette_metadata: Mapping[str, Any] | None = None,
 ) -> dict:
     """Execute one task with separate artifact-freshness and source-origin policy."""
+    if str(task.get("task_kind") or "").strip() == "fpml_conformance":
+        from trellis.agent.fpml_conformance import run_fpml_conformance_task
+
+        market_state, _market_context = build_market_state_for_task(task, market_state)
+        return run_fpml_conformance_task(
+            task,
+            market_state,
+            timer=timer,
+            now_fn=now_fn,
+            task_run_storage_root=task_run_storage_root,
+            task_run_storage_layout=task_run_storage_layout,
+        )
+
     from trellis.agent.cassette import current_llm_cassette_context
     from trellis.agent.evals import (
         task_result_outcome_class,

@@ -1,0 +1,202 @@
+version: 1
+tasks:
+- id: FPC001
+  title: FpML conformance - fixed-float IRS
+  status: pending
+  task_kind: fpml_conformance
+  expected_outcome: pricing_success
+  market_scenario_id: usd_rates_smile
+  fpml:
+    fixture: tests/test_io/fixtures/fpml/confirmation_5_13_fixed_float_swap.xml
+    source_view: confirmation
+    source_version: 5-13
+    valuation_party_id: PARTY-A
+    envelope_variants:
+    - name: operational_labels
+      valuation_party_name: Rates Desk Alpha
+      identifiers:
+        portfolio_ref: FPML-CONFORMANCE-A
+      metadata:
+        book: USD-RATES
+        source_batch: batch-a
+  native_contract:
+    kind: fixed_float_swap
+    currency: USD
+    start_date: 2025-06-30
+    end_date: 2027-06-30
+    notional: 1000000.0
+    fixed_direction: pay
+    fixed_rate: 0.04
+    fixed_frequency: semiannual
+    fixed_day_count: 30/360
+    floating_frequency: quarterly
+    floating_day_count: ACT/360
+    rate_index: USD-SOFR
+    index_tenor: 3M
+  tolerance:
+    absolute: 1.0e-8
+    relative: 1.0e-12
+
+- id: FPC002
+  title: FpML conformance - physical European payer swaption
+  status: pending
+  task_kind: fpml_conformance
+  expected_outcome: pricing_success
+  market_scenario_id: usd_rates_smile
+  fpml:
+    fixture: tests/test_io/fixtures/fpml/confirmation_5_13_european_swaption.xml
+    source_view: confirmation
+    source_version: 5-13
+    valuation_party_id: PARTY-A
+    envelope_variants:
+    - name: operational_labels
+      valuation_party_name: Swaptions Desk
+      identifiers:
+        portfolio_ref: FPML-CONFORMANCE-B
+      metadata:
+        book: USD-OPTIONS
+        source_batch: batch-b
+  native_contract:
+    kind: european_swaption
+    position: long
+    payer_receiver: payer
+    exercise_date: 2025-06-27
+    underlier_id: USD-IRS-20250630-20270630
+    strike: 0.04
+    settlement_kind: physical
+    underlying_swap:
+      kind: fixed_float_swap
+      currency: USD
+      start_date: 2025-06-30
+      end_date: 2027-06-30
+      notional: 1000000.0
+      fixed_direction: pay
+      fixed_rate: 0.04
+      fixed_frequency: semiannual
+      fixed_day_count: 30/360
+      floating_frequency: quarterly
+      floating_day_count: ACT/360
+      rate_index: USD-SOFR
+      index_tenor: 3M
+  tolerance:
+    absolute: 1.0e-8
+    relative: 1.0e-12
+
+- id: FPC003
+  title: FpML conformance - scheduled cap strip
+  status: pending
+  task_kind: fpml_conformance
+  expected_outcome: pricing_success
+  market_scenario_id: usd_rates_smile
+  fpml:
+    fixture: tests/test_io/fixtures/fpml/confirmation_5_13_cap_floor.xml
+    source_view: confirmation
+    source_version: 5-13
+    valuation_party_id: PARTY-A
+    envelope_variants:
+    - name: operational_labels
+      valuation_party_name: Caps Desk
+      identifiers:
+        portfolio_ref: FPML-CONFORMANCE-C
+      metadata:
+        book: USD-CAPS
+        source_batch: batch-c
+  native_contract:
+    kind: period_rate_option_strip
+    direction: receive
+    option_side: call
+    currency: USD
+    start_date: 2025-06-30
+    end_date: 2027-06-30
+    notional: 1000000.0
+    strike: 0.04
+    payment_frequency: quarterly
+    day_count: ACT/360
+    rate_index: USD-SOFR
+    index_tenor: 3M
+  tolerance:
+    absolute: 1.0e-8
+    relative: 1.0e-12
+
+- id: FPC101
+  title: FpML conformance honest block - missing valuation party
+  status: pending
+  task_kind: fpml_conformance
+  expected_outcome: honest_block
+  market_scenario_id: usd_rates_smile
+  fpml:
+    fixture: tests/test_io/fixtures/fpml/confirmation_5_13_fixed_float_swap.xml
+    source_view: confirmation
+    source_version: 5-13
+  expected_blocker_ids:
+  - missing_contract_field:fpml_valuation_party_id
+
+- id: FPC102
+  title: FpML conformance honest block - unsupported view
+  status: pending
+  task_kind: fpml_conformance
+  expected_outcome: honest_block
+  market_scenario_id: usd_rates_smile
+  fpml:
+    fixture: tests/test_io/fixtures/fpml/recordkeeping_5_13_unsupported.xml
+    source_view: recordkeeping
+    source_version: 5-13
+    valuation_party_id: PARTY-A
+  expected_blocker_ids:
+  - external_import:fpml_unsupported_view
+
+- id: FPC103
+  title: FpML conformance honest block - unsupported version
+  status: pending
+  task_kind: fpml_conformance
+  expected_outcome: honest_block
+  market_scenario_id: usd_rates_smile
+  fpml:
+    fixture: tests/test_io/fixtures/fpml/confirmation_5_12_unsupported.xml
+    source_view: confirmation
+    source_version: 5-12
+    valuation_party_id: PARTY-A
+  expected_blocker_ids:
+  - external_import:fpml_unsupported_version
+
+- id: FPC104
+  title: FpML conformance honest block - incomplete swap economics
+  status: pending
+  task_kind: fpml_conformance
+  expected_outcome: honest_block
+  market_scenario_id: usd_rates_smile
+  fpml:
+    fixture: tests/test_io/fixtures/fpml/confirmation_5_13_swap.xml
+    source_view: confirmation
+    source_version: 5-13
+    valuation_party_id: PARTY-A
+  expected_blocker_ids:
+  - missing_contract_field:fpml_swap_stream
+
+- id: FPC105
+  title: FpML conformance honest block - generic product
+  status: pending
+  task_kind: fpml_conformance
+  expected_outcome: honest_block
+  market_scenario_id: usd_rates_smile
+  fpml:
+    fixture: tests/test_io/fixtures/fpml/confirmation_5_13_generic_product.xml
+    source_view: confirmation
+    source_version: 5-13
+    valuation_party_id: PARTY-A
+  expected_blocker_ids:
+  - external_import:fpml_incomplete_generic_product
+
+- id: FPC106
+  title: FpML conformance honest block - non-schema product
+  status: pending
+  task_kind: fpml_conformance
+  expected_outcome: honest_block
+  market_scenario_id: usd_rates_smile
+  fpml:
+    fixture: tests/test_io/fixtures/fpml/confirmation_5_13_non_schema_product.xml
+    source_view: confirmation
+    source_version: 5-13
+    valuation_party_id: PARTY-A
+  expected_blocker_ids:
+  - external_import:fpml_incomplete_non_schema_product

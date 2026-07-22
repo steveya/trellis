@@ -99,7 +99,10 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         action="append",
         dest="corpora",
         default=[],
-        help="Filter to one or more task corpora (benchmark_financepy, extension, market_construction, proof_legacy).",
+        help=(
+            "Filter to one or more task corpora (benchmark_financepy, extension, "
+            "market_construction, proof_legacy, fpml_conformance)."
+        ),
     )
     parser.add_argument("--output")
     return parser.parse_args(argv)

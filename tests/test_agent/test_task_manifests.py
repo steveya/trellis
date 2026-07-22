@@ -15,6 +15,16 @@ def test_load_pricing_tasks_aggregates_new_corpora_and_preserves_legacy_ids():
     assert "P001" in task_ids
     assert "T01" in task_ids
     assert "E21" in task_ids
+    assert "FPC001" in task_ids
+
+
+def test_load_fpml_conformance_tasks_reads_dedicated_corpus():
+    from trellis.agent.task_manifests import load_fpml_conformance_tasks
+
+    tasks = load_fpml_conformance_tasks(root=Path(__file__).resolve().parents[2])
+    task_ids = {task["id"] for task in tasks}
+
+    assert {"FPC001", "FPC002", "FPC003", "FPC101", "FPC106"} <= task_ids
 
 
 def test_load_negative_tasks_reads_dedicated_negative_corpus():
@@ -130,3 +140,22 @@ def test_filter_loaded_tasks_respects_status_before_exact_id_selection():
     )
 
     assert [task["id"] for task in selected] == ["P004"]
+
+
+def test_filter_loaded_tasks_supports_multi_character_id_prefix_ranges():
+    from trellis.agent.task_manifests import filter_loaded_tasks
+
+    tasks = [
+        {"id": "FPC001", "status": "pending"},
+        {"id": "FPC002", "status": "pending"},
+        {"id": "FPC101", "status": "pending"},
+        {"id": "F001", "status": "pending"},
+    ]
+
+    selected = filter_loaded_tasks(
+        tasks,
+        start_id="FPC001",
+        end_id="FPC002",
+    )
+
+    assert [task["id"] for task in selected] == ["FPC001", "FPC002"]

@@ -175,3 +175,27 @@ formulas, and indices remain part of the relevant identity.
 normalized semantic fields. ``fpml_import_report_summary(...)`` exposes the
 identity, economic projection, and mapping evidence without retaining raw XML
 or parser nodes.
+
+Conformance Evidence
+--------------------
+
+``TASKS_FPML_CONFORMANCE.yaml`` is the executable evidence ledger for the
+bounded cohort. Each positive task pairs one FpML fixture with independently
+declared native terms. ``trellis.agent.fpml_conformance`` builds only existing
+generic IR values from those terms and requires the imported and native paths
+to agree on economic identity, complete economic projection, structural
+selection, deterministic market binding, and price. Non-economic envelope
+variants must leave every one of those gates unchanged.
+
+Negative tasks certify the exact honest blocker rather than accepting any
+failure as success. They cover missing valuation perspective, unsupported
+view/version, incomplete swap economics, and incomplete ``genericProduct`` or
+``nonSchemaProduct`` payloads. A mismatch in blocker ids is actionable even
+though both outcomes are fail-closed.
+
+The conformance task kind dispatches before agent build and review paths.
+Results record zero builder, codegen, quant-review, model-validator, recovery,
+and token calls. Persisted records carry body-free import provenance and
+clarification evidence. The corpus therefore tests the deterministic import
+contract without teaching an agent a product-specific helper or promoting a
+cookbook entry.
