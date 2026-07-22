@@ -170,7 +170,7 @@ execution mirror and stays ordered by implementation dependency.
 | `QUA-1211` | Done | confirmation-view fixed-float swap normalization | `QUA-1210` |
 | `QUA-1212` | Done | European swaption normalization | `QUA-1210`, `QUA-1211` |
 | `QUA-1213` | Done | scheduled cap/floor strip normalization | `QUA-1210`, `QUA-1211` |
-| `QUA-1214` | Backlog | paired FpML/native conformance task corpus | `QUA-1211`, `QUA-1212`, `QUA-1213` |
+| `QUA-1214` | Done | paired FpML/native conformance task corpus | `QUA-1211`, `QUA-1212`, `QUA-1213` |
 | `QUA-1215` | Backlog | support matrix, maintenance review, and epic closeout | `QUA-1214` |
 
 ## Cohort Details
