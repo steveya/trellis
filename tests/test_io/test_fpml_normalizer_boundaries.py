@@ -61,6 +61,25 @@ def test_shared_normalization_module_owns_product_neutral_helpers():
         assert not hasattr(shared, product_mapper_name)
 
 
+def test_swap_normalization_module_owns_fixed_float_mapping():
+    normalizer = importlib.import_module("trellis.io.fpml.normalizer")
+    swap_mapper = importlib.import_module("trellis.io.fpml._normalization_swap")
+
+    for helper_name in (
+        "_normalize_fixed_float_swap",
+        "_reject_unresolved_swap_historical_fixings",
+    ):
+        mapper_helper = getattr(swap_mapper, helper_name)
+        assert mapper_helper.__module__ == swap_mapper.__name__
+        assert getattr(normalizer, helper_name) is mapper_helper
+
+    for other_product_mapper_name in (
+        "_normalize_cap_floor",
+        "_normalize_european_swaption",
+    ):
+        assert not hasattr(swap_mapper, other_product_mapper_name)
+
+
 def test_shared_normalization_module_has_no_pricing_or_route_authority_imports():
     shared = importlib.import_module("trellis.io.fpml._normalization_common")
 
@@ -73,10 +92,25 @@ def test_shared_normalization_module_has_no_pricing_or_route_authority_imports()
     assert violations == ()
 
 
+def test_swap_normalization_module_has_no_pricing_or_route_authority_imports():
+    swap_mapper = importlib.import_module("trellis.io.fpml._normalization_swap")
+
+    violations = tuple(
+        imported
+        for imported in _imported_modules(swap_mapper)
+        if imported.startswith(FORBIDDEN_SHARED_IMPORT_PREFIXES)
+    )
+
+    assert violations == ()
+
+
 def test_internal_normalization_module_is_not_codegen_import_authority():
     from trellis.agent.knowledge.import_registry import get_import_registry
 
-    assert "trellis.io.fpml._normalization_common" not in get_import_registry()
+    registry = get_import_registry()
+
+    assert "trellis.io.fpml._normalization_common" not in registry
+    assert "trellis.io.fpml._normalization_swap" not in registry
 
 
 def test_public_and_inspected_document_facades_remain_field_compatible():
@@ -105,3 +139,51 @@ def test_public_and_inspected_document_facades_remain_field_compatible():
     )
 
     assert direct == staged
+
+
+def test_direct_swap_mapper_matches_public_facade():
+    from trellis.io.fpml import inspect_fpml_document, normalize_fpml_document
+    from trellis.io.fpml.contracts import DEFAULT_FPML_INSPECTION_LIMITS
+    from trellis.io.fpml.importer import (
+        _bounded_parse,
+        _content_bytes,
+        _direct_children,
+        _first_direct_child,
+    )
+
+    swap_mapper = importlib.import_module("trellis.io.fpml._normalization_swap")
+    xml = FIXTURE.read_bytes()
+    inspected = inspect_fpml_document(
+        xml,
+        declared_view="confirmation",
+        declared_version="5-13",
+    )
+    root = _bounded_parse(
+        _content_bytes(xml),
+        limits=DEFAULT_FPML_INSPECTION_LIMITS,
+    )
+    namespace = inspected.document.namespace
+    trade = _direct_children(root, "trade", namespace=namespace)[0]
+    swap = _first_direct_child(trade, "swap", namespace=namespace)
+
+    contract, provenance = swap_mapper._normalize_fixed_float_swap(
+        swap,
+        namespace=namespace,
+        valuation_party_id="PARTY-A",
+        known_party_ids=inspected.trade.party_ids,
+    )
+    report = normalize_fpml_document(
+        xml,
+        declared_view="confirmation",
+        declared_version="5-13",
+        valuation_party_id="PARTY-A",
+    )
+
+    assert contract == report.normalized_contract
+    assert provenance == report.mapping_provenance
+    assert (
+        importlib.import_module(
+            "trellis.io.fpml.normalizer"
+        )._normalize_european_swaption.__globals__["_normalize_fixed_float_swap"]
+        is swap_mapper._normalize_fixed_float_swap
+    )
