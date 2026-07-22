@@ -345,6 +345,14 @@ Acceptance:
 - document format, view, version, and extraction mode remain visible for
   provenance without becoming solver selectors
 
+Implementation status:
+
+- `QUA-1209` through `QUA-1215` delivered the explicit bounded FpML request
+  path, secure import boundary, three confirmation-view rates cohorts,
+  conformance proof, and versioned support contract.
+- Recordkeeping and lifecycle-state projection remain outside that first
+  cohort and are tracked under `QUA-1216`.
+
 ## Risks To Avoid
 
 - **Ambient-state drift.** If the meaning of a valuation depends on an

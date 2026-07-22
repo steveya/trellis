@@ -55,6 +55,10 @@ appear as actionable failures. This corpus is conformance evidence for the
 published import cohort; it does not add product support, a pricing helper, a
 cookbook entry, or a new route.
 
+The public claim governed by that evidence is the versioned
+:doc:`fpml_support_matrix`; a passing task pack cannot widen the matrix beyond
+the exact paired contract shapes and deterministic normalization tests.
+
 The runtime helpers cover:
 
 - loading task ranges and statuses
