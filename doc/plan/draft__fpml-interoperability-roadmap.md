@@ -187,7 +187,7 @@ normalization, package result cardinality, and support closeout.
 | `QUA-1220` | In Progress | modular normalizer umbrella | `QUA-1207` |
 | `QUA-1226` | Done | shared parsing and stream-normalization boundary | `QUA-1207` |
 | `QUA-1227` | Done | fixed-float swap mapping extraction | `QUA-1226` |
-| `QUA-1229` | Backlog | cap/floor mapping extraction | `QUA-1226` |
+| `QUA-1229` | In Progress | cap/floor mapping extraction | `QUA-1226` |
 | `QUA-1228` | Backlog | swaption mapping extraction | `QUA-1226`, `QUA-1227` |
 | `QUA-1230` | Backlog | facade and modularity closeout | `QUA-1227`, `QUA-1228`, `QUA-1229` |
 | `QUA-1222` | Backlog | reusable irregular-period static coupon execution | none |

@@ -35,6 +35,7 @@ from trellis.io.fpml.contracts import (
     FpMLFieldProvenance,
     FpMLImportBlocker,
     FpMLImportReport,
+    FpMLPremiumMetadata,
 )
 from trellis.io.fpml.importer import (
     _direct_children,
@@ -161,6 +162,13 @@ _ALLOWED_FLOATING_RATE_CALCULATION_CHILDREN = {
     "spreadSchedule",
 }
 _RATE_OPTION_STRIKE_CHILDREN = {"capRateSchedule", "floorRateSchedule"}
+_ALLOWED_PREMIUM_CHILDREN = {
+    "payerPartyReference",
+    "paymentAmount",
+    "paymentDate",
+    "receiverPartyReference",
+}
+_ALLOWED_PAYMENT_AMOUNT_CHILDREN = {"amount", "currency"}
 
 
 @dataclass(frozen=True)
@@ -1432,6 +1440,98 @@ def _reject_unadmitted_direct_children(
             + ", ".join(unsupported)
             + f" in {scope.replace('_', ' ')}.",
         )
+
+
+def _normalize_option_premiums(
+    product,
+    *,
+    namespace: str | None,
+    valuation_date: date | None,
+    known_party_ids: tuple[str, ...],
+    option_party_ids: tuple[str, str],
+    product_scope: str,
+    product_label: str,
+) -> tuple[FpMLPremiumMetadata, ...]:
+    result = []
+    for premium in _direct_children(product, "premium", namespace=namespace):
+        _reject_unadmitted_direct_children(
+            premium,
+            allowed=_ALLOWED_PREMIUM_CHILDREN,
+            scope=f"{product_scope}_premium",
+            namespace=namespace,
+        )
+        payer = _required_href(
+            premium,
+            "payerPartyReference",
+            namespace=namespace,
+            missing_field="premium_payer_party_reference",
+        )
+        receiver = _required_href(
+            premium,
+            "receiverPartyReference",
+            namespace=namespace,
+            missing_field="premium_receiver_party_reference",
+        )
+        if (
+            payer == receiver
+            or not {payer, receiver}.issubset(set(known_party_ids))
+            or {payer, receiver} != set(option_party_ids)
+        ):
+            _fail(
+                f"contract_conflict:fpml_{product_scope}_premium_parties",
+                "contract_conflict",
+                f"{product_label} premium parties must be distinct identified trade parties.",
+            )
+        amount_element = _required_child(
+            premium,
+            "paymentAmount",
+            namespace=namespace,
+            missing_field="premium_payment_amount",
+        )
+        _reject_unadmitted_direct_children(
+            amount_element,
+            allowed=_ALLOWED_PAYMENT_AMOUNT_CHILDREN,
+            scope="premium_payment_amount",
+            namespace=namespace,
+        )
+        currency = _required_text(
+            amount_element,
+            "currency",
+            namespace=namespace,
+            missing_field="premium_currency",
+        ).upper()
+        amount = _finite_float(
+            _required_text(
+                amount_element,
+                "amount",
+                namespace=namespace,
+                missing_field="premium_amount",
+            ),
+            field_name="premium_amount",
+            positive=True,
+        )
+        _, payment_date = _adjustable_date(
+            premium,
+            "paymentDate",
+            namespace=namespace,
+        )
+        if valuation_date is not None and payment_date >= valuation_date:
+            _fail(
+                f"external_import:fpml_{product_scope}_unsettled_premium_unsupported",
+                "unsupported_contract",
+                "Only premiums settled before the valuation date are admitted as "
+                "separate source metadata.",
+            )
+        result.append(
+            FpMLPremiumMetadata(
+                payer_party_id=payer,
+                receiver_party_id=receiver,
+                payment_date=payment_date,
+                currency=currency,
+                amount=amount,
+            )
+        )
+    return tuple(result)
 
 
 def _provenance(
