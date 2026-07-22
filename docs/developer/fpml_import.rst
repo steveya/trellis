@@ -8,6 +8,10 @@ single-currency, constant-notional fixed-float interest-rate swap, one
 physically settled European payer/receiver swaption on that swap cohort, or one
 scheduled single-currency cap or floor strip.
 
+The versioned :doc:`fpml_support_matrix` is the authoritative distinction
+between documents that can be inspected, economics that can be normalized,
+contracts that can be executed, and pairs with conformance evidence.
+
 Lifecycle
 ---------
 
@@ -131,6 +135,8 @@ date and declared adjustments. Payment dates relative to
 ``CalculationPeriodEndDate`` are anchored to adjusted calculation-period ends
 before their own payment-date adjustment is applied.
 
+.. _fpml-import-fail-closed:
+
 Fail-Closed Boundary
 --------------------
 
@@ -199,3 +205,20 @@ and token calls. Persisted records carry body-free import provenance and
 clarification evidence. The corpus therefore tests the deterministic import
 contract without teaching an agent a product-specific helper or promoting a
 cookbook entry.
+
+Extension Rules
+---------------
+
+An FpML extension begins with Trellis semantic closure, not an XML product
+name. Before an import cohort can become executable, it must have an existing
+semantic representation, structural declaration, validation bundle, callable
+binding, and deterministic pricing evidence. The normalizer may map XML terms
+onto those artifacts; it may not create an FpML-specific pricing helper or let
+the product wrapper choose them.
+
+Every extension must add secure positive and negative fixtures, exact blocker
+tests, native/FpML canonical-identity and selection parity, and a support-matrix
+update. ``genericProduct``, ``nonSchemaProduct``, vendor extensions, or labels
+can advance only when their full economics have a separately approved Trellis
+semantic contract. An agent-authored adapter or cookbook entry cannot upgrade
+the public import support claim by itself.

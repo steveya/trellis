@@ -49,7 +49,7 @@ metadata. Tests compare materially different envelopes over the same contract
 and require identical semantic, pricing-plan, backend-binding, and validation
 artifacts.
 
-This boundary is format-neutral. FpML is the first planned importer, but the
+This boundary is format-neutral. FpML is the first implemented importer, but the
 envelope itself does not parse XML and does not imply that an imported product
 is supported. Importers must normalize economics separately and fail closed
 when the internal semantic and executable support contract is incomplete.
@@ -99,20 +99,20 @@ and ``standardProduct`` wrappers fail closed rather than being interpreted as
 current complete economics.
 
 Inspection is deliberately separate from product support. The first product
-normalizer now admits one regular, single-currency, constant-notional
-fixed-float interest-rate swap cohort. It lowers the XML economics into
-``StaticLegContractIR`` and then uses the same structural selection,
-``ContractExecutionIR``, and ``ExecutionBackedPayoff`` runtime as an equivalent
-native contract. The FpML product wrapper is not route authority, and raw XML
-never enters natural-language parsing, code generation, or model-validator
-review.
+normalizers admit a regular, single-currency, constant-notional fixed-float
+swap, a physically settled European payer/receiver swaption over that cohort,
+and a regular single-currency constant-strike cap or floor strip. They lower
+onto existing ``StaticLegContractIR`` or ``ContractIR`` semantics and use the
+same structural declarations and runtime as equivalent native contracts. The
+FpML product wrapper is not route authority, and raw XML never enters
+natural-language parsing, code generation, or model-validator review.
 
 The caller must explicitly identify one ``TradeParty`` with
 ``role="valuation_party"`` because FpML payer/receiver references do not choose
 whose NPV to return. Missing perspective, unsupported schedules or economics,
-and products outside the first cohort remain fail-closed. See
-:doc:`fpml_import` for the exact lifecycle, admitted closure, identity contract,
-and blocker policy.
+and products outside the first cohort remain fail-closed. See the versioned
+:doc:`fpml_support_matrix` for exact support levels and evidence, and
+:doc:`fpml_import` for lifecycle, normalization, identity, and blocker details.
 
 The plain fixed-income pricing path now also carries desk-readable bond
 reporting outputs. ``price_instrument(...)`` and the ``Session.price(...)``

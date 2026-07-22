@@ -616,3 +616,4 @@ Every completed review ticket should leave behind:
 11. `trellis/agent/knowledge/canonical/decompositions.yaml` — Product → feature mappings
 12. `trellis/agent/knowledge/canonical/api_map.yaml` — Small family-level API navigation map
 13. `trellis/agent/knowledge/import_registry.py` — Imports approved for generated pricing code
+14. `docs/developer/fpml_support_matrix.rst` — Versioned FpML inspection, normalization, execution, and conformance claims

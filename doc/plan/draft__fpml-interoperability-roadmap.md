@@ -2,7 +2,8 @@
 
 ## Status
 
-Active execution mirror for the bounded first FpML interoperability cohort.
+The bounded first FpML interoperability cohort is in final closeout. Future
+cohorts remain planning-only under a separate follow-on umbrella.
 
 Linear umbrella: `QUA-1207` — Semantic FpML import: canonical trade
 interoperability.
@@ -10,7 +11,7 @@ interoperability.
 The `FPI.*` labels below remain architectural cohort names. The live ticket
 queue for the first cohort is recorded under **First Cohort Execution Queue**.
 
-Status snapshot as of `2026-07-19`.
+Status snapshot as of `2026-07-21`.
 
 ## Linked Context
 
@@ -149,8 +150,8 @@ of silently coercing it into a nearby product family.
 
 | Cohort | Status | Objective | Hard prerequisites |
 | --- | --- | --- | --- |
-| `FPI.0` | Proposed | foundation seam for imported documents and trade envelopes | none |
-| `FPI.1` | Proposed | confirmation-view vanilla-rates current-state pricing | `FPI.0` |
+| `FPI.0` | Done | foundation seam for imported documents and trade envelopes | none |
+| `FPI.1` | Done | confirmation-view vanilla-rates current-state pricing | `FPI.0` |
 | `FPI.2` | Proposed | rates breadth and package hygiene | `FPI.1` |
 | `FPI.3` | Proposed | cross-asset current-state single-trade coverage | `FPI.1` |
 | `FPI.4` | Proposed | lifecycle-state and alternate-view normalization | `FPI.2`, `FPI.3` |
@@ -171,7 +172,7 @@ execution mirror and stays ordered by implementation dependency.
 | `QUA-1212` | Done | European swaption normalization | `QUA-1210`, `QUA-1211` |
 | `QUA-1213` | Done | scheduled cap/floor strip normalization | `QUA-1210`, `QUA-1211` |
 | `QUA-1214` | Done | paired FpML/native conformance task corpus | `QUA-1211`, `QUA-1212`, `QUA-1213` |
-| `QUA-1215` | Backlog | support matrix, maintenance review, and epic closeout | `QUA-1214` |
+| `QUA-1215` | In Progress | support matrix, maintenance review, and epic closeout | `QUA-1214` |
 
 ## Cohort Details
 
@@ -201,6 +202,8 @@ Acceptance:
   contract fields
 - unsupported constructs fail closed at a named import boundary
 
+Delivered by `QUA-1208` through `QUA-1210`.
+
 ### FPI.1 — Confirmation-view vanilla rates
 
 Objective:
@@ -215,7 +218,6 @@ Scope:
 - European payer / receiver swaption
 - scheduled cap / floor strips on the canonical
   `period_rate_option_strip` track
-- optional stretch: constant-notional basis swap
 
 Queue:
 
@@ -237,6 +239,10 @@ Acceptance:
   through checked lanes
 - envelope-only metadata changes do not affect structural selection
 - unsupported rates payloads block honestly
+
+Delivered by `QUA-1208` through `QUA-1215`. The executable support contract is
+published in `docs/developer/fpml_support_matrix.rst`. Constant-notional basis
+swap import was not part of the admitted first cohort and remains in `FPI.2`.
 
 ### FPI.2 — Rates breadth and package hygiene
 
@@ -368,7 +374,7 @@ surface.
 Queue:
 
 - `FPI.6a` publish a versioned FpML support matrix by view, family, and
-  lifecycle state
+  lifecycle state — initial bounded contract delivered by `QUA-1215`
 - `FPI.6b` add schema/version/document provenance reporting on imported
   requests
 - `FPI.6c` add bulk import, audit, and reconciliation tooling for books
@@ -395,18 +401,17 @@ Use this rule when selecting the next cohort.
 - do not widen into dynamic imported exotics before current-state
   single-trade import is stable
 
-## Immediate Next Slice
+## Follow-On Cohorts
 
-If implementation began now, the smallest coherent queue would be:
+The first coherent slice is complete. Future breadth is explicitly outside
+`QUA-1207` and tracked under `QUA-1216`:
 
-1. `FPI.0a` trade envelope
-2. `FPI.0b` `fpml` request entry point
-3. `FPI.0c` XML fixture/parser harness
-4. `FPI.1a` IRS adapter
-5. `FPI.1b` swaption adapter
-6. `FPI.1c` cap/floor adapter
-7. `FPI.1d` invariance and parity tests
-8. `FPI.1f` docs
+1. `QUA-1217` / `FPI.2` — richer rates conventions and package hygiene
+2. `QUA-1218` / `FPI.3` — cross-asset current-state single trades
+3. `QUA-1219` / `FPI.4` — lifecycle and recordkeeping current-state projection,
+   blocked by `QUA-1217` and `QUA-1218`
+4. `QUA-1220` — behavior-preserving modularization of the internal FpML
+   normalizer before future breadth makes that boundary harder to review
 
-That slice proves the architecture without over-claiming support beyond
-the currently realistic Trellis closure surface.
+`FPI.5` dynamic imported exotics and the remaining `FPI.6` industrial tooling
+stay planning-only until those prerequisite cohorts are closed.

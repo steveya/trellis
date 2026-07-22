@@ -85,6 +85,12 @@ contract through ``ContractIR``. These comparisons are evidence about
 normalization coherence; the native oracle is not a product helper or route
 authority.
 
+The :doc:`../developer/fpml_support_matrix` records this evidence in four
+separate stages: secure inspection, economic normalization, executable
+structural lowering, and paired conformance. Quant support should be claimed
+only at the highest stage actually proved. Parsing an XML wrapper or preserving
+its labels is not mathematical evidence about the normalized contract.
+
 ``ConditionalAccrualLeg`` does not change that boundary. It represents an
 automatic scheduled coupon whose amount is gated by a predicate over observed
 or projected quantities. A plain single-index range accrual therefore belongs

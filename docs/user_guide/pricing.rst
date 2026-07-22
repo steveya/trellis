@@ -51,6 +51,11 @@ the scenes instead of defining a separate runtime path.
 Bounded FpML Rates Pricing
 --------------------------
 
+The authoritative support levels and evidence links are published in the
+:doc:`../developer/fpml_support_matrix`. In particular, **inspected** means the
+document profile and identity were accepted; only **executable** rows can
+produce a price.
+
 The internal platform request API can price three admitted FpML rates cohorts:
 one FpML 5.13 confirmation ``dataDocument`` containing either a regular,
 single-currency, constant-notional fixed-float swap or a physically settled
@@ -109,6 +114,15 @@ Cap/floor collars, stepped strikes, spreads, nonunit gearing, averaging,
 compounding, amortization, extra payments, early termination, and unsettled
 premiums remain blocked.
 This is bounded interoperability, not general FpML pricing coverage.
+
+``source_reference`` is an audit label, not a location that Trellis fetches.
+The caller must supply the XML bytes inline; the importer performs no network
+or external-entity resolution. A blocked compile returns a ``blocker_report``
+and, after XML inspection, a body-free ``import_report``. Missing caller-owned
+terms such as ``valuation_party_id`` or valuation date are clarification gaps;
+unsupported views, versions, lifecycle content, products, or conventions are
+support-boundary blockers. Neither outcome invokes code generation or changes
+the pricing library.
 
 The checked-in ``TASKS_FPML_CONFORMANCE.yaml`` pack provides reproducible
 evidence for this boundary. It compares each admitted FpML cohort with an
