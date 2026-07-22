@@ -43,6 +43,14 @@ def test_fpml_import_surface_is_visible_to_import_registry():
     assert symbols <= set(static_registry[module])
 
 
+def test_fpml_conformance_harness_is_not_available_to_generated_code():
+    module = "trellis.agent.fpml_conformance"
+
+    assert not module_exists(module)
+    assert list_module_exports(module) == ()
+    assert module not in get_import_registry()
+
+
 def test_static_leg_economic_identity_is_visible_to_import_registry():
     module = "trellis.agent.static_leg_contract"
     symbols = {

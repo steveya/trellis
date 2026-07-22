@@ -33,7 +33,9 @@ the miniforge interpreter.
 **Scope:** `trellis/agent/knowledge/`, `trellis/agent/experience.py`, `trellis/agent/cookbooks.py`
 **Task:** Maintain the knowledge system — lessons, features, decompositions, cookbooks, import registry.
 **Rules:**
-- After Library Developer adds/moves modules, update `import_registry.py` (run `get_import_registry()` to regenerate)
+- After Library Developer adds/moves symbols admitted for generated pricing
+  code, update `import_registry.py` (run `get_import_registry()` to regenerate).
+  Keep internal task/evaluation harnesses out of this code-generation allowlist.
 - Treat validated `_fresh` adapter snapshots as the upgrade signal for checked-in adapter code. If a fresh-build adapter differs from the checked-in route, surface it as `stale` in retrieval/prompt text and keep the first pass warning-only until the replacement is validated.
 - After new instruments are added, add decompositions to `canonical/decompositions.yaml`
 - After new pricing methods are added, add cookbooks to `canonical/cookbooks.yaml`, contracts to `data_contracts.yaml`, requirements to `method_requirements.yaml`
@@ -589,7 +591,10 @@ Every completed review ticket should leave behind:
 
 ## Anti-Hallucination Rules
 
-1. **Never invent import paths.** The import registry (`knowledge/import_registry.py`) has every valid import. If it's not there, it doesn't exist.
+1. **Never invent import paths.** The import registry (`knowledge/import_registry.py`)
+   has every import approved for generated pricing code. If it is not there,
+   agents must not use it in generated pricing code; internal task/runtime code
+   may intentionally remain outside this allowlist.
 2. **Never invent formulas.** If you need a pricing formula, check `trellis/models/` first. If it's not implemented, say so.
 3. **Never overpromise in docstrings.** Document what IS implemented, not what COULD be.
 4. **Check before claiming.** Before saying "trellis supports X", verify with `grep` or `import`.
@@ -610,4 +615,4 @@ Every completed review ticket should leave behind:
 10. `trellis/agent/knowledge/canonical/features.yaml` — Feature taxonomy
 11. `trellis/agent/knowledge/canonical/decompositions.yaml` — Product → feature mappings
 12. `trellis/agent/knowledge/canonical/api_map.yaml` — Small family-level API navigation map
-13. `trellis/agent/knowledge/import_registry.py` — All valid imports
+13. `trellis/agent/knowledge/import_registry.py` — Imports approved for generated pricing code

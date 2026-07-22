@@ -140,3 +140,22 @@ def test_filter_loaded_tasks_respects_status_before_exact_id_selection():
     )
 
     assert [task["id"] for task in selected] == ["P004"]
+
+
+def test_filter_loaded_tasks_supports_multi_character_id_prefix_ranges():
+    from trellis.agent.task_manifests import filter_loaded_tasks
+
+    tasks = [
+        {"id": "FPC001", "status": "pending"},
+        {"id": "FPC002", "status": "pending"},
+        {"id": "FPC101", "status": "pending"},
+        {"id": "F001", "status": "pending"},
+    ]
+
+    selected = filter_loaded_tasks(
+        tasks,
+        start_id="FPC001",
+        end_id="FPC002",
+    )
+
+    assert [task["id"] for task in selected] == ["FPC001", "FPC002"]

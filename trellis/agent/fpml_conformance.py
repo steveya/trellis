@@ -3,6 +3,8 @@
 This module is an evaluation harness, not a pricing authority.  It constructs
 existing generic contract IR values from structured oracle terms and compares
 them with contracts admitted through the production FpML compiler boundary.
+It is intentionally excluded from the import registry used to authorize
+generated pricing code.
 """
 
 from __future__ import annotations
