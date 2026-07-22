@@ -106,8 +106,10 @@ party. Amortizing, compounding, stubbed, cross-currency, lifecycle-rich, and
 other unsupported trades remain blocked, as do end-of-month rolls and
 unclassified vendor extension elements. Pricing also requires a deterministic
 valuation date and rejects unpaid floating coupons that already require a
-historical fixing, because the current static-leg runtime does not consume that
-fixing history. Cash-settled, Bermudan/American, straddle, partial-exercise,
+historical fixing. The reusable static-leg execution runtime can consume such
+fixings for explicit coupon obligations, but the bounded FpML mapper does not
+yet admit seasoned or irregular imported schedules into that lane.
+Cash-settled, Bermudan/American, straddle, partial-exercise,
 and unsettled-premium swaptions remain blocked. A historical settled premium is
 reported separately and is not included in the option value or route identity.
 Cap/floor collars, stepped strikes, spreads, nonunit gearing, averaging,
@@ -158,6 +160,7 @@ main labels are:
 
 - ``discount_curve``
 - ``forward_curve``
+- ``fixing_history``
 - ``black_vol_surface``
 - ``credit_curve``
 - ``fx_rates``
@@ -175,6 +178,13 @@ public execution boundary now also supports the bounded callable-bond dynamic
 execution slice, so an admitted callable-bond ``DynamicContractIR`` can execute
 through the shared payoff surface once it has been lowered into
 ``ContractExecutionIR``.
+Floating coupon execution artifacts with explicit fixing dates declare
+``fixing_history`` in their complete execution requirements. When
+``ExecutionBackedPayoff`` receives a ``valuation_date`` execution term, its
+capability preflight omits that requirement while every unpaid fixing remains
+future. After a fixing becomes historical, the history must contain that exact
+date or pricing fails closed. Without a valuation date, preflight remains
+conservative and requires the indexed history binding.
 
 Task Diagnostics And Honest Blocks
 ----------------------------------

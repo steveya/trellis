@@ -151,11 +151,14 @@ The first fixed-float cohort requires:
 - internal FpML schedule references that identify the schedule they claim to
   reference
 
-Pricing requests also require a deterministic valuation date. Until the
-static-leg runtime consumes historical fixing histories, Trellis rejects a
-swap with an unpaid floating coupon whose fixing date is on or before that
-valuation date. Build-only normalization remains independent of valuation
-date. When an admitted fixed-float or swaption request declares ``analytics``
+Pricing requests also require a deterministic valuation date. The generic
+static-leg runtime can consume historical fixing histories for exact coupon
+obligations, but the current FpML cohort does not yet bind imported seasoned
+swaps to that market-data lane. FpML therefore still rejects a swap with an
+unpaid floating coupon whose fixing date is on or before the valuation date;
+bounded irregular-schedule normalization is a separate roadmap slice.
+Build-only normalization remains independent of valuation date. When an
+admitted fixed-float or swaption request declares ``analytics``
 or ``greeks`` without explicit outputs, the normalized request receives the
 bounded rates defaults before execution planning: price/DV01/duration for
 analytics and DV01/duration/convexity for Greeks. Structural solver selection

@@ -656,6 +656,15 @@ def _require_fixed_float_swap_execution_ir(ir: ContractExecutionIR) -> None:
         raise ValueError(
             "future-value bridge currently admits only fixed_float_swap execution IR"
         )
+    source_metadata = _metadata_dict(ir.source_track.source_metadata)
+    if (
+        source_metadata.get("static_leg_lowering_declaration_id")
+        != "static_leg_fixed_float_swap"
+    ):
+        raise ValueError(
+            "fixed_float_swap future-value bridge requires the "
+            "static_leg_fixed_float_swap lowering declaration"
+        )
     if ir.execution_metadata.unsupported_reasons:
         raise ValueError(
             "Cannot bridge unsupported execution IR: "

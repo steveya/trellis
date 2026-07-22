@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from datetime import date
 
 import pytest
 
+from trellis.agent.contract_ir import CurveQuote, ParRateTenor
 from trellis.agent.static_leg_contract import (
     ConditionalAccrualLeg,
     ConditionalAccrualPeriod,
@@ -19,6 +21,7 @@ from trellis.agent.static_leg_contract import (
     OvernightRateIndex,
     PeriodRateOptionPeriod,
     PeriodRateOptionStripLeg,
+    QuotedCouponFormula,
     SettlementRule,
     SignedLeg,
     StaticLegContractIR,
@@ -30,7 +33,8 @@ from trellis.agent.semantic_observables import (
     RateIndexObservable,
 )
 from trellis.conventions.day_count import DayCountConvention
-from trellis.core.market_state import MarketState
+from trellis.core.date_utils import year_fraction
+from trellis.core.market_state import MarketState, MissingCapabilityError
 from trellis.core.payoff import ExecutionBackedPayoff
 from trellis.core.types import Frequency
 from trellis.curves.date_aware_flat_curve import DateAwareFlatYieldCurve
@@ -49,7 +53,7 @@ from trellis.execution.visitors.normalize import normalize_execution_ir
 from trellis.execution.visitors.requirements import derive_requirement_hints
 from trellis.execution.visitors.schedule import execution_event_schedule
 from trellis.instruments.bond import Bond
-from trellis.instruments.swap import SwapPayoff
+from trellis.instruments.swap import SwapPayoff, SwapSpec
 from trellis.models.rate_basis_swap import price_rate_basis_swap
 from trellis.models.rate_cap_floor import price_rate_cap_floor_strip_analytical
 from trellis.models.range_accrual import price_range_accrual
@@ -164,6 +168,37 @@ def _fixed_float_swap() -> StaticLegContractIR:
             ),
         ),
         metadata={"semantic_family": "fixed_float_swap"},
+    )
+
+
+def _irregular_fixed_float_swap() -> StaticLegContractIR:
+    contract = _fixed_float_swap()
+    periods = _periods(
+        ("2025-06-30", "2025-08-15"),
+        ("2025-08-15", "2026-02-15"),
+    )
+    notional = _notional("2025-06-30", "2026-02-15", 1_000_000.0)
+    fixed_signed_leg, floating_signed_leg = contract.legs
+    return replace(
+        contract,
+        legs=(
+            replace(
+                fixed_signed_leg,
+                leg=replace(
+                    fixed_signed_leg.leg,
+                    notional_schedule=notional,
+                    coupon_periods=periods,
+                ),
+            ),
+            replace(
+                floating_signed_leg,
+                leg=replace(
+                    floating_signed_leg.leg,
+                    notional_schedule=notional,
+                    coupon_periods=periods,
+                ),
+            ),
+        ),
     )
 
 
@@ -367,7 +402,11 @@ def test_static_leg_compile_emits_route_free_execution_ir_for_fixed_float_swap()
     assert ir.source_track.source_kind == "static_leg_contract_ir"
     assert ir.source_track.product_family == "fixed_float_swap"
     assert ir.requirement_hints.market_inputs == frozenset(
-        {"discount_curve:USD", "forward_curve:SOFR"}
+        {
+            "discount_curve:USD",
+            "forward_curve:SOFR",
+            "fixing_history:SOFR",
+        }
     )
     assert {obligation.obligation_kind for obligation in ir.obligations} == {
         "coupon_leg"
@@ -384,6 +423,229 @@ def test_static_leg_compile_emits_route_free_execution_ir_for_fixed_float_swap()
     assert summary["obligation_kinds"] == ("coupon_leg",)
 
 
+def test_irregular_coupon_execution_preserves_exact_periods_and_avoids_regular_spec():
+    contract = _irregular_fixed_float_swap()
+    market = _market_state()
+
+    ir = compile_static_leg_execution_ir(contract, fail_on_unsupported=True)
+    price = price_static_leg_execution_ir(ir, market)
+
+    assert (
+        dict(ir.source_track.source_metadata)["static_leg_lowering_declaration_id"]
+        == "static_leg_coupon_obligations"
+    )
+    assert ir.requirement_hints.market_inputs == frozenset(
+        {
+            "discount_curve:USD",
+            "forward_curve:SOFR",
+            "fixing_history:SOFR",
+        }
+    )
+    assert (
+        tuple(
+            period
+            for obligation in ir.obligations
+            for period in dict(obligation.metadata)["periods"]
+        )
+        == (
+            (
+                date(2025, 6, 30),
+                date(2025, 8, 15),
+                date(2025, 8, 15),
+                date(2025, 6, 30),
+            ),
+            (
+                date(2025, 8, 15),
+                date(2026, 2, 15),
+                date(2026, 2, 15),
+                date(2025, 8, 15),
+            ),
+        )
+        * 2
+    )
+
+    expected = 0.0
+    for signed_leg in contract.legs:
+        leg = signed_leg.leg
+        day_count = (
+            DayCountConvention.THIRTY_360
+            if leg.day_count == "30/360"
+            else DayCountConvention.ACT_360
+        )
+        sign = 1.0 if signed_leg.direction == "receive" else -1.0
+        for period in leg.coupon_periods:
+            if isinstance(leg.coupon_formula, FixedCouponFormula):
+                rate = leg.coupon_formula.rate
+            else:
+                curve = market.forecast_forward_curve("SOFR")
+                start = year_fraction(
+                    market.settlement, period.accrual_start, day_count
+                )
+                end = year_fraction(market.settlement, period.accrual_end, day_count)
+                rate = curve.forward_rate(max(start, 0.0), max(end, start + 1e-6))
+            accrual = year_fraction(period.accrual_start, period.accrual_end, day_count)
+            discount_time = year_fraction(
+                market.settlement, period.payment_date, day_count
+            )
+            expected += (
+                sign
+                * 1_000_000.0
+                * float(rate)
+                * accrual
+                * market.discount.discount(discount_time)
+            )
+
+    regular_price = price_payoff(
+        SwapPayoff(
+            SwapSpec(
+                notional=1_000_000.0,
+                fixed_rate=0.04,
+                start_date=date(2025, 6, 30),
+                end_date=date(2026, 2, 15),
+                fixed_frequency=Frequency.SEMI_ANNUAL,
+                float_frequency=Frequency.QUARTERLY,
+                fixed_day_count=DayCountConvention.THIRTY_360,
+                float_day_count=DayCountConvention.ACT_360,
+                rate_index="SOFR",
+                is_payer=True,
+            )
+        ),
+        market,
+    )
+    assert price == pytest.approx(expected, rel=1e-12, abs=1e-8)
+    assert price != pytest.approx(regular_price, rel=1e-8, abs=1e-4)
+
+
+def test_irregular_floating_coupon_uses_required_historical_fixing():
+    contract = _irregular_fixed_float_swap()
+    ir = compile_static_leg_execution_ir(contract, fail_on_unsupported=True)
+    payoff = ExecutionBackedPayoff(ir)
+    fixing_date = date(2025, 6, 30)
+    same_day_market = replace(
+        _market_state(),
+        as_of=fixing_date,
+        settlement=fixing_date,
+    )
+    assert math.isfinite(price_static_leg_execution_ir(ir, same_day_market))
+
+    settlement = date(2025, 7, 15)
+    missing_fixing_market = replace(
+        _market_state(),
+        as_of=settlement,
+        settlement=settlement,
+    )
+
+    assert payoff.requirements == {
+        "discount_curve",
+        "fixing_history",
+        "forward_curve",
+    }
+    with pytest.raises(MissingCapabilityError, match="fixing_history"):
+        price_payoff(payoff, missing_fixing_market)
+    with pytest.raises(ValueError, match="historical fixing"):
+        price_static_leg_execution_ir(ir, missing_fixing_market)
+
+    low_fixing_market = replace(
+        missing_fixing_market,
+        fixing_histories={"SOFR": {fixing_date: 0.01}},
+    )
+    high_fixing_market = replace(
+        missing_fixing_market,
+        fixing_histories={"SOFR": {fixing_date: 0.09}},
+    )
+    low_price = price_static_leg_execution_ir(ir, low_fixing_market)
+    high_price = price_static_leg_execution_ir(ir, high_fixing_market)
+    first_period = contract.legs[1].leg.coupon_periods[0]
+    accrual = year_fraction(
+        first_period.accrual_start,
+        first_period.accrual_end,
+        DayCountConvention.ACT_360,
+    )
+    discount_time = year_fraction(
+        settlement,
+        first_period.payment_date,
+        DayCountConvention.ACT_360,
+    )
+
+    assert high_price - low_price == pytest.approx(
+        1_000_000.0
+        * (0.09 - 0.01)
+        * accrual
+        * low_fixing_market.discount.discount(discount_time),
+        rel=1e-12,
+        abs=1e-8,
+    )
+
+
+def test_irregular_fixed_bond_uses_exact_stub_accruals():
+    contract = _fixed_coupon_bond()
+    coupon_leg, redemption_leg = contract.legs
+    irregular_periods = _periods(
+        ("2025-01-15", "2025-08-15"),
+        ("2025-08-15", "2026-01-15"),
+        ("2026-01-15", "2026-07-15"),
+        ("2026-07-15", "2027-01-15"),
+    )
+    contract = replace(
+        contract,
+        legs=(
+            replace(
+                coupon_leg,
+                leg=replace(coupon_leg.leg, coupon_periods=irregular_periods),
+            ),
+            redemption_leg,
+        ),
+    )
+    market = _market_state()
+
+    ir = compile_static_leg_execution_ir(contract, fail_on_unsupported=True)
+    price = price_static_leg_execution_ir(ir, market)
+
+    coupon_pv = sum(
+        1_000_000.0
+        * 0.05
+        * year_fraction(
+            period.accrual_start,
+            period.accrual_end,
+            DayCountConvention.ACT_ACT,
+        )
+        * market.discount.discount(
+            year_fraction(
+                market.settlement,
+                period.payment_date,
+                DayCountConvention.ACT_ACT,
+            )
+        )
+        for period in irregular_periods
+    )
+    principal_pv = 1_000_000.0 * market.discount.discount(
+        year_fraction(
+            market.settlement,
+            date(2027, 1, 15),
+            DayCountConvention.ACT_ACT,
+        )
+    )
+    regular_frequency_shortcut = sum(
+        1_000_000.0
+        * 0.05
+        * 0.5
+        * market.discount.discount(
+            year_fraction(
+                market.settlement,
+                period.payment_date,
+                DayCountConvention.ACT_ACT,
+            )
+        )
+        for period in irregular_periods
+    ) + principal_pv
+
+    assert dict(ir.source_track.source_metadata)[
+        "static_leg_lowering_declaration_id"
+    ] == "static_leg_coupon_obligations"
+    assert price == pytest.approx(coupon_pv + principal_pv, rel=1e-12, abs=1e-8)
+    assert price != pytest.approx(regular_frequency_shortcut, rel=1e-10, abs=1e-6)
+
+
 def test_static_leg_compile_emits_conditional_accrual_execution_ir_for_range_accrual():
     ir = compile_static_leg_execution_ir(_range_accrual_contract())
 
@@ -392,6 +654,12 @@ def test_static_leg_compile_emits_conditional_accrual_execution_ir_for_range_acc
         "conditional_accrual_leg"
     }
     assert ir.requirement_hints.market_inputs == frozenset(
+        {"discount_curve:USD", "fixing_history:SOFR", "forward_curve:SOFR"}
+    )
+    assert derive_requirement_hints(
+        ir,
+        valuation_date=SETTLE,
+    ).market_inputs == frozenset(
         {"discount_curve:USD", "fixing_history:SOFR", "forward_curve:SOFR"}
     )
     summary = contract_execution_summary(ir)
@@ -410,7 +678,13 @@ def test_static_leg_compile_fails_closed_for_unadmitted_shape():
                     currency="USD",
                     notional_schedule=_notional("2025-01-15", "2026-01-15", 1_000_000.0),
                     coupon_periods=_periods(("2025-01-15", "2025-07-15")),
-                    coupon_formula=FixedCouponFormula(0.0),
+                    coupon_formula=QuotedCouponFormula(
+                        CurveQuote(
+                            curve_id="USD-SWAP",
+                            coordinate=ParRateTenor("5Y"),
+                            convention="par_rate",
+                        )
+                    ),
                     day_count="ACT/360",
                     payment_frequency="semiannual",
                 ),
@@ -421,6 +695,9 @@ def test_static_leg_compile_fails_closed_for_unadmitted_shape():
     ir = compile_static_leg_execution_ir(unsupported)
     assert ir.obligations == ()
     assert ir.execution_metadata.unsupported_reasons
+    assert "static_coupon_obligation_formula_unsupported" in str(
+        ir.execution_metadata.unsupported_reasons
+    )
 
     with pytest.raises(UnsupportedExecutionSemantics):
         compile_static_leg_execution_ir(unsupported, fail_on_unsupported=True)
@@ -545,7 +822,10 @@ def test_execution_backed_payoff_prices_static_leg_ir_through_public_payoff_boun
     contract = _fixed_float_swap()
     market = _market_state()
     ir = compile_static_leg_execution_ir(contract)
-    payoff = ExecutionBackedPayoff(ir)
+    payoff = ExecutionBackedPayoff(
+        ir,
+        execution_terms={"valuation_date": market.settlement},
+    )
 
     assert payoff.execution_ir is ir
     assert payoff.requirements == {"discount_curve", "forward_curve"}
@@ -554,6 +834,35 @@ def test_execution_backed_payoff_prices_static_leg_ir_through_public_payoff_boun
         rel=1e-12,
         abs=1e-8,
     )
+
+
+def test_regular_fixed_float_payoff_preflights_fixing_history():
+    ir = compile_static_leg_execution_ir(_fixed_float_swap())
+    settlement = date(2025, 7, 15)
+    payoff = ExecutionBackedPayoff(
+        ir,
+        execution_terms={"valuation_date": settlement},
+    )
+    market = replace(
+        _market_state(),
+        as_of=settlement,
+        settlement=settlement,
+        fixing_histories={},
+    )
+
+    with pytest.raises(MissingCapabilityError, match="fixing_history"):
+        price_payoff(payoff, market)
+
+
+def test_execution_backed_payoff_rejects_mismatched_valuation_date():
+    market = _market_state()
+    payoff = ExecutionBackedPayoff(
+        compile_static_leg_execution_ir(_fixed_float_swap()),
+        execution_terms={"valuation_date": date(2025, 1, 1)},
+    )
+
+    with pytest.raises(ValueError, match="must match market_state.settlement"):
+        price_payoff(payoff, market)
 
 
 def test_static_leg_runtime_matches_basis_swap_helper_with_date_aware_curves():

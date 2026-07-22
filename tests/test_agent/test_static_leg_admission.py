@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import pytest
 
+from trellis.agent.contract_ir import CurveQuote, ParRateTenor
 from trellis.agent.static_leg_admission import (
     conditional_range_accrual_admission_blockers,
     StaticLegLoweringNoMatchError,
     materialize_static_leg_lowering,
     select_static_leg_lowering,
+    static_coupon_obligation_admission_blockers,
 )
 from trellis.agent.semantic_observables import (
     BetweenPredicate,
@@ -32,6 +35,7 @@ from trellis.agent.static_leg_contract import (
     OvernightRateIndex,
     PeriodRateOptionPeriod,
     PeriodRateOptionStripLeg,
+    QuotedCouponFormula,
     SignedLeg,
     StaticLegContractIR,
     TermRateIndex,
@@ -106,6 +110,61 @@ def _fixed_float_swap() -> StaticLegContractIR:
                 ),
             ),
         )
+    )
+
+
+def _irregular_fixed_float_swap(
+    *,
+    compounding: str = "simple",
+    scheduled_notional: bool = False,
+) -> StaticLegContractIR:
+    contract = _fixed_float_swap()
+    periods = _periods(
+        ("2025-06-30", "2025-08-15"),
+        ("2025-08-15", "2026-02-15"),
+    )
+    notional = (
+        NotionalSchedule(
+            (
+                NotionalStep(
+                    start_date=date(2025, 6, 30),
+                    end_date=date(2025, 8, 15),
+                    amount=1_000_000.0,
+                ),
+                NotionalStep(
+                    start_date=date(2025, 8, 15),
+                    end_date=date(2026, 2, 15),
+                    amount=900_000.0,
+                ),
+            )
+        )
+        if scheduled_notional
+        else _notional("2025-06-30", "2026-02-15", 1_000_000.0)
+    )
+    fixed_signed_leg, floating_signed_leg = contract.legs
+    return replace(
+        contract,
+        legs=(
+            replace(
+                fixed_signed_leg,
+                leg=replace(
+                    fixed_signed_leg.leg,
+                    notional_schedule=notional,
+                    coupon_periods=periods,
+                ),
+            ),
+            replace(
+                floating_signed_leg,
+                leg=replace(
+                    floating_signed_leg.leg,
+                    notional_schedule=notional,
+                    coupon_periods=periods,
+                    coupon_formula=FloatingCouponFormula(
+                        OvernightRateIndex("SOFR", compounding=compounding)
+                    ),
+                ),
+            ),
+        ),
     )
 
 
@@ -339,10 +398,128 @@ class TestStaticLegAdmission:
         materialized = materialize_static_leg_lowering(contract, selection=selection)
 
         assert selection.declaration_id == "static_leg_fixed_float_swap"
+        assert selection.required_capabilities == (
+            "discount_curve",
+            "forward_curve",
+        )
         assert materialized["callable_ref"] == "trellis.instruments.swap.SwapPayoff"
         assert isinstance(materialized["call_kwargs"]["spec"], SwapSpec)
         assert materialized["call_kwargs"]["spec"].is_payer is True
         assert materialized["call_kwargs"]["spec"].fixed_rate == pytest.approx(0.04)
+
+    def test_irregular_fixed_float_selects_generic_coupon_obligation_execution(self):
+        contract = _irregular_fixed_float_swap()
+
+        selection = select_static_leg_lowering(contract)
+        materialized = materialize_static_leg_lowering(
+            contract,
+            selection=selection,
+        )
+
+        assert selection.declaration_id == "static_leg_coupon_obligations"
+        assert selection.callable_ref == "trellis.core.payoff.ExecutionBackedPayoff"
+        assert selection.validation_bundle_id == "static_coupon_obligation_execution_v1"
+        assert selection.required_capabilities == (
+            "discount_curve",
+            "forward_curve",
+            "fixing_history",
+        )
+        assert materialized["callable_ref"] == selection.callable_ref
+        assert (
+            dict(
+                materialized["call_kwargs"]["execution_ir"].source_track.source_metadata
+            )["static_leg_lowering_declaration_id"]
+            == selection.declaration_id
+        )
+
+    def test_irregular_fixed_coupon_bond_avoids_regular_bond_adapter(self):
+        contract = _fixed_coupon_bond()
+        coupon_leg, redemption_leg = contract.legs
+        contract = replace(
+            contract,
+            legs=(
+                replace(
+                    coupon_leg,
+                    leg=replace(
+                        coupon_leg.leg,
+                        coupon_periods=_periods(
+                            ("2025-01-15", "2025-08-15"),
+                            ("2025-08-15", "2026-01-15"),
+                            ("2026-01-15", "2026-07-15"),
+                            ("2026-07-15", "2027-01-15"),
+                        ),
+                    ),
+                ),
+                redemption_leg,
+            ),
+        )
+
+        selection = select_static_leg_lowering(contract)
+
+        assert selection.declaration_id == "static_leg_coupon_obligations"
+        assert selection.callable_ref == "trellis.core.payoff.ExecutionBackedPayoff"
+
+    def test_coupon_obligations_reject_nested_foreign_currency_cashflow(self):
+        contract = _fixed_coupon_bond()
+        coupon_leg, redemption_leg = contract.legs
+        foreign_redemption = replace(
+            redemption_leg,
+            leg=replace(
+                redemption_leg.leg,
+                cashflows=tuple(
+                    replace(cashflow, currency="EUR")
+                    for cashflow in redemption_leg.leg.cashflows
+                ),
+            ),
+        )
+        contract = replace(contract, legs=(coupon_leg, foreign_redemption))
+
+        blockers = static_coupon_obligation_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "static_coupon_obligation_single_currency_required",
+        )
+        with pytest.raises(
+            StaticLegLoweringNoMatchError,
+            match="static_coupon_obligation_single_currency_required",
+        ):
+            select_static_leg_lowering(contract)
+
+    def test_scheduled_notional_coupon_obligations_fail_with_stable_blocker(self):
+        from trellis.agent.semantic_contract_compiler import (
+            _compile_static_leg_admission_blockers,
+        )
+
+        contract = _irregular_fixed_float_swap(scheduled_notional=True)
+
+        blockers = static_coupon_obligation_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "static_coupon_obligation_constant_notional_required",
+        )
+        assert tuple(
+            blocker.blocker_id
+            for blocker in _compile_static_leg_admission_blockers(contract)
+        ) == ("static_coupon_obligation_constant_notional_required",)
+        with pytest.raises(
+            StaticLegLoweringNoMatchError,
+            match="static_coupon_obligation_constant_notional_required",
+        ):
+            select_static_leg_lowering(contract)
+
+    def test_compounded_overnight_coupon_obligations_fail_with_stable_blocker(self):
+        contract = _irregular_fixed_float_swap(compounding="compounded")
+
+        blockers = static_coupon_obligation_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "static_coupon_obligation_simple_overnight_required",
+        )
+        with pytest.raises(
+            StaticLegLoweringNoMatchError,
+            match="static_coupon_obligation_simple_overnight_required",
+        ):
+            select_static_leg_lowering(contract)
 
     def test_basis_swap_selection_materializes_checked_basis_swap_spec(self):
         contract = _basis_swap()
@@ -351,6 +528,10 @@ class TestStaticLegAdmission:
         materialized = materialize_static_leg_lowering(contract, selection=selection)
 
         assert selection.declaration_id == "static_leg_basis_swap"
+        assert selection.required_capabilities == (
+            "discount_curve",
+            "forward_curve",
+        )
         assert materialized["callable_ref"] == "trellis.models.rate_basis_swap.price_rate_basis_swap"
         assert isinstance(materialized["call_kwargs"]["spec"], RateBasisSwapSpec)
         assert materialized["call_kwargs"]["spec"].pay_leg.rate_index == "SOFR"
@@ -377,7 +558,13 @@ class TestStaticLegAdmission:
                         currency="USD",
                         notional_schedule=_notional("2025-01-15", "2026-01-15", 1_000_000.0),
                         coupon_periods=_periods(("2025-01-15", "2025-07-15")),
-                        coupon_formula=FixedCouponFormula(0.0),
+                        coupon_formula=QuotedCouponFormula(
+                            CurveQuote(
+                                curve_id="USD-SWAP",
+                                coordinate=ParRateTenor("5Y"),
+                                convention="par_rate",
+                            )
+                        ),
                         day_count="ACT/360",
                         payment_frequency="semiannual",
                         label="placeholder",
@@ -386,7 +573,10 @@ class TestStaticLegAdmission:
             )
         )
 
-        with pytest.raises(StaticLegLoweringNoMatchError):
+        with pytest.raises(
+            StaticLegLoweringNoMatchError,
+            match="static_coupon_obligation_formula_unsupported",
+        ):
             select_static_leg_lowering(contract)
 
     def test_period_rate_option_strip_defaults_to_checked_analytical_lowering(self):
@@ -505,6 +695,11 @@ class TestStaticLegAdmission:
         materialized = materialize_static_leg_lowering(contract, selection=selection)
 
         assert selection.declaration_id == "static_leg_range_accrual_discounted"
+        assert selection.required_capabilities == (
+            "discount_curve",
+            "forward_curve",
+            "fixing_history",
+        )
         assert selection.callable_ref == "trellis.models.range_accrual.price_range_accrual"
         assert selection.validation_bundle_id == "range_accrual_discounted_cashflow_v1"
         assert materialized["callable_ref"] == "trellis.models.range_accrual.price_range_accrual"
