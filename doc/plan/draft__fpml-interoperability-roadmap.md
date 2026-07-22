@@ -184,12 +184,12 @@ normalization, package result cardinality, and support closeout.
 | --- | --- | --- | --- |
 | `QUA-1216` | In Progress | expansion umbrella for FPI.2 through FPI.4 | `QUA-1207` |
 | `QUA-1217` | In Progress | FPI.2 rates and package umbrella | `QUA-1207` |
-| `QUA-1220` | In Progress | modular normalizer umbrella | `QUA-1207` |
+| `QUA-1220` | Done | modular normalizer umbrella | `QUA-1207` |
 | `QUA-1226` | Done | shared parsing and stream-normalization boundary | `QUA-1207` |
 | `QUA-1227` | Done | fixed-float swap mapping extraction | `QUA-1226` |
 | `QUA-1229` | Done | cap/floor mapping extraction | `QUA-1226` |
 | `QUA-1228` | Done | swaption mapping extraction | `QUA-1226`, `QUA-1227` |
-| `QUA-1230` | In Progress | facade and modularity closeout | `QUA-1227`, `QUA-1228`, `QUA-1229` |
+| `QUA-1230` | Done | facade and modularity closeout | `QUA-1227`, `QUA-1228`, `QUA-1229` |
 | `QUA-1222` | Backlog | reusable irregular-period static coupon execution | none |
 | `QUA-1223` | Backlog | bounded basis-swap normalization | `QUA-1220` |
 | `QUA-1224` | Backlog | bounded irregular schedule normalization | `QUA-1220`, `QUA-1222` |
@@ -432,7 +432,7 @@ The first coherent slice is complete. Future breadth is explicitly outside
 3. `QUA-1219` / `FPI.4` — lifecycle and recordkeeping current-state projection,
    blocked by `QUA-1217` and `QUA-1218`
 4. `QUA-1220` — behavior-preserving modularization of the internal FpML
-   normalizer — In Progress and a prerequisite for new mappings
+   normalizer — Done; the bounded facade is ready for new mappings
 
 `FPI.5` dynamic imported exotics and the remaining `FPI.6` industrial tooling
 stay planning-only until those prerequisite cohorts are closed.
