@@ -152,7 +152,7 @@ of silently coercing it into a nearby product family.
 | --- | --- | --- | --- |
 | `FPI.0` | Done | foundation seam for imported documents and trade envelopes | none |
 | `FPI.1` | Done | confirmation-view vanilla-rates current-state pricing | `FPI.0` |
-| `FPI.2` | Proposed | rates breadth and package hygiene | `FPI.1` |
+| `FPI.2` | In Progress | rates breadth and package hygiene | `FPI.1` |
 | `FPI.3` | Proposed | cross-asset current-state single-trade coverage | `FPI.1` |
 | `FPI.4` | Proposed | lifecycle-state and alternate-view normalization | `FPI.2`, `FPI.3` |
 | `FPI.5` | Proposed | dynamic and stateful imported exotics | `FPI.4` plus executable dynamic lowering inside Trellis |
@@ -173,6 +173,28 @@ execution mirror and stays ordered by implementation dependency.
 | `QUA-1213` | Done | scheduled cap/floor strip normalization | `QUA-1210`, `QUA-1211` |
 | `QUA-1214` | Done | paired FpML/native conformance task corpus | `QUA-1211`, `QUA-1212`, `QUA-1213` |
 | `QUA-1215` | Done | support matrix, maintenance review, and epic closeout | `QUA-1214` |
+
+## FPI.2 Execution Queue
+
+Linear is the source of truth. The audited queue separates behavior-preserving
+normalizer modularization, reusable static-leg execution, product/convention
+normalization, package result cardinality, and support closeout.
+
+| Ticket | Status | Objective | Hard prerequisites |
+| --- | --- | --- | --- |
+| `QUA-1216` | In Progress | expansion umbrella for FPI.2 through FPI.4 | `QUA-1207` |
+| `QUA-1217` | In Progress | FPI.2 rates and package umbrella | `QUA-1207` |
+| `QUA-1220` | In Progress | modular normalizer umbrella | `QUA-1207` |
+| `QUA-1226` | In Progress | shared parsing and stream-normalization boundary | `QUA-1207` |
+| `QUA-1227` | Backlog | fixed-float swap mapping extraction | `QUA-1226` |
+| `QUA-1229` | Backlog | cap/floor mapping extraction | `QUA-1226` |
+| `QUA-1228` | Backlog | swaption mapping extraction | `QUA-1226`, `QUA-1227` |
+| `QUA-1230` | Backlog | facade and modularity closeout | `QUA-1227`, `QUA-1228`, `QUA-1229` |
+| `QUA-1222` | Backlog | reusable irregular-period static coupon execution | none |
+| `QUA-1223` | Backlog | bounded basis-swap normalization | `QUA-1220` |
+| `QUA-1224` | Backlog | bounded irregular schedule normalization | `QUA-1220`, `QUA-1222` |
+| `QUA-1221` | Backlog | document/package/trade result axes | `QUA-1220` |
+| `QUA-1225` | Backlog | conformance and support-contract closeout | `QUA-1221`, `QUA-1223`, `QUA-1224` |
 
 ## Cohort Details
 
@@ -257,17 +279,16 @@ Scope:
 - first package/document identity surfaces
 - still current-state only
 
-Queue:
+Audited queue:
 
-- `FPI.2a` broaden static-leg import for richer day-count, stub, and
-  compounding conventions that remain inside admitted static-leg closure
-- `FPI.2b` make basis-swap import first-class rather than stretch-only
-- `FPI.2c` add bounded package/document import for multiple
-  independently priceable rates trades
-- `FPI.2d` add result-path support for imported document, package, and
-  trade axes
-- `FPI.2e` add fail-closed handling for package semantics that imply
-  unsupported netting or path-dependent package logic
+- modularize the existing normalizer before adding another XML mapping
+- close reusable irregular-period, constant-notional coupon execution before
+  admitting explicit FpML stubs
+- make bounded constant-notional basis-swap import first-class
+- add bounded package/document import with per-trade result axes, without
+  aggregate package economics
+- keep compounding, scheduled notionals, netting, collateral, and
+  path-dependent package logic fail-closed
 
 Acceptance:
 
@@ -406,12 +427,12 @@ Use this rule when selecting the next cohort.
 The first coherent slice is complete. Future breadth is explicitly outside
 `QUA-1207` and tracked under `QUA-1216`:
 
-1. `QUA-1217` / `FPI.2` — richer rates conventions and package hygiene
+1. `QUA-1217` / `FPI.2` — richer rates conventions and package hygiene — In Progress
 2. `QUA-1218` / `FPI.3` — cross-asset current-state single trades
 3. `QUA-1219` / `FPI.4` — lifecycle and recordkeeping current-state projection,
    blocked by `QUA-1217` and `QUA-1218`
 4. `QUA-1220` — behavior-preserving modularization of the internal FpML
-   normalizer before future breadth makes that boundary harder to review
+   normalizer — In Progress and a prerequisite for new mappings
 
 `FPI.5` dynamic imported exotics and the remaining `FPI.6` industrial tooling
 stay planning-only until those prerequisite cohorts are closed.

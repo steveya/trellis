@@ -40,6 +40,28 @@ artifacts are selected from normalized structure.
 The admitted path performs no natural-language parsing, LLM call, code
 generation, cookbook update, or model-validator review.
 
+Internal Module Boundaries
+--------------------------
+
+``trellis.io.fpml.importer`` owns secure document inspection and
+``trellis.io.fpml.contracts`` owns immutable body-free reports.
+``trellis.io.fpml.normalizer`` remains the stable normalization facade and,
+until the product-mapping extraction tickets close, contains the admitted
+swap, swaption, and cap/floor mappings. The internal
+``trellis.io.fpml._normalization_common`` module owns product-neutral XML
+access, exact blocker and provenance construction, calendars, date and
+frequency conventions, regular schedule validation, and bounded stream
+parsing.
+
+The public entry point remains ``normalize_fpml_document(...)``. The platform
+request compiler also uses the internal
+``_normalize_inspected_fpml_document(...)`` seam so it can reconcile document
+provenance before lowering economics; modularization must preserve both result
+contracts. Shared and product normalization modules may depend on semantic IR
+types, but they must not import pricing models, generated adapters, agent
+knowledge, or route-selection authority. Moving code across these boundaries
+does not change the versioned support matrix.
+
 Valuation Perspective
 ---------------------
 
