@@ -2,8 +2,8 @@
 
 ## Status
 
-The bounded first FpML interoperability cohort is in final closeout. Future
-cohorts remain planning-only under a separate follow-on umbrella.
+The bounded first FpML interoperability cohort is complete. Future cohorts
+remain planning-only under a separate follow-on umbrella.
 
 Linear umbrella: `QUA-1207` — Semantic FpML import: canonical trade
 interoperability.
@@ -172,7 +172,7 @@ execution mirror and stays ordered by implementation dependency.
 | `QUA-1212` | Done | European swaption normalization | `QUA-1210`, `QUA-1211` |
 | `QUA-1213` | Done | scheduled cap/floor strip normalization | `QUA-1210`, `QUA-1211` |
 | `QUA-1214` | Done | paired FpML/native conformance task corpus | `QUA-1211`, `QUA-1212`, `QUA-1213` |
-| `QUA-1215` | In Progress | support matrix, maintenance review, and epic closeout | `QUA-1214` |
+| `QUA-1215` | Done | support matrix, maintenance review, and epic closeout | `QUA-1214` |
 
 ## Cohort Details
 
