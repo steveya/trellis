@@ -398,6 +398,10 @@ class TestStaticLegAdmission:
         materialized = materialize_static_leg_lowering(contract, selection=selection)
 
         assert selection.declaration_id == "static_leg_fixed_float_swap"
+        assert selection.required_capabilities == (
+            "discount_curve",
+            "forward_curve",
+        )
         assert materialized["callable_ref"] == "trellis.instruments.swap.SwapPayoff"
         assert isinstance(materialized["call_kwargs"]["spec"], SwapSpec)
         assert materialized["call_kwargs"]["spec"].is_payer is True
@@ -455,6 +459,32 @@ class TestStaticLegAdmission:
         assert selection.declaration_id == "static_leg_coupon_obligations"
         assert selection.callable_ref == "trellis.core.payoff.ExecutionBackedPayoff"
 
+    def test_coupon_obligations_reject_nested_foreign_currency_cashflow(self):
+        contract = _fixed_coupon_bond()
+        coupon_leg, redemption_leg = contract.legs
+        foreign_redemption = replace(
+            redemption_leg,
+            leg=replace(
+                redemption_leg.leg,
+                cashflows=tuple(
+                    replace(cashflow, currency="EUR")
+                    for cashflow in redemption_leg.leg.cashflows
+                ),
+            ),
+        )
+        contract = replace(contract, legs=(coupon_leg, foreign_redemption))
+
+        blockers = static_coupon_obligation_admission_blockers(contract)
+
+        assert tuple(blocker.blocker_id for blocker in blockers) == (
+            "static_coupon_obligation_single_currency_required",
+        )
+        with pytest.raises(
+            StaticLegLoweringNoMatchError,
+            match="static_coupon_obligation_single_currency_required",
+        ):
+            select_static_leg_lowering(contract)
+
     def test_scheduled_notional_coupon_obligations_fail_with_stable_blocker(self):
         from trellis.agent.semantic_contract_compiler import (
             _compile_static_leg_admission_blockers,
@@ -498,6 +528,10 @@ class TestStaticLegAdmission:
         materialized = materialize_static_leg_lowering(contract, selection=selection)
 
         assert selection.declaration_id == "static_leg_basis_swap"
+        assert selection.required_capabilities == (
+            "discount_curve",
+            "forward_curve",
+        )
         assert materialized["callable_ref"] == "trellis.models.rate_basis_swap.price_rate_basis_swap"
         assert isinstance(materialized["call_kwargs"]["spec"], RateBasisSwapSpec)
         assert materialized["call_kwargs"]["spec"].pay_leg.rate_index == "SOFR"
@@ -661,6 +695,11 @@ class TestStaticLegAdmission:
         materialized = materialize_static_leg_lowering(contract, selection=selection)
 
         assert selection.declaration_id == "static_leg_range_accrual_discounted"
+        assert selection.required_capabilities == (
+            "discount_curve",
+            "forward_curve",
+            "fixing_history",
+        )
         assert selection.callable_ref == "trellis.models.range_accrual.price_range_accrual"
         assert selection.validation_bundle_id == "range_accrual_discounted_cashflow_v1"
         assert materialized["callable_ref"] == "trellis.models.range_accrual.price_range_accrual"
