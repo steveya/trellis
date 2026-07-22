@@ -17,6 +17,11 @@ FIXTURE = (
 CAP_FLOOR_FIXTURE = (
     Path(__file__).with_name("fixtures") / "fpml" / "confirmation_5_13_cap_floor.xml"
 )
+SWAPTION_FIXTURE = (
+    Path(__file__).with_name("fixtures")
+    / "fpml"
+    / "confirmation_5_13_european_swaption.xml"
+)
 
 FORBIDDEN_SHARED_IMPORT_PREFIXES = (
     "trellis.agent.executor",
@@ -59,7 +64,6 @@ def test_shared_normalization_module_owns_product_neutral_helpers():
     for facade_helper_name in (
         "_blocked_from",
         "_blocker",
-        "_normalize_option_premiums",
         "_validate_document_metadata",
     ):
         shared_helper = getattr(shared, facade_helper_name)
@@ -127,6 +131,28 @@ def test_cap_floor_normalization_module_owns_strip_mapping():
         assert not hasattr(cap_floor_mapper, other_product_mapper_name)
 
 
+def test_swaption_normalization_module_owns_european_mapping():
+    normalizer = importlib.import_module("trellis.io.fpml.normalizer")
+    swaption_mapper = importlib.import_module(
+        "trellis.io.fpml._normalization_swaption"
+    )
+
+    mapper = swaption_mapper._normalize_european_swaption
+    assert mapper.__module__ == swaption_mapper.__name__
+    assert normalizer._normalize_european_swaption is mapper
+
+    shared_premium_mapper = importlib.import_module(
+        "trellis.io.fpml._normalization_common"
+    )._normalize_option_premiums
+    swap_mapper = importlib.import_module(
+        "trellis.io.fpml._normalization_swap"
+    )._normalize_fixed_float_swap
+    assert mapper.__globals__["_normalize_option_premiums"] is shared_premium_mapper
+    assert mapper.__globals__["_normalize_fixed_float_swap"] is swap_mapper
+
+    assert not hasattr(swaption_mapper, "_normalize_cap_floor")
+
+
 def test_shared_normalization_module_has_no_pricing_or_route_authority_imports():
     shared = importlib.import_module("trellis.io.fpml._normalization_common")
 
@@ -165,6 +191,20 @@ def test_cap_floor_module_has_no_pricing_or_route_authority_imports():
     assert violations == ()
 
 
+def test_swaption_module_has_no_pricing_or_route_authority_imports():
+    swaption_mapper = importlib.import_module(
+        "trellis.io.fpml._normalization_swaption"
+    )
+
+    violations = tuple(
+        imported
+        for imported in _imported_modules(swaption_mapper)
+        if imported.startswith(FORBIDDEN_SHARED_IMPORT_PREFIXES)
+    )
+
+    assert violations == ()
+
+
 def test_internal_normalization_module_is_not_codegen_import_authority():
     from trellis.agent.knowledge.import_registry import get_import_registry
 
@@ -173,6 +213,7 @@ def test_internal_normalization_module_is_not_codegen_import_authority():
     assert "trellis.io.fpml._normalization_common" not in registry
     assert "trellis.io.fpml._normalization_cap_floor" not in registry
     assert "trellis.io.fpml._normalization_swap" not in registry
+    assert "trellis.io.fpml._normalization_swaption" not in registry
 
 
 def test_public_and_inspected_document_facades_remain_field_compatible():
@@ -297,3 +338,54 @@ def test_direct_cap_floor_mapper_matches_source_neutral_public_facade():
     assert provenance == report.mapping_provenance
     assert premium_metadata == report.premium_metadata
     assert contract.metadata["semantic_family"] == "period_rate_option_strip"
+
+
+def test_direct_swaption_mapper_matches_public_facade_and_preserves_underlying():
+    from trellis.io.fpml import inspect_fpml_document, normalize_fpml_document
+    from trellis.io.fpml.contracts import DEFAULT_FPML_INSPECTION_LIMITS
+    from trellis.io.fpml.importer import (
+        _bounded_parse,
+        _content_bytes,
+        _direct_children,
+        _first_direct_child,
+    )
+
+    swaption_mapper = importlib.import_module(
+        "trellis.io.fpml._normalization_swaption"
+    )
+    xml = SWAPTION_FIXTURE.read_bytes()
+    inspected = inspect_fpml_document(
+        xml,
+        declared_view="confirmation",
+        declared_version="5-13",
+    )
+    root = _bounded_parse(
+        _content_bytes(xml),
+        limits=DEFAULT_FPML_INSPECTION_LIMITS,
+    )
+    namespace = inspected.document.namespace
+    trade = _direct_children(root, "trade", namespace=namespace)[0]
+    swaption = _first_direct_child(trade, "swaption", namespace=namespace)
+
+    contract, provenance, premium_metadata = (
+        swaption_mapper._normalize_european_swaption(
+            swaption,
+            namespace=namespace,
+            valuation_party_id="PARTY-A",
+            valuation_date=date(2025, 1, 15),
+            known_party_ids=inspected.trade.party_ids,
+        )
+    )
+    report = normalize_fpml_document(
+        xml,
+        declared_view="confirmation",
+        declared_version="5-13",
+        valuation_party_id="PARTY-A",
+        valuation_date=date(2025, 1, 15),
+    )
+
+    assert contract == report.normalized_contract
+    assert provenance == report.mapping_provenance
+    assert premium_metadata == report.premium_metadata
+    assert contract.underlying_contract is not None
+    assert contract.underlying_contract == report.normalized_contract.underlying_contract
