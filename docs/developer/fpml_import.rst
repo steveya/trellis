@@ -64,6 +64,40 @@ access, exact blocker and provenance construction, calendars, date and
 frequency conventions, regular schedule validation, bounded stream parsing,
 and option-premium metadata shared by cap/floor and swaption normalization.
 
+The internal dependency graph is deliberately small and enforced by tests:
+
+.. list-table:: FpML normalization ownership
+   :header-rows: 1
+   :widths: 30 45 25
+
+   * - Module
+     - Owns
+     - May depend on
+   * - ``normalizer``
+     - document validation, valuation context, product dispatch, economic
+       identity selection, and immutable report construction
+     - ``_normalization_common`` and every admitted product mapper
+   * - ``_normalization_common``
+     - product-neutral XML, blocker, provenance, convention, schedule, stream,
+       and shared premium parsing
+     - no product mapper
+   * - ``_normalization_swap``
+     - fixed-float swap semantics and swap-specific fixing rejection
+     - ``_normalization_common``
+   * - ``_normalization_cap_floor``
+     - scheduled cap/floor strip semantics
+     - ``_normalization_common``
+   * - ``_normalization_swaption``
+     - physical European swaption semantics and complete underlying-swap
+       composition
+     - ``_normalization_common`` and ``_normalization_swap``
+
+``tests/test_io/test_fpml_normalizer_boundaries.py`` fixes this graph, the two
+function facade surface, stable public exports, mapper identity, and exclusion
+from code-generation import authority. Shared and product modules may use
+semantic IR types, but cannot import the facade, pricing models, generated
+adapters, agent knowledge, task runtime, or route-selection authority.
+
 The public entry point remains ``normalize_fpml_document(...)``. The platform
 request compiler also uses the internal
 ``_normalize_inspected_fpml_document(...)`` seam so it can reconcile document
@@ -255,3 +289,19 @@ update. ``genericProduct``, ``nonSchemaProduct``, vendor extensions, or labels
 can advance only when their full economics have a separately approved Trellis
 semantic contract. An agent-authored adapter or cookbook entry cannot upgrade
 the public import support claim by itself.
+
+Place new XML access, convention, or schedule logic in
+``_normalization_common`` only when it is product-neutral and reused by more
+than one admitted mapper. Product-specific admission rules, blockers, semantic
+construction, and provenance belong in one product mapper. A product mapper
+may compose another mapper only when the nested product is part of canonical
+economic identity, as the admitted swaption composes the complete fixed-float
+swap. Such a dependency must be explicit in the boundary test and must not
+flow back from the nested mapper to its consumer.
+
+The facade may add a product name only after inspection admits it and an
+internal mapper exists. The facade remains responsible for orchestration and
+report cardinality; product validation must not move back into it. Internal
+normalization modules remain absent from the code-generation import registry,
+and neither a generated adapter nor learned cookbook can become import-support
+authority.

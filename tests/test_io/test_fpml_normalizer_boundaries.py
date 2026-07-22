@@ -31,6 +31,13 @@ FORBIDDEN_SHARED_IMPORT_PREFIXES = (
     "trellis.instruments",
     "trellis.models",
 )
+NORMALIZATION_MODULES = {
+    "common": "trellis.io.fpml._normalization_common",
+    "swap": "trellis.io.fpml._normalization_swap",
+    "cap_floor": "trellis.io.fpml._normalization_cap_floor",
+    "swaption": "trellis.io.fpml._normalization_swaption",
+    "facade": "trellis.io.fpml.normalizer",
+}
 
 
 def _imported_modules(module) -> tuple[str, ...]:
@@ -43,6 +50,77 @@ def _imported_modules(module) -> tuple[str, ...]:
         elif isinstance(node, ast.ImportFrom) and node.module:
             imports.append(node.module)
     return tuple(imports)
+
+
+def test_normalizer_facade_defines_only_bounded_orchestration():
+    normalizer = importlib.import_module(NORMALIZATION_MODULES["facade"])
+    tree = ast.parse(inspect.getsource(normalizer))
+
+    functions = tuple(
+        node.name for node in tree.body if isinstance(node, ast.FunctionDef)
+    )
+    normalization_imports = {
+        imported
+        for imported in _imported_modules(normalizer)
+        if imported in set(NORMALIZATION_MODULES.values())
+    }
+
+    assert functions == (
+        "normalize_fpml_document",
+        "_normalize_inspected_fpml_document",
+    )
+    assert normalization_imports == {
+        NORMALIZATION_MODULES["common"],
+        NORMALIZATION_MODULES["swap"],
+        NORMALIZATION_MODULES["cap_floor"],
+        NORMALIZATION_MODULES["swaption"],
+    }
+
+
+def test_internal_normalization_dependency_graph_is_explicit_and_acyclic():
+    expected_dependencies = {
+        "common": set(),
+        "swap": {NORMALIZATION_MODULES["common"]},
+        "cap_floor": {NORMALIZATION_MODULES["common"]},
+        "swaption": {
+            NORMALIZATION_MODULES["common"],
+            NORMALIZATION_MODULES["swap"],
+        },
+    }
+    internal_module_names = set(NORMALIZATION_MODULES.values())
+
+    for module_name, expected in expected_dependencies.items():
+        module = importlib.import_module(NORMALIZATION_MODULES[module_name])
+        dependencies = {
+            imported
+            for imported in _imported_modules(module)
+            if imported in internal_module_names
+        }
+        assert dependencies == expected
+
+
+def test_public_fpml_exports_keep_the_stable_normalization_facade():
+    fpml = importlib.import_module("trellis.io.fpml")
+    normalizer = importlib.import_module(NORMALIZATION_MODULES["facade"])
+
+    assert fpml.__all__ == [
+        "DEFAULT_FPML_INSPECTION_LIMITS",
+        "FPML_5_13_CONFIRMATION",
+        "SUPPORTED_FPML_PROFILES",
+        "FpMLClarification",
+        "FpMLDocumentIdentity",
+        "FpMLFieldProvenance",
+        "FpMLImportBlocker",
+        "FpMLImportReport",
+        "FpMLInspectionLimits",
+        "FpMLPremiumMetadata",
+        "FpMLProfile",
+        "FpMLTradeIdentity",
+        "fpml_import_report_summary",
+        "inspect_fpml_document",
+        "normalize_fpml_document",
+    ]
+    assert fpml.normalize_fpml_document is normalizer.normalize_fpml_document
 
 
 def test_shared_normalization_module_owns_product_neutral_helpers():
