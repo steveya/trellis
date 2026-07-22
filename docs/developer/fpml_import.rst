@@ -46,14 +46,19 @@ Internal Module Boundaries
 ``trellis.io.fpml.importer`` owns secure document inspection and
 ``trellis.io.fpml.contracts`` owns immutable body-free reports.
 ``trellis.io.fpml.normalizer`` remains the stable normalization facade and
-contains the admitted swaption and cap/floor mappings until their extraction
-tickets close. The internal ``trellis.io.fpml._normalization_swap`` module owns
-fixed-float swap validation, semantic mapping, provenance, and the
-product-specific historical-fixing rejection. The internal
+contains the admitted swaption mapping until its extraction ticket closes. The
+internal ``trellis.io.fpml._normalization_swap`` module owns fixed-float swap
+validation, semantic mapping, provenance, and the product-specific
+historical-fixing rejection. The internal
+``trellis.io.fpml._normalization_cap_floor`` module owns cap/floor validation,
+strike and option-side mapping, static-strip construction, and provenance. It
+normalizes the external ``capFloor`` label to source-neutral
+``period_rate_option_strip`` semantics without selecting a pricing route. The
+internal
 ``trellis.io.fpml._normalization_common`` module owns product-neutral XML
 access, exact blocker and provenance construction, calendars, date and
-frequency conventions, regular schedule validation, and bounded stream
-parsing.
+frequency conventions, regular schedule validation, bounded stream parsing,
+and option-premium metadata shared by cap/floor and swaption normalization.
 
 The public entry point remains ``normalize_fpml_document(...)``. The platform
 request compiler also uses the internal

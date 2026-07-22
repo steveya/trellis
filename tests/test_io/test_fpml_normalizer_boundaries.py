@@ -14,6 +14,9 @@ FIXTURE = (
     / "fpml"
     / "confirmation_5_13_fixed_float_swap.xml"
 )
+CAP_FLOOR_FIXTURE = (
+    Path(__file__).with_name("fixtures") / "fpml" / "confirmation_5_13_cap_floor.xml"
+)
 
 FORBIDDEN_SHARED_IMPORT_PREFIXES = (
     "trellis.agent.executor",
@@ -45,13 +48,22 @@ def test_shared_normalization_module_owns_product_neutral_helpers():
         "_adjustable_date",
         "_blocked_from",
         "_blocker",
+        "_normalize_option_premiums",
         "_normalize_stream",
         "_provenance",
         "_validate_document_metadata",
     ):
         shared_helper = getattr(shared, helper_name)
         assert shared_helper.__module__ == shared.__name__
-        assert getattr(normalizer, helper_name) is shared_helper
+
+    for facade_helper_name in (
+        "_blocked_from",
+        "_blocker",
+        "_normalize_option_premiums",
+        "_validate_document_metadata",
+    ):
+        shared_helper = getattr(shared, facade_helper_name)
+        assert getattr(normalizer, facade_helper_name) is shared_helper
 
     for product_mapper_name in (
         "_normalize_cap_floor",
@@ -80,6 +92,41 @@ def test_swap_normalization_module_owns_fixed_float_mapping():
         assert not hasattr(swap_mapper, other_product_mapper_name)
 
 
+def test_cap_floor_normalization_module_owns_strip_mapping():
+    cap_floor_mapper = importlib.import_module(
+        "trellis.io.fpml._normalization_cap_floor"
+    )
+    normalizer = importlib.import_module("trellis.io.fpml.normalizer")
+
+    mapper = cap_floor_mapper._normalize_cap_floor
+    assert mapper.__module__ == cap_floor_mapper.__name__
+    assert normalizer._normalize_cap_floor is mapper
+    assert (
+        cap_floor_mapper._normalize_cap_floor_strike_schedule.__module__
+        == cap_floor_mapper.__name__
+    )
+
+    shared_premium_mapper = importlib.import_module(
+        "trellis.io.fpml._normalization_common"
+    )._normalize_option_premiums
+    assert (
+        cap_floor_mapper._normalize_cap_floor.__globals__["_normalize_option_premiums"]
+        is shared_premium_mapper
+    )
+    assert (
+        normalizer._normalize_european_swaption.__globals__[
+            "_normalize_option_premiums"
+        ]
+        is shared_premium_mapper
+    )
+
+    for other_product_mapper_name in (
+        "_normalize_european_swaption",
+        "_normalize_fixed_float_swap",
+    ):
+        assert not hasattr(cap_floor_mapper, other_product_mapper_name)
+
+
 def test_shared_normalization_module_has_no_pricing_or_route_authority_imports():
     shared = importlib.import_module("trellis.io.fpml._normalization_common")
 
@@ -104,12 +151,27 @@ def test_swap_normalization_module_has_no_pricing_or_route_authority_imports():
     assert violations == ()
 
 
+def test_cap_floor_module_has_no_pricing_or_route_authority_imports():
+    cap_floor_mapper = importlib.import_module(
+        "trellis.io.fpml._normalization_cap_floor"
+    )
+
+    violations = tuple(
+        imported
+        for imported in _imported_modules(cap_floor_mapper)
+        if imported.startswith(FORBIDDEN_SHARED_IMPORT_PREFIXES)
+    )
+
+    assert violations == ()
+
+
 def test_internal_normalization_module_is_not_codegen_import_authority():
     from trellis.agent.knowledge.import_registry import get_import_registry
 
     registry = get_import_registry()
 
     assert "trellis.io.fpml._normalization_common" not in registry
+    assert "trellis.io.fpml._normalization_cap_floor" not in registry
     assert "trellis.io.fpml._normalization_swap" not in registry
 
 
@@ -187,3 +249,51 @@ def test_direct_swap_mapper_matches_public_facade():
         )._normalize_european_swaption.__globals__["_normalize_fixed_float_swap"]
         is swap_mapper._normalize_fixed_float_swap
     )
+
+
+def test_direct_cap_floor_mapper_matches_source_neutral_public_facade():
+    from trellis.io.fpml import inspect_fpml_document, normalize_fpml_document
+    from trellis.io.fpml.contracts import DEFAULT_FPML_INSPECTION_LIMITS
+    from trellis.io.fpml.importer import (
+        _bounded_parse,
+        _content_bytes,
+        _direct_children,
+        _first_direct_child,
+    )
+
+    cap_floor_mapper = importlib.import_module(
+        "trellis.io.fpml._normalization_cap_floor"
+    )
+    xml = CAP_FLOOR_FIXTURE.read_bytes()
+    inspected = inspect_fpml_document(
+        xml,
+        declared_view="confirmation",
+        declared_version="5-13",
+    )
+    root = _bounded_parse(
+        _content_bytes(xml),
+        limits=DEFAULT_FPML_INSPECTION_LIMITS,
+    )
+    namespace = inspected.document.namespace
+    trade = _direct_children(root, "trade", namespace=namespace)[0]
+    cap_floor = _first_direct_child(trade, "capFloor", namespace=namespace)
+
+    contract, provenance, premium_metadata = cap_floor_mapper._normalize_cap_floor(
+        cap_floor,
+        namespace=namespace,
+        valuation_party_id="PARTY-A",
+        valuation_date=date(2025, 1, 15),
+        known_party_ids=inspected.trade.party_ids,
+    )
+    report = normalize_fpml_document(
+        xml,
+        declared_view="confirmation",
+        declared_version="5-13",
+        valuation_party_id="PARTY-A",
+        valuation_date=date(2025, 1, 15),
+    )
+
+    assert contract == report.normalized_contract
+    assert provenance == report.mapping_provenance
+    assert premium_metadata == report.premium_metadata
+    assert contract.metadata["semantic_family"] == "period_rate_option_strip"
