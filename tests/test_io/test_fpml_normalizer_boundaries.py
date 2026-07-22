@@ -5,6 +5,7 @@ from __future__ import annotations
 import ast
 from datetime import date
 import importlib
+from importlib.util import resolve_name
 import inspect
 from pathlib import Path
 
@@ -38,18 +39,57 @@ NORMALIZATION_MODULES = {
     "swaption": "trellis.io.fpml._normalization_swaption",
     "facade": "trellis.io.fpml.normalizer",
 }
+PUBLIC_FACADE_EXPORTS = {
+    "trellis.io.fpml.normalize_fpml_document": NORMALIZATION_MODULES["facade"],
+}
 
 
-def _imported_modules(module) -> tuple[str, ...]:
-    source = inspect.getsource(module)
+def _imported_modules_from_source(source: str, *, package: str) -> tuple[str, ...]:
     tree = ast.parse(source)
     imports: list[str] = []
+    internal_modules = set(NORMALIZATION_MODULES.values())
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             imports.extend(alias.name for alias in node.names)
-        elif isinstance(node, ast.ImportFrom) and node.module:
-            imports.append(node.module)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:
+                imported_module = resolve_name(
+                    f"{'.' * node.level}{node.module or ''}", package
+                )
+            else:
+                imported_module = node.module
+            if imported_module is None:
+                continue
+            imports.append(imported_module)
+            for alias in node.names:
+                imported_symbol = f"{imported_module}.{alias.name}"
+                if imported_symbol in internal_modules:
+                    imports.append(imported_symbol)
+                facade_module = PUBLIC_FACADE_EXPORTS.get(imported_symbol)
+                if facade_module is not None:
+                    imports.append(facade_module)
     return tuple(imports)
+
+
+def _imported_modules(module) -> tuple[str, ...]:
+    return _imported_modules_from_source(
+        inspect.getsource(module), package=module.__package__
+    )
+
+
+def test_import_parser_normalizes_facade_bypass_forms():
+    for source in (
+        "from .normalizer import _normalize_inspected_fpml_document",
+        "from trellis.io.fpml import normalize_fpml_document",
+    ):
+        imports = set(
+            _imported_modules_from_source(
+                source,
+                package="trellis.io.fpml",
+            )
+        )
+
+        assert NORMALIZATION_MODULES["facade"] in imports
 
 
 def test_normalizer_facade_defines_only_bounded_orchestration():
