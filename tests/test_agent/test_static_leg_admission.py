@@ -415,7 +415,11 @@ class TestStaticLegAdmission:
         assert selection.declaration_id == "static_leg_coupon_obligations"
         assert selection.callable_ref == "trellis.core.payoff.ExecutionBackedPayoff"
         assert selection.validation_bundle_id == "static_coupon_obligation_execution_v1"
-        assert selection.required_capabilities == ("discount_curve", "forward_curve")
+        assert selection.required_capabilities == (
+            "discount_curve",
+            "forward_curve",
+            "fixing_history",
+        )
         assert materialized["callable_ref"] == selection.callable_ref
         assert (
             dict(

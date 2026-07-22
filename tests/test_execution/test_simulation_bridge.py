@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date
 
 import numpy as np
@@ -166,6 +167,25 @@ def _fixed_coupon_bond() -> StaticLegContractIR:
     )
 
 
+def _irregular_fixed_float_swap() -> StaticLegContractIR:
+    contract = _fixed_float_swap()
+    periods = _periods(
+        ("2024-11-15", "2025-01-15"),
+        ("2025-01-15", "2025-08-15"),
+    )
+    fixed_leg, floating_leg = contract.legs
+    return replace(
+        contract,
+        legs=(
+            replace(fixed_leg, leg=replace(fixed_leg.leg, coupon_periods=periods)),
+            replace(
+                floating_leg,
+                leg=replace(floating_leg.leg, coupon_periods=periods),
+            ),
+        ),
+    )
+
+
 def test_fixed_float_swap_execution_ir_compiles_to_factor_state_simulation_ir():
     ir = compile_static_leg_execution_ir(_fixed_float_swap())
 
@@ -242,4 +262,11 @@ def test_future_value_bridge_fails_closed_for_unsupported_execution_family():
     ir = compile_static_leg_execution_ir(_fixed_coupon_bond())
 
     with pytest.raises(ValueError, match="fixed_float_swap"):
+        compile_factor_state_simulation_ir_from_execution_ir(ir)
+
+
+def test_future_value_bridge_rejects_irregular_coupon_obligation_execution():
+    ir = compile_static_leg_execution_ir(_irregular_fixed_float_swap())
+
+    with pytest.raises(ValueError, match="static_leg_fixed_float_swap"):
         compile_factor_state_simulation_ir_from_execution_ir(ir)

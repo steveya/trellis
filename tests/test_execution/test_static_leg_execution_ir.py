@@ -34,7 +34,7 @@ from trellis.agent.semantic_observables import (
 )
 from trellis.conventions.day_count import DayCountConvention
 from trellis.core.date_utils import year_fraction
-from trellis.core.market_state import MarketState
+from trellis.core.market_state import MarketState, MissingCapabilityError
 from trellis.core.payoff import ExecutionBackedPayoff
 from trellis.core.types import Frequency
 from trellis.curves.date_aware_flat_curve import DateAwareFlatYieldCurve
@@ -430,6 +430,13 @@ def test_irregular_coupon_execution_preserves_exact_periods_and_avoids_regular_s
         dict(ir.source_track.source_metadata)["static_leg_lowering_declaration_id"]
         == "static_leg_coupon_obligations"
     )
+    assert ir.requirement_hints.market_inputs == frozenset(
+        {
+            "discount_curve:USD",
+            "forward_curve:SOFR",
+            "fixing_history:SOFR",
+        }
+    )
     assert (
         tuple(
             period
@@ -508,6 +515,7 @@ def test_irregular_coupon_execution_preserves_exact_periods_and_avoids_regular_s
 def test_irregular_floating_coupon_uses_required_historical_fixing():
     contract = _irregular_fixed_float_swap()
     ir = compile_static_leg_execution_ir(contract, fail_on_unsupported=True)
+    payoff = ExecutionBackedPayoff(ir)
     fixing_date = date(2025, 6, 30)
     same_day_market = replace(
         _market_state(),
@@ -523,6 +531,13 @@ def test_irregular_floating_coupon_uses_required_historical_fixing():
         settlement=settlement,
     )
 
+    assert payoff.requirements == {
+        "discount_curve",
+        "fixing_history",
+        "forward_curve",
+    }
+    with pytest.raises(MissingCapabilityError, match="fixing_history"):
+        price_payoff(payoff, missing_fixing_market)
     with pytest.raises(ValueError, match="historical fixing"):
         price_static_leg_execution_ir(ir, missing_fixing_market)
 

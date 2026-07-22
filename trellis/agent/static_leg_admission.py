@@ -441,6 +441,16 @@ def _coupon_obligation_required_capabilities(
         for signed_leg in contract.legs
     ):
         capabilities.append("forward_curve")
+    if any(
+        isinstance(signed_leg.leg, CouponLeg)
+        and isinstance(signed_leg.leg.coupon_formula, FloatingCouponFormula)
+        and any(
+            period.fixing_date is not None
+            for period in signed_leg.leg.coupon_periods
+        )
+        for signed_leg in contract.legs
+    ):
+        capabilities.append("fixing_history")
     return tuple(capabilities)
 
 

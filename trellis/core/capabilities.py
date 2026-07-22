@@ -60,6 +60,16 @@ MARKET_DATA: list[MarketDataCapability] = [
         how_to_provide="Automatically available when discount curve is provided.",
     ),
     MarketDataCapability(
+        name="fixing_history",
+        description="Historical observed fixings keyed by rate-index name and date.",
+        market_state_field="fixing_histories",
+        providing_modules=("trellis.core.market_state",),
+        example_usage="fixing = market_state.fixing_history('SOFR')[fixing_date]",
+        how_to_provide=(
+            "Use MarketState(fixing_histories={'SOFR': {fixing_date: rate}})."
+        ),
+    ),
+    MarketDataCapability(
         name="black_vol_surface",
         description="Black (lognormal) implied volatility surface.",
         market_state_field="vol_surface",

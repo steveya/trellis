@@ -180,10 +180,15 @@ def lower_static_leg_contract_ir_to_execution_ir(
             static_leg_contract_ir,
             selection.declaration_id,
         )
-        observables = _static_leg_execution_observables(static_leg_contract_ir, currency)
+        observables = _static_leg_execution_observables(
+            static_leg_contract_ir,
+            currency,
+            declaration_id=selection.declaration_id,
+        )
         requirement_hints = _static_leg_requirement_hints(
             static_leg_contract_ir,
             currency=currency,
+            declaration_id=selection.declaration_id,
         )
         settlement_steps = _static_leg_settlement_steps(static_leg_contract_ir)
     except (NotImplementedError, UnsupportedExecutionSemantics) as exc:
@@ -557,6 +562,8 @@ def _static_leg_execution_events(
 def _static_leg_execution_observables(
     contract: object,
     currency: str,
+    *,
+    declaration_id: str,
 ) -> tuple[object, ...]:
     from trellis.agent.static_leg_contract import (
         ConditionalAccrualLeg,
@@ -579,18 +586,33 @@ def _static_leg_execution_observables(
         leg = signed_leg.leg
         if isinstance(leg, CouponLeg) and isinstance(leg.coupon_formula, FloatingCouponFormula):
             index_name = _rate_index_identifier(leg.coupon_formula.rate_index)
-            observable_id = f"forward_curve:{index_name}"
-            if observable_id not in seen:
-                seen.add(observable_id)
-                observables.append(
-                    ForwardRateObservableRef(
-                        observable_id=observable_id,
-                        source_ref=f"market.forward_curve:{index_name}",
+            floating_observables: list[object] = [
+                ForwardRateObservableRef(
+                    observable_id=f"forward_curve:{index_name}",
+                    source_ref=f"market.forward_curve:{index_name}",
+                    currency=leg.currency,
+                    tags=("forward_curve", "static_leg"),
+                    metadata={"rate_index": index_name},
+                )
+            ]
+            if declaration_id == "static_leg_coupon_obligations" and any(
+                period.fixing_date is not None for period in leg.coupon_periods
+            ):
+                floating_observables.append(
+                    ObservableBinding(
+                        observable_id=f"fixing_history:{index_name}",
+                        observable_kind="fixing_history",
+                        source_ref=f"market.fixing_history:{index_name}",
                         currency=leg.currency,
-                        tags=("forward_curve", "static_leg"),
+                        tags=("fixing_history", "static_leg", "coupon_obligation"),
                         metadata={"rate_index": index_name},
                     )
                 )
+            for observable in floating_observables:
+                if observable.observable_id in seen:
+                    continue
+                seen.add(observable.observable_id)
+                observables.append(observable)
         if isinstance(leg, PeriodRateOptionStripLeg):
             index_name = _rate_index_identifier(leg.rate_index)
             for observable_id, kind, cls in (
@@ -644,6 +666,7 @@ def _static_leg_requirement_hints(
     contract: object,
     *,
     currency: str,
+    declaration_id: str,
 ) -> RequirementHints:
     from trellis.agent.static_leg_contract import (
         ConditionalAccrualLeg,
@@ -659,7 +682,12 @@ def _static_leg_requirement_hints(
     for signed_leg in contract.legs:
         leg = signed_leg.leg
         if isinstance(leg, CouponLeg) and isinstance(leg.coupon_formula, FloatingCouponFormula):
-            market_inputs.add(f"forward_curve:{_rate_index_identifier(leg.coupon_formula.rate_index)}")
+            index_name = _rate_index_identifier(leg.coupon_formula.rate_index)
+            market_inputs.add(f"forward_curve:{index_name}")
+            if declaration_id == "static_leg_coupon_obligations" and any(
+                period.fixing_date is not None for period in leg.coupon_periods
+            ):
+                market_inputs.add(f"fixing_history:{index_name}")
             timeline_roles.add("fixing_dates")
         if isinstance(leg, PeriodRateOptionStripLeg):
             index_name = _rate_index_identifier(leg.rate_index)
