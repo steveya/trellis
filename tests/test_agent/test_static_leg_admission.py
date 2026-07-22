@@ -424,6 +424,24 @@ class TestStaticLegAdmission:
             "day_count": DayCountConvention.ACT_360,
             "rate_index": "USD-SOFR-3M",
         }
+        assert materialized["result_multiplier"] == 1.0
+
+    def test_period_rate_option_strip_admits_pay_direction_with_explicit_sign(self):
+        receive_contract = _period_rate_option_strip()
+        pay_contract = StaticLegContractIR(
+            legs=(SignedLeg("pay", receive_contract.legs[0].leg),),
+            settlement=receive_contract.settlement,
+            metadata=receive_contract.metadata,
+        )
+
+        selection = select_static_leg_lowering(pay_contract)
+        materialized = materialize_static_leg_lowering(
+            pay_contract,
+            selection=selection,
+        )
+
+        assert selection.declaration_id == "static_leg_period_rate_option_strip_analytical"
+        assert materialized["result_multiplier"] == -1.0
 
     def test_period_rate_option_strip_materializes_model_terms_for_analytical_helper(self):
         contract = _period_rate_option_strip()

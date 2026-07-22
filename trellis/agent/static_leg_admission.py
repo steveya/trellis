@@ -120,7 +120,7 @@ def _is_fixed_coupon_bond(contract: StaticLegContractIR) -> bool:
 
 
 def _is_period_rate_option_strip(contract: StaticLegContractIR) -> bool:
-    if len(contract.legs) != 1 or contract.legs[0].direction != "receive":
+    if len(contract.legs) != 1:
         return False
     leg = contract.legs[0].leg
     return (
@@ -664,7 +664,12 @@ def _period_rate_option_strip_analytical_adapter(
     for key in ("model", "shift", "sabr"):
         if terms.get(key) is not None:
             call_kwargs[key] = terms[key]
-    return {"call_kwargs": call_kwargs}
+    return {
+        "call_kwargs": call_kwargs,
+        "result_multiplier": (
+            1.0 if contract.legs[0].direction == "receive" else -1.0
+        ),
+    }
 
 
 def _period_rate_option_strip_monte_carlo_adapter(
@@ -689,7 +694,12 @@ def _period_rate_option_strip_monte_carlo_adapter(
     ):
         if terms.get(key) is not None:
             call_kwargs[key] = terms[key]
-    return {"call_kwargs": call_kwargs}
+    return {
+        "call_kwargs": call_kwargs,
+        "result_multiplier": (
+            1.0 if contract.legs[0].direction == "receive" else -1.0
+        ),
+    }
 
 
 def _range_accrual_reference_index(observable: RateIndexObservable) -> str:
