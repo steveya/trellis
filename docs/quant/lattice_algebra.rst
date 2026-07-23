@@ -519,6 +519,31 @@ recover model parameters. ``price_swaption_tree(...)`` and
 ``build_swaption_tree_spec(...)`` remain compatibility and independent
 reference surfaces, not generated construction authority.
 
+Partial-Horizon Rollback And Discount-Bond Options
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``lattice_backward_induction(...)`` and
+``lattice_backward_induction_result(...)`` accept an optional
+``terminal_step``. It defaults to ``lattice.n_steps``; an earlier exact integer
+applies the terminal payoff at that step and rolls only to the root.
+``observation_steps`` are validated against the selected partial horizon, not
+against unused later lattice storage.
+
+The zero-coupon-bond option tree route uses this product-neutral boundary:
+
+#. resolve dates, unit-face strike, direction, volatility, and model parameters
+   with ``resolve_discount_bond_claim_inputs(...)``;
+#. build one Ho-Lee or Hull-White lattice through ``MODEL_REGISTRY``,
+   ``BINOMIAL_1F_TOPOLOGY``, ``UNIFORM_ADDITIVE_MESH``,
+   ``TERM_STRUCTURE_TARGET(...)``, and ``build_lattice(...)``;
+#. map expiry and maturity with ``lattice_step_from_time(...)``;
+#. roll a unit bond from ``bond_step`` while observing the expiry nodes; and
+#. roll the option payoff from ``expiry_step`` to the root.
+
+Generated code must use the generic rollback API rather than duplicating its
+loops. This lane is bounded to European one-factor Ho-Lee/Hull-White claims on
+the selected lattice grid.
+
 Compatibility And Reference Surfaces
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -526,7 +551,9 @@ Compatibility And Reference Surfaces
 ``trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree`` remain
 public compatibility and independent-reference surfaces; neither is generated
 route authority. ``trellis.models.zcb_option_tree.price_zcb_option_tree``
-remains the checked product entry point for its separately tracked route.
+remains a checked compatibility/reference entry point. It composes the same
+generic partial-horizon rollback internally but is not generated route
+authority.
 
 Target API Design
 -----------------

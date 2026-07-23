@@ -2417,22 +2417,32 @@ class TestAnalyticalRoutes:
         assert spec.engine_family == "analytical"
 
     def test_zcb_primitives(self, registry):
-        # QUA-915: the analytical-method branch of short_rate_bond_option
-        # resolves to the Jamshidian helper (same kernel the pre-collapse
-        # zcb_option_analytical route exposed).
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         new_prims = resolve_route_primitives(spec, self.ZCB_IR, method="analytical")
         expected_prims = {
-            ("trellis.models.zcb_option", "price_zcb_option_jamshidian", "route_helper"),
+            (
+                "trellis.models.resolution.short_rate_claims",
+                "resolve_discount_bond_claim_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.analytical.jamshidian",
+                "ResolvedJamshidianInputs",
+                "input_contract",
+            ),
+            (
+                "trellis.models.analytical.jamshidian",
+                "zcb_option_hw_raw",
+                "pricing_kernel",
+            ),
         }
         assert _prim_set(new_prims) == expected_prims
 
-    def test_zcb_analytical_route_is_thin(self, registry):
-        # QUA-915: the collapsed route stays thin — the analytical branch
-        # adds no prose notes on top of the base (empty) notes.
+    def test_zcb_analytical_route_explains_raw_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         notes = resolve_route_notes(spec, self.ZCB_IR, method="analytical")
-        assert notes == ()
+        assert any("ResolvedJamshidianInputs" in note for note in notes)
+        assert any("compatibility/reference" in note for note in notes)
 
     def test_admissibility_rejects_pathwise_state_tags_on_black76(self, registry):
         from dataclasses import replace
@@ -2471,8 +2481,8 @@ class TestAnalyticalRoutes:
 class TestShortRateBondOptionRoutes:
     """QUA-915: pattern-keyed ZCB-option family replaces the old
     ``zcb_option_analytical`` + ``zcb_option_rate_tree`` pair. The
-    rate-tree branch of ``short_rate_bond_option`` dispatches to the
-    Hull-White helper; the analytical branch keeps the Jamshidian helper.
+    two method branches expose reusable construction primitives rather than
+    product helpers.
     """
 
     IR = ProductIR(instrument="zcb_option", payoff_family="zcb_option", exercise_style="european")
@@ -2495,7 +2505,43 @@ class TestShortRateBondOptionRoutes:
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         new_prims = resolve_route_primitives(spec, self.IR, method="rate_tree")
         expected_prims = {
-            ("trellis.models.zcb_option_tree", "price_zcb_option_tree", "route_helper"),
+            (
+                "trellis.models.resolution.short_rate_claims",
+                "resolve_discount_bond_claim_inputs",
+                "market_binding",
+            ),
+            ("trellis.models.trees.models", "MODEL_REGISTRY", "model_registry"),
+            (
+                "trellis.models.trees.algebra",
+                "BINOMIAL_1F_TOPOLOGY",
+                "topology",
+            ),
+            (
+                "trellis.models.trees.algebra",
+                "UNIFORM_ADDITIVE_MESH",
+                "mesh",
+            ),
+            (
+                "trellis.models.trees.algebra",
+                "TERM_STRUCTURE_TARGET",
+                "calibration_target",
+            ),
+            ("trellis.models.trees.algebra", "build_lattice", "lattice_builder"),
+            (
+                "trellis.models.trees.control",
+                "lattice_step_from_time",
+                "schedule_mapping",
+            ),
+            (
+                "trellis.models.trees.lattice",
+                "lattice_backward_induction_result",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.trees.lattice",
+                "lattice_backward_induction",
+                "backward_induction",
+            ),
         }
         assert _prim_set(new_prims) == expected_prims
 
@@ -2503,18 +2549,36 @@ class TestShortRateBondOptionRoutes:
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         new_prims = resolve_route_primitives(spec, self.IR, method="analytical")
         expected_prims = {
-            ("trellis.models.zcb_option", "price_zcb_option_jamshidian", "route_helper"),
+            (
+                "trellis.models.resolution.short_rate_claims",
+                "resolve_discount_bond_claim_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.analytical.jamshidian",
+                "ResolvedJamshidianInputs",
+                "input_contract",
+            ),
+            (
+                "trellis.models.analytical.jamshidian",
+                "zcb_option_hw_raw",
+                "pricing_kernel",
+            ),
         }
         assert _prim_set(new_prims) == expected_prims
 
-    def test_route_is_thin_per_method(self, registry):
-        # The collapsed route carries no adapter or note prose for either
-        # branch — both helper surfaces already own the assembly.
+    def test_route_keeps_adapters_empty_and_explains_composition_per_method(self, registry):
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
-        assert resolve_route_notes(spec, self.IR, method="rate_tree") == ()
         assert resolve_route_adapters(spec, self.IR, method="rate_tree") == ()
-        assert resolve_route_notes(spec, self.IR, method="analytical") == ()
         assert resolve_route_adapters(spec, self.IR, method="analytical") == ()
+        assert any(
+            "terminal_step=expiry_step" in note
+            for note in resolve_route_notes(spec, self.IR, method="rate_tree")
+        )
+        assert any(
+            "zcb_option_hw_raw" in note
+            for note in resolve_route_notes(spec, self.IR, method="analytical")
+        )
 
     def test_route_family_resolves_per_method(self, registry):
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
@@ -2562,11 +2626,7 @@ class TestShortRateBondOptionRoutes:
         assert "short_rate_bond_option" in {r.id for r in gap_audit_matches}
 
 
-def test_rate_tree_routes_keep_backend_binding_metadata_only(registry):
-    """QUA-915: the ZCB-option family collapsed into
-    ``short_rate_bond_option``. The rate-tree-facing bindings still stay
-    thin: no adapter prose, no notes, on either method branch.
-    """
+def test_rate_tree_routes_keep_zcb_adapters_empty_but_surface_composition_notes(registry):
     exercise = find_route_by_id("exercise_lattice", registry)
     backward = find_route_by_id("rate_tree_backward_induction", registry)
     zcb_route = find_route_by_id("short_rate_bond_option", registry)
@@ -2580,12 +2640,10 @@ def test_rate_tree_routes_keep_backend_binding_metadata_only(registry):
         payoff_family="zcb_option",
         exercise_style="european",
     )
-    # Both method branches must stay thin — the collapsed route does not
-    # smuggle adapter or note prose through either conditional block.
     assert resolve_route_adapters(zcb_route, zcb_ir, method="rate_tree") == ()
-    assert resolve_route_notes(zcb_route, zcb_ir, method="rate_tree") == ()
     assert resolve_route_adapters(zcb_route, zcb_ir, method="analytical") == ()
-    assert resolve_route_notes(zcb_route, zcb_ir, method="analytical") == ()
+    assert resolve_route_notes(zcb_route, zcb_ir, method="rate_tree")
+    assert resolve_route_notes(zcb_route, zcb_ir, method="analytical")
 
 
 # ---------------------------------------------------------------------------

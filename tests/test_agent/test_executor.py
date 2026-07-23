@@ -6008,11 +6008,11 @@ def test_deterministic_black_scholes_comparator_satisfies_required_primitive_val
 @pytest.mark.parametrize(
     ("comparison_target", "expected_fragment"),
     [
-        ("ho_lee_tree", 'model="ho_lee"'),
-        ("hull_white_tree", 'model="hull_white"'),
+        ("ho_lee_tree", 'MODEL_REGISTRY["ho_lee"]'),
+        ("hull_white_tree", 'MODEL_REGISTRY["hull_white"]'),
     ],
 )
-def test_deterministic_exact_binding_module_materializes_zcb_option_tree_helper_wrapper(
+def test_deterministic_exact_binding_module_materializes_zcb_option_raw_lattice_composition(
     comparison_target,
     expected_fragment,
 ):
@@ -6024,7 +6024,9 @@ def test_deterministic_exact_binding_module_materializes_zcb_option_tree_helper_
     from trellis.agent.planner import STATIC_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=("trellis.models.zcb_option_tree.price_zcb_option_tree",),
+        lane_exact_binding_refs=(
+            "trellis.models.trees.lattice.lattice_backward_induction_result",
+        ),
         primitive_plan=None,
         method="rate_tree",
         instrument_type="zcb_option",
@@ -6042,8 +6044,63 @@ def test_deterministic_exact_binding_module_materializes_zcb_option_tree_helper_
     )
 
     assert generated is not None
-    assert "price_zcb_option_tree(market_state, spec" in generated.code
+    assert "resolve_discount_bond_claim_inputs(" in generated.code
+    assert "build_lattice(" in generated.code
+    assert "lattice_step_from_time(" in generated.code
+    assert "lattice_backward_induction_result(" in generated.code
+    assert "lattice_backward_induction(" in generated.code
+    assert "terminal_step=bond_step" in generated.code
+    assert "terminal_step=expiry_step" in generated.code
+    assert "price_zcb_option_tree" not in generated.code
+    assert "build_zcb_option_lattice" not in generated.code
+    assert "price_zcb_option_on_lattice" not in generated.code
     assert expected_fragment in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+    lattice_imports = [
+        alias.name
+        for node in ast.parse(generated.code).body
+        if isinstance(node, ast.ImportFrom)
+        and node.module == "trellis.models.trees.lattice"
+        for alias in node.names
+    ]
+    assert lattice_imports.count("lattice_backward_induction") == 1
+    assert lattice_imports.count("lattice_backward_induction_result") == 1
+
+
+def test_deterministic_exact_binding_module_materializes_zcb_option_raw_jamshidian_composition():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.analytical.jamshidian.zcb_option_hw_raw",
+        ),
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="zcb_option",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["zcb_option"],
+        "ZCB option analytical",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        comparison_target="jamshidian",
+    )
+
+    assert generated is not None
+    assert "resolve_discount_bond_claim_inputs(" in generated.code
+    assert "ResolvedJamshidianInputs(" in generated.code
+    assert "zcb_option_hw_raw(" in generated.code
+    assert "price_zcb_option_jamshidian" not in generated.code
+    assert "resolve_zcb_option_hw_inputs" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 

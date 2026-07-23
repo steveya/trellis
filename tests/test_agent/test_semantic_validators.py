@@ -1124,30 +1124,7 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
-    def test_flags_zcb_option_tree_helper_signature_mismatch(self, registry):
-        # QUA-915: ZCB-option family collapsed into ``short_rate_bond_option``.
-        # The rate-tree branch still routes to ``price_zcb_option_tree``.
-        spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
-        zcb_ir = ProductIR(
-            instrument="zcb_option",
-            payoff_family="zcb_option",
-            exercise_style="european",
-        )
-        spec = replace(
-            spec,
-            primitives=resolve_route_primitives(spec, zcb_ir, method="rate_tree"),
-        )
-        source = '''
-from trellis.models.zcb_option_tree import price_zcb_option_tree
-
-def evaluate(self, market_state):
-    return price_zcb_option_tree(self._spec, market_state, steps=100)
-'''
-        validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("short_rate_bond_option", "lattice"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
-
-    def test_accepts_zcb_option_tree_helper_surface(self, registry):
+    def test_rejects_zcb_option_tree_compatibility_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         zcb_ir = ProductIR(
             instrument="zcb_option",
@@ -1166,12 +1143,9 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("short_rate_bond_option", "lattice"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(f.category == "zcb_option_forbidden_helper" for f in findings)
 
-    def test_flags_zcb_option_jamshidian_helper_signature_mismatch(self, registry):
-        # QUA-915: the analytical branch of the collapsed route still
-        # routes to ``price_zcb_option_jamshidian`` and must keep the
-        # same helper-signature enforcement it had pre-collapse.
+    def test_accepts_zcb_option_generic_lattice_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         zcb_ir = ProductIR(
             instrument="zcb_option",
@@ -1180,19 +1154,62 @@ def evaluate(self, market_state):
         )
         spec = replace(
             spec,
-            primitives=resolve_route_primitives(spec, zcb_ir, method="analytical"),
+            primitives=resolve_route_primitives(spec, zcb_ir, method="rate_tree"),
         )
         source = '''
-from trellis.models.zcb_option import price_zcb_option_jamshidian
+from trellis.models.resolution.short_rate_claims import resolve_discount_bond_claim_inputs
+from trellis.models.trees.algebra import (
+    BINOMIAL_1F_TOPOLOGY,
+    UNIFORM_ADDITIVE_MESH,
+    TERM_STRUCTURE_TARGET,
+    build_lattice,
+)
+from trellis.models.trees.control import lattice_step_from_time
+from trellis.models.trees.lattice import (
+    lattice_backward_induction,
+    lattice_backward_induction_result,
+)
+from trellis.models.trees.models import MODEL_REGISTRY
 
 def evaluate(self, market_state):
-    return price_zcb_option_jamshidian(self._spec, market_state, strike=0.63)
+    claim = resolve_discount_bond_claim_inputs(market_state, self._spec, model="ho_lee")
+    lattice = build_lattice(
+        BINOMIAL_1F_TOPOLOGY,
+        UNIFORM_ADDITIVE_MESH,
+        MODEL_REGISTRY["ho_lee"],
+        TERM_STRUCTURE_TARGET(market_state.discount),
+        r0=claim.regime.initial_rate,
+        sigma=claim.regime.sigma,
+        a=claim.regime.mean_reversion,
+        maturity=claim.bond_maturity_time,
+        n_steps=200,
+    )
+    expiry_step = lattice_step_from_time(
+        claim.expiry_time, dt=lattice.dt, n_steps=lattice.n_steps
+    )
+    bond_step = lattice_step_from_time(
+        claim.bond_maturity_time, dt=lattice.dt, n_steps=lattice.n_steps
+    )
+    bond = lattice_backward_induction_result(
+        lattice,
+        terminal_value=1.0,
+        terminal_step=bond_step,
+        observation_steps=(expiry_step,),
+    )
+    bond_values = bond.observation_at(expiry_step).post_control_values
+    return lattice_backward_induction(
+        lattice,
+        terminal_payoff=lambda step, node, lattice_: max(
+            bond_values[node] - claim.strike_unit, 0.0
+        ) * claim.notional,
+        terminal_step=expiry_step,
+    )
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("short_rate_bond_option"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        findings = validator.validate(source, _make_plan("short_rate_bond_option", "lattice"), spec)
+        assert not any(f.severity == "error" for f in findings)
 
-    def test_accepts_zcb_option_jamshidian_helper_surface(self, registry):
+    def test_rejects_zcb_option_jamshidian_compatibility_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         zcb_ir = ProductIR(
             instrument="zcb_option",
@@ -1211,9 +1228,9 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("short_rate_bond_option"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(f.category == "zcb_option_forbidden_helper" for f in findings)
 
-    def test_rejects_zcb_option_jamshidian_positional_optional_argument(self, registry):
+    def test_accepts_zcb_option_raw_jamshidian_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "short_rate_bond_option"][0]
         zcb_ir = ProductIR(
             instrument="zcb_option",
@@ -1225,14 +1242,29 @@ def evaluate(self, market_state):
             primitives=resolve_route_primitives(spec, zcb_ir, method="analytical"),
         )
         source = '''
-from trellis.models.zcb_option import price_zcb_option_jamshidian
+from trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw_raw
+from trellis.models.resolution.short_rate_claims import resolve_discount_bond_claim_inputs
 
 def evaluate(self, market_state):
-    return price_zcb_option_jamshidian(market_state, self._spec, 0.1)
+    claim = resolve_discount_bond_claim_inputs(
+        market_state,
+        self._spec,
+        model="hull_white",
+    )
+    inputs = ResolvedJamshidianInputs(
+        discount_factor_expiry=claim.discount_factor_expiry,
+        discount_factor_bond=claim.discount_factor_bond,
+        strike=claim.strike_unit,
+        T_exp=claim.expiry_time,
+        T_bond=claim.bond_maturity_time,
+        sigma=claim.regime.sigma,
+        a=claim.regime.mean_reversion,
+    )
+    return claim.notional * zcb_option_hw_raw(inputs)[claim.option_type]
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("short_rate_bond_option"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert not any(f.severity == "error" for f in findings)
 
     def test_flags_credit_default_swap_analytical_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]

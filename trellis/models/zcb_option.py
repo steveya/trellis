@@ -1,9 +1,9 @@
-"""Stable zero-coupon-bond option helpers.
+"""Compatibility wrappers for European zero-coupon-bond options.
 
-This module gives the DSL a checked-in helper surface for European options on
-zero-coupon bonds under the Hull-White / Jamshidian contract. Generated
-adapters should bind dates, strike units, and market-state access here instead
-of rebuilding those semantics inline.
+Generated construction resolves the shared discount-bond claim through
+``trellis.models.resolution.short_rate_claims`` and calls the raw Jamshidian
+contract in ``trellis.models.analytical.jamshidian``. The functions here remain
+public convenience and independent-reference surfaces.
 """
 
 from __future__ import annotations

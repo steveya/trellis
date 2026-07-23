@@ -245,6 +245,56 @@ class TestLatticeRollbackObservations:
         assert terminal.post_cashflow_values == terminal.continuation_values
         assert terminal.post_control_values == terminal.continuation_values
 
+    def test_result_rolls_back_from_an_explicit_partial_horizon(self):
+        lattice = self._two_step_lattice()
+
+        result = lattice_backward_induction_result(
+            lattice,
+            terminal_payoff=lambda step, node, lattice_: 10.0 + node,
+            terminal_step=1,
+            observation_steps=(0, 1),
+        )
+
+        assert result.root_value == pytest.approx(10.5)
+        terminal = result.observation_at(1)
+        assert terminal.continuation_values == pytest.approx((10.0, 11.0))
+        assert terminal.post_cashflow_values == terminal.continuation_values
+        assert terminal.post_control_values == terminal.continuation_values
+
+    def test_scalar_wrapper_rolls_back_from_an_explicit_partial_horizon(self):
+        lattice = self._two_step_lattice()
+
+        price = lattice_backward_induction(
+            lattice,
+            terminal_payoff=lambda step, node, lattice_: 10.0 + node,
+            terminal_step=1,
+        )
+
+        assert price == pytest.approx(10.5)
+
+    @pytest.mark.parametrize("terminal_step", [-1, 3, 0.5, True])
+    def test_result_rejects_invalid_partial_horizon(self, terminal_step):
+        lattice = self._two_step_lattice()
+
+        error = TypeError if terminal_step in {0.5, True} else ValueError
+        with pytest.raises(error):
+            lattice_backward_induction_result(
+                lattice,
+                terminal_value=1.0,
+                terminal_step=terminal_step,
+            )
+
+    def test_partial_horizon_rejects_observations_after_terminal_step(self):
+        lattice = self._two_step_lattice()
+
+        with pytest.raises(ValueError, match="between 0 and 1 inclusive"):
+            lattice_backward_induction_result(
+                lattice,
+                terminal_value=1.0,
+                terminal_step=1,
+                observation_steps=(2,),
+            )
+
     @pytest.mark.parametrize("observation_steps", [(-1,), (3,), (0.5,), (True,)])
     def test_result_rejects_invalid_observation_steps(self, observation_steps):
         lattice = self._two_step_lattice()

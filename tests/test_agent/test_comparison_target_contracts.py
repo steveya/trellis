@@ -191,6 +191,35 @@ def test_callable_fixed_income_targets_have_explicit_executable_contracts():
     }
 
 
+def test_t01_declares_method_true_zcb_option_target_contracts():
+    contracts = _contracts_for("T01")
+
+    assert set(contracts) == {"ho_lee_tree", "hull_white_tree", "jamshidian"}
+    assert contracts["ho_lee_tree"].explicit is True
+    assert contracts["ho_lee_tree"].method == "rate_tree"
+    assert contracts["ho_lee_tree"].route_id == "short_rate_bond_option"
+    assert contracts["ho_lee_tree"].route_family == "rate_lattice"
+    assert contracts["ho_lee_tree"].backend_binding_id == (
+        "trellis.models.trees.lattice.lattice_backward_induction_result"
+    )
+    assert contracts["ho_lee_tree"].variant_parameters == {
+        "lattice_model": "ho_lee",
+        "tree_steps": 200,
+    }
+    assert contracts["hull_white_tree"].variant_parameters == {
+        "lattice_model": "hull_white",
+        "tree_steps": 200,
+    }
+    assert contracts["jamshidian"].method == "analytical"
+    assert contracts["jamshidian"].route_family == "analytical"
+    assert contracts["jamshidian"].backend_binding_id == (
+        "trellis.models.analytical.jamshidian.zcb_option_hw_raw"
+    )
+    assert contracts["jamshidian"].variant_parameters == {
+        "analytical_method": "jamshidian"
+    }
+
+
 def test_comparison_execution_binding_uses_validation_contract_axis_fallbacks():
     from trellis.agent.executor import _comparison_execution_binding_metadata
 

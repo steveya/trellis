@@ -48,17 +48,24 @@ analytical:
     dates must match the instrument schedule.'
   jamshidian_zcb_option:
   - 'JAMSHIDIAN ZCB OPTION CONSISTENCY: For European zero-coupon bond options under
-    the Hull-White / Jamshidian contract, prefer the checked helper-backed path
-    `resolve_zcb_option_hw_inputs(...)` -> `ResolvedJamshidianInputs` -> `zcb_option_hw_raw(...)`,
-    or delegate straight to `price_zcb_option_jamshidian(...)` when the wrapper
-    already matches the route. Do not degrade this route to generic Black76 on
-    a forward bond price when the task explicitly asks for Jamshidian / Hull-White.'
+    the Hull-White / Jamshidian contract, compose
+    `resolve_discount_bond_claim_inputs(...)` -> `ResolvedJamshidianInputs` ->
+    `zcb_option_hw_raw(...)`, then apply option direction and notional once.
+    `resolve_zcb_option_hw_inputs(...)` and `price_zcb_option_jamshidian(...)`
+    are compatibility/reference surfaces, not generated construction authority.
+    Do not degrade this route to generic Black76 on a forward bond price.'
   - 'ZCB OPTION STRIKE NORMALIZATION: Normalize strike quotes to unit face before
     the closed-form kernel. Treat `63` on `100` face as `0.63`, and require the
     underlying bond maturity to remain strictly after option expiry.'
   - 'ZCB OPTION MARKET DATA CONTRACT: Requires `market_state.discount` and `market_state.vol_surface`.
     Resolved inputs should carry discount factors at option expiry and bond maturity
     plus the mapped Black-style volatility quote at expiry.'
+  - 'ZCB OPTION LATTICE CONTRACT: Resolve the same discount-bond claim with the
+    selected `ho_lee` or `hull_white` model, build one calibrated generic lattice,
+    use `lattice_backward_induction_result(..., terminal_step=bond_step,
+    observation_steps=(expiry_step,))` for unit-bond values at expiry, then use
+    `lattice_backward_induction(..., terminal_step=expiry_step)` for the option.
+    Do not open-code rollback or call the retained ZCB-option tree wrappers.'
   credit_default_swap:
   - 'CREDIT-SURVIVAL CONSISTENCY: For single-name CDS, price the premium leg and
     protection leg directly from credit_curve survival probabilities and hazard

@@ -948,15 +948,45 @@ bindings:
       - when:
           methods: [analytical]
         primitives:
-          - module: trellis.models.zcb_option
-            symbol: price_zcb_option_jamshidian
-            role: route_helper
+          - module: trellis.models.resolution.short_rate_claims
+            symbol: resolve_discount_bond_claim_inputs
+            role: market_binding
+          - module: trellis.models.analytical.jamshidian
+            symbol: ResolvedJamshidianInputs
+            role: input_contract
+          - module: trellis.models.analytical.jamshidian
+            symbol: zcb_option_hw_raw
+            role: pricing_kernel
       - when:
           methods: [rate_tree]
         primitives:
-          - module: trellis.models.zcb_option_tree
-            symbol: price_zcb_option_tree
-            role: route_helper
+          - module: trellis.models.resolution.short_rate_claims
+            symbol: resolve_discount_bond_claim_inputs
+            role: market_binding
+          - module: trellis.models.trees.models
+            symbol: MODEL_REGISTRY
+            role: model_registry
+          - module: trellis.models.trees.algebra
+            symbol: BINOMIAL_1F_TOPOLOGY
+            role: topology
+          - module: trellis.models.trees.algebra
+            symbol: UNIFORM_ADDITIVE_MESH
+            role: mesh
+          - module: trellis.models.trees.algebra
+            symbol: TERM_STRUCTURE_TARGET
+            role: calibration_target
+          - module: trellis.models.trees.algebra
+            symbol: build_lattice
+            role: lattice_builder
+          - module: trellis.models.trees.control
+            symbol: lattice_step_from_time
+            role: schedule_mapping
+          - module: trellis.models.trees.lattice
+            symbol: lattice_backward_induction_result
+            role: pricing_kernel
+          - module: trellis.models.trees.lattice
+            symbol: lattice_backward_induction
+            role: backward_induction
 
   - route_id: short_rate_zero_coupon_bond
     engine_family: analytical

@@ -44,6 +44,40 @@ tasks:
     - ho_lee_tree
     - hull_white_tree
     analytical: jamshidian
+    target_contracts:
+      ho_lee_tree:
+        method: rate_tree
+        route_id: short_rate_bond_option
+        route_family: rate_lattice
+        backend_binding_id: trellis.models.trees.lattice.lattice_backward_induction_result
+        variant_parameters: {lattice_model: ho_lee, tree_steps: 200}
+        validation_bundle_id: rate_tree:zcb_option
+        payoff_family: zcb_option
+        exercise_style: european
+        model_family: interest_rate
+        observation_style: terminal
+      hull_white_tree:
+        method: rate_tree
+        route_id: short_rate_bond_option
+        route_family: rate_lattice
+        backend_binding_id: trellis.models.trees.lattice.lattice_backward_induction_result
+        variant_parameters: {lattice_model: hull_white, tree_steps: 200}
+        validation_bundle_id: rate_tree:zcb_option
+        payoff_family: zcb_option
+        exercise_style: european
+        model_family: interest_rate
+        observation_style: terminal
+      jamshidian:
+        method: analytical
+        route_id: short_rate_bond_option
+        route_family: analytical
+        backend_binding_id: trellis.models.analytical.jamshidian.zcb_option_hw_raw
+        variant_parameters: {analytical_method: jamshidian}
+        validation_bundle_id: analytical:zcb_option
+        payoff_family: zcb_option
+        exercise_style: european
+        model_family: interest_rate
+        observation_style: terminal
     external:
     - quantlib
     - financepy

@@ -91,10 +91,12 @@ class TestCookbooks:
 
     def test_analytical_cookbook_includes_jamshidian_resolved_input_pattern(self):
         cb = get_cookbook("analytical")
-        assert "resolve_zcb_option_hw_inputs" in cb
+        assert "resolve_discount_bond_claim_inputs" in cb
+        assert "claim = resolve_discount_bond_claim_inputs" in cb
         assert "ResolvedJamshidianInputs" in cb
         assert "zcb_option_hw_raw" in cb
         assert "price_zcb_option_jamshidian" not in cb
+        assert "compatibility/reference APIs" in cb
 
     def test_rate_tree_returns_present_value(self):
         cb = get_cookbook("rate_tree")

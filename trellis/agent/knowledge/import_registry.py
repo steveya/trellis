@@ -29,6 +29,20 @@ _REPO_FACTS_CACHE: dict[str, tuple[RepoFact, ...]] = {}
 # helper added beside the reusable primitives.
 _CODEGEN_MODULE_EXPORT_ALLOWLIST: dict[str, frozenset[str]] = {
     "trellis.models.basket_option": frozenset(),
+    "trellis.models.zcb_option": frozenset(),
+    "trellis.models.zcb_option_tree": frozenset(),
+    "trellis.models.resolution.short_rate_claims": frozenset(
+        {
+            "ResolvedDiscountBondClaim",
+            "resolve_discount_bond_claim_inputs",
+        }
+    ),
+    "trellis.models.analytical.jamshidian": frozenset(
+        {
+            "ResolvedJamshidianInputs",
+            "zcb_option_hw_raw",
+        }
+    ),
     "trellis.models.resolution.terminal_basket": frozenset(
         {
             "ResolvedTerminalBasketInputs",
@@ -630,7 +644,7 @@ from trellis.models.analytical.support.expectations import gauss_hermite_product
 from trellis.models.analytical.support.probability import bivariate_standard_normal_cdf, standard_normal_cdf
 from trellis.models.calibration.solve_request import ObjectiveBundle, SolveBounds, SolveRequest, execute_solve_request
 from trellis.models.analytical.fx import ResolvedGarmanKohlhagenInputs, garman_kohlhagen_call_raw, garman_kohlhagen_price_raw, garman_kohlhagen_put_raw
-from trellis.models.analytical.jamshidian import zcb_option_hw
+from trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw_raw
 from trellis.models.analytical.barrier import barrier_option_price, down_and_out_call, down_and_in_call
 from trellis.models.analytical.support.barriers import DoubleBarrierSpec, double_barrier_hit_mask, double_barrier_path_payoff, double_barrier_state_payoff, resolve_double_barrier_inputs, terminal_double_barrier_payoff
 from trellis.models.autocallable import AutocallableMonteCarloConfig, AutocallableMonteCarloResult, AutocallableRuntimeSpec, autocallable_observation_steps, autocallable_path_payoffs, price_autocallable_monte_carlo, price_autocallable_monte_carlo_result, resolve_autocallable_inputs
@@ -648,6 +662,7 @@ from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quant
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
 from trellis.models.resolution.terminal_basket import ResolvedTerminalBasketInputs, TerminalBasketSpecLike, resolve_terminal_basket_inputs
 from trellis.models.resolution.single_state_diffusion import ResolvedScalarDiffusionMarketInputs, ResolvedSingleStateDiffusionInputs, resolve_scalar_diffusion_market_inputs, resolve_single_state_diffusion_inputs
+from trellis.models.resolution.short_rate_claims import ResolvedDiscountBondClaim, resolve_discount_bond_claim_inputs
 from trellis.models.analytical.terminal_basket import two_asset_extremum_option_stulz, two_asset_spread_option_kirk, two_asset_terminal_basket_gauss_hermite
 from trellis.models.short_rate_bond import ResolvedShortRateBondInputs, price_cir_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_tree, price_vasicek_zero_coupon_bond_analytical, resolve_short_rate_bond_inputs
 from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
@@ -659,6 +674,7 @@ from trellis.models.short_rate_fixed_income import build_embedded_fixed_income_e
 from trellis.models.short_rate_lattice import ResolvedShortRateLatticeInputs, resolve_short_rate_lattice_inputs
 from trellis.models.trees.models import MODEL_REGISTRY
 from trellis.models.trees.algebra import BINOMIAL_1F_TOPOLOGY, TERM_STRUCTURE_TARGET, UNIFORM_ADDITIVE_MESH, build_lattice, price_on_lattice, value_on_lattice
+from trellis.models.trees.control import lattice_step_from_time
 from trellis.models.equity_option_tree import build_vanilla_equity_lattice, compile_vanilla_equity_contract_spec, price_cev_option_tree, price_vanilla_equity_option_on_lattice, price_vanilla_equity_option_tree, resolve_vanilla_equity_tree_inputs
 from trellis.models.trees.lattice import LatticeRollbackObservation, LatticeRollbackResult, build_rate_lattice, build_spot_lattice, lattice_backward_induction, lattice_backward_induction_result, build_generic_lattice, calibrate_lattice
 from trellis.models.trees.binomial import BinomialTree

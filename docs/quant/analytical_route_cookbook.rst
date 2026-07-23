@@ -220,20 +220,22 @@ Recent analytical routes in Trellis follow the same resolver-to-raw split:
   with ``price_swaption_black76_raw(...)``. Do not sum or maximize European
   values across the schedule; the retained product wrapper is reference-only.
 - Jamshidian zero-coupon bond option:
-  ``resolve_zcb_option_hw_inputs(...)`` ->
-  ``ResolvedJamshidianInputs`` / ``zcb_option_hw_raw(...)`` under the public
-  wrapper ``price_zcb_option_jamshidian(...)`` in
-  ``trellis.models.zcb_option`` and
-  ``trellis.models.analytical.jamshidian``.
+  ``resolve_discount_bond_claim_inputs(...)`` ->
+  explicit ``ResolvedJamshidianInputs(...)`` ->
+  ``zcb_option_hw_raw(...)``. The shared resolver owns settlement, date
+  measures, unit-face strike normalization, discount factors, volatility,
+  mean reversion, and option direction. Generated code handles zero-expiry
+  intrinsic value, selects call or put, and applies notional once.
+  ``resolve_zcb_option_hw_inputs(...)`` and
+  ``price_zcb_option_jamshidian(...)`` remain compatibility/reference
+  surfaces, not generated construction authority.
 
-When an admitted route helper owns market binding plus a raw kernel, agent
-generated adapters should delegate to that surface instead of reconstructing
-annuity, forward, or strike-normalization logic inline. Primitive-composed
-routes such as quanto are the converse: the admitted resolver and numerical
-primitives are the construction contract, and product wrappers must not replace
-that composition.
+Primitive-composed routes make the admitted resolver and numerical kernels the
+construction contract. Product wrappers may remain useful for application
+convenience or independent validation, but they must not replace that visible
+composition in generated code.
 The public adapter should preserve the same present-value scalar as the raw
-kernel; the raw helper exists for reuse and verification, not because the
+kernel; the raw kernel exists for reuse and verification, not because the
 public route must collapse the trace.
 
 

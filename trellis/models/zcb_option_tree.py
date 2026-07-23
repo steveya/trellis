@@ -1,4 +1,8 @@
-"""Stable zero-coupon-bond option tree helpers."""
+"""Compatibility wrappers for zero-coupon-bond option lattice pricing.
+
+Generated construction uses the shared claim resolver, generic calibrated
+lattice algebra, time-step mapping, and partial-horizon rollback directly.
+"""
 
 from __future__ import annotations
 
@@ -6,7 +10,13 @@ from typing import Protocol
 
 import trellis.models.trees.models as tree_models
 
-from trellis.models.trees.lattice import RecombiningLattice, build_generic_lattice
+from trellis.models.trees.control import lattice_step_from_time
+from trellis.models.trees.lattice import (
+    RecombiningLattice,
+    build_generic_lattice,
+    lattice_backward_induction,
+    lattice_backward_induction_result,
+)
 from trellis.models.resolution.short_rate_claims import (
     DiscountBondClaimSpecLike,
     ResolvedDiscountBondClaim,
@@ -80,46 +90,43 @@ def price_zcb_option_on_lattice(
     *,
     claim: ResolvedDiscountBondClaim,
 ) -> float:
-    """Price a European option on a ZCB using a pre-built calibrated lattice."""
-    exp_step = int(round(claim.expiry_time / lattice.dt))
-    bond_step = int(round(claim.bond_maturity_time / lattice.dt))
-    if bond_step > lattice.n_steps:
-        raise ValueError(
-            f"Lattice horizon {lattice.n_steps} is shorter than bond maturity step {bond_step}"
-        )
+    """Price a European option on a ZCB using generic partial-horizon rollback."""
+    expiry_step = lattice_step_from_time(
+        claim.expiry_time,
+        dt=lattice.dt,
+        n_steps=lattice.n_steps,
+        allow_step_zero=True,
+    )
+    bond_step = lattice_step_from_time(
+        claim.bond_maturity_time,
+        dt=lattice.dt,
+        n_steps=lattice.n_steps,
+        allow_step_zero=True,
+    )
+    if expiry_step is None or bond_step is None:
+        raise ValueError("ZCB option dates must lie on the calibrated lattice horizon")
+    if expiry_step >= bond_step:
+        raise ValueError("ZCB option expiry step must precede bond maturity step")
 
-    zcb_values = [1.0] * lattice.n_nodes(bond_step)
-    for step in range(bond_step - 1, exp_step - 1, -1):
-        new_vals = [0.0] * lattice.n_nodes(step)
-        for node in range(lattice.n_nodes(step)):
-            discount = lattice.get_discount(step, node)
-            probs = lattice.get_probabilities(step, node)
-            children = lattice.child_indices(step, node)
-            new_vals[node] = discount * sum(
-                p * zcb_values[child] for p, child in zip(probs, children)
+    bond_result = lattice_backward_induction_result(
+        lattice,
+        terminal_value=1.0,
+        terminal_step=bond_step,
+        observation_steps=(expiry_step,),
+    )
+    bond_values = bond_result.observation_at(expiry_step).post_control_values
+    payoff_sign = -1.0 if claim.option_type == "put" else 1.0
+    return float(lattice_backward_induction(
+        lattice,
+        terminal_payoff=lambda step, node, lattice_: (
+            claim.notional
+            * max(
+                payoff_sign * (bond_values[node] - claim.strike_unit),
+                0.0,
             )
-        zcb_values = new_vals
-
-    payoff = []
-    for node in range(lattice.n_nodes(exp_step)):
-        bond_unit_price = float(zcb_values[node])
-        if claim.option_type == "put":
-            payoff.append(max(claim.strike_unit - bond_unit_price, 0.0) * claim.notional)
-        else:
-            payoff.append(max(bond_unit_price - claim.strike_unit, 0.0) * claim.notional)
-
-    values = payoff
-    for step in range(exp_step - 1, -1, -1):
-        new_vals = [0.0] * lattice.n_nodes(step)
-        for node in range(lattice.n_nodes(step)):
-            discount = lattice.get_discount(step, node)
-            probs = lattice.get_probabilities(step, node)
-            children = lattice.child_indices(step, node)
-            new_vals[node] = discount * sum(
-                p * values[child] for p, child in zip(probs, children)
-            )
-        values = new_vals
-    return float(values[0])
+        ),
+        terminal_step=expiry_step,
+    ))
 
 
 def price_zcb_option_tree(

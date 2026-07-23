@@ -69,6 +69,7 @@ Status mirror last synced: `2026-07-23`
 | `QUA-1205` | Callable fixed income: raw lattice primitive assembly | Done |
 | `QUA-1231` | Semantic ranked-observation basket: primitive-composed Monte Carlo lane | Done |
 | `QUA-1232` | Terminal basket pricing: retire analytical, Monte Carlo, and transform helper authority | Done |
+| `QUA-1233` | Semantic ZCB option: raw Jamshidian and partial-horizon lattice composition | In Progress |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -144,6 +145,11 @@ Status mirror last synced: `2026-07-23`
     engine-neutral payoff algebra with method-true Stulz, Kirk, correlated-GBM
     Monte Carlo, and Hurd-Zhou primitives, and retain all product wrappers only
     as excluded compatibility references.
+21. Apply QUA-1233 to the zero-coupon-bond option lane: compose the Jamshidian
+    result from the shared discount-bond claim resolver and raw analytical
+    kernel, extend generic lattice rollback to bounded partial horizons, and
+    use that generic API for distinct Ho-Lee and Hull-White tree artifacts while
+    retaining product wrappers only as compatibility and reference evidence.
 
 ## Completion Evidence
 

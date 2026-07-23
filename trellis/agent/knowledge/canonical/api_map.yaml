@@ -311,14 +311,15 @@ rate_lattice:
   module: trellis.models.trees.lattice
   methods: [rate_tree]
   navigation:
-    aliases: [rate_tree, callable_bond, puttable_bond]
+    aliases: [rate_tree, callable_bond, puttable_bond, zcb_option, discount_bond_option]
   key_imports:
     - "from trellis.models.short_rate_lattice import ResolvedShortRateLatticeInputs, resolve_short_rate_lattice_inputs"
     - "from trellis.models.short_rate_fixed_income import build_embedded_fixed_income_event_timeline, compile_embedded_fixed_income_lattice_contract_spec, present_value_fixed_coupon_bond, settlement_date_for_fixed_income_claim"
     - "from trellis.models.trees.models import MODEL_REGISTRY"
     - "from trellis.models.trees.algebra import BINOMIAL_1F_TOPOLOGY, UNIFORM_ADDITIVE_MESH, TERM_STRUCTURE_TARGET, build_lattice, price_on_lattice, value_on_lattice"
     - "from trellis.models.trees.lattice import LatticeRollbackObservation, LatticeRollbackResult, lattice_backward_induction, lattice_backward_induction_result"
-    - "from trellis.models.zcb_option_tree import price_zcb_option_tree"
+    - "from trellis.models.trees.control import lattice_step_from_time"
+    - "from trellis.models.resolution.short_rate_claims import ResolvedDiscountBondClaim, resolve_discount_bond_claim_inputs"
   notes:
     - "Callable bonds, puttable bonds, and Bermudan swaptions use a calibrated rate lattice from a TreeModel specification such as Hull-White or Black-Derman-Toy"
     - "Resolve product-neutral market inputs with resolve_short_rate_lattice_inputs(...), then select the returned model_name from MODEL_REGISTRY and build against TERM_STRUCTURE_TARGET(discount_curve)"
@@ -329,9 +330,11 @@ rate_lattice:
     - "price_callable_bond_tree is a compatibility reference, not an admitted generated-route target"
     - "lattice_backward_induction handles cashflow_at_node and exercise_fn"
     - "lattice_backward_induction_result(..., observation_steps=...) and value_on_lattice(..., observation_steps=...) capture only requested steps as immutable LatticeRollbackObservation values"
+    - "Set terminal_step to an earlier validated step when a claim ends before the lattice horizon; observations must be at or before that partial horizon"
     - "Each nonterminal observation separates discounted continuation, post-cashflow, and post-control node vectors; terminal observations use the terminal payoff vector for all three phases"
     - "Use the bounded observation result to compose schedule and exercise state; do not open-code rollback or introduce a product-specific observation helper"
-    - "Zero-coupon bond option tree routes should prefer `price_zcb_option_tree(...)` instead of rebuilding nested backward induction inline"
+    - "For a zero-coupon-bond option, resolve the shared claim, map expiry and maturity with lattice_step_from_time(...), observe unit-bond values using terminal_step=bond_step, and roll the option payoff using terminal_step=expiry_step"
+    - "price_zcb_option_tree(...), build_zcb_option_lattice(...), and price_zcb_option_on_lattice(...) are compatibility/reference surfaces, not generated construction authority"
 
 # ---------------------------------------------------------------------------
 # Model imports — Monte Carlo
@@ -648,9 +651,9 @@ copulas:
 # Model imports — analytical
 # ---------------------------------------------------------------------------
 analytical:
-  module: trellis.models.zcb_option
+  module: trellis.models.analytical
   key_imports:
-    - "from trellis.models.zcb_option import resolve_zcb_option_hw_inputs, price_zcb_option_jamshidian"
+    - "from trellis.models.resolution.short_rate_claims import ResolvedDiscountBondClaim, resolve_discount_bond_claim_inputs"
     - "from trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw_raw"
     - "from trellis.models.analytical import zcb_option_hw"
     - "from trellis.models.analytical import terminal_vanilla_from_basis"
@@ -660,6 +663,8 @@ analytical:
     - "from trellis.models.analytical.barrier import barrier_option_price"
     - "from trellis.models.rate_style_swaption import ResolvedSwaptionBlack76Inputs, resolve_swaption_black76_inputs, price_swaption_black76_raw"
   notes:
+    - "For a Jamshidian ZCB option, resolve the shared discount-bond claim, construct ResolvedJamshidianInputs visibly, call zcb_option_hw_raw(...), then apply option direction and notional once"
+    - "resolve_zcb_option_hw_inputs(...) and price_zcb_option_jamshidian(...) remain compatibility/reference APIs and are excluded from generated construction authority"
     - "For FX vanilla analytics, resolve spot, domestic/foreign discount factors, volatility, and contract terms, then call `garman_kohlhagen_price_raw(...)` on the resolved basis and apply notional"
     - "For FX single-barrier analytics, resolve FX spot, domestic/foreign rates, volatility, monitoring, and payoff terms, then call `barrier_option_price(...)` with foreign rate as `q` and apply notional"
     - "For European digitals, use the Black-76 cash-or-nothing or asset-or-nothing call/put basis kernel selected by contract semantics; bind the carry-adjusted forward and apply discount, notional, and cash amount explicitly"
@@ -698,10 +703,16 @@ utilities:
       - "For European Black76 construction, bind with resolve_swaption_black76_inputs(...) and price only the typed result with price_swaption_black76_raw(...); the product wrapper is reference-only"
       - "For the Bermudan final-exercise lower-bound comparator, normalize/filter the exercise schedule first and pass only the final valid date to the same resolver/raw-kernel composition"
   jamshidian_zcb_option:
-    module: trellis.models.zcb_option
+    module: trellis.models.resolution.short_rate_claims
+    navigation:
+      aliases: [jamshidian, zcb_option, zero_coupon_bond_option, discount_bond_option, hull_white_bond_option]
     imports:
-      - "from trellis.models.zcb_option import ResolvedZCBOptionInputs, resolve_zcb_option_hw_inputs, price_zcb_option_jamshidian"
+      - "from trellis.models.resolution.short_rate_claims import ResolvedDiscountBondClaim, resolve_discount_bond_claim_inputs"
       - "from trellis.models.analytical.jamshidian import ResolvedJamshidianInputs, zcb_option_hw_raw"
+    notes:
+      - "Use the shared claim resolver for dates, unit-face strike, discount factors, volatility, mean reversion, and option direction before constructing the raw Jamshidian input contract"
+      - "For tree comparison, follow rate_lattice with the same resolved claim and two generic partial-horizon rollback passes"
+      - "The trellis.models.zcb_option and trellis.models.zcb_option_tree wrappers are compatibility/reference APIs, not generated construction authority"
   schedule:
     module: trellis.core.date_utils
     imports:

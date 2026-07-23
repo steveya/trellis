@@ -1194,7 +1194,7 @@ def test_evaluate_prompt_compact_surface_mentions_swaption_resolver_kernel_route
     assert "annuity" in prompt
 
 
-def test_evaluate_prompt_compact_surface_mentions_jamshidian_raw_helper():
+def test_evaluate_prompt_compact_surface_teaches_raw_jamshidian_composition():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.prompts import evaluate_prompt
     from trellis.agent.quant import PricingPlan
@@ -1202,11 +1202,16 @@ def test_evaluate_prompt_compact_surface_mentions_jamshidian_raw_helper():
     plan = GenerationPlan(
         method="analytical",
         instrument_type="zcb_option",
-        inspected_modules=("trellis.models.zcb_option", "trellis.models.analytical.jamshidian"),
-        approved_modules=("trellis.models.zcb_option", "trellis.models.analytical.jamshidian"),
+        inspected_modules=(
+            "trellis.models.resolution.short_rate_claims",
+            "trellis.models.analytical.jamshidian",
+        ),
+        approved_modules=(
+            "trellis.models.resolution.short_rate_claims",
+            "trellis.models.analytical.jamshidian",
+        ),
         symbols_to_reuse=(
-            "price_zcb_option_jamshidian",
-            "resolve_zcb_option_hw_inputs",
+            "resolve_discount_bond_claim_inputs",
             "ResolvedJamshidianInputs",
             "zcb_option_hw_raw",
         ),
@@ -1215,9 +1220,23 @@ def test_evaluate_prompt_compact_surface_mentions_jamshidian_raw_helper():
             route="zcb_option_analytical",
             engine_family="analytical",
             primitives=(
-                PrimitiveRef("trellis.models.zcb_option", "price_zcb_option_jamshidian", "route_helper"),
+                PrimitiveRef(
+                    "trellis.models.resolution.short_rate_claims",
+                    "resolve_discount_bond_claim_inputs",
+                    "market_binding",
+                ),
+                PrimitiveRef(
+                    "trellis.models.analytical.jamshidian",
+                    "ResolvedJamshidianInputs",
+                    "input_contract",
+                ),
+                PrimitiveRef(
+                    "trellis.models.analytical.jamshidian",
+                    "zcb_option_hw_raw",
+                    "pricing_kernel",
+                ),
             ),
-            adapters=("reuse_checked_in_zcb_option_analytical_helper",),
+            adapters=(),
             blockers=(),
         ),
     )
@@ -1225,10 +1244,13 @@ def test_evaluate_prompt_compact_surface_mentions_jamshidian_raw_helper():
     prompt = evaluate_prompt(
         skeleton_code="class Demo:\n    def evaluate(self, market_state):\n        pass\n",
         spec_schema=SimpleNamespace(class_name="Demo", fields=[]),
-        reference_sources={"Jamshidian helper": "x" * 1500},
+        reference_sources={"Jamshidian kernel": "x" * 1500},
         pricing_plan=PricingPlan(
             method="analytical",
-            method_modules=["trellis.models.zcb_option"],
+            method_modules=[
+                "trellis.models.resolution.short_rate_claims",
+                "trellis.models.analytical.jamshidian",
+            ],
             required_market_data={"discount_curve", "black_vol_surface"},
             model_to_build="zcb_option",
             reasoning="Jamshidian route.",
@@ -1238,10 +1260,10 @@ def test_evaluate_prompt_compact_surface_mentions_jamshidian_raw_helper():
         prompt_surface="compact",
     )
 
-    assert "price_zcb_option_jamshidian" in prompt
-    assert "resolve_zcb_option_hw_inputs" in prompt
+    assert "resolve_discount_bond_claim_inputs" in prompt
     assert "ResolvedJamshidianInputs" in prompt
     assert "zcb_option_hw_raw" in prompt
+    assert "compatibility/reference APIs, not generated construction authority" in prompt
 
 
 def test_evaluate_prompt_compact_surface_mentions_current_pde_contract():
@@ -1738,10 +1760,10 @@ def test_executor_zcb_option_analytical_retry_mentions_jamshidian_raw_lane():
 
     text = "\n".join(_route_specific_retry_lines(request))
 
-    assert "price_zcb_option_jamshidian" in text
-    assert "resolve_zcb_option_hw_inputs" in text
+    assert "resolve_discount_bond_claim_inputs" in text
     assert "ResolvedJamshidianInputs" in text
     assert "zcb_option_hw_raw" in text
+    assert "compatibility/reference APIs, not generated construction authority" in text
 
 
 def test_evaluate_prompt_american_tree_surface_mentions_equity_tree_helper_and_longstaff_schwartz():

@@ -71,6 +71,7 @@ _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
     "equity_quanto",
     "exercise_lattice",
     "rate_tree_backward_induction",
+    "short_rate_bond_option",
 })
 _TERMINAL_BASKET_FORBIDDEN_SYMBOLS = frozenset(
     {
@@ -80,6 +81,15 @@ _TERMINAL_BASKET_FORBIDDEN_SYMBOLS = frozenset(
         "price_ranked_observation_basket_monte_carlo",
         "build_ranked_observation_basket_state_payoff",
         "terminal_ranked_observation_basket_payoff",
+    }
+)
+_ZCB_OPTION_FORBIDDEN_SYMBOLS = frozenset(
+    {
+        "build_zcb_option_lattice",
+        "price_zcb_option_jamshidian",
+        "price_zcb_option_on_lattice",
+        "price_zcb_option_tree",
+        "resolve_zcb_option_hw_inputs",
     }
 )
 _EXACT_HELPER_SIGNATURES = {
@@ -645,6 +655,13 @@ class AlgorithmContractValidator:
                 exact_surface_primitives,
             )
         )
+        findings.extend(
+            self._check_zcb_option_boundary(
+                source,
+                route_spec,
+                exact_surface_primitives,
+            )
+        )
 
         # Checked route helpers own internal engine, payoff, and discounting
         # obligations, but only after the helper call surface itself validates.
@@ -802,6 +819,34 @@ class AlgorithmContractValidator:
                         f"composition and cannot call '{symbol}'. Use the declared "
                         "resolver, raw method kernel, process/engine, and payoff "
                         "primitives instead."
+                    ),
+                )
+            )
+        return findings
+
+    def _check_zcb_option_boundary(
+        self,
+        source: str,
+        route_spec: RouteSpec,
+        exact_surface_primitives,
+    ) -> list[SemanticFinding]:
+        """Reject compatibility wrappers on the raw ZCB-option route."""
+        if route_spec.id != "short_rate_bond_option":
+            return []
+        findings: list[SemanticFinding] = []
+        for symbol in sorted(_ZCB_OPTION_FORBIDDEN_SYMBOLS):
+            if not _calls_symbol(source, symbol):
+                continue
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="zcb_option_forbidden_helper",
+                    message=(
+                        f"Route '{route_spec.id}' cannot call compatibility surface "
+                        f"'{symbol}'. Compose the shared discount-bond claim resolver "
+                        "with the raw Jamshidian kernel or generic calibrated-lattice "
+                        "and partial-horizon rollback primitives."
                     ),
                 )
             )

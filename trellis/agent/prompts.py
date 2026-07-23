@@ -601,20 +601,20 @@ def _render_family_route_guidance(
         lines.append("## Family Route Guidance")
         if method == "rate_tree":
             lines.extend([
-                "- For zero-coupon bond option tree routes, prefer `price_zcb_option_tree(market_state, self._spec, model=\"ho_lee\"|\"hull_white\")` from `trellis.models.zcb_option_tree`.",
-                "- Map `implementation_target=ho_lee_tree` to `model=\"ho_lee\"` and `implementation_target=hull_white_tree` to `model=\"hull_white\"`.",
-                "- If you must build the tree directly, import `build_generic_lattice` from `trellis.models.trees.lattice` and `MODEL_REGISTRY` from `trellis.models.trees.models`, then call `build_generic_lattice(MODEL_REGISTRY[...], r0=..., sigma=..., a=..., T=..., n_steps=..., discount_curve=market_state.discount)`.",
-                "- Do not call `build_rate_lattice(...)` with invented keyword forms such as `market_state=...`, `maturity=...`, or `steps=...`.",
-                "- Build the tree to `spec.bond_maturity_date`, not just to expiry, because the route needs nested backward induction for the underlying bond price at option expiry.",
+                "- Resolve dates, unit-face strike, call/put direction, volatility, mean reversion, and discount factors with `resolve_discount_bond_claim_inputs(...)`.",
+                "- Map `implementation_target=ho_lee_tree` to `MODEL_REGISTRY[\"ho_lee\"]` and `implementation_target=hull_white_tree` to `MODEL_REGISTRY[\"hull_white\"]`.",
+                "- Build one calibrated lattice through `BINOMIAL_1F_TOPOLOGY`, `UNIFORM_ADDITIVE_MESH`, `TERM_STRUCTURE_TARGET(market_state.discount)`, and `build_lattice(...)`; its horizon must reach bond maturity.",
+                "- Map expiry and maturity with `lattice_step_from_time(...)`. Roll the unit bond with `lattice_backward_induction_result(..., terminal_step=bond_step, observation_steps=(expiry_step,))`, form the option payoff from those expiry-node values, and roll it with `lattice_backward_induction(..., terminal_step=expiry_step)`.",
+                "- `price_zcb_option_tree(...)`, `build_zcb_option_lattice(...)`, and `price_zcb_option_on_lattice(...)` are compatibility/reference APIs, not generated construction authority. Do not duplicate rollback loops.",
             ])
         elif method == "analytical":
             lines.extend([
-                "- For Jamshidian analytical routes, prefer `price_zcb_option_jamshidian(market_state, self._spec, mean_reversion=0.1)` from `trellis.models.zcb_option`.",
-                "- If you need the resolved-input lane under that wrapper, use `resolve_zcb_option_hw_inputs(...)` from `trellis.models.zcb_option`, then pass `resolved.jamshidian` into `zcb_option_hw_raw(...)` from `trellis.models.analytical.jamshidian`.",
-                "- Treat `ResolvedJamshidianInputs` as the traced contract for expiry discounting, bond discounting, normalized strike, expiry, bond maturity, volatility, and mean reversion.",
+                "- For Jamshidian analytical routes, call `resolve_discount_bond_claim_inputs(..., model=\"hull_white\")` from `trellis.models.resolution.short_rate_claims`.",
+                "- Construct `ResolvedJamshidianInputs` visibly from that shared claim, pass it to `zcb_option_hw_raw(...)`, select call/put direction, and apply notional once.",
+                "- Treat the shared claim plus `ResolvedJamshidianInputs` as the traced contracts for dates, discount factors, normalized strike, volatility, mean reversion, direction, and scaling.",
                 "- Do not degrade this route to generic Black76 on a forward bond price when the task explicitly asks for Jamshidian / Hull-White.",
-                "- Normalize strike quotes to unit face before the closed-form kernel. Treat `63` on `100` face as `0.63`.",
-                "- Use `spec.expiry_date` and `spec.bond_maturity_date`; validate that the bond maturity is strictly after expiry.",
+                "- Handle zero-expiry intrinsic value before the raw kernel and require bond maturity strictly after expiry.",
+                "- `resolve_zcb_option_hw_inputs(...)` and `price_zcb_option_jamshidian(...)` are compatibility/reference APIs, not generated construction authority.",
             ])
 
     if instrument_type == "european_option" and method == "analytical":
