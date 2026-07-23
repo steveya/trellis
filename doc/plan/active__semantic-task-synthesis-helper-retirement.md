@@ -68,7 +68,7 @@ Status mirror last synced: `2026-07-23`
 | `QUA-1206` | Semantic comparison: bind callable fixed-income target variants | Done |
 | `QUA-1205` | Callable fixed income: raw lattice primitive assembly | Done |
 | `QUA-1231` | Semantic ranked-observation basket: primitive-composed Monte Carlo lane | Done |
-| `QUA-1232` | Terminal basket pricing: retire analytical, Monte Carlo, and transform helper authority | In Progress |
+| `QUA-1232` | Terminal basket pricing: retire analytical, Monte Carlo, and transform helper authority | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
