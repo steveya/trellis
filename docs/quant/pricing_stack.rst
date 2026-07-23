@@ -1122,6 +1122,40 @@ a product pricing helper as construction authority. The semantic API map card
 ``analytical_gaussian_composition`` is the builder's general hot start for
 these probability and root-solving pieces.
 
+Terminal basket primitive composition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+European terminal baskets use the
+``terminal_basket_option_composition`` API-map card. Generated code starts with
+``resolve_terminal_basket_inputs(...)`` and then selects one method-true
+composition:
+
+- best/worst-of two-asset claims use
+  ``two_asset_extremum_option_stulz(...)``;
+- one-long/one-short two-asset spreads use
+  ``two_asset_spread_option_kirk(...)``;
+- a generic two-asset terminal reference uses
+  ``two_asset_terminal_basket_gauss_hermite(...)``;
+- Monte Carlo combines ``CorrelatedGBM``, ``MonteCarloEngine``, and the
+  engine-neutral ``terminal_basket_option_payoff(...)``; and
+- the Fourier spread lane builds
+  ``correlated_gbm_log_return_characteristic_function(...)`` and passes it to
+  ``hurd_zhou_spread_option_2d_fft(...)``.
+
+Resolution, discount-rate conversion, process construction, payoff algebra,
+discounting, and notional scaling remain visible. The historical
+``price_basket_option_*`` functions are compatibility/reference surfaces and
+are excluded from generated authority. Ranked-observation basket primitives
+are also excluded: an observation-state selection contract is not a terminal
+basket merely because both products mention several assets.
+
+The supported numerical domain is intentionally narrow. Stulz does not price
+weighted sums or spreads; Kirk is an approximation for a two-leg spread; and
+the Hurd-Zhou implementation is a finite, damped two-dimensional Fourier grid
+for a positive-strike spread under correlated lognormal dynamics. See
+``L59`` for unsupported dimensions, dynamics, exercise, and error-control
+claims.
+
 Fixed lookback analytical composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

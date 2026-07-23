@@ -2580,6 +2580,16 @@ def _traits_from_text(desc: str) -> tuple[str, ...]:
         "fixed_strike": ("fixed_strike",),
         "floating_strike": ("floating_strike",),
         "multi_asset": ("multi_asset", "multi_underlier", "multi_underlying"),
+        "spread": (
+            "spread option",
+            "spread_option",
+            "kirk approximation",
+            "kirk_approximation",
+            "hurd zhou",
+            "hurd_zhou",
+        ),
+        "best_of": ("best of", "best_of", "best-of"),
+        "worst_of": ("worst of", "worst_of", "worst-of"),
         "barrier": ("barrier",),
         "double_barrier": ("double barrier", "double_barrier", "lower and upper barriers"),
         "digital": (

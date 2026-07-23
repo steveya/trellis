@@ -554,25 +554,29 @@ class TestLegacyRegistryRegression:
         )
         assert black76 is not None, "analytical_black76 missing from registry"
 
-        # QUA-920 fixed the form of the first four structural clauses. Later
-        # tickets may append more legacy helper clauses before the default
-        # sentinel, so this regression lock only requires that the original
-        # migrated prefix still exists and the final clause remains default.
+        # QUA-920 fixed the form of four structural clauses. Later tickets may
+        # add more-specific legacy trait guards ahead of a broader DSL clause
+        # when precedence requires it, so locate the migrated DSL clauses by
+        # form rather than relying on a forever-fixed list position.
         assert len(black76.conditional_primitives) >= 5, (
             f"analytical_black76 should have at least the 4 migrated DSL "
             f"clauses plus a trailing default; got "
             f"{len(black76.conditional_primitives)}"
         )
 
-        # Clauses 0..3 must be DSL form.
-        for idx in range(4):
-            cp = black76.conditional_primitives[idx]
+        migrated_clauses = tuple(
+            cp
+            for cp in black76.conditional_primitives
+            if isinstance(cp.contract_pattern, ContractPattern)
+        )[:4]
+        assert len(migrated_clauses) == 4
+        for cp in migrated_clauses:
             assert isinstance(cp.contract_pattern, ContractPattern), (
-                f"analytical_black76.conditional_primitives[{idx}] should be "
-                f"DSL form after QUA-920; got contract_pattern={cp.contract_pattern!r}"
+                "analytical_black76 migrated clause should stay DSL form after "
+                f"QUA-920; got contract_pattern={cp.contract_pattern!r}"
             )
             assert cp.when == {}, (
-                f"analytical_black76.conditional_primitives[{idx}] is DSL form; "
+                "analytical_black76 migrated clause is DSL form; "
                 f"`when` should be empty-dict placeholder, got {cp.when!r}"
             )
 

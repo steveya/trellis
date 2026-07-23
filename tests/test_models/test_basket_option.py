@@ -96,6 +96,33 @@ def test_resolve_basket_option_inputs_accepts_runtime_contract_proxy():
     assert resolved.correlation_matrix[1] == pytest.approx((0.35, 1.0))
 
 
+def test_resolve_basket_option_inputs_keeps_explicit_style_authoritative():
+    from trellis.models.basket_option import resolve_basket_option_inputs
+
+    resolved = resolve_basket_option_inputs(
+        _market_state(),
+        _BestOfSpec(),
+        comparison_target="fft_spread_2d",
+    )
+
+    assert resolved.basket_style == "best_of"
+    assert resolved.comparison_target == "fft_spread_2d"
+
+
+def test_resolve_basket_option_inputs_rejects_more_than_two_underliers():
+    from trellis.models.basket_option import resolve_basket_option_inputs
+
+    class ThreeAssetSpec(_BestOfSpec):
+        underliers = "SPX,NDX,RUT"
+        spots = "100.0,95.0,90.0"
+        vols = "0.20,0.20,0.20"
+        dividend_yields = "0.0,0.0,0.0"
+        correlation = "1.0,0.3,0.2;0.3,1.0,0.4;0.2,0.4,1.0"
+
+    with pytest.raises(ValueError, match="exactly two underliers"):
+        resolve_basket_option_inputs(_market_state(), ThreeAssetSpec())
+
+
 def test_basket_option_helpers_keep_best_of_analytical_and_mc_within_tolerance():
     from trellis.models.basket_option import (
         price_basket_option_analytical,
@@ -121,7 +148,7 @@ def test_basket_option_helpers_keep_best_of_analytical_and_mc_within_tolerance()
     assert monte_carlo == pytest.approx(analytical, rel=0.12)
 
 
-def test_spread_transform_proxy_matches_stabilized_analytical_kernel():
+def test_spread_transform_compatibility_wrapper_uses_independent_fourier_kernel():
     from trellis.models.basket_option import (
         price_basket_option_analytical,
         price_basket_option_transform_proxy,
@@ -139,7 +166,8 @@ def test_spread_transform_proxy_matches_stabilized_analytical_kernel():
         comparison_target="fft_spread_2d",
     )
 
-    assert transform == pytest.approx(analytical, rel=1e-12)
+    assert transform == pytest.approx(analytical, rel=0.02)
+    assert transform != analytical
 
 
 def test_weighted_spread_kirk_tracks_monte_carlo():

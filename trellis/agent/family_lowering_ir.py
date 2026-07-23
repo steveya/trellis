@@ -173,6 +173,24 @@ class TransformPricingIR(BaseFamilyLoweringIR):
 
 
 @dataclass(frozen=True)
+class TerminalBasketPricingIR(BaseFamilyLoweringIR):
+    """Typed composition contract for two-asset terminal basket pricing."""
+
+    method_family: str = ""
+    resolver_symbol: str = "resolve_terminal_basket_inputs"
+    algorithm_symbols: tuple[str, ...] = ()
+    payoff_symbol: str = "terminal_basket_option_payoff"
+    process_symbol: str = ""
+    engine_symbol: str = ""
+    characteristic_symbol: str = ""
+    market_mapping: str = (
+        "terminal_basket_spot_discount_vol_carry_correlation_inputs"
+    )
+    helper_symbol: str = ""
+    compatibility_wrapper: str = ""
+
+
+@dataclass(frozen=True)
 class MCStateSpec:
     """Typed state-space contract for one event-aware Monte Carlo problem."""
 
@@ -662,6 +680,7 @@ class NthToDefaultIR(BaseFamilyLoweringIR):
 FamilyLoweringIR = (
     AnalyticalBlack76IR
     | TransformPricingIR
+    | TerminalBasketPricingIR
     | EventAwareMonteCarloIR
     | EventAwarePDEIR
     | VanillaEquityPDEIR
@@ -790,7 +809,6 @@ _TRANSFORM_TERMINAL_PAYOFF_KIND_BY_FAMILY = {
 _TRANSFORM_HELPER_BINDINGS = {
     ("vanilla_option", "equity_diffusion"): "price_vanilla_equity_option_transform",
     ("vanilla_option", "stochastic_volatility"): "price_heston_option_transform",
-    ("basket_option", "equity_diffusion"): "price_basket_option_transform_proxy",
 }
 
 
@@ -1030,15 +1048,41 @@ def _binding_supports_transform_pricing(
     del route_id
     if _binding_has_role(binding_spec, "transform_pricer"):
         return True
+    if _binding_has_symbol(
+        binding_spec,
+        "pricing_kernel",
+        "hurd_zhou_spread_option_2d_fft",
+    ):
+        return True
     if _binding_has_any_symbol(
         binding_spec,
         "route_helper",
         "price_vanilla_equity_option_transform",
         "price_heston_option_transform",
-        "price_basket_option_transform_proxy",
     ):
         return True
     return False
+
+
+def _binding_supports_terminal_basket(
+    binding_spec: ResolvedBackendBindingSpec | None,
+) -> bool:
+    """Return whether a binding exposes raw terminal-basket composition."""
+    if not _binding_has_symbol(
+        binding_spec,
+        "market_binding",
+        "resolve_terminal_basket_inputs",
+    ):
+        return False
+    return any(
+        _binding_has_symbol(binding_spec, role, symbol)
+        for role, symbol in (
+            ("pricing_kernel", "two_asset_extremum_option_stulz"),
+            ("pricing_kernel", "two_asset_spread_option_kirk"),
+            ("payoff_kernel", "terminal_basket_option_payoff"),
+            ("pricing_kernel", "hurd_zhou_spread_option_2d_fft"),
+        )
+    )
 
 
 def _binding_supports_vanilla_equity_pde(
@@ -1272,6 +1316,15 @@ def build_family_lowering_ir(
         route_family=resolved_route_family,
     )
 
+    if _is_terminal_basket_product(product_ir) and _binding_supports_terminal_basket(
+        binding_spec
+    ):
+        return _build_terminal_basket_pricing_ir(
+            binding_spec=binding_spec,
+            method=method,
+            **common_kwargs,
+        )
+
     if _is_vanilla_european_contract(contract, product_ir):
         if _binding_supports_black76_analytical(binding_spec, route_id=route_id):
             option_type = _option_type_for_contract(contract)
@@ -1350,6 +1403,75 @@ def build_family_lowering_ir(
         )
 
     return None
+
+
+def _is_terminal_basket_product(product_ir) -> bool:
+    """Return whether ProductIR describes an ordinary two-asset terminal basket."""
+    instrument = str(getattr(product_ir, "instrument", "") or "").strip().lower()
+    payoff_family = str(
+        getattr(product_ir, "payoff_family", "") or ""
+    ).strip().lower()
+    traits = {
+        str(value or "").strip().lower()
+        for value in getattr(product_ir, "payoff_traits", ()) or ()
+    }
+    return (
+        instrument == "basket_option"
+        and payoff_family == "basket_option"
+        and "two_asset_terminal_basket" in traits
+    )
+
+
+def _build_terminal_basket_pricing_ir(
+    *,
+    binding_spec: ResolvedBackendBindingSpec,
+    method: str | None,
+    **common_kwargs,
+) -> TerminalBasketPricingIR:
+    """Project canonical binding primitives into typed terminal-basket IR."""
+    primitives = tuple(
+        primitive
+        for primitive in getattr(binding_spec, "primitives", ()) or ()
+        if not getattr(primitive, "excluded", False)
+    )
+    symbols_by_role: dict[str, tuple[str, ...]] = {}
+    for role in {
+        "pricing_kernel",
+        "numerical_evidence",
+        "payoff_kernel",
+        "state_process",
+        "engine",
+        "characteristic_function",
+    }:
+        symbols_by_role[role] = tuple(
+            str(primitive.symbol)
+            for primitive in primitives
+            if str(getattr(primitive, "role", "") or "") == role
+        )
+    algorithms = (
+        symbols_by_role["pricing_kernel"]
+        + symbols_by_role["numerical_evidence"]
+    )
+    normalized_method = str(method or "").strip().lower()
+    if not normalized_method:
+        normalized_method = str(
+            getattr(binding_spec, "route_family", "") or ""
+        ).strip().lower()
+    return TerminalBasketPricingIR(
+        method_family=normalized_method,
+        algorithm_symbols=algorithms,
+        process_symbol=next(iter(symbols_by_role["state_process"]), ""),
+        engine_symbol=next(iter(symbols_by_role["engine"]), ""),
+        payoff_symbol=next(
+            iter(symbols_by_role["payoff_kernel"]),
+            "terminal_basket_option_payoff",
+        ),
+        characteristic_symbol=next(
+            iter(symbols_by_role["characteristic_function"]),
+            "",
+        ),
+        **common_kwargs,
+    )
 
 
 def _common_kwargs(

@@ -654,6 +654,25 @@ but new generated adapters do not use it. This makes the construction visible
 to validation and keeps the observation grid, path state, discounting, and
 notional responsibilities explicit.
 
+Ordinary European terminal baskets use a separate composition card and payoff
+contract. The public entry points are
+``resolve_terminal_basket_inputs(...)`` for market coordinates,
+``terminal_basket_option_payoff(...)`` for undiscounted terminal payoff
+algebra, and method-specific raw kernels for Stulz best/worst-of, Kirk spreads,
+Gauss-Hermite reference integration, and Hurd-Zhou two-dimensional Fourier
+spreads. Monte Carlo code combines that same payoff with ``CorrelatedGBM`` and
+``MonteCarloEngine``. This separation prevents a terminal spread from drifting
+onto the ranked-observation route and prevents a shared intrinsic-value
+calculation from changing the artifact's engine identity.
+
+The historical ``price_basket_option_analytical(...)``,
+``price_basket_option_monte_carlo(...)``, and
+``price_basket_option_transform_proxy(...)`` functions remain callable for
+compatibility and reference comparison. New generated pricing code does not
+use them. Support is bounded to European two-asset lognormal claims; see
+``L59`` in ``LIMITATIONS.md`` before assuming broader basket, path-dependent,
+or transform coverage.
+
 They also now carry compiler-emitted lane obligations. In practice that means
 the build loop sees the computational lane first (analytical, lattice, Monte
 Carlo, PDE, and so on), the timeline and market bindings that lane requires,

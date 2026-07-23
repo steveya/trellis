@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from dataclasses import replace
 
+import pytest
+
 from trellis.agent.backend_bindings import ResolvedBackendBindingSpec
 from trellis.agent.codegen_guardrails import PrimitiveRef
 from trellis.agent.family_lowering_ir import (
@@ -500,7 +502,7 @@ def test_heston_transform_lowering_uses_model_parameter_helper_contract():
     assert family_ir.market_mapping == "heston_model_parameter_transform_inputs"
 
 
-def test_transform_lane_accepts_exact_basket_transform_helper():
+def test_transform_lane_accepts_hurd_zhou_basket_kernel_without_helper():
     from trellis.agent.family_lowering_ir import (
         _binding_supports_transform_pricing,
         _transform_helper_symbol_for_product,
@@ -510,9 +512,9 @@ def test_transform_lane_accepts_exact_basket_transform_helper():
 
     binding_spec = _resolved_binding_spec(
         PrimitiveRef(
-            module="trellis.models.basket_option",
-            symbol="price_basket_option_transform_proxy",
-            role="route_helper",
+            module="trellis.models.transforms.spread_option",
+            symbol="hurd_zhou_spread_option_2d_fft",
+            role="pricing_kernel",
             required=True,
         ),
         route_id="transform_fft",
@@ -527,7 +529,94 @@ def test_transform_lane_accepts_exact_basket_transform_helper():
     assert _transform_helper_symbol_for_product(
         SimpleNamespace(payoff_family="basket_option"),
         TransformCharacteristicSpec(model_family="equity_diffusion"),
-    ) == "price_basket_option_transform_proxy"
+    ) == ""
+
+
+@pytest.mark.parametrize(
+    ("route_id", "method", "expected_algorithms"),
+    [
+        (
+            "analytical_black76",
+            "analytical",
+            (
+                "two_asset_extremum_option_stulz",
+                "two_asset_spread_option_kirk",
+                "two_asset_terminal_basket_gauss_hermite",
+            ),
+        ),
+        ("monte_carlo_paths", "monte_carlo", ()),
+        (
+            "transform_fft",
+            "fft_pricing",
+            ("hurd_zhou_spread_option_2d_fft",),
+        ),
+    ],
+)
+def test_terminal_basket_compiles_to_typed_primitive_composition_ir(
+    route_id,
+    method,
+    expected_algorithms,
+):
+    from trellis.agent.family_lowering_ir import (
+        TerminalBasketPricingIR,
+        build_family_lowering_ir,
+    )
+    from trellis.agent.knowledge.schema import ProductIR
+    from trellis.agent.semantic_contracts import make_vanilla_option_contract
+
+    base_contract = make_vanilla_option_contract(
+        description="Two-asset terminal basket",
+        underliers=("SPX", "NDX"),
+        observation_schedule=("2026-06-20",),
+        preferred_method=method,
+    )
+    terminal_basket_contract = replace(
+        base_contract,
+        product=replace(
+            base_contract.product,
+            semantic_id="terminal_basket_option",
+            instrument_class="basket_option",
+            payoff_family="basket_option",
+            payoff_traits=("two_asset_terminal_basket",),
+            model_family="equity_diffusion",
+            multi_asset=True,
+        ),
+    )
+    product_ir = ProductIR(
+        instrument="basket_option",
+        payoff_family="basket_option",
+        payoff_traits=("two_asset_terminal_basket",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
+
+    family_ir = build_family_lowering_ir(
+        terminal_basket_contract,
+        route_id=route_id,
+        route_family=(
+            "fft_pricing"
+            if method == "fft_pricing"
+            else "monte_carlo"
+            if method == "monte_carlo"
+            else "analytical"
+        ),
+        product_ir=product_ir,
+        method=method,
+    )
+
+    assert isinstance(family_ir, TerminalBasketPricingIR)
+    assert family_ir.resolver_symbol == "resolve_terminal_basket_inputs"
+    assert family_ir.algorithm_symbols == expected_algorithms
+    assert family_ir.payoff_symbol == "terminal_basket_option_payoff"
+    assert family_ir.helper_symbol == ""
+    if method == "monte_carlo":
+        assert family_ir.process_symbol == "CorrelatedGBM"
+        assert family_ir.engine_symbol == "MonteCarloEngine"
+    if method == "fft_pricing":
+        assert family_ir.characteristic_symbol == (
+            "correlated_gbm_log_return_characteristic_function"
+        )
 
 
 def test_callable_bond_compiles_to_exercise_lattice_family_ir():

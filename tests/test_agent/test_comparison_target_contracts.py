@@ -27,6 +27,37 @@ def _contracts_for(task_id: str):
     }
 
 
+def test_target_projection_accepts_structured_variant_metadata():
+    from trellis.agent.comparison_target_contracts import (
+        ComparisonTargetContract,
+        project_product_ir_for_comparison_target,
+    )
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    product_ir = decompose_to_ir(
+        "European two-asset basket option",
+        instrument_type="basket_option",
+    )
+    contract = ComparisonTargetContract(
+        target_id="transform",
+        method="fft_pricing",
+        payoff_family="basket_option",
+        observation_style="terminal",
+        model_family="multi_asset_diffusion",
+        variant_parameters={
+            "dimensions": 2,
+            "transform": "hurd_zhou",
+            "grid_controls": {"size": 256, "frequency_step": 0.25},
+        },
+    )
+
+    projected = project_product_ir_for_comparison_target(product_ir, contract)
+
+    assert projected.candidate_engine_families == ("fft_pricing",)
+    assert "two_asset_terminal_basket" in projected.payoff_traits
+    assert "spread" in projected.payoff_traits
+
+
 def test_t04_declares_tree_reference_and_european_lower_bound_relation():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 

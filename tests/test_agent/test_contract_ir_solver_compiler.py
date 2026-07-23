@@ -65,7 +65,9 @@ from trellis.agent.valuation_context import build_valuation_context
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.core.market_state import MarketState
 from trellis.curves.yield_curve import YieldCurve
-from trellis.models.basket_option import price_basket_option_analytical
+from trellis.models.analytical.terminal_basket import (
+    two_asset_terminal_basket_gauss_hermite,
+)
 from trellis.models.black import (
     black76_asset_or_nothing_call,
     black76_asset_or_nothing_put,
@@ -917,7 +919,7 @@ class TestContractIRSolverCompiler:
         )
         assert selected_price != pytest.approx(fallback_price, rel=1e-9, abs=1e-9)
 
-    def test_two_asset_basket_helper_binding_matches_exact_helper(self):
+    def test_two_asset_basket_call_binding_materializes_raw_kernel_inputs(self):
         contract = _basket_call_contract_ir()
         market_state = _basket_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
@@ -929,16 +931,21 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        assert decision.declaration_id == "helper_basket_option_call"
-        spec = decision.call_kwargs["spec"]
-        assert spec.basket_style == "weighted_sum"
+        assert decision.declaration_id == "terminal_basket_call_raw_kernel"
+        assert decision.helper_refs == ()
+        assert decision.pricing_kernel_refs == (
+            "trellis.models.analytical.terminal_basket."
+            "two_asset_terminal_basket_gauss_hermite",
+        )
+        assert decision.call_kwargs["basket_style"] == "weighted_sum"
         assert execute_contract_ir_solver_decision(decision) == pytest.approx(
-            price_basket_option_analytical(market_state, spec),
+            decision.value_scale
+            * two_asset_terminal_basket_gauss_hermite(**decision.call_kwargs),
             rel=1e-12,
             abs=1e-12,
         )
 
-    def test_two_asset_basket_put_helper_binding_matches_exact_helper(self):
+    def test_two_asset_basket_put_binding_materializes_raw_kernel_inputs(self):
         contract = _basket_put_contract_ir()
         market_state = _basket_market_state()
         context = build_valuation_context(market_snapshot=market_state, requested_outputs=("price",))
@@ -950,11 +957,12 @@ class TestContractIRSolverCompiler:
             preferred_method="analytical",
         )
 
-        assert decision.declaration_id == "helper_basket_option_put"
-        spec = decision.call_kwargs["spec"]
-        assert spec.option_type == "put"
+        assert decision.declaration_id == "terminal_basket_put_raw_kernel"
+        assert decision.helper_refs == ()
+        assert decision.call_kwargs["option_type"] == "put"
         assert execute_contract_ir_solver_decision(decision) == pytest.approx(
-            price_basket_option_analytical(market_state, spec),
+            decision.value_scale
+            * two_asset_terminal_basket_gauss_hermite(**decision.call_kwargs),
             rel=1e-12,
             abs=1e-12,
         )

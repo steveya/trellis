@@ -32,8 +32,11 @@ _ENGINE_SIGNATURES = {
         "black76_call",
         "black76_put",
         "garman_kohlhagen_price_raw",
+        "two_asset_extremum_option_stulz",
+        "two_asset_spread_option_kirk",
+        "two_asset_terminal_basket_gauss_hermite",
     ),
-    "fft_pricing": ("fft_price", "cos_price"),
+    "fft_pricing": ("fft_price", "cos_price", "hurd_zhou_spread_option_2d_fft"),
     "pde_solver": ("theta_method_1d", "Grid", "BlackScholesOperator"),
     "qmc": ("sobol_normals", "GBM"),
     "copula": ("FactorCopula",),
@@ -69,6 +72,16 @@ _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
     "exercise_lattice",
     "rate_tree_backward_induction",
 })
+_TERMINAL_BASKET_FORBIDDEN_SYMBOLS = frozenset(
+    {
+        "price_basket_option_analytical",
+        "price_basket_option_monte_carlo",
+        "price_basket_option_transform_proxy",
+        "price_ranked_observation_basket_monte_carlo",
+        "build_ranked_observation_basket_state_payoff",
+        "terminal_ranked_observation_basket_payoff",
+    }
+)
 _EXACT_HELPER_SIGNATURES = {
     "price_double_barrier_option_pde_result": {
         "min_positional_args": 2,
@@ -625,6 +638,13 @@ class AlgorithmContractValidator:
                 exact_surface_primitives,
             )
         )
+        findings.extend(
+            self._check_terminal_basket_boundary(
+                source,
+                route_spec,
+                exact_surface_primitives,
+            )
+        )
 
         # Checked route helpers own internal engine, payoff, and discounting
         # obligations, but only after the helper call surface itself validates.
@@ -716,7 +736,13 @@ class AlgorithmContractValidator:
         exact_surface_primitives,
     ) -> list[SemanticFinding]:
         """Require explicit primitive composition for helper-retired routes."""
-        enforce_whole_route = route_spec.id in _EXPLICIT_COMPOSITION_ROUTE_IDS
+        enforce_whole_route = (
+            route_spec.id in _EXPLICIT_COMPOSITION_ROUTE_IDS
+            or any(
+                primitive.symbol == "resolve_terminal_basket_inputs"
+                for primitive in exact_surface_primitives
+            )
+        )
         required_primitives = tuple(
             primitive
             for primitive in exact_surface_primitives
@@ -745,6 +771,37 @@ class AlgorithmContractValidator:
                         f"'{primitive.symbol}' from '{primitive.module}', but generated "
                         "code does not call that primitive. Product pricing wrappers do "
                         "not satisfy this construction contract."
+                    ),
+                )
+            )
+        return findings
+
+    def _check_terminal_basket_boundary(
+        self,
+        source: str,
+        route_spec: RouteSpec,
+        exact_surface_primitives,
+    ) -> list[SemanticFinding]:
+        """Reject compatibility wrappers and ranked-basket substitution."""
+        if not any(
+            primitive.symbol == "resolve_terminal_basket_inputs"
+            for primitive in exact_surface_primitives
+        ):
+            return []
+        findings: list[SemanticFinding] = []
+        for symbol in sorted(_TERMINAL_BASKET_FORBIDDEN_SYMBOLS):
+            if not _calls_symbol(source, symbol):
+                continue
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="terminal_basket_forbidden_helper",
+                    message=(
+                        f"Route '{route_spec.id}' is an ordinary terminal-basket "
+                        f"composition and cannot call '{symbol}'. Use the declared "
+                        "resolver, raw method kernel, process/engine, and payoff "
+                        "primitives instead."
                     ),
                 )
             )

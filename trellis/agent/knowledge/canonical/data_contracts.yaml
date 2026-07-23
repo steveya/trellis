@@ -19,6 +19,22 @@
   conversion: None — use directly in black76_call(F, K, sigma, T)
   model_range: 0.10 to 0.60
   warning: ''
+- name: TERMINAL_BASKET_MARKET_BINDING
+  method: analytical
+  source: resolve_terminal_basket_inputs(market_state, spec)
+  convention: Named two-underlier spots, Black volatilities, continuous carries,
+    a 2x2 correlation matrix, expiry domestic discount factor, weights, strike,
+    option type, and terminal basket style
+  typical_range: positive spots and volatilities; correlation in [-1, 1]; positive
+    discount factor
+  model_expects: one coherent ResolvedTerminalBasketInputs contract shared by
+    Stulz, Kirk, and Gauss-Hermite kernels
+  conversion: derive continuous domestic rate from the expiry discount factor only
+    when a raw kernel requires it; do not apply discounting or notional inside more
+    than one layer
+  model_range: exactly two underliers for Stulz, Kirk, and the bounded reference kernel
+  warning: Best/worst-of, spread, and weighted-basket methods are payoff-specific;
+    never select a kernel merely because all are two-asset formulas.
 - name: FX_DOMESTIC_FOREIGN_DISCOUNTING
   method: analytical
   source: market_state.discount.discount(T) for domestic discounting and market_state.forecast_curves[foreign_discount_key].discount(T)
@@ -45,6 +61,22 @@
   conversion: Use directly as sigma in GBM(mu=r, sigma=sigma_Black)
   model_range: 0.10 to 0.60
   warning: ''
+- name: TERMINAL_BASKET_MARKET_BINDING
+  method: monte_carlo
+  source: resolve_terminal_basket_inputs(market_state, spec)
+  convention: Named two-underlier spots, Black volatilities, continuous carries,
+    a 2x2 correlation matrix, expiry domestic discount factor, weights, strike,
+    option type, and terminal basket style
+  typical_range: positive spots and volatilities; correlation in [-1, 1]; positive
+    discount factor
+  model_expects: CorrelatedGBM drift vector equal to domestic rate minus each carry,
+    plus terminal states consumed by terminal_basket_option_payoff
+  conversion: infer the continuous domestic zero rate from the expiry discount factor;
+    let the engine return an undiscounted terminal expectation, then apply the resolved
+    discount factor and notional once
+  model_range: exactly two underliers for the current bounded terminal-basket route
+  warning: A terminal-only basket is not a ranked-observation payoff; do not add an
+    observation schedule, removal state, or locked-return state.
 - name: volatility
   method: qmc
   source: market_state.vol_surface.black_vol(T, K)
@@ -82,6 +114,21 @@
   model_range: 'v0: 0.01 to 0.16'
   warning: NEVER pass Black vol directly as v0. A Black vol of 0.20 is v0=0.04, NOT
     v0=0.20.
+- name: TERMINAL_BASKET_TRANSFORM_CONVENTION
+  method: fft_pricing
+  source: resolve_terminal_basket_inputs(market_state, spec) plus correlated_gbm_log_return_characteristic_function
+  convention: Joint characteristic function of the two correlated GBM log returns
+    log(S_i(T) / S_i(0))
+  typical_range: two positive spots, two non-negative volatilities, correlation in
+    [-1, 1], positive maturity and strike
+  model_expects: a vectorized two-dimensional characteristic function and the Hurd-Zhou
+    spread-payoff transform
+  conversion: pass the joint log-return characteristic function to
+    hurd_zhou_spread_option_2d_fft with explicit spots, strike, maturity, and discount
+    factor
+  model_range: European two-asset spread claims only
+  warning: Do not reuse a one-dimensional Carr-Madan log-price characteristic function
+    or treat a generic basket proxy as Hurd-Zhou.
 - name: MODEL_PARAMETERS_FOR_HESTON_MC
   method: monte_carlo
   source: Heston model parameters (v0, kappa, theta, sigma_v/xi, rho)

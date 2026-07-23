@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-22`
+Status mirror last synced: `2026-07-23`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
@@ -68,6 +68,7 @@ Status mirror last synced: `2026-07-22`
 | `QUA-1206` | Semantic comparison: bind callable fixed-income target variants | Done |
 | `QUA-1205` | Callable fixed income: raw lattice primitive assembly | Done |
 | `QUA-1231` | Semantic ranked-observation basket: primitive-composed Monte Carlo lane | Done |
+| `QUA-1232` | Terminal basket pricing: retire analytical, Monte Carlo, and transform helper authority | In Progress |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -138,6 +139,11 @@ Status mirror last synced: `2026-07-22`
     resolution, rate conversion, correlated process, generic Monte Carlo
     engine, and reduced-state payoff primitives while retaining the product
     pricer only as an explicitly excluded compatibility reference.
+20. Apply QUA-1232 to ordinary terminal baskets: project explicit comparison
+    semantics before route selection, compose shared market resolution and
+    engine-neutral payoff algebra with method-true Stulz, Kirk, correlated-GBM
+    Monte Carlo, and Hurd-Zhou primitives, and retain all product wrappers only
+    as excluded compatibility references.
 
 ## Completion Evidence
 

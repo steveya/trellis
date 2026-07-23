@@ -28,6 +28,28 @@ _REPO_FACTS_CACHE: dict[str, tuple[RepoFact, ...]] = {}
 # allowlist narrow so live introspection cannot silently re-admit a product
 # helper added beside the reusable primitives.
 _CODEGEN_MODULE_EXPORT_ALLOWLIST: dict[str, frozenset[str]] = {
+    "trellis.models.basket_option": frozenset(),
+    "trellis.models.resolution.terminal_basket": frozenset(
+        {
+            "ResolvedTerminalBasketInputs",
+            "TerminalBasketSpecLike",
+            "resolve_terminal_basket_inputs",
+        }
+    ),
+    "trellis.models.analytical.terminal_basket": frozenset(
+        {
+            "two_asset_extremum_option_stulz",
+            "two_asset_spread_option_kirk",
+            "two_asset_terminal_basket_gauss_hermite",
+        }
+    ),
+    "trellis.models.payoffs": frozenset({"terminal_basket_option_payoff"}),
+    "trellis.models.transforms.spread_option": frozenset(
+        {
+            "correlated_gbm_log_return_characteristic_function",
+            "hurd_zhou_spread_option_2d_fft",
+        }
+    ),
     "trellis.models.monte_carlo.ranked_observation_payoffs": frozenset(
         {
             "build_ranked_observation_basket_state_payoff",
@@ -500,6 +522,7 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
         elif mod in {
             "trellis.models.observation_aggregation",
             "trellis.models.observation_returns",
+            "trellis.models.payoffs",
         }:
             groups["Models — Payoff Composition"].append(line)
         elif "trellis.models.black" in mod:
@@ -623,7 +646,9 @@ from trellis.models.observation_returns import ObservationReturnContract, bounde
 from trellis.models.quoted_observable import CurveQuoteSpreadSpecLike, QuotedObservableSpreadResult, SurfaceQuoteSpreadSpecLike, price_curve_quote_spread_analytical, price_curve_quote_spread_analytical_result, price_surface_quote_spread_analytical, price_surface_quote_spread_analytical_result
 from trellis.models.resolution.quanto import ResolvedQuantoInputs, resolve_quanto_correlation, resolve_quanto_foreign_curve, resolve_quanto_inputs, resolve_quanto_underlier_spot
 from trellis.models.resolution.basket_semantics import ResolvedBasketSemantics, resolve_basket_semantics
+from trellis.models.resolution.terminal_basket import ResolvedTerminalBasketInputs, TerminalBasketSpecLike, resolve_terminal_basket_inputs
 from trellis.models.resolution.single_state_diffusion import ResolvedScalarDiffusionMarketInputs, ResolvedSingleStateDiffusionInputs, resolve_scalar_diffusion_market_inputs, resolve_single_state_diffusion_inputs
+from trellis.models.analytical.terminal_basket import two_asset_extremum_option_stulz, two_asset_spread_option_kirk, two_asset_terminal_basket_gauss_hermite
 from trellis.models.short_rate_bond import ResolvedShortRateBondInputs, price_cir_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_tree, price_vasicek_zero_coupon_bond_analytical, resolve_short_rate_bond_inputs
 from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
 
@@ -654,6 +679,7 @@ from trellis.models.monte_carlo.variance_reduction import antithetic, control_va
 from trellis.models.processes.correlated_gbm import CorrelatedGBM
 from trellis.models.monte_carlo.schemes import Euler, Milstein, Exact, LogEuler, HestonQuadraticExponential, LaguerreBasis, PolynomialBasis
 from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_observation_basket_state_payoff, terminal_ranked_observation_basket_payoff
+from trellis.models.payoffs import terminal_basket_option_payoff
 from trellis.models.monte_carlo.stochastic_vol import HestonMonteCarloProblem, HestonMonteCarloResult, ResolvedHestonMonteCarloInputs, build_heston_monte_carlo_problem, price_heston_option_monte_carlo, price_heston_option_monte_carlo_result, resolve_heston_monte_carlo_inputs
 from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
 from trellis.models.asian_option import ArithmeticAsianOptionAnalyticalResult, ArithmeticAsianOptionMonteCarloResult, AsianOptionMonteCarloResult, price_arithmetic_asian_option_analytical, price_arithmetic_asian_option_analytical_result, price_arithmetic_asian_option_monte_carlo, price_arithmetic_asian_option_monte_carlo_result, price_asian_option_monte_carlo, price_asian_option_monte_carlo_result
@@ -675,6 +701,7 @@ from trellis.models.pde.heston_adi import HestonAdiPDEConfig, HestonAdiPDEResult
 from trellis.models.equity_option_pde import build_event_aware_equity_pde_problem, build_event_aware_pde_problem, build_vanilla_equity_pde_problem, interpolate_pde_values, price_cev_option_pde, price_equity_digital_option_pde, price_event_aware_equity_option_pde, price_vanilla_equity_option_pde, resolve_vanilla_equity_pde_inputs, solve_event_aware_equity_option_pde_surface, solve_event_aware_pde, solve_vanilla_equity_option_pde_surface
 
 ### Models — Transforms (FFT/COS)
+from trellis.models.transforms.spread_option import correlated_gbm_log_return_characteristic_function, hurd_zhou_spread_option_2d_fft
 from trellis.models.transforms.cos_method import cos_price
 from trellis.models.transforms.fft_pricer import fft_price
 from trellis.models.transforms.heston import HestonTransformResult, ResolvedHestonTransformInputs, UnsupportedHestonTransformMethod, heston_transform_capability_packet, price_heston_option_transform, price_heston_option_transform_result, resolve_heston_transform_inputs

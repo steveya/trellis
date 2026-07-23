@@ -8,7 +8,7 @@ cross-validation without encoding product-specific dispatch in the runtime.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import Any, Mapping
 
@@ -266,10 +266,169 @@ def comparison_target_contracts_compatible(
     ) == comparison_target_execution_identity(actual)
 
 
+def project_product_ir_for_comparison_target(
+    product_ir,
+    contract: ComparisonTargetContract,
+):
+    """Project declared target semantics onto a decomposed product IR.
+
+    Comparison-target prose contains execution labels, serialized metadata,
+    and declaration instructions that are useful after compilation but can
+    distort natural-language product classification. Explicit target axes are
+    therefore authoritative for the per-method plan. This projection is
+    structural: it uses declared semantic axes and numerical dimensions, never
+    target ids or task ids.
+    """
+    axes = dict(contract.semantic_axes or {})
+
+    def declared_text(field_name: str, fallback: str) -> str:
+        value = getattr(contract, field_name, "") or axes.get(field_name) or ""
+        return str(value).strip() or fallback
+
+    payoff_family = declared_text("payoff_family", product_ir.payoff_family)
+    exercise_style = declared_text("exercise_style", product_ir.exercise_style)
+    model_family = declared_text("model_family", product_ir.model_family)
+    observation_style = declared_text("observation_style", "")
+    state_dependence = str(
+        axes.get("state_dependence") or product_ir.state_dependence
+    ).strip()
+    schedule_dependence = bool(
+        axes.get("schedule_dependence", product_ir.schedule_dependence)
+    )
+    if observation_style == "terminal":
+        state_dependence = "terminal_markov"
+        schedule_dependence = False
+    elif observation_style == "fixed_schedule":
+        state_dependence = "schedule_dependent"
+        schedule_dependence = True
+    elif observation_style == "exercise_schedule":
+        state_dependence = "schedule_dependent"
+        schedule_dependence = True
+    elif observation_style == "path_dependent":
+        state_dependence = "path_dependent"
+
+    declared_identity = bool(
+        contract.payoff_family
+        or contract.exercise_style
+        or contract.model_family
+        or contract.observation_style
+        or axes
+    )
+    payoff_traits = list(product_ir.payoff_traits)
+    if declared_identity:
+        incompatible_traits = {
+            "locked_returns",
+            "path_dependent",
+            "ranked_observation",
+            "remaining_selection",
+            "remove_selected",
+            "schedule_dependent",
+        }
+        if observation_style == "terminal" or (
+            contract.payoff_family
+            and contract.payoff_family != product_ir.payoff_family
+        ):
+            payoff_traits = [
+                trait
+                for trait in payoff_traits
+                if trait not in incompatible_traits
+            ]
+
+    raw_declared_traits = axes.get("payoff_traits") or ()
+    if isinstance(raw_declared_traits, str):
+        declared_traits = (raw_declared_traits,)
+    else:
+        declared_traits = tuple(raw_declared_traits)
+    for trait in declared_traits:
+        normalized = str(trait).strip()
+        if normalized and normalized not in payoff_traits:
+            payoff_traits.append(normalized)
+
+    raw_dimensions = dict(contract.variant_parameters or {}).get("dimensions")
+    normalized_variant_values = {
+        str(value).strip().lower().replace("-", "_").replace(" ", "_")
+        for value in dict(contract.variant_parameters or {}).values()
+        if isinstance(value, (str, int, float, bool))
+        and str(value).strip()
+    }
+    if normalized_variant_values.intersection({"kirk", "hurd_zhou"}):
+        if "spread" not in payoff_traits:
+            payoff_traits.append("spread")
+    try:
+        dimensions = int(raw_dimensions)
+    except (TypeError, ValueError):
+        dimensions = None
+    if (
+        payoff_family == "basket_option"
+        and observation_style in {"", "terminal"}
+        and dimensions == 2
+    ):
+        for trait in ("multi_asset", "two_asset_terminal_basket"):
+            if trait not in payoff_traits:
+                payoff_traits.append(trait)
+
+    required_market_data = set(product_ir.required_market_data)
+    if "two_asset_terminal_basket" in payoff_traits:
+        required_market_data.update(
+            {"black_vol_surface", "discount_curve", "model_parameters", "spot"}
+        )
+
+    instrument = str(
+        axes.get("instrument") or product_ir.instrument
+    ).strip()
+    derivative_family = str(
+        axes.get("derivative_family") or product_ir.derivative_family
+    ).strip()
+    underlying_asset_class = str(
+        axes.get("underlying_asset_class")
+        or product_ir.underlying_asset_class
+    ).strip()
+    option_type = str(
+        axes.get("option_type") or product_ir.option_type
+    ).strip()
+    underlying_identifiers = product_ir.underlying_identifiers
+    raw_identifiers = axes.get("underlying_identifiers")
+    if raw_identifiers:
+        if isinstance(raw_identifiers, str):
+            underlying_identifiers = (raw_identifiers.strip(),)
+        else:
+            underlying_identifiers = tuple(
+                str(value).strip()
+                for value in raw_identifiers
+                if str(value).strip()
+            )
+
+    return replace(
+        product_ir,
+        instrument=instrument,
+        payoff_family=payoff_family,
+        payoff_traits=tuple(dict.fromkeys(payoff_traits)),
+        exercise_style=exercise_style,
+        state_dependence=state_dependence,
+        schedule_dependence=schedule_dependence,
+        model_family=model_family,
+        candidate_engine_families=(contract.method,),
+        route_families=(
+            (contract.route_family,)
+            if contract.route_family
+            else product_ir.route_families
+        ),
+        required_market_data=frozenset(required_market_data),
+        reusable_primitives=(
+            () if declared_identity else product_ir.reusable_primitives
+        ),
+        derivative_family=derivative_family,
+        underlying_asset_class=underlying_asset_class,
+        underlying_identifiers=underlying_identifiers,
+        option_type=option_type,
+    )
+
+
 __all__ = [
     "ComparisonTargetContract",
     "comparison_target_contracts_compatible",
     "comparison_target_execution_identity",
     "declared_comparison_target_contract",
+    "project_product_ir_for_comparison_target",
     "resolve_comparison_target_contract",
 ]

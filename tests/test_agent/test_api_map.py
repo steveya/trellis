@@ -48,6 +48,10 @@ def test_api_map_contains_expected_core_entries():
         == "trellis.models.resolution.quanto"
     )
     assert (
+        api_map["terminal_basket_option_composition"]["module"]
+        == "trellis.models.resolution.terminal_basket"
+    )
+    assert (
         api_map["digital_option_composition"]["module"]
         == "trellis.models.resolution.single_state_diffusion"
     )
@@ -99,6 +103,7 @@ def test_api_map_key_imports_are_registry_valid():
         "observation_return_composition",
         "digital_option_composition",
         "quanto_option_composition",
+        "terminal_basket_option_composition",
         "rate_monte_carlo_composition",
         "bermudan_swaption_lower_bound_composition",
         "european_swaption_monte_carlo_composition",
@@ -237,6 +242,15 @@ def test_api_map_semantic_selection_reaches_composition_cards():
                 model_family="hybrid",
             ),
             "quanto_option_composition",
+        ),
+        (
+            ApiMapQuery(
+                instrument_type="basket_option",
+                payoff_family="basket_option",
+                method="fft_pricing",
+                features=("two_asset_terminal_basket", "spread"),
+            ),
+            "terminal_basket_option_composition",
         ),
         (
             ApiMapQuery(

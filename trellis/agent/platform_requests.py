@@ -29,7 +29,10 @@ from trellis.agent.knowledge import (
 )
 from trellis.agent.knowledge.decompose import decompose_to_contract_ir, decompose_to_ir
 from trellis.agent.knowledge.methods import is_known_method, normalize_method
-from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+from trellis.agent.comparison_target_contracts import (
+    ComparisonTargetContract,
+    project_product_ir_for_comparison_target,
+)
 from trellis.agent.imported_documents import (
     ImportedDocumentPayload,
     fpml_import_blocker_report,
@@ -2194,6 +2197,12 @@ def compile_build_request(
         metadata["semantic_extension_trace"] = semantic_extension_trace
         request = replace(request, metadata=metadata)
     product_ir = decompose_to_ir(description, instrument_type=instrument_type)
+    raw_target_contract = request.metadata.get("comparison_target_contract")
+    if isinstance(raw_target_contract, Mapping):
+        product_ir = project_product_ir_for_comparison_target(
+            product_ir,
+            ComparisonTargetContract.from_payload(raw_target_contract),
+        )
     pricing_plan = select_pricing_method_for_product_ir(
         product_ir,
         preferred_method=preferred_method,
@@ -2349,6 +2358,11 @@ def _compile_comparison_method_plan(
         pricing_plan = semantic_blueprint.pricing_plan
         inspected_modules = semantic_blueprint.route_modules
     else:
+        if target_contract is not None:
+            product_ir = project_product_ir_for_comparison_target(
+                product_ir,
+                target_contract,
+            )
         pricing_plan = select_pricing_method_for_product_ir(
             product_ir,
             preferred_method=preferred_method,

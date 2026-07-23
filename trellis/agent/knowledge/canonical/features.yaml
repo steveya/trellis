@@ -112,6 +112,14 @@
   description: "Payoff depends on multiple underliers jointly"
   method_hint: monte_carlo
 
+- id: terminal_observation
+  description: "Payoff depends only on the joint underlier state at expiry, with no observation-time state machine"
+
+- id: two_asset_terminal_basket
+  description: "European terminal claim on exactly two correlated underliers, including best-of, worst-of, weighted-basket, and spread forms"
+  implies: [multi_asset, terminal_observation]
+  market_data: [spot, black_vol_surface, correlation]
+
 - id: ranked_observation
   description: "At each observation date, rank the remaining constituents and select the best or worst remaining name"
   implies: [multi_asset, path_dependent]

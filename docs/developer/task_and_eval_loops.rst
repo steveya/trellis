@@ -1141,6 +1141,33 @@ repair target is a reusable computational or API surface, not a new function
 named after the failing product and method. A product-method helper may remain
 as compatibility evidence, but it cannot turn an incompatible route green.
 
+Explicit comparison targets are compiled in two stages. Natural-language
+decomposition supplies the base product, then the target contract projects its
+declared payoff, exercise, model, observation, and numerical-dimension axes
+onto that ``ProductIR`` before method routing. This ordering matters because
+the target appendix contains method labels and serialized declarations that
+are execution evidence, not product prose. The compiler removes incompatible
+path/ranked traits when an explicit target declares terminal observation and
+derives structural traits such as ``two_asset_terminal_basket`` or ``spread``
+from declared dimensions and method semantics. It never dispatches on a task
+ID or target name.
+
+Terminal basket tasks demonstrate the intended repair loop. T102 and T126
+lower through the public resolver, raw Stulz/Kirk/Gauss-Hermite kernels, generic
+correlated-GBM engine composition, engine-neutral payoff algebra, and the
+joint-characteristic-function plus Hurd-Zhou FFT pair. Their generated
+artifacts contain no ``price_basket_option_*`` or ranked-observation pricing
+call. The analytical artifact also contains no Monte Carlo import: shared
+payoff algebra lives in ``trellis.models.payoffs`` so using intrinsic value
+does not falsely claim another engine family.
+
+Use ``terminal_basket_option_composition`` in ``canonical/api_map.yaml`` as the
+navigation entry point. Route and backend cards must agree on the same
+primitive roles, while the three historical basket pricing wrappers remain
+excluded ``compatibility_reference`` entries. The semantic validator blocks
+those wrappers and ranked-observation calls when a generated source claims the
+terminal-basket composition surface.
+
 ``P005`` is the proving case. Its Bermudan exercise schedule is retained through
 semantic drafting. The rate-tree lane remains admitted. The Monte Carlo lane
 blocks before generation until the generic rates-MC composition surface can map

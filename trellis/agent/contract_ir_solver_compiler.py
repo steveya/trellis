@@ -67,6 +67,7 @@ from trellis.core.date_utils import add_months, year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention, Frequency
 from trellis.models.rate_style_swaption import resolve_swaption_black76_inputs
+from trellis.models.resolution.terminal_basket import resolve_terminal_basket_inputs
 
 
 def _freeze_mapping(mapping: Mapping[str, object] | None) -> Mapping[str, object]:
@@ -1471,7 +1472,7 @@ class _StructuralBasketSpec:
     day_count: DayCountConvention
 
 
-def _basket_helper_adapter(
+def _basket_raw_kernel_adapter(
     *,
     contract_ir: ContractIR,
     term_environment: ContractIRTermEnvironment,
@@ -1502,12 +1503,22 @@ def _basket_helper_adapter(
         option_type=option_type,
         day_count=term_environment.accrual_conventions.day_count,
     )
+    resolved = resolve_terminal_basket_inputs(market_state, spec)
+    semantics = resolved.semantics
     return {
         "call_kwargs": {
-            "market_state": market_state,
-            "spec": spec,
+            "spots": resolved.notional_spots,
+            "weights": resolved.weights,
+            "strike": resolved.strike,
+            "T": semantics.T,
+            "discount_factor": semantics.domestic_df,
+            "dividend_yields": resolved.carry,
+            "volatilities": resolved.vols,
+            "correlation": resolved.correlation_matrix[0][1],
+            "basket_style": resolved.basket_style,
+            "option_type": resolved.option_type,
         },
-        "value_scale": 1.0,
+        "value_scale": float(spec.notional),
         "resolved_market_coordinates": (
             "spot",
             "discount_curve",
@@ -2182,14 +2193,24 @@ def _default_registry() -> ContractIRSolverRegistry:
                 required_term_groups=("cash_settlement", "accrual_conventions"),
             ),
             materialization=ContractIRSolverMaterialization(
-                callable_ref="trellis.models.basket_option.price_basket_option_analytical",
-                call_style="helper_call",
+                callable_ref=(
+                    "trellis.models.analytical.terminal_basket."
+                    "two_asset_terminal_basket_gauss_hermite"
+                ),
+                call_style="raw_kernel_kwargs",
                 adapter_ref="trellis.agent.contract_ir_solver_compiler._basket_call_adapter",
             ),
             provenance=ContractIRSolverProvenance(
-                declaration_id="helper_basket_option_call",
+                declaration_id="terminal_basket_call_raw_kernel",
                 validation_bundle_id="basket_option_contract",
-                helper_refs=("trellis.models.basket_option.price_basket_option_analytical",),
+                pricing_kernel_refs=(
+                    "trellis.models.analytical.terminal_basket."
+                    "two_asset_terminal_basket_gauss_hermite",
+                ),
+                market_binding_refs=(
+                    "trellis.models.resolution.terminal_basket."
+                    "resolve_terminal_basket_inputs",
+                ),
             ),
             precedence=42,
         ),
@@ -2222,14 +2243,24 @@ def _default_registry() -> ContractIRSolverRegistry:
                 required_term_groups=("cash_settlement", "accrual_conventions"),
             ),
             materialization=ContractIRSolverMaterialization(
-                callable_ref="trellis.models.basket_option.price_basket_option_analytical",
-                call_style="helper_call",
+                callable_ref=(
+                    "trellis.models.analytical.terminal_basket."
+                    "two_asset_terminal_basket_gauss_hermite"
+                ),
+                call_style="raw_kernel_kwargs",
                 adapter_ref="trellis.agent.contract_ir_solver_compiler._basket_put_adapter",
             ),
             provenance=ContractIRSolverProvenance(
-                declaration_id="helper_basket_option_put",
+                declaration_id="terminal_basket_put_raw_kernel",
                 validation_bundle_id="basket_option_contract",
-                helper_refs=("trellis.models.basket_option.price_basket_option_analytical",),
+                pricing_kernel_refs=(
+                    "trellis.models.analytical.terminal_basket."
+                    "two_asset_terminal_basket_gauss_hermite",
+                ),
+                market_binding_refs=(
+                    "trellis.models.resolution.terminal_basket."
+                    "resolve_terminal_basket_inputs",
+                ),
             ),
             precedence=41,
         ),
@@ -2501,11 +2532,11 @@ def _receiver_swaption_resolved_kernel_adapter(**kwargs) -> dict[str, object]:
 
 
 def _basket_call_adapter(**kwargs) -> dict[str, object]:
-    return _basket_helper_adapter(option_type="call", **kwargs)
+    return _basket_raw_kernel_adapter(option_type="call", **kwargs)
 
 
 def _basket_put_adapter(**kwargs) -> dict[str, object]:
-    return _basket_helper_adapter(option_type="put", **kwargs)
+    return _basket_raw_kernel_adapter(option_type="put", **kwargs)
 
 
 def _variance_swap_adapter(**kwargs) -> dict[str, object]:

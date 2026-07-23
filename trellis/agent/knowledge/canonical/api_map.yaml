@@ -232,6 +232,38 @@ quanto_option_composition:
     - "Product-level quanto pricing wrappers remain compatibility/reference APIs and are not generated-route construction authority"
 
 # ---------------------------------------------------------------------------
+# Terminal basket composition
+# ---------------------------------------------------------------------------
+terminal_basket_option_composition:
+  module: trellis.models.resolution.terminal_basket
+  methods: [analytical, monte_carlo, fft_pricing]
+  navigation:
+    aliases: [basket_option, terminal_basket, rainbow_option, best_of, worst_of, spread_option, stulz, kirk, hurd_zhou]
+  modules:
+    market_binding: trellis.models.resolution.terminal_basket
+    analytical_kernels: trellis.models.analytical.terminal_basket
+    discounting: trellis.models.analytical.support
+    process: trellis.models.processes.correlated_gbm
+    monte_carlo_engine: trellis.models.monte_carlo.engine
+    terminal_payoff: trellis.models.payoffs
+    transform_kernels: trellis.models.transforms.spread_option
+  key_imports:
+    - "from trellis.models.resolution.terminal_basket import resolve_terminal_basket_inputs"
+    - "from trellis.models.analytical.terminal_basket import two_asset_extremum_option_stulz, two_asset_spread_option_kirk, two_asset_terminal_basket_gauss_hermite"
+    - "from trellis.models.analytical.support import implied_zero_rate"
+    - "from trellis.models.processes.correlated_gbm import CorrelatedGBM"
+    - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+    - "from trellis.models.payoffs import terminal_basket_option_payoff"
+    - "from trellis.models.transforms.spread_option import correlated_gbm_log_return_characteristic_function, hurd_zhou_spread_option_2d_fft"
+  notes:
+    - "Start with resolve_terminal_basket_inputs; it binds named underliers, spots, volatilities, carries, correlation, discount factor, weights, style, and option type"
+    - "Analytical method identity is explicit: use Stulz only for two-asset best/worst-of claims, Kirk only for two-asset spreads, and Gauss-Hermite as an independent generic weighted-basket reference"
+    - "Monte Carlo composes CorrelatedGBM, MonteCarloEngine, and terminal_basket_option_payoff; discount at the implied domestic zero rate and apply notional once"
+    - "The Hurd-Zhou lane is a true two-dimensional Fourier spread method: build the joint GBM log-return characteristic function and pass it to hurd_zhou_spread_option_2d_fft"
+    - "Do not substitute ranked_observation_basket_composition for an ordinary terminal basket; ranked selection has observation-time state and is a different payoff contract"
+    - "The trellis.models.basket_option pricing wrappers remain compatibility/reference APIs and are excluded from generated construction authority"
+
+# ---------------------------------------------------------------------------
 # Ranked-observation basket composition
 # ---------------------------------------------------------------------------
 ranked_observation_basket_composition:

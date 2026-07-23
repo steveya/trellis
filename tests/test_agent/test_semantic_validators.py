@@ -1539,3 +1539,54 @@ def evaluate(self, market_state):
         assert not report.ok
         assert any(f.category == "fx_rate_scalar_extraction_missing" for f in report.findings)
         assert report.mode == "blocking"
+
+    @pytest.mark.parametrize(
+        "forbidden_symbol",
+        [
+            "price_basket_option_analytical",
+            "price_basket_option_monte_carlo",
+            "price_basket_option_transform_proxy",
+            "price_ranked_observation_basket_monte_carlo",
+            "build_ranked_observation_basket_state_payoff",
+        ],
+    )
+    def test_terminal_basket_authority_rejects_helpers_and_ranked_substitution(
+        self,
+        registry,
+        forbidden_symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "analytical_black76"][0]
+        plan = _make_plan(
+            "analytical_black76",
+            "analytical",
+            instrument_type="basket_option",
+            primitives=(
+                PrimitiveRef(
+                    module="trellis.models.resolution.terminal_basket",
+                    symbol="resolve_terminal_basket_inputs",
+                    role="market_binding",
+                ),
+                PrimitiveRef(
+                    module="trellis.models.analytical.terminal_basket",
+                    symbol="two_asset_extremum_option_stulz",
+                    role="pricing_kernel",
+                ),
+            ),
+        )
+        source = (
+            "def evaluate(self, market_state):\n"
+            f"    return {forbidden_symbol}(market_state, self._spec)\n"
+        )
+
+        report = validate_generated_semantics(
+            source,
+            plan,
+            route_spec=spec,
+        )
+
+        assert not report.ok
+        assert report.mode == "blocking"
+        assert any(
+            finding.category == "terminal_basket_forbidden_helper"
+            for finding in report.findings
+        )

@@ -719,7 +719,70 @@ def test_basket_route_card_stays_backend_binding_only():
     assert "trellis.models.processes.correlated_gbm" in card
     assert "trellis.models.basket" not in card
     assert "trellis.models.ranked_observation" not in card
-    assert "trellis.models.payoff" not in card
+    assert "from trellis.models.payoff import" not in card
+
+
+def test_terminal_basket_payoff_is_searchable_in_compact_import_registry():
+    from trellis.agent.knowledge.import_registry import get_import_registry
+
+    registry = get_import_registry()
+
+    assert (
+        "from trellis.models.payoffs import terminal_basket_option_payoff"
+        in registry
+    )
+    assert "trellis.models.monte_carlo.terminal_basket" not in registry
+
+
+@pytest.mark.parametrize(
+    ("method", "expected_symbols"),
+    [
+        (
+            "analytical",
+            (
+                "resolve_terminal_basket_inputs",
+                "two_asset_spread_option_kirk",
+            ),
+        ),
+        (
+            "monte_carlo",
+            (
+                "resolve_terminal_basket_inputs",
+                "CorrelatedGBM",
+                "MonteCarloEngine",
+                "terminal_basket_option_payoff",
+            ),
+        ),
+        (
+            "fft_pricing",
+            (
+                "resolve_terminal_basket_inputs",
+                "correlated_gbm_log_return_characteristic_function",
+                "hurd_zhou_spread_option_2d_fft",
+            ),
+        ),
+    ],
+)
+def test_terminal_basket_route_card_exposes_composition_not_product_helpers(
+    method,
+    expected_symbols,
+):
+    compiled = compile_build_request(
+        "Spread option (Kirk approximation) vs 2D MC vs 2D FFT",
+        instrument_type="basket_option",
+        preferred_method=method,
+    )
+
+    card = render_generation_route_card(compiled.generation_plan)
+
+    for symbol in expected_symbols:
+        assert symbol in card
+    if method == "analytical":
+        assert "two_asset_extremum_option_stulz" not in card
+    assert "price_basket_option_analytical" not in card
+    assert "price_basket_option_monte_carlo" not in card
+    assert "price_basket_option_transform_proxy" not in card
+    assert "ranked_observation" not in card
 
 
 def test_generation_route_card_for_generic_monte_carlo_stays_backend_binding_only():
