@@ -26,7 +26,7 @@ Two structural clauses migrate: ``swaption + bermudan`` and
   also matches trait-level ``vanilla_option`` entries, which would over-match
   on two-asset baskets carrying ``vanilla_option`` as a leg-style trait
   (pinned by
-  ``test_resolve_backend_binding_spec_uses_basket_option_exact_helpers`` in
+  the terminal-basket binding tests in
   ``tests/test_agent/test_backend_bindings.py``).
 * ``period_rate_option_strip`` follows the same discipline as QUA-920's
   routes.yaml migration.
@@ -101,9 +101,41 @@ _VANILLA_PRIMS: tuple[PrimitiveRef, ...] = (
 
 _BASKET_PRIMS: tuple[PrimitiveRef, ...] = (
     PrimitiveRef(
+        "trellis.models.resolution.terminal_basket",
+        "resolve_terminal_basket_inputs",
+        "market_binding",
+    ),
+    PrimitiveRef(
+        "trellis.models.analytical.support",
+        "implied_zero_rate",
+        "assembly_helper",
+    ),
+    PrimitiveRef(
+        "trellis.models.analytical.terminal_basket",
+        "two_asset_extremum_option_stulz",
+        "pricing_kernel",
+    ),
+    PrimitiveRef(
+        "trellis.models.analytical.terminal_basket",
+        "two_asset_spread_option_kirk",
+        "pricing_kernel",
+    ),
+    PrimitiveRef(
+        "trellis.models.analytical.terminal_basket",
+        "two_asset_terminal_basket_gauss_hermite",
+        "numerical_evidence",
+    ),
+    PrimitiveRef(
+        "trellis.models.payoffs",
+        "terminal_basket_option_payoff",
+        "payoff_kernel",
+    ),
+    PrimitiveRef(
         "trellis.models.basket_option",
         "price_basket_option_analytical",
-        "route_helper",
+        "compatibility_reference",
+        required=False,
+        excluded=True,
     ),
 )
 
@@ -566,7 +598,7 @@ class TestOnDiskBlack76BindingDispatchMatchesBothVariants:
             assert resolved.route_id == "analytical_black76"
             # Every fixture is expected to surface a non-empty primitive set:
             # the default clause always produces Black76 kernels, and each
-            # specific fixture lands in a helper-backed clause.
+            # specific fixture lands in an explicit binding clause.
             assert resolved.primitives, (
                 f"analytical_black76 resolved to empty primitives for fixture "
                 f"ir={ir!r}; expected at least one primitive"

@@ -849,13 +849,32 @@ routes:
       - when:
           payoff_family: basket_option
           exercise_style: [european]
-          model_family: [equity_diffusion]
+          model_family: [equity_diffusion, multi_asset_diffusion]
         primitives:
+          - module: trellis.models.resolution.terminal_basket
+            symbol: resolve_terminal_basket_inputs
+            role: market_binding
+          - module: trellis.models.analytical.support
+            symbol: implied_zero_rate
+            role: assembly_helper
+          - module: trellis.models.processes.correlated_gbm
+            symbol: CorrelatedGBM
+            role: state_process
+          - module: trellis.models.monte_carlo.engine
+            symbol: MonteCarloEngine
+            role: engine
+          - module: trellis.models.payoffs
+            symbol: terminal_basket_option_payoff
+            role: payoff_kernel
           - module: trellis.models.basket_option
             symbol: price_basket_option_monte_carlo
-            role: route_helper
+            role: compatibility_reference
+            required: false
+            excluded: true
         adapters: []
-        notes: []
+        notes:
+          - "Resolve terminal-basket market coordinates, bind CorrelatedGBM and MonteCarloEngine, and pass simulated terminal states to terminal_basket_option_payoff."
+          - "Keep discounting and notional scaling visible in generated code. Do not substitute the ranked-observation basket route."
       - when: default
         primitives: []
         adapters: []
@@ -1602,7 +1621,7 @@ routes:
       required_market_data: [black_vol_surface]
       payoff_family: [vanilla_option, basket_option, asian_option, swaption, barrier_option, digital_option, lookback_option, chooser_option, compound_option, cliquet_option, variance_swap]
       exercise: [european, bermudan, none]
-      model_family: [generic, equity, equity_diffusion, interest_rate, short_rate]
+      model_family: [generic, equity, equity_diffusion, multi_asset_diffusion, interest_rate, short_rate]
       exclude_required_market_data: [fx_rates]
     admissibility:
       control_styles: [identity, holder_max]
@@ -1619,6 +1638,33 @@ routes:
     # labels for each admitted helper cohort, so helper selection no
     # longer depends on ``ProductIR.instrument``.
     conditional_primitives:
+      - when:
+          payoff_family: basket_option
+          payoff_traits: [two_asset_terminal_basket, spread]
+          exercise_style: [european]
+          model_family: [equity_diffusion, multi_asset_diffusion]
+        primitives:
+          - module: trellis.models.resolution.terminal_basket
+            symbol: resolve_terminal_basket_inputs
+            role: market_binding
+          - module: trellis.models.analytical.support
+            symbol: implied_zero_rate
+            role: assembly_helper
+          - module: trellis.models.analytical.terminal_basket
+            symbol: two_asset_spread_option_kirk
+            role: pricing_kernel
+          - module: trellis.models.payoffs
+            symbol: terminal_basket_option_payoff
+            role: payoff_kernel
+          - module: trellis.models.basket_option
+            symbol: price_basket_option_analytical
+            role: compatibility_reference
+            required: false
+            excluded: true
+        adapters: []
+        notes:
+          - "For a two-asset terminal spread, bind the resolved forwards to the Kirk approximation and keep expiry intrinsic, discounting, and notional scaling explicit."
+          - "Do not substitute an extremum, weighted-basket quadrature, ranked-observation, or product-helper route."
       - when:
           contract_pattern:
             payoff:
@@ -1668,11 +1714,33 @@ routes:
             underlying:
               kind: equity_diffusion
         primitives:
+          - module: trellis.models.resolution.terminal_basket
+            symbol: resolve_terminal_basket_inputs
+            role: market_binding
+          - module: trellis.models.analytical.support
+            symbol: implied_zero_rate
+            role: assembly_helper
+          - module: trellis.models.analytical.terminal_basket
+            symbol: two_asset_extremum_option_stulz
+            role: pricing_kernel
+          - module: trellis.models.analytical.terminal_basket
+            symbol: two_asset_spread_option_kirk
+            role: pricing_kernel
+          - module: trellis.models.analytical.terminal_basket
+            symbol: two_asset_terminal_basket_gauss_hermite
+            role: numerical_evidence
+          - module: trellis.models.payoffs
+            symbol: terminal_basket_option_payoff
+            role: payoff_kernel
           - module: trellis.models.basket_option
             symbol: price_basket_option_analytical
-            role: route_helper
+            role: compatibility_reference
+            required: false
+            excluded: true
         adapters: []
-        notes: []
+        notes:
+          - "Resolve the terminal basket once, then select Stulz for best/worst-of, Kirk for spreads, or Gauss-Hermite as the generic weighted-basket reference."
+          - "Apply expiry intrinsic value and notional scaling explicitly; price_basket_option_analytical is compatibility-only."
       - when:
           contract_pattern:
             payoff:
@@ -2361,13 +2429,32 @@ routes:
       - when:
           payoff_family: basket_option
           exercise_style: [european]
-          model_family: [equity_diffusion]
+          model_family: [equity_diffusion, multi_asset_diffusion]
         primitives:
+          - module: trellis.models.resolution.terminal_basket
+            symbol: resolve_terminal_basket_inputs
+            role: market_binding
+          - module: trellis.models.analytical.support
+            symbol: implied_zero_rate
+            role: assembly_helper
+          - module: trellis.models.transforms.spread_option
+            symbol: correlated_gbm_log_return_characteristic_function
+            role: characteristic_function
+          - module: trellis.models.transforms.spread_option
+            symbol: hurd_zhou_spread_option_2d_fft
+            role: pricing_kernel
+          - module: trellis.models.payoffs
+            symbol: terminal_basket_option_payoff
+            role: payoff_kernel
           - module: trellis.models.basket_option
             symbol: price_basket_option_transform_proxy
-            role: route_helper
+            role: compatibility_reference
+            required: false
+            excluded: true
         adapters: []
-        notes: []
+        notes:
+          - "The two-asset spread lane requires the joint GBM log-return characteristic function and the genuine Hurd-Zhou 2D FFT kernel."
+          - "Do not label Kirk, quadrature, or another analytical proxy as a Fourier result."
       - when: default
         primitives:
           - module: trellis.models.transforms.fft_pricer

@@ -2,6 +2,14 @@ analytical:
   common:
   - 'OUTPUT CONTRACT: evaluate() must return a float present value. Return a non-empty
     JSON-serializable structure only when a caller explicitly expects structured output.'
+  terminal_basket_option:
+  - 'TERMINAL BASKET METHOD IDENTITY: Resolve the shared two-asset market contract
+    with `resolve_terminal_basket_inputs`. Use Stulz only for best/worst-of claims,
+    Kirk only for spreads, and Gauss-Hermite as an independent generic weighted-basket
+    reference. These kernels are not interchangeable and product pricing wrappers
+    are compatibility/reference APIs rather than generated construction authority.'
+  - 'TERMINAL BASKET SETTLEMENT: Handle expiry intrinsic value explicitly, apply the
+    resolved domestic discount factor exactly once, and apply notional exactly once.'
   black_scholes_equity:
   - 'BLACK-SCHOLES FORWARD CONSISTENCY: Derive the forward from spot and discounting
     before calling Black-style kernels. With no dividends, F = S0 / discount_curve.discount(T);
@@ -97,6 +105,10 @@ rate_tree:
   Treat the exact route family as equity_tree. Do not invent crr_tree, AMERICAN, or
   a method="lsm" fallback for the tree route.'
 monte_carlo:
+- 'TERMINAL BASKET MC COMPOSITION: Resolve inputs with `resolve_terminal_basket_inputs`,
+  build `CorrelatedGBM` and `MonteCarloEngine`, and evaluate terminal states with
+  `terminal_basket_option_payoff`. Do not route a terminal-only claim through the
+  ranked-observation state machine or a product pricing wrapper.'
 - 'CONVERGENCE: Use at least 10,000 paths. Verify that the standard error is <1% of
   the price. If path-dependent, use at least 100 time steps per year.'
 - 'DISCRETE OBSERVATIONS: For instruments with discrete fixing/observation dates (Asian
@@ -141,6 +153,11 @@ pde_solver:
 - 'HESTON ADI PDE ROUTE: For European Heston vanilla ADI targets, bind canonical kappa/theta/xi/rho/v0 parameters through the Heston runtime binding boundary; do not read market_state.vol_surface as Heston parameters or imply recalibration without a recorded calibration problem.'
 - 'DOUBLE-BARRIER PDE ROUTE: For lower/upper barrier options, build the bounded Black-Scholes grid on [lower_barrier, upper_barrier] with absorbing boundary functions and use the shared terminal payoff primitive. Generated code owns the PDE solve and any knock-in parity assembly.'
 fft_pricing:
+- 'HURD-ZHOU SPREAD ROUTE: For an explicit two-dimensional correlated-GBM spread
+  target, construct the joint log-return characteristic function with
+  `correlated_gbm_log_return_characteristic_function` and price with
+  `hurd_zhou_spread_option_2d_fft`. Do not substitute one-dimensional Carr-Madan
+  vanilla FFT or a product transform proxy.'
 - 'CHARACTERISTIC FUNCTION CONVENTION: COS method expects CF of log-return log(S_T/S0).
   FFT (Carr-Madan) expects CF of log(S_T). Do NOT mix them.'
 - 'HESTON TRANSFORM ROUTE: For European Heston vanilla options, prefer trellis.models.transforms.heston.price_heston_option_transform

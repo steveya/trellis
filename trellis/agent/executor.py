@@ -4641,14 +4641,6 @@ def _credit_basket_tranche_helper_kwargs(comparison_target: str | None) -> str:
     return ', copula_family="gaussian"'
 
 
-def _basket_option_helper_kwargs(comparison_target: str | None) -> str:
-    """Return deterministic helper kwargs for typed basket-option helpers."""
-    target = str(comparison_target or "").strip()
-    if not target:
-        return ""
-    return f', comparison_target="{target}"'
-
-
 def _american_equity_tree_primitive_body(
     comparison_target: str,
     *,
@@ -4853,6 +4845,235 @@ def _ranked_observation_basket_primitive_body(refs: set[str]) -> str | None:
         )
         """
     ).rstrip()
+
+
+def _terminal_basket_primitive_body(
+    refs: set[str],
+    *,
+    normalized_target: str,
+    generation_method: str,
+) -> str | None:
+    """Return explicit primitive composition for a two-asset terminal basket."""
+    analytical_kernels = {
+        "trellis.models.analytical.terminal_basket.two_asset_extremum_option_stulz",
+        "trellis.models.analytical.terminal_basket.two_asset_spread_option_kirk",
+        (
+            "trellis.models.analytical.terminal_basket."
+            "two_asset_terminal_basket_gauss_hermite"
+        ),
+    }
+    monte_carlo_kernels = {
+        "trellis.models.processes.correlated_gbm.CorrelatedGBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        "trellis.models.payoffs.terminal_basket_option_payoff",
+    }
+    transform_kernels = {
+        (
+            "trellis.models.transforms.spread_option."
+            "correlated_gbm_log_return_characteristic_function"
+        ),
+        (
+            "trellis.models.transforms.spread_option."
+            "hurd_zhou_spread_option_2d_fft"
+        ),
+    }
+    target = str(normalized_target or "").strip()
+    use_transform = generation_method in {"fft_pricing", "transform_fft"}
+    use_monte_carlo = generation_method in {"monte_carlo", "qmc"}
+    if use_transform and transform_kernels.issubset(refs):
+        return textwrap.dedent(
+            """\
+            spec = self._spec
+            resolved = resolve_terminal_basket_inputs(
+                market_state, spec, comparison_target=__COMPARISON_TARGET__
+            )
+            semantics = resolved.semantics
+            if len(semantics.constituent_names) != 2:
+                raise ValueError("Hurd-Zhou pricing requires exactly two underliers")
+            if resolved.basket_style != "spread":
+                raise ValueError("Hurd-Zhou pricing requires basket_style='spread'")
+            if semantics.T <= 0.0:
+                intrinsic = terminal_basket_option_payoff(
+                    get_numpy().asarray(
+                        [semantics.constituent_spots], dtype=float
+                    ),
+                    weights=resolved.weights,
+                    basket_style=resolved.basket_style,
+                    strike=resolved.strike,
+                    option_type=resolved.option_type,
+                )[0]
+                return float(spec.notional) * float(intrinsic)
+            domestic_rate = float(
+                implied_zero_rate(semantics.domestic_df, semantics.T)
+            )
+
+            def characteristic_function(u1, u2):
+                return correlated_gbm_log_return_characteristic_function(
+                    u1,
+                    u2,
+                    T=semantics.T,
+                    rate=domestic_rate,
+                    dividend_yields=resolved.carry,
+                    volatilities=resolved.vols,
+                    correlation=resolved.correlation_matrix[0][1],
+                )
+
+            unit_price = hurd_zhou_spread_option_2d_fft(
+                characteristic_function,
+                spots=resolved.notional_spots,
+                weights=resolved.weights,
+                strike=resolved.strike,
+                discount_factor=semantics.domestic_df,
+                option_type=resolved.option_type,
+            )
+            return float(spec.notional) * float(unit_price)
+            """
+        ).rstrip().replace("__COMPARISON_TARGET__", repr(target or None))
+    if use_monte_carlo and monte_carlo_kernels.issubset(refs):
+        return textwrap.dedent(
+            """\
+            spec = self._spec
+            resolved = resolve_terminal_basket_inputs(
+                market_state, spec, comparison_target=__COMPARISON_TARGET__
+            )
+            semantics = resolved.semantics
+            if semantics.T <= 0.0:
+                intrinsic = terminal_basket_option_payoff(
+                    get_numpy().asarray(
+                        [semantics.constituent_spots], dtype=float
+                    ),
+                    weights=resolved.weights,
+                    basket_style=resolved.basket_style,
+                    strike=resolved.strike,
+                    option_type=resolved.option_type,
+                )[0]
+                return float(spec.notional) * float(intrinsic)
+            domestic_rate = float(
+                implied_zero_rate(semantics.domestic_df, semantics.T)
+            )
+            process = CorrelatedGBM(
+                mu=[
+                    domestic_rate
+                    for _ in semantics.constituent_names
+                ],
+                sigma=list(resolved.vols),
+                corr=[
+                    list(row) for row in resolved.correlation_matrix
+                ],
+                dividend_yield=list(resolved.carry),
+            )
+
+            def payoff_fn(simulated_paths):
+                return terminal_basket_option_payoff(
+                    simulated_paths[:, -1, :],
+                    weights=resolved.weights,
+                    basket_style=resolved.basket_style,
+                    strike=resolved.strike,
+                    option_type=resolved.option_type,
+                )
+
+            engine = MonteCarloEngine(
+                process,
+                n_paths=max(
+                    int(getattr(spec, "n_paths", 40000) or 40000),
+                    8192,
+                ),
+                n_steps=1,
+                seed=int(getattr(spec, "seed", 42) or 42),
+                method="exact",
+            )
+            result = engine.price(
+                get_numpy().asarray(
+                    semantics.constituent_spots, dtype=float
+                ),
+                float(semantics.T),
+                payoff_fn,
+                discount_rate=domestic_rate,
+                return_paths=False,
+            )
+            return float(spec.notional) * float(result["price"])
+            """
+        ).rstrip().replace("__COMPARISON_TARGET__", repr(target or None))
+    if analytical_kernels.intersection(refs):
+        return textwrap.dedent(
+            """\
+            spec = self._spec
+            resolved = resolve_terminal_basket_inputs(
+                market_state, spec, comparison_target=__COMPARISON_TARGET__
+            )
+            semantics = resolved.semantics
+            if len(semantics.constituent_names) != 2:
+                raise ValueError(
+                    "terminal basket analytical pricing requires exactly two underliers"
+                )
+            if semantics.T <= 0.0:
+                intrinsic = terminal_basket_option_payoff(
+                    get_numpy().asarray(
+                        [semantics.constituent_spots], dtype=float
+                    ),
+                    weights=resolved.weights,
+                    basket_style=resolved.basket_style,
+                    strike=resolved.strike,
+                    option_type=resolved.option_type,
+                )[0]
+                return float(spec.notional) * float(intrinsic)
+            if resolved.basket_style in {"best_of", "worst_of"}:
+                unit_price = two_asset_extremum_option_stulz(
+                    spots=resolved.notional_spots,
+                    strike=resolved.strike,
+                    T=semantics.T,
+                    discount_factor=semantics.domestic_df,
+                    dividend_yields=resolved.carry,
+                    volatilities=resolved.vols,
+                    correlation=resolved.correlation_matrix[0][1],
+                    basket_style=resolved.basket_style,
+                    option_type=resolved.option_type,
+                )
+            elif resolved.basket_style == "spread":
+                domestic_rate = float(
+                    implied_zero_rate(semantics.domestic_df, semantics.T)
+                )
+                forwards = tuple(
+                    float(spot)
+                    * exp(
+                        (
+                            domestic_rate - float(dividend_yield)
+                        )
+                        * float(semantics.T)
+                    )
+                    for spot, dividend_yield in zip(
+                        semantics.constituent_spots,
+                        resolved.carry,
+                        strict=True,
+                    )
+                )
+                unit_price = two_asset_spread_option_kirk(
+                    forwards=forwards,
+                    strike=resolved.strike,
+                    T=semantics.T,
+                    discount_factor=semantics.domestic_df,
+                    volatilities=resolved.vols,
+                    correlation=resolved.correlation_matrix[0][1],
+                    weights=resolved.weights,
+                    option_type=resolved.option_type,
+                )
+            else:
+                unit_price = two_asset_terminal_basket_gauss_hermite(
+                    spots=resolved.notional_spots,
+                    weights=resolved.weights,
+                    strike=resolved.strike,
+                    T=semantics.T,
+                    discount_factor=semantics.domestic_df,
+                    dividend_yields=resolved.carry,
+                    volatilities=resolved.vols,
+                    correlation=resolved.correlation_matrix[0][1],
+                    basket_style=resolved.basket_style,
+                    option_type=resolved.option_type,
+                )
+            return float(spec.notional) * float(unit_price)
+            """
+        ).rstrip().replace("__COMPARISON_TARGET__", repr(target or None))
+    return None
 
 
 def _nth_to_default_helper_body(refs: set[str]) -> str | None:
@@ -5714,7 +5935,6 @@ def _deterministic_exact_binding_evaluate_body(
     heston_transform_kwargs = _heston_transform_helper_kwargs(comparison_target)
     zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
-    basket_option_kwargs = _basket_option_helper_kwargs(comparison_target)
     runtime_contract = metadata.get("runtime_contract")
     if not isinstance(runtime_contract, Mapping):
         runtime_contract = {}
@@ -6483,6 +6703,15 @@ def _deterministic_exact_binding_evaluate_body(
     if cds_body is not None:
         return cds_body
 
+    if instrument_type == "basket_option":
+        terminal_basket_body = _terminal_basket_primitive_body(
+            refs,
+            normalized_target=normalized_target,
+            generation_method=generation_method,
+        )
+        if terminal_basket_body is not None:
+            return terminal_basket_body
+
     ranked_basket_body = _ranked_observation_basket_primitive_body(refs)
     if ranked_basket_body is not None:
         return ranked_basket_body
@@ -7065,18 +7294,6 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_credit_portfolio_loss_distribution_monte_carlo("
             'market_state, spec, copula_family="gaussian", n_paths=40000, seed=42)'
         ),
-        "trellis.models.basket_option.price_basket_option_analytical": (
-            "return price_basket_option_analytical("
-            f"market_state, spec{basket_option_kwargs})"
-        ),
-        "trellis.models.basket_option.price_basket_option_monte_carlo": (
-            "return price_basket_option_monte_carlo("
-            f"market_state, spec{basket_option_kwargs}, seed=42)"
-        ),
-        "trellis.models.basket_option.price_basket_option_transform_proxy": (
-            "return price_basket_option_transform_proxy("
-            f"market_state, spec{basket_option_kwargs})"
-        ),
         "trellis.models.analytical.equity_exotics.price_equity_digital_option_analytical": (
             "return price_equity_digital_option_analytical(market_state, spec)"
         ),
@@ -7614,6 +7831,45 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "resolve_basket_semantics(" in body:
         imports.append(
             "from trellis.models.resolution.basket_semantics import resolve_basket_semantics"
+        )
+    if "resolve_terminal_basket_inputs(" in body:
+        imports.append(
+            "from trellis.models.resolution.terminal_basket import "
+            "resolve_terminal_basket_inputs"
+        )
+    if any(
+        symbol in body
+        for symbol in (
+            "two_asset_extremum_option_stulz(",
+            "two_asset_spread_option_kirk(",
+            "two_asset_terminal_basket_gauss_hermite(",
+        )
+    ):
+        symbols = [
+            symbol
+            for symbol in (
+                "two_asset_extremum_option_stulz",
+                "two_asset_spread_option_kirk",
+                "two_asset_terminal_basket_gauss_hermite",
+            )
+            if f"{symbol}(" in body
+        ]
+        imports.append(
+            "from trellis.models.analytical.terminal_basket import "
+            + ", ".join(symbols)
+        )
+    if "terminal_basket_option_payoff(" in body:
+        imports.append(
+            "from trellis.models.payoffs import terminal_basket_option_payoff"
+        )
+    if (
+        "correlated_gbm_log_return_characteristic_function(" in body
+        or "hurd_zhou_spread_option_2d_fft(" in body
+    ):
+        imports.append(
+            "from trellis.models.transforms.spread_option import "
+            "correlated_gbm_log_return_characteristic_function, "
+            "hurd_zhou_spread_option_2d_fft"
         )
     if (
         "build_ranked_observation_basket_state_payoff(" in body

@@ -6516,29 +6516,66 @@ def test_deterministic_exact_binding_module_composes_european_swaption_monte_car
 
 
 @pytest.mark.parametrize(
-    ("helper_ref", "comparison_target", "expected_call"),
+    ("method", "comparison_target", "primitive_refs", "expected_symbols"),
     [
         (
-            "trellis.models.basket_option.price_basket_option_analytical",
+            "analytical",
             "stulz_rainbow",
-            'price_basket_option_analytical(market_state, spec, comparison_target="stulz_rainbow")',
+            (
+                "trellis.models.resolution.terminal_basket.resolve_terminal_basket_inputs",
+                "trellis.models.analytical.support.implied_zero_rate",
+                "trellis.models.analytical.terminal_basket.two_asset_extremum_option_stulz",
+                "trellis.models.analytical.terminal_basket.two_asset_spread_option_kirk",
+                "trellis.models.analytical.terminal_basket.two_asset_terminal_basket_gauss_hermite",
+                "trellis.models.payoffs.terminal_basket_option_payoff",
+            ),
+            (
+                "resolve_terminal_basket_inputs",
+                "two_asset_extremum_option_stulz",
+                "two_asset_spread_option_kirk",
+                "two_asset_terminal_basket_gauss_hermite",
+            ),
         ),
         (
-            "trellis.models.basket_option.price_basket_option_monte_carlo",
+            "monte_carlo",
             "mc_spread_2d",
-            'price_basket_option_monte_carlo(market_state, spec, comparison_target="mc_spread_2d", seed=42)',
+            (
+                "trellis.models.resolution.terminal_basket.resolve_terminal_basket_inputs",
+                "trellis.models.analytical.support.implied_zero_rate",
+                "trellis.models.processes.correlated_gbm.CorrelatedGBM",
+                "trellis.models.monte_carlo.engine.MonteCarloEngine",
+                "trellis.models.payoffs.terminal_basket_option_payoff",
+            ),
+            (
+                "resolve_terminal_basket_inputs",
+                "CorrelatedGBM",
+                "MonteCarloEngine",
+                "terminal_basket_option_payoff",
+            ),
         ),
         (
-            "trellis.models.basket_option.price_basket_option_transform_proxy",
+            "fft_pricing",
             "fft_spread_2d",
-            'price_basket_option_transform_proxy(market_state, spec, comparison_target="fft_spread_2d")',
+            (
+                "trellis.models.resolution.terminal_basket.resolve_terminal_basket_inputs",
+                "trellis.models.analytical.support.implied_zero_rate",
+                "trellis.models.transforms.spread_option.correlated_gbm_log_return_characteristic_function",
+                "trellis.models.transforms.spread_option.hurd_zhou_spread_option_2d_fft",
+                "trellis.models.payoffs.terminal_basket_option_payoff",
+            ),
+            (
+                "resolve_terminal_basket_inputs",
+                "correlated_gbm_log_return_characteristic_function",
+                "hurd_zhou_spread_option_2d_fft",
+            ),
         ),
     ],
 )
-def test_deterministic_exact_binding_module_materializes_typed_basket_helpers(
-    helper_ref,
+def test_deterministic_exact_binding_module_composes_terminal_basket_primitives(
+    method,
     comparison_target,
-    expected_call,
+    primitive_refs,
+    expected_symbols,
 ):
     from trellis.agent.executor import (
         _generate_skeleton,
@@ -6547,9 +6584,9 @@ def test_deterministic_exact_binding_module_materializes_typed_basket_helpers(
     from trellis.agent.planner import STATIC_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=(helper_ref,),
+        lane_exact_binding_refs=primitive_refs,
         primitive_plan=None,
-        method="analytical",
+        method=method,
         instrument_type="basket_option",
     )
     skeleton = _generate_skeleton(
@@ -6565,7 +6602,21 @@ def test_deterministic_exact_binding_module_materializes_typed_basket_helpers(
     )
 
     assert generated is not None
-    assert expected_call in generated.code
+    for symbol in expected_symbols:
+        assert symbol in generated.code
+    assert "price_basket_option_analytical(" not in generated.code
+    assert "price_basket_option_monte_carlo(" not in generated.code
+    assert "price_basket_option_transform_proxy(" not in generated.code
+    assert "price_ranked_observation_basket_monte_carlo(" not in generated.code
+    if method == "analytical":
+        assert "trellis.models.monte_carlo" not in generated.code
+        assert "hurd_zhou_spread_option_2d_fft" not in generated.code
+    elif method == "monte_carlo":
+        assert "two_asset_extremum_option_stulz" not in generated.code
+        assert "hurd_zhou_spread_option_2d_fft" not in generated.code
+    else:
+        assert "MonteCarloEngine" not in generated.code
+        assert "two_asset_extremum_option_stulz" not in generated.code
 
 
 def test_extract_instrument_type_uses_shared_lower_layer_mapping():

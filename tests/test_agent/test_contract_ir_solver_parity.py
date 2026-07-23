@@ -118,17 +118,23 @@ def test_compile_build_request_keeps_terminal_basket_request_off_vanilla_semanti
     assert "two_asset_terminal_basket" in compiled.product_ir.payoff_traits
     assert compiled.generation_plan is not None
     assert compiled.generation_plan.backend_binding_id == (
-        "trellis.models.basket_option.price_basket_option_analytical"
+        "trellis.models.analytical.terminal_basket."
+        "two_asset_terminal_basket_gauss_hermite"
     )
     assert compiler["source"] == "request_decomposition"
     assert compiler["shadow_status"] == "bound"
-    assert compiler["contract_ir_solver_selection"]["declaration_id"] == "helper_basket_option_call"
-    assert compiler["contract_ir_solver_shadow"]["declaration_id"] == "helper_basket_option_call"
+    assert compiler["contract_ir_solver_selection"]["declaration_id"] == (
+        "terminal_basket_call_raw_kernel"
+    )
+    assert compiler["contract_ir_solver_shadow"]["declaration_id"] == (
+        "terminal_basket_call_raw_kernel"
+    )
     authority = compiled.request.metadata["route_binding_authority"]
     assert authority["route_id"] is None
     assert authority["authority_kind"] == "exact_backend_fit"
     assert authority["backend_binding"]["exact_target_refs"] == [
-        "trellis.models.basket_option.price_basket_option_analytical"
+        "trellis.models.analytical.terminal_basket."
+        "two_asset_terminal_basket_gauss_hermite"
     ]
 
 

@@ -9,6 +9,7 @@ analytical:
   - cds
   - swaption
   - european_option
+  - basket_option
   version: canonical
   solution_contracts:
   - id: black_scholes_equity
@@ -115,10 +116,30 @@ analytical:
     lattice_equivalence: any tree recovers the same PV when no exercise or path dependence
       exists
     pde_equivalence: trivial (no diffusion term)
+  - id: two_asset_terminal_basket
+    name: Two-asset terminal basket under correlated GBM
+    assumptions:
+    - exactly two correlated lognormal underliers
+    - deterministic rates, carries, volatilities, and correlation
+    - European exercise with terminal-only observation
+    payoff: Best-of, worst-of, spread, or weighted terminal basket call/put
+    market_data:
+    - discount_curve
+    - black_vol_surface
+    - spot
+    - correlation
+    lattice_equivalence: not directly applicable
+    pde_equivalence: a two-dimensional PDE can recover the same contract under matching assumptions
   template: "## Cookbook: Analytical\nThis family contains distinct solution contracts.\
     \ Each is valid only under\nits stated assumptions. See the `solution_contracts`\
     \ block above for the\nassumption sets. Do not mix assumptions across contracts.\n\
-    \nevaluate() returns the present-value scalar and discounts each period internally.\n\
+    \n### Two-asset terminal basket (solution contract: two_asset_terminal_basket)\n\
+    Start with `resolve_terminal_basket_inputs`. Use `two_asset_extremum_option_stulz`\
+    \ only for best/worst-of claims, `two_asset_spread_option_kirk` only for spread\
+    \ claims, and `two_asset_terminal_basket_gauss_hermite` as the independent generic\
+    \ weighted-basket reference. Apply expiry intrinsic value, domestic discounting,\
+    \ and notional once. Product pricing wrappers are compatibility/reference APIs,\
+    \ not generated construction authority.\n\nevaluate() returns the present-value scalar and discounts each period internally.\n\
     Do not wrap the final present value in `float(...)` solely because `evaluate()` is public.\n\
     Use `float(...)` only at an explicit solver or reporting boundary.\n\
     Prefer the raw-kernel-plus-wrapper pattern when a resolved-input helper exists.\n\n\
@@ -342,10 +363,16 @@ monte_carlo:
   - basket_path_payoff
   - ranked_observation_basket
   - heston_option
+  - basket_option
   version: canonical
   template: "## Cookbook: Monte Carlo (path simulation)\nUse this pattern for path-dependent\
     \ instruments.\nThe MC engine computes a discounted expected payoff estimate and\
-    \ returns a float.\n\n```python\ndef evaluate(self, market_state):\n    from trellis.core.date_utils\
+    \ returns a float.\n\nFor a European terminal basket, start with\
+    \ `resolve_terminal_basket_inputs`, construct `CorrelatedGBM` and\
+    \ `MonteCarloEngine`, and pass terminal states to\
+    \ `terminal_basket_option_payoff`. Apply the resolved domestic discount factor\
+    \ and notional once. Do not substitute a ranked-observation state machine or\
+    \ call a product pricing wrapper.\n\n```python\ndef evaluate(self, market_state):\n    from trellis.core.date_utils\
     \ import year_fraction\n    from trellis.core.differentiable import get_numpy\n\
     \    from trellis.models.monte_carlo.engine import MonteCarloEngine\n    from\
     \ trellis.models.processes.gbm import GBM\n\n    np = get_numpy()\n    spec =\
@@ -567,9 +594,15 @@ fft_pricing:
   applicable_instruments:
   - heston_option
   - european_option
+  - basket_option
   version: canonical
   template: "## Cookbook: FFT/COS Transform Pricing\nUse this pattern for models with\
-    \ a stable characteristic function.\n\nFor European Heston vanilla options, keep\
+    \ a stable characteristic function.\n\nFor a two-asset European spread target,\
+    \ build the joint log-return characteristic function with\
+    \ `correlated_gbm_log_return_characteristic_function` and pass it to\
+    \ `hurd_zhou_spread_option_2d_fft`. Keep both transform dimensions explicit;\
+    \ this is not Carr-Madan one-dimensional vanilla FFT; product transform proxies\
+    \ are compatibility-only.\n\nFor European Heston vanilla options, keep\
     \ the adapter thin and delegate to the checked helper. The helper reads underlier\
     \ spot from the spec or `market_state.spot`, reads explicit Heston model parameters\
     \ from `market_state.model_parameters`, and does not use a Black vol surface as\

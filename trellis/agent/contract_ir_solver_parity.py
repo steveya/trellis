@@ -36,7 +36,9 @@ from trellis.models.asian_option import (
     price_arithmetic_asian_option_analytical,
     price_arithmetic_asian_option_monte_carlo,
 )
-from trellis.models.basket_option import price_basket_option_analytical
+from trellis.models.analytical.terminal_basket import (
+    two_asset_terminal_basket_gauss_hermite,
+)
 from trellis.models.black import (
     black76_asset_or_nothing_call,
     black76_asset_or_nothing_put,
@@ -164,7 +166,10 @@ def _swaption_reference(decision, market_state: MarketState, contract_ir) -> flo
 
 
 def _basket_reference(decision, market_state: MarketState, contract_ir) -> float:
-    return float(price_basket_option_analytical(market_state, decision.call_kwargs["spec"]))
+    return float(
+        decision.value_scale
+        * two_asset_terminal_basket_gauss_hermite(**decision.call_kwargs)
+    )
 
 
 def _variance_reference(decision, market_state: MarketState, contract_ir) -> float:
@@ -301,7 +306,7 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             preferred_method="analytical",
             expected_source="request_decomposition",
             expected_shadow_status="bound",
-            expected_declaration_id="helper_basket_option_call",
+            expected_declaration_id="terminal_basket_call_raw_kernel",
             reference_price=_basket_reference,
             market_state_factory=_basket_market_state,
         ),
@@ -313,7 +318,7 @@ def _parity_cases() -> tuple[ContractIRSolverParityCase, ...]:
             preferred_method="analytical",
             expected_source="request_decomposition",
             expected_shadow_status="bound",
-            expected_declaration_id="helper_basket_option_put",
+            expected_declaration_id="terminal_basket_put_raw_kernel",
             reference_price=_basket_reference,
             market_state_factory=_basket_market_state,
         ),

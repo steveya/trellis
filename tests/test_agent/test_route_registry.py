@@ -703,6 +703,14 @@ class TestBasketRoutes:
         payoff_family="basket_path_payoff",
         payoff_traits=("ranked_observation",),
     )
+    TERMINAL_BASKET_IR = ProductIR(
+        instrument="basket_option",
+        payoff_family="basket_option",
+        payoff_traits=("two_asset_terminal_basket",),
+        exercise_style="european",
+        state_dependence="terminal_markov",
+        model_family="equity_diffusion",
+    )
 
     def test_monte_carlo_candidate(self, registry):
         new = _new_routes(registry, "monte_carlo", self.BASKET_IR)
@@ -745,6 +753,137 @@ class TestBasketRoutes:
         assert not any(primitive.role == "route_helper" for primitive in new_prims)
         assert resolve_route_adapters(spec, self.BASKET_IR) == ()
         assert resolve_route_notes(spec, self.BASKET_IR) == ()
+
+    def test_terminal_basket_analytical_route_exposes_raw_kernels(self, registry):
+        spec = find_route_by_id("analytical_black76", registry)
+        assert spec is not None
+
+        primitives = resolve_route_primitives(spec, self.TERMINAL_BASKET_IR)
+
+        assert _prim_set(primitives) == {
+            (
+                "trellis.models.resolution.terminal_basket",
+                "resolve_terminal_basket_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "implied_zero_rate",
+                "assembly_helper",
+            ),
+            (
+                "trellis.models.analytical.terminal_basket",
+                "two_asset_extremum_option_stulz",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.analytical.terminal_basket",
+                "two_asset_spread_option_kirk",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.analytical.terminal_basket",
+                "two_asset_terminal_basket_gauss_hermite",
+                "numerical_evidence",
+            ),
+            (
+                "trellis.models.payoffs",
+                "terminal_basket_option_payoff",
+                "payoff_kernel",
+            ),
+            (
+                "trellis.models.basket_option",
+                "price_basket_option_analytical",
+                "compatibility_reference",
+            ),
+        }
+        assert not any(primitive.role == "route_helper" for primitive in primitives)
+
+    def test_terminal_basket_monte_carlo_route_exposes_process_engine_and_payoff(
+        self,
+        registry,
+    ):
+        spec = find_route_by_id("monte_carlo_paths", registry)
+        assert spec is not None
+
+        primitives = resolve_route_primitives(spec, self.TERMINAL_BASKET_IR)
+
+        assert _prim_set(primitives) == {
+            (
+                "trellis.models.resolution.terminal_basket",
+                "resolve_terminal_basket_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "implied_zero_rate",
+                "assembly_helper",
+            ),
+            (
+                "trellis.models.processes.correlated_gbm",
+                "CorrelatedGBM",
+                "state_process",
+            ),
+            (
+                "trellis.models.monte_carlo.engine",
+                "MonteCarloEngine",
+                "engine",
+            ),
+            (
+                "trellis.models.payoffs",
+                "terminal_basket_option_payoff",
+                "payoff_kernel",
+            ),
+            (
+                "trellis.models.basket_option",
+                "price_basket_option_monte_carlo",
+                "compatibility_reference",
+            ),
+        }
+        assert not any(primitive.role == "route_helper" for primitive in primitives)
+
+    def test_terminal_basket_transform_route_exposes_hurd_zhou_primitives(
+        self,
+        registry,
+    ):
+        spec = find_route_by_id("transform_fft", registry)
+        assert spec is not None
+
+        primitives = resolve_route_primitives(spec, self.TERMINAL_BASKET_IR)
+
+        assert _prim_set(primitives) == {
+            (
+                "trellis.models.resolution.terminal_basket",
+                "resolve_terminal_basket_inputs",
+                "market_binding",
+            ),
+            (
+                "trellis.models.analytical.support",
+                "implied_zero_rate",
+                "assembly_helper",
+            ),
+            (
+                "trellis.models.transforms.spread_option",
+                "correlated_gbm_log_return_characteristic_function",
+                "characteristic_function",
+            ),
+            (
+                "trellis.models.transforms.spread_option",
+                "hurd_zhou_spread_option_2d_fft",
+                "pricing_kernel",
+            ),
+            (
+                "trellis.models.payoffs",
+                "terminal_basket_option_payoff",
+                "payoff_kernel",
+            ),
+            (
+                "trellis.models.basket_option",
+                "price_basket_option_transform_proxy",
+                "compatibility_reference",
+            ),
+        }
+        assert not any(primitive.role == "route_helper" for primitive in primitives)
 
     def test_admissibility_rejects_strategic_control_for_basket_event_route(self, registry):
         from dataclasses import replace

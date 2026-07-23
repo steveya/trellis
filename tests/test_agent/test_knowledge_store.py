@@ -549,6 +549,7 @@ class TestKnowledgeStore:
             )
             for lesson in k["lessons"]
         )
+
         assert "price_ranked_observation_basket_monte_carlo" not in retrieved_lesson_text
         assert "do not import unapproved correlated_gbm" not in retrieved_lesson_text.lower()
         assert any(
@@ -570,6 +571,66 @@ class TestKnowledgeStore:
         assert "from trellis.models.processes.correlated_gbm import CorrelatedGBM" in registry
         assert "build_ranked_observation_basket_state_payoff" in registry
         assert "terminal_ranked_observation_basket_payoff" in registry
+
+    def test_terminal_basket_guidance_is_cross_indexed_by_method(self):
+        from trellis.agent.knowledge import retrieve_for_task
+
+        analytical = retrieve_for_task(
+            "analytical",
+            features=["multi_asset", "two_asset_terminal_basket"],
+            instrument="basket_option",
+        )
+        monte_carlo = retrieve_for_task(
+            "monte_carlo",
+            features=["multi_asset", "two_asset_terminal_basket"],
+            instrument="basket_option",
+        )
+        transform = retrieve_for_task(
+            "fft_pricing",
+            features=["multi_asset", "two_asset_terminal_basket", "spread"],
+            instrument="basket_option",
+        )
+
+        assert "basket_option" in analytical["cookbook"].applicable_instruments
+        assert "resolve_terminal_basket_inputs" in analytical["cookbook"].template
+        assert "two_asset_extremum_option_stulz" in analytical["cookbook"].template
+        assert "two_asset_spread_option_kirk" in analytical["cookbook"].template
+
+        assert "basket_option" in monte_carlo["cookbook"].applicable_instruments
+        assert "resolve_terminal_basket_inputs" in monte_carlo["cookbook"].template
+        assert "terminal_basket_option_payoff" in monte_carlo["cookbook"].template
+        assert "price_basket_option_monte_carlo" not in monte_carlo["cookbook"].template
+
+        assert "basket_option" in transform["cookbook"].applicable_instruments
+        assert (
+            "correlated_gbm_log_return_characteristic_function"
+            in transform["cookbook"].template
+        )
+        assert "hurd_zhou_spread_option_2d_fft" in transform["cookbook"].template
+        assert (
+            "price_basket_option_transform_proxy"
+            not in transform["cookbook"].template
+        )
+
+        analytical_requirements = "\n".join(
+            analytical["method_requirements"].requirements
+        )
+        monte_carlo_requirements = "\n".join(
+            monte_carlo["method_requirements"].requirements
+        )
+        transform_requirements = "\n".join(
+            transform["method_requirements"].requirements
+        )
+        assert "TERMINAL BASKET METHOD IDENTITY" in analytical_requirements
+        assert "TERMINAL BASKET MC COMPOSITION" in monte_carlo_requirements
+        assert "HURD-ZHOU SPREAD ROUTE" in transform_requirements
+
+        assert {
+            contract.name for contract in monte_carlo["data_contracts"]
+        } >= {"TERMINAL_BASKET_MARKET_BINDING"}
+        assert {
+            contract.name for contract in transform["data_contracts"]
+        } >= {"TERMINAL_BASKET_TRANSFORM_CONVENTION"}
 
     def test_retrieve_basket_bootstrap_guidance_includes_launch_contract(self):
         from trellis.agent.knowledge import retrieve_for_task

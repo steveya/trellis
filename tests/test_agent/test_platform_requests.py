@@ -1578,11 +1578,17 @@ def test_compile_build_request_keeps_generic_basket_option_off_ranked_observatio
 @pytest.mark.parametrize(
     ("preferred_method", "expected_binding"),
     [
-        ("analytical", "trellis.models.basket_option.price_basket_option_analytical"),
-        ("monte_carlo", "trellis.models.basket_option.price_basket_option_monte_carlo"),
+        (
+            "analytical",
+            "trellis.models.analytical.terminal_basket.two_asset_extremum_option_stulz",
+        ),
+        (
+            "monte_carlo",
+            "trellis.models.payoffs.terminal_basket_option_payoff",
+        ),
     ],
 )
-def test_compile_build_request_bootstraps_title_only_rainbow_task_into_exact_basket_bindings(
+def test_compile_build_request_bootstraps_title_only_rainbow_task_into_terminal_basket_primitives(
     preferred_method: str,
     expected_binding: str,
 ):
@@ -1624,6 +1630,72 @@ def test_compile_build_request_marks_two_asset_terminal_baskets_for_exact_helper
     assert "two_asset_terminal_basket" in compiled.product_ir.payoff_traits
 
 
+@pytest.mark.parametrize(
+    ("target_id", "expected_route", "expected_binding"),
+    [
+        (
+            "kirk_spread",
+            "analytical_black76",
+            "trellis.models.analytical.terminal_basket.two_asset_spread_option_kirk",
+        ),
+        (
+            "mc_spread_2d",
+            "monte_carlo_paths",
+            "trellis.models.payoffs.terminal_basket_option_payoff",
+        ),
+        (
+            "fft_spread_2d",
+            "transform_fft",
+            "trellis.models.transforms.spread_option.hurd_zhou_spread_option_2d_fft",
+        ),
+    ],
+)
+def test_compile_build_request_projects_explicit_comparison_semantics_before_route_selection(
+    target_id: str,
+    expected_route: str,
+    expected_binding: str,
+):
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import (
+        _description_for_comparison_target,
+        _effective_task_description,
+    )
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == "T126"
+    )
+    harness = build_comparison_harness_plan(task)
+    target = next(target for target in harness.targets if target.target_id == target_id)
+    description = _description_for_comparison_target(
+        _effective_task_description(task),
+        target,
+    )
+    compiled = compile_build_request(
+        description,
+        instrument_type="basket_option",
+        preferred_method=target.contract.method,
+        metadata={
+            "comparison_target": target.target_id,
+            "comparison_target_contract": target.contract.to_payload(),
+        },
+    )
+
+    assert compiled.product_ir is not None
+    assert compiled.product_ir.payoff_family == "basket_option"
+    assert compiled.product_ir.model_family == "multi_asset_diffusion"
+    assert compiled.product_ir.state_dependence == "terminal_markov"
+    assert "two_asset_terminal_basket" in compiled.product_ir.payoff_traits
+    assert "ranked_observation" not in compiled.product_ir.payoff_traits
+    assert compiled.generation_plan is not None
+    assert compiled.generation_plan.primitive_plan is not None
+    assert compiled.generation_plan.primitive_plan.route == expected_route
+    assert compiled.generation_plan.backend_binding_id == expected_binding
+
+
 def test_compile_build_request_emits_exact_authority_for_explicit_terminal_basket_request():
     from trellis.agent.platform_requests import compile_build_request
 
@@ -1644,16 +1716,18 @@ def test_compile_build_request_emits_exact_authority_for_explicit_terminal_baske
     assert compiled.generation_plan.primitive_plan is None
     compiler_summary = compiled.request.metadata["contract_ir_compiler"]
     assert compiler_summary["contract_ir_solver_selection"]["declaration_id"] == (
-        "helper_basket_option_call"
+        "terminal_basket_call_raw_kernel"
     )
     assert compiled.generation_plan.backend_binding_id == (
-        "trellis.models.basket_option.price_basket_option_analytical"
+        "trellis.models.analytical.terminal_basket."
+        "two_asset_terminal_basket_gauss_hermite"
     )
     authority = compiled.request.metadata["route_binding_authority"]
     assert authority["route_id"] is None
     assert authority["authority_kind"] == "exact_backend_fit"
     assert authority["backend_binding"]["exact_target_refs"] == [
-        "trellis.models.basket_option.price_basket_option_analytical"
+        "trellis.models.analytical.terminal_basket."
+        "two_asset_terminal_basket_gauss_hermite"
     ]
 
 

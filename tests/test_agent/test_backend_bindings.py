@@ -499,7 +499,10 @@ def test_resolve_backend_binding_spec_composes_european_swaption_rate_lattice():
     }
 
 
-def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
+@pytest.mark.parametrize("model_family", ["equity_diffusion", "multi_asset_diffusion"])
+def test_resolve_backend_binding_spec_uses_terminal_basket_primitive_composition(
+    model_family,
+):
     catalog = load_backend_binding_catalog()
     analytical = find_backend_binding_by_route_id("analytical_black76", catalog)
     monte_carlo = find_backend_binding_by_route_id("monte_carlo_paths", catalog)
@@ -511,7 +514,7 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
         payoff_traits=("two_asset_terminal_basket", "vanilla_option"),
         exercise_style="european",
         state_dependence="terminal_markov",
-        model_family="equity_diffusion",
+        model_family=model_family,
     )
 
     assert analytical is not None
@@ -522,15 +525,41 @@ def test_resolve_backend_binding_spec_uses_basket_option_exact_helpers():
     monte_carlo_resolved = resolve_backend_binding_spec(monte_carlo, product_ir=product_ir)
     transform_resolved = resolve_backend_binding_spec(transform, product_ir=product_ir)
 
-    assert analytical_resolved.helper_refs == (
-        "trellis.models.basket_option.price_basket_option_analytical",
+    assert analytical_resolved.helper_refs == ()
+    assert monte_carlo_resolved.helper_refs == ()
+    assert transform_resolved.helper_refs == ()
+    assert analytical_resolved.market_binding_refs == (
+        "trellis.models.resolution.terminal_basket.resolve_terminal_basket_inputs",
     )
-    assert monte_carlo_resolved.helper_refs == (
-        "trellis.models.basket_option.price_basket_option_monte_carlo",
+    assert monte_carlo_resolved.market_binding_refs == (
+        "trellis.models.resolution.terminal_basket.resolve_terminal_basket_inputs",
     )
-    assert transform_resolved.helper_refs == (
-        "trellis.models.basket_option.price_basket_option_transform_proxy",
+    assert transform_resolved.market_binding_refs == (
+        "trellis.models.resolution.terminal_basket.resolve_terminal_basket_inputs",
     )
+    assert analytical_resolved.exact_target_refs == (
+        "trellis.models.analytical.terminal_basket.two_asset_extremum_option_stulz",
+        "trellis.models.analytical.terminal_basket.two_asset_spread_option_kirk",
+    )
+    assert monte_carlo_resolved.exact_target_refs == (
+        "trellis.models.payoffs.terminal_basket_option_payoff",
+    )
+    assert transform_resolved.exact_target_refs == (
+        "trellis.models.transforms.spread_option.hurd_zhou_spread_option_2d_fft",
+    )
+    for resolved in (
+        analytical_resolved,
+        monte_carlo_resolved,
+        transform_resolved,
+    ):
+        compatibility = [
+            primitive
+            for primitive in resolved.primitives
+            if primitive.role == "compatibility_reference"
+        ]
+        assert len(compatibility) == 1
+        assert compatibility[0].required is False
+        assert compatibility[0].excluded is True
 
 
 def test_monte_carlo_binding_resolves_vanilla_terminal_claim_primitives():

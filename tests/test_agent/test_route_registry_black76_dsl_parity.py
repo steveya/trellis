@@ -88,10 +88,46 @@ _VANILLA_NOTES: tuple[str, ...] = (
 
 _BASKET_PRIMS: tuple[PrimitiveRef, ...] = (
     PrimitiveRef(
+        "trellis.models.resolution.terminal_basket",
+        "resolve_terminal_basket_inputs",
+        "market_binding",
+    ),
+    PrimitiveRef(
+        "trellis.models.analytical.support",
+        "implied_zero_rate",
+        "assembly_helper",
+    ),
+    PrimitiveRef(
+        "trellis.models.analytical.terminal_basket",
+        "two_asset_extremum_option_stulz",
+        "pricing_kernel",
+    ),
+    PrimitiveRef(
+        "trellis.models.analytical.terminal_basket",
+        "two_asset_spread_option_kirk",
+        "pricing_kernel",
+    ),
+    PrimitiveRef(
+        "trellis.models.analytical.terminal_basket",
+        "two_asset_terminal_basket_gauss_hermite",
+        "numerical_evidence",
+    ),
+    PrimitiveRef(
+        "trellis.models.payoffs",
+        "terminal_basket_option_payoff",
+        "payoff_kernel",
+    ),
+    PrimitiveRef(
         "trellis.models.basket_option",
         "price_basket_option_analytical",
-        "route_helper",
+        "compatibility_reference",
+        required=False,
+        excluded=True,
     ),
+)
+_BASKET_NOTES: tuple[str, ...] = (
+    "Resolve the terminal basket once, then select Stulz for best/worst-of, Kirk for spreads, or Gauss-Hermite as the generic weighted-basket reference.",
+    "Apply expiry intrinsic value and notional scaling explicitly; price_basket_option_analytical is compatibility-only.",
 )
 
 _SWAPTION_BERM_PRIMS: tuple[PrimitiveRef, ...] = (
@@ -242,7 +278,7 @@ def _legacy_clauses() -> tuple[ConditionalPrimitive, ...]:
             },
             primitives=_BASKET_PRIMS,
             adapters=(),
-            notes=(),
+            notes=_BASKET_NOTES,
         ),
         ConditionalPrimitive(
             when={
@@ -298,7 +334,7 @@ def _dsl_clauses() -> tuple[ConditionalPrimitive, ...]:
             ),
             primitives=_BASKET_PRIMS,
             adapters=(),
-            notes=(),
+            notes=_BASKET_NOTES,
         ),
         ConditionalPrimitive(
             when={},
