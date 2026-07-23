@@ -1024,8 +1024,8 @@ already owns that work.
 
 The retained callable fixed-income proof rows bind their numerical experiments
 explicitly. ``T02`` selects BDT and Hull-White variants of the checked lattice
-binding; ``T17`` selects the Hull-White PSOR PDE and Hull-White lattice
-bindings. Both ``T17`` lanes consume the same typed Hull-White parameter set
+binding; ``T17`` selects the Hull-White event-aware theta PDE and Hull-White
+lattice bindings. Both ``T17`` lanes consume the same typed Hull-White parameter set
 from the task comparison regime. Model selection and calibration coordinates
 belong to the valuation target and market parameter set, not to derivative spec
 overrides. Hull-White parameter resolution therefore prefers typed

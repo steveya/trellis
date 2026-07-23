@@ -264,7 +264,7 @@ tasks:
     - quantlib
   status: pending
 - id: T17
-  title: 'Callable bond: HW rate PDE (PSOR) vs HW tree'
+  title: 'Callable bond: HW event-aware theta PDE vs HW tree'
   construct:
   - pde
   - lattice
@@ -282,15 +282,15 @@ tasks:
     source_kind: task_comparison_regime
   cross_validate:
     internal:
-    - hw_pde_psor
+    - hw_pde_theta
     - hw_rate_tree
     target_contracts:
-      hw_pde_psor:
+      hw_pde_theta:
         method: pde_solver
         route_id: pde_theta_1d
         route_family: pde_solver
         backend_binding_id: trellis.models.callable_bond_pde.price_callable_bond_pde
-        variant_parameters: {pricing_method: pde_solver, solver: psor, model_parameter_set: 't17_hull_white_comparison:hull_white', mean_reversion: 0.1, sigma: 0.01}
+        variant_parameters: {pricing_method: pde_solver, theta: 0.5, model_parameter_set: 't17_hull_white_comparison:hull_white', mean_reversion: 0.1, sigma: 0.01}
         validation_bundle_id: pde_solver:callable_bond
         payoff_family: callable_fixed_income
         exercise_style: issuer_call

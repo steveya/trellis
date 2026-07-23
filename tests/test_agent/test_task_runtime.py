@@ -4642,15 +4642,15 @@ def test_effective_task_description_bootstraps_title_only_callable_bond_tasks():
     description = _effective_task_description(
         {
             "id": "T17",
-            "title": "Callable bond: HW rate PDE (PSOR) vs HW tree",
+            "title": "Callable bond: HW event-aware theta PDE vs HW tree",
             "construct": ["pde", "lattice"],
-            "cross_validate": {"internal": ["hw_pde_psor", "hw_rate_tree"]},
+            "cross_validate": {"internal": ["hw_pde_theta", "hw_rate_tree"]},
         }
     )
 
     assert "issuer call dates 2028-01-15, 2030-01-15, and 2032-01-15" in description
     assert "5% semi-annual coupon" in description
-    assert "Comparison targets: hw_pde_psor (pde_solver), hw_rate_tree (rate_tree)" in description
+    assert "Comparison targets: hw_pde_theta (pde_solver), hw_rate_tree (rate_tree)" in description
 
 
 def test_prepare_existing_task_infers_schema_for_matching_generic_module(monkeypatch):

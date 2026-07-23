@@ -5683,6 +5683,18 @@ def _deterministic_exact_binding_evaluate_body(
     ).strip().lower()
     if callable_bond_lattice_model not in {"bdt", "hull_white"}:
         callable_bond_lattice_model = "hull_white"
+    callable_bond_pde_theta = 0.5
+    if "trellis.models.callable_bond_pde.price_callable_bond_pde" in refs:
+        try:
+            callable_bond_pde_theta = float(target_variants.get("theta", 0.5))
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                "Callable-bond PDE theta must be a number between 0 and 1"
+            ) from exc
+        if not 0.0 <= callable_bond_pde_theta <= 1.0:
+            raise ValueError(
+                "Callable-bond PDE theta must be a number between 0 and 1"
+            )
     is_american_equity_option = instrument_type in {"american_put", "american_option"}
     black_scholes_vanilla_exact_binding = _is_black_scholes_vanilla_exact_binding(
         generation_plan,
@@ -6707,7 +6719,8 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_fx_barrier_option_monte_carlo(market_state, spec)"
         ),
         "trellis.models.callable_bond_pde.price_callable_bond_pde": (
-            "return price_callable_bond_pde(market_state, spec)"
+            "return price_callable_bond_pde("
+            f"market_state, spec, theta={callable_bond_pde_theta!r})"
         ),
         "trellis.models.callable_bond_tree.price_callable_bond_tree": (
             "return price_callable_bond_tree("

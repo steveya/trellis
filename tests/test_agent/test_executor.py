@@ -1642,14 +1642,14 @@ def test_deterministic_callable_bond_tree_wrapper_binds_declared_lattice_model()
         (
             "pde_solver",
             "trellis.models.callable_bond_pde.price_callable_bond_pde",
-            "hw_pde_psor",
+            "hw_pde_theta",
             {
                 "pricing_method": "pde_solver",
-                "solver": "psor",
+                "theta": 0.5,
                 "mean_reversion": 0.1,
                 "sigma": 0.01,
             },
-            "return price_callable_bond_pde(market_state, spec)",
+            "return price_callable_bond_pde(market_state, spec, theta=0.5)",
         ),
         (
             "rate_tree",
@@ -1707,6 +1707,34 @@ def test_deterministic_callable_bond_targets_bind_shared_hull_white_parameters(
 
     assert generated is not None
     assert expected_call in generated.code
+
+
+def test_deterministic_callable_bond_pde_rejects_invalid_theta_variant():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _deterministic_exact_binding_evaluate_body
+
+    contract = ComparisonTargetContract(
+        target_id="hw_pde_theta",
+        method="pde_solver",
+        variant_parameters={"theta": "psor"},
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.callable_bond_pde.price_callable_bond_pde",
+        ),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type="callable_bond",
+    )
+
+    with pytest.raises(ValueError, match="theta must be a number between 0 and 1"):
+        _deterministic_exact_binding_evaluate_body(
+            generation_plan,
+            request_metadata={
+                "comparison_target_contract": contract.to_payload(),
+            },
+            comparison_target="hw_pde_theta",
+        )
 
 
 def test_deterministic_exact_binding_module_materializes_callable_bond_pde_wrapper():

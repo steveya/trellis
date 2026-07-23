@@ -127,19 +127,19 @@ def test_callable_fixed_income_targets_have_explicit_executable_contracts():
     assert t05["puttable_tree"].exercise_style == "holder_put"
 
     t17 = _contracts_for("T17")
-    assert set(t17) == {"hw_pde_psor", "hw_rate_tree"}
-    assert t17["hw_pde_psor"].method == "pde_solver"
-    assert t17["hw_pde_psor"].route_id == "pde_theta_1d"
-    assert t17["hw_pde_psor"].route_family == "pde_solver"
-    assert t17["hw_pde_psor"].backend_binding_id == (
+    assert set(t17) == {"hw_pde_theta", "hw_rate_tree"}
+    assert t17["hw_pde_theta"].method == "pde_solver"
+    assert t17["hw_pde_theta"].route_id == "pde_theta_1d"
+    assert t17["hw_pde_theta"].route_family == "pde_solver"
+    assert t17["hw_pde_theta"].backend_binding_id == (
         "trellis.models.callable_bond_pde.price_callable_bond_pde"
     )
-    assert t17["hw_pde_psor"].validation_bundle_id == (
+    assert t17["hw_pde_theta"].validation_bundle_id == (
         "pde_solver:callable_bond"
     )
-    assert t17["hw_pde_psor"].variant_parameters == {
+    assert t17["hw_pde_theta"].variant_parameters == {
         "pricing_method": "pde_solver",
-        "solver": "psor",
+        "theta": 0.5,
         "model_parameter_set": "t17_hull_white_comparison:hull_white",
         "mean_reversion": 0.1,
         "sigma": 0.01,

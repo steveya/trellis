@@ -1966,9 +1966,9 @@ def test_compile_build_request_uses_exact_callable_bond_pde_binding_for_bootstra
     description = _effective_task_description(
         {
             "id": "T17",
-            "title": "Callable bond: HW rate PDE (PSOR) vs HW tree",
+            "title": "Callable bond: HW event-aware theta PDE vs HW tree",
             "construct": ["pde", "lattice"],
-            "cross_validate": {"internal": ["hw_pde_psor", "hw_rate_tree"]},
+            "cross_validate": {"internal": ["hw_pde_theta", "hw_rate_tree"]},
         }
     )
     compiled = compile_build_request(
