@@ -1827,7 +1827,7 @@ def test_run_task_propagates_and_enforces_single_explicit_target_contract(tmp_pa
         route_id="exercise_lattice",
         route_family="rate_lattice",
         backend_binding_id=(
-            "trellis.models.callable_bond_tree.price_callable_bond_tree"
+            "trellis.models.trees.algebra.price_on_lattice"
         ),
         validation_bundle_id="rate_tree:puttable_bond",
         payoff_family="puttable_fixed_income",
@@ -1889,7 +1889,7 @@ def test_run_task_propagates_and_enforces_single_explicit_target_contract(tmp_pa
             selected_route_id="exercise_lattice",
             selected_route_family="rate_lattice",
             selected_backend_binding_id=(
-                "trellis.models.callable_bond_tree.price_callable_bond_tree"
+                "trellis.models.trees.algebra.price_on_lattice"
             ),
             selected_validation_bundle_id="rate_tree:puttable_bond",
             selected_semantic_axes={

@@ -623,6 +623,16 @@ attaching control. Product-level equity-tree helpers remain compatibility and
 reference surfaces; new integrations should target ``LatticeRecipe`` rather
 than hand-assembling route-local tree logic.
 
+Callable and puttable fixed-income routes follow the same primitive-first
+policy. Use ``resolve_short_rate_lattice_inputs(...)`` for market and model
+inputs, build the calibrated lattice with ``MODEL_REGISTRY`` and
+``build_lattice(...)``, build one embedded fixed-income event timeline, and
+compile it with an explicit ``issuer_min`` or ``holder_max`` control assertion
+before ``price_on_lattice(...)``. Compare the result with
+``present_value_fixed_coupon_bond(...)`` as the callable upper bound or
+puttable lower bound. ``price_callable_bond_tree(...)`` is retained for
+compatibility, but new generated routes do not use it.
+
 Semantic Request Compilation
 ----------------------------
 

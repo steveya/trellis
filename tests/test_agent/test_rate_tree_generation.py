@@ -43,6 +43,24 @@ def _callable_plan():
     )
 
 
+def _puttable_plan():
+    return build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="rate_tree",
+            method_modules=["trellis.models.trees.lattice"],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="puttable_bond",
+            reasoning="test",
+        ),
+        instrument_type="puttable_bond",
+        inspected_modules=("trellis.models.trees.lattice",),
+        product_ir=decompose_to_ir(
+            "Puttable bond with semiannual coupon and put schedule",
+            instrument_type="puttable_bond",
+        ),
+    )
+
+
 def _bermudan_plan():
     return build_generation_plan(
         pricing_plan=PricingPlan(
@@ -89,6 +107,62 @@ def test_callable_artifact_is_rate_tree_route_compliant():
         generation_plan=_callable_plan(),
     )
     assert report.ok
+
+
+def test_puttable_artifact_is_rate_tree_route_compliant():
+    report = validate_semantics(
+        _artifact_source("puttablebond.py"),
+        product_ir=decompose_to_ir(
+            "Puttable bond with semiannual coupon and put schedule",
+            instrument_type="puttable_bond",
+        ),
+        generation_plan=_puttable_plan(),
+    )
+    assert report.ok
+
+
+def test_callable_and_puttable_artifacts_own_primitive_composition():
+    required_symbols = {
+        "resolve_short_rate_lattice_inputs",
+        "build_embedded_fixed_income_event_timeline",
+        "compile_embedded_fixed_income_lattice_contract_spec",
+        "build_lattice",
+        "price_on_lattice",
+        "present_value_fixed_coupon_bond",
+    }
+    for artifact_name in ("callablebond.py", "puttablebond.py"):
+        source = _artifact_source(artifact_name)
+        assert "price_callable_bond_tree" not in source
+        for symbol in required_symbols:
+            assert symbol in source
+
+    assert 'expected_control_style="issuer_min"' in _artifact_source(
+        "callablebond.py"
+    )
+    assert 'expected_control_style="holder_max"' in _artifact_source(
+        "puttablebond.py"
+    )
+
+
+def test_callable_artifact_wrong_declared_control_fails_semantic_validation():
+    source = _artifact_source("callablebond.py").replace(
+        'expected_control_style="issuer_min"',
+        'expected_control_style="holder_max"',
+    )
+
+    report = validate_semantics(
+        source,
+        product_ir=decompose_to_ir(
+            "Callable bond with semiannual coupon and call schedule",
+            instrument_type="callable_bond",
+        ),
+        generation_plan=_callable_plan(),
+    )
+
+    assert any(
+        issue.code == "lattice.exercise_objective_mismatch"
+        for issue in report.issues
+    )
 
 
 def test_bermudan_artifact_is_rate_tree_route_compliant():

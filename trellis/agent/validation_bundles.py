@@ -419,17 +419,28 @@ def _has_explicit_callable_comparison_calibration(test_payoff: Any | None) -> bo
     bindings = getattr(test_payoff, "__trellis_comparison_bindings__", None)
     if not isinstance(bindings, Mapping):
         return False
-    callable_backends = {
-        "trellis.models.callable_bond_pde.price_callable_bond_pde",
-        "trellis.models.callable_bond_tree.price_callable_bond_tree",
-    }
     for raw_binding in bindings.values():
         if not isinstance(raw_binding, Mapping):
             continue
         target_contract = raw_binding.get("target_contract")
         if not isinstance(target_contract, Mapping):
             continue
-        if target_contract.get("backend_binding_id") not in callable_backends:
+        backend_binding_id = str(
+            target_contract.get("backend_binding_id") or ""
+        ).strip()
+        is_callable_pde = (
+            backend_binding_id
+            == "trellis.models.callable_bond_pde.price_callable_bond_pde"
+        )
+        is_embedded_fixed_income_lattice = (
+            backend_binding_id
+            == "trellis.models.trees.algebra.price_on_lattice"
+            and target_contract.get("payoff_family")
+            in {"callable_fixed_income", "puttable_fixed_income"}
+            and target_contract.get("exercise_style")
+            in {"issuer_call", "holder_put"}
+        )
+        if not (is_callable_pde or is_embedded_fixed_income_lattice):
             continue
         variants = target_contract.get("variant_parameters")
         if not isinstance(variants, Mapping):

@@ -1564,7 +1564,7 @@ def test_description_spec_defaults_extract_cap_model_fields(
         assert defaults[key] == expected
 
 
-def test_deterministic_exact_binding_module_materializes_callable_bond_tree_wrapper():
+def test_deterministic_exact_binding_module_materializes_callable_bond_primitive_composition():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
         _generate_skeleton,
@@ -1573,8 +1573,8 @@ def test_deterministic_exact_binding_module_materializes_callable_bond_tree_wrap
     from trellis.agent.planner import STATIC_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=("trellis.models.callable_bond_tree.price_callable_bond_tree",),
-        primitive_plan=None,
+        lane_exact_binding_refs=("trellis.models.trees.algebra.price_on_lattice",),
+        primitive_plan=SimpleNamespace(route="exercise_lattice", primitives=()),
         method="rate_tree",
         instrument_type="callable_bond",
     )
@@ -1590,11 +1590,48 @@ def test_deterministic_exact_binding_module_materializes_callable_bond_tree_wrap
     )
 
     assert generated is not None
-    assert 'return price_callable_bond_tree(market_state, spec, model="hull_white")' in generated.code
+    assert "price_callable_bond_tree" not in generated.code
+    assert "resolve_short_rate_lattice_inputs(" in generated.code
+    assert "build_embedded_fixed_income_event_timeline(" in generated.code
+    assert "compile_embedded_fixed_income_lattice_contract_spec(" in generated.code
+    assert "price_on_lattice(" in generated.code
+    assert "present_value_fixed_coupon_bond(" in generated.code
+    assert 'expected_control_style="issuer_min"' in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
-def test_deterministic_callable_bond_tree_wrapper_binds_declared_lattice_model():
+def test_deterministic_exact_binding_module_materializes_puttable_bond_primitive_composition():
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=("trellis.models.trees.algebra.price_on_lattice",),
+        primitive_plan=SimpleNamespace(route="exercise_lattice", primitives=()),
+        method="rate_tree",
+        instrument_type="puttable_bond",
+    )
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["puttable_bond"],
+        "Puttable bond tree",
+        generation_plan=generation_plan,
+    )
+
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "price_callable_bond_tree" not in generated.code
+    assert 'expected_control_style="holder_max"' in generated.code
+    assert 'if event_timeline.exercise.reference_bound != "lower"' in generated.code
+    assert "return max(tree_price, straight_price)" in generated.code
+
+
+def test_deterministic_callable_bond_tree_composition_binds_declared_lattice_model():
     from trellis.agent.comparison_target_contracts import ComparisonTargetContract
     from trellis.agent.executor import (
         _generate_skeleton,
@@ -1609,9 +1646,9 @@ def test_deterministic_callable_bond_tree_wrapper_binds_declared_lattice_model()
     )
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(
-            "trellis.models.callable_bond_tree.price_callable_bond_tree",
+            "trellis.models.trees.algebra.price_on_lattice",
         ),
-        primitive_plan=None,
+        primitive_plan=SimpleNamespace(route="exercise_lattice", primitives=()),
         method="rate_tree",
         instrument_type="callable_bond",
     )
@@ -1631,9 +1668,8 @@ def test_deterministic_callable_bond_tree_wrapper_binds_declared_lattice_model()
     )
 
     assert generated is not None
-    assert 'return price_callable_bond_tree(market_state, spec, model="bdt")' in (
-        generated.code
-    )
+    assert 'model="bdt"' in generated.code
+    assert "price_callable_bond_tree" not in generated.code
 
 
 def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
@@ -1647,9 +1683,9 @@ def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
     )
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(
-            "trellis.models.callable_bond_tree.price_callable_bond_tree",
+            "trellis.models.trees.algebra.price_on_lattice",
         ),
-        primitive_plan=None,
+        primitive_plan=SimpleNamespace(route="exercise_lattice", primitives=()),
         method="rate_tree",
         instrument_type="callable_bond",
     )
@@ -1682,7 +1718,7 @@ def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
         ),
         (
             "rate_tree",
-            "trellis.models.callable_bond_tree.price_callable_bond_tree",
+            "trellis.models.trees.algebra.price_on_lattice",
             "hw_rate_tree",
             {
                 "pricing_method": "rate_tree",
@@ -1690,8 +1726,7 @@ def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
                 "mean_reversion": 0.1,
                 "sigma": 0.01,
             },
-            'return price_callable_bond_tree(market_state, spec, model="hull_white", '
-            "mean_reversion=0.1, sigma=0.01)",
+            "mean_reversion=0.1",
         ),
     ],
 )
@@ -1716,7 +1751,11 @@ def test_deterministic_callable_bond_targets_bind_shared_hull_white_parameters(
     )
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(binding_ref,),
-        primitive_plan=None,
+        primitive_plan=(
+            SimpleNamespace(route="exercise_lattice", primitives=())
+            if method == "rate_tree"
+            else None
+        ),
         method=method,
         instrument_type="callable_bond",
     )
@@ -1736,7 +1775,11 @@ def test_deterministic_callable_bond_targets_bind_shared_hull_white_parameters(
     )
 
     assert generated is not None
+    ast.parse(generated.code)
     assert expected_call in generated.code
+    if method == "rate_tree":
+        assert "sigma=0.01" in generated.code
+        assert "price_callable_bond_tree" not in generated.code
 
 
 def test_deterministic_callable_bond_target_rejects_unbound_named_parameter_set():

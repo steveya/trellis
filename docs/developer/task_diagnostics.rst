@@ -446,7 +446,8 @@ bound-style routes:
 
 - analytical swaptions against the retained Black76 reference
 - analytical zero-coupon-bond options against the Jamshidian helper
-- callable and puttable rate-tree bonds against the straight-bond bound helper
+- callable and puttable rate-tree bonds against the straight-bond reference
+  relation produced by the reusable fixed-income PV primitive
 
 The packet should therefore show the oracle id, source, relation, tolerance,
 sampled scenario prices, and maximum observed deviation when that checkpoint

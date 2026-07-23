@@ -337,7 +337,7 @@ defined in the skeleton.
 - For CDS / nth-to-default: use `market_state.credit_curve.survival_probability(t)` and `market_state.credit_curve.hazard_rate(t)` on an explicit payment/default schedule; do not route credit-default pricing through Black76 call/put primitives.
 - For equity trees: resolve scalar inputs with `resolve_single_state_diffusion_inputs`, declare the claim with `equity_tree`, attach `with_control`, then use `compile_lattice_recipe`, `build_lattice`, and `price_on_lattice`
 - For vanilla European PDE routes: compose `resolve_single_state_diffusion_inputs`, `terminal_intrinsic_from_resolved`, `EventAwarePDEProblemSpec`, `build_event_aware_pde_problem`, `solve_event_aware_pde`, and `interpolate_pde_values`
-- For rate lattices: prefer helper surfaces such as `price_callable_bond_tree(...)`, `price_bermudan_swaption_tree(...)`, or `price_zcb_option_tree(...)`; the lower-level fallback is `from trellis.models.trees.lattice import build_rate_lattice, lattice_backward_induction`
+- For rate lattices: follow the selected route card and compose its market resolver, topology, mesh, calibration target, contract compiler, and generic rollback primitive; do not default to a product-specific pricing wrapper
 - For schedule-dependent rate lattices: `from trellis.models.trees.control import lattice_steps_from_timeline, resolve_lattice_exercise_policy`
 - For MC: `from trellis.models.monte_carlo import MonteCarloEngine`
 - For QMC accelerators: `from trellis.models.qmc import sobol_normals, brownian_bridge`
@@ -529,32 +529,20 @@ def _render_family_route_guidance(
     if instrument_type == "callable_bond" and method == "rate_tree":
         lines.append("## Family Route Guidance")
         lines.extend([
-            "- Prefer the checked-in callable-bond helper surface in `trellis.models.callable_bond_tree`: `price_callable_bond_tree(market_state, spec, model=\"hull_white\"|\"bdt\")` or the lower-level `build_callable_bond_lattice(...)` + `price_callable_bond_on_lattice(...)`.",
-            "- For callable rate-tree routes, treat lattice control as a checked-in contract: import `build_payment_timeline`, `build_exercise_timeline_from_dates`, `lattice_steps_from_timeline`, `lattice_step_from_time`, and `resolve_lattice_exercise_policy` from `trellis.models.trees.control`.",
-            "- Read the short-rate seed from `market_state.discount.zero_rate(...)`. Do not call `market_state.zero_rate(...)` directly.",
-            "- Keep rate-vol access explicit in the body: bind `black_vol = float(market_state.vol_surface.black_vol(max(T / 2.0, 1e-6), max(r0, 1e-6)))` before converting it to the tree volatility parameter.",
-            "- For explicit BDT / Hull-White comparison routes, prefer `price_callable_bond_tree(..., model=\"bdt\"|\"hull_white\")`. If you must build the tree directly, import `build_generic_lattice` from `trellis.models.trees.lattice` and `MODEL_REGISTRY` from `trellis.models.trees.models`; use `MODEL_REGISTRY[\"bdt\"]` for `bdt_tree` and `MODEL_REGISTRY[\"hull_white\"]` for `hull_white_tree`.",
-            "- Use `build_rate_lattice(r0, sigma_hw, mean_reversion, T, n_steps, discount_curve=market_state.discount)` only for the plain Hull-White helper route; do not invent keyword-only variants like `maturity=...` or `steps=...`.",
-            "- Treat `trellis.models.trees.control` as the canonical lattice-timeline facade. Build payment and exercise timelines there. Map the multi-date exercise timeline with `lattice_steps_from_timeline(..., dt=lattice.dt, n_steps=lattice.n_steps)`, and map individual payment/maturity events with `lattice_step_from_time(..., dt=lattice.dt, n_steps=lattice.n_steps, allow_terminal_step=True)`.",
-            "- Resolve callable exercise with `exercise_policy = resolve_lattice_exercise_policy(\"issuer_call\", exercise_steps=...)`.",
-            "- Call `lattice_backward_induction(lattice, terminal_payoff, exercise_value=..., cashflow_at_node=..., exercise_policy=...)`. Do not use legacy names like `terminal_value=` or `exercise_value_fn=`.",
-            "- `terminal_payoff(step, node, lattice)` should return principal plus the final coupon at maturity. Do not key the terminal payoff off the node index or collapse it to a coupon-only lookup.",
-            "- Coupon cashflows belong to tree steps, not nodes. Build a `coupon_by_step` map from the payment timeline, using `lattice_step_from_time(...)` for individual coupon/maturity steps, and read from it inside `cashflow_at_node(step, node, lattice)`.",
-            "- Pass `exercise_policy=exercise_policy` into `lattice_backward_induction(...)` instead of open-coding `exercise_type`, `exercise_steps`, and `exercise_fn=min` separately.",
-            "- Keep the callable route thin: lattice builder, explicit coupon/exercise timelines, exercise-value callback, and checked-in lattice control only.",
-            "- Do not invent a local exercise convention or holder-maximizing objective for callable bonds. `issuer_call` must map to Bermudan schedule control with the issuer minimizing liability.",
+            "- Resolve settlement and maturity, then call `resolve_short_rate_lattice_inputs(...)`; this public resolver owns curve, volatility, calibrated parameter, and step binding.",
+            "- Select the resolved model from `MODEL_REGISTRY` and compose `BINOMIAL_1F_TOPOLOGY`, `UNIFORM_ADDITIVE_MESH`, `TERM_STRUCTURE_TARGET(market_state.discount)`, and `build_lattice(...)`.",
+            "- Build one timeline with `build_embedded_fixed_income_event_timeline(...)` and pass that same object to `compile_embedded_fixed_income_lattice_contract_spec(..., expected_control_style=\"issuer_min\", dt=lattice.dt, n_steps=lattice.n_steps)`.",
+            "- Roll back with `price_on_lattice(...)`, compute the straight-bond reference with `present_value_fixed_coupon_bond(...)`, and enforce the callable holder-value upper bound with `min(tree_price, straight_price)`.",
+            "- `price_callable_bond_tree` is only a compatibility reference. Do not call it from new generated routes.",
         ])
 
     if instrument_type == "puttable_bond" and method == "rate_tree":
         lines.append("## Family Route Guidance")
         lines.extend([
-            "- Prefer the checked-in embedded-bond helper surface in `trellis.models.callable_bond_tree`: `price_callable_bond_tree(market_state, spec, model=\"hull_white\"|\"bdt\")` supports puttable bond specs with `put_dates` and `put_price`.",
-            "- If you need the lower-level lattice path, keep `trellis.models.trees.control` as the canonical lattice-timeline facade: use `build_exercise_timeline_from_dates(...)`, `lattice_steps_from_timeline(...)`, and `resolve_lattice_exercise_policy(\"holder_put\", exercise_steps=...)`.",
-            "- Do not pass `exercise_fn=` into `resolve_lattice_exercise_policy(...)`. Holder-put max/min semantics are already encoded by `resolve_lattice_exercise_policy(\"holder_put\", ...)`.",
-            "- If you call `lattice_backward_induction(...)` directly, pass `exercise_policy=exercise_policy` and let the checked-in policy carry the holder-max objective. Do not open-code a second holder exercise function or drift to issuer-minimizing semantics.",
-            "- Keep rate-vol access explicit in the body with `market_state.vol_surface.black_vol(...)`, and read the short-rate seed from `market_state.discount.zero_rate(...)`.",
-            "- Build the put exercise schedule from explicit dates only. Use the typed `put_dates` tuple directly or normalize it through `build_exercise_timeline_from_dates(...)`; do not rebuild comma-separated strings.",
-            "- Treat the puttable route as a thin adapter over the shared embedded-bond helper or the checked-in lattice-control contract. Do not invent bespoke exercise conventions inline.",
+            "- Use the same public short-rate resolver and generic lattice composition as callable bonds; do not delegate to the callable-bond compatibility wrapper.",
+            "- Build one embedded event timeline and compile it with `expected_control_style=\"holder_max\"` so a callable-style issuer-min objective fails closed.",
+            "- Roll back with `price_on_lattice(...)`, value the straight bond with `present_value_fixed_coupon_bond(...)`, and enforce the puttable holder-value lower bound with `max(tree_price, straight_price)`.",
+            "- Keep the typed `put_dates` and `put_price` on the spec; the shared event compiler owns schedule mapping and quoted-price conversion.",
         ])
 
     if instrument_type == "bermudan_swaption" and method == "rate_tree":

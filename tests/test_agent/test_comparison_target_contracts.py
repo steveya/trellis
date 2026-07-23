@@ -103,7 +103,7 @@ def test_callable_fixed_income_targets_have_explicit_executable_contracts():
     assert t02["bdt_tree"].route_id == "exercise_lattice"
     assert t02["bdt_tree"].route_family == "rate_lattice"
     assert t02["bdt_tree"].backend_binding_id == (
-        "trellis.models.callable_bond_tree.price_callable_bond_tree"
+        "trellis.models.trees.algebra.price_on_lattice"
     )
     assert t02["bdt_tree"].validation_bundle_id == "rate_tree:callable_bond"
     assert t02["bdt_tree"].variant_parameters == {"lattice_model": "bdt"}
@@ -122,6 +122,9 @@ def test_callable_fixed_income_targets_have_explicit_executable_contracts():
     assert set(t05) == {"puttable_tree"}
     assert t05["puttable_tree"].explicit is True
     assert t05["puttable_tree"].route_id == "exercise_lattice"
+    assert t05["puttable_tree"].backend_binding_id == (
+        "trellis.models.trees.algebra.price_on_lattice"
+    )
     assert t05["puttable_tree"].validation_bundle_id == "rate_tree:puttable_bond"
     assert t05["puttable_tree"].payoff_family == "puttable_fixed_income"
     assert t05["puttable_tree"].exercise_style == "holder_put"
@@ -145,6 +148,9 @@ def test_callable_fixed_income_targets_have_explicit_executable_contracts():
         "sigma": 0.01,
     }
     assert t17["hw_rate_tree"].method == "rate_tree"
+    assert t17["hw_rate_tree"].backend_binding_id == (
+        "trellis.models.trees.algebra.price_on_lattice"
+    )
     assert t17["hw_rate_tree"].variant_parameters == {
         "pricing_method": "rate_tree",
         "lattice_model": "hull_white",

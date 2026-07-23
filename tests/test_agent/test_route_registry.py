@@ -1423,22 +1423,45 @@ class TestRateTreeRoutes:
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         new_prims = resolve_route_primitives(spec, self.CALLABLE_IR)
         expected_prims = {
-            ("trellis.models.callable_bond_tree", "price_callable_bond_tree", "route_helper"),
+            ("trellis.core.date_utils", "year_fraction", "timeline_mapping"),
+            ("trellis.models.short_rate_lattice", "resolve_short_rate_lattice_inputs", "market_binding"),
+            ("trellis.models.trees.models", "MODEL_REGISTRY", "model_registry"),
+            ("trellis.models.trees.algebra", "BINOMIAL_1F_TOPOLOGY", "topology"),
+            ("trellis.models.trees.algebra", "UNIFORM_ADDITIVE_MESH", "mesh"),
+            ("trellis.models.trees.algebra", "TERM_STRUCTURE_TARGET", "calibration_target"),
+            ("trellis.models.trees.algebra", "build_lattice", "lattice_builder"),
+            ("trellis.models.short_rate_fixed_income", "settlement_date_for_fixed_income_claim", "settlement_binding"),
+            ("trellis.models.short_rate_fixed_income", "build_embedded_fixed_income_event_timeline", "event_timeline_builder"),
+            ("trellis.models.short_rate_fixed_income", "compile_embedded_fixed_income_lattice_contract_spec", "contract_compiler"),
+            ("trellis.models.trees.algebra", "price_on_lattice", "pricing_kernel"),
+            ("trellis.models.short_rate_fixed_income", "present_value_fixed_coupon_bond", "reference_bound"),
+            ("trellis.models.callable_bond_tree", "price_callable_bond_tree", "compatibility_reference"),
         }
         assert _prim_set(new_prims) == expected_prims
+        retained_wrapper = next(
+            primitive
+            for primitive in new_prims
+            if primitive.symbol == "price_callable_bond_tree"
+        )
+        assert not retained_wrapper.required
+        assert retained_wrapper.excluded
 
-    def test_callable_bond_helper_route_is_thin(self, registry):
+    def test_callable_bond_route_documents_explicit_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         notes = resolve_route_notes(spec, self.CALLABLE_IR)
-        assert notes == ()
+        rendered = "\n".join(notes)
+        assert "resolve_short_rate_lattice_inputs" in rendered
+        assert "issuer_min" in rendered
+        assert "compatibility" in rendered
 
     def test_puttable_bond_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         new_prims = resolve_route_primitives(spec, self.PUTTABLE_IR)
-        expected_prims = {
-            ("trellis.models.callable_bond_tree", "price_callable_bond_tree", "route_helper"),
-        }
-        assert _prim_set(new_prims) == expected_prims
+        callable_prims = resolve_route_primitives(spec, self.CALLABLE_IR)
+        assert _prim_set(new_prims) == _prim_set(callable_prims)
+        rendered = "\n".join(resolve_route_notes(spec, self.PUTTABLE_IR))
+        assert "holder_max" in rendered
+        assert "lower" in rendered
 
     def test_bermudan_swaption_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]

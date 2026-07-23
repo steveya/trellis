@@ -1443,6 +1443,17 @@ def _build_exercise_lattice_expr_from_family_ir(
             bindings=bindings,
         )
 
+    if (
+        family_ir.product_instrument in {"callable_bond", "puttable_bond"}
+        and not family_ir.helper_symbol
+    ):
+        return _build_embedded_fixed_income_lattice_expr_from_family_ir(
+            route_id=route_id,
+            binding_id=binding_id,
+            family_ir=family_ir,
+            bindings=bindings,
+        )
+
     route_helper = next(
         (
             binding
@@ -1499,6 +1510,99 @@ def _build_exercise_lattice_expr_from_family_ir(
         description=(
             f"Immediate exercise/call branch for typed {family_ir.exercise_style} "
             "exercise-lattice route."
+        ),
+    )
+    return ChoiceExpr(
+        style=control_style,
+        branches=(continuation, exercise),
+        label=family_ir.exercise_style or route_id,
+    ), ()
+
+
+def _build_embedded_fixed_income_lattice_expr_from_family_ir(
+    *,
+    route_id: str,
+    binding_id: str,
+    family_ir: ExerciseLatticeIR,
+    bindings: tuple[DslTargetBinding, ...],
+) -> tuple[ContractExpr | None, tuple[str, ...]]:
+    """Build the explicit generic-lattice contract for callable/puttable bonds."""
+    required_symbols = (
+        "year_fraction",
+        "resolve_short_rate_lattice_inputs",
+        "MODEL_REGISTRY",
+        "BINOMIAL_1F_TOPOLOGY",
+        "UNIFORM_ADDITIVE_MESH",
+        "TERM_STRUCTURE_TARGET",
+        "build_lattice",
+        "settlement_date_for_fixed_income_claim",
+        "build_embedded_fixed_income_event_timeline",
+        "compile_embedded_fixed_income_lattice_contract_spec",
+        "price_on_lattice",
+        "present_value_fixed_coupon_bond",
+    )
+    required_bindings = {
+        symbol: next(
+            (binding for binding in bindings if binding.symbol == symbol),
+            None,
+        )
+        for symbol in required_symbols
+    }
+    missing = tuple(
+        symbol for symbol, binding in required_bindings.items() if binding is None
+    )
+    if missing:
+        return None, tuple(
+            _missing_primitive_message(
+                route_id,
+                binding_id,
+                "embedded fixed-income lattice",
+                symbol,
+            )
+            for symbol in missing
+        )
+
+    control_style = _control_style_from_family_ir(family_ir)
+    if control_style not in {ControlStyle.ISSUER_MIN, ControlStyle.HOLDER_MAX}:
+        return None, (
+            f"Route '{route_id}' requires issuer_min or holder_max embedded fixed-income control.",
+        )
+
+    market_signature = _market_signature_from_family_ir(family_ir)
+    branch_signature = ContractSignature(
+        inputs=market_signature.inputs,
+        outputs=("value:scalar",),
+        timeline_roles=market_signature.timeline_roles
+        | {TimelineRole.EXERCISE, TimelineRole.PAYMENT},
+        market_data_requirements=market_signature.market_data_requirements,
+    )
+    pricing_kernel = required_bindings["price_on_lattice"]
+    contract_compiler = required_bindings[
+        "compile_embedded_fixed_income_lattice_contract_spec"
+    ]
+    assert pricing_kernel is not None
+    assert contract_compiler is not None
+    continuation = ContractAtom(
+        atom_id=f"{family_ir.route_family}:continuation",
+        primitive_ref=pricing_kernel.primitive_ref,
+        signature=branch_signature,
+        description=(
+            "Rollback the compiled coupon and exercise contract on the calibrated "
+            "generic short-rate lattice."
+        ),
+    )
+    branch_label = (
+        "exercise_now"
+        if control_style is ControlStyle.ISSUER_MIN
+        else "exercise_or_keep"
+    )
+    exercise = ContractAtom(
+        atom_id=f"{family_ir.route_family}:{branch_label}",
+        primitive_ref=contract_compiler.primitive_ref,
+        signature=branch_signature,
+        description=(
+            "Compile the embedded event timeline with an explicit fail-closed "
+            f"{family_ir.control_style} control assertion."
         ),
     )
     return ChoiceExpr(

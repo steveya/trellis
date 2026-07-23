@@ -1050,12 +1050,12 @@ def test_accepts_callable_lattice_with_policy_helper():
     assert report.ok
 
 
-def test_accepts_helper_only_callable_route_without_low_level_lattice_contract():
+def test_rejects_helper_only_callable_route_without_primitive_composition():
     from trellis.agent.semantic_validation import validate_semantics
 
     pricing_plan = PricingPlan(
         method="rate_tree",
-        method_modules=["trellis.models.callable_bond_tree"],
+        method_modules=["trellis.models.trees.algebra"],
         required_market_data={"discount_curve", "black_vol_surface"},
         model_to_build="callable_bond",
         reasoning="test",
@@ -1067,7 +1067,7 @@ def test_accepts_helper_only_callable_route_without_low_level_lattice_contract()
     generation_plan = build_generation_plan(
         pricing_plan=pricing_plan,
         instrument_type="callable_bond",
-        inspected_modules=("trellis.models.callable_bond_tree",),
+        inspected_modules=("trellis.models.trees.algebra",),
         product_ir=product_ir,
     )
 
@@ -1078,11 +1078,9 @@ def test_accepts_helper_only_callable_route_without_low_level_lattice_contract()
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "lattice.exercise_type_mismatch" not in issue_codes
-    assert "lattice.exercise_schedule_missing" not in issue_codes
-    assert "lattice.exercise_objective_mismatch" not in issue_codes
-    assert "engine.family_incompatible_with_ir" not in issue_codes
-    assert report.ok
+    assert "assembly.excluded_primitive_used" in issue_codes
+    assert "assembly.required_primitive_missing" in issue_codes
+    assert not report.ok
 
 
 def test_rejects_helper_only_equity_tree_route_without_required_algebra_primitives():

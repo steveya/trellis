@@ -924,14 +924,15 @@ not relax the resolver to generic aliases, so a route that cannot consume the
 real named contract fails during validation rather than passing on a broader
 fixture.
 
-For helper-backed comparison routes, the build loop now also prefers
-deterministic exact wrappers over open-ended adapter synthesis. Those wrappers
-thread semantic comparison-regime bindings such as explicit Hull-White
-parameters through the analytical, tree, and Monte Carlo helper calls, and
-they can attach stable comparison sampling controls for Monte Carlo lanes. This
-keeps comparison failures concentrated on real model/regime mismatches instead
-of letting generated adapter drift reintroduce stale imports or route-local
-numerical defaults.
+For exact comparison routes, deterministic materialization binds declared
+comparison parameters to the admitted backend surface before open-ended adapter
+synthesis. That surface may be a checked kernel or an explicit primitive
+composition. Callable and puttable rate-tree targets use the latter: the
+materializer emits the short-rate resolver, model registry, generic calibrated
+lattice, embedded event-contract compiler, generic rollback, and straight-bond
+bound check. It never emits the callable-bond compatibility wrapper. This keeps
+comparison failures concentrated on real model/regime mismatches without
+reintroducing route-local numerical defaults.
 
 The lower-layer cleanup tranches now apply primitive composition to FX and
 quanto routes as well. For quanto, the semantic compiler points analytical

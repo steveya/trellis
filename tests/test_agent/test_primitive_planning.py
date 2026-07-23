@@ -845,8 +845,27 @@ def test_builds_exercise_lattice_plan_for_callable_bond():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "exercise_lattice"
     assert plan.primitive_plan.engine_family == "lattice"
-    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_callable_bond_tree"}
+    primitive_symbols = {
+        primitive.symbol
+        for primitive in plan.primitive_plan.primitives
+        if primitive.required
+    }
+    assert primitive_symbols == {
+        "year_fraction",
+        "resolve_short_rate_lattice_inputs",
+        "MODEL_REGISTRY",
+        "BINOMIAL_1F_TOPOLOGY",
+        "UNIFORM_ADDITIVE_MESH",
+        "TERM_STRUCTURE_TARGET",
+        "build_lattice",
+        "settlement_date_for_fixed_income_claim",
+        "build_embedded_fixed_income_event_timeline",
+        "compile_embedded_fixed_income_lattice_contract_spec",
+        "price_on_lattice",
+        "present_value_fixed_coupon_bond",
+    }
+    assert "price_callable_bond_tree" not in plan.symbols_to_reuse
+    assert "trellis.models.short_rate_fixed_income" in plan.approved_modules
     assert plan.primitive_plan.adapters == ()
     assert plan.primitive_plan.blockers == ()
 
@@ -876,9 +895,21 @@ def test_builds_exercise_lattice_plan_for_puttable_bond():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "exercise_lattice"
     assert plan.primitive_plan.engine_family == "lattice"
-    primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert primitive_symbols == {"price_callable_bond_tree"}
-    assert "trellis.models.callable_bond_tree" in plan.approved_modules
+    primitive_symbols = {
+        primitive.symbol
+        for primitive in plan.primitive_plan.primitives
+        if primitive.required
+    }
+    assert "price_callable_bond_tree" not in primitive_symbols
+    assert {
+        "resolve_short_rate_lattice_inputs",
+        "build_embedded_fixed_income_event_timeline",
+        "compile_embedded_fixed_income_lattice_contract_spec",
+        "price_on_lattice",
+        "present_value_fixed_coupon_bond",
+    } <= primitive_symbols
+    assert "trellis.models.callable_bond_tree" not in plan.approved_modules
+    assert "trellis.models.short_rate_fixed_income" in plan.approved_modules
     assert "tests/test_tasks/test_t05_puttable_bond.py" in plan.proposed_tests
 
 
