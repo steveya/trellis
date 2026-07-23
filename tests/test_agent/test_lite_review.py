@@ -414,6 +414,64 @@ def price(spec, market_state):
     assert "lite.hardcoded_black_vol_surface" not in issue_codes
 
 
+def test_lite_review_allows_callable_calibration_only_when_it_matches_target_contract():
+    from trellis.agent.lite_review import review_generated_code
+    from trellis.agent.quant import PricingPlan
+
+    source = """\
+from trellis.models.callable_bond_pde import price_callable_bond_pde
+
+def price(spec, market_state):
+    return price_callable_bond_pde(
+        market_state,
+        spec,
+        mean_reversion=0.1,
+        sigma=0.01,
+        theta=0.5,
+    )
+"""
+    pricing_plan = PricingPlan(
+        method="pde_solver",
+        method_modules=["trellis.models.callable_bond_pde"],
+        required_market_data={"discount_curve", "black_vol_surface"},
+        model_to_build="callable_bond",
+        reasoning="test",
+    )
+    generation_plan = SimpleNamespace(primitive_plan=None)
+    matching_contract = {
+        "variant_parameters": {
+            "model_parameter_set": "comparison:hull_white",
+            "mean_reversion": 0.1,
+            "sigma": 0.01,
+        }
+    }
+
+    matching_report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=generation_plan,
+        comparison_target_contract=matching_contract,
+    )
+    mismatched_report = review_generated_code(
+        source,
+        pricing_plan=pricing_plan,
+        generation_plan=generation_plan,
+        comparison_target_contract={
+            "variant_parameters": {
+                "mean_reversion": 0.1,
+                "sigma": 0.02,
+            }
+        },
+    )
+
+    assert "lite.hardcoded_black_vol_surface" not in {
+        issue.code for issue in matching_report.issues
+    }
+    assert "lite.hardcoded_black_vol_surface" in {
+        issue.code for issue in mismatched_report.issues
+    }
+
+
 def test_lite_review_rejects_garman_kohlhagen_without_foreign_curve_access():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan
     from trellis.agent.lite_review import review_generated_code

@@ -1677,7 +1677,8 @@ def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
                 "mean_reversion": 0.1,
                 "sigma": 0.01,
             },
-            "return price_callable_bond_pde(market_state, spec, theta=0.5)",
+            "return price_callable_bond_pde(market_state, spec, "
+            "mean_reversion=0.1, sigma=0.01, theta=0.5)",
         ),
         (
             "rate_tree",
@@ -1689,7 +1690,8 @@ def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
                 "mean_reversion": 0.1,
                 "sigma": 0.01,
             },
-            'return price_callable_bond_tree(market_state, spec, model="hull_white")',
+            'return price_callable_bond_tree(market_state, spec, model="hull_white", '
+            "mean_reversion=0.1, sigma=0.01)",
         ),
     ],
 )
@@ -1735,6 +1737,37 @@ def test_deterministic_callable_bond_targets_bind_shared_hull_white_parameters(
 
     assert generated is not None
     assert expected_call in generated.code
+
+
+def test_deterministic_callable_bond_target_rejects_unbound_named_parameter_set():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _deterministic_exact_binding_evaluate_body
+
+    contract = ComparisonTargetContract(
+        target_id="named_hw_pde",
+        method="pde_solver",
+        variant_parameters={"model_parameter_set": "comparison:hull_white"},
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.callable_bond_pde.price_callable_bond_pde",
+        ),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type="callable_bond",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="model_parameter_set requires explicit mean_reversion and sigma",
+    ):
+        _deterministic_exact_binding_evaluate_body(
+            generation_plan,
+            request_metadata={
+                "comparison_target_contract": contract.to_payload(),
+            },
+            comparison_target="named_hw_pde",
+        )
 
 
 def test_deterministic_callable_bond_pde_rejects_invalid_theta_variant():

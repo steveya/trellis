@@ -13,6 +13,7 @@ import time
 from dataclasses import MISSING, asdict, dataclass, fields, is_dataclass, replace as replace_dataclass
 from datetime import date, datetime
 from importlib import import_module
+from math import isfinite
 from pathlib import Path
 from typing import Any, Callable, Mapping, Sequence, get_args, get_origin
 from types import SimpleNamespace
@@ -2216,6 +2217,9 @@ def build_payoff(
             pricing_plan=pricing_plan,
             product_ir=product_ir,
             generation_plan=generation_plan,
+            comparison_target_contract=(request_metadata or {}).get(
+                "comparison_target_contract"
+            ),
         )
         _record_platform_event(
             compiled_request,
@@ -5678,6 +5682,41 @@ def _deterministic_exact_binding_evaluate_body(
         if isinstance(raw_target_contract, Mapping)
         else {}
     )
+    callable_bond_binding_refs = {
+        "trellis.models.callable_bond_pde.price_callable_bond_pde",
+        "trellis.models.callable_bond_tree.price_callable_bond_tree",
+    }
+    has_callable_bond_exact_binding = bool(refs & callable_bond_binding_refs)
+    callable_bond_calibration_kwargs: list[str] = []
+    if has_callable_bond_exact_binding:
+        for variant_name in ("mean_reversion", "sigma"):
+            if variant_name not in target_variants:
+                continue
+            try:
+                variant_value = float(target_variants[variant_name])
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"Callable-bond {variant_name} must be a finite number"
+                ) from exc
+            if not isfinite(variant_value):
+                raise ValueError(
+                    f"Callable-bond {variant_name} must be a finite number"
+                )
+            callable_bond_calibration_kwargs.append(
+                f"{variant_name}={variant_value!r}"
+            )
+    declared_callable_bond_parameter_set = str(
+        target_variants.get("model_parameter_set") or ""
+    ).strip()
+    if (
+        has_callable_bond_exact_binding
+        and declared_callable_bond_parameter_set
+        and not {"mean_reversion", "sigma"}.issubset(target_variants)
+    ):
+        raise ValueError(
+            "Callable-bond model_parameter_set requires explicit "
+            "mean_reversion and sigma variants"
+        )
     raw_callable_bond_lattice_model = target_variants.get("lattice_model")
     callable_bond_lattice_model = str(
         raw_callable_bond_lattice_model
@@ -6728,11 +6767,25 @@ def _deterministic_exact_binding_evaluate_body(
         ),
         "trellis.models.callable_bond_pde.price_callable_bond_pde": (
             "return price_callable_bond_pde("
-            f"market_state, spec, theta={callable_bond_pde_theta!r})"
+            "market_state, spec, "
+            + ", ".join(
+                (
+                    *callable_bond_calibration_kwargs,
+                    f"theta={callable_bond_pde_theta!r}",
+                )
+            )
+            + ")"
         ),
         "trellis.models.callable_bond_tree.price_callable_bond_tree": (
             "return price_callable_bond_tree("
-            f'market_state, spec, model="{callable_bond_lattice_model}")'
+            "market_state, spec, "
+            + ", ".join(
+                (
+                    f'model="{callable_bond_lattice_model}"',
+                    *callable_bond_calibration_kwargs,
+                )
+            )
+            + ")"
         ),
         "trellis.models.rate_style_swaption.price_swaption_black76_raw": (
             "resolved = resolve_swaption_black76_inputs(market_state, spec"
