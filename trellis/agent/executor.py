@@ -191,16 +191,19 @@ def _comparison_execution_binding_metadata(
     route_id = str(
         getattr(generation_plan, "lowering_route_id", "")
         or getattr(primitive_plan, "route", "")
+        or getattr(validation_contract, "route_id", "")
         or ""
     ).strip()
     route_family = str(
         getattr(generation_plan, "backend_route_family", "")
         or getattr(primitive_plan, "route_family", "")
+        or getattr(validation_contract, "route_family", "")
         or ""
     ).strip()
     backend_binding_id = str(
         getattr(generation_plan, "backend_binding_id", "")
         or getattr(primitive_plan, "backend_binding_id", "")
+        or getattr(validation_contract, "backend_binding_id", "")
         or ""
     ).strip()
 
@@ -211,7 +214,7 @@ def _comparison_execution_binding_metadata(
     state_dependence = str(
         getattr(product_ir, "state_dependence", "") or ""
     ).strip()
-    if exercise_style in {"american", "bermudan"}:
+    if exercise_style in {"american", "bermudan", "issuer_call", "holder_put"}:
         observation_style = "exercise_schedule"
     elif schedule_dependence:
         observation_style = "fixed_schedule"
@@ -360,6 +363,34 @@ def _record_reused_comparison_binding(
         requested_contract=requested_contract,
         artifact_kind="cached",
         compiled_request=compiled_request,
+    )
+
+
+def _cached_artifact_declares_requested_comparison_target(
+    payoff_cls: type,
+    request_metadata: Mapping[str, object] | None,
+) -> bool:
+    """Return whether cached source proves the requested target identity."""
+    from trellis.agent.comparison_target_contracts import (
+        ComparisonTargetContract,
+        comparison_target_contracts_compatible,
+        declared_comparison_target_contract,
+    )
+
+    raw_contract = (request_metadata or {}).get("comparison_target_contract")
+    if not isinstance(raw_contract, Mapping):
+        return True
+    try:
+        expected = ComparisonTargetContract.from_payload(raw_contract)
+    except (TypeError, ValueError):
+        return False
+    declared = declared_comparison_target_contract(
+        getattr(payoff_cls, "__trellis_comparison_bindings__", None),
+        expected.target_id,
+    )
+    return declared is not None and comparison_target_contracts_compatible(
+        expected,
+        declared,
     )
 
 
@@ -1508,8 +1539,24 @@ def build_payoff(
 
     # Step 3b: Reuse supported deterministic adapters and explicit cached builds.
     existing = _try_import_existing(plan)
+    cached_target_binding_valid = (
+        existing is None
+        or _cached_artifact_declares_requested_comparison_target(
+            existing,
+            request_metadata,
+        )
+    )
+    target_bound_rematerialization = bool(
+        existing is not None
+        and not fresh_build
+        and not cached_target_binding_valid
+        and isinstance(
+            (request_metadata or {}).get("comparison_target_contract"),
+            Mapping,
+        )
+    )
     reuse_reason = None
-    if existing is not None and not fresh_build:
+    if existing is not None and not fresh_build and cached_target_binding_valid:
         if _is_deterministic_supported_route(plan):
             reuse_reason = "deterministic_supported_route"
         elif not force_rebuild:
@@ -1606,7 +1653,7 @@ def build_payoff(
             market_state=market_state,
         )
         return existing
-    if existing is not None and fresh_build:
+    if existing is not None and (fresh_build or target_bound_rematerialization):
         _record_platform_event(
             compiled_request,
             "existing_generated_module_bypassed",
@@ -1614,7 +1661,11 @@ def build_payoff(
             details={
                 "module_path": plan.steps[0].module_path if plan.steps else "",
                 "class_name": getattr(existing, "__name__", type(existing).__name__),
-                "reason": "fresh_build",
+                "reason": (
+                    "fresh_build"
+                    if fresh_build
+                    else "cached_comparison_target_binding_missing_or_incompatible"
+                ),
             },
         )
 
@@ -1841,6 +1892,7 @@ def build_payoff(
     output_file_path, output_module_path, module_name = _resolve_output_target(
         step.module_path,
         fresh_build=fresh_build,
+        isolate_comparison_target=target_bound_rematerialization,
         request_metadata=request_metadata,
     )
     if build_meta is not None:
@@ -5620,6 +5672,17 @@ def _deterministic_exact_binding_evaluate_body(
     normalized_target = str(
         comparison_target or metadata.get("comparison_target") or ""
     ).strip().lower().replace("-", "_")
+    raw_target_contract = metadata.get("comparison_target_contract")
+    target_variants = (
+        dict(raw_target_contract.get("variant_parameters") or {})
+        if isinstance(raw_target_contract, Mapping)
+        else {}
+    )
+    callable_bond_lattice_model = str(
+        target_variants.get("lattice_model") or "hull_white"
+    ).strip().lower()
+    if callable_bond_lattice_model not in {"bdt", "hull_white"}:
+        callable_bond_lattice_model = "hull_white"
     is_american_equity_option = instrument_type in {"american_put", "american_option"}
     black_scholes_vanilla_exact_binding = _is_black_scholes_vanilla_exact_binding(
         generation_plan,
@@ -6647,7 +6710,8 @@ def _deterministic_exact_binding_evaluate_body(
             "return price_callable_bond_pde(market_state, spec)"
         ),
         "trellis.models.callable_bond_tree.price_callable_bond_tree": (
-            'return price_callable_bond_tree(market_state, spec, model="hull_white")'
+            "return price_callable_bond_tree("
+            f'market_state, spec, model="{callable_bond_lattice_model}")'
         ),
         "trellis.models.rate_style_swaption.price_swaption_black76_raw": (
             "resolved = resolve_swaption_black76_inputs(market_state, spec"
@@ -8084,6 +8148,7 @@ def _resolve_output_target(
     module_path: str,
     *,
     fresh_build: bool,
+    isolate_comparison_target: bool = False,
     request_metadata: Mapping[str, object] | None,
 ) -> tuple[Path, str, str]:
     """Resolve the output file path, module path, and import name for one build.
@@ -8099,6 +8164,30 @@ def _resolve_output_target(
         normalized_module_path,
         request_metadata=request_metadata,
     )
+    if isolate_comparison_target and _is_agent_module_path(normalized_module_path):
+        metadata = dict(request_metadata or {})
+        task_id = _normalize_fresh_build_token(metadata.get("task_id")) or "task"
+        target = (
+            _normalize_fresh_build_token(metadata.get("comparison_target"))
+            or "target"
+        )
+        filename = Path(normalized_module_path).name
+        output_file_path = (
+            REPO_ROOT
+            / "task_runs"
+            / "comparison_target_artifacts"
+            / task_id
+            / target
+            / filename
+        )
+        output_module_path = str(output_file_path.relative_to(REPO_ROOT)).replace(
+            "\\", "/"
+        )
+        stem = _normalize_fresh_build_token(Path(filename).stem) or "module"
+        module_name = (
+            f"trellis_task_targets.{task_id}.{target}.{stem}"
+        )
+        return output_file_path, output_module_path, module_name
     if fresh_build and _is_agent_module_path(normalized_module_path):
         benchmark_root = _benchmark_fresh_build_root(request_metadata)
         if benchmark_root is not None:

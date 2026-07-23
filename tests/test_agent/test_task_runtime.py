@@ -1369,6 +1369,12 @@ def test_build_market_state_for_task_materializes_short_rate_comparison_regime(m
     assert regime.regime_name == "t01_short_rate_comparison"
     assert regime.hull_white_mean_reversion == pytest.approx(0.1)
     assert regime.ho_lee_mean_reversion == pytest.approx(0.0)
+    hull_white_parameters = market_state.model_parameter_sets[
+        "t01_short_rate_comparison:hull_white"
+    ]
+    assert hull_white_parameters["model_family"] == "hull_white"
+    assert hull_white_parameters["mean_reversion"] == pytest.approx(0.1)
+    assert hull_white_parameters["sigma"] == pytest.approx(0.01)
     assert market_context["provenance"]["comparison_regime"]["regime_family"] == "short_rate"
     assert market_context["provenance"]["comparison_regime"]["flat_sigma"] == pytest.approx(0.01)
 
@@ -1809,6 +1815,119 @@ def test_run_task_uses_single_construct_as_preferred_method():
     assert result["comparison_task"] is False
     assert result["preferred_method"] == "pde_solver"
     assert result["success"] is True
+
+
+def test_run_task_propagates_and_enforces_single_explicit_target_contract(tmp_path):
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.task_runtime import run_task
+
+    contract = ComparisonTargetContract(
+        target_id="puttable_tree",
+        method="rate_tree",
+        route_id="exercise_lattice",
+        route_family="rate_lattice",
+        backend_binding_id=(
+            "trellis.models.callable_bond_tree.price_callable_bond_tree"
+        ),
+        validation_bundle_id="rate_tree:puttable_bond",
+        payoff_family="puttable_fixed_income",
+        exercise_style="holder_put",
+        model_family="interest_rate",
+        observation_style="exercise_schedule",
+    )
+    task = {
+        "id": "SINGLE-TARGET",
+        "title": "Puttable bond holder exercise",
+        "construct": "lattice",
+        "cross_validate": {
+            "internal": ["puttable_tree"],
+            "target_contracts": {
+                "puttable_tree": {
+                    key: value
+                    for key, value in contract.to_payload().items()
+                    if key
+                    not in {
+                        "schema_version",
+                        "contract_id",
+                        "target_id",
+                        "resolution_source",
+                        "explicit",
+                    }
+                }
+            },
+        },
+    }
+    calls = []
+    binding_mode = {"declared": True}
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        requested_payload = kwargs["request_metadata"][
+            "comparison_target_contract"
+        ]
+
+        class BoundPuttablePayoff:
+            __trellis_comparison_bindings__ = (
+                {"puttable_tree": {"target_contract": requested_payload}}
+                if binding_mode["declared"]
+                else {}
+            )
+
+        return SimpleNamespace(
+            success=True,
+            attempts=0,
+            gap_confidence=1.0,
+            knowledge_gaps=[],
+            payoff_cls=BoundPuttablePayoff,
+            failures=[],
+            reflection={},
+            comparison_target_contract=requested_payload,
+            execution_binding={},
+            comparison_binding_evidence_source="fresh_artifact_declaration",
+            validation_binding_evidence_source="executed_validation_bundle",
+            selected_method="rate_tree",
+            selected_route_id="exercise_lattice",
+            selected_route_family="rate_lattice",
+            selected_backend_binding_id=(
+                "trellis.models.callable_bond_tree.price_callable_bond_tree"
+            ),
+            selected_validation_bundle_id="rate_tree:puttable_bond",
+            selected_semantic_axes={
+                "payoff_family": "puttable_fixed_income",
+                "exercise_style": "holder_put",
+                "model_family": "interest_rate",
+                "observation_style": "exercise_schedule",
+            },
+        )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+        task_run_storage_layout="isolated",
+    )
+
+    assert calls[0]["comparison_target"] == "puttable_tree"
+    assert calls[0]["preferred_method"] == "rate_tree"
+    assert calls[0]["request_metadata"]["comparison_target_contract"][
+        "target_id"
+    ] == "puttable_tree"
+    assert result["success"] is True
+    assert result["artifact_binding"]["status"] == "bound_unique_artifact"
+
+    binding_mode["declared"] = False
+    unbound_result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+        task_run_storage_layout="isolated",
+    )
+
+    assert unbound_result["success"] is False
+    assert unbound_result["artifact_binding"]["status"] == "unbound_artifact"
+    assert "missing_artifact_target_declaration" in unbound_result["failures"][0]
 
 
 def test_run_task_builds_each_construct_method_for_comparison_task():

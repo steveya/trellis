@@ -107,6 +107,14 @@ so pricing and tolerance checks were suppressed. The corrective action is to
 repair target binding or the missing reusable composition surface, not to widen
 the tolerance or accept matching numbers.
 
+This evidence rule also applies to an explicit single-target task. Such a row
+has no cross-method tolerance result, but its result still includes an
+``artifact_binding`` report and fails when the executable cannot prove the
+declared target contract. A stale cached adapter with a missing or incompatible
+target declaration is bypassed; the diagnosis should identify the isolated
+rematerialized artifact rather than presenting the cached source as newly
+bound evidence.
+
 Computational problem evidence
 ------------------------------
 

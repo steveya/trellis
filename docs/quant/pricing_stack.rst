@@ -108,6 +108,13 @@ thorough cached comparison builds re-execute that deterministic bundle rather
 than relying on historical validation; fast cache reuse cannot satisfy a
 target that requires bundle evidence.
 
+An explicit single target follows the same rule even though it cannot produce
+a two-method tolerance check. Its validation bundle can prove bounded product
+invariants, but the task passes only when the executable artifact also proves
+the full target contract. A cached adapter without that declaration is not
+silently relabeled: the checked binding is rematerialized into an isolated run
+artifact, leaving the admitted source untouched.
+
 Variant names are not evidence. Direct numerical coordinates such as
 ``tree_steps=2000`` are proven by exact spec instantiation. Behavioral choices
 that are not spec fields, such as selecting a polynomial rather than Laguerre
@@ -1014,6 +1021,22 @@ routes into a single pattern-keyed route ``short_rate_bond_option`` whose
 lattice helper. The route card still carries no lattice-construction or
 short-rate-input assembly instructions because the checked helper surface
 already owns that work.
+
+The retained callable fixed-income proof rows bind their numerical experiments
+explicitly. ``T02`` selects BDT and Hull-White variants of the checked lattice
+binding; ``T17`` selects the Hull-White PSOR PDE and Hull-White lattice
+bindings. Both ``T17`` lanes consume the same typed Hull-White parameter set
+from the task comparison regime. Model selection and calibration coordinates
+belong to the valuation target and market parameter set, not to derivative spec
+overrides. Hull-White parameter resolution therefore prefers typed
+``model_family="hull_white"`` payloads (or explicitly named Hull-White sets)
+and ignores unrelated named parameter sets that merely contain a generic
+``sigma`` field.
+
+``T05`` is intentionally narrower: the former callable-tree "symmetry" target
+was not an independent implementation. The row now proves one explicitly bound
+puttable-lattice artifact plus the holder-exercise/straight-bond lower-bound
+validation contract; it does not claim cross-method evidence.
 
 Plain zero-coupon bond comparison tasks under Vasicek or CIR use a separate
 ``short_rate_zero_coupon_bond`` route. That route narrows the product to

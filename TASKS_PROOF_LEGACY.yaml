@@ -56,6 +56,29 @@ tasks:
     internal:
     - bdt_tree
     - hull_white_tree
+    target_contracts:
+      bdt_tree:
+        method: rate_tree
+        route_id: exercise_lattice
+        route_family: rate_lattice
+        backend_binding_id: trellis.models.callable_bond_tree.price_callable_bond_tree
+        variant_parameters: {lattice_model: bdt}
+        validation_bundle_id: rate_tree:callable_bond
+        payoff_family: callable_fixed_income
+        exercise_style: issuer_call
+        model_family: interest_rate
+        observation_style: exercise_schedule
+      hull_white_tree:
+        method: rate_tree
+        route_id: exercise_lattice
+        route_family: rate_lattice
+        backend_binding_id: trellis.models.callable_bond_tree.price_callable_bond_tree
+        variant_parameters: {lattice_model: hull_white}
+        validation_bundle_id: rate_tree:callable_bond
+        payoff_family: callable_fixed_income
+        exercise_style: issuer_call
+        model_family: interest_rate
+        observation_style: exercise_schedule
     external:
     - financepy
     - quantlib
@@ -88,13 +111,23 @@ tasks:
     - financepy
   status: done
 - id: T05
-  title: 'Puttable bond: exercise_fn=max and puttable-callable symmetry'
+  title: 'Puttable bond: holder exercise and straight-bond lower bound'
   construct: lattice
   new_component: null
   cross_validate:
     internal:
     - puttable_tree
-    - callable_tree_symmetry
+    target_contracts:
+      puttable_tree:
+        method: rate_tree
+        route_id: exercise_lattice
+        route_family: rate_lattice
+        backend_binding_id: trellis.models.callable_bond_tree.price_callable_bond_tree
+        validation_bundle_id: rate_tree:puttable_bond
+        payoff_family: puttable_fixed_income
+        exercise_style: holder_put
+        model_family: interest_rate
+        observation_style: exercise_schedule
     external:
     - quantlib
     - financepy
@@ -236,10 +269,44 @@ tasks:
   - pde
   - lattice
   new_component: hw_rate_pde_operator
+  comparison_regime:
+    family: short_rate
+    regime_name: t17_hull_white_comparison
+    flat_discount_rate: 0.05
+    flat_sigma: 0.01
+    hull_white_mean_reversion: 0.1
+    ho_lee_mean_reversion: 0.0
+    quote_family: black
+    quote_subject: discount_bond_option
+    quote_convention: flat
+    source_kind: task_comparison_regime
   cross_validate:
     internal:
     - hw_pde_psor
     - hw_rate_tree
+    target_contracts:
+      hw_pde_psor:
+        method: pde_solver
+        route_id: pde_theta_1d
+        route_family: pde_solver
+        backend_binding_id: trellis.models.callable_bond_pde.price_callable_bond_pde
+        variant_parameters: {pricing_method: pde_solver, solver: psor, model_parameter_set: 't17_hull_white_comparison:hull_white', mean_reversion: 0.1, sigma: 0.01}
+        validation_bundle_id: pde_solver:callable_bond
+        payoff_family: callable_fixed_income
+        exercise_style: issuer_call
+        model_family: interest_rate
+        observation_style: exercise_schedule
+      hw_rate_tree:
+        method: rate_tree
+        route_id: exercise_lattice
+        route_family: rate_lattice
+        backend_binding_id: trellis.models.callable_bond_tree.price_callable_bond_tree
+        variant_parameters: {pricing_method: rate_tree, lattice_model: hull_white, model_parameter_set: 't17_hull_white_comparison:hull_white', mean_reversion: 0.1, sigma: 0.01}
+        validation_bundle_id: rate_tree:callable_bond
+        payoff_family: callable_fixed_income
+        exercise_style: issuer_call
+        model_family: interest_rate
+        observation_style: exercise_schedule
     external:
     - quantlib
   status: pending

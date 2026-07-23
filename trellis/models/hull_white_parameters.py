@@ -28,17 +28,47 @@ def build_hull_white_parameter_payload(
 
 def extract_hull_white_parameter_payload(market_state) -> dict[str, object] | None:
     """Return the first Hull-White parameter payload attached to ``market_state``."""
-    candidates = []
+    candidates: list[tuple[str, Mapping[str, object], bool]] = []
     direct = getattr(market_state, "model_parameters", None)
     if isinstance(direct, Mapping):
-        candidates.append(direct)
-    for payload in dict(getattr(market_state, "model_parameter_sets", None) or {}).values():
+        nested = direct.get("hull_white")
+        if isinstance(nested, Mapping):
+            candidates.append(("hull_white", nested, False))
+        candidates.append(("", direct, True))
+    for name, payload in dict(
+        getattr(market_state, "model_parameter_sets", None) or {}
+    ).items():
         if isinstance(payload, Mapping):
-            candidates.append(payload)
+            candidates.append((str(name), payload, False))
 
-    for payload in candidates:
-        model_family = str(payload.get("model_family", "")).strip().lower()
-        if model_family not in {"", "hull_white"}:
+    def _family(payload: Mapping[str, object]) -> str:
+        return str(
+            payload.get("model_family")
+            or payload.get("model_name")
+            or payload.get("family")
+            or ""
+        ).strip().lower().replace("-", "_").replace(" ", "_")
+
+    for _, payload, _ in candidates:
+        model_family = _family(payload)
+        if model_family in {"hull_white", "hullwhite"} and (
+            "mean_reversion" in payload or "sigma" in payload
+        ):
+            return dict(payload)
+
+    for name, payload, _ in candidates:
+        normalized_name = name.strip().lower().replace("-", "_").replace(" ", "_")
+        if (
+            not _family(payload)
+            and "hull_white" in normalized_name
+            and ("mean_reversion" in payload or "sigma" in payload)
+        ):
+            return dict(payload)
+
+    # Preserve the legacy direct, untyped payload form without letting an
+    # unrelated named parameter set with a generic ``sigma`` field win.
+    for _, payload, is_direct in candidates:
+        if not is_direct or _family(payload):
             continue
         if "mean_reversion" in payload or "sigma" in payload:
             return dict(payload)

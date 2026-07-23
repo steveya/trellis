@@ -1077,6 +1077,13 @@ def _materialize_task_comparison_regime(task: dict, market_state):
         "ho_lee_mean_reversion": float(regime.ho_lee_mean_reversion),
         "source_kind": regime.source_kind,
     }
+    model_parameter_sets[f"{regime.regime_name}:hull_white"] = {
+        "model_family": "hull_white",
+        "mean_reversion": float(regime.hull_white_mean_reversion),
+        "sigma": float(regime.flat_sigma),
+        "parameter_set_name": f"{regime.regime_name}:hull_white",
+        "source_kind": regime.source_kind,
+    }
     base_discount = getattr(market_state, "discount", None)
     max_tenor = getattr(base_discount, "max_tenor", None)
     if max_tenor is None:
@@ -2384,12 +2391,33 @@ def run_task(
             )
             result_data["failures"] = _aggregate_failures(result_data)
         else:
-            preferred_method = construct_methods[0] if construct_methods else None
+            single_declared_target = (
+                comparison_targets[0]
+                if len(comparison_targets) == 1
+                and comparison_targets[0].contract.explicit
+                else None
+            )
+            preferred_method = (
+                single_declared_target.preferred_method
+                if single_declared_target is not None
+                else (construct_methods[0] if construct_methods else None)
+            )
+            single_target_metadata = (
+                {
+                    "comparison_target": single_declared_target.target_id,
+                    "comparison_target_contract": (
+                        single_declared_target.contract.to_payload()
+                    ),
+                }
+                if single_declared_target is not None
+                else {}
+            )
             build_kwargs = {
                 "description": description,
                 "instrument_type": instrument_type,
                 "request_metadata": {
                     **base_request_metadata,
+                    **single_target_metadata,
                     **(
                         {"preferred_method": preferred_method}
                         if preferred_method is not None
@@ -2420,6 +2448,11 @@ def run_task(
             payload = _build_result_payload(
                 result,
                 preferred_method=preferred_method,
+                comparison_target_contract=(
+                    single_declared_target.contract
+                    if single_declared_target is not None
+                    else None
+                ),
                 generation_policy=generation_policy_value,
             )
             target_id = (
@@ -2438,9 +2471,35 @@ def run_task(
                 task_kind="pricing",
                 instrument_type=instrument_type,
                 recovery_mode=recovery_mode_value,
+                comparison_target_contract=(
+                    single_declared_target.contract
+                    if single_declared_target is not None
+                    else None
+                ),
             )
             if recovery_record is not None:
                 result_data.setdefault("recovery_attempts", []).append(recovery_record)
+            if (
+                single_declared_target is not None
+                and getattr(result, "success", False)
+                and getattr(result, "payoff_cls", None) is not None
+            ):
+                artifact_binding = _comparison_target_binding_report(
+                    single_declared_target,
+                    result,
+                )
+                payload["artifact_binding"] = artifact_binding
+                if artifact_binding["status"] not in _BOUND_ARTIFACT_STATUSES:
+                    payload["success"] = False
+                    binding_codes = [
+                        str(failure.get("code") or "target_binding_mismatch")
+                        for failure in artifact_binding.get("failures") or ()
+                    ]
+                    payload.setdefault("failures", []).insert(
+                        0,
+                        "Explicit comparison target artifact mismatch: "
+                        + ", ".join(binding_codes),
+                    )
             elapsed = timer() - t0
             runtime_contract_result = dict(runtime_contract)
             runtime_contract_result["trace_identifier"] = getattr(result, "platform_request_id", None)
