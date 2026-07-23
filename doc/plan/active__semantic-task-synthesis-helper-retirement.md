@@ -67,7 +67,7 @@ Status mirror last synced: `2026-07-22`
 | `QUA-1204` | Short-rate lattice: reusable market calibration inputs | Done |
 | `QUA-1206` | Semantic comparison: bind callable fixed-income target variants | Done |
 | `QUA-1205` | Callable fixed income: raw lattice primitive assembly | Done |
-| `QUA-1231` | Semantic ranked-observation basket: primitive-composed Monte Carlo lane | In Progress |
+| `QUA-1231` | Semantic ranked-observation basket: primitive-composed Monte Carlo lane | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
