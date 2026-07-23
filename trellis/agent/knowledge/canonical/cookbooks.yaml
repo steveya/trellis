@@ -207,22 +207,24 @@ analytical:
     \        resolve_swaption_black76_inputs,\n    )\n\n    spec = self._spec\n  \
     \  resolved = resolve_swaption_black76_inputs(market_state, spec)\n    assert\
     \ isinstance(resolved, ResolvedSwaptionBlack76Inputs)\n    return price_swaption_black76_raw(resolved)\n\
-    ```\n\n### Jamshidian zero-coupon bond option (helper-backed resolved-input route;\
+    ```\n\n### Jamshidian zero-coupon bond option (primitive-composed route;\
     \ solution contract: jamshidian_zcb_option)\nAssumptions: one-factor Hull-White\
     \ / Jamshidian closed form, European\nexercise, option on a zero-coupon bond.\n\
-    ```python\ndef evaluate(self, market_state):\n    from trellis.models.zcb_option\
-    \ import resolve_zcb_option_hw_inputs\n    from trellis.models.analytical.jamshidian\
+    ```python\ndef evaluate(self, market_state):\n    from trellis.models.resolution.short_rate_claims\
+    \ import resolve_discount_bond_claim_inputs\n    from trellis.models.analytical.jamshidian\
     \ import (\n        ResolvedJamshidianInputs,\n        zcb_option_hw_raw,\n  \
-    \  )\n\n    spec = self._spec\n    resolved = resolve_zcb_option_hw_inputs(\n\
-    \        market_state,\n        spec,\n        mean_reversion=0.1,\n    )\n  \
-    \  assert isinstance(resolved.jamshidian, ResolvedJamshidianInputs)\n\n    if\
-    \ resolved.jamshidian.T_exp <= 0.0:\n        if resolved.option_type == \"put\"\
-    :\n            intrinsic = max(\n                resolved.jamshidian.strike -\
-    \ resolved.jamshidian.discount_factor_bond,\n                0.0,\n          \
-    \  )\n        else:\n            intrinsic = max(\n                resolved.jamshidian.discount_factor_bond\
-    \ - resolved.jamshidian.strike,\n                0.0,\n            )\n       \
-    \ return resolved.notional * intrinsic\n\n    raw = zcb_option_hw_raw(resolved.jamshidian)\n\
-    \    return resolved.notional * raw[resolved.option_type]\n```\n\n### Credit\
+    \  )\n\n    spec = self._spec\n    claim = resolve_discount_bond_claim_inputs(\n\
+    \        market_state,\n        spec,\n        model=\"hull_white\",\n    )\n\
+    \n    if claim.expiry_time <= 0.0:\n        sign = -1.0 if claim.option_type\
+    \ == \"put\" else 1.0\n        intrinsic = max(\n            sign * (claim.discount_factor_bond\
+    \ - claim.strike_unit),\n            0.0,\n        )\n        return claim.notional\
+    \ * intrinsic\n\n    resolved = ResolvedJamshidianInputs(\n        discount_factor_expiry=claim.discount_factor_expiry,\n\
+    \        discount_factor_bond=claim.discount_factor_bond,\n        strike=claim.strike_unit,\n\
+    \        T_exp=claim.expiry_time,\n        T_bond=claim.bond_maturity_time,\n\
+    \        sigma=claim.regime.sigma,\n        a=claim.regime.mean_reversion,\n\
+    \    )\n    raw = zcb_option_hw_raw(resolved)\n    return claim.notional * raw[claim.option_type]\n\
+    ```\nThe product wrappers in `trellis.models.zcb_option` remain compatibility/reference\
+    \ APIs, not generated construction authority.\n\n### Credit\
     \ default swap (single-name) (solution contract: credit_default_swap)\nAssumptions:\
     \ deterministic discounting, credit survival probabilities from\na credit curve,\
     \ one reference entity, premium leg on a schedule, protection\nleg triggered by\

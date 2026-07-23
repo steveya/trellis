@@ -1019,10 +1019,20 @@ reference price, and embedded call option value under parallel rate shocks.
 The same route-thinning rule now also applies to the short-rate ZCB-option
 cohort. QUA-915 collapsed the Jamshidian analytical and Hull-White tree
 routes into a single pattern-keyed route ``short_rate_bond_option`` whose
-``conditional_primitives`` dispatch on method selects the Jamshidian or
-lattice helper. The route card still carries no lattice-construction or
-short-rate-input assembly instructions because the checked helper surface
-already owns that work.
+``conditional_primitives`` dispatch now exposes method-true reusable
+construction. The analytical branch resolves a shared discount-bond claim,
+constructs ``ResolvedJamshidianInputs``, and calls ``zcb_option_hw_raw(...)``.
+The tree branch resolves the same claim, builds a calibrated generic Ho-Lee or
+Hull-White lattice, observes expiry-node bond values with
+``lattice_backward_induction_result(..., terminal_step=bond_step)``, and rolls
+the option payoff with ``lattice_backward_induction(...,
+terminal_step=expiry_step)``. The retained product wrappers are
+compatibility/reference APIs rather than route authority.
+
+``T01`` declares explicit Ho-Lee, Hull-White, and Jamshidian target contracts,
+including model variants, validation bundles, and raw backend identities. A
+strict fresh replay therefore proves three target-coherent artifacts before
+numerical comparison instead of relying on legacy target-label inference.
 
 The retained callable fixed-income proof rows bind their numerical experiments
 explicitly. ``T02`` selects BDT and Hull-White variants of the checked lattice

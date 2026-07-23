@@ -103,6 +103,46 @@ def test_ranked_observation_binding_exposes_primitive_composition_without_helper
     } <= primitives
 
 
+@pytest.mark.parametrize(
+    ("method", "binding_id"),
+    [
+        (
+            "analytical",
+            "trellis.models.analytical.jamshidian.zcb_option_hw_raw",
+        ),
+        (
+            "rate_tree",
+            "trellis.models.trees.lattice.lattice_backward_induction_result",
+        ),
+    ],
+)
+def test_zcb_option_binding_exposes_raw_composition_without_helper_authority(
+    method,
+    binding_id,
+):
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("short_rate_bond_option", catalog)
+    product_ir = ProductIR(
+        instrument="zcb_option",
+        payoff_family="zcb_option",
+        exercise_style="european",
+        model_family="interest_rate",
+    )
+
+    assert binding is not None
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=product_ir,
+        method=method,
+    )
+
+    assert resolved.binding_id == binding_id
+    assert resolved.helper_refs == ()
+    symbols = {primitive.symbol for primitive in resolved.primitives}
+    assert "price_zcb_option_jamshidian" not in symbols
+    assert "price_zcb_option_tree" not in symbols
+
+
 def test_binding_catalog_canonical_load_is_not_derived_from_route_registry(monkeypatch):
     from trellis.agent import route_registry as route_registry_module
 

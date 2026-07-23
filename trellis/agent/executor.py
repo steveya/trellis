@@ -4623,16 +4623,6 @@ def _heston_transform_helper_kwargs(comparison_target: str | None) -> str:
     return ""
 
 
-def _zcb_option_tree_helper_kwargs(comparison_target: str | None) -> str:
-    """Return deterministic helper kwargs for ZCB-option tree comparison targets."""
-    target = str(comparison_target or "").strip().lower()
-    if target == "ho_lee_tree":
-        return ', model="ho_lee"'
-    if target == "hull_white_tree":
-        return ', model="hull_white"'
-    return ""
-
-
 def _credit_basket_tranche_helper_kwargs(comparison_target: str | None) -> str:
     """Return deterministic helper kwargs for tranche-copula comparison targets."""
     target = str(comparison_target or "").strip().lower()
@@ -4755,6 +4745,150 @@ return {helper}(
     discount_curve=market_state.discount{helper_extra},
 )
 """
+    ).rstrip()
+
+
+def _zcb_option_primitive_body(
+    refs: set[str],
+    *,
+    normalized_target: str,
+    target_variants: Mapping[str, object],
+    generation_method: str,
+) -> str | None:
+    """Return raw analytical or generic-lattice ZCB-option composition."""
+    analytical_ref = "trellis.models.analytical.jamshidian.zcb_option_hw_raw"
+    tree_ref = (
+        "trellis.models.trees.lattice.lattice_backward_induction_result"
+    )
+
+    if generation_method == "analytical" and analytical_ref in refs:
+        analytical_method = str(
+            target_variants.get("analytical_method") or normalized_target
+        ).strip().lower().replace("-", "_")
+        if analytical_method not in {"", "jamshidian"}:
+            return None
+        return textwrap.dedent(
+            """\
+            claim = resolve_discount_bond_claim_inputs(
+                market_state,
+                spec,
+                model="hull_white",
+                default_mean_reversion=0.1,
+            )
+            if claim.expiry_time <= 0.0:
+                if claim.option_type == "put":
+                    intrinsic = max(
+                        claim.strike_unit - claim.discount_factor_bond,
+                        0.0,
+                    )
+                else:
+                    intrinsic = max(
+                        claim.discount_factor_bond - claim.strike_unit,
+                        0.0,
+                    )
+                return float(claim.notional * intrinsic)
+
+            resolved = ResolvedJamshidianInputs(
+                discount_factor_expiry=claim.discount_factor_expiry,
+                discount_factor_bond=claim.discount_factor_bond,
+                strike=claim.strike_unit,
+                T_exp=claim.expiry_time,
+                T_bond=claim.bond_maturity_time,
+                sigma=claim.regime.sigma,
+                a=claim.regime.mean_reversion,
+            )
+            raw = zcb_option_hw_raw(resolved)
+            return float(claim.notional * float(raw[claim.option_type]))
+            """
+        ).rstrip()
+
+    if generation_method != "rate_tree" or tree_ref not in refs:
+        return None
+
+    model_name = str(
+        target_variants.get("lattice_model")
+        or normalized_target.removesuffix("_tree")
+        or "hull_white"
+    ).strip().lower().replace("-", "_")
+    if model_name not in {"ho_lee", "hull_white"}:
+        return None
+    tree_steps = int(target_variants.get("tree_steps", 200))
+    if tree_steps <= 0:
+        return None
+
+    return textwrap.dedent(
+        f"""\
+        if market_state.discount is None:
+            raise ValueError("ZCB option lattice pricing requires market_state.discount")
+        claim = resolve_discount_bond_claim_inputs(
+            market_state,
+            spec,
+            model="{model_name}",
+            default_mean_reversion=0.1,
+        )
+        if claim.expiry_time <= 0.0:
+            if claim.option_type == "put":
+                intrinsic = max(
+                    claim.strike_unit - claim.discount_factor_bond,
+                    0.0,
+                )
+            else:
+                intrinsic = max(
+                    claim.discount_factor_bond - claim.strike_unit,
+                    0.0,
+                )
+            return float(claim.notional * intrinsic)
+
+        tree_steps = {tree_steps}
+        tree_model = MODEL_REGISTRY["{model_name}"]
+        lattice = build_lattice(
+            BINOMIAL_1F_TOPOLOGY,
+            UNIFORM_ADDITIVE_MESH,
+            tree_model,
+            calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),
+            r0=claim.regime.initial_rate,
+            sigma=claim.regime.sigma,
+            a=claim.regime.mean_reversion,
+            T=claim.bond_maturity_time,
+            n_steps=tree_steps,
+        )
+        expiry_step = lattice_step_from_time(
+            claim.expiry_time,
+            dt=lattice.dt,
+            n_steps=lattice.n_steps,
+            allow_step_zero=True,
+        )
+        bond_step = lattice_step_from_time(
+            claim.bond_maturity_time,
+            dt=lattice.dt,
+            n_steps=lattice.n_steps,
+            allow_step_zero=True,
+        )
+        if expiry_step is None or bond_step is None:
+            raise ValueError("ZCB option dates must lie on the calibrated lattice horizon")
+        if expiry_step >= bond_step:
+            raise ValueError("ZCB option expiry step must precede bond maturity step")
+
+        bond_result = lattice_backward_induction_result(
+            lattice,
+            terminal_value=1.0,
+            terminal_step=bond_step,
+            observation_steps=(expiry_step,),
+        )
+        bond_values = bond_result.observation_at(expiry_step).post_control_values
+        payoff_sign = -1.0 if claim.option_type == "put" else 1.0
+        return float(lattice_backward_induction(
+            lattice,
+            terminal_payoff=lambda step, node, lattice_: (
+                claim.notional
+                * max(
+                    payoff_sign * (bond_values[node] - claim.strike_unit),
+                    0.0,
+                )
+            ),
+            terminal_step=expiry_step,
+        ))
+        """
     ).rstrip()
 
 
@@ -5933,7 +6067,6 @@ def _deterministic_exact_binding_evaluate_body(
     heston_mc_kwargs = _heston_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
     heston_transform_kwargs = _heston_transform_helper_kwargs(comparison_target)
-    zcb_option_tree_kwargs = _zcb_option_tree_helper_kwargs(comparison_target)
     credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
     runtime_contract = metadata.get("runtime_contract")
     if not isinstance(runtime_contract, Mapping):
@@ -6042,6 +6175,14 @@ def _deterministic_exact_binding_evaluate_body(
     generation_method = str(
         _generation_plan_field(generation_plan, "method", "") or ""
     ).strip().lower().replace("-", "_")
+    zcb_option_body = _zcb_option_primitive_body(
+        refs,
+        normalized_target=normalized_target,
+        target_variants=target_variants,
+        generation_method=generation_method,
+    )
+    if instrument_type == "zcb_option" and zcb_option_body is not None:
+        return zcb_option_body
     scheduled_return_body = _scheduled_observation_return_evaluate_body(
         refs,
         normalized_target=normalized_target,
@@ -7265,10 +7406,6 @@ def _deterministic_exact_binding_evaluate_body(
         "trellis.models.levy_option.price_kou_option_reference": (
             "return price_kou_option_reference(market_state, spec)"
         ),
-        "trellis.models.zcb_option_tree.price_zcb_option_tree": (
-            "return price_zcb_option_tree("
-            f"market_state, spec{zcb_option_tree_kwargs})"
-        ),
         "trellis.models.short_rate_bond.price_short_rate_zero_coupon_bond_analytical": (
             "return price_short_rate_zero_coupon_bond_analytical("
             "market_state, spec, allow_benchmark_defaults=True)"
@@ -7678,6 +7815,16 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             "from trellis.models.short_rate_lattice import "
             "resolve_short_rate_lattice_inputs"
         )
+    if "resolve_discount_bond_claim_inputs(" in body:
+        imports.append(
+            "from trellis.models.resolution.short_rate_claims import "
+            "resolve_discount_bond_claim_inputs"
+        )
+    if "ResolvedJamshidianInputs(" in body or "zcb_option_hw_raw(" in body:
+        imports.append(
+            "from trellis.models.analytical.jamshidian import "
+            "ResolvedJamshidianInputs, zcb_option_hw_raw"
+        )
     if "build_embedded_fixed_income_event_timeline(" in body:
         imports.append(
             "from trellis.models.short_rate_fixed_income import (\n"
@@ -7716,12 +7863,16 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             "from trellis.models.bermudan_swaption_tree import "
             "resolve_bermudan_swaption_tree_inputs"
         )
-    if "BINOMIAL_1F_TOPOLOGY" in body and "price_on_lattice(" in body:
+    if "BINOMIAL_1F_TOPOLOGY" in body and "build_lattice(" in body:
         algebra_symbols = [
-            "BINOMIAL_1F_TOPOLOGY",
-            "TERM_STRUCTURE_TARGET",
-            "UNIFORM_ADDITIVE_MESH",
-            "build_lattice",
+            symbol
+            for symbol in (
+                "BINOMIAL_1F_TOPOLOGY",
+                "TERM_STRUCTURE_TARGET",
+                "UNIFORM_ADDITIVE_MESH",
+                "build_lattice",
+            )
+            if symbol in body
         ]
         algebra_symbols.extend(
             symbol
@@ -7733,11 +7884,28 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             )
             if symbol in body
         )
-        algebra_symbols.append("price_on_lattice")
+        if "price_on_lattice(" in body:
+            algebra_symbols.append("price_on_lattice")
         imports.append(
             "from trellis.models.trees.algebra import (\n"
             + "".join(f"    {symbol},\n" for symbol in algebra_symbols)
             + ")"
+        )
+    if (
+        "lattice_backward_induction_result(" in body
+        or "lattice_backward_induction(" in body
+    ):
+        lattice_symbols = [
+            symbol
+            for symbol in (
+                "lattice_backward_induction",
+                "lattice_backward_induction_result",
+            )
+            if f"{symbol}(" in body
+        ]
+        imports.append(
+            "from trellis.models.trees.lattice import "
+            + ", ".join(lattice_symbols)
         )
     if "lattice_step_from_time(" in body:
         imports.append(
@@ -8265,16 +8433,66 @@ def _combine_skeleton_and_body(skeleton: str, evaluate_body: str) -> str:
 
 def _inject_top_level_imports(skeleton: str, import_lines: list[str]) -> str:
     """Insert additional top-level imports into the skeleton header without duplicates."""
-    normalized_imports = []
+    normalized_imports: list[str] = []
     existing_imports = {
         line.strip()
         for line in skeleton.splitlines()
         if line.strip().startswith(("import ", "from "))
     }
+    existing_from_imports: dict[tuple[int, str | None], set[tuple[str, str | None]]] = {}
+    try:
+        skeleton_tree = ast.parse(skeleton)
+    except SyntaxError:
+        skeleton_tree = None
+    if skeleton_tree is not None:
+        for node in skeleton_tree.body:
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            key = (node.level, node.module)
+            existing_from_imports.setdefault(key, set()).update(
+                (alias.name, alias.asname) for alias in node.names
+            )
+
     for line in import_lines:
         stripped = line.strip()
         if stripped.startswith("from __future__ import"):
             continue
+        try:
+            import_tree = ast.parse(stripped)
+        except SyntaxError:
+            import_tree = None
+        if (
+            import_tree is not None
+            and len(import_tree.body) == 1
+            and isinstance(import_tree.body[0], ast.ImportFrom)
+        ):
+            node = import_tree.body[0]
+            key = (node.level, node.module)
+            imported = existing_from_imports.setdefault(key, set())
+            missing_aliases = [
+                alias
+                for alias in node.names
+                if (alias.name, alias.asname) not in imported
+            ]
+            if not missing_aliases:
+                continue
+            imported.update((alias.name, alias.asname) for alias in missing_aliases)
+            module = "." * node.level + str(node.module or "")
+            names = [
+                alias.name
+                if alias.asname is None
+                else f"{alias.name} as {alias.asname}"
+                for alias in missing_aliases
+            ]
+            compact = f"from {module} import {', '.join(names)}"
+            if "\n" in stripped:
+                stripped = (
+                    f"from {module} import (\n"
+                    + "".join(f"    {name},\n" for name in names)
+                    + ")"
+                )
+            else:
+                stripped = compact
         if stripped and stripped not in existing_imports:
             normalized_imports.append(stripped)
             existing_imports.add(stripped)
@@ -8917,11 +9135,21 @@ def _reference_modules(
         )
     if normalized_instrument == "zcb_option":
         modules.append(
-            ("trellis.models.zcb_option", "Jamshidian ZCB option helper")
+            (
+                "trellis.models.resolution.short_rate_claims",
+                "Shared discount-bond claim resolver",
+            )
         )
         modules.append(
-            ("trellis.models.zcb_option_tree", "ZCB option tree helper")
+            (
+                "trellis.models.analytical.jamshidian",
+                "Raw Jamshidian input contract and kernel",
+            )
         )
+        modules.append(("trellis.models.trees.algebra", "Generic lattice algebra"))
+        modules.append(("trellis.models.trees.control", "Lattice time-step mapping"))
+        modules.append(("trellis.models.trees.lattice", "Generic partial-horizon rollback"))
+        modules.append(("trellis.models.trees.models", "Short-rate lattice model registry"))
 
     deduped: list[tuple[str, str]] = []
     seen: set[str] = set()
@@ -10077,12 +10305,12 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
-            "Zero-coupon bond option tree routes should stay on the checked-in helper surface.",
-            "Prefer `from trellis.models.zcb_option_tree import price_zcb_option_tree` and delegate to that helper from the adapter.",
-            "Map `implementation_target=ho_lee_tree` to `model=\"ho_lee\"` and `implementation_target=hull_white_tree` to `model=\"hull_white\"`.",
-            "If you must build the tree directly, use `build_generic_lattice(MODEL_REGISTRY[...], r0=..., sigma=..., a=..., T=..., n_steps=..., discount_curve=market_state.discount)`.",
-            "Do not call `build_rate_lattice(...)` with invented keyword forms such as `market_state=...`, `maturity=...`, or `steps=...`.",
-            "The tree horizon must run to `spec.bond_maturity_date`, not merely to option expiry, because the route needs the bond price at expiry first.",
+            "Zero-coupon bond option tree routes should compose the public generic lattice primitives directly.",
+            "Resolve dates, unit-face strike, option direction, volatility, mean reversion, and discount factors with `resolve_discount_bond_claim_inputs(...)` using the target's `ho_lee` or `hull_white` model.",
+            "Build one calibrated lattice through `MODEL_REGISTRY`, `BINOMIAL_1F_TOPOLOGY`, `UNIFORM_ADDITIVE_MESH`, `TERM_STRUCTURE_TARGET(...)`, and `build_lattice(...)`; the horizon must reach bond maturity.",
+            "Map expiry and bond maturity with `lattice_step_from_time(...)`. Roll a unit bond with `lattice_backward_induction_result(..., terminal_step=bond_step, observation_steps=(expiry_step,))`.",
+            "Read the expiry-node bond values, form the call/put payoff there, and roll it with `lattice_backward_induction(..., terminal_step=expiry_step)`.",
+            "`price_zcb_option_tree(...)`, `build_zcb_option_lattice(...)`, and `price_zcb_option_on_lattice(...)` are compatibility/reference APIs, not generated construction authority. Do not open-code rollback loops.",
         )
     if (
         instrument == "zcb_option"
@@ -10090,12 +10318,11 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
-            "Jamshidian analytical routes should use the checked-in helper instead of rebuilding forward-bond Black76 inline.",
-            "Prefer `from trellis.models.zcb_option import price_zcb_option_jamshidian` and delegate to that helper from the adapter.",
-            "If you need the resolved-input lane under that wrapper, use `resolve_zcb_option_hw_inputs(...)` and pass `resolved.jamshidian` into `zcb_option_hw_raw(...)` from `trellis.models.analytical.jamshidian`.",
-            "Treat `ResolvedJamshidianInputs` as the traced closed-form contract after date and strike normalization.",
-            "Normalize strike quotes to unit face before the closed-form kernel: treat `63` on `100` face as `0.63`.",
-            "Use `spec.expiry_date` and `spec.bond_maturity_date`, and validate that the bond maturity is strictly after expiry.",
+            "Jamshidian analytical routes should compose the shared claim resolver and raw analytical contract instead of using a product wrapper or generic forward-bond Black76.",
+            "Call `resolve_discount_bond_claim_inputs(..., model=\"hull_white\")`; it owns settlement dates, unit-face strike normalization, discount factors, volatility, mean reversion, and option direction.",
+            "Construct `ResolvedJamshidianInputs` visibly from the resolved claim and pass it to `zcb_option_hw_raw(...)`, then select call/put and apply notional once.",
+            "Handle zero-expiry intrinsic value before the raw kernel and require bond maturity strictly after expiry.",
+            "`resolve_zcb_option_hw_inputs(...)` and `price_zcb_option_jamshidian(...)` are compatibility/reference APIs, not generated construction authority.",
         )
     if (
         instrument == "european_option"

@@ -492,7 +492,7 @@ class TestKnowledgeStore:
             required_market_data={"discount_curve", "black_vol_surface"},
             reusable_primitives=(
                 "ResolvedJamshidianInputs",
-                "resolve_zcb_option_hw_inputs",
+                "resolve_discount_bond_claim_inputs",
                 "zcb_option_hw_raw",
             ),
             supported=True,
@@ -501,9 +501,10 @@ class TestKnowledgeStore:
         k = retrieve_for_product_ir(ir, preferred_method="analytical")
 
         assert k["cookbook"] is not None
-        assert "resolve_zcb_option_hw_inputs" in k["cookbook"].template
+        assert "resolve_discount_bond_claim_inputs" in k["cookbook"].template
         assert "ResolvedJamshidianInputs" in k["cookbook"].template
         assert "zcb_option_hw_raw" in k["cookbook"].template
+        assert "compatibility/reference APIs" in k["cookbook"].template
         assert k["method_requirements"] is not None
         requirements_text = "\n".join(k["method_requirements"].requirements)
         assert "JAMSHIDIAN ZCB OPTION CONSISTENCY" in requirements_text

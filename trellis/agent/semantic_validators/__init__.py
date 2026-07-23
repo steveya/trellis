@@ -43,6 +43,7 @@ _ALWAYS_BLOCKING_CATEGORIES = {
     "route_helper_signature_mismatch",
     "required_primitive_not_called",
     "terminal_basket_forbidden_helper",
+    "zcb_option_forbidden_helper",
 }
 
 

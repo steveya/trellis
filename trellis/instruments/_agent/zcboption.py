@@ -27,13 +27,18 @@ Implementation target: jamshidian."""
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 from datetime import date
 
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.models.resolution.short_rate_claims import resolve_discount_bond_option_type
-from trellis.models.zcb_option import price_zcb_option_jamshidian
+from trellis.models.analytical.jamshidian import (
+    ResolvedJamshidianInputs,
+    zcb_option_hw_raw,
+)
+from trellis.models.resolution.short_rate_claims import (
+    resolve_discount_bond_claim_inputs,
+)
 
 
 
@@ -114,14 +119,29 @@ Implementation target: jamshidian."""
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec
-        option_type = resolve_discount_bond_option_type(spec)
-        if option_type != spec.option_type:
-            spec = replace(spec, option_type=option_type)
+        claim = resolve_discount_bond_claim_inputs(
+            market_state,
+            spec,
+            model="hull_white",
+            default_mean_reversion=0.1,
+        )
+        if claim.expiry_time <= 0.0:
+            payoff_sign = -1.0 if claim.option_type == "put" else 1.0
+            intrinsic = max(
+                payoff_sign
+                * (claim.discount_factor_bond - claim.strike_unit),
+                0.0,
+            )
+            return float(claim.notional * intrinsic)
 
-        if spec.bond_maturity_date <= spec.expiry_date:
-            raise ValueError("bond_maturity_date must be strictly after expiry_date")
-
-        if market_state.discount is None:
-            raise ValueError("market_state.discount is required for ZCB option pricing")
-
-        return float(price_zcb_option_jamshidian(market_state, spec, mean_reversion=0.1))
+        resolved = ResolvedJamshidianInputs(
+            discount_factor_expiry=claim.discount_factor_expiry,
+            discount_factor_bond=claim.discount_factor_bond,
+            strike=claim.strike_unit,
+            T_exp=claim.expiry_time,
+            T_bond=claim.bond_maturity_time,
+            sigma=claim.regime.sigma,
+            a=claim.regime.mean_reversion,
+        )
+        raw = zcb_option_hw_raw(resolved)
+        return float(claim.notional * float(raw[claim.option_type]))

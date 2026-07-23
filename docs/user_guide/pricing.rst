@@ -733,6 +733,16 @@ parameters, and tree-step controls remain visible. ``price_swaption_tree(...)``
 and ``build_swaption_tree_spec(...)`` remain callable compatibility/reference
 APIs, but neither is live build authority.
 
+European zero-coupon-bond options follow the same policy. The analytical lane
+resolves the shared discount-bond claim, constructs the raw Jamshidian input,
+and applies option direction and notional outside
+``zcb_option_hw_raw(...)``. The Ho-Lee and Hull-White tree lanes build the
+generic calibrated lattice, observe unit-bond values at option expiry using a
+partial-horizon rollback from bond maturity, and then roll the option payoff
+from expiry. ``price_zcb_option_jamshidian(...)`` and
+``price_zcb_option_tree(...)`` remain convenient public references, but they
+are not live build authority.
+
 The Bermudan ``black76_european_lower_bound`` comparison reuses those same
 surfaces without pretending Black76 is a Bermudan solver. Generated code
 normalizes the exercise schedule, keeps dates strictly after settlement and

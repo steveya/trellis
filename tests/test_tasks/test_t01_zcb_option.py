@@ -14,7 +14,6 @@ Parameters (following Hull, Ch. 28):
 
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
 from trellis.curves.yield_curve import YieldCurve
@@ -23,7 +22,9 @@ from trellis.models.trees.lattice import (
     RecombiningLattice,
     build_generic_lattice,
     lattice_backward_induction,
+    lattice_backward_induction_result,
 )
+from trellis.models.trees.control import lattice_step_from_time
 from trellis.models.trees.models import MODEL_REGISTRY
 
 
@@ -71,65 +72,37 @@ def _price_zcb_option_on_lattice(
 
     The lattice must cover at least T_bond (i.e., n_steps * dt >= T_bond).
     """
-    dt = lattice.dt
-    n_steps = lattice.n_steps
+    exp_step = lattice_step_from_time(
+        t_exp,
+        dt=lattice.dt,
+        n_steps=lattice.n_steps,
+        allow_step_zero=True,
+    )
+    bond_step = lattice_step_from_time(
+        t_bond,
+        dt=lattice.dt,
+        n_steps=lattice.n_steps,
+        allow_step_zero=True,
+    )
+    if exp_step is None or bond_step is None or exp_step >= bond_step:
+        raise ValueError("ZCB option dates must lie in expiry-before-maturity order")
 
-    # Step indices for expiry and bond maturity
-    exp_step = int(round(t_exp / dt))
-    bond_step = int(round(t_bond / dt))
-
-    if bond_step > n_steps:
-        raise ValueError(
-            f"Lattice too short: bond_step={bond_step} > n_steps={n_steps}"
-        )
-
-    # --- Phase 1: Compute ZCB price P(T_exp, T_bond) at each expiry node ---
-    # Backward induction from bond_step to exp_step (terminal payoff = 1.0)
-    n_terminal = lattice.n_nodes(bond_step)
-    zcb_values = np.ones(n_terminal)  # ZCB pays 1 at maturity
-
-    for step in range(bond_step - 1, exp_step - 1, -1):
-        n_nodes = lattice.n_nodes(step)
-        new_vals = np.zeros(n_nodes)
-        for j in range(n_nodes):
-            df = lattice.get_discount(step, j)
-            probs = lattice.get_probabilities(step, j)
-            children = lattice.child_indices(step, j)
-            new_vals[j] = df * sum(
-                p * zcb_values[c] for p, c in zip(probs, children)
-            )
-        zcb_values = new_vals
-
-    # zcb_values now holds P(T_exp, T_bond) at each node of exp_step
-
-    # --- Phase 2: Option payoff at expiry ---
-    n_exp_nodes = lattice.n_nodes(exp_step)
-    if option_type == "call":
-        option_payoff = np.array([
-            max(zcb_values[j] * face - strike, 0.0)
-            for j in range(n_exp_nodes)
-        ])
-    else:  # put
-        option_payoff = np.array([
-            max(strike - zcb_values[j] * face, 0.0)
-            for j in range(n_exp_nodes)
-        ])
-
-    # --- Phase 3: Roll back option from expiry to root ---
-    values = option_payoff
-    for step in range(exp_step - 1, -1, -1):
-        n_nodes = lattice.n_nodes(step)
-        new_vals = np.zeros(n_nodes)
-        for j in range(n_nodes):
-            df = lattice.get_discount(step, j)
-            probs = lattice.get_probabilities(step, j)
-            children = lattice.child_indices(step, j)
-            new_vals[j] = df * sum(
-                p * values[c] for p, c in zip(probs, children)
-            )
-        values = new_vals
-
-    return float(values[0])
+    bond_result = lattice_backward_induction_result(
+        lattice,
+        terminal_value=1.0,
+        terminal_step=bond_step,
+        observation_steps=(exp_step,),
+    )
+    bond_values = bond_result.observation_at(exp_step).post_control_values
+    payoff_sign = -1.0 if option_type == "put" else 1.0
+    return lattice_backward_induction(
+        lattice,
+        terminal_payoff=lambda step, node, lattice_: max(
+            payoff_sign * (bond_values[node] * face - strike),
+            0.0,
+        ),
+        terminal_step=exp_step,
+    )
 
 
 # ===================================================================

@@ -441,11 +441,12 @@ check id does not grant construction authority to the reference wrapper.
 
 Eligible single-method routes now also emit a post-bundle
 ``reference_oracle_executed`` event before reviewer escalation. This is the
-next checkpoint after the deterministic bundle for helper-backed exact or
-bound-style routes:
+next checkpoint after the deterministic bundle for raw-kernel, compatibility
+reference, or bound-style routes:
 
 - analytical swaptions against the retained Black76 reference
-- analytical zero-coupon-bond options against the Jamshidian helper
+- primitive-composed analytical zero-coupon-bond options against the retained
+  Jamshidian compatibility reference
 - callable and puttable rate-tree bonds against the straight-bond reference
   relation produced by the reusable fixed-income PV primitive
 

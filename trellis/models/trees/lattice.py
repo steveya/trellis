@@ -148,6 +148,24 @@ def _coerce_observation_step(step: object) -> int:
         raise TypeError("lattice observation steps must be integers") from exc
 
 
+def _normalize_terminal_step(step: object | None, *, n_steps: int) -> int:
+    """Return a validated rollback horizon within the lattice."""
+    if step is None:
+        return int(n_steps)
+    if isinstance(step, bool):
+        raise TypeError("lattice terminal step must be an integer, not bool")
+    try:
+        normalized = int(integer_index(step))
+    except TypeError as exc:
+        raise TypeError("lattice terminal step must be an integer") from exc
+    if normalized < 0 or normalized > int(n_steps):
+        raise ValueError(
+            f"lattice terminal step must be between 0 and {int(n_steps)} inclusive; "
+            f"received {normalized}"
+        )
+    return normalized
+
+
 def _normalize_observation_steps(
     observation_steps: Iterable[int],
     *,
@@ -468,6 +486,7 @@ def lattice_backward_induction_result(
     terminal_value: float | None = None,
     exercise_value_fn=None,
     observation_steps: Iterable[int] = (),
+    terminal_step: int | None = None,
 ) -> LatticeRollbackResult:
     """Run generic backward induction and capture requested node-value phases.
 
@@ -501,6 +520,10 @@ def lattice_backward_induction_result(
         continuation values, values after the current node cashflow, and values
         after exercise/control. At the terminal step all three vectors equal the
         terminal payoff vector.
+    terminal_step : int or None
+        Inclusive lattice step where the supplied terminal payoff is applied.
+        Defaults to the lattice's full horizon. Use an earlier step for bounded
+        partial-horizon rollback without rebuilding or open-coding the lattice.
 
     Returns
     -------
@@ -533,7 +556,7 @@ def lattice_backward_induction_result(
     )
     if exercise_fn is None:
         exercise_fn = max
-    n = lattice.n_steps
+    n = _normalize_terminal_step(terminal_step, n_steps=lattice.n_steps)
     requested_steps = _normalize_observation_steps(
         observation_steps,
         n_steps=n,
@@ -618,8 +641,9 @@ def lattice_backward_induction(
     exercise_policy: LatticeExercisePolicy | None = None,
     terminal_value: float | None = None,
     exercise_value_fn=None,
+    terminal_step: int | None = None,
 ) -> float:
-    """Return the root value from generic lattice backward induction."""
+    """Return the root value from full- or partial-horizon backward induction."""
     result = lattice_backward_induction_result(
         lattice,
         terminal_payoff=terminal_payoff,
@@ -631,6 +655,7 @@ def lattice_backward_induction(
         exercise_policy=exercise_policy,
         terminal_value=terminal_value,
         exercise_value_fn=exercise_value_fn,
+        terminal_step=terminal_step,
     )
     return float(result.root_value)
 

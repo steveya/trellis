@@ -1002,7 +1002,7 @@ def test_generation_route_card_for_quanto_exposes_primitive_composition_only():
     assert "trellis.models.analytical.quanto" not in text
 
 
-def test_generation_route_card_for_zcb_option_analytical_stays_helper_only():
+def test_generation_route_card_for_zcb_option_analytical_requires_raw_composition():
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
     pricing_plan = PricingPlan(
@@ -1025,12 +1025,14 @@ def test_generation_route_card_for_zcb_option_analytical_stays_helper_only():
 
     text = render_generation_route_card(plan)
 
-    assert "price_zcb_option_jamshidian" in text
-    assert "resolve_zcb_option_hw_inputs" not in text
-    assert "zcb_option_hw_raw" not in text
+    assert "resolve_discount_bond_claim_inputs" in text
+    assert "ResolvedJamshidianInputs" in text
+    assert "zcb_option_hw_raw" in text
+    assert "Helper authority:" not in text
+    assert "compatibility/reference surfaces" in text
 
 
-def test_generation_route_card_for_zcb_option_tree_stays_helper_only():
+def test_generation_route_card_for_zcb_option_tree_requires_generic_lattice_composition():
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
     pricing_plan = PricingPlan(
@@ -1053,9 +1055,14 @@ def test_generation_route_card_for_zcb_option_tree_stays_helper_only():
 
     text = render_generation_route_card(plan)
 
-    assert "price_zcb_option_tree" in text
-    assert "build_generic_lattice" not in text
-    assert "MODEL_REGISTRY" not in text
+    assert "resolve_discount_bond_claim_inputs" in text
+    assert "build_lattice" in text
+    assert "lattice_step_from_time" in text
+    assert "lattice_backward_induction_result" in text
+    assert "lattice_backward_induction" in text
+    assert "MODEL_REGISTRY" in text
+    assert "Helper authority:" not in text
+    assert "compatibility/reference surfaces" in text
 
 
 def test_generation_route_card_for_vanilla_equity_pde_requires_primitive_composition():
