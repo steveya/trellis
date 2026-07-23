@@ -52,7 +52,7 @@ _ROUTE_HELPER_SUBSUMED_PRIMITIVE_ROLES = frozenset({
 _CHECKED_ROUTE_HELPER_CALLS = frozenset({
     "trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo",
 })
-_DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "topology"})
+_DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "model_registry", "topology"})
 
 
 @dataclass(frozen=True)
@@ -256,6 +256,22 @@ class _SemanticVisitor(ast.NodeVisitor):
                 if normalized_objective == "holder_max":
                     self.lattice_exercise_functions.append("max")
                 elif normalized_objective == "issuer_min":
+                    self.lattice_exercise_functions.append("min")
+
+        if call_name.endswith("compile_embedded_fixed_income_lattice_contract_spec"):
+            self.engine_families.add("lattice")
+            expected_control_style = _literal_keyword(
+                node,
+                "expected_control_style",
+            )
+            if isinstance(expected_control_style, str):
+                normalized_control_style = expected_control_style.strip().lower()
+                self.lattice_exercise_types.append("bermudan")
+                self.lattice_has_exercise_steps = True
+                self.lattice_exercise_styles.append(normalized_control_style)
+                if normalized_control_style == "holder_max":
+                    self.lattice_exercise_functions.append("max")
+                elif normalized_control_style == "issuer_min":
                     self.lattice_exercise_functions.append("min")
 
         if call_name.endswith("resolve_lattice_exercise_policy"):

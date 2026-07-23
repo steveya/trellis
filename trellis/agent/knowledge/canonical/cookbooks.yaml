@@ -265,12 +265,31 @@ rate_tree:
     `build_rate_lattice` which creates a mean-reverting SHORT-RATE tree.\nFor model-specific\
     \ calibrated trees such as BDT vs Hull-White comparisons,\nuse `build_generic_lattice(...,\
     \ MODEL_REGISTRY[\"bdt\"|\"hull_white\"], ...)`.\nDo NOT use `BinomialTree.crr`\
-    \ for interest-rate exercise problems.\n\nPrefer the checked-in helper surface\
-    \ first:\n\n```python\ndef evaluate(self, market_state):\n    from trellis.models.callable_bond_tree\
-    \ import price_callable_bond_tree\n\n    return price_callable_bond_tree(\n  \
-    \      market_state,\n        self._spec,\n        model=\"hull_white\",  # or\
-    \ \"bdt\" for explicit comparison routes\n    )\n```\n\nIf you must build the\
-    \ lattice path manually, keep to the following shape:\n\n```python\ndef evaluate(self,\
+    \ for interest-rate exercise problems.\n\nNever call a product-specific pricing\
+    \ wrapper from a new generated route. For callable and puttable fixed income,\
+    \ compose the public market-binding, event-contract, and generic lattice primitives:\n\n\
+    ```python\ndef evaluate(self, market_state):\n    from trellis.core.date_utils import year_fraction\n\
+    \    from trellis.models.short_rate_lattice import resolve_short_rate_lattice_inputs\n\
+    \    from trellis.models.short_rate_fixed_income import (\n        build_embedded_fixed_income_event_timeline,\n\
+    \        compile_embedded_fixed_income_lattice_contract_spec,\n        present_value_fixed_coupon_bond,\n\
+    \        settlement_date_for_fixed_income_claim,\n    )\n    from trellis.models.trees.algebra import (\n\
+    \        BINOMIAL_1F_TOPOLOGY, TERM_STRUCTURE_TARGET, UNIFORM_ADDITIVE_MESH,\n\
+    \        build_lattice, price_on_lattice,\n    )\n    from trellis.models.trees.models import MODEL_REGISTRY\n\n\
+    \    spec = self._spec\n    settlement = settlement_date_for_fixed_income_claim(market_state, spec)\n\
+    \    horizon = year_fraction(settlement, spec.end_date, spec.day_count)\n\
+    \    resolved = resolve_short_rate_lattice_inputs(\n        market_state, horizon=horizon, model=\"hull_white\"\n\
+    \    )\n    model = MODEL_REGISTRY[resolved.model_name]\n    lattice = build_lattice(\n\
+    \        BINOMIAL_1F_TOPOLOGY, UNIFORM_ADDITIVE_MESH, model.as_lattice_model_spec(),\n\
+    \        calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),\n\
+    \        r0=resolved.r0, sigma=resolved.sigma, a=resolved.mean_reversion,\n\
+    \        T=resolved.horizon, n_steps=resolved.n_steps,\n    )\n    timeline = build_embedded_fixed_income_event_timeline(spec, settlement=settlement)\n\
+    \    expected_control = \"issuer_min\"  # use \"holder_max\" for a puttable product\n\
+    \    contract = compile_embedded_fixed_income_lattice_contract_spec(\n        spec, event_timeline=timeline, expected_control_style=expected_control,\n\
+    \        dt=lattice.dt, n_steps=lattice.n_steps,\n    )\n    tree_price = float(price_on_lattice(lattice, contract))\n\
+    \    straight_price = present_value_fixed_coupon_bond(\n        market_state, spec, settlement=settlement\n\
+    \    )\n    return min(tree_price, straight_price) if expected_control == \"issuer_min\" else max(tree_price, straight_price)\n\
+    ```\n\nThe lower-level lattice-control pattern below is useful when a different\
+    \ rate product does not have a shared event-contract compiler:\n\n```python\ndef evaluate(self,\
     \ market_state):\n    from trellis.core.date_utils import (\n        build_exercise_timeline_from_dates,\n\
     \        build_payment_timeline,\n        year_fraction,\n    )\n    from trellis.models.trees.control\
     \ import (\n        lattice_step_from_time,\n        lattice_steps_from_timeline,\n\

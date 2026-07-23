@@ -1180,7 +1180,7 @@ def test_known_family_request_requires_semantic_bridge(monkeypatch):
                 },
             },
             "callable_bond",
-            "trellis.models.callable_bond_tree",
+            "trellis.models.short_rate_fixed_income",
             "exercise_lattice",
         ),
         (
@@ -1224,6 +1224,8 @@ def test_representative_term_sheet_requests_use_the_semantic_path(
     assert compiled.execution_plan.reason == "semantic_contract_request"
     assert compiled.execution_plan.route_method in {"analytical", "rate_tree"}
     assert expected_generation_module in compiled.semantic_blueprint.target_modules
+    if expected_semantic_id == "callable_bond":
+        assert "trellis.models.callable_bond_tree" not in compiled.semantic_blueprint.target_modules
     assert expected_generation_module in compiled.generation_plan.approved_modules
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == expected_route
@@ -2018,7 +2020,7 @@ def test_compile_build_request_uses_exact_callable_bond_pde_binding_for_bootstra
             "callable_bond",
             "callable_fixed_income",
             "trellis.models.trees.lattice",
-            "trellis.models.callable_bond_tree",
+            "trellis.models.short_rate_fixed_income",
             "exercise_lattice",
         ),
         (
@@ -2095,6 +2097,8 @@ def test_representative_derivatives_use_generic_semantic_contracts(
     assert compiled.semantic_blueprint.primitive_routes == expected_primitive_routes
     assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == expected_primitive_route
     assert expected_generation_module in compiled.semantic_blueprint.target_modules
+    if expected_semantic_id == "callable_bond":
+        assert "trellis.models.callable_bond_tree" not in compiled.semantic_blueprint.target_modules
     assert snapshot == snapshot_again
     assert snapshot["semantic_contract"] == compiled.request.metadata["semantic_contract"]
     assert snapshot["semantic_blueprint"]["selection_reason"] == compiled.pricing_plan.selection_reason

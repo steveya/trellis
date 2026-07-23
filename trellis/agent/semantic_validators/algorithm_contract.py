@@ -63,9 +63,10 @@ _HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({
     "price_double_barrier_option_pde_result",
     "price_double_barrier_option_monte_carlo_result",
 })
-_DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "topology"})
+_DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "model_registry", "topology"})
 _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
     "equity_quanto",
+    "exercise_lattice",
     "rate_tree_backward_induction",
 })
 _EXACT_HELPER_SIGNATURES = {

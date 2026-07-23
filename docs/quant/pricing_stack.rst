@@ -1006,11 +1006,13 @@ accrual base and adds a deterministic issuer-call wrapper over projected
 cashflows. It does not claim stochastic callable range-accrual valuation or
 interrupted/barrier-state range-accrual execution.
 
-The callable-rates desk slices follow the same philosophy. The callable-bond
-and Bermudan-swaption adapters are thin checked wrappers over the stable
-exercise-lattice helpers, with typed exercise schedules and trader-facing event
-projection layered on top of the preserved numerical kernels rather than a new
-generic exotics runtime. The callable-bond slice now also projects callable
+The callable-rates desk slices follow the same philosophy. Callable and
+puttable bond adapters now compose the public short-rate resolver, model
+registry, generic lattice builder, embedded fixed-income event compiler, and
+generic rollback directly. Bermudan swaptions use their corresponding generic
+lattice-contract composition. Product wrappers remain compatibility and
+independent-reference APIs, not generated route authority. The callable-bond
+slice also projects callable
 analytics directly off that tree boundary: effective ``oas_duration`` plus a
 callable-specific scenario ladder that compares callable price, straight-bond
 reference price, and embedded call option value under parallel rate shocks.

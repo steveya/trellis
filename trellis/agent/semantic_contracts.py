@@ -340,7 +340,11 @@ def _build_semantic_family_registry() -> MappingProxyType:
             method_surfaces=(
                 _method_surface_definition(
                     "rate_tree",
-                    target_modules=("trellis.models.callable_bond_tree",),
+                    target_modules=(
+                        "trellis.models.short_rate_lattice",
+                        "trellis.models.short_rate_fixed_income",
+                        "trellis.models.trees.algebra",
+                    ),
                     primitive_families=("exercise_lattice",),
                     adapter_obligations=(
                         "resolve_call_schedule",

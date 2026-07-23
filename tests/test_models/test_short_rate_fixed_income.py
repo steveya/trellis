@@ -110,6 +110,42 @@ def test_generic_lattice_contract_spec_matches_callable_wrapper_price():
     )
 
 
+def test_generic_lattice_contract_compiles_one_prebuilt_event_timeline():
+    spec = _callable_spec()
+    event_timeline = build_embedded_fixed_income_event_timeline(
+        spec,
+        settlement=date(2024, 11, 15),
+    )
+
+    contract = compile_embedded_fixed_income_lattice_contract_spec(
+        spec,
+        event_timeline=event_timeline,
+        expected_control_style="issuer_min",
+        dt=0.125,
+        n_steps=80,
+    )
+
+    assert contract.control.objective == "issuer_min"
+    assert contract.metadata["event_timeline"] is event_timeline
+
+
+def test_generic_lattice_contract_rejects_wrong_declared_control_style():
+    spec = _callable_spec()
+    event_timeline = build_embedded_fixed_income_event_timeline(
+        spec,
+        settlement=date(2024, 11, 15),
+    )
+
+    with pytest.raises(ValueError, match="expected holder_max.*resolved issuer_min"):
+        compile_embedded_fixed_income_lattice_contract_spec(
+            spec,
+            event_timeline=event_timeline,
+            expected_control_style="holder_max",
+            dt=0.125,
+            n_steps=80,
+        )
+
+
 def test_generic_lattice_contract_spec_includes_terminal_coupon_in_terminal_payoff():
     spec = _callable_spec()
     contract = compile_embedded_fixed_income_lattice_contract_spec(

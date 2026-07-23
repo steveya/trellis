@@ -1527,7 +1527,7 @@ def test_evaluate_prompt_route_less_semantic_request_prefers_compiler_inspected_
     assert "`trellis.models.black`" not in modules_block
 
 
-def test_executor_callable_bond_rate_tree_retry_pins_vol_surface_and_control_policy():
+def test_executor_callable_bond_rate_tree_retry_pins_primitive_composition():
     from types import SimpleNamespace
 
     from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
@@ -1546,16 +1546,22 @@ def test_executor_callable_bond_rate_tree_retry_pins_vol_surface_and_control_pol
 
     text = "\n".join(_route_specific_retry_lines(request))
 
-    assert "market_state.vol_surface.black_vol" in text
-    assert "market_state.discount.zero_rate" in text
-    assert "price_callable_bond_tree" in text
-    assert "sigma_hw = black_vol" in text
-    assert "build_generic_lattice" in text
-    assert 'MODEL_REGISTRY["bdt"]' in text
-    assert "lattice_step_from_time" in text
-    assert "lattice_steps_from_timeline" in text
-    assert "build_payment_timeline" in text
-    assert 'resolve_lattice_exercise_policy("issuer_call"' in text
+    for symbol in (
+        "resolve_short_rate_lattice_inputs",
+        "MODEL_REGISTRY",
+        "BINOMIAL_1F_TOPOLOGY",
+        "UNIFORM_ADDITIVE_MESH",
+        "TERM_STRUCTURE_TARGET",
+        "build_lattice",
+        "build_embedded_fixed_income_event_timeline",
+        "compile_embedded_fixed_income_lattice_contract_spec",
+        "price_on_lattice",
+        "present_value_fixed_coupon_bond",
+    ):
+        assert symbol in text
+    assert 'expected_control_style="issuer_min"' in text
+    assert "min(tree_price, straight_price)" in text
+    assert "Do not call `price_callable_bond_tree`" in text
 
 
 def test_executor_bermudan_swaption_rate_tree_retry_pins_explicit_lattice_composition():
@@ -1893,7 +1899,7 @@ def test_evaluate_prompt_american_pde_surface_mentions_exercise_values_and_ranna
     assert "rannacher_timesteps" in prompt
 
 
-def test_evaluate_prompt_callable_bond_rate_tree_surface_mentions_lattice_control_helper():
+def test_evaluate_prompt_callable_bond_rate_tree_surface_mentions_primitive_composition():
     from trellis.agent.codegen_guardrails import GenerationPlan, PrimitivePlan, PrimitiveRef
     from trellis.agent.prompts import evaluate_prompt
     from trellis.agent.quant import PricingPlan
@@ -1981,14 +1987,16 @@ def test_evaluate_prompt_callable_bond_rate_tree_surface_mentions_lattice_contro
         prompt_surface="compact",
     )
 
-    assert "resolve_lattice_exercise_policy" in prompt
-    assert "lattice_steps_from_timeline" in prompt
-    assert "build_generic_lattice" in prompt
+    assert "resolve_short_rate_lattice_inputs" in prompt
     assert "MODEL_REGISTRY" in prompt
-    assert 'exercise_policy=exercise_policy' in prompt
-    assert '"issuer_call"' in prompt
-    assert "market_state.vol_surface.black_vol" in prompt
-    assert "market_state.discount.zero_rate" in prompt
+    assert "BINOMIAL_1F_TOPOLOGY" in prompt
+    assert "UNIFORM_ADDITIVE_MESH" in prompt
+    assert "TERM_STRUCTURE_TARGET" in prompt
+    assert "build_embedded_fixed_income_event_timeline" in prompt
+    assert "compile_embedded_fixed_income_lattice_contract_spec" in prompt
+    assert 'expected_control_style="issuer_min"' in prompt
+    assert "price_on_lattice" in prompt
+    assert "present_value_fixed_coupon_bond" in prompt
 
 
 def test_evaluate_prompt_barrier_pde_surface_mentions_grid_operator_and_rannacher():

@@ -103,10 +103,12 @@ METHOD_TEST_TARGETS = {
 
 FAMILY_SUPPORT_MODULES = {
     "callable_bond": (
-        "trellis.models.callable_bond_tree",
+        "trellis.models.short_rate_fixed_income",
+        "trellis.models.short_rate_lattice",
     ),
     "puttable_bond": (
-        "trellis.models.callable_bond_tree",
+        "trellis.models.short_rate_fixed_income",
+        "trellis.models.short_rate_lattice",
     ),
     "bermudan_swaption": (
         "trellis.models.bermudan_swaption_tree",
@@ -402,11 +404,18 @@ def build_generation_plan(
 
     if primitive_plan is not None:
         for primitive in primitive_plan.primitives:
-            approved.add(primitive.module)
+            if not primitive.excluded:
+                approved.add(primitive.module)
 
     symbols = set()
     for module_path in approved:
         symbols.update(list_module_exports(module_path))
+    if primitive_plan is not None:
+        symbols.difference_update(
+            primitive.symbol
+            for primitive in primitive_plan.primitives
+            if primitive.excluded
+        )
 
     proposed_tests = list(METHOD_TEST_TARGETS.get(method, ("tests/test_agent",)))
     if instrument_type:

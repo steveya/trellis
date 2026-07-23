@@ -547,7 +547,10 @@ def test_callable_bond_compiles_to_exercise_lattice_family_ir():
     assert family_ir.control_style == "issuer_min"
     assert family_ir.control_program.control_style == "issuer_min"
     assert family_ir.control_program.controller_role == "issuer"
-    assert family_ir.helper_symbol == "price_callable_bond_tree"
+    assert family_ir.helper_symbol == ""
+    assert family_ir.market_mapping == (
+        "discount_curve_short_rate_calibration_event_contract_to_lattice"
+    )
     assert family_ir.event_program.event_dates == ("2026-01-15", "2027-01-15")
     assert "add_cashflow" in family_ir.event_program.transform_kinds
     assert "project_min" in family_ir.event_program.transform_kinds
@@ -691,7 +694,7 @@ def test_exercise_lattice_family_ir_ignores_legacy_settlement_rule_mirror():
     callable_bp = compile_semantic_contract(callable_contract)
 
     assert isinstance(callable_bp.dsl_lowering.family_ir, ExerciseLatticeIR)
-    assert callable_bp.dsl_lowering.family_ir.helper_symbol == "price_callable_bond_tree"
+    assert callable_bp.dsl_lowering.family_ir.helper_symbol == ""
 
     swaption_contract = make_rate_style_swaption_contract(
         description="Bermudan payer swaption with annual exercise dates",
@@ -1064,7 +1067,11 @@ def test_exercise_lattice_dispatches_from_binding_surface_not_route_id(monkeypat
     assert isinstance(family_ir, ExerciseLatticeIR)
     assert family_ir.route_id == synthetic_route_id
     assert family_ir.route_family == "lattice"
-    assert family_ir.helper_symbol == "price_callable_bond_tree"
+    assert family_ir.helper_symbol == ""
+    assert (
+        family_ir.market_mapping
+        == "discount_curve_short_rate_calibration_event_contract_to_lattice"
+    )
 
 
 def test_event_aware_pde_dispatches_from_binding_surface_not_route_id(monkeypatch):

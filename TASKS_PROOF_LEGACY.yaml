@@ -61,7 +61,7 @@ tasks:
         method: rate_tree
         route_id: exercise_lattice
         route_family: rate_lattice
-        backend_binding_id: trellis.models.callable_bond_tree.price_callable_bond_tree
+        backend_binding_id: trellis.models.trees.algebra.price_on_lattice
         variant_parameters: {lattice_model: bdt}
         validation_bundle_id: rate_tree:callable_bond
         payoff_family: callable_fixed_income
@@ -72,7 +72,7 @@ tasks:
         method: rate_tree
         route_id: exercise_lattice
         route_family: rate_lattice
-        backend_binding_id: trellis.models.callable_bond_tree.price_callable_bond_tree
+        backend_binding_id: trellis.models.trees.algebra.price_on_lattice
         variant_parameters: {lattice_model: hull_white}
         validation_bundle_id: rate_tree:callable_bond
         payoff_family: callable_fixed_income
@@ -122,7 +122,7 @@ tasks:
         method: rate_tree
         route_id: exercise_lattice
         route_family: rate_lattice
-        backend_binding_id: trellis.models.callable_bond_tree.price_callable_bond_tree
+        backend_binding_id: trellis.models.trees.algebra.price_on_lattice
         validation_bundle_id: rate_tree:puttable_bond
         payoff_family: puttable_fixed_income
         exercise_style: holder_put
@@ -300,7 +300,7 @@ tasks:
         method: rate_tree
         route_id: exercise_lattice
         route_family: rate_lattice
-        backend_binding_id: trellis.models.callable_bond_tree.price_callable_bond_tree
+        backend_binding_id: trellis.models.trees.algebra.price_on_lattice
         variant_parameters: {pricing_method: rate_tree, lattice_model: hull_white, model_parameter_set: 't17_hull_white_comparison:hull_white', mean_reversion: 0.1, sigma: 0.01}
         validation_bundle_id: rate_tree:callable_bond
         payoff_family: callable_fixed_income

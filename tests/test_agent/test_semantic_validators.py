@@ -595,7 +595,7 @@ def evaluate(self, market_state):
         )
         assert not any(f.category == "engine_family_mismatch" for f in findings)
 
-    def test_flags_missing_callable_bond_route_helper(self, registry):
+    def test_flags_missing_callable_bond_primitive_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         callable_ir = ProductIR(
             instrument="callable_bond",
@@ -610,7 +610,7 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
-        assert any(f.category == "route_helper_not_called" for f in findings)
+        assert any(f.category == "required_primitive_not_called" for f in findings)
 
     def test_importing_retired_quanto_wrapper_does_not_satisfy_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]
@@ -953,7 +953,7 @@ def evaluate(self, market_state):
         )
         assert any(f.category == "required_primitive_not_called" for f in findings)
 
-    def test_flags_callable_bond_tree_helper_signature_mismatch(self, registry):
+    def test_callable_bond_tree_wrapper_does_not_satisfy_primitive_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         callable_ir = ProductIR(
             instrument="callable_bond",
@@ -970,9 +970,9 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(f.category == "required_primitive_not_called" for f in findings)
 
-    def test_accepts_callable_bond_tree_helper_surface(self, registry):
+    def test_callable_bond_tree_wrapper_is_not_route_authority(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         callable_ir = ProductIR(
             instrument="callable_bond",
@@ -989,9 +989,9 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(f.category == "required_primitive_not_called" for f in findings)
 
-    def test_rejects_callable_bond_tree_positional_optional_argument(self, registry):
+    def test_callable_bond_tree_positional_call_does_not_satisfy_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "exercise_lattice"][0]
         callable_ir = ProductIR(
             instrument="callable_bond",
@@ -1008,7 +1008,7 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("exercise_lattice", "lattice"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(f.category == "required_primitive_not_called" for f in findings)
 
     def test_flags_rate_tree_swaption_missing_required_composition_primitive(self, registry):
         spec = [r for r in registry.routes if r.id == "rate_tree_backward_induction"][0]

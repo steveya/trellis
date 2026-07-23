@@ -753,7 +753,7 @@ def test_contract_requires_correlation_for_multi_asset_mc():
             "settle_on_call_or_maturity",
             "rate_tree",
             "exercise_lattice",
-            "trellis.models.callable_bond_tree",
+            "trellis.models.short_rate_fixed_income",
         ),
         (
             "European swaption on a fixed-for-floating swap with expiry 2026-01-15",
@@ -825,6 +825,8 @@ def test_representative_derivative_contracts_validate_and_compile(
     expected_primitive_routes = () if expected_route is None else (expected_route,)
     assert compiled.primitive_routes == expected_primitive_routes
     assert expected_target_module in compiled.target_modules
+    if expected_semantic_id == "callable_bond":
+        assert "trellis.models.callable_bond_tree" not in compiled.target_modules
     assert all("himalaya" not in module.lower() for module in compiled.route_modules)
 
 

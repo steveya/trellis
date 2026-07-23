@@ -40,7 +40,7 @@ _CHECKED_MARKET_BINDING_OWNER_SYMBOLS = frozenset({
 })
 _CALLABLE_CALIBRATION_BINDING_SYMBOLS = frozenset({
     "price_callable_bond_pde",
-    "price_callable_bond_tree",
+    "resolve_short_rate_lattice_inputs",
 })
 
 # Legacy _ROUTE_REQUIRED_ACCESSES and _ROUTE_ACCESS_ERROR_CODES removed.

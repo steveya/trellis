@@ -745,8 +745,8 @@ _EXERCISE_LATTICE_PROFILES = (
         ),
         required_observables=("discount_curve", "cashflow_schedule"),
         required_inputs=("discount_curve", "black_vol_surface"),
-        helper_symbol="price_callable_bond_tree",
-        market_mapping="discount_curve_black_vol_coupon_schedule_to_callable_tree",
+        helper_symbol="",
+        market_mapping="discount_curve_short_rate_calibration_event_contract_to_lattice",
         derived_quantities=(
             "call_schedule_steps",
             "coupon_accrual_fractions",

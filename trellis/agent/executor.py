@@ -5684,9 +5684,23 @@ def _deterministic_exact_binding_evaluate_body(
     )
     callable_bond_binding_refs = {
         "trellis.models.callable_bond_pde.price_callable_bond_pde",
-        "trellis.models.callable_bond_tree.price_callable_bond_tree",
     }
-    has_callable_bond_exact_binding = bool(refs & callable_bond_binding_refs)
+    callable_primitive_plan = _generation_plan_field(
+        generation_plan,
+        "primitive_plan",
+    )
+    callable_primitive_route = str(
+        getattr(callable_primitive_plan, "route", "") or ""
+    ).strip()
+    has_callable_bond_lattice_composition = (
+        instrument_type in {"callable_bond", "puttable_bond"}
+        and callable_primitive_route == "exercise_lattice"
+        and "trellis.models.trees.algebra.price_on_lattice" in refs
+    )
+    has_callable_bond_exact_binding = (
+        bool(refs & callable_bond_binding_refs)
+        or has_callable_bond_lattice_composition
+    )
     callable_bond_calibration_kwargs: list[str] = []
     if has_callable_bond_exact_binding:
         for variant_name in ("mean_reversion", "sigma"):
@@ -5724,7 +5738,7 @@ def _deterministic_exact_binding_evaluate_body(
         else "hull_white"
     ).strip().lower()
     if (
-        "trellis.models.callable_bond_tree.price_callable_bond_tree" in refs
+        has_callable_bond_lattice_composition
         and callable_bond_lattice_model not in {"bdt", "hull_white"}
     ):
         raise ValueError(
@@ -6755,6 +6769,73 @@ def _deterministic_exact_binding_evaluate_body(
             return float(result["price"])
             """
         ).rstrip()
+    if has_callable_bond_lattice_composition:
+        expected_control_style = (
+            "holder_max" if instrument_type == "puttable_bond" else "issuer_min"
+        )
+        expected_reference_bound = (
+            "lower" if instrument_type == "puttable_bond" else "upper"
+        )
+        reference_bound_operator = (
+            "max" if instrument_type == "puttable_bond" else "min"
+        )
+        calibration_argument_lines = "".join(
+            f"                {argument},\n"
+            for argument in callable_bond_calibration_kwargs
+        )
+        return textwrap.dedent(
+            f"""\
+            if market_state.discount is None:
+                raise ValueError("Embedded fixed-income lattice pricing requires market_state.discount")
+
+            settlement = settlement_date_for_fixed_income_claim(market_state, spec)
+            horizon = year_fraction(settlement, spec.end_date, spec.day_count)
+            if horizon <= 0.0:
+                raise ValueError("Embedded fixed-income maturity must be after settlement")
+
+            resolved = resolve_short_rate_lattice_inputs(
+                market_state,
+                horizon=horizon,
+                model="{callable_bond_lattice_model}",
+{calibration_argument_lines}                minimum_steps=50,
+                maximum_steps=200,
+                steps_per_year=50.0,
+            )
+            tree_model = MODEL_REGISTRY[resolved.model_name]
+            lattice = build_lattice(
+                BINOMIAL_1F_TOPOLOGY,
+                UNIFORM_ADDITIVE_MESH,
+                tree_model.as_lattice_model_spec(),
+                calibration_target=TERM_STRUCTURE_TARGET(market_state.discount),
+                r0=resolved.r0,
+                sigma=resolved.sigma,
+                a=resolved.mean_reversion,
+                T=resolved.horizon,
+                n_steps=resolved.n_steps,
+            )
+            event_timeline = build_embedded_fixed_income_event_timeline(
+                spec,
+                settlement=settlement,
+            )
+            if event_timeline.exercise.reference_bound != "{expected_reference_bound}":
+                raise ValueError("Embedded fixed-income reference bound does not match product control")
+            contract = compile_embedded_fixed_income_lattice_contract_spec(
+                spec,
+                event_timeline=event_timeline,
+                expected_control_style="{expected_control_style}",
+                dt=lattice.dt,
+                n_steps=lattice.n_steps,
+            )
+            tree_price = float(price_on_lattice(lattice, contract))
+            straight_price = present_value_fixed_coupon_bond(
+                market_state,
+                spec,
+                settlement=settlement,
+            )
+            return {reference_bound_operator}(tree_price, straight_price)
+            """
+        ).rstrip()
+
     helper_bodies = {
         "trellis.models.fx_vanilla.price_fx_vanilla_analytical": (
             "return price_fx_vanilla_analytical(market_state, spec)"
@@ -6772,17 +6853,6 @@ def _deterministic_exact_binding_evaluate_body(
                 (
                     *callable_bond_calibration_kwargs,
                     f"theta={callable_bond_pde_theta!r}",
-                )
-            )
-            + ")"
-        ),
-        "trellis.models.callable_bond_tree.price_callable_bond_tree": (
-            "return price_callable_bond_tree("
-            "market_state, spec, "
-            + ", ".join(
-                (
-                    f'model="{callable_bond_lattice_model}"',
-                    *callable_bond_calibration_kwargs,
                 )
             )
             + ")"
@@ -7333,6 +7403,22 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append("from math import sqrt")
     if "year_fraction(" in body:
         imports.append("from trellis.core.date_utils import year_fraction")
+    if "resolve_short_rate_lattice_inputs(" in body:
+        imports.append(
+            "from trellis.models.short_rate_lattice import "
+            "resolve_short_rate_lattice_inputs"
+        )
+    if "build_embedded_fixed_income_event_timeline(" in body:
+        imports.append(
+            "from trellis.models.short_rate_fixed_income import (\n"
+            "    build_embedded_fixed_income_event_timeline,\n"
+            "    compile_embedded_fixed_income_lattice_contract_spec,\n"
+            "    present_value_fixed_coupon_bond,\n"
+            "    settlement_date_for_fixed_income_claim,\n"
+            ")"
+        )
+    if "MODEL_REGISTRY[" in body:
+        imports.append("from trellis.models.trees.models import MODEL_REGISTRY")
     if "normalize_explicit_dates(" in body:
         imports.append("from trellis.core.date_utils import normalize_explicit_dates")
     if "build_payment_timeline(" in body:
@@ -9586,22 +9672,12 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed"}
     ):
         return (
-            "Callable rate-tree routes must keep both rate-vol access and schedule-dependent lattice control explicit in the generated body.",
-            "Prefer the checked-in helper surface in `trellis.models.callable_bond_tree`: `price_callable_bond_tree(market_state, spec, model=\"hull_white\"|\"bdt\")` or the lower-level `build_callable_bond_lattice(...)` + `price_callable_bond_on_lattice(...)`.",
-            "Read the short-rate seed from `market_state.discount.zero_rate(...)`; do not call `market_state.zero_rate(...)` or invent a curve accessor on MarketState itself.",
-            "Read the short-rate volatility proxy from `market_state.vol_surface.black_vol(...)` and keep that access visible in `evaluate()`; do not replace it with a hard-coded fallback or hide it behind a stale helper.",
-            "A good shape is `black_vol = float(market_state.vol_surface.black_vol(max(T / 2.0, 1e-6), max(r0, 1e-6)))`, followed by `sigma_hw = black_vol * max(abs(r0), 1e-6)`.",
-            "Do not drop `market_state.vol_surface` access just because the route later converts Black vol into a Hull-White or BDT tree volatility.",
-            "For BDT or explicit Hull-White comparison routes, prefer `price_callable_bond_tree(..., model=\"bdt\"|\"hull_white\")`. If you must build the tree directly, import `build_generic_lattice` from `trellis.models.trees.lattice` and `MODEL_REGISTRY` from `trellis.models.trees.models`, then choose `MODEL_REGISTRY[\"bdt\"]` or `MODEL_REGISTRY[\"hull_white\"]` explicitly.",
-            "If you use the plain Hull-White helper route, call `build_rate_lattice(r0, sigma_hw, mean_reversion, T, n_steps, discount_curve=market_state.discount)` with positional `r0, sigma_hw, mean_reversion, T, n_steps`.",
-            "Treat `trellis.models.trees.control` as the lattice-timeline facade: it exports `build_payment_timeline(...)`, `build_exercise_timeline_from_dates(...)`, `lattice_steps_from_timeline(...)`, and `lattice_step_from_time(...)`.",
-            "Build payment and exercise timelines with that control facade; map the multi-date exercise timeline with `lattice_steps_from_timeline(..., dt=lattice.dt, n_steps=lattice.n_steps)` and map individual coupon/maturity times with `lattice_step_from_time(..., dt=lattice.dt, n_steps=lattice.n_steps, allow_terminal_step=True)`.",
-            "Resolve callable exercise with `exercise_policy = resolve_lattice_exercise_policy(\"issuer_call\", exercise_steps=...)`.",
-            "Call `lattice_backward_induction(lattice, terminal_payoff, exercise_value=..., cashflow_at_node=..., exercise_policy=...)`; do not fall back to legacy names like `terminal_value=` or `exercise_value_fn=`.",
-            "Make `terminal_payoff(step, node, lattice)` return principal plus the final coupon. Do not key maturity cashflows off the node index or collapse terminal value to a coupon-only lookup.",
-            "Coupon cashflows are step-based, not node-based. Build a `coupon_by_step` map from the payment timeline and use `lattice_step_from_time(...)` for any single coupon or maturity event you later index directly.",
-            "Pass `exercise_policy=exercise_policy` into `lattice_backward_induction(...)` instead of open-coding holder-style exercise semantics.",
-            "Keep the callable route thin: explicit coupon cashflows, explicit exercise value, explicit vol-surface access, checked-in lattice control, and no bespoke exercise convention logic.",
+            "Callable rate-tree routes compose the public short-rate, event-contract, and generic lattice primitives directly.",
+            "Resolve settlement and maturity, then call `resolve_short_rate_lattice_inputs(...)`; do not reconstruct curve/volatility fallback rules inside the adapter.",
+            "Select the resolved model through `MODEL_REGISTRY`, then compose `BINOMIAL_1F_TOPOLOGY`, `UNIFORM_ADDITIVE_MESH`, `TERM_STRUCTURE_TARGET(...)`, and `build_lattice(...)`.",
+            "Build one `build_embedded_fixed_income_event_timeline(...)` result and pass it to `compile_embedded_fixed_income_lattice_contract_spec(..., expected_control_style=\"issuer_min\")`.",
+            "Call `price_on_lattice(...)`, compare with `present_value_fixed_coupon_bond(...)`, and return the upper-bound-safe `min(tree_price, straight_price)`.",
+            "Do not call `price_callable_bond_tree`; it is an excluded compatibility reference for this route.",
         )
     if (
         instrument == "puttable_bond"
@@ -9609,14 +9685,11 @@ def _route_specific_retry_lines(
         and stage in {"code_generation_failed", "semantic_validation_failed", "validation_failed", "actual_market_smoke_failed", "import_validation_failed"}
     ):
         return (
-            "Puttable bond rate-tree routes should stay on the checked-in embedded-bond helper surface whenever possible.",
-            "Prefer `from trellis.models.callable_bond_tree import price_callable_bond_tree` and delegate to that helper from the adapter. The helper accepts puttable specs with `put_dates` and `put_price`.",
-            "If you need the lower-level lattice path, resolve holder exercise with `exercise_policy = resolve_lattice_exercise_policy(\"holder_put\", exercise_steps=...)`.",
-            "Do not pass `exercise_fn=` into `resolve_lattice_exercise_policy(...)`. That function only accepts `exercise_style` and `exercise_steps`; the holder-max objective is already built into the `holder_put` policy.",
-            "Do not pass a second bespoke holder exercise function into `lattice_backward_induction(...)` when you already pass `exercise_policy=exercise_policy`.",
-            "Treat `trellis.models.trees.control` as the lattice-timeline facade: build the exercise schedule from explicit `put_dates`, map it with `lattice_steps_from_timeline(...)`, and keep the policy object explicit.",
-            "Keep `market_state.vol_surface.black_vol(...)` and `market_state.discount.zero_rate(...)` visible in `evaluate()` before delegating so the route keeps its calibration inputs explicit.",
-            "Puttable bonds are holder-maximizing Bermudan exercise problems. Do not drift to issuer-minimizing semantics or `exercise_fn=min` anywhere in the route.",
+            "Puttable bond rate-tree routes use the public short-rate resolver, embedded event compiler, and generic lattice rollback directly.",
+            "Compose the same `MODEL_REGISTRY`, topology, mesh, calibration target, and `build_lattice(...)` surface as the callable route.",
+            "Compile the shared event timeline with `expected_control_style=\"holder_max\"`; issuer-min semantics must fail closed.",
+            "Call `price_on_lattice(...)`, compare with `present_value_fixed_coupon_bond(...)`, and return the lower-bound-safe `max(tree_price, straight_price)`.",
+            "Do not call `price_callable_bond_tree`; it is an excluded compatibility reference for this route.",
         )
     if (
         instrument == "bermudan_swaption"

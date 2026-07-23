@@ -88,7 +88,7 @@ def test_ranked_observation_basket_lowers_to_market_binding_then_helper():
     )
 
 
-def test_callable_bond_lowers_to_explicit_issuer_choice_plus_helper_targets():
+def test_callable_bond_lowers_to_explicit_issuer_choice_plus_primitive_targets():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_callable_bond_contract
 
@@ -104,7 +104,7 @@ def test_callable_bond_lowers_to_explicit_issuer_choice_plus_helper_targets():
     assert lowering.route_family == "rate_lattice"
     assert lowering.admissibility_errors == ()
     assert isinstance(lowering.family_ir, ExerciseLatticeIR)
-    assert lowering.family_ir.helper_symbol == "price_callable_bond_tree"
+    assert lowering.family_ir.helper_symbol == ""
     assert lowering.family_ir.control_style == "issuer_min"
     assert "coupon_accrual_fractions" in lowering.family_ir.derived_quantities
     assert isinstance(lowering.normalized_expr, ChoiceExpr)
@@ -118,11 +118,13 @@ def test_callable_bond_lowers_to_explicit_issuer_choice_plus_helper_targets():
     assert blueprint.lane_plan.lane_family == "lattice"
     assert blueprint.lane_plan.plan_kind == "exact_target_binding"
     assert "control_style:issuer_min" in blueprint.lane_plan.control_obligations
+    assert lowering.route_helper_refs == ()
     assert (
-        "trellis.models.callable_bond_tree.price_callable_bond_tree"
-        in lowering.helper_refs
+        "trellis.models.trees.algebra.price_on_lattice"
+        in lowering.target_refs
     )
-    assert "trellis.models.callable_bond_tree" in blueprint.route_modules
+    assert "trellis.models.callable_bond_tree" not in blueprint.route_modules
+    assert "trellis.models.short_rate_fixed_income" in blueprint.route_modules
 
 
 def test_quanto_lowering_prefers_binding_spec_targets_when_route_primitives_are_stale(monkeypatch):

@@ -1,9 +1,9 @@
-"""Generic short-rate fixed-income helper kits for event-aware claims.
+"""Public short-rate fixed-income composition primitives for event-aware claims.
 
 This module owns reusable coupon/event/control assembly for bounded
-single-state fixed-income claims with embedded call/put schedules. Product
-wrappers such as callable bonds should stay thin and delegate schedule,
-exercise, lattice, and PDE event preparation here.
+single-state fixed-income claims with embedded call/put schedules. Agents can
+compose these primitives with the generic lattice or PDE substrates without a
+product-specific pricing wrapper.
 """
 
 from __future__ import annotations
@@ -36,7 +36,7 @@ class DiscountCurveLike(Protocol):
 
 
 class FixedIncomeMarketStateLike(Protocol):
-    """Market-state interface required by fixed-income helper kits."""
+    """Market-state interface required by fixed-income composition primitives."""
 
     as_of: date | None
     settlement: date | None
@@ -100,7 +100,7 @@ def settlement_date_for_fixed_income_claim(
     market_state: FixedIncomeMarketStateLike,
     spec: FixedIncomeScheduleSpecLike,
 ) -> date:
-    """Resolve the settlement anchor for fixed-income claim helpers."""
+    """Resolve the settlement anchor for fixed-income claim composition."""
     return getattr(market_state, "settlement", None) or getattr(market_state, "as_of", None) or spec.start_date
 
 
@@ -281,12 +281,43 @@ def build_embedded_fixed_income_exercise_policy(
 def compile_embedded_fixed_income_lattice_contract_spec(
     spec: EmbeddedFixedIncomeSpecLike,
     *,
-    settlement: date,
+    settlement: date | None = None,
+    event_timeline: EmbeddedFixedIncomeEventTimeline | None = None,
+    expected_control_style: str | None = None,
     dt: float,
     n_steps: int,
 ) -> lattice_algebra.LatticeContractSpec:
-    """Compile one callable/putable fixed-income claim onto the lattice substrate."""
-    event_timeline = build_embedded_fixed_income_event_timeline(spec, settlement=settlement)
+    """Compile one embedded fixed-income event timeline onto the lattice substrate.
+
+    Callers may either provide ``settlement`` and let this function assemble the
+    timeline, or build the timeline once and pass it through ``event_timeline``.
+    ``expected_control_style`` is an optional fail-closed assertion for agents
+    composing issuer-call (``issuer_min``) or holder-put (``holder_max``)
+    contracts from the public primitives.
+    """
+    if event_timeline is None:
+        if settlement is None:
+            raise ValueError("settlement is required when event_timeline is not provided")
+        event_timeline = build_embedded_fixed_income_event_timeline(
+            spec,
+            settlement=settlement,
+        )
+    elif settlement is not None and settlement != event_timeline.settlement:
+        raise ValueError(
+            "settlement must match event_timeline.settlement when both are provided"
+        )
+
+    if expected_control_style is not None:
+        if expected_control_style not in {"issuer_min", "holder_max"}:
+            raise ValueError(
+                "expected_control_style must be 'issuer_min' or 'holder_max'"
+            )
+        resolved_control_style = event_timeline.exercise.control_style
+        if expected_control_style != resolved_control_style:
+            raise ValueError(
+                f"expected {expected_control_style} control but resolved "
+                f"{resolved_control_style} from the event timeline"
+            )
     coupon_by_step = build_embedded_fixed_income_coupon_step_map(
         event_timeline,
         dt=dt,
@@ -315,7 +346,10 @@ def compile_embedded_fixed_income_lattice_contract_spec(
                 + float(coupon_by_step.get(step, 0.0))
             ),
         ),
-        metadata={"coupon_by_step": coupon_by_step},
+        metadata={
+            "coupon_by_step": coupon_by_step,
+            "event_timeline": event_timeline,
+        },
     )
 
 

@@ -354,11 +354,42 @@ whereas a lognormal model retains :math:`\sigma_{\mathrm{Black}}`. Missing
 discount or volatility evidence, unsupported model names, non-positive
 horizons, and invalid step policies fail closed.
 
-The callable-bond and Bermudan-swaption lattice builders consume this same
-binding while retaining their own schedule and payoff semantics. Generated
-construction can therefore use the resolver with ``MODEL_REGISTRY``,
+The callable/puttable fixed-income and Bermudan-swaption lattice compositions
+consume this same binding while retaining their own schedule and payoff
+semantics. Generated construction therefore uses the resolver with ``MODEL_REGISTRY``,
 ``TERM_STRUCTURE_TARGET(...)``, and ``build_lattice(...)`` without copying
 market-default conventions or invoking a product pricer.
+
+Callable And Puttable Fixed-Income Composition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Generated callable and puttable bond routes assemble the public primitives in
+this order:
+
+1. Resolve settlement with ``settlement_date_for_fixed_income_claim(...)`` and
+   measure the positive maturity horizon.
+2. Call ``resolve_short_rate_lattice_inputs(...)``, select the returned
+   ``model_name`` from ``MODEL_REGISTRY``, and build the calibrated lattice from
+   ``BINOMIAL_1F_TOPOLOGY``, ``UNIFORM_ADDITIVE_MESH``,
+   ``TERM_STRUCTURE_TARGET(...)``, and ``build_lattice(...)``.
+3. Build one ``EmbeddedFixedIncomeEventTimeline`` with
+   ``build_embedded_fixed_income_event_timeline(...)``.
+4. Pass that same timeline to
+   ``compile_embedded_fixed_income_lattice_contract_spec(...)`` with
+   ``expected_control_style="issuer_min"`` for an issuer call or
+   ``expected_control_style="holder_max"`` for a holder put. A mismatched
+   declaration fails closed.
+5. Roll back with ``price_on_lattice(...)`` and evaluate the straight-bond
+   reference with ``present_value_fixed_coupon_bond(...)``.
+6. Enforce the economic reference relation: callable holder value is capped by
+   the straight-bond value, while puttable holder value is floored by it.
+
+The event compiler owns coupon-step mapping, quoted exercise-price conversion,
+exercise dates, and min/max control. The generated adapter owns orchestration,
+model selection, and the final reference-bound check. The public
+``price_callable_bond_tree(...)`` wrapper remains callable for compatibility
+and independent comparison, but it is excluded from generated construction
+authority.
 
 Bermudan Swaption Composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -488,15 +519,14 @@ recover model parameters. ``price_swaption_tree(...)`` and
 ``build_swaption_tree_spec(...)`` remain compatibility and independent
 reference surfaces, not generated construction authority.
 
-Current Helper-Backed Routes
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Compatibility And Reference Surfaces
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-The checked helper-backed lattice routes remain:
-
-- ``trellis.models.callable_bond_tree.price_callable_bond_tree``
-- ``trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree`` for
-  the separate multi-exercise Bermudan lane
-- ``trellis.models.zcb_option_tree.price_zcb_option_tree``
+``trellis.models.callable_bond_tree.price_callable_bond_tree`` and
+``trellis.models.bermudan_swaption_tree.price_bermudan_swaption_tree`` remain
+public compatibility and independent-reference surfaces; neither is generated
+route authority. ``trellis.models.zcb_option_tree.price_zcb_option_tree``
+remains the checked product entry point for its separately tracked route.
 
 Target API Design
 -----------------

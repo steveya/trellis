@@ -1551,6 +1551,66 @@ def test_exercise_lattice_binding_adds_bermudan_schedule_mapping_primitives():
     }.issubset(resolved.primitive_refs)
 
 
+@pytest.mark.parametrize(
+    ("instrument", "payoff_family", "exercise_style"),
+    [
+        ("callable_bond", "callable_fixed_income", "issuer_call"),
+        ("puttable_bond", "puttable_fixed_income", "holder_put"),
+    ],
+)
+def test_exercise_lattice_binding_resolves_embedded_fixed_income_composition(
+    instrument,
+    payoff_family,
+    exercise_style,
+):
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("exercise_lattice", catalog)
+    assert binding is not None
+
+    resolved = resolve_backend_binding_spec(
+        binding,
+        product_ir=ProductIR(
+            instrument=instrument,
+            payoff_family=payoff_family,
+            exercise_style=exercise_style,
+            model_family="interest_rate",
+            schedule_dependence=True,
+            state_dependence="schedule_state",
+        ),
+    )
+
+    assert resolved.helper_refs == ()
+    assert resolved.market_binding_refs == (
+        "trellis.models.short_rate_lattice.resolve_short_rate_lattice_inputs",
+    )
+    assert resolved.exact_target_refs == (
+        "trellis.models.trees.algebra.price_on_lattice",
+    )
+    assert resolved.binding_id == "trellis.models.trees.algebra.price_on_lattice"
+    assert {primitive.symbol: primitive.role for primitive in resolved.primitives} == {
+        "year_fraction": "timeline_mapping",
+        "resolve_short_rate_lattice_inputs": "market_binding",
+        "MODEL_REGISTRY": "model_registry",
+        "BINOMIAL_1F_TOPOLOGY": "topology",
+        "UNIFORM_ADDITIVE_MESH": "mesh",
+        "TERM_STRUCTURE_TARGET": "calibration_target",
+        "build_lattice": "lattice_builder",
+        "settlement_date_for_fixed_income_claim": "settlement_binding",
+        "build_embedded_fixed_income_event_timeline": "event_timeline_builder",
+        "compile_embedded_fixed_income_lattice_contract_spec": "contract_compiler",
+        "price_on_lattice": "pricing_kernel",
+        "present_value_fixed_coupon_bond": "reference_bound",
+        "price_callable_bond_tree": "compatibility_reference",
+    }
+    retained_wrapper = next(
+        primitive
+        for primitive in resolved.primitives
+        if primitive.symbol == "price_callable_bond_tree"
+    )
+    assert not retained_wrapper.required
+    assert retained_wrapper.excluded
+
+
 def test_exercise_lattice_binding_resolves_bermudan_swaption_composition():
     catalog = load_backend_binding_catalog()
     binding = find_backend_binding_by_route_id("exercise_lattice", catalog)

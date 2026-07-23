@@ -1172,15 +1172,57 @@ routes:
           - "Map the contractual Bermudan exercise dates to lattice steps, then pass those steps to `with_control(..., control_kind=\"bermudan\", exercise_steps=...)`."
           - "Resolve, compile, build, and price through the same generic lattice algebra used by the American route."
       - when:
-          payoff_family: [bond, callable_bond, callable_fixed_income]
+          payoff_family: [bond, callable_bond, callable_fixed_income, puttable_fixed_income]
           exercise_style: [issuer_call, holder_put, bermudan]
           model_family: [interest_rate, short_rate]
         primitives:
+          - module: trellis.core.date_utils
+            symbol: year_fraction
+            role: timeline_mapping
+          - module: trellis.models.short_rate_lattice
+            symbol: resolve_short_rate_lattice_inputs
+            role: market_binding
+          - module: trellis.models.trees.models
+            symbol: MODEL_REGISTRY
+            role: model_registry
+          - module: trellis.models.trees.algebra
+            symbol: BINOMIAL_1F_TOPOLOGY
+            role: topology
+          - module: trellis.models.trees.algebra
+            symbol: UNIFORM_ADDITIVE_MESH
+            role: mesh
+          - module: trellis.models.trees.algebra
+            symbol: TERM_STRUCTURE_TARGET
+            role: calibration_target
+          - module: trellis.models.trees.algebra
+            symbol: build_lattice
+            role: lattice_builder
+          - module: trellis.models.short_rate_fixed_income
+            symbol: settlement_date_for_fixed_income_claim
+            role: settlement_binding
+          - module: trellis.models.short_rate_fixed_income
+            symbol: build_embedded_fixed_income_event_timeline
+            role: event_timeline_builder
+          - module: trellis.models.short_rate_fixed_income
+            symbol: compile_embedded_fixed_income_lattice_contract_spec
+            role: contract_compiler
+          - module: trellis.models.trees.algebra
+            symbol: price_on_lattice
+            role: pricing_kernel
+          - module: trellis.models.short_rate_fixed_income
+            symbol: present_value_fixed_coupon_bond
+            role: reference_bound
           - module: trellis.models.callable_bond_tree
             symbol: price_callable_bond_tree
-            role: route_helper
+            role: compatibility_reference
+            required: false
+            excluded: true
         adapters: []
-        notes: []
+        notes:
+          - "Compose the public primitives directly: resolve settlement and maturity, call `resolve_short_rate_lattice_inputs`, select `MODEL_REGISTRY`, and build the calibrated lattice with the generic topology, mesh, and term-structure target."
+          - "Build one embedded fixed-income event timeline, then compile it with `expected_control_style=\"issuer_min\"` for an issuer call or `expected_control_style=\"holder_max\"` for a holder put before calling `price_on_lattice`."
+          - "Validate the economic reference bound after rollback: callable holder value has the straight-bond PV as an upper bound; puttable holder value has it as a lower bound."
+          - "`price_callable_bond_tree` is retained only as an excluded compatibility reference. New generated routes must use the primitive composition above."
       - when:
           payoff_family: swaption
           exercise_style: [bermudan]
