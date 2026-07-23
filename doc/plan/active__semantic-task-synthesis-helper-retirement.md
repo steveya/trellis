@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-16`
+Status mirror last synced: `2026-07-22`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
@@ -65,8 +65,8 @@ Status mirror last synced: `2026-07-16`
 | `QUA-1202` | Semantic proving: distinguish fresh artifacts from agent synthesis | Done |
 | `QUA-1203` | Semantic authority: classify scalar barrier formula as pricing kernel | Done |
 | `QUA-1204` | Short-rate lattice: reusable market calibration inputs | Done |
-| `QUA-1206` | Semantic comparison: bind callable fixed-income target variants | Backlog |
-| `QUA-1205` | Callable fixed income: raw lattice primitive assembly | Blocked by QUA-1204, QUA-1206 |
+| `QUA-1206` | Semantic comparison: bind callable fixed-income target variants | Done |
+| `QUA-1205` | Callable fixed income: raw lattice primitive assembly | Backlog |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
