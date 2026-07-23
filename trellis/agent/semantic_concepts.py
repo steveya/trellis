@@ -123,7 +123,7 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
     _concept(
         semantic_id="ranked_observation_basket",
         semantic_version="c2.0",
-        scope="ranked-observation basket contracts and their thin compatibility wrappers",
+        scope="ranked-observation basket contracts and their compatibility aliases",
         description=(
             "Multi-asset ranked-observation basket with remaining-constituent selection, "
             "locked returns, and maturity aggregation."
@@ -173,10 +173,7 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
             "event_transitions",
         ),
         required_primitives=("correlated_basket_monte_carlo",),
-        route_helpers=(
-            "trellis.models.resolution.basket_semantics",
-            "trellis.models.monte_carlo.semantic_basket",
-        ),
+        route_helpers=(),
         required_market_inputs=(
             "discount_curve",
             "underlier_spots",

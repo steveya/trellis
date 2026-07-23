@@ -975,8 +975,8 @@ def test_platform_trace_records_checked_range_accrual_static_leg_binding(tmp_pat
             "thin_compatibility_wrapper",
             "correlated_basket_monte_carlo",
             "correlated_basket_monte_carlo",
-            "trellis.models.monte_carlo.semantic_basket",
-            "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
+            "trellis.models.monte_carlo.ranked_observation_payoffs",
+            None,
         ),
     ],
 )
@@ -1080,3 +1080,11 @@ def test_platform_trace_persists_semantic_checkpoint_and_generation_boundary(
         assert expected_helper in trace.generation_boundary["lowering"]["helper_refs"]
         assert expected_helper in boundary["generation_boundary"]["lowering"]["helper_refs"]
         assert expected_helper in trace.generation_boundary["route_binding_authority"]["backend_binding"]["helper_refs"]
+    if expected_route_id == "correlated_basket_monte_carlo":
+        lowering = trace.generation_boundary["lowering"]
+        assert lowering["helper_refs"] == []
+        assert (
+            "trellis.models.monte_carlo.ranked_observation_payoffs."
+            "terminal_ranked_observation_basket_payoff"
+            in lowering["target_refs"]
+        )

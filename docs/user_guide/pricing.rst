@@ -646,6 +646,14 @@ single-name CDS, and
 nth-to-default basket credit now carry explicit contract, market-binding, and
 route-lowering metadata before pricing or code generation starts.
 
+For ranked-observation baskets, the generated construction surface is the
+basket resolver, implied-rate conversion, correlated GBM process, generic
+Monte Carlo engine, and ranked-observation state/terminal payoff primitives.
+The older product-level basket pricer remains available to existing callers,
+but new generated adapters do not use it. This makes the construction visible
+to validation and keeps the observation grid, path state, discounting, and
+notional responsibilities explicit.
+
 They also now carry compiler-emitted lane obligations. In practice that means
 the build loop sees the computational lane first (analytical, lattice, Monte
 Carlo, PDE, and so on), the timeline and market bindings that lane requires,

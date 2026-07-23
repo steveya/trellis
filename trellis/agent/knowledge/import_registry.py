@@ -23,6 +23,19 @@ _PACKAGE_MAP_CACHE: dict[str, PackageMap] = {}
 _TEST_MAP_CACHE: dict[str, TestMap] = {}
 _REPO_FACTS_CACHE: dict[str, tuple[RepoFact, ...]] = {}
 
+# Some library modules intentionally retain compatibility/reference APIs while
+# exposing a smaller construction surface to generated pricing code. Keep this
+# allowlist narrow so live introspection cannot silently re-admit a product
+# helper added beside the reusable primitives.
+_CODEGEN_MODULE_EXPORT_ALLOWLIST: dict[str, frozenset[str]] = {
+    "trellis.models.monte_carlo.ranked_observation_payoffs": frozenset(
+        {
+            "build_ranked_observation_basket_state_payoff",
+            "terminal_ranked_observation_basket_payoff",
+        }
+    ),
+}
+
 
 def get_import_registry() -> str:
     """Return the compact import registry for prompt injection."""
@@ -249,6 +262,9 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
         "trellis.instruments._agent.",
         "trellis.agent.",
         "trellis.data.",
+        # Compatibility/reference surface only. Ranked-observation generation
+        # is authorized through the primitive-composed route instead.
+        "trellis.models.monte_carlo.semantic_basket",
     )
 
     for _importer, modname, _ispkg in pkgutil.walk_packages(
@@ -271,6 +287,10 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
             if inspect.isclass(obj) or inspect.isfunction(obj):
                 if getattr(obj, "__module__", "") == modname:
                     symbols.append(name)
+
+        export_allowlist = _CODEGEN_MODULE_EXPORT_ALLOWLIST.get(modname)
+        if export_allowlist is not None:
+            symbols = [name for name in symbols if name in export_allowlist]
 
         if symbols:
             registry[modname] = tuple(sorted(symbols))
@@ -633,8 +653,7 @@ from trellis.models.monte_carlo.discretization import euler_maruyama, milstein, 
 from trellis.models.monte_carlo.variance_reduction import antithetic, control_variate, sobol_normals, sobol_transition_inputs
 from trellis.models.processes.correlated_gbm import CorrelatedGBM
 from trellis.models.monte_carlo.schemes import Euler, Milstein, Exact, LogEuler, HestonQuadraticExponential, LaguerreBasis, PolynomialBasis
-from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_observation_basket_initial_state, build_ranked_observation_basket_process, build_ranked_observation_basket_state_payoff, price_ranked_observation_basket_monte_carlo, recommended_ranked_observation_basket_mc_engine_kwargs, terminal_ranked_observation_basket_payoff
-from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketMonteCarloPayoff, RankedObservationBasketSpec
+from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_observation_basket_state_payoff, terminal_ranked_observation_basket_payoff
 from trellis.models.monte_carlo.stochastic_vol import HestonMonteCarloProblem, HestonMonteCarloResult, ResolvedHestonMonteCarloInputs, build_heston_monte_carlo_problem, price_heston_option_monte_carlo, price_heston_option_monte_carlo_result, resolve_heston_monte_carlo_inputs
 from trellis.models.monte_carlo.event_aware import price_equity_cliquet_option_monte_carlo
 from trellis.models.asian_option import ArithmeticAsianOptionAnalyticalResult, ArithmeticAsianOptionMonteCarloResult, AsianOptionMonteCarloResult, price_arithmetic_asian_option_analytical, price_arithmetic_asian_option_analytical_result, price_arithmetic_asian_option_monte_carlo, price_arithmetic_asian_option_monte_carlo_result, price_asian_option_monte_carlo, price_asian_option_monte_carlo_result

@@ -1,8 +1,8 @@
 id: mc_027
-title: Unapproved correlated_gbm module path blocks Himalaya build
+title: Superseded - correlated_gbm was unapproved
 severity: critical
 category: monte_carlo
-status: promoted
+status: archived
 confidence: 0.8
 created: '2026-03-28T12:05:09.116634'
 version: ''
@@ -22,14 +22,9 @@ applies_when:
   - greeks
   instrument: []
   error_signature: null
-symptom: Build fails with 'unapproved Trellis module trellis.models.processes.correlated_gbm'
-  error on every attempt.
-root_cause: The agent repeatedly imports CorrelatedGBM from `trellis.models.processes.correlated_gbm`,
-  which is not on the approved module list, despite lessons stating a thin adapter
-  must be used instead.
-fix: Replace all imports of `trellis.models.processes.correlated_gbm` with the approved
-  thin-adapter path (e.g., `trellis.models.monte_carlo.correlated_gbm` or whichever
-  path appears in the generation plan's approved module list) and verify the approved
-  path before writing any import statement.
-validation: Discovered during build (attempt 3)
+symptom: Historical generation policy rejected the real CorrelatedGBM module.
+root_cause: The approved-module surface lagged the public process API.
+fix: Import CorrelatedGBM from trellis.models.processes.correlated_gbm when it appears
+  in the exact binding and import registry.
+validation: Archived by QUA-1231 after admitting the public module as route authority.
 supersedes: []

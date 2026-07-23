@@ -1,5 +1,7 @@
 """Tests for the structured import registry."""
 
+import importlib
+
 import trellis.agent.knowledge.import_registry as import_registry
 from trellis.agent.knowledge.import_registry import (
     find_symbol_modules,
@@ -49,6 +51,30 @@ def test_fpml_conformance_harness_is_not_available_to_generated_code():
     assert not module_exists(module)
     assert list_module_exports(module) == ()
     assert module not in get_import_registry()
+
+
+def test_ranked_basket_compatibility_module_is_importable_but_not_codegen_authorized():
+    module = "trellis.models.monte_carlo.semantic_basket"
+    compatibility = importlib.import_module(module)
+
+    assert hasattr(compatibility, "price_ranked_observation_basket_monte_carlo")
+    assert not module_exists(module)
+    assert list_module_exports(module) == ()
+    assert module not in get_import_registry()
+
+    payoff_module = "trellis.models.monte_carlo.ranked_observation_payoffs"
+    assert set(list_module_exports(payoff_module)) == {
+        "build_ranked_observation_basket_state_payoff",
+        "terminal_ranked_observation_basket_payoff",
+    }
+    assert not is_valid_import(
+        payoff_module,
+        "price_ranked_observation_basket_monte_carlo",
+    )
+    assert not is_valid_import(
+        payoff_module,
+        "build_ranked_observation_basket_process",
+    )
 
 
 def test_static_leg_economic_identity_is_visible_to_import_registry():

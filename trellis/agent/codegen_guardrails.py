@@ -1914,6 +1914,11 @@ def _verify_primitives(primitives: list[PrimitiveRef]) -> list[str]:
     """Return missing-module or missing-symbol blockers for referenced primitives."""
     blockers: list[str] = []
     for primitive in primitives:
+        if primitive.excluded:
+            # Excluded references are audit-only deny-list entries. They are
+            # intentionally allowed to sit outside the code-generation import
+            # registry and must not make the constructive route unavailable.
+            continue
         if not module_exists(primitive.module):
             blockers.append(f"missing_module:{primitive.module}")
             continue

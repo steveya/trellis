@@ -1,8 +1,8 @@
 id: mc_029
-title: Do not import unapproved correlated_gbm module in payoff
+title: Superseded - remove correlated_gbm from ranked payoff
 severity: critical
 category: monte_carlo
-status: promoted
+status: archived
 confidence: 1.0
 created: '2026-03-28T14:44:24.251551'
 version: ''
@@ -23,12 +23,8 @@ applies_when:
   - vol_surface_dependence
   instrument: []
   error_signature: null
-symptom: Build fails with 'unapproved Trellis module trellis.models.processes.correlated_gbm'
-  error on the import line inside evaluate().
-root_cause: The payoff's evaluate() method attempted to import trellis.models.processes.correlated_gbm
-  directly, which is not on the approved module list even though prior lessons indicated
-  it should be used as a thin adapter.
-fix: Remove the direct import of trellis.models.processes.correlated_gbm from evaluate();
-  instead rely only on approved modules listed in the generation plan such as trellis.models.monte_carlo.engine
-  and trellis.models.processes.gbm for path simulation.
-validation: Discovered during build (attempt 3)
+symptom: Historical policy blocked direct construction of the required correlated process.
+root_cause: The policy encoded an obsolete allowlist rather than the current route contract.
+fix: Follow the exact binding, which admits CorrelatedGBM together with MonteCarloEngine
+  and the ranked state-payoff primitive.
+validation: Archived by QUA-1231 after the allowlist and route were reconciled.

@@ -392,45 +392,37 @@ monte_carlo:
     \ derive a required-input checklist from the semantic\ncontract, method requirements,\
     \ and data contracts. Then either synthesize a\nmock input provider plan or surface\
     \ the exact remaining fields the user\nmust supply.\n\n### Ranked-observation\
-    \ basket path payoff (solution contract: ranked_observation_basket)\nUse this\
-    \ pattern for ranked-selection basket payoffs with an ordered\nobservation schedule\
-    \ and a shared correlated path substrate.\n\nKeep the adapter thin: resolve the\
-    \ basket semantics first, then delegate to\nthe shared basket Monte Carlo helper.\
-    \ Do not reimplement the ranking or\nstate-machine logic inside the adapter.\n\
-    \n```python\ndef evaluate(self, market_state):\n    from trellis.models.resolution.basket_semantics\
-    \ import resolve_basket_semantics\n    from trellis.models.monte_carlo.semantic_basket\
-    \ import (\n        price_ranked_observation_basket_monte_carlo,\n    )\n\n  \
-    \  resolved = resolve_basket_semantics(market_state, self.spec)\n    return price_ranked_observation_basket_monte_carlo(self.spec,\
-    \ resolved)\n```\n\nIf you need reduced-state evaluation, use the shared basket\
-    \ state helpers\nin `trellis.models.monte_carlo.basket_state` and the ranked-observation\n\
-    payoff helpers in `trellis.models.monte_carlo.ranked_observation_payoffs`.\n\n\
-    The generated payoff must declare the market inputs basket pricing actually\n\
-    needs: `discount_curve`, `black_vol_surface`, `spot`, and `model_parameters`\n\
-    (plus `forward_curve` when the route uses forward drift). Do not emit a\nrequirements\
-    \ set that only names `discount_curve`.\n\nFor multi-asset basket routes, do not\
-    \ reshape or index the raw\n`MarketState` as if it were a simulated path tensor.\
-    \ Resolve the basket\nsemantics first, then use `resolved.constituent_spots` as\
-    \ the engine's\ninitial multi-asset state and pass the resolved basket object\
-    \ directly to\nthe shared Monte Carlo helper.\n\n### Exact adapter signature\n\
-    Use the following adapter shape exactly when generating the payoff module:\n\n\
-    ```python\ndef evaluate(self, market_state):\n    from datetime import date\n\
-    \    from trellis.models.resolution.basket_semantics import resolve_basket_semantics\n\
-    \    from trellis.models.monte_carlo.semantic_basket import (\n        RankedObservationBasketSpec,\n\
-    \        price_ranked_observation_basket_monte_carlo,\n    )\n\n    constituents\
-    \ = [\n        name.strip()\n        for name in self.spec.underlyings.split(\"\
-    ,\")\n        if name.strip()\n    ]\n    observation_dates = [\n        date.fromisoformat(item.strip())\n\
-    \        for item in self.spec.observation_dates.split(\",\")\n        if item.strip()\n\
-    \    ]\n    ranked_spec = RankedObservationBasketSpec(\n        notional=self.spec.notional,\n\
-    \        strike=self.spec.strike,\n        expiry_date=self.spec.expiry_date,\n\
-    \        constituents=\",\".join(constituents),\n        observation_dates=\"\
-    ,\".join(item.isoformat() for item in observation_dates),\n        option_type=\"\
-    call\",\n        day_count=self.spec.day_count,\n    )\n    resolved = resolve_basket_semantics(market_state,\
-    \ ranked_spec)\n    return price_ranked_observation_basket_monte_carlo(ranked_spec,\
-    \ resolved)\n```\n\nDo NOT pass `basket_assets`, `asset_names`, `underlyings`,\
-    \ or `is_call` into\n`RankedObservationBasketSpec`. Do NOT inline a Monte Carlo\
-    \ loop or construct\n`CorrelatedGBM` in the generated payoff module. That state-process\
-    \ primitive\nbelongs inside `trellis.models.monte_carlo.ranked_observation_payoffs.build_ranked_observation_basket_process`,\n\
-    which is called by the shared helper above.\n\n### Bootstrap contract\nBefore\
+    \ basket path payoff (solution contract: ranked_observation_basket)\nResolve\
+    \ basket market semantics first, then compose the admitted numerical primitives\
+    \ explicitly. Keep ranked selection and reduced-state replay inside the shared\
+    \ payoff-state primitive; keep process construction, engine controls, expiry,\
+    \ discounting, and notional settlement visible in the adapter.\n\n```python\ndef\
+    \ evaluate(self, market_state):\n    from trellis.models.resolution.basket_semantics\
+    \ import resolve_basket_semantics\n    from trellis.models.analytical.support import\
+    \ implied_zero_rate\n    from trellis.models.processes.correlated_gbm import\
+    \ CorrelatedGBM\n    from trellis.models.monte_carlo.engine import MonteCarloEngine\n\
+    \    from trellis.models.monte_carlo.ranked_observation_payoffs import (\n\
+    \        build_ranked_observation_basket_state_payoff,\n        terminal_ranked_observation_basket_payoff,\n\
+    \    )\n\n    spec = self._spec\n    resolved = resolve_basket_semantics(market_state,\
+    \ spec, constituents=spec.underlyings)\n    if resolved.T <= 0.0:\n\
+    \        payoff = terminal_ranked_observation_basket_payoff(\n            spec,\n\
+    \            [[[float(value) for value in resolved.constituent_spots]]],\n\
+    \            resolved,\n        )[0]\n        return float(spec.notional) * float(payoff)\n\n\
+    \    rate = implied_zero_rate(resolved.domestic_df, resolved.T)\n    process\
+    \ = CorrelatedGBM(\n        mu=[rate - carry for carry in resolved.constituent_carry],\n\
+    \        sigma=resolved.constituent_vols,\n        corr=resolved.correlation_matrix,\n\
+    \    )\n    n_steps = max(int(getattr(spec, \"n_steps\", 252) or 252),\
+    \ 64)\n    state_payoff = build_ranked_observation_basket_state_payoff(\n\
+    \        spec, resolved, n_steps=n_steps,\n    )\n    engine = MonteCarloEngine(\n\
+    \        process, n_paths=50000, n_steps=n_steps, seed=42, method=\"exact\",\n\
+    \    )\n    result = engine.price(\n        resolved.constituent_spots, resolved.T,\n+    \ state_payoff,\n        discount_rate=0.0, storage_policy=state_payoff.path_requirement,\n\
+    \        return_paths=False,\n    )\n    return (float(spec.notional) * float(resolved.domestic_df)\n\
+    \            * float(result[\"price\"]))\n```\n\nThe required market inputs are\
+    \ `discount_curve`, `black_vol_surface`, `spot`, and `model_parameters`;\
+    \ add `forward_curve` only when the resolved carry contract requires it. Choose\
+    \ one `n_steps` value and pass it to both the payoff-state builder and the engine.\
+    \ Product pricing wrappers and product-named process builders are compatibility/reference\
+    \ APIs, not generated construction authority.\n\n### Bootstrap contract\nBefore\
     \ the final pricing call, launch the generated module with the\nrepo-pinned Python\
     \ interpreter, an explicit shell invocation, and the repo\nworkdir. Run an import/compile\
     \ smoke test before pricing. If you see\n`ModuleNotFoundError`, `ImportError`,\

@@ -1,8 +1,8 @@
 id: mc_032
-title: RankedObservationBasketSpec uses constituents and option_type
+title: Superseded - generated RankedObservationBasketSpec normalized fields
 severity: critical
 category: monte_carlo
-status: promoted
+status: archived
 confidence: 1.0
 created: '2026-03-28T15:15:00.000000'
 version: ''
@@ -20,7 +20,9 @@ applies_when:
   - path_dependent
   instrument: []
   error_signature: null
-symptom: 'Build fails with: RankedObservationBasketSpec.__init__() got an unexpected keyword argument ''basket_assets'' or ''underlyings'' or ''is_call''.'
-root_cause: The generated adapter was still using legacy basket-spec field names from older Himalaya scaffolding. The shared RankedObservationBasketSpec contract expects a normalized constituents string plus option_type, not basket_assets/underlyings/is_call aliases.
-fix: Pass constituent names via the constituents field, observation dates as a normalized string or the accepted observation_dates field, and use option_type="call"/"put". Do not send basket_assets, underlyings, or is_call into RankedObservationBasketSpec.
-validation: Discovered during build replay on the Himalaya proving run after removing older conflicting basket lessons.
+symptom: Historical adapters failed while translating task fields into a second product spec.
+root_cause: The translation duplicated alias normalization already implemented by the
+  basket resolver.
+fix: Bind aliases at resolve_basket_semantics and keep the original frozen task spec
+  as the payoff contract.
+validation: Archived by QUA-1231 when the compatibility spec left generated authority.

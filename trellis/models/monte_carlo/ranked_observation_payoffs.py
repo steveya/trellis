@@ -98,18 +98,29 @@ def recommended_ranked_observation_basket_mc_engine_kwargs(
 def build_ranked_observation_basket_state_payoff(
     spec: RankedObservationBasketSpecLike,
     resolved: ResolvedBasketSemantics,
+    *,
+    n_steps: int | None = None,
 ) -> StateAwarePayoff:
-    """Return a state-aware payoff that can consume reduced basket path state."""
-    engine_kwargs = recommended_ranked_observation_basket_mc_engine_kwargs(spec, resolved)
+    """Return a state-aware payoff aligned to an explicit simulation grid.
+
+    ``n_steps`` lets primitive-composed callers bind the engine grid once and
+    reuse the same observation-step mapping in the reduced-state payoff. The
+    omitted form retains the compatibility wrapper's historical policy.
+    """
+    resolved_n_steps = int(n_steps) if n_steps is not None else int(
+        recommended_ranked_observation_basket_mc_engine_kwargs(spec, resolved)["n_steps"]
+    )
+    if resolved_n_steps <= 0:
+        raise ValueError("Ranked-observation basket state payoff requires positive n_steps")
     observation_steps = observation_step_indices(
         resolved.observation_times,
         resolved.T,
-        int(engine_kwargs["n_steps"]),
+        resolved_n_steps,
     )
     requirement = build_basket_path_requirement(
         resolved.observation_times,
         resolved.T,
-        int(engine_kwargs["n_steps"]),
+        resolved_n_steps,
     )
 
     def evaluate_paths(paths):

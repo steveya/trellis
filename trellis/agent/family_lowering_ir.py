@@ -596,8 +596,12 @@ class ExerciseLatticeIR(BaseFamilyLoweringIR):
 class CorrelatedBasketMonteCarloIR(BaseFamilyLoweringIR):
     """Typed lowering payload for ranked-observation basket Monte Carlo routes."""
 
-    helper_symbol: str = "price_ranked_observation_basket_monte_carlo"
     market_binding_symbol: str = "resolve_basket_semantics"
+    rate_conversion_symbol: str = "implied_zero_rate"
+    state_process_symbol: str = "CorrelatedGBM"
+    engine_symbol: str = "MonteCarloEngine"
+    state_payoff_symbol: str = "build_ranked_observation_basket_state_payoff"
+    expiry_payoff_symbol: str = "terminal_ranked_observation_basket_payoff"
     market_mapping: str = "basket_spots_vols_discount_correlation_to_resolved_semantics"
     controller_style: str = "identity"
     constituent_names: tuple[str, ...] = ()
@@ -1177,11 +1181,22 @@ def _binding_supports_correlated_basket_monte_carlo(
     is dead code and has been retired.
     """
     del route_id
-    if _binding_has_symbol(binding_spec, "market_binding", "resolve_basket_semantics"):
-        return True
-    if _binding_has_symbol(binding_spec, "route_helper", "price_ranked_observation_basket_monte_carlo"):
-        return True
-    return False
+    return bool(
+        _binding_has_symbol(binding_spec, "market_binding", "resolve_basket_semantics")
+        and _binding_has_symbol(binding_spec, "assembly_helper", "implied_zero_rate")
+        and _binding_has_symbol(binding_spec, "state_process", "CorrelatedGBM")
+        and _binding_has_symbol(binding_spec, "engine", "MonteCarloEngine")
+        and _binding_has_symbol(
+            binding_spec,
+            "payoff_primitive",
+            "build_ranked_observation_basket_state_payoff",
+        )
+        and _binding_has_symbol(
+            binding_spec,
+            "payoff_kernel",
+            "terminal_ranked_observation_basket_payoff",
+        )
+    )
 
 
 def _binding_supports_credit_default_swap(

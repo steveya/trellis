@@ -705,14 +705,18 @@ def test_basket_route_card_stays_backend_binding_only():
 
     assert "correlated_basket_monte_carlo" in card
     assert "resolve_basket_semantics" in card
-    assert "price_ranked_observation_basket_monte_carlo" in card
+    assert "implied_zero_rate" in card
+    assert "CorrelatedGBM" in card
+    assert "MonteCarloEngine" in card
+    assert "build_ranked_observation_basket_state_payoff" in card
+    assert "terminal_ranked_observation_basket_payoff" in card
+    assert "price_ranked_observation_basket_monte_carlo" not in card
     assert "Required adapters:" not in card
     assert "Backend notes:" not in card
     assert "Parse `spec.underlyings` into a Python list of ticker strings" not in card
     assert "delegate straight to `price_ranked_observation_basket_monte_carlo(...)` through a thin adapter" not in card
     assert "HimalayaBasketSpec" not in card
-    assert "CorrelatedGBM" not in card
-    assert "trellis.models.processes.correlated_gbm" not in card
+    assert "trellis.models.processes.correlated_gbm" in card
     assert "trellis.models.basket" not in card
     assert "trellis.models.ranked_observation" not in card
     assert "trellis.models.payoff" not in card

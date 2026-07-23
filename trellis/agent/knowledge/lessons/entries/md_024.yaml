@@ -1,8 +1,8 @@
 id: md_024
-title: ResolvedBasketSemantics object missing dividends attribute
+title: Superseded - ResolvedBasketSemantics dividends alias missing
 severity: critical
 category: market_data
-status: validated
+status: archived
 confidence: 0.6
 created: '2026-03-28T09:08:33.319683'
 version: ''
@@ -23,14 +23,7 @@ applies_when:
   - delta_space_interpolation
   instrument: []
   error_signature: null
-symptom: 'AttributeError: ''ResolvedBasketSemantics'' object has no attribute ''dividends''
-  raised during Monte Carlo payoff construction for a multi-asset ranked-observation
-  basket.'
-root_cause: The resolve_basket_semantics helper returns a ResolvedBasketSemantics
-  dataclass that does not expose a 'dividends' field; the payoff code (or semantic_basket
-  module) attempted to access .dividends on it, which does not exist in that object's
-  interface.
-fix: Access dividend yields through the MarketState directly (e.g. market_state.get_dividend_yield(ticker))
-  rather than through ResolvedBasketSemantics, or pass dividend yields explicitly
-  as a separate dict keyed by underlying name before constructing the payoff.
-validation: Discovered during build (attempt 2)
+symptom: Historical resolved inputs lacked a dividends compatibility alias.
+root_cause: The current contract exposes both constituent_carry and dividends aliases.
+fix: Prefer constituent_carry in canonical process construction.
+validation: Archived by QUA-1231 against the current frozen resolved-input contract.

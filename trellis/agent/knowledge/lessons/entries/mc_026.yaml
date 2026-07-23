@@ -1,8 +1,8 @@
 id: mc_026
-title: Himalaya pricer must not import unapproved Trellis modules
+title: Superseded - inline ranked-selection import guidance
 severity: critical
 category: monte_carlo
-status: validated
+status: archived
 confidence: 0.6
 created: '2026-03-28T11:59:15.422154'
 version: ''
@@ -22,15 +22,9 @@ applies_when:
   - discrete_coupons
   instrument: []
   error_signature: null
-symptom: Build fails with 'unapproved Trellis module' or 'unknown Trellis module'
-  errors referencing trellis.models.monte_carlo, trellis.models.multi_asset, trellis.models.ranked_observation,
-  or trellis.models.payoff_aggregation.
-root_cause: The agent hallucinated non-existent Trellis module paths (trellis.models.monte_carlo,
-  trellis.models.multi_asset, trellis.models.ranked_observation, trellis.models.payoff_aggregation)
-  instead of using only the approved thin adapters such as trellis.models.processes.correlated_gbm
-  and the core primitives.
-fix: 'Import only approved modules: use the CorrelatedGBM thin adapter directly from
-  trellis.models.processes.correlated_gbm for path simulation, implement ranked observation
-  and removal logic inline in evaluate(), and never import trellis.models.monte_carlo,
-  trellis.models.multi_asset, trellis.models.ranked_observation, or trellis.models.payoff_aggregation.'
-validation: Discovered during build (attempt 3)
+symptom: Historical code hallucinated module paths and then copied payoff-state logic
+  into the generated adapter.
+root_cause: The route lacked a concise canonical API navigation packet.
+fix: Use only the exact modules in ranked_observation_basket_composition and keep
+  ranked state transitions in the admitted payoff-state primitive.
+validation: Archived by QUA-1231 after the canonical API card and exact binding became authoritative.

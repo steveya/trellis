@@ -67,6 +67,7 @@ Status mirror last synced: `2026-07-22`
 | `QUA-1204` | Short-rate lattice: reusable market calibration inputs | Done |
 | `QUA-1206` | Semantic comparison: bind callable fixed-income target variants | Done |
 | `QUA-1205` | Callable fixed income: raw lattice primitive assembly | Done |
+| `QUA-1231` | Semantic ranked-observation basket: primitive-composed Monte Carlo lane | In Progress |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -133,6 +134,10 @@ Status mirror last synced: `2026-07-22`
 18. After QUA-1204 and QUA-1206 land, apply QUA-1205 to retire
     callable/puttable tree wrapper authority through explicit event, contract,
     lattice, and bound composition.
+19. Apply QUA-1231 to the ranked-observation basket lane: compose basket market
+    resolution, rate conversion, correlated process, generic Monte Carlo
+    engine, and reduced-state payoff primitives while retaining the product
+    pricer only as an explicitly excluded compatibility reference.
 
 ## Completion Evidence
 

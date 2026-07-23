@@ -232,6 +232,33 @@ quanto_option_composition:
     - "Product-level quanto pricing wrappers remain compatibility/reference APIs and are not generated-route construction authority"
 
 # ---------------------------------------------------------------------------
+# Ranked-observation basket composition
+# ---------------------------------------------------------------------------
+ranked_observation_basket_composition:
+  module: trellis.models.resolution.basket_semantics
+  methods: [monte_carlo, qmc]
+  navigation:
+    aliases: [ranked_observation_basket, himalaya, basket_path_payoff, remaining_selection]
+  modules:
+    market_binding: trellis.models.resolution.basket_semantics
+    discounting: trellis.models.analytical.support
+    process: trellis.models.processes.correlated_gbm
+    monte_carlo_engine: trellis.models.monte_carlo.engine
+    payoff_state: trellis.models.monte_carlo.ranked_observation_payoffs
+  key_imports:
+    - "from trellis.models.resolution.basket_semantics import resolve_basket_semantics"
+    - "from trellis.models.analytical.support import implied_zero_rate"
+    - "from trellis.models.processes.correlated_gbm import CorrelatedGBM"
+    - "from trellis.models.monte_carlo.engine import MonteCarloEngine"
+    - "from trellis.models.monte_carlo.ranked_observation_payoffs import build_ranked_observation_basket_state_payoff, terminal_ranked_observation_basket_payoff"
+  notes:
+    - "Resolve the named constituents, spots, volatilities, carries, correlation, discount factor, and observation times before constructing the process"
+    - "Use implied_zero_rate on resolved.domestic_df and resolved.T, then construct CorrelatedGBM with per-name drift equal to domestic rate minus resolved carry"
+    - "Choose n_steps once, pass the same value to build_ranked_observation_basket_state_payoff(..., n_steps=n_steps) and MonteCarloEngine, and use payoff.path_requirement as the storage policy"
+    - "The generated adapter owns the zero-expiry branch, initial state, deterministic engine controls, domestic discounting, and notional scaling"
+    - "Ranked selection and reduced-state replay stay in the payoff-state primitives; product pricing wrappers and process builders are compatibility/reference APIs, not generated construction authority"
+
+# ---------------------------------------------------------------------------
 # Model imports — trees
 # ---------------------------------------------------------------------------
 equity_tree:

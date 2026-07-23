@@ -509,7 +509,7 @@ class TestKnowledgeStore:
         assert "JAMSHIDIAN ZCB OPTION CONSISTENCY" in requirements_text
         assert "unit face" in requirements_text
 
-    def test_retrieve_ranked_observation_basket_includes_semantic_basket_guidance(self):
+    def test_retrieve_ranked_observation_basket_includes_primitive_composition_guidance(self):
         from trellis.agent.knowledge import retrieve_for_product_ir
         from trellis.agent.knowledge.retrieval import build_shared_knowledge_payload
         from trellis.agent.knowledge.import_registry import get_import_registry
@@ -528,9 +528,29 @@ class TestKnowledgeStore:
         assert k["decomposition"].instrument == "basket_path_payoff"
         assert k["cookbook"] is not None
         assert "resolve_basket_semantics" in k["cookbook"].template
-        assert "price_ranked_observation_basket_monte_carlo" in k["cookbook"].template
+        assert "CorrelatedGBM" in k["cookbook"].template
+        assert "MonteCarloEngine" in k["cookbook"].template
+        assert "build_ranked_observation_basket_state_payoff" in k["cookbook"].template
+        assert "price_ranked_observation_basket_monte_carlo" not in k["cookbook"].template
+        assert "Do NOT inline a Monte Carlo loop or construct" not in k["cookbook"].template
         assert k["lessons"]
-        assert any("ranked-observation basket" in lesson.title.lower() for lesson in k["lessons"])
+        assert any(
+            "ranked" in lesson.title.lower() and "basket" in lesson.title.lower()
+            for lesson in k["lessons"]
+        )
+        retrieved_lesson_text = "\n".join(
+            " ".join(
+                (
+                    lesson.title,
+                    lesson.symptom,
+                    lesson.root_cause,
+                    lesson.fix,
+                )
+            )
+            for lesson in k["lessons"]
+        )
+        assert "price_ranked_observation_basket_monte_carlo" not in retrieved_lesson_text
+        assert "do not import unapproved correlated_gbm" not in retrieved_lesson_text.lower()
         assert any(
             "semantic understanding" in principle.rule.lower()
             for principle in k["principles"]
@@ -538,12 +558,18 @@ class TestKnowledgeStore:
 
         payload = build_shared_knowledge_payload(k)
         superseded_ids = payload["summary"].get("superseded_lesson_ids", [])
-        assert {"mc_016", "mc_018"}.issubset(set(superseded_ids))
+        assert {"mc_013", "mc_014", "mc_016", "mc_018", "mc_019"}.issubset(
+            set(superseded_ids)
+        )
         assert "mc_021" not in superseded_ids
 
         registry = get_import_registry()
         assert "trellis.models.resolution.basket_semantics" in registry
-        assert "trellis.models.monte_carlo.semantic_basket" in registry
+        assert "trellis.models.processes.correlated_gbm" in registry
+        assert "trellis.models.monte_carlo.semantic_basket" not in registry
+        assert "from trellis.models.processes.correlated_gbm import CorrelatedGBM" in registry
+        assert "build_ranked_observation_basket_state_payoff" in registry
+        assert "terminal_ranked_observation_basket_payoff" in registry
 
     def test_retrieve_basket_bootstrap_guidance_includes_launch_contract(self):
         from trellis.agent.knowledge import retrieve_for_task

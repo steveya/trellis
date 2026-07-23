@@ -1,8 +1,8 @@
 id: md_021
-title: resolve_basket_semantics does not accept 'underlyings' kwarg
+title: Superseded - resolve_basket_semantics underlyings alias rejection
 severity: critical
 category: market_data
-status: validated
+status: archived
 confidence: 0.6
 created: '2026-03-28T08:58:41.571714'
 version: ''
@@ -22,13 +22,7 @@ applies_when:
   - vol_surface_dependence
   instrument: []
   error_signature: null
-symptom: 'Build fails with: TypeError: resolve_basket_semantics() got an unexpected
-  keyword argument ''underlyings'''
-root_cause: The agent inferred the signature of resolve_basket_semantics() incorrectly,
-  passing 'underlyings' as a keyword argument when the function does not accept that
-  parameter name. The correct interface uses positional arguments or a different keyword
-  (e.g., 'assets' or 'tickers').
-fix: Do not call resolve_basket_semantics() with 'underlyings=...' — instead use price_ranked_observation_basket_monte_carlo()
-  directly with the correct positional/keyword arguments, or inspect the actual function
-  signature before calling resolve_basket_semantics().
-validation: Discovered during build (attempt 2)
+symptom: Historical resolver versions rejected an underlyings keyword alias.
+root_cause: The current resolver accepts generated aliases through its normalization layer.
+fix: Prefer constituents for canonical code; underlyings remains a supported generated alias.
+validation: Archived by QUA-1231 against the current resolver signature and tests.

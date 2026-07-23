@@ -6772,7 +6772,7 @@ def test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper
     assert EVALUATE_SENTINEL not in generated.code
 
 
-def test_deterministic_exact_binding_module_materializes_ranked_basket_wrapper():
+def test_deterministic_exact_binding_module_materializes_ranked_basket_primitives():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
         _generate_skeleton,
@@ -6783,7 +6783,11 @@ def test_deterministic_exact_binding_module_materializes_ranked_basket_wrapper()
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(
             "trellis.models.resolution.basket_semantics.resolve_basket_semantics",
-            "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
+            "trellis.models.analytical.support.implied_zero_rate",
+            "trellis.models.processes.correlated_gbm.CorrelatedGBM",
+            "trellis.models.monte_carlo.engine.MonteCarloEngine",
+            "trellis.models.monte_carlo.ranked_observation_payoffs.build_ranked_observation_basket_state_payoff",
+            "trellis.models.monte_carlo.ranked_observation_payoffs.terminal_ranked_observation_basket_payoff",
         ),
         primitive_plan=None,
         method="monte_carlo",
@@ -6801,14 +6805,16 @@ def test_deterministic_exact_binding_module_materializes_ranked_basket_wrapper()
     )
 
     assert generated is not None
-    assert "RankedObservationBasketSpec(" in generated.code
-    assert 'constituents=getattr(spec, "constituents", None) or spec.underliers' in generated.code
-    assert (
-        'aggregation_rule=getattr(spec, "aggregation_rule", None) or "average_locked_levels"'
-        in generated.code
-    )
-    assert "resolved = resolve_basket_semantics(market_state, helper_spec)" in generated.code
-    assert "return price_ranked_observation_basket_monte_carlo(helper_spec, resolved)" in generated.code
+    assert "resolved = resolve_basket_semantics(" in generated.code
+    assert "domestic_rate = float(implied_zero_rate(resolved.domestic_df, resolved.T))" in generated.code
+    assert "process = CorrelatedGBM(" in generated.code
+    assert "engine = MonteCarloEngine(" in generated.code
+    assert "payoff = build_ranked_observation_basket_state_payoff(" in generated.code
+    assert "terminal_ranked_observation_basket_payoff(" in generated.code
+    assert "float(spec.notional) * float(resolved.domestic_df)" in generated.code
+    assert "price_ranked_observation_basket_monte_carlo" not in generated.code
+    assert "RankedObservationBasketMonteCarloPayoff" not in generated.code
+    assert "build_ranked_observation_basket_process" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 

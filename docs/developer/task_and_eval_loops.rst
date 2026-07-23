@@ -1285,6 +1285,19 @@ nonrepresentable-grid semantics fail closed instead of inheriting the
 arithmetic fixed-strike lane. Retained lookback and Asian pricing wrappers are
 compatibility and independent-comparison references only.
 
+The ranked-observation basket target follows the same primitive-first rule.
+Generated code resolves constituents, spots, volatilities, correlation, and
+the observation schedule with ``resolve_basket_semantics(...)``; converts the
+domestic discount factor with ``implied_zero_rate(...)``; constructs
+``CorrelatedGBM`` and ``MonteCarloEngine`` directly; and combines
+``build_ranked_observation_basket_state_payoff(...)`` with
+``terminal_ranked_observation_basket_payoff(...)``. The payoff and engine must
+share one explicit time grid, while the adapter owns expiry settlement,
+discounting, and notional application. The retained
+``price_ranked_observation_basket_monte_carlo(...)`` function is an excluded
+compatibility reference: semantic validation rejects it as construction
+authority even though older callers can still import it.
+
 Capped/floored cliquet comparisons are now a primitive-composed task lane. The
 analytical target builds an ``ObservationReturnContract`` and combines bounded
 return accumulation with a node-budgeted product expectation; the unbounded

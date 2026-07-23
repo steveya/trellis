@@ -117,7 +117,10 @@ class TestPayoffComponent:
             component_id="select",
             component_type="selection_rule",
             compatible_methods=("monte_carlo",),
-            proven_primitive="trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
+            proven_primitive=(
+                "trellis.models.monte_carlo.basket_state."
+                "evaluate_ranked_observation_basket_state"
+            ),
         )
         assert c.proven_primitive is not None
 
@@ -420,7 +423,10 @@ class TestRankedObservationBasket:
                     component_id="select",
                     component_type="selection_rule",
                     compatible_methods=("monte_carlo",),
-                    proven_primitive="trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
+                    proven_primitive=(
+                        "trellis.models.monte_carlo.basket_state."
+                        "evaluate_ranked_observation_basket_state"
+                    ),
                 ),
                 _lock_remove(id="lock"),
                 _maturity_settlement(id="settle", methods=("monte_carlo",)),
