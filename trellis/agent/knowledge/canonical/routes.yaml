@@ -318,9 +318,26 @@ routes:
       - module: trellis.models.resolution.basket_semantics
         symbol: resolve_basket_semantics
         role: market_binding
+      - module: trellis.models.analytical.support
+        symbol: implied_zero_rate
+        role: assembly_helper
+      - module: trellis.models.processes.correlated_gbm
+        symbol: CorrelatedGBM
+        role: state_process
+      - module: trellis.models.monte_carlo.engine
+        symbol: MonteCarloEngine
+        role: engine
+      - module: trellis.models.monte_carlo.ranked_observation_payoffs
+        symbol: build_ranked_observation_basket_state_payoff
+        role: payoff_primitive
+      - module: trellis.models.monte_carlo.ranked_observation_payoffs
+        symbol: terminal_ranked_observation_basket_payoff
+        role: payoff_kernel
       - module: trellis.models.monte_carlo.semantic_basket
         symbol: price_ranked_observation_basket_monte_carlo
-        role: route_helper
+        role: compatibility_reference
+        required: false
+        excluded: true
     adapters: []
     notes: []
     market_data_access:
@@ -328,6 +345,7 @@ routes:
         discount_curve: [market_state.discount]
         black_vol_surface: [market_state.vol_surface]
         spot: [market_state.spot, market_state.underlier_spots]
+        model_parameters: [market_state.model_parameters]
 
   # -----------------------------------------------------------------------
   # Monte Carlo routes (method-level)

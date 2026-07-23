@@ -1263,15 +1263,24 @@ def test_mountain_range_request_drafts_ranked_observation_contract():
     assert compiled.semantic_blueprint.assumption_summary == compiled.pricing_plan.assumption_summary
     assert compiled.semantic_blueprint.target_modules == (
         "trellis.models.resolution.basket_semantics",
-        "trellis.models.monte_carlo.semantic_basket",
+        "trellis.models.analytical.support",
+        "trellis.models.processes.correlated_gbm",
+        "trellis.models.monte_carlo.engine",
+        "trellis.models.monte_carlo.ranked_observation_payoffs",
     )
     assert compiled.semantic_blueprint.route_modules == _expected_route_modules(compiled)
     assert snapshot == snapshot_again
     assert snapshot["semantic_contract"] == compiled.request.metadata["semantic_contract"]
     assert "trellis.models.resolution.basket_semantics" in snapshot["approved_modules"]
-    assert "trellis.models.monte_carlo.semantic_basket" in snapshot["approved_modules"]
+    assert "trellis.models.monte_carlo.ranked_observation_payoffs" in snapshot["approved_modules"]
+    assert "trellis.models.monte_carlo.semantic_basket" not in snapshot["approved_modules"]
     assert "trellis.models.monte_carlo.engine" in snapshot["semantic_blueprint"]["route_modules"]
-    assert "trellis.models.processes.correlated_gbm" not in snapshot["approved_modules"]
+    assert "trellis.models.processes.correlated_gbm" in snapshot["approved_modules"]
+    assert not compiled.generation_plan.backend_helper_refs
+    assert not any(
+        "price_ranked_observation_basket_monte_carlo" in ref
+        for ref in compiled.generation_plan.lane_reusable_primitives
+    )
     assert "himalaya_option" not in repr(snapshot).lower()
     assert compiled.generation_plan.primitive_plan is not None
     assert compiled.generation_plan.primitive_plan.route == "correlated_basket_monte_carlo"

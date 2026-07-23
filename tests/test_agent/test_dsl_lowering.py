@@ -37,7 +37,7 @@ def _make_bermudan_equity_pde_contract():
     )
 
 
-def test_ranked_observation_basket_lowers_to_market_binding_then_helper():
+def test_ranked_observation_basket_lowers_to_explicit_monte_carlo_primitives():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_ranked_observation_basket_contract
 
@@ -53,39 +53,34 @@ def test_ranked_observation_basket_lowers_to_market_binding_then_helper():
     assert lowering.route_id == "correlated_basket_monte_carlo"
     assert lowering.route_family == "monte_carlo"
     assert lowering.admissibility_errors == ()
-    assert (
-        lowering.binding_id
-        == "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo"
-    )
+    assert lowering.binding_id == "trellis.models.monte_carlo.ranked_observation_payoffs.terminal_ranked_observation_basket_payoff"
     assert isinstance(lowering.family_ir, CorrelatedBasketMonteCarloIR)
     assert lowering.family_ir.market_binding_symbol == "resolve_basket_semantics"
-    assert lowering.family_ir.helper_symbol == "price_ranked_observation_basket_monte_carlo"
+    assert lowering.family_ir.state_process_symbol == "CorrelatedGBM"
+    assert lowering.family_ir.engine_symbol == "MonteCarloEngine"
+    assert lowering.family_ir.state_payoff_symbol == "build_ranked_observation_basket_state_payoff"
     assert lowering.family_ir.path_requirement_kind == "observation_snapshot_state"
     assert lowering.family_ir.binding_sources[-1] == (
         "correlation_matrix",
         "runtime_connector_resolution",
     )
     assert isinstance(lowering.normalized_expr, ThenExpr)
-    binding, helper = lowering.normalized_expr.terms
-    assert isinstance(binding, ContractAtom)
-    assert isinstance(helper, ContractAtom)
-    assert binding.atom_id == (
-        "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo:"
-        "market_binding"
-    )
-    assert helper.atom_id == (
-        "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo:"
-        "route_helper"
-    )
-    assert helper.primitive_ref == (
-        "trellis.models.monte_carlo.semantic_basket."
-        "price_ranked_observation_basket_monte_carlo"
+    assert all(isinstance(term, ContractAtom) for term in lowering.normalized_expr.terms)
+    primitive_refs = tuple(term.primitive_ref for term in lowering.normalized_expr.terms)
+    assert primitive_refs == (
+        "trellis.models.resolution.basket_semantics.resolve_basket_semantics",
+        "trellis.models.analytical.support.implied_zero_rate",
+        "trellis.models.monte_carlo.ranked_observation_payoffs.terminal_ranked_observation_basket_payoff",
+        "trellis.models.processes.correlated_gbm.CorrelatedGBM",
+        "trellis.models.monte_carlo.ranked_observation_payoffs.build_ranked_observation_basket_state_payoff",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
     )
     assert lowering.control_styles == ()
     assert (
         "trellis.models.resolution.basket_semantics.resolve_basket_semantics"
         in lowering.helper_refs
     )
+    assert lowering.route_helper_refs == ()
 
 
 def test_callable_bond_lowers_to_explicit_issuer_choice_plus_primitive_targets():

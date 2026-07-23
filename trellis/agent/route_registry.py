@@ -738,12 +738,16 @@ def validate_registry(registry: RouteRegistry | None = None) -> tuple[str, ...]:
     errors: list[str] = []
     for route in registry.routes:
         for prim in route.primitives:
+            if prim.excluded:
+                continue
             if not module_exists(prim.module):
                 errors.append(f"Route '{route.id}': module '{prim.module}' does not exist")
             elif prim.required and not is_valid_import(prim.module, prim.symbol):
                 errors.append(f"Route '{route.id}': symbol '{prim.module}.{prim.symbol}' not exported")
         for cond in route.conditional_primitives:
             for prim in cond.primitives:
+                if prim.excluded:
+                    continue
                 if not module_exists(prim.module):
                     errors.append(f"Route '{route.id}' (conditional): module '{prim.module}' does not exist")
                 elif prim.required and not is_valid_import(prim.module, prim.symbol):

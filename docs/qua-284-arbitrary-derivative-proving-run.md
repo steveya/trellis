@@ -1,5 +1,11 @@
 # QUA-284 Arbitrary-Derivative Proving Run
 
+> Historical evidence note (QUA-1231): this proving run predates retirement of
+> the ranked-observation product helper as generated-code authority. Current
+> fresh adapters compose the public basket resolver, rate conversion,
+> correlated process, generic Monte Carlo engine, and ranked state/terminal
+> payoff primitives. Helper references below describe the historical run.
+
 ## Summary
 - Task id: `T998`
 - Task title: `Himalaya ranked observation basket`

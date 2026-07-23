@@ -131,6 +131,35 @@ def test_ranked_observation_state_payoff_applies_strike_to_locked_levels(monkeyp
     assert value[0] == pytest.approx(11.0)
 
 
+def test_ranked_observation_state_payoff_uses_explicit_engine_grid(monkeypatch):
+    from trellis.models.monte_carlo import ranked_observation_payoffs as basket_mc
+    from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketSpec
+
+    resolved = _resolved_basket_inputs()
+    spec = RankedObservationBasketSpec(
+        notional=1.0,
+        strike=0.0,
+        expiry_date=date(2025, 11, 15),
+        constituents="SPX,NDX",
+        n_steps=999,
+    )
+    monkeypatch.setattr(
+        basket_mc,
+        "recommended_ranked_observation_basket_mc_engine_kwargs",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            AssertionError("explicit n_steps must bypass product engine policy")
+        ),
+    )
+
+    payoff = basket_mc.build_ranked_observation_basket_state_payoff(
+        spec,
+        resolved,
+        n_steps=2,
+    )
+
+    assert payoff.path_requirement.snapshot_steps == (1, 2)
+
+
 def test_ranked_observation_basket_price_helper_uses_snapshot_state_requirement(monkeypatch):
     from trellis.models.monte_carlo import ranked_observation_payoffs as basket_mc
     from trellis.models.monte_carlo.semantic_basket import RankedObservationBasketSpec

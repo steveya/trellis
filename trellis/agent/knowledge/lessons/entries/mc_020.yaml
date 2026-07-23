@@ -1,8 +1,8 @@
 id: mc_020
-title: Himalaya pricer must parse constituent names before basket resolution
+title: Superseded - manual constituent parsing before basket resolution
 severity: critical
 category: monte_carlo
-status: promoted
+status: archived
 confidence: 1.0
 created: '2026-03-28T09:40:47.773692'
 version: ''
@@ -21,14 +21,9 @@ applies_when:
   - discounting
   instrument: []
   error_signature: null
-symptom: Smoke test raises 'Basket pricing requires at least one constituent name'
-  despite spec containing underlyings.
-root_cause: The underlyings field was stored as a raw comma-separated string (or left
-  unparsed) and never converted to a concrete Python list before being passed into
-  the basket construction path, which requires an explicit non-empty sequence of ticker
-  strings.
-fix: Parse the underlyings field into a Python list of strings (for example `['AAPL',
-  'MSFT', 'NVDA']`) before constructing the payoff, then pass that list to `resolve_basket_semantics(...)`
-  or the correlated-process builder so the resolver receives at least one name.
-validation: Discovered during build (attempt 3); promoted after adding the parse step
-  recipe
+symptom: Historical adapters failed to carry their underlier field into basket resolution.
+root_cause: The old guidance incorrectly blamed comma-separated input; the current
+  resolver normalizes strings and sequences itself.
+fix: Pass the declared constituent or underlier field to resolve_basket_semantics and
+  let the resolver validate and normalize names.
+validation: Archived by QUA-1231 against the current resolver contract.

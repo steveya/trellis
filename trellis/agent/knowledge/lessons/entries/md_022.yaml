@@ -1,8 +1,8 @@
 id: md_022
-title: ResolvedBasketSemantics has no 'spots' attribute
+title: Superseded - ResolvedBasketSemantics spots alias missing
 severity: critical
 category: market_data
-status: validated
+status: archived
 confidence: 0.6
 created: '2026-03-28T09:04:03.640585'
 version: ''
@@ -22,15 +22,8 @@ applies_when:
   - vol_surface_dependence
   instrument: []
   error_signature: null
-symptom: 'AttributeError: ''ResolvedBasketSemantics'' object has no attribute ''spots''
-  raised during MC payoff smoke test.'
-root_cause: The code attempts to access `.spots` on a `ResolvedBasketSemantics` object,
-  but the correct attribute name for spot prices in that object is different (e.g.,
-  `.spot_prices`, `.spot_map`, or spots are accessed via the `MarketState` directly
-  per ticker). The basket semantics resolver returns a structured object whose spot
-  data is not exposed as `.spots`.
-fix: Access spot prices directly from `MarketState` using `market_state.spot(ticker)`
-  for each underlying, or use the correct attribute on `ResolvedBasketSemantics` (e.g.,
-  `.spot_map` or `.initial_spots`). Do not rely on a `.spots` shortcut attribute that
-  does not exist on that object.
-validation: Discovered during build (attempt 2)
+symptom: Historical resolved inputs lacked a short spots alias.
+root_cause: ResolvedBasketSemantics now exposes both constituent_spots and the spots
+  compatibility alias.
+fix: Prefer constituent_spots in canonical composition; spots remains compatible.
+validation: Archived by QUA-1231 against the current frozen resolved-input contract.

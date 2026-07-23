@@ -144,12 +144,16 @@ def test_ranked_observation_basket_contract_validates():
     assert compiled.contract.product.selection_scope == "remaining_constituents"
     assert compiled.target_modules == (
         "trellis.models.resolution.basket_semantics",
-        "trellis.models.monte_carlo.semantic_basket",
+        "trellis.models.analytical.support",
+        "trellis.models.processes.correlated_gbm",
+        "trellis.models.monte_carlo.engine",
+        "trellis.models.monte_carlo.ranked_observation_payoffs",
     )
     assert compiled.route_modules == _expected_route_modules(compiled)
     assert "trellis.models.monte_carlo.engine" in compiled.route_modules
     assert "correlated_basket_monte_carlo" in compiled.primitive_routes
-    assert "trellis.models.processes.correlated_gbm" not in compiled.route_modules
+    assert "trellis.models.processes.correlated_gbm" in compiled.route_modules
+    assert "trellis.models.monte_carlo.semantic_basket" not in compiled.target_modules
     assert compiled.dsl_lowering is not None
     assert compiled.dsl_lowering.route_id == "correlated_basket_monte_carlo"
 

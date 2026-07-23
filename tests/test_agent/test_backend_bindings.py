@@ -71,6 +71,38 @@ def test_binding_catalog_covers_retired_fallback_routes():
     } <= route_ids
 
 
+def test_ranked_observation_binding_exposes_primitive_composition_without_helper_authority():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("correlated_basket_monte_carlo", catalog)
+
+    assert binding is not None
+    primitives = {
+        (primitive.module, primitive.symbol, primitive.role)
+        for primitive in binding.primitives
+    }
+    assert (
+        "trellis.models.monte_carlo.semantic_basket",
+        "price_ranked_observation_basket_monte_carlo",
+        "route_helper",
+    ) not in primitives
+    assert {
+        ("trellis.models.resolution.basket_semantics", "resolve_basket_semantics", "market_binding"),
+        ("trellis.models.analytical.support", "implied_zero_rate", "assembly_helper"),
+        ("trellis.models.processes.correlated_gbm", "CorrelatedGBM", "state_process"),
+        ("trellis.models.monte_carlo.engine", "MonteCarloEngine", "engine"),
+        (
+            "trellis.models.monte_carlo.ranked_observation_payoffs",
+            "build_ranked_observation_basket_state_payoff",
+            "payoff_primitive",
+        ),
+        (
+            "trellis.models.monte_carlo.ranked_observation_payoffs",
+            "terminal_ranked_observation_basket_payoff",
+            "payoff_kernel",
+        ),
+    } <= primitives
+
+
 def test_binding_catalog_canonical_load_is_not_derived_from_route_registry(monkeypatch):
     from trellis.agent import route_registry as route_registry_module
 

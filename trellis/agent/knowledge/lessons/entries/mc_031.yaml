@@ -1,8 +1,8 @@
 id: mc_031
-title: RankedObservationBasketSpec does not accept asset_names argument
+title: Superseded - generated RankedObservationBasketSpec asset_names signature
 severity: critical
 category: monte_carlo
-status: promoted
+status: archived
 confidence: 1.0
 created: '2026-03-28T14:54:28.143423'
 version: ''
@@ -20,12 +20,9 @@ applies_when:
   - path_dependent
   instrument: []
   error_signature: null
-symptom: 'Build fails with: RankedObservationBasketSpec.__init__() got an unexpected
-  keyword argument ''asset_names'''
-root_cause: RankedObservationBasketSpec does not expose an 'asset_names' constructor
-  parameter; asset identity is resolved through a different mechanism (likely constituent
-  indices or a separate resolution step) rather than being passed directly by name.
-fix: Do not pass 'asset_names' to RankedObservationBasketSpec. Parse constituent names
-  first, resolve them to the required internal representation, and supply only the
-  arguments the spec actually accepts.
-validation: Discovered during build (attempt 3)
+symptom: Historical generated code reconstructed a compatibility product spec using
+  guessed asset-name fields.
+root_cause: The market resolver already owns constituent-name normalization.
+fix: Bind the task's declared names through resolve_basket_semantics and avoid a second
+  product-spec constructor in generated source.
+validation: Archived by QUA-1231 when the compatibility spec left generated authority.

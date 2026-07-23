@@ -23,6 +23,8 @@ applies_when:
   instrument: []
   error_signature: null
 symptom: 'Build fails with: market_state.vol_surface is required for basket pricing.'
-root_cause: The generated basket adapter or its requirements list omitted the black vol-surface capability, so the runtime market state did not include a concrete vol_surface object before calling the shared basket Monte Carlo helper.
-fix: Require and wire a real vol_surface into the basket pricing path before calling price_ranked_observation_basket_monte_carlo(); the adapter requirements should include black_vol_surface, and the market snapshot must materialize a concrete vol_surface object.
+root_cause: The generated basket adapter or its requirements list omitted the black
+  vol-surface capability, so basket market resolution had no constituent volatility source.
+fix: Declare black_vol_surface in the adapter requirements and materialize a concrete
+  vol_surface before calling resolve_basket_semantics.
 validation: Discovered during build replay on the Himalaya proving run after fixing the constructor contract.

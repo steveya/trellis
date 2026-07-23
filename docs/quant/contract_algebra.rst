@@ -296,9 +296,13 @@ The compiled contract now also has a shared helper-facing runtime substrate:
 
 This keeps automatic event state separate from contract memory and gives helper
 routes one stable place to read resolved market inputs and runtime metadata.
-The first checked consumers are the ranked-observation basket Monte Carlo path,
-single-name CDS helper routes, and nth-to-default basket-credit lowering, but
-the surface is intentionally generic.
+The first checked consumers include ranked-observation basket Monte Carlo,
+single-name CDS routes, and nth-to-default basket-credit lowering, but the
+surface is intentionally generic. Ranked-observation basket construction no
+longer delegates to its product pricer: it combines resolved basket semantics,
+an implied zero rate, correlated GBM, the generic Monte Carlo engine, and the
+ranked reduced-state payoff. The state payoff and engine use the same explicit
+step count so observation indices cannot drift from simulated path columns.
 
 For schedule-dependent helper routes, tranche 1 now treats explicit timelines
 as the practical runtime boundary. Agent-facing specs may still be normalized
@@ -320,7 +324,7 @@ The current compilation path is:
      -> EventProgramIR / ControlProgramIR
      -> typed route admissibility
      -> family lowering IR
-     -> existing checked-in helper or kernel
+     -> checked reusable primitives or a bounded pricing kernel
 
 ``ProductIR`` remains the shared checked summary used by route selection.
 Trellis does not currently use one flat universal numerical IR. The shipped
@@ -494,9 +498,10 @@ The typed semantic boundary is proven end-to-end for:
   ``event_triggered_two_legged_contract`` family
 - ``nth_to_default_monte_carlo`` on nth-to-default basket credit
 
-These routes preserve the existing helper-backed pricing math. The work in this
-slice changes the contract, validation, binding, admissibility, and lowering
-boundaries, not the numerical kernels.
+These routes preserve checked pricing math while progressively removing
+product-helper authority. The ranked-observation basket route is
+primitive-composed: its retained product pricer is compatibility/reference
+surface only, and the route explicitly excludes it from fresh generated code.
 
 Admissibility And Authority Rules
 ---------------------------------

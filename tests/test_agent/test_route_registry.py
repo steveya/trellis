@@ -714,9 +714,35 @@ class TestBasketRoutes:
         new_prims = resolve_route_primitives(spec, self.BASKET_IR)
         expected_prims = {
             ("trellis.models.resolution.basket_semantics", "resolve_basket_semantics", "market_binding"),
-            ("trellis.models.monte_carlo.semantic_basket", "price_ranked_observation_basket_monte_carlo", "route_helper"),
+            ("trellis.models.analytical.support", "implied_zero_rate", "assembly_helper"),
+            ("trellis.models.processes.correlated_gbm", "CorrelatedGBM", "state_process"),
+            ("trellis.models.monte_carlo.engine", "MonteCarloEngine", "engine"),
+            (
+                "trellis.models.monte_carlo.ranked_observation_payoffs",
+                "build_ranked_observation_basket_state_payoff",
+                "payoff_primitive",
+            ),
+            (
+                "trellis.models.monte_carlo.ranked_observation_payoffs",
+                "terminal_ranked_observation_basket_payoff",
+                "payoff_kernel",
+            ),
+            (
+                "trellis.models.monte_carlo.semantic_basket",
+                "price_ranked_observation_basket_monte_carlo",
+                "compatibility_reference",
+            ),
         }
         assert _prim_set(new_prims) == expected_prims
+        compatibility = [
+            primitive
+            for primitive in new_prims
+            if primitive.role == "compatibility_reference"
+        ]
+        assert len(compatibility) == 1
+        assert compatibility[0].required is False
+        assert compatibility[0].excluded is True
+        assert not any(primitive.role == "route_helper" for primitive in new_prims)
         assert resolve_route_adapters(spec, self.BASKET_IR) == ()
         assert resolve_route_notes(spec, self.BASKET_IR) == ()
 

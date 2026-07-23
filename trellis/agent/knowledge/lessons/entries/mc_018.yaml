@@ -21,12 +21,10 @@ applies_when:
   - discounting
   instrument: []
   error_signature: null
-symptom: This lesson was superseded after the basket proving run moved to the shared
-  semantic-basket helper route.
-root_cause: The direct `CorrelatedGBM` path was replaced by a shared helper that
-  owns the correlated basket process, path simulation, and ranked-observation assembly.
-fix: Delegate to `resolve_basket_semantics(...)` and
-  `price_ranked_observation_basket_monte_carlo(...)` instead of constructing or
-  importing `trellis.models.processes.correlated_gbm` in the generated adapter.
-validation: Discovered during build (attempt 3); promoted after adding the direct
-  indexed-path recipe
+symptom: Historical guidance indexed full paths manually or delegated the entire route
+  to a product wrapper.
+root_cause: The earlier route had no stable reduced-state payoff contract for observation
+  snapshots.
+fix: Use build_ranked_observation_basket_state_payoff with the engine's exact n_steps
+  and its path_requirement storage policy.
+validation: Superseded by the reduced-state primitive composition admitted in QUA-1231.

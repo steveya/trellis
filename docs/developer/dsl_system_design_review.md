@@ -309,7 +309,12 @@ The typed semantic boundary is proven end-to-end for these route families:
 | `exercise_lattice` | `ExerciseLatticeIR` | callable bonds, Bermudan swaptions |
 | `correlated_basket_monte_carlo` | `CorrelatedBasketMonteCarloIR` | ranked-observation baskets |
 
-This boundary preserves current route IDs and helper entry surfaces.
+This boundary preserves current route IDs while allowing construction authority
+to move from product helpers to reusable primitives. In particular,
+`correlated_basket_monte_carlo` now lowers ranked-observation baskets to market
+resolution, implied-rate conversion, `CorrelatedGBM`, `MonteCarloEngine`, and
+the ranked-observation reduced-state payoff primitives. The retained product
+pricer is an excluded compatibility reference, not a generated-code target.
 
 The semantic-contract layer feeding that boundary is now also registry-backed:
 ordered draft rules select the family, registered family definitions own the
@@ -331,7 +336,7 @@ The generic Monte Carlo route cards are now also explicitly metadata-first.
 binding records, but they no longer carry procedural synthesis guidance. The
 semantic and decomposition layers now decide when a generic `basket_option`
 wrapper stays on the generic Monte Carlo path, when ranked-observation traits
-refine it onto the basket helper route, and when explicit credit-basket cues
+refine it onto the primitive-composed ranked-observation route, and when explicit credit-basket cues
 upgrade it to the nth-to-default family before route binding.
 
 Route scoring now follows the same rule. The learned and heuristic scorers no

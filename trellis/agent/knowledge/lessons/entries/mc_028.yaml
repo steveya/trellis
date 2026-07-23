@@ -1,8 +1,8 @@
 id: mc_028
-title: Use approved GBM module, not correlated_gbm path
+title: Superseded - substitute scalar GBM for correlated_gbm
 severity: critical
 category: monte_carlo
-status: validated
+status: archived
 confidence: 0.6
 created: '2026-03-28T12:19:46.736445'
 version: ''
@@ -22,11 +22,9 @@ applies_when:
   - discrete_coupons
   instrument: []
   error_signature: null
-symptom: Build fails with 'unapproved Trellis module trellis.models.processes.correlated_gbm'
-  error on every attempt.
-root_cause: The agent repeatedly imported `trellis.models.processes.correlated_gbm`
-  which is not on the approved module list, despite a lesson explicitly stating to
-  use the CorrelatedGBM thin adapter directly via an inspected path.
-fix: Import CorrelatedGBM only from the approved module path (e.g. `trellis.models.processes.gbm`
-  or the inspected adapter listed in the generation plan), never from `trellis.models.processes.correlated_gbm`.
-validation: Discovered during build (attempt 3)
+symptom: Historical guidance substituted a scalar GBM because the correlated process
+  path was absent from the generation allowlist.
+root_cause: That substitution cannot preserve a joint correlation contract.
+fix: Use the exact CorrelatedGBM path declared by the route and binding; do not replace
+  it with independent scalar processes.
+validation: Archived by QUA-1231 after import and route admission were corrected.

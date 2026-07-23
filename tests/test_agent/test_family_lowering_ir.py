@@ -774,6 +774,12 @@ def test_ranked_observation_basket_compiles_to_correlated_basket_family_ir():
     )
     assert family_ir.path_requirement_kind == "observation_snapshot_state"
     assert family_ir.required_fixing_schedule == ("2025-06-15", "2025-12-15", "2026-06-15")
+    assert family_ir.market_binding_symbol == "resolve_basket_semantics"
+    assert family_ir.rate_conversion_symbol == "implied_zero_rate"
+    assert family_ir.state_process_symbol == "CorrelatedGBM"
+    assert family_ir.engine_symbol == "MonteCarloEngine"
+    assert family_ir.state_payoff_symbol == "build_ranked_observation_basket_state_payoff"
+    assert family_ir.expiry_payoff_symbol == "terminal_ranked_observation_basket_payoff"
 
 
 def test_ranked_observation_basket_family_ir_ignores_legacy_event_transition_mirror():

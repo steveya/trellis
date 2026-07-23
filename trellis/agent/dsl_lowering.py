@@ -1862,68 +1862,75 @@ def _build_correlated_basket_mc_expr_from_family_ir(
     family_ir: CorrelatedBasketMonteCarloIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
-    """Build a ranked-observation basket MC lowering from typed family IR."""
-    market_binding = next(
-        (
-            binding
-            for binding in bindings
-            if binding.role == "market_binding" and binding.symbol == family_ir.market_binding_symbol
-        ),
-        None,
+    """Build explicit ranked-observation basket Monte Carlo composition."""
+    required = (
+        ("market_binding", family_ir.market_binding_symbol),
+        ("assembly_helper", family_ir.rate_conversion_symbol),
+        ("payoff_kernel", family_ir.expiry_payoff_symbol),
+        ("state_process", family_ir.state_process_symbol),
+        ("payoff_primitive", family_ir.state_payoff_symbol),
+        ("engine", family_ir.engine_symbol),
     )
-    if market_binding is None:
-        return None, (
+    resolved_bindings = {
+        symbol: next(
+            (
+                binding
+                for binding in bindings
+                if binding.role == role and binding.symbol == symbol
+            ),
+            None,
+        )
+        for role, symbol in required
+    }
+    missing = tuple(
+        (role, symbol)
+        for role, symbol in required
+        if resolved_bindings[symbol] is None
+    )
+    if missing:
+        return None, tuple(
             _missing_primitive_message(
                 route_id,
                 binding_id,
-                "market binding",
-                family_ir.market_binding_symbol,
-            ),
-        )
-
-    route_helper = next(
-        (
-            binding
-            for binding in bindings
-            if binding.role == "route_helper" and binding.symbol == family_ir.helper_symbol
-        ),
-        None,
-    )
-    if route_helper is None:
-        return None, (
-            _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
+                "ranked-observation Monte Carlo composition",
+                symbol,
+            )
+            for _role, symbol in missing
         )
 
     market_signature = _market_signature_from_family_ir(family_ir)
-    binding_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "market_binding"),
-        primitive_ref=market_binding.primitive_ref,
-        description=(
-            "Typed ranked-observation basket binding that resolves constituent market data, "
-            "correlation, and schedule semantics into a reusable resolved basket state."
-        ),
-        signature=ContractSignature(
-            inputs=market_signature.inputs,
-            outputs=("resolved_state:state",),
-            timeline_roles=market_signature.timeline_roles,
-            market_data_requirements=market_signature.market_data_requirements,
-        ),
+    ports = (
+        market_signature.inputs,
+        ("resolved_basket:state",),
+        ("resolved_basket_with_rate:state",),
+        ("ranked_payoff_contract:state",),
+        ("correlated_process_contract:state",),
+        ("ranked_mc_problem:state",),
+        ("price:scalar",),
     )
-    helper_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
-        primitive_ref=route_helper.primitive_ref,
-        description=(
-            f"Typed ranked-observation basket Monte Carlo helper with "
-            f"{family_ir.path_requirement_kind} path-state requirement."
-        ),
-        signature=ContractSignature(
-            inputs=("resolved_state:state",),
-            outputs=("price:scalar",),
-            timeline_roles=market_signature.timeline_roles,
-            market_data_requirements=market_signature.market_data_requirements,
-        ),
+    descriptions = (
+        "Resolve constituent spots, volatilities, carries, correlation, discounting, and observation times.",
+        "Convert the resolved domestic discount factor into the continuous rate used by process drift.",
+        "Bind the ranked terminal payoff used by the zero-expiry rule and simulated state payoff.",
+        "Construct the generic correlated geometric Brownian motion from resolved vectors.",
+        f"Build the reusable ranked payoff with the {family_ir.path_requirement_kind} requirement.",
+        "Run the generic Monte Carlo engine and apply explicit discount and notional scaling.",
     )
-    return ThenExpr(terms=(binding_atom, helper_atom)), ()
+    atoms = tuple(
+        ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, role),
+            primitive_ref=resolved_bindings[symbol].primitive_ref,
+            description=description,
+            signature=ContractSignature(
+                inputs=ports[index],
+                outputs=ports[index + 1],
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        for index, ((role, symbol), description) in enumerate(zip(required, descriptions, strict=True))
+    )
+    return ThenExpr(terms=atoms), ()
 
 
 def _build_event_triggered_two_legged_expr_from_family_ir(

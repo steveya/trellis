@@ -22,12 +22,10 @@ applies_when:
   - greeks
   instrument: []
   error_signature: null
-symptom: This lesson was superseded after the basket proving run moved to the shared
-  semantic-basket helper route.
-root_cause: The direct-`CorrelatedGBM` instruction conflicted with the later canonical
-  basket route card and cookbook, which route through `resolve_basket_semantics(...)`
-  and `price_ranked_observation_basket_monte_carlo(...)`.
-fix: Use the shared basket semantic helper path instead of importing
-  `trellis.models.processes.correlated_gbm` directly in the generated adapter.
-validation: Discovered during build (attempt 3); promoted after adding explicit adapter
-  guidance
+symptom: Historical guidance alternated between a pricing wrapper and an untyped
+  direct-process recipe.
+root_cause: Neither version exposed one coherent typed composition contract.
+fix: Follow the canonical API card that binds resolve_basket_semantics, CorrelatedGBM,
+  MonteCarloEngine, and the ranked state-payoff primitive explicitly.
+validation: Superseded again by QUA-1231 after the generic correlated process became
+  an admitted generated primitive.

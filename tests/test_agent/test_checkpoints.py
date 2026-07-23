@@ -222,7 +222,10 @@ def _validation_contract(
         "analytical_black76": "trellis.models.black.black76_call",
         "equity_quanto": "trellis.models.black.black76_call",
         "analytical_garman_kohlhagen": "trellis.models.fx_vanilla.price_fx_vanilla_analytical",
-        "correlated_basket_monte_carlo": "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo",
+        "correlated_basket_monte_carlo": (
+            "trellis.models.monte_carlo.ranked_observation_payoffs."
+            "terminal_ranked_observation_basket_payoff"
+        ),
     }
     backend_binding_id = binding_ids.get(route_id)
     return {
@@ -986,12 +989,17 @@ class TestEmitDecisionCheckpoint:
 
         assert semantic.decision == "ranked_observation_basket"
         assert semantic.metadata["compatibility_bridge_status"] == "thin_compatibility_wrapper"
-        assert binding.decision == "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo"
+        assert binding.decision == (
+            "trellis.models.monte_carlo.ranked_observation_payoffs."
+            "terminal_ranked_observation_basket_payoff"
+        )
         assert binding.metadata["binding_authority"]["binding_route_alias"] == "correlated_basket_monte_carlo"
-        assert "trellis.models.monte_carlo.semantic_basket" in builder.metadata["approved_modules"]
+        assert "trellis.models.monte_carlo.ranked_observation_payoffs" in builder.metadata["approved_modules"]
+        assert "trellis.models.processes.correlated_gbm" in builder.metadata["approved_modules"]
         assert (
             validator.metadata["backend_binding_id"]
-            == "trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo"
+            == "trellis.models.monte_carlo.ranked_observation_payoffs."
+            "terminal_ranked_observation_basket_payoff"
         )
         assert validator.metadata["binding_route_alias"] == "correlated_basket_monte_carlo"
         assert validator.metadata["bundle_id"] == "monte_carlo:basket_option"

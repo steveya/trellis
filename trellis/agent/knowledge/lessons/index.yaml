@@ -2370,10 +2370,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_013
-  title: Himalaya payoff must wrap GBM and MonteCarloEngine primitives
+  title: Superseded - per-asset GBM ranked-basket assembly
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2390,10 +2390,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_014
-  title: Himalaya basket must delegate to price_ranked_observation_basket_monte_carlo
+  title: Superseded - ranked-basket pricing-helper mandate
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2411,10 +2411,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_015
-  title: CorrelatedGBM requires 'spot_prices' not 'spots' keyword
+  title: Superseded - CorrelatedGBM spot keyword restriction
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2453,7 +2453,7 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_017
-  title: Ranked-observation basket must delegate to required semantic primitives
+  title: Ranked-observation basket composes resolved process, engine, and state payoff
   severity: critical
   category: monte_carlo
   status: promoted
@@ -2493,10 +2493,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_019
-  title: Himalaya payoff must wrap CorrelatedGBM as thin adapter
+  title: Superseded - direct CorrelatedGBM simulate recipe
   severity: critical
   category: monte_carlo
-  status: validated
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2513,10 +2513,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_020
-  title: Himalaya pricer must parse constituent names before basket resolution
+  title: Superseded - manual constituent parsing before basket resolution
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2620,10 +2620,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_026
-  title: Himalaya pricer must not import unapproved Trellis modules
+  title: Superseded - inline ranked-selection import guidance
   severity: critical
   category: monte_carlo
-  status: validated
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2641,10 +2641,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_027
-  title: Unapproved correlated_gbm module path blocks Himalaya build
+  title: Superseded - correlated_gbm was unapproved
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2662,10 +2662,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_028
-  title: Use approved GBM module, not correlated_gbm path
+  title: Superseded - substitute scalar GBM for correlated_gbm
   severity: critical
   category: monte_carlo
-  status: validated
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2683,10 +2683,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_029
-  title: Do not import unapproved correlated_gbm module in payoff
+  title: Superseded - remove correlated_gbm from ranked payoff
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2705,10 +2705,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_030
-  title: RankedObservationBasketSpec does not accept start_date
+  title: Superseded - generated RankedObservationBasketSpec start_date signature
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2725,10 +2725,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_031
-  title: RankedObservationBasketSpec does not accept asset_names argument
+  title: Superseded - generated RankedObservationBasketSpec asset_names signature
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2744,10 +2744,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_032
-  title: RankedObservationBasketSpec uses constituents and option_type
+  title: Superseded - generated RankedObservationBasketSpec normalized fields
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -2825,10 +2825,10 @@ entries:
     instrument: []
     error_signature: null
 - id: mc_036
-  title: Analytical Himalaya pricer must wrap required primitives explicitly
+  title: Superseded - analytical Black76 decomposition for ranked basket
   severity: critical
   category: monte_carlo
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -4572,10 +4572,10 @@ entries:
     instrument: []
     error_signature: null
 - id: md_021
-  title: resolve_basket_semantics does not accept 'underlyings' kwarg
+  title: Superseded - resolve_basket_semantics underlyings alias rejection
   severity: critical
   category: market_data
-  status: validated
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -4593,10 +4593,10 @@ entries:
     instrument: []
     error_signature: null
 - id: md_022
-  title: ResolvedBasketSemantics has no 'spots' attribute
+  title: Superseded - ResolvedBasketSemantics spots alias missing
   severity: critical
   category: market_data
-  status: validated
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -4614,10 +4614,10 @@ entries:
     instrument: []
     error_signature: null
 - id: md_023
-  title: ResolvedBasketSemantics missing rates attribute access
+  title: Superseded - ResolvedBasketSemantics rates alias missing
   severity: critical
   category: market_data
-  status: promoted
+  status: archived
   supersedes: []
   applies_when:
     method:
@@ -4637,10 +4637,10 @@ entries:
     instrument: []
     error_signature: null
 - id: md_024
-  title: ResolvedBasketSemantics object missing dividends attribute
+  title: Superseded - ResolvedBasketSemantics dividends alias missing
   severity: critical
   category: market_data
-  status: validated
+  status: archived
   supersedes: []
   applies_when:
     method:

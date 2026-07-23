@@ -1,5 +1,5 @@
 id: mc_017
-title: Ranked-observation basket must delegate to required semantic primitives
+title: Ranked-observation basket composes resolved process, engine, and state payoff
 severity: critical
 category: monte_carlo
 status: promoted
@@ -21,16 +21,13 @@ applies_when:
   - discounting
   instrument: []
   error_signature: null
-symptom: Build fails with assembly.required_primitive_missing because generated code
-  does not call trellis.models.resolution.basket_semantics.resolve_basket_semantics
-  and trellis.models.monte_carlo.semantic_basket.price_ranked_observation_basket_monte_carlo.
-root_cause: The agent generated a hand-rolled payoff class instead of acting as a
-  thin adapter around the two required primitives mandated by the assembly route.
-  The code-generation loop needs the exact adapter signature, not an inferred approximation,
-  so the shared helper calls must be visible in the payoff module.
-fix: The payoff module must import and call resolve_basket_semantics to build basket
-  config, then pass it directly to price_ranked_observation_basket_monte_carlo; no
-  hand-rolled simulation loop, no direct `trellis.models.processes.correlated_gbm`
-  import, and no bespoke payoff class body is permitted.
-validation: Discovered during build (attempt 3); promoted after adding exact adapter
-  guidance
+symptom: Ranked-basket source is incomplete when it skips market resolution, uses an
+  independent process per name, or copies ranked-selection state logic into the adapter.
+root_cause: The route requires one correlated state process and one observation-state
+  contract aligned to the engine grid; imports without construction do not satisfy that
+  semantic obligation.
+fix: Resolve basket semantics, convert the domestic discount factor with implied_zero_rate,
+  construct CorrelatedGBM and MonteCarloEngine, pass the same n_steps to the ranked
+  state-payoff primitive, and apply discount/notional settlement explicitly.
+validation: Original failure evidence retained; construction guidance reconciled with
+  the QUA-1231 route, lowering, generated-source, and regression tests.

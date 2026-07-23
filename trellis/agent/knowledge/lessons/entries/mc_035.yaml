@@ -26,8 +26,7 @@ symptom: Smoke test raises 'initial state shape does not match the simulated ter
 root_cause: The generated basket adapter or its knowledge guidance treated the raw
   MarketState like a path tensor instead of resolving the basket semantics first and
   using the resolved constituent spot vector as the engine's initial state.
-fix: Resolve the basket semantics first, then pass the resolved basket object to the
-  shared Monte Carlo helper; use resolved.constituent_spots as the initial multi-asset
-  state and never reshape or index the raw MarketState as if it were a simulated path
-  tensor.
+fix: Resolve basket semantics first, construct CorrelatedGBM from the resolved process
+  parameters, and pass resolved.constituent_spots to MonteCarloEngine.price as the
+  initial multi-asset state. Never reshape or index raw MarketState as a path tensor.
 validation: Discovered during build (attempt 3)

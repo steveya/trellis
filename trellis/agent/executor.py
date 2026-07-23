@@ -4766,38 +4766,91 @@ return {helper}(
     ).rstrip()
 
 
-def _ranked_observation_basket_helper_body(refs: set[str]) -> str | None:
-    """Return a thin deterministic wrapper for ranked-observation basket MC."""
-    helper_ref = (
-        "trellis.models.monte_carlo.semantic_basket."
-        "price_ranked_observation_basket_monte_carlo"
-    )
-    if helper_ref not in refs:
+def _ranked_observation_basket_primitive_body(refs: set[str]) -> str | None:
+    """Return explicit primitive composition for ranked-observation basket MC."""
+    required_refs = {
+        "trellis.models.resolution.basket_semantics.resolve_basket_semantics",
+        "trellis.models.analytical.support.implied_zero_rate",
+        "trellis.models.processes.correlated_gbm.CorrelatedGBM",
+        "trellis.models.monte_carlo.engine.MonteCarloEngine",
+        (
+            "trellis.models.monte_carlo.ranked_observation_payoffs."
+            "build_ranked_observation_basket_state_payoff"
+        ),
+        (
+            "trellis.models.monte_carlo.ranked_observation_payoffs."
+            "terminal_ranked_observation_basket_payoff"
+        ),
+    }
+    if not required_refs.issubset(refs):
         return None
 
     return textwrap.dedent(
         """\
         spec = self._spec
-        helper_spec = RankedObservationBasketSpec(
-            notional=spec.notional,
-            strike=spec.strike,
-            expiry_date=spec.expiry_date,
+        resolved = resolve_basket_semantics(
+            market_state,
+            spec,
             constituents=getattr(spec, "constituents", None) or spec.underliers,
             observation_dates=getattr(spec, "observation_dates", None),
             selection_rule=getattr(spec, "selection_rule", None) or "best_of_remaining",
             lock_rule=getattr(spec, "lock_rule", None) or "remove_selected",
-            aggregation_rule=getattr(spec, "aggregation_rule", None) or "average_locked_levels",
+            aggregation_rule=getattr(spec, "aggregation_rule", None) or "average_locked_returns",
             option_type=getattr(spec, "option_type", "call"),
             selection_count=getattr(spec, "selection_count", None) or 1,
             day_count=spec.day_count,
-            n_paths=getattr(spec, "n_paths", 50000),
-            n_steps=getattr(spec, "n_steps", 252),
-            seed=getattr(spec, "seed", None) or 42,
-            mc_method=getattr(spec, "mc_method", None) or "exact",
-            correlation_matrix_key=getattr(spec, "correlation_matrix_key", None),
+            correlation_matrix_key=(
+                getattr(spec, "correlation_matrix_key", None)
+                or getattr(spec, "correlation_key", None)
+            ),
         )
-        resolved = resolve_basket_semantics(market_state, helper_spec)
-        return price_ranked_observation_basket_monte_carlo(helper_spec, resolved)
+        if resolved.T <= 0.0:
+            intrinsic = terminal_ranked_observation_basket_payoff(
+                spec,
+                [[[float(value) for value in resolved.constituent_spots]]],
+                resolved,
+            )[0]
+            return float(spec.notional) * float(intrinsic)
+
+        domestic_rate = float(implied_zero_rate(resolved.domestic_df, resolved.T))
+        process = CorrelatedGBM(
+            mu=[domestic_rate - float(carry) for carry in resolved.constituent_carry],
+            sigma=[float(value) for value in resolved.constituent_vols],
+            corr=[
+                [float(cell) for cell in row]
+                for row in resolved.correlation_matrix
+            ],
+        )
+        engine_steps = max(
+            int(getattr(spec, "n_steps", 252) or 252),
+            64,
+            int(float(resolved.T) * 252.0 + 0.999999),
+            len(resolved.observation_times) * 16 if resolved.observation_times else 64,
+        )
+        payoff = build_ranked_observation_basket_state_payoff(
+            spec,
+            resolved,
+            n_steps=engine_steps,
+        )
+        engine = MonteCarloEngine(
+            process,
+            n_paths=max(int(getattr(spec, "n_paths", 50000) or 50000), 4096),
+            n_steps=engine_steps,
+            seed=int(getattr(spec, "seed", 42) or 42),
+            method=getattr(spec, "mc_method", None) or "exact",
+        )
+        price_result = engine.price(
+            tuple(float(value) for value in resolved.constituent_spots),
+            float(resolved.T),
+            payoff,
+            discount_rate=0.0,
+            storage_policy=payoff.path_requirement,
+            return_paths=False,
+        )
+        return (
+            float(spec.notional) * float(resolved.domestic_df)
+            * float(price_result["price"])
+        )
         """
     ).rstrip()
 
@@ -6430,7 +6483,7 @@ def _deterministic_exact_binding_evaluate_body(
     if cds_body is not None:
         return cds_body
 
-    ranked_basket_body = _ranked_observation_basket_helper_body(refs)
+    ranked_basket_body = _ranked_observation_basket_primitive_body(refs)
     if ranked_basket_body is not None:
         return ranked_basket_body
 
@@ -7558,13 +7611,18 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
         imports.append(
             "from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo"
         )
-    if "price_ranked_observation_basket_monte_carlo(" in body:
-        imports.append(
-            "from trellis.models.monte_carlo.semantic_basket import "
-            "RankedObservationBasketSpec, price_ranked_observation_basket_monte_carlo"
-        )
+    if "resolve_basket_semantics(" in body:
         imports.append(
             "from trellis.models.resolution.basket_semantics import resolve_basket_semantics"
+        )
+    if (
+        "build_ranked_observation_basket_state_payoff(" in body
+        or "terminal_ranked_observation_basket_payoff(" in body
+    ):
+        imports.append(
+            "from trellis.models.monte_carlo.ranked_observation_payoffs import "
+            "build_ranked_observation_basket_state_payoff, "
+            "terminal_ranked_observation_basket_payoff"
         )
     if "price_nth_to_default_basket(" in body:
         imports.append(

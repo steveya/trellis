@@ -168,6 +168,19 @@ def build_price(self, market_state):
 """
 
 
+HELPER_ONLY_RANKED_BASKET_SOURCE = """\
+from __future__ import annotations
+
+from trellis.models.monte_carlo.semantic_basket import (
+    price_ranked_observation_basket_monte_carlo,
+)
+
+
+def build_price(self, market_state):
+    return float(price_ranked_observation_basket_monte_carlo(market_state, self._spec))
+"""
+
+
 HELPER_ONLY_FX_BARRIER_SOURCE = """\
 from __future__ import annotations
 
@@ -1000,6 +1013,30 @@ def test_rejects_retired_bermudan_swaption_helper_as_construction_authority():
         HELPER_ONLY_BERMUDAN_ROUTE_SOURCE,
         product_ir=product_ir,
         generation_plan=generation_plan,
+    )
+
+    issue_codes = {issue.code for issue in report.issues}
+    assert "assembly.excluded_primitive_used" in issue_codes
+    assert "assembly.required_primitive_missing" in issue_codes
+    assert not report.ok
+
+
+def test_rejects_retired_ranked_basket_helper_as_construction_authority():
+    from trellis.agent.platform_requests import compile_build_request
+    from trellis.agent.semantic_validation import validate_semantics
+
+    compiled = compile_build_request(
+        "Himalaya-style ranked observation basket on AAPL, MSFT, NVDA with observation "
+        "dates 2025-01-15, 2025-02-15, 2025-03-15. At each observation choose the best "
+        "performer among the remaining constituents, remove it, lock the simple return, "
+        "and settle the average locked returns at maturity.",
+        instrument_type="basket_option",
+    )
+
+    report = validate_semantics(
+        HELPER_ONLY_RANKED_BASKET_SOURCE,
+        product_ir=compiled.product_ir,
+        generation_plan=compiled.generation_plan,
     )
 
     issue_codes = {issue.code for issue in report.issues}
