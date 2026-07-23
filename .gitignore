@@ -54,6 +54,7 @@ cover/
 
 # Local benchmark scratch reports
 benchmark_runs/
+/task_runs/comparison_target_artifacts/
 
 # Translations
 *.mo

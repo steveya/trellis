@@ -546,6 +546,83 @@ def test_execute_validation_bundle_skips_generic_vol_checks_for_model_parameter_
     assert calls == ["check_non_negativity", "check_price_sanity"]
 
 
+def test_execute_validation_bundle_skips_flat_vol_for_bound_callable_calibration(
+    monkeypatch,
+):
+    from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle
+
+    calls: list[str] = []
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_non_negativity",
+        lambda payoff, market_state: calls.append("check_non_negativity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_price_sanity",
+        lambda payoff, market_state: calls.append("check_price_sanity") or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_vol_sensitivity",
+        lambda payoff_factory, market_state_factory: calls.append(
+            "check_vol_sensitivity"
+        )
+        or [],
+    )
+    monkeypatch.setattr(
+        "trellis.agent.invariants.check_vol_monotonicity",
+        lambda payoff_factory, market_state_factory, expected_direction=None: calls.append(
+            "check_vol_monotonicity"
+        )
+        or [],
+    )
+
+    test_payoff = SimpleNamespace(
+        requirements={"discount_curve", "black_vol_surface"},
+        __trellis_comparison_bindings__={
+            "hw_pde_theta": {
+                "target_contract": {
+                    "backend_binding_id": (
+                        "trellis.models.callable_bond_pde.price_callable_bond_pde"
+                    ),
+                    "variant_parameters": {
+                        "model_parameter_set": "comparison:hull_white",
+                        "mean_reversion": 0.1,
+                        "sigma": 0.01,
+                    },
+                }
+            }
+        },
+    )
+    bundle = ValidationBundle(
+        bundle_id="pde_solver:callable_bond",
+        instrument_type="callable_bond",
+        method="pde_solver",
+        checks=(
+            "check_non_negativity",
+            "check_price_sanity",
+            "check_vol_sensitivity",
+            "check_vol_monotonicity",
+        ),
+        categories={
+            "universal": ("check_non_negativity", "check_price_sanity"),
+            "no_arbitrage": ("check_vol_sensitivity", "check_vol_monotonicity"),
+        },
+    )
+
+    execution = execute_validation_bundle(
+        bundle,
+        validation_level="standard",
+        test_payoff=test_payoff,
+        market_state=object(),
+        payoff_factory=lambda: test_payoff,
+        market_state_factory=lambda **kwargs: object(),
+    )
+
+    assert execution.failures == ()
+    assert execution.executed_checks == ("check_non_negativity", "check_price_sanity")
+    assert execution.skipped_checks == ("check_vol_sensitivity", "check_vol_monotonicity")
+    assert calls == ["check_non_negativity", "check_price_sanity"]
+
+
 def test_execute_validation_bundle_returns_structured_failure_details(monkeypatch):
     from trellis.agent.invariants import InvariantFailure
     from trellis.agent.validation_bundles import ValidationBundle, execute_validation_bundle

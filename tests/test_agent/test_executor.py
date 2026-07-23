@@ -337,6 +337,9 @@ def test_build_payoff_reuse_branch_attaches_analytical_trace(monkeypatch, tmp_pa
         target_id="black_scholes",
         method="analytical",
     ).to_payload()
+    existing.__trellis_comparison_bindings__ = {
+        "black_scholes": {"target_contract": target_contract}
+    }
     trace_id = "executor_build_cached_123"
     emitted_kwargs: dict[str, object] = {}
 
@@ -384,10 +387,12 @@ def test_build_payoff_reuse_branch_attaches_analytical_trace(monkeypatch, tmp_pa
     assert emitted_kwargs["context"]["selected_curve_names"] == {
         "discount_curve": "usd_ois",
     }
-    assert build_meta["comparison_target_contract"] == {}
-    assert build_meta["execution_binding"]["comparison_target_contract"] == {}
+    assert build_meta["comparison_target_contract"] == target_contract
+    assert build_meta["execution_binding"]["comparison_target_contract"] == (
+        target_contract
+    )
     assert build_meta["comparison_binding_evidence_source"] == (
-        "cached_artifact_declaration_missing"
+        "cached_artifact_declaration"
     )
 
 
@@ -1589,6 +1594,210 @@ def test_deterministic_exact_binding_module_materializes_callable_bond_tree_wrap
     assert EVALUATE_SENTINEL not in generated.code
 
 
+def test_deterministic_callable_bond_tree_wrapper_binds_declared_lattice_model():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    contract = ComparisonTargetContract(
+        target_id="bdt_tree",
+        method="rate_tree",
+        variant_parameters={"lattice_model": "bdt"},
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.callable_bond_tree.price_callable_bond_tree",
+        ),
+        primitive_plan=None,
+        method="rate_tree",
+        instrument_type="callable_bond",
+    )
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["callable_bond"],
+        "Callable bond BDT target",
+        generation_plan=generation_plan,
+    )
+
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        request_metadata={
+            "comparison_target_contract": contract.to_payload(),
+        },
+        comparison_target="bdt_tree",
+    )
+
+    assert generated is not None
+    assert 'return price_callable_bond_tree(market_state, spec, model="bdt")' in (
+        generated.code
+    )
+
+
+def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _deterministic_exact_binding_evaluate_body
+
+    contract = ComparisonTargetContract(
+        target_id="misspelled_tree",
+        method="rate_tree",
+        variant_parameters={"lattice_model": "hull_wite"},
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.callable_bond_tree.price_callable_bond_tree",
+        ),
+        primitive_plan=None,
+        method="rate_tree",
+        instrument_type="callable_bond",
+    )
+
+    with pytest.raises(ValueError, match="lattice_model must be one of"):
+        _deterministic_exact_binding_evaluate_body(
+            generation_plan,
+            request_metadata={
+                "comparison_target_contract": contract.to_payload(),
+            },
+            comparison_target="misspelled_tree",
+        )
+
+
+@pytest.mark.parametrize(
+    ("method", "binding_ref", "target_id", "variants", "expected_call"),
+    [
+        (
+            "pde_solver",
+            "trellis.models.callable_bond_pde.price_callable_bond_pde",
+            "hw_pde_theta",
+            {
+                "pricing_method": "pde_solver",
+                "theta": 0.5,
+                "mean_reversion": 0.1,
+                "sigma": 0.01,
+            },
+            "return price_callable_bond_pde(market_state, spec, "
+            "mean_reversion=0.1, sigma=0.01, theta=0.5)",
+        ),
+        (
+            "rate_tree",
+            "trellis.models.callable_bond_tree.price_callable_bond_tree",
+            "hw_rate_tree",
+            {
+                "pricing_method": "rate_tree",
+                "lattice_model": "hull_white",
+                "mean_reversion": 0.1,
+                "sigma": 0.01,
+            },
+            'return price_callable_bond_tree(market_state, spec, model="hull_white", '
+            "mean_reversion=0.1, sigma=0.01)",
+        ),
+    ],
+)
+def test_deterministic_callable_bond_targets_bind_shared_hull_white_parameters(
+    method,
+    binding_ref,
+    target_id,
+    variants,
+    expected_call,
+):
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    contract = ComparisonTargetContract(
+        target_id=target_id,
+        method=method,
+        variant_parameters=variants,
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(binding_ref,),
+        primitive_plan=None,
+        method=method,
+        instrument_type="callable_bond",
+    )
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["callable_bond"],
+        f"Callable bond {target_id}",
+        generation_plan=generation_plan,
+    )
+
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+        request_metadata={
+            "comparison_target_contract": contract.to_payload(),
+        },
+        comparison_target=target_id,
+    )
+
+    assert generated is not None
+    assert expected_call in generated.code
+
+
+def test_deterministic_callable_bond_target_rejects_unbound_named_parameter_set():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _deterministic_exact_binding_evaluate_body
+
+    contract = ComparisonTargetContract(
+        target_id="named_hw_pde",
+        method="pde_solver",
+        variant_parameters={"model_parameter_set": "comparison:hull_white"},
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.callable_bond_pde.price_callable_bond_pde",
+        ),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type="callable_bond",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="model_parameter_set requires explicit mean_reversion and sigma",
+    ):
+        _deterministic_exact_binding_evaluate_body(
+            generation_plan,
+            request_metadata={
+                "comparison_target_contract": contract.to_payload(),
+            },
+            comparison_target="named_hw_pde",
+        )
+
+
+def test_deterministic_callable_bond_pde_rejects_invalid_theta_variant():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _deterministic_exact_binding_evaluate_body
+
+    contract = ComparisonTargetContract(
+        target_id="hw_pde_theta",
+        method="pde_solver",
+        variant_parameters={"theta": "psor"},
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.callable_bond_pde.price_callable_bond_pde",
+        ),
+        primitive_plan=None,
+        method="pde_solver",
+        instrument_type="callable_bond",
+    )
+
+    with pytest.raises(ValueError, match="theta must be a number between 0 and 1"):
+        _deterministic_exact_binding_evaluate_body(
+            generation_plan,
+            request_metadata={
+                "comparison_target_contract": contract.to_payload(),
+            },
+            comparison_target="hw_pde_theta",
+        )
+
+
 def test_deterministic_exact_binding_module_materializes_callable_bond_pde_wrapper():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
@@ -1615,7 +1824,10 @@ def test_deterministic_exact_binding_module_materializes_callable_bond_pde_wrapp
     )
 
     assert generated is not None
-    assert "return price_callable_bond_pde(market_state, spec)" in generated.code
+    assert (
+        "return price_callable_bond_pde(market_state, spec, theta=0.5)"
+        in generated.code
+    )
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -7113,6 +7325,57 @@ def test_resolve_output_target_uses_benchmark_generated_root_for_financepy_tasks
     ).replace("\\", "/")
     assert output_module_path == "task_runs/financepy_benchmarks/generated/f009/analytical/barrieroption.py"
     assert module_name == "trellis_benchmarks._fresh.f009.analytical.barrieroption"
+
+
+def test_resolve_output_target_isolates_rematerialized_comparison_artifact():
+    from trellis.agent.executor import _resolve_output_target
+
+    output_file_path, output_module_path, module_name = _resolve_output_target(
+        "instruments/_agent/callablebond.py",
+        fresh_build=False,
+        isolate_comparison_target=True,
+        request_metadata={
+            "task_id": "T02",
+            "comparison_target": "bdt_tree",
+        },
+    )
+
+    assert output_module_path == (
+        "task_runs/comparison_target_artifacts/t02/bdt_tree/callablebond.py"
+    )
+    assert str(output_file_path).replace("\\", "/").endswith(output_module_path)
+    assert module_name == "trellis_task_targets.t02.bdt_tree.callablebond"
+
+
+def test_cached_comparison_artifact_requires_compatible_target_declaration():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import (
+        _cached_artifact_declares_requested_comparison_target,
+    )
+
+    requested = ComparisonTargetContract(
+        target_id="bdt_tree",
+        method="rate_tree",
+        variant_parameters={"lattice_model": "bdt"},
+    )
+
+    class UndeclaredPayoff:
+        pass
+
+    class DeclaredPayoff:
+        __trellis_comparison_bindings__ = {
+            requested.target_id: {"target_contract": requested.to_payload()}
+        }
+
+    metadata = {"comparison_target_contract": requested.to_payload()}
+    assert not _cached_artifact_declares_requested_comparison_target(
+        UndeclaredPayoff,
+        metadata,
+    )
+    assert _cached_artifact_declares_requested_comparison_target(
+        DeclaredPayoff,
+        metadata,
+    )
 
 
 def test_resolve_output_target_sanitizes_agent_prompt_filename():

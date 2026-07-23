@@ -122,6 +122,13 @@ fallback, but that fallback records ``explicit=false`` and
 ``resolution_source=legacy_target_inference`` rather than pretending that an
 inferred target has exact route or variant authority.
 
+An explicit one-target row is still a target-contract task even though no
+two-price tolerance comparison is possible. The runtime carries that target's
+full contract into construction and applies artifact coherence before the row
+can pass. This is useful for a bounded validation claim such as a puttable
+bond's holder-exercise and straight-bond lower-bound checks, but it must not be
+described as an independent cross-method comparison.
+
 The requested contract follows one target through harness planning,
 platform-request compilation, and builder request metadata. Build results keep
 that request in ``requested_comparison_target_contract`` and separately retain
@@ -133,6 +140,15 @@ fresh generation: an old class is not restamped with the current request.
 Standard and thorough cached comparison builds re-execute a required validation
 bundle before returning the class. Fast validation does not claim that evidence
 and therefore cannot make a target requiring a bundle coherent.
+
+If a cached adapter has no compatible declaration for the requested target,
+the executor bypasses it and deterministically rematerializes the checked
+binding into an isolated run artifact under
+``task_runs/comparison_target_artifacts/``. It does not overwrite or promote
+the admitted adapter. The request remains a request; only the declaration on
+the rematerialized artifact can become comparison evidence. This fallback is
+for exact checked bindings, not permission to add a task- or product-shaped
+helper.
 
 ``comparison_binding_evidence_source`` and
 ``validation_binding_evidence_source`` state where the evidence came from.

@@ -1,10 +1,10 @@
-"""T05: Puttable bond pricing — exercise_fn=max, verify puttable >= straight,
-compare callable-puttable symmetry.
+"""T05: Puttable bond pricing — holder exercise and straight-bond lower bound.
 
-Cross-validates:
+Validates:
   1. Puttable bond pricing via HW tree with exercise_fn=max
   2. Puttable >= straight bond at all rate levels (3%, 5%, 7%)
-  3. Callable vs puttable symmetry: puttable >= straight >= callable
+  3. Callable/straight/puttable ordering as a local invariant, not an
+     independent comparison target
   4. Puttable OAS: negative OAS for puttable trading above straight
   5. QuantLib cross-validation via CallableFixedRateBond with put schedule
   6. FinancePy cross-validation via BondEmbeddedOption with put dates

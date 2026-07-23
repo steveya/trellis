@@ -9,13 +9,20 @@ proof rows that previously failed at `semantic_product_shape`. `T25`, `T26`,
 basis/tree comparison targets, and `T18` is a certified honest block until the
 rate payoff and schedule are specified.
 
+`QUA-1206` binds the retained callable fixed-income experiments explicitly.
+`T02` distinguishes BDT from Hull-White lattice execution, `T17` compares
+Hull-White event-aware theta PDE with the Hull-White lattice under one typed
+parameter set, and `T05` is narrowed to one honest puttable-lattice target plus
+its straight-bond lower-bound validation because the former callable
+"symmetry" label was not an independent implementation.
+
 | Task | Bucket | Target | Title |
 | --- | --- | --- | --- |
 | `T01` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical |
 | `T02` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Callable bond: BDT lognormal vs HW normal tree |
 | `T03` | `market_or_research_hold` | `TASKS_PROOF_LEGACY.yaml` | Trinomial tree implementation and convergence |
 | `T04` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Bermudan swaption on HW tree |
-| `T05` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Puttable bond: exercise_fn=max and puttable-callable symmetry |
+| `T05` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Puttable bond: holder exercise and straight-bond lower bound |
 | `T06` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | CIR++ rate tree: positive rates via shifted CIR |
 | `T07` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Two-factor Hull-White tree (2D lattice) |
 | `T08` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Convertible bond: equity + credit on tree |
@@ -27,7 +34,7 @@ rate payoff and schedule are specified.
 | `T14` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | American put: PSOR vs tree vs LSM three-way |
 | `T15` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | CEV model: CEVOperator PDE vs CEV tree |
 | `T16` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Barrier call: PDE absorbing BC vs MC discrete monitoring |
-| `T17` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Callable bond: HW rate PDE (PSOR) vs HW tree |
+| `T17` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Callable bond: HW event-aware theta PDE vs HW tree |
 | `T18` | `certified_honest_block` | `TASKS_PROOF_LEGACY.yaml` | Log-space PDE for rate instruments (avoid negative rates) |
 | `T19` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Non-uniform grid (log-spaced) for PDE near-barrier accuracy |
 | `T20` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | 2D PDE: Heston (S, V) via ADI splitting |

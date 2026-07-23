@@ -667,13 +667,13 @@ def test_platform_trace_summarizes_event_aware_pde_family_ir(tmp_path):
 
     compiled = compile_build_request(
         (
-            "Build a pricer for: Callable bond: HW rate PDE (PSOR) vs HW tree\n\n"
+            "Build a pricer for: Callable bond: HW event-aware theta PDE vs HW tree\n\n"
             "Price a 10-year callable bond paying a 5% semi-annual coupon, par $100,\n"
             "callable at par on any coupon date after year 3.\n"
             "Use the USD OIS discount curve from the market snapshot (as_of 2024-11-15).\n"
             "Hull-White model: mean reversion a=0.05, short-rate vol sigma=0.01.\n"
-            "Method 1: solve the HW rate PDE backward in time using PSOR to\n"
-            "enforce the call constraint (issuer calls when continuation value > par)."
+            "Method 1: solve the HW rate PDE with an event-aware theta=0.5 rollback\n"
+            "and project the issuer call constraint on scheduled call dates."
         ),
         instrument_type="callable_bond",
         preferred_method="pde_solver",

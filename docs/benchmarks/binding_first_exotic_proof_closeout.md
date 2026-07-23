@@ -112,7 +112,13 @@
 - Retry taxonomy: `none`
 - Latest diagnosis dossier: `T126.md`
 
-### T17 - Callable bond: HW rate PDE (PSOR) vs HW tree
+### T17 - Callable bond: HW event-aware theta PDE vs HW tree
+
+Correction (`QUA-1206`): this lane executes the event-aware theta rollback
+(`pde_theta_1d`, theta `0.5`), not PSOR. The underlying historical result paths
+are retained as recorded evidence; only the unsupported solver claim is
+corrected here.
+
 - Cohort: `event_control_schedule`
 - Expected outcome: `proved`
 - Gate passed: `True`

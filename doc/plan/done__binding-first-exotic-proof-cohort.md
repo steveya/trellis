@@ -81,9 +81,14 @@ All proof slices must use the same measurement protocol.
 
 These tasks define the `QUA-808` proof surface.
 
+Correction (`QUA-1206`): the T17 callable-bond PDE lane uses the event-aware
+theta rollback (`pde_theta_1d`, theta `0.5`), not PSOR. The historical target
+label below was narrowed after executable target binding made that distinction
+observable.
+
 | Task | Expected outcome | Binding-first capability under test | Notes |
 | --- | --- | --- | --- |
-| `T17` Callable bond: HW rate PDE (PSOR) vs HW tree | `proved` | same-day event schedule plus issuer control across PDE and lattice bindings | Tests event transforms, fixed-income schedule semantics, and explicit issuer control |
+| `T17` Callable bond: HW event-aware theta PDE vs HW tree | `proved` | same-day event schedule plus issuer control across PDE and lattice bindings | Tests event transforms, fixed-income schedule semantics, and explicit issuer control |
 | `T73` European swaption: Black76 vs HW tree vs HW MC | `proved` | rate-style schedule semantics and method-spanning helper bindings | Good check that schedule-aware analytical, lattice, and MC bindings share one semantic contract |
 | `E22` Cap/floor: Black caplet stack vs MC rate simulation | `proved` | rate cap/floor strip decomposition without route-local rescue logic | Confirms typed family lowering plus rate MC/analytical bindings |
 | `T105` Quanto option: quanto-adjusted BS vs MC cross-currency | `proved` | cross-currency market binding plus analytical/MC parity | Keeps the proof program honest about multi-currency exact bindings |

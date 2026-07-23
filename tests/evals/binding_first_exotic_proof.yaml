@@ -2,7 +2,7 @@ T17:
   cohort: event_control_schedule
   outcome_class: proved
   comparison_targets:
-    - hw_pde_psor
+    - hw_pde_theta
     - hw_rate_tree
   requires_binding_ids: true
 

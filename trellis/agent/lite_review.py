@@ -9,7 +9,9 @@ through to later LLM-backed review.
 from __future__ import annotations
 
 import ast
+from collections.abc import Mapping
 from dataclasses import dataclass
+from math import isfinite
 
 
 _CAPABILITY_ATTR_PREFIXES = {
@@ -36,6 +38,10 @@ _CHECKED_ROUTE_HELPER_SYMBOLS = frozenset({
 _CHECKED_MARKET_BINDING_OWNER_SYMBOLS = frozenset({
     "price_single_state_terminal_claim_monte_carlo_result",
 })
+_CALLABLE_CALIBRATION_BINDING_SYMBOLS = frozenset({
+    "price_callable_bond_pde",
+    "price_callable_bond_tree",
+})
 
 # Legacy _ROUTE_REQUIRED_ACCESSES and _ROUTE_ACCESS_ERROR_CODES removed.
 # Market-data access requirements are now sourced from the route registry
@@ -59,6 +65,9 @@ class LiteReviewSignals:
     literal_assignments: tuple[str, ...]
     wall_clock_calls: tuple[str, ...]
     api_misuses: tuple[str, ...] = ()
+    literal_call_arguments: tuple[
+        tuple[str, tuple[tuple[str, str], ...]], ...
+    ] = ()
 
 
 @dataclass(frozen=True)
@@ -84,6 +93,9 @@ class _LiteReviewVisitor(ast.NodeVisitor):
         self.market_state_accesses: set[str] = set()
         self.call_names: set[str] = set()
         self.literal_assignments: list[str] = []
+        self.literal_call_arguments: list[
+            tuple[str, tuple[tuple[str, str], ...]]
+        ] = []
         self.wall_clock_calls: set[str] = set()
         self.api_misuses: set[str] = set()
 
@@ -117,12 +129,18 @@ class _LiteReviewVisitor(ast.NodeVisitor):
             bad_spot_keywords = {"spot", "s0", "initial_spot", "initial_value"}
             if any(keyword.arg in bad_spot_keywords for keyword in node.keywords if keyword.arg):
                 self.api_misuses.add("gbm_spot_constructor_keyword")
+        literal_call_arguments: list[tuple[str, str]] = []
         for keyword in node.keywords:
             if keyword.arg is None:
                 continue
             value = _numeric_literal(keyword.value)
             if value is not None:
                 self.literal_assignments.append(f"{keyword.arg}={value}")
+                literal_call_arguments.append((keyword.arg, value))
+        if call_name and literal_call_arguments:
+            self.literal_call_arguments.append(
+                (call_name, tuple(literal_call_arguments))
+            )
         self.generic_visit(node)
 
 
@@ -132,6 +150,7 @@ def review_generated_code(
     pricing_plan=None,
     product_ir=None,
     generation_plan=None,
+    comparison_target_contract: Mapping[str, object] | None = None,
 ) -> LiteReviewReport:
     """Run a cheap deterministic review for high-confidence anti-patterns."""
     try:
@@ -160,6 +179,7 @@ def review_generated_code(
         literal_assignments=tuple(visitor.literal_assignments),
         wall_clock_calls=tuple(sorted(visitor.wall_clock_calls)),
         api_misuses=tuple(sorted(visitor.api_misuses)),
+        literal_call_arguments=tuple(visitor.literal_call_arguments),
     )
 
     required_market_data = set()
@@ -174,6 +194,7 @@ def review_generated_code(
             capability,
             signals,
             generation_plan=generation_plan,
+            comparison_target_contract=comparison_target_contract,
         )
         if issue is not None:
             issues.append(issue)
@@ -216,11 +237,13 @@ def _capability_literal_issue(
     signals: LiteReviewSignals,
     *,
     generation_plan=None,
+    comparison_target_contract: Mapping[str, object] | None = None,
 ) -> LiteReviewIssue | None:
     if _capability_literal_is_subsumed_by_route_binding(
         capability,
         signals,
         generation_plan=generation_plan,
+        comparison_target_contract=comparison_target_contract,
     ):
         return None
 
@@ -264,10 +287,16 @@ def _capability_literal_is_subsumed_by_route_binding(
     signals: LiteReviewSignals,
     *,
     generation_plan=None,
+    comparison_target_contract: Mapping[str, object] | None = None,
 ) -> bool:
     """Return whether an admitted route binding legitimately owns the literal."""
     if capability != "black_vol_surface":
         return False
+    if _callable_calibration_matches_target_contract(
+        signals,
+        comparison_target_contract,
+    ):
+        return True
     primitive_plan = getattr(generation_plan, "primitive_plan", None)
     if primitive_plan is None:
         return False
@@ -284,6 +313,42 @@ def _capability_literal_is_subsumed_by_route_binding(
         any(item.startswith("mean_reversion=") for item in signals.literal_assignments)
         and any(item.startswith("sigma=") for item in signals.literal_assignments)
     )
+
+
+def _callable_calibration_matches_target_contract(
+    signals: LiteReviewSignals,
+    comparison_target_contract: Mapping[str, object] | None,
+) -> bool:
+    """Return whether one callable helper call binds the declared calibration."""
+    if not isinstance(comparison_target_contract, Mapping):
+        return False
+    raw_variants = comparison_target_contract.get("variant_parameters")
+    if not isinstance(raw_variants, Mapping):
+        return False
+    try:
+        expected = {
+            name: float(raw_variants[name])
+            for name in ("mean_reversion", "sigma")
+        }
+    except (KeyError, TypeError, ValueError):
+        return False
+    if not all(isfinite(value) for value in expected.values()):
+        return False
+
+    for call_name, literal_arguments in signals.literal_call_arguments:
+        if call_name.rsplit(".", 1)[-1] not in _CALLABLE_CALIBRATION_BINDING_SYMBOLS:
+            continue
+        bound_arguments = dict(literal_arguments)
+        try:
+            actual = {
+                name: float(bound_arguments[name])
+                for name in ("mean_reversion", "sigma")
+            }
+        except (KeyError, TypeError, ValueError):
+            continue
+        if actual == expected:
+            return True
+    return False
 
 
 def _resolve_attribute_chain(node: ast.AST) -> str:

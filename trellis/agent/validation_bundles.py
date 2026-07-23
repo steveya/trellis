@@ -8,6 +8,7 @@ and executes them. Checks that lack required inputs are skipped gracefully.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Callable, Mapping
 
 from trellis.agent.assembly_tools import normalize_comparison_relation, select_invariant_pack
@@ -385,6 +386,9 @@ def _uses_model_parameter_volatility_route(
     ):
         return True
 
+    if _has_explicit_callable_comparison_calibration(test_payoff):
+        return True
+
     spec = getattr(test_payoff, "spec", None)
     requirements = set(getattr(test_payoff, "requirements", set()) or set())
     if "model_parameters" in requirements and not (
@@ -407,6 +411,38 @@ def _uses_model_parameter_volatility_route(
                 "levy_parameter_set",
             )
         )
+    return False
+
+
+def _has_explicit_callable_comparison_calibration(test_payoff: Any | None) -> bool:
+    """Return whether the artifact fixes an explicit callable-model calibration."""
+    bindings = getattr(test_payoff, "__trellis_comparison_bindings__", None)
+    if not isinstance(bindings, Mapping):
+        return False
+    callable_backends = {
+        "trellis.models.callable_bond_pde.price_callable_bond_pde",
+        "trellis.models.callable_bond_tree.price_callable_bond_tree",
+    }
+    for raw_binding in bindings.values():
+        if not isinstance(raw_binding, Mapping):
+            continue
+        target_contract = raw_binding.get("target_contract")
+        if not isinstance(target_contract, Mapping):
+            continue
+        if target_contract.get("backend_binding_id") not in callable_backends:
+            continue
+        variants = target_contract.get("variant_parameters")
+        if not isinstance(variants, Mapping):
+            continue
+        try:
+            calibration = (
+                float(variants["mean_reversion"]),
+                float(variants["sigma"]),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        if all(isfinite(value) for value in calibration):
+            return True
     return False
 
 

@@ -94,6 +94,103 @@ def test_declared_basket_comparison_targets_preserve_method_and_sampling_identit
     assert t126["fft_spread_2d"].method == "fft_pricing"
 
 
+def test_callable_fixed_income_targets_have_explicit_executable_contracts():
+    tasks = _proof_tasks()
+
+    t02 = _contracts_for("T02")
+    assert set(t02) == {"bdt_tree", "hull_white_tree"}
+    assert t02["bdt_tree"].explicit is True
+    assert t02["bdt_tree"].route_id == "exercise_lattice"
+    assert t02["bdt_tree"].route_family == "rate_lattice"
+    assert t02["bdt_tree"].backend_binding_id == (
+        "trellis.models.callable_bond_tree.price_callable_bond_tree"
+    )
+    assert t02["bdt_tree"].validation_bundle_id == "rate_tree:callable_bond"
+    assert t02["bdt_tree"].variant_parameters == {"lattice_model": "bdt"}
+    assert t02["bdt_tree"].spec_overrides == {}
+    assert t02["hull_white_tree"].variant_parameters == {
+        "lattice_model": "hull_white"
+    }
+    assert t02["hull_white_tree"].exercise_style == "issuer_call"
+    assert t02["hull_white_tree"].observation_style == "exercise_schedule"
+
+    # The old callable-tree "symmetry" label was not an independent
+    # implementation.  T05 is narrowed to the puttable target whose standard
+    # validation bundle proves the meaningful straight-bond lower bound.
+    assert tasks["T05"]["cross_validate"]["internal"] == ["puttable_tree"]
+    t05 = _contracts_for("T05")
+    assert set(t05) == {"puttable_tree"}
+    assert t05["puttable_tree"].explicit is True
+    assert t05["puttable_tree"].route_id == "exercise_lattice"
+    assert t05["puttable_tree"].validation_bundle_id == "rate_tree:puttable_bond"
+    assert t05["puttable_tree"].payoff_family == "puttable_fixed_income"
+    assert t05["puttable_tree"].exercise_style == "holder_put"
+
+    t17 = _contracts_for("T17")
+    assert set(t17) == {"hw_pde_theta", "hw_rate_tree"}
+    assert t17["hw_pde_theta"].method == "pde_solver"
+    assert t17["hw_pde_theta"].route_id == "pde_theta_1d"
+    assert t17["hw_pde_theta"].route_family == "pde_solver"
+    assert t17["hw_pde_theta"].backend_binding_id == (
+        "trellis.models.callable_bond_pde.price_callable_bond_pde"
+    )
+    assert t17["hw_pde_theta"].validation_bundle_id == (
+        "pde_solver:callable_bond"
+    )
+    assert t17["hw_pde_theta"].variant_parameters == {
+        "pricing_method": "pde_solver",
+        "theta": 0.5,
+        "model_parameter_set": "t17_hull_white_comparison:hull_white",
+        "mean_reversion": 0.1,
+        "sigma": 0.01,
+    }
+    assert t17["hw_rate_tree"].method == "rate_tree"
+    assert t17["hw_rate_tree"].variant_parameters == {
+        "pricing_method": "rate_tree",
+        "lattice_model": "hull_white",
+        "model_parameter_set": "t17_hull_white_comparison:hull_white",
+        "mean_reversion": 0.1,
+        "sigma": 0.01,
+    }
+
+
+def test_comparison_execution_binding_uses_validation_contract_axis_fallbacks():
+    from trellis.agent.executor import _comparison_execution_binding_metadata
+
+    binding = _comparison_execution_binding_metadata(
+        pricing_plan=SimpleNamespace(method="pde_solver"),
+        generation_plan=SimpleNamespace(
+            lowering_route_id="pde_theta_1d",
+            backend_route_family="",
+            backend_binding_id="callable-pde-binding",
+            validation_bundle_id="",
+            primitive_plan=None,
+        ),
+        product_ir=SimpleNamespace(
+            payoff_family="callable_fixed_income",
+            exercise_style="issuer_call",
+            model_family="interest_rate",
+            schedule_dependence=True,
+            state_dependence="terminal_markov",
+            underlying_asset_class="rate",
+            option_type="call",
+        ),
+        request_metadata={},
+        validation_contract=SimpleNamespace(
+            route_id="pde_theta_1d",
+            route_family="pde_solver",
+            backend_binding_id="callable-pde-binding",
+            bundle_id="pde_solver:callable_bond",
+        ),
+    )
+
+    assert binding["selected_route_family"] == "pde_solver"
+    assert binding["selected_validation_bundle_id"] == "pde_solver:callable_bond"
+    assert binding["selected_semantic_axes"]["observation_style"] == (
+        "exercise_schedule"
+    )
+
+
 def test_legacy_comparison_target_fallback_is_typed_and_explicitly_unresolved():
     from trellis.agent.assembly_tools import build_comparison_harness_plan
 
