@@ -1763,7 +1763,10 @@ def test_deterministic_exact_binding_module_materializes_callable_bond_pde_wrapp
     )
 
     assert generated is not None
-    assert "return price_callable_bond_pde(market_state, spec)" in generated.code
+    assert (
+        "return price_callable_bond_pde(market_state, spec, theta=0.5)"
+        in generated.code
+    )
     assert EVALUATE_SENTINEL not in generated.code
 
 
