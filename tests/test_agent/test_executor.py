@@ -1636,6 +1636,34 @@ def test_deterministic_callable_bond_tree_wrapper_binds_declared_lattice_model()
     )
 
 
+def test_deterministic_callable_bond_tree_rejects_unsupported_lattice_model():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.executor import _deterministic_exact_binding_evaluate_body
+
+    contract = ComparisonTargetContract(
+        target_id="misspelled_tree",
+        method="rate_tree",
+        variant_parameters={"lattice_model": "hull_wite"},
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.callable_bond_tree.price_callable_bond_tree",
+        ),
+        primitive_plan=None,
+        method="rate_tree",
+        instrument_type="callable_bond",
+    )
+
+    with pytest.raises(ValueError, match="lattice_model must be one of"):
+        _deterministic_exact_binding_evaluate_body(
+            generation_plan,
+            request_metadata={
+                "comparison_target_contract": contract.to_payload(),
+            },
+            comparison_target="misspelled_tree",
+        )
+
+
 @pytest.mark.parametrize(
     ("method", "binding_ref", "target_id", "variants", "expected_call"),
     [

@@ -5678,11 +5678,19 @@ def _deterministic_exact_binding_evaluate_body(
         if isinstance(raw_target_contract, Mapping)
         else {}
     )
+    raw_callable_bond_lattice_model = target_variants.get("lattice_model")
     callable_bond_lattice_model = str(
-        target_variants.get("lattice_model") or "hull_white"
+        raw_callable_bond_lattice_model
+        if raw_callable_bond_lattice_model is not None
+        else "hull_white"
     ).strip().lower()
-    if callable_bond_lattice_model not in {"bdt", "hull_white"}:
-        callable_bond_lattice_model = "hull_white"
+    if (
+        "trellis.models.callable_bond_tree.price_callable_bond_tree" in refs
+        and callable_bond_lattice_model not in {"bdt", "hull_white"}
+    ):
+        raise ValueError(
+            "Callable-bond lattice_model must be one of: bdt, hull_white"
+        )
     callable_bond_pde_theta = 0.5
     if "trellis.models.callable_bond_pde.price_callable_bond_pde" in refs:
         try:
