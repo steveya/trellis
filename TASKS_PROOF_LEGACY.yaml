@@ -717,6 +717,30 @@ tasks:
     internal:
     - mc_cds
     - analytical_cds
+    target_contracts:
+      mc_cds:
+        method: monte_carlo
+        route_id: credit_default_swap
+        route_family: event_triggered_two_legged_contract
+        backend_binding_id: trellis.models.contingent_cashflows.sample_first_event_weights
+        validation_bundle_id: monte_carlo:credit_default_swap
+        payoff_family: event_triggered_two_legged_contract
+        exercise_style: none
+        model_family: credit_intensity
+        underlying_asset_class: credit
+        observation_style: fixed_schedule
+        variant_parameters: {sampling: pseudo_random}
+      analytical_cds:
+        method: analytical
+        route_id: credit_default_swap
+        route_family: event_triggered_two_legged_contract
+        backend_binding_id: trellis.models.contingent_cashflows.expected_first_event_weights
+        validation_bundle_id: analytical:credit_default_swap
+        payoff_family: event_triggered_two_legged_contract
+        exercise_style: none
+        model_family: credit_intensity
+        underlying_asset_class: credit
+        observation_style: fixed_schedule
     external:
     - quantlib
     - financepy

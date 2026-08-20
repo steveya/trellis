@@ -35,10 +35,15 @@ _CANONICAL_BINDING_OPERATOR_METADATA: dict[str, BindingOperatorMetadata] = {
         short_description="Exact Garman-Kohlhagen analytical helper binding for FX vanilla pricing.",
         diagnostic_label="fx_vanilla_analytical_binding",
     ),
-    "trellis.models.credit_default_swap.price_cds_analytical": BindingOperatorMetadata(
-        display_name="CDS analytical binding",
-        short_description="Exact analytical backend binding for single-name CDS pricing.",
+    "trellis.models.contingent_cashflows.expected_first_event_weights": BindingOperatorMetadata(
+        display_name="CDS expected first-event composition",
+        short_description="Exact deterministic first-event weighting binding for explicit single-name CDS leg composition.",
         diagnostic_label="credit_default_swap_analytical_binding",
+    ),
+    "trellis.models.contingent_cashflows.sample_first_event_weights": BindingOperatorMetadata(
+        display_name="CDS sampled first-event composition",
+        short_description="Exact sampled first-event weighting binding for explicit single-name CDS leg composition.",
+        diagnostic_label="credit_default_swap_monte_carlo_binding",
     ),
     "trellis.models.zcb_option.price_zcb_option_jamshidian": BindingOperatorMetadata(
         display_name="ZCB option analytical binding",

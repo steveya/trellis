@@ -350,7 +350,7 @@ def test_binding_catalog_skips_malformed_primitive_rows(monkeypatch):
         clear_backend_binding_catalog_cache()
 
 
-def test_resolve_backend_binding_spec_captures_helper_schedule_and_cashflow_roles():
+def test_resolve_backend_binding_spec_captures_explicit_event_and_cashflow_roles():
     catalog = load_backend_binding_catalog()
 
     cds = find_backend_binding_by_route_id("credit_default_swap", catalog)
@@ -379,14 +379,26 @@ def test_resolve_backend_binding_spec_captures_helper_schedule_and_cashflow_role
         ),
     )
 
-    assert cds_resolved.binding_id == "trellis.models.credit_default_swap.price_cds_monte_carlo"
-    assert cds_resolved.primitives[0].symbol == "build_cds_schedule"
-    assert cds_resolved.helper_refs == (
-        "trellis.models.credit_default_swap.price_cds_monte_carlo",
+    assert (
+        cds_resolved.binding_id
+        == "trellis.models.contingent_cashflows.sample_first_event_weights"
     )
+    assert cds_resolved.primitives[0].symbol == "build_period_schedule"
+    assert cds_resolved.helper_refs == ()
     assert cds_resolved.schedule_builder_refs == (
-        "trellis.models.credit_default_swap.build_cds_schedule",
+        "trellis.core.date_utils.build_period_schedule",
     )
+    assert {
+        primitive.symbol for primitive in cds_resolved.primitives
+    } >= {
+        "build_default_event_grid",
+        "conditional_event_probabilities_from_curve",
+        "sample_first_event_weights",
+        "CouponAccrual",
+        "ProtectionPayment",
+        "coupon_cashflow_pv",
+        "protection_payment_pv",
+    }
     assert waterfall_resolved.cashflow_engine_refs == (
         "trellis.models.cashflow_engine.waterfall.Waterfall",
         "trellis.models.cashflow_engine.waterfall.Tranche",

@@ -1,8 +1,9 @@
-"""Reusable single-name CDS schedule and pricing helpers.
+"""Compatibility and reference pricing APIs for single-name CDS.
 
-These functions provide a stable deterministic surface for single-name CDS
-routes so adapters do not have to reconstruct schedule periods, spread
-normalization, or premium/protection leg timing by hand.
+Generated construction uses the product-neutral schedule, default-event, and
+contingent-cashflow primitives directly.  The functions in this module remain
+useful as independent numerical references and for callers of the historical
+product API, but they are not code-generation authority.
 """
 
 from __future__ import annotations
@@ -32,7 +33,7 @@ _CDS_PROTECTION_STEPS_PER_YEAR = 25
 
 
 class CreditCurveLike(Protocol):
-    """Curve interface required by the CDS helpers."""
+    """Curve interface required by the compatibility CDS reference APIs."""
 
     def survival_probability(self, t: float) -> float:
         """Return survival probability to time ``t``."""
@@ -40,7 +41,7 @@ class CreditCurveLike(Protocol):
 
 
 class DiscountCurveLike(Protocol):
-    """Discount interface required by the CDS helpers."""
+    """Discount interface required by the compatibility CDS reference APIs."""
 
     def discount(self, t: float) -> float:
         """Return discount factor to time ``t``."""
@@ -147,8 +148,8 @@ def build_cds_schedule(
 ) -> EventSchedule:
     """Build the canonical single-name CDS schedule.
 
-    The CDS helpers use ``start_date`` as the schedule time origin so
-    analytical and Monte Carlo routes can share the same event times.
+    The compatibility/reference APIs use ``start_date`` as the schedule time
+    origin so analytical and Monte Carlo evidence shares the same event times.
     """
     origin = start_date if time_origin is None else time_origin
     return build_period_schedule(

@@ -305,15 +305,29 @@ class TestKnowledgeStore:
         assert k["cookbook"] is not None
         template = k["cookbook"].template
         assert "Credit default swap (single-name)" in template
-        assert "survival_probability" in template
         assert "credit_curve" in template
+        assert "single_name_default_event_composition" in template
+        assert "build_period_schedule" in template
+        assert "build_default_event_grid" in template
+        assert "conditional_event_probabilities_from_curve" in template
+        assert "expected_first_event_weights" in template
+        assert "CouponAccrual" in template
+        assert "ProtectionPayment" in template
+        assert "WEEKEND_ONLY" in template
+        assert "BusinessDayAdjustment.FOLLOWING" in template
+        assert "StubType.SHORT_LAST" in template
         assert "build_cds_schedule" in template
-        assert "price_cds_analytical" in template
-        assert "spec.start_date" in template
-        assert "Do not trapezoid the protection" in template
-        assert "price_cds_analytical" in template
+        assert "price_cds_*" in template
+        assert "reference-only" in template
+        assert "price_cds_analytical(" not in template
+        assert {
+            contract.name for contract in k["data_contracts"]
+        } >= {"SINGLE_NAME_DEFAULT_EVENT_COMPOSITION"}
+        assert {
+            lesson.id for lesson in k["lessons"]
+        }.isdisjoint({"mc_068", "md_072", "mc_077", "md_118"})
 
-    def test_retrieve_monte_carlo_cds_includes_hazard_rate_guidance(self):
+    def test_retrieve_monte_carlo_cds_includes_generic_first_event_guidance(self):
         from trellis.agent.knowledge import retrieve_for_task
 
         k = retrieve_for_task(
@@ -330,13 +344,22 @@ class TestKnowledgeStore:
             "If the user request is partial or underspecified",
         )[0]
         assert "Credit default swap (single-name)" in template
-        assert "hazard_rate" in template or "survival_probability" in template
-        assert "credit_curve" in template
-        assert "150 bp -> 0.015" in template
+        assert "conditional_event_probabilities_from_curve" in cds_section
+        assert "sample_first_event_weights" in cds_section
+        assert "weights.event_weights" in cds_section
+        assert "weights.survival_weights" in cds_section
         assert "`100`" in template and "`0.01`" in template
         assert "MonteCarloEngine" not in cds_section
         assert "build_cds_schedule" in cds_section
         assert "price_cds_monte_carlo" in cds_section
+        assert "reference evidence" in cds_section
+        assert "price_cds_monte_carlo(" not in cds_section
+        assert {
+            contract.name for contract in k["data_contracts"]
+        } >= {"SINGLE_NAME_DEFAULT_EVENT_COMPOSITION"}
+        assert {
+            lesson.id for lesson in k["lessons"]
+        }.isdisjoint({"mc_068", "md_072", "mc_077", "md_118"})
 
     def test_retrieve_copula_nth_to_default_keeps_basket_credit_guidance(self):
         from trellis.agent.knowledge import retrieve_for_task

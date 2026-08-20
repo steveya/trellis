@@ -62,6 +62,12 @@ _BASKET_HELPER_MARKERS = (
     "price_ranked_observation_basket_monte_carlo",
     "semantic basket helper",
 )
+_CDS_SUPERSEDED_HELPER_MARKERS = (
+    "trellis.models.credit_default_swap.price_cds_analytical",
+    "trellis.models.credit_default_swap.price_cds_monte_carlo",
+    "price_cds_analytical primitive directly",
+    "price_cds_monte_carlo primitive directly",
+)
 
 # ---------------------------------------------------------------------------
 # Feature expansion
@@ -158,6 +164,41 @@ def identify_superseded_basket_lesson_ids(*, root: Path | None = None) -> list[s
     return sorted(set(superseded))
 
 
+def identify_superseded_cds_lesson_ids(*, root: Path | None = None) -> list[str]:
+    """Return historical CDS-helper lessons superseded by primitive composition."""
+    knowledge_root = Path(root) if root is not None else _KNOWLEDGE_DIR
+    entries_dir = knowledge_root / "lessons" / "entries"
+    if not entries_dir.exists():
+        return []
+
+    superseded: list[str] = []
+    for path in sorted(entries_dir.glob("*.yaml")):
+        try:
+            data = yaml.safe_load(path.read_text()) or {}
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        status = str(data.get("status") or "").strip().lower()
+        if status not in {"promoted", "validated", "archived"}:
+            continue
+        text = " ".join(
+            str(data.get(field) or "")
+            for field in ("title", "symptom", "root_cause", "fix", "validation")
+        ).lower()
+        normalized_text = text.replace("`", "")
+        if status == "archived" or any(
+            marker in normalized_text for marker in _CDS_SUPERSEDED_HELPER_MARKERS
+        ):
+            lesson_id = str(data.get("id") or "").strip()
+            if lesson_id and (
+                "credit_default_swap" in normalized_text
+                or "price_cds_" in normalized_text
+            ):
+                superseded.append(lesson_id)
+    return sorted(set(superseded))
+
+
 # ---------------------------------------------------------------------------
 # KnowledgeStore
 # ---------------------------------------------------------------------------
@@ -183,6 +224,7 @@ class KnowledgeStore:
         self._benchmarks_cache: dict[str, BenchmarkSuite] | None = None
         self._retrieval_cache: dict[tuple[Any, ...], dict[str, Any]] = {}
         self._basket_superseded_lesson_ids_cache: list[str] | None = None
+        self._cds_superseded_lesson_ids_cache: list[str] | None = None
         self._retrieval_cache_hits = 0
         self._retrieval_cache_misses = 0
 
@@ -305,6 +347,14 @@ class KnowledgeStore:
             )
         return list(self._basket_superseded_lesson_ids_cache)
 
+    def _cds_superseded_lesson_ids(self) -> list[str]:
+        """Return CDS helper-authority lessons superseded by canonical composition."""
+        if self._cds_superseded_lesson_ids_cache is None:
+            self._cds_superseded_lesson_ids_cache = identify_superseded_cds_lesson_ids(
+                root=_KNOWLEDGE_DIR,
+            )
+        return list(self._cds_superseded_lesson_ids_cache)
+
     # --------------------------------------------------------------------- #
     # Main retrieval
     # --------------------------------------------------------------------- #
@@ -329,6 +379,8 @@ class KnowledgeStore:
             "ranked_observation" in expanded and "multi_asset" in expanded
         ):
             basket_superseded_ids = set(self._basket_superseded_lesson_ids())
+        if spec.instrument in {"cds", "credit_default_swap"}:
+            basket_superseded_ids.update(self._cds_superseded_lesson_ids())
 
         result: dict[str, Any] = {
             "principles": list(self._principles),
@@ -442,6 +494,7 @@ class KnowledgeStore:
         self._benchmarks_cache = None
         self._retrieval_cache.clear()
         self._basket_superseded_lesson_ids_cache = None
+        self._cds_superseded_lesson_ids_cache = None
         self._retrieval_cache_hits = 0
         self._retrieval_cache_misses = 0
 

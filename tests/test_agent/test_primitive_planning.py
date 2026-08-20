@@ -527,7 +527,21 @@ def test_builds_cds_monte_carlo_plan_without_generic_mc_engine():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "credit_default_swap"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert {"build_cds_schedule", "interval_default_probability", "price_cds_monte_carlo", "get_numpy"} <= primitive_symbols
+    assert {
+        "build_period_schedule",
+        "build_default_event_grid",
+        "conditional_event_probabilities_from_curve",
+        "sample_first_event_weights",
+        "CouponAccrual",
+        "ProtectionPayment",
+        "coupon_cashflow_pv",
+        "protection_payment_pv",
+    } <= primitive_symbols
+    assert {
+        "build_cds_schedule",
+        "price_cds_analytical",
+        "price_cds_monte_carlo",
+    }.isdisjoint(primitive_symbols)
     assert "MonteCarloEngine" not in primitive_symbols
     assert plan.primitive_plan.notes == ()
 

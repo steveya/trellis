@@ -1347,19 +1347,28 @@ def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "credit_default_swap"
     assert plan.primitive_plan.route_family == "event_triggered_two_legged_contract"
+    assert "trellis.conventions.calendar" in plan.approved_modules
+    assert "trellis.conventions.schedule" in plan.approved_modules
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
     assert {
-        "build_cds_schedule",
-        "interval_default_probability",
-        "price_cds_monte_carlo",
-        "get_numpy",
+        "build_period_schedule",
+        "build_default_event_grid",
+        "conditional_event_probabilities_from_curve",
+        "sample_first_event_weights",
+        "CouponAccrual",
+        "ProtectionPayment",
+        "coupon_cashflow_pv",
+        "protection_payment_pv",
     } <= primitive_symbols
     assert "MonteCarloEngine" not in primitive_symbols
     assert "GaussianCopula" not in primitive_symbols
-    assert "build_cds_schedule" in card
-    assert "price_cds_monte_carlo" in card
-    assert "spread_quote" in card
-    assert "n_paths" in card
+    assert "build_period_schedule" in card
+    assert "build_default_event_grid" in card
+    assert "sample_first_event_weights" in card
+    assert "CouponAccrual" in card
+    assert "ProtectionPayment" in card
+    assert "build_cds_schedule" not in card
+    assert "price_cds_monte_carlo" not in card
     assert "Route family: `credit_default_swap`" in card
     assert "Route family: `event_triggered_two_legged_contract`" not in card
     assert "survival_probability" not in card
@@ -1368,7 +1377,7 @@ def test_cds_monte_carlo_route_uses_single_name_credit_default_swap_assembly():
     assert "Do not hard-code n_paths=50000" not in card
 
 
-def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
+def test_cds_analytical_route_card_surfaces_explicit_composition_primitives():
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
     pricing_plan = PricingPlan(
@@ -1390,11 +1399,16 @@ def test_cds_analytical_route_card_surfaces_helper_signature_keywords():
 
     card = render_generation_route_card(plan)
 
-    assert "price_cds_analytical" in card
-    assert "build_cds_schedule" in card
-    assert "spread_quote" in card
-    assert "discount_curve" in card
-    assert "survival_probability" not in card
+    assert "trellis.conventions.calendar" in plan.approved_modules
+    assert "trellis.conventions.schedule" in plan.approved_modules
+    assert "build_period_schedule" in card
+    assert "build_default_event_grid" in card
+    assert "conditional_event_probabilities_from_curve" in card
+    assert "expected_first_event_weights" in card
+    assert "coupon_cashflow_pv" in card
+    assert "protection_payment_pv" in card
+    assert "price_cds_analytical" not in card
+    assert "build_cds_schedule" not in card
     assert "Required adapters:" not in card
     assert "Do not reinterpret a single-name CDS" not in card
 

@@ -508,23 +508,31 @@ def _build_semantic_family_registry() -> MappingProxyType:
             method_surfaces=(
                 _method_surface_definition(
                     "analytical",
-                    target_modules=("trellis.models.credit_default_swap",),
+                    target_modules=(
+                        "trellis.core.date_utils",
+                        "trellis.models.contingent_cashflows",
+                    ),
                     primitive_families=("credit_default_swap",),
                     adapter_obligations=(
                         "resolve_event_trigger_and_discount_inputs",
-                        "build_scheduled_leg_payment_schedule",
-                        "delegate_two_legged_event_contract_to_checked_helpers",
+                        "build_period_schedule_and_default_event_grid",
+                        "derive_expected_first_event_weights",
+                        "assemble_signed_scheduled_and_trigger_legs",
                     ),
                     spec_schema_hints=("credit_default_swap",),
                 ),
                 _method_surface_definition(
                     "monte_carlo",
-                    target_modules=("trellis.models.credit_default_swap",),
+                    target_modules=(
+                        "trellis.core.date_utils",
+                        "trellis.models.contingent_cashflows",
+                    ),
                     primitive_families=("credit_default_swap",),
                     adapter_obligations=(
                         "resolve_event_trigger_and_discount_inputs",
-                        "build_scheduled_leg_payment_schedule",
-                        "delegate_two_legged_event_contract_to_checked_helpers",
+                        "build_period_schedule_and_default_event_grid",
+                        "sample_persistent_first_event_weights",
+                        "assemble_signed_scheduled_and_trigger_legs",
                     ),
                     spec_schema_hints=("credit_default_swap",),
                 ),

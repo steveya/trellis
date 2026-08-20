@@ -576,9 +576,9 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
         )
     if isinstance(family_ir, CreditDefaultSwapIR):
         return (
-            f"Build the CDS schedule with `{family_ir.schedule_builder_symbol}` and keep the leg semantics explicit: {', '.join(family_ir.leg_semantics)}.",
-            f"Bind discount and credit-curve inputs to the `{family_ir.pricing_mode}` lane without routing through equity-option kernels.",
-            f"Price the schedule-driven contract through `{family_ir.helper_symbol}` unless the request introduces a genuinely new credit kernel.",
+            f"Build the payment schedule with `{family_ir.schedule_builder_symbol}` and partition it through `{family_ir.event_grid_symbol}`.",
+            f"Convert survival ratios into conditional probabilities and `{family_ir.event_weight_symbol}` first-event weights for the `{family_ir.pricing_mode}` lane.",
+            f"Assemble the explicit `{family_ir.scheduled_leg_symbol}` and `{family_ir.trigger_leg_symbol}` legs with their signed accrual/payment value contracts.",
         )
     if isinstance(family_ir, NthToDefaultIR):
         return (

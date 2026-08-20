@@ -479,52 +479,33 @@ def _render_family_route_guidance(
 
     if instrument_type in {"cds", "credit_default_swap"}:
         lines.append("## Family Route Guidance")
-        if method in {"monte_carlo", "qmc"}:
+        lines.extend([
+            "- Compose single-name CDS pricing from the public schedule and contingent-cashflow primitives; do not call `build_cds_schedule`, `price_cds_analytical`, or `price_cds_monte_carlo`.",
+            "- Build `build_period_schedule(...)` with the declared coupon day count and explicit curve-time origin, then call `build_default_event_grid(schedule)` so premium accrual and survival/discount time remain separate.",
+            "- For the bounded standard-CDS route, pass `calendar=WEEKEND_ONLY`, `bda=BusinessDayAdjustment.FOLLOWING`, `roll_convention=RollConvention.NONE`, `stub=StubType.SHORT_LAST`, and `payment_lag_days=0`; use different conventions only when the request declares them.",
+            "- Derive ordered conditional probabilities with `conditional_event_probabilities_from_curve(credit_curve, event_grid.intervals)`.",
+            "- Assemble the scheduled premium/accrued leg with `CouponAccrual` plus `coupon_cashflow_pv`, and the trigger leg with `ProtectionPayment` plus `protection_payment_pv`.",
+            "- Use `event_grid.period_interval_stops`, `period_payment_times`, and `elapsed_period_fractions` to align interval weights with each schedule period; do not reconstruct those mappings by hand.",
+            "- CDS running spreads may arrive as basis points. Normalize once at the top of `evaluate()` with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, then use only the local decimal spread.",
+            "- Discount scheduled coupons at `event_grid.period_payment_times`; discount protection and accrued-on-event cashflows at each interval's `settlement_time`.",
+            "- Return the explicitly signed value `protection_leg - premium_leg - accrued_on_event + accrued_to_valuation`.",
+            "- Do not import Black, equity diffusion, copula, nth-to-default, or basket-credit machinery for a single-name CDS.",
+        ])
+        if method == "monte_carlo":
             lines.extend([
-                "- For single-name CDS Monte Carlo routes, keep the premium leg and protection leg on an explicit payment/default schedule for one reference entity.",
-                "- Prefer `build_cds_schedule` and `price_cds_monte_carlo` from `trellis.models.credit_default_swap` so the adapter delegates to checked-in CDS helpers instead of open-coding the leg loop.",
-                "- If the spec exposes `n_paths`, pass `spec.n_paths` through to `price_cds_monte_carlo(...)` instead of hard-coding a smaller path count in the adapter.",
-                "- Do not hard-code `n_paths=50000` for a comparison-quality CDS route. Use `spec.n_paths` when available; otherwise pick a comparison-stable path count such as `250000`.",
-                "- Keep comparison-task randomness reproducible with `seed=42` unless the spec explicitly carries a different seed input.",
-                "- Do not import or instantiate `MonteCarloEngine` for this route. Here Monte Carlo means direct random default-time draws, not a generic diffusion-engine wrapper.",
-                "- CDS running spreads are often quoted in basis points in task text. Normalize them at the top of `evaluate()` with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, for example `150 bp -> 0.015`.",
-                "- After that normalization step, use only the local `spread` variable in the premium leg. Do not read raw `spec.spread` again later in the body.",
-                "- Treat `100` and `0.01` as semantically equivalent CDS running spreads. The route should price them the same up to numerical tolerance.",
-                "- Start the body with `from trellis.core.differentiable import get_numpy` and `np = get_numpy()` so the route uses the approved array backend.",
-                "- Use `rng = np.random.default_rng(...)` or equivalent direct RNG draws to sample default times from the credit curve hazard structure.",
-                "- Use `market_state.credit_curve.hazard_rate(t)` or `market_state.credit_curve.survival_probability(t)` directly on the schedule; do not hide the credit curve behind an alias.",
-                "- Use `market_state.discount.discount(t)` directly for each payment-date discount factor.",
-                "- Build the explicit schedule with `build_period_schedule(spec.start_date, spec.end_date, spec.frequency, day_count=spec.day_count, time_origin=spec.start_date)` and iterate over `period.payment_date`, `period.accrual_fraction`, and `period.t_payment`.",
-                "- This route must price a Monte Carlo expectation over many paths. Use `n_paths = ...`, `alive = np.ones(n_paths, dtype=bool)`, vectorized `default_in_interval`, and return a path average such as `float(np.mean(protection_pv - premium_pv))`.",
-                "- Do not collapse the Monte Carlo leg to scalar `alive`, a single `rng.random()` draw per coupon date, or a one-scenario loop with `break` after default.",
-                "- Compute interval default probability from `survival_probability(prev_t)` and `survival_probability(t_pay)` as `1.0 - s_pay / s_prev` when `s_prev > 0.0`.",
-                "- Use `hazard_rate` only for within-interval default-time interpolation after an interval default is sampled; do not replace the interval default probability with `1.0 - exp(-hazard * dt)` when survival probabilities are available.",
-                "- For this comparison route, keep protection-leg discounting aligned with the analytical schedule loop: use the payment-date discount factor `discount(t_pay)` for interval default mass.",
-                "- Do not discount protection at sampled default times `tau` or replace interval default mass with sampled settlement-time discounting in the comparison build.",
-                "- Use `spec.start_date` as the time origin for Monte Carlo schedule times so the MC and analytical CDS legs share the same `t` convention.",
-                "- If you track both accrual dates and survival/default times, keep `prev_date` and `prev_t` as separate variables. Do not compare float year-fractions to `date` objects or pass floats into `year_fraction(...)` date slots.",
-                "- Keep a persistent `alive` indicator across the schedule. Sample `default_in_interval` once per accrual interval, add protection only on that interval, then update `alive` before the next payment date.",
-                "- Update `alive` immediately after drawing `default_in_interval`, then use the updated `alive` state for premium accrual at the payment date.",
-                "- Premium accrual should use the fraction of paths still alive through the payment date, not the start-of-interval alive state. Do not overwrite or reinitialize the default state inside each loop iteration.",
-                "- Keep the body as a single explicit schedule loop plus a final `premium_leg` / `protection_leg` PV aggregation; do not invent helper names or route credit-default pricing through Black76.",
-                "- Do not import copulas or reinterpret a single-name CDS as nth-to-default, basket CDS, or first-to-default.",
-                "- A good shape is: initialize `premium_leg = 0.0`, `protection_leg = 0.0`, loop over the payment dates, update both legs, then `return protection_leg - premium_leg`.",
+                "- Produce Monte Carlo weights with `sample_first_event_weights(conditional_probabilities, n_paths=..., seed=42)`; this generic primitive owns the persistent alive-state simulation.",
+                "- Use `spec.n_paths` when available and otherwise a comparison-stable default such as `250000`; do not hard-code `50000` for comparison evidence.",
+                "- Do not instantiate `MonteCarloEngine` or write adapter-local RNG/default-state loops. This lane samples one first-event process, not an equity diffusion.",
             ])
         elif method == "analytical":
             lines.extend([
-                "- For single-name CDS analytical routes, build the premium leg and protection leg directly from the credit curve on the explicit payment schedule.",
-                "- Prefer `build_cds_schedule` and `price_cds_analytical` from `trellis.models.credit_default_swap` so the adapter stays thin and reuses the checked-in leg logic.",
-                "- Prefer `build_period_schedule(...)` over raw `generate_schedule(...)` so the route reads explicit `SchedulePeriod` objects instead of rebuilding `prev_date` and coupon boundaries by hand.",
-                "- CDS running spreads are often quoted in basis points in task text. Convert them to decimals before accrual, for example `150 bp -> 0.015`.",
-                "- After that normalization step, use only the local `spread` variable in the premium leg. Do not read raw `spec.spread` again later in the body.",
-                "- Use `market_state.credit_curve.survival_probability(t)` directly; do not route credit-default pricing through Black76 call/put primitives.",
-                "- Do not reinterpret the request as nth-to-default or basket credit, and do not import copula helpers for a single-name CDS.",
-                "- Use `spec.start_date` as the time origin for schedule year fractions so the analytical and Monte Carlo CDS legs share the same `t` convention.",
-                "- Keep discounting explicit with `market_state.discount.discount(pay_t)` and use that payment-date discount factor for both the premium leg and the interval default mass.",
-                "- Keep the premium leg to `spread * accrual * df * survival` only. Do not add an accrued-on-default premium adjustment like `0.5 * spread * accrual * df * (prev_survival - survival)`.",
-                "- Do not average adjacent discount factors, trapezoid the protection leg, or introduce midpoint expressions like `0.5 * (prev_discount + discount)`.",
-                "- A good shape is: initialize `premium_leg = 0.0`, `protection_leg = 0.0`, build `periods = build_period_schedule(...).periods`, loop over the periods, update the running survival probability, then `return protection_leg - premium_leg`.",
+                "- Produce deterministic weights with `expected_first_event_weights(conditional_probabilities)`; its event weights are unconditional first-event mass and its survival weights are post-interval alive mass.",
+                "- Use the final survival weight in each period for the scheduled premium and each interval event weight for protection plus accrued-on-event premium.",
             ])
+        elif method == "qmc":
+            lines.append(
+                "- Single-name CDS QMC is not certified by this route; fail closed instead of relabeling pseudo-random first-event sampling as QMC."
+            )
 
     if instrument_type == "callable_bond" and method == "rate_tree":
         lines.append("## Family Route Guidance")

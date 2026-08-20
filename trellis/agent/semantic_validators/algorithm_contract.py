@@ -44,6 +44,10 @@ _ENGINE_SIGNATURES = {
 }
 
 _ROUTE_SIGNATURES = {
+    "credit_default_swap": (
+        "expected_first_event_weights",
+        "sample_first_event_weights",
+    ),
     "heston_adi_2d": ("price_heston_option_adi_pde_result", "HestonAdiPDEConfig"),
 }
 
@@ -68,6 +72,7 @@ _HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({
 })
 _DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "model_registry", "topology"})
 _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
+    "credit_default_swap",
     "equity_quanto",
     "exercise_lattice",
     "rate_tree_backward_induction",
@@ -90,6 +95,13 @@ _ZCB_OPTION_FORBIDDEN_SYMBOLS = frozenset(
         "price_zcb_option_on_lattice",
         "price_zcb_option_tree",
         "resolve_zcb_option_hw_inputs",
+    }
+)
+_CREDIT_DEFAULT_SWAP_FORBIDDEN_SYMBOLS = frozenset(
+    {
+        "build_cds_schedule",
+        "price_cds_analytical",
+        "price_cds_monte_carlo",
     }
 )
 _EXACT_HELPER_SIGNATURES = {
@@ -662,6 +674,12 @@ class AlgorithmContractValidator:
                 exact_surface_primitives,
             )
         )
+        findings.extend(
+            self._check_credit_default_swap_boundary(
+                source,
+                route_spec,
+            )
+        )
 
         # Checked route helpers own internal engine, payoff, and discounting
         # obligations, but only after the helper call surface itself validates.
@@ -847,6 +865,33 @@ class AlgorithmContractValidator:
                         f"'{symbol}'. Compose the shared discount-bond claim resolver "
                         "with the raw Jamshidian kernel or generic calibrated-lattice "
                         "and partial-horizon rollback primitives."
+                    ),
+                )
+            )
+        return findings
+
+    def _check_credit_default_swap_boundary(
+        self,
+        source: str,
+        route_spec: RouteSpec,
+    ) -> list[SemanticFinding]:
+        """Reject product-level CDS schedule and pricing compatibility helpers."""
+        if route_spec.id != "credit_default_swap":
+            return []
+        findings: list[SemanticFinding] = []
+        for symbol in sorted(_CREDIT_DEFAULT_SWAP_FORBIDDEN_SYMBOLS):
+            if not _calls_symbol(source, symbol):
+                continue
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_forbidden_helper",
+                    message=(
+                        f"Route '{route_spec.id}' cannot call compatibility surface "
+                        f"'{symbol}'. Build the public period schedule, first-event "
+                        "grid, survival-derived weights, and signed premium/protection "
+                        "cashflows explicitly."
                     ),
                 )
             )

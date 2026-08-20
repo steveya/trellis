@@ -77,6 +77,45 @@ def test_ranked_basket_compatibility_module_is_importable_but_not_codegen_author
     )
 
 
+def test_cds_product_helpers_are_hidden_but_default_event_primitives_are_admitted():
+    compatibility_module = "trellis.models.credit_default_swap"
+    compatibility = importlib.import_module(compatibility_module)
+
+    assert hasattr(compatibility, "price_cds_analytical")
+    assert hasattr(compatibility, "price_cds_monte_carlo")
+    assert not module_exists(compatibility_module)
+    assert list_module_exports(compatibility_module) == ()
+    assert compatibility_module not in get_import_registry()
+
+    primitive_module = "trellis.models.contingent_cashflows"
+    symbols = {
+        "CouponAccrual",
+        "DefaultEventGrid",
+        "DefaultEventInterval",
+        "FirstEventWeights",
+        "ProtectionPayment",
+        "build_default_event_grid",
+        "conditional_event_probabilities_from_curve",
+        "coupon_cashflow_pv",
+        "expected_first_event_weights",
+        "protection_payment_pv",
+        "sample_first_event_weights",
+    }
+    assert symbols <= set(list_module_exports(primitive_module))
+    for symbol in symbols:
+        assert is_valid_import(primitive_module, symbol)
+
+
+def test_schedule_convention_symbols_required_by_generic_composition_are_admitted():
+    assert is_valid_import(
+        "trellis.conventions.calendar",
+        "BusinessDayAdjustment",
+    )
+    assert is_valid_import("trellis.conventions.calendar", "WEEKEND_ONLY")
+    assert is_valid_import("trellis.conventions.schedule", "RollConvention")
+    assert is_valid_import("trellis.conventions.schedule", "StubType")
+
+
 def test_static_leg_economic_identity_is_visible_to_import_registry():
     module = "trellis.agent.static_leg_contract"
     symbols = {

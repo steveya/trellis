@@ -37,6 +37,7 @@ _VALIDATOR_MODES: dict[str, str] = {
 }
 
 _ALWAYS_BLOCKING_CATEGORIES = {
+    "credit_default_swap_forbidden_helper",
     "fx_rate_scalar_extraction_missing",
     "heston_black_vol_surface_mismatch",
     "route_helper_not_called",

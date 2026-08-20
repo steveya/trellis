@@ -279,22 +279,22 @@
 - instrument: cds
   features: [credit_risk, fixed_coupons, discounting]
   method: analytical
-  method_modules: []
+  method_modules:
+    - trellis.core.date_utils
+    - trellis.models.contingent_cashflows
   required_market_data: [discount_curve, credit_curve]
   modeling_requirements:
     - >-
-      CREDIT-SURVIVAL: Price premium leg as sum of
-      (spread * notional * accrual * survival(t) * df(t)) over payment schedule.
-      Protection leg = (1-recovery) * notional * sum of (default_prob(t) * df(t))
-      where default_prob(t) = survival(t_prev) - survival(t).
-      Use market_state.credit_curve.survival_probability(t) and
-      market_state.discount.discount(t) directly.
+      CREDIT-SURVIVAL: Build the public period schedule and default-event grid,
+      derive conditional probabilities from curve survival ratios, then propagate
+      exact first-event and survival weights. Assemble CouponAccrual and
+      ProtectionPayment values explicitly through their public PV kernels.
     - >-
-      MC ALTERNATIVE: For Monte Carlo route, sample default times from
-      credit_curve hazard rates: tau = -ln(U) / lambda. Per path, if
-      tau < maturity, protection pays (1-recovery)*notional discounted to tau,
-      premium accrues to tau. Return shape (n_paths,).
-  reasoning: "Single-name CDS: both analytical (survival curve) and MC (hazard rate simulation) routes share credit curve primitives."
+      MC ALTERNATIVE: Keep the same grid and leg assembly, but replace
+      expected_first_event_weights with sample_first_event_weights. The generic
+      sampler owns the persistent alive state and produces empirical event/survival
+      weights; the adapter must not write a product-specific simulation helper.
+  reasoning: "Single-name CDS analytical and Monte Carlo lanes share a generic first-event grid and explicit contingent-cashflow composition."
   learned: false
 
 # ---------------------------------------------------------------------------

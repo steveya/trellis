@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import comb
+from math import ceil, comb
 from typing import Protocol
 
 from scipy import integrate
 from scipy.stats import norm
+
+from trellis.core.date_utils import year_fraction
+from trellis.core.differentiable import get_numpy
+from trellis.core.types import DayCountConvention, EventSchedule, SchedulePeriod
+
+np = get_numpy()
 
 
 class CreditCurveLike(Protocol):
@@ -16,6 +22,41 @@ class CreditCurveLike(Protocol):
     def survival_probability(self, t: float) -> float:
         """Return survival probability to time ``t``."""
         ...
+
+
+@dataclass(frozen=True)
+class DefaultEventInterval:
+    """One bounded interval in a first-event integration grid."""
+
+    period_index: int
+    start_time: float
+    end_time: float
+    settlement_time: float
+    period_fraction_elapsed: float
+
+
+@dataclass(frozen=True)
+class DefaultEventGrid:
+    """Schedule-aligned intervals for deterministic or sampled first events.
+
+    ``period_interval_stops[i]`` is the exclusive interval stop for schedule
+    period ``i``. Together with the previous stop, it lets callers assemble
+    period cashflows without reconstructing the event partition.
+    """
+
+    periods: tuple[SchedulePeriod, ...]
+    intervals: tuple[DefaultEventInterval, ...]
+    period_interval_stops: tuple[int, ...]
+    period_payment_times: tuple[float, ...]
+    elapsed_period_fractions: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class FirstEventWeights:
+    """Unconditional first-event and post-interval survival weights."""
+
+    event_weights: tuple[float, ...]
+    survival_weights: tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -72,6 +113,141 @@ class PrepaymentStep:
     total_principal: float
     remaining_balance: float
     smm: float
+
+
+def build_default_event_grid(
+    schedule: EventSchedule,
+    *,
+    curve_day_count: DayCountConvention = DayCountConvention.ACT_365,
+    steps_per_year: int = 25,
+) -> DefaultEventGrid:
+    """Partition measured schedule periods into a reusable first-event grid.
+
+    Coupon accrual remains on each period's declared day-count convention.
+    Curve, survival, and discount times use ``curve_day_count`` so callers do
+    not accidentally reuse premium-accrual fractions as model times.
+    """
+    if schedule.time_origin is None:
+        raise ValueError("default-event grids require schedule.time_origin")
+    if steps_per_year <= 0:
+        raise ValueError("steps_per_year must be positive")
+
+    missing = [
+        index
+        for index, period in enumerate(schedule.periods)
+        if period.accrual_fraction is None
+    ]
+    if missing:
+        raise ValueError(
+            "default-event grids require accrual_fraction on every period; "
+            f"missing for periods {missing}"
+        )
+
+    origin = schedule.time_origin
+    intervals: list[DefaultEventInterval] = []
+    stops: list[int] = []
+    payment_times: list[float] = []
+    elapsed_fractions: list[float] = []
+
+    for period_index, period in enumerate(schedule.periods):
+        raw_start = float(year_fraction(origin, period.start_date, curve_day_count))
+        raw_end = float(year_fraction(origin, period.end_date, curve_day_count))
+        start = max(raw_start, 0.0)
+        end = max(raw_end, 0.0)
+        payment_times.append(
+            max(float(year_fraction(origin, period.payment_date, curve_day_count)), 0.0)
+        )
+
+        total_days = max((period.end_date - period.start_date).days, 1)
+        if period.start_date < origin < period.end_date:
+            elapsed_days = max((origin - period.start_date).days, 0)
+            elapsed_fractions.append(min(elapsed_days / total_days, 1.0))
+        else:
+            elapsed_fractions.append(0.0)
+
+        if end > start:
+            step_count = max(int(ceil((end - start) * steps_per_year)), 1)
+            step_size = (end - start) / step_count
+            total_period_time = max(raw_end - raw_start, 1e-12)
+            for step in range(step_count):
+                interval_start = start + step * step_size
+                interval_end = start + (step + 1) * step_size
+                settlement_time = 0.5 * (interval_start + interval_end)
+                period_fraction_elapsed = min(
+                    max((settlement_time - raw_start) / total_period_time, 0.0),
+                    1.0,
+                )
+                intervals.append(
+                    DefaultEventInterval(
+                        period_index=period_index,
+                        start_time=interval_start,
+                        end_time=interval_end,
+                        settlement_time=settlement_time,
+                        period_fraction_elapsed=period_fraction_elapsed,
+                    )
+                )
+        stops.append(len(intervals))
+
+    return DefaultEventGrid(
+        periods=tuple(schedule.periods),
+        intervals=tuple(intervals),
+        period_interval_stops=tuple(stops),
+        period_payment_times=tuple(payment_times),
+        elapsed_period_fractions=tuple(elapsed_fractions),
+    )
+
+
+def conditional_event_probabilities_from_curve(
+    credit_curve: CreditCurveLike,
+    intervals: tuple[DefaultEventInterval, ...],
+) -> tuple[float, ...]:
+    """Return conditional event probabilities for ordered grid intervals."""
+    return tuple(
+        interval_default_probability_from_survival(
+            float(credit_curve.survival_probability(interval.start_time)),
+            float(credit_curve.survival_probability(interval.end_time)),
+        )
+        for interval in intervals
+    )
+
+
+def expected_first_event_weights(
+    conditional_probabilities: tuple[float, ...],
+) -> FirstEventWeights:
+    """Propagate conditional probabilities into exact first-event weights."""
+    alive = 1.0
+    event_weights: list[float] = []
+    survival_weights: list[float] = []
+    for probability in conditional_probabilities:
+        conditional_probability = max(0.0, min(float(probability), 1.0))
+        event_weight = alive * conditional_probability
+        alive = max(alive - event_weight, 0.0)
+        event_weights.append(event_weight)
+        survival_weights.append(alive)
+    return FirstEventWeights(tuple(event_weights), tuple(survival_weights))
+
+
+def sample_first_event_weights(
+    conditional_probabilities: tuple[float, ...],
+    *,
+    n_paths: int,
+    seed: int,
+) -> FirstEventWeights:
+    """Estimate first-event weights with one persistent alive-state simulation."""
+    if n_paths <= 0:
+        raise ValueError("n_paths must be positive")
+
+    rng = np.random.default_rng(seed)
+    alive = np.ones(int(n_paths), dtype=bool)
+    event_weights: list[float] = []
+    survival_weights: list[float] = []
+    for probability in conditional_probabilities:
+        conditional_probability = max(0.0, min(float(probability), 1.0))
+        event = alive & (rng.uniform(size=int(n_paths)) < conditional_probability)
+        event_weights.append(float(np.mean(event)))
+        alive = alive & (~event)
+        survival_weights.append(float(np.mean(alive)))
+    return FirstEventWeights(tuple(event_weights), tuple(survival_weights))
 
 
 def interval_default_probability_from_survival(
@@ -215,16 +391,23 @@ def nth_to_default_probability(
 
 __all__ = [
     "CouponAccrual",
+    "DefaultEventGrid",
+    "DefaultEventInterval",
+    "FirstEventWeights",
     "PrepaymentStep",
     "PrincipalPayment",
     "ProtectionPayment",
     "TriggerSettlement",
+    "build_default_event_grid",
+    "conditional_event_probabilities_from_curve",
     "coupon_cashflow_pv",
+    "expected_first_event_weights",
     "interval_default_probability_from_survival",
     "nth_to_default_probability",
     "principal_payment_pv",
     "project_prepayment_step",
     "protection_payment_pv",
+    "sample_first_event_weights",
     "terminal_default_probability",
     "trigger_settlement_pv",
 ]

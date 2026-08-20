@@ -19,6 +19,28 @@ def test_resolve_binding_operator_metadata_returns_canonical_entry_for_known_bin
     assert "semantic quanto option pricing" in metadata.short_description
 
 
+def test_resolve_binding_operator_metadata_names_cds_composition_bindings():
+    from trellis.agent.binding_operator_metadata import resolve_binding_operator_metadata
+
+    analytical = resolve_binding_operator_metadata(
+        binding_id="trellis.models.contingent_cashflows.expected_first_event_weights",
+        engine_family="analytical",
+        route_family="event_triggered_two_legged_contract",
+        route_id="credit_default_swap",
+    )
+    monte_carlo = resolve_binding_operator_metadata(
+        binding_id="trellis.models.contingent_cashflows.sample_first_event_weights",
+        engine_family="analytical",
+        route_family="event_triggered_two_legged_contract",
+        route_id="credit_default_swap",
+    )
+
+    assert analytical.display_name == "CDS expected first-event composition"
+    assert analytical.diagnostic_label == "credit_default_swap_analytical_binding"
+    assert monte_carlo.display_name == "CDS sampled first-event composition"
+    assert monte_carlo.diagnostic_label == "credit_default_swap_monte_carlo_binding"
+
+
 def test_resolve_binding_operator_metadata_derives_fallback_without_route_prose():
     from trellis.agent.binding_operator_metadata import resolve_binding_operator_metadata
 

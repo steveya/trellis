@@ -224,28 +224,46 @@ analytical:
     \        sigma=claim.regime.sigma,\n        a=claim.regime.mean_reversion,\n\
     \    )\n    raw = zcb_option_hw_raw(resolved)\n    return claim.notional * raw[claim.option_type]\n\
     ```\nThe product wrappers in `trellis.models.zcb_option` remain compatibility/reference\
-    \ APIs, not generated construction authority.\n\n### Credit\
-    \ default swap (single-name) (solution contract: credit_default_swap)\nAssumptions:\
-    \ deterministic discounting, credit survival probabilities from\na credit curve,\
-    \ one reference entity, premium leg on a schedule, protection\nleg triggered by\
-    \ default before maturity. Do not reinterpret this section as\nnth-to-default\
-    \ or basket CDS.\nConvert quoted running spreads from basis points to decimals\
-    \ before accrual,\nfor example 150 bp -> 0.015.\nKeep the analytical schedule\
-    \ convention aligned with the Monte Carlo\ncomparator: use `spec.start_date` as\
-    \ the time origin for `year_fraction(...)`\nschedule times and discount both the\
-    \ premium leg and the interval default\nmass with the payment-date discount factor.\
-    \ Do not trapezoid the protection\nleg or average adjacent discount factors.\n\
-    Prefer the checked-in CDS helpers so the adapter stays thin.\nThe shared analytical\
-    \ helper uses `credit_curve.survival_probability(t)` and\n`discount_curve.discount(t)`\
-    \ internally and preserves the same premium/protection\nleg contract.\n```python\n\
-    def evaluate(self, market_state):\n    from trellis.models.credit_default_swap\
-    \ import (\n        build_cds_schedule,\n        price_cds_analytical,\n    )\n\
-    \n    spec = self._spec\n    schedule = build_cds_schedule(\n        spec.start_date,\n\
-    \        spec.end_date,\n        spec.frequency,\n        spec.day_count,\n  \
-    \  )\n    return price_cds_analytical(\n        notional=spec.notional,\n    \
-    \    spread_quote=spec.spread,\n        recovery=spec.recovery,\n        schedule=schedule,\n\
-    \        credit_curve=market_state.credit_curve,\n        discount_curve=market_state.discount,\n\
-    \    )\n```\n"
+    \ APIs, not generated construction authority.\n\n### Credit default swap (single-name)\
+    \ (solution contract: credit_default_swap)\nAssumptions: one reference entity,\
+    \ deterministic discount and survival curves, fixed recovery, and an explicit\
+    \ premium schedule. Do not reinterpret this section as nth-to-default or basket\
+    \ credit.\nStart navigation at the `single_name_default_event_composition` API-map\
+    \ card. Generated code must compose `build_period_schedule`, `build_default_event_grid`,\
+    \ `conditional_event_probabilities_from_curve`, and `expected_first_event_weights`;\
+    \ the retained `build_cds_schedule` and `price_cds_*` functions are reference-only.\
+    \ Normalize a basis-point spread once, for example 150 bp -> 0.015.\n```python\n\
+    def evaluate(self, market_state):\n    from trellis.conventions.calendar import BusinessDayAdjustment, WEEKEND_ONLY\n\
+    \    from trellis.conventions.schedule import RollConvention, StubType\n    from trellis.core.date_utils import build_period_schedule\n\
+    \    from trellis.models.contingent_cashflows import (\n        CouponAccrual,\
+    \ ProtectionPayment, build_default_event_grid,\n        conditional_event_probabilities_from_curve,\
+    \ coupon_cashflow_pv,\n        expected_first_event_weights, protection_payment_pv,\n\
+    \    )\n\n    spec = self._spec\n    schedule = build_period_schedule(\n       \
+    \ spec.start_date, spec.end_date, spec.frequency,\n        day_count=spec.day_count,\
+    \ time_origin=spec.valuation_date or spec.start_date,\n        calendar=WEEKEND_ONLY,\n\
+    \        bda=BusinessDayAdjustment.FOLLOWING,\n        roll_convention=RollConvention.NONE,\n\
+    \        stub=StubType.SHORT_LAST,\n        payment_lag_days=0,\n    )\n\
+    \    grid = build_default_event_grid(schedule)\n\
+    \    conditional = conditional_event_probabilities_from_curve(\n        market_state.credit_curve,\
+    \ grid.intervals\n    )\n    weights = expected_first_event_weights(conditional)\n\
+    \    spread = float(spec.spread)\n    if spread > 1.0:\n        spread *= 1e-4\n\
+    \n    premium = protection = accrued_on_event = accrued_to_valuation = 0.0\n   \
+    \ cursor = 0\n    for period_index, period in enumerate(grid.periods):\n     \
+    \   stop = grid.period_interval_stops[period_index]\n        if stop <= cursor:\n\
+    \            cursor = stop\n            continue\n        accrual = float(period.accrual_fraction)\n\
+    \        premium += coupon_cashflow_pv(CouponAccrual(\n            spec.notional,\
+    \ spread, accrual,\n            market_state.discount.discount(grid.period_payment_times[period_index]),\n\
+    \            weights.survival_weights[stop - 1],\n        ))\n        accrued_to_valuation\
+    \ += spec.notional * spread * accrual * grid.elapsed_period_fractions[period_index]\n\
+    \        for event_index in range(cursor, stop):\n            interval = grid.intervals[event_index]\n\
+    \            event_weight = weights.event_weights[event_index]\n            df\
+    \ = market_state.discount.discount(interval.settlement_time)\n            protection\
+    \ += protection_payment_pv(ProtectionPayment(\n                spec.notional,\
+    \ spec.recovery, event_weight, df\n            ))\n            accrued_on_event\
+    \ += coupon_cashflow_pv(CouponAccrual(\n                spec.notional, spread,\
+    \ accrual * interval.period_fraction_elapsed, df, event_weight\n            ))\n\
+    \        cursor = stop\n    return float(protection - premium - accrued_on_event\
+    \ + accrued_to_valuation)\n```\n"
 calibration:
   description: Implied-vol calibration for rates options under explicit multi-curve
     provenance
@@ -398,25 +416,19 @@ monte_carlo:
     \ import price_heston_option_monte_carlo\n\n    spec = self._spec\n    return\
     \ price_heston_option_monte_carlo(market_state, spec, scheme=\"heston_qe\")\n\
     ```\n\n### Credit\
-    \ default swap (single-name) (solution contract: credit_default_swap)\nUse this\
-    \ pattern for single-name credit protection legs and premium-leg\naccrual under\
-    \ a hazard-rate or survival-probability model. Do not reuse it\nfor nth-to-default\
-    \ or basket CDS.\nConvert quoted running spreads from basis points to decimals\
-    \ before accrual,\nfor example 150 bp -> 0.015. Do that once at the top of `evaluate()`\
-    \ and\nthen reuse only the normalized `spread` variable for the premium leg.\n\
-    Semantically equivalent quotes such as `100` and `0.01` should produce the\nsame\
-    \ PV up to numerical tolerance.\nPrefer the checked-in CDS helpers so the adapter\
-    \ stays thin.\nThe shared Monte Carlo helper samples interval defaults from the\
-    \ credit\ncurve survival structure, using `survival_probability(...)` for interval\n\
-    default mass and `hazard_rate(...)` only if later routes need within-interval\n\
-    timing refinement.\n\n```python\ndef evaluate(self, market_state):\n    from trellis.models.credit_default_swap\
-    \ import (\n        build_cds_schedule,\n        price_cds_monte_carlo,\n    )\n\
-    \n    spec = self._spec\n    schedule = build_cds_schedule(\n        spec.start_date,\n\
-    \        spec.end_date,\n        spec.frequency,\n        spec.day_count,\n  \
-    \  )\n    return price_cds_monte_carlo(\n        notional=spec.notional,\n   \
-    \     spread_quote=spec.spread,\n        recovery=spec.recovery,\n        schedule=schedule,\n\
-    \        credit_curve=market_state.credit_curve,\n        discount_curve=market_state.discount,\n\
-    \        n_paths=50000,\n        seed=42,\n    )\n```\n\nIf the user request is\
+    \ default swap (single-name) (solution contract: credit_default_swap)\nUse the\
+    \ same explicit schedule, default-event grid, survival-ratio probabilities, and\
+    \ `CouponAccrual` / `ProtectionPayment` leg assembly as the analytical CDS section.\
+    \ Replace only the weight construction with the generic sampler; do not write\
+    \ product-specific RNG, alive-state, schedule, or pricing helpers. Normalize the\
+    \ spread once so semantically equivalent quotes such as `100` and `0.01` produce\
+    \ the same PV up to Monte Carlo tolerance.\n\n```python\nconditional = conditional_event_probabilities_from_curve(\n\
+    \    market_state.credit_curve, grid.intervals\n)\nweights = sample_first_event_weights(\n\
+    \    conditional,\n    n_paths=getattr(spec, \"n_paths\", 250000) or 250000,\n\
+    \    seed=42,\n)\n# Use weights.event_weights and weights.survival_weights in the\
+    \ same explicit signed leg loop as the analytical cookbook.\n```\nThe retained\
+    \ `build_cds_schedule`, `price_cds_analytical`, and `price_cds_monte_carlo` functions\
+    \ are independent reference evidence, not generated construction authority.\n\nIf the user request is\
     \ partial or underspecified, do not guess the missing\ncontract fields. First\
     \ derive a required-input checklist from the semantic\ncontract, method requirements,\
     \ and data contracts. Then either synthesize a\nmock input provider plan or surface\

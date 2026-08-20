@@ -67,16 +67,18 @@ analytical:
     `lattice_backward_induction(..., terminal_step=expiry_step)` for the option.
     Do not open-code rollback or call the retained ZCB-option tree wrappers.'
   credit_default_swap:
-  - 'CREDIT-SURVIVAL CONSISTENCY: For single-name CDS, price the premium leg and
-    protection leg directly from credit_curve survival probabilities and hazard
-    rates on an explicit payment schedule. Do not reinterpret CDS as nth-to-default,
-    basket CDS, or first-to-default, and do not reuse Black76 call/put primitives.'
+  - 'CREDIT-SURVIVAL CONSISTENCY: For single-name CDS, use build_period_schedule,
+    build_default_event_grid, and conditional_event_probabilities_from_curve.
+    Use expected_first_event_weights for analytical evidence or
+    sample_first_event_weights for Monte Carlo evidence. Do not call the retained
+    build_cds_schedule or price_cds_* compatibility/reference helpers.'
   - 'CDS SPREAD UNITS: Running CDS spreads in task text are often quoted in basis
     points. Convert them to decimals before premium-leg accrual, for example 150
     bp -> 0.015; do not multiply accrual by a raw value like 150.0.'
   - 'CREDIT MARKET DATA CONTRACT: Requires credit_curve plus discount_curve. Declare
-    both in the generated requirements set and keep the adapter thin around schedule
-    generation, year_fraction, survival_probability, hazard_rate, and discounting.'
+    both in the generated requirements set. Compose CouponAccrual/coupon_cashflow_pv
+    and ProtectionPayment/protection_payment_pv explicitly so scheduled-leg,
+    accrued-on-event, trigger-leg, discounting, and sign semantics remain visible.'
   deterministic_cashflow:
   - 'DETERMINISTIC CASHFLOW CONTRACT: When all cashflows are known at pricing time
     and there is no optionality, PV = sum of cashflows * discount_factors. No vol

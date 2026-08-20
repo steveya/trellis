@@ -54,6 +54,30 @@ payoff:
     - "DeterministicCashflowPayoff wraps any Instrument into Payoff"
 
 # ---------------------------------------------------------------------------
+# Single-name first-event cashflow composition
+# ---------------------------------------------------------------------------
+single_name_default_event_composition:
+  module: trellis.models.contingent_cashflows
+  methods: [analytical, monte_carlo]
+  navigation:
+    aliases: [cds, credit_default_swap, single_name_credit, survival_weighted_legs, default_event]
+  modules:
+    schedule: trellis.core.date_utils
+    event_grid: trellis.models.contingent_cashflows
+    cashflow_values: trellis.models.contingent_cashflows
+  key_imports:
+    - "from trellis.core.date_utils import build_period_schedule"
+    - "from trellis.conventions.calendar import BusinessDayAdjustment, WEEKEND_ONLY"
+    - "from trellis.conventions.schedule import RollConvention, StubType"
+    - "from trellis.models.contingent_cashflows import CouponAccrual, ProtectionPayment, build_default_event_grid, conditional_event_probabilities_from_curve, coupon_cashflow_pv, expected_first_event_weights, protection_payment_pv, sample_first_event_weights"
+  notes:
+    - "Use build_period_schedule with the declared premium day count and an explicit time origin; build_default_event_grid then creates bounded curve-time intervals without confusing coupon accrual fractions with model time"
+    - "conditional_event_probabilities_from_curve reads survival ratios on the ordered grid; expected_first_event_weights gives exact unconditional event and post-interval survival mass, while sample_first_event_weights gives reproducible empirical weights from one persistent alive-state process"
+    - "Assemble scheduled premium and accrued-on-event amounts with CouponAccrual plus coupon_cashflow_pv, and protection with ProtectionPayment plus protection_payment_pv; keep the leg signs and final aggregation visible in generated code"
+    - "The product-level build_cds_schedule, price_cds_analytical, and price_cds_monte_carlo functions remain compatibility and independent reference evidence only, not generated construction authority"
+    - "This card covers a single reference entity with deterministic discount/survival curves and fixed recovery; do not infer basket, copula, stochastic-rate, quanto, option, or calibration support"
+
+# ---------------------------------------------------------------------------
 # Analytical Gaussian and scalar-root composition
 # ---------------------------------------------------------------------------
 analytical_gaussian_composition:

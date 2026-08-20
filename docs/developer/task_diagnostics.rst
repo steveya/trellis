@@ -426,9 +426,12 @@ For comparison-quality single-name CDS Monte Carlo runs, the typed spec now
 also carries the path-count control explicitly. The planner specializes the
 CDS Monte Carlo schema with ``n_paths``, and the ``T38`` canary pins a tighter
 ``2.0`` percent comparison tolerance around the resulting internal reference.
-If the generated adapter hard-codes a smaller path count such as ``50000``
-instead of flowing ``spec.n_paths``, expect a route-specific diagnosis packet
-that fails on internal comparison spread long before reviewer escalation.
+The exact target binds ``sample_first_event_weights(...)``; the analytical
+target binds ``expected_first_event_weights(...)``. If an artifact calls a
+product-level CDS helper, omits the event-grid/cashflow primitives, or
+hard-codes a smaller path count such as ``50000`` instead of flowing
+``spec.n_paths``, expect a semantic or comparison-coherence failure before
+reviewer escalation.
 
 For analytical rate-style swaption routes, the deterministic bundle also checks
 composition consistency against the retained

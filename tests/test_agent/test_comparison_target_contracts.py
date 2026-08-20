@@ -27,6 +27,15 @@ def _contracts_for(task_id: str):
     }
 
 
+def _financepy_tasks():
+    from trellis.agent.task_manifests import load_task_manifest
+
+    return {
+        task["id"]: task
+        for task in load_task_manifest("TASKS_BENCHMARK_FINANCEPY.yaml")
+    }
+
+
 def test_target_projection_accepts_structured_variant_metadata():
     from trellis.agent.comparison_target_contracts import (
         ComparisonTargetContract,
@@ -218,6 +227,56 @@ def test_t01_declares_method_true_zcb_option_target_contracts():
     assert contracts["jamshidian"].variant_parameters == {
         "analytical_method": "jamshidian"
     }
+
+
+def test_cds_tasks_declare_method_true_generic_first_event_bindings():
+    from trellis.agent.assembly_tools import build_comparison_harness_plan
+
+    t38 = _contracts_for("T38")
+    assert set(t38) == {"mc_cds", "analytical_cds"}
+    assert t38["mc_cds"].explicit is True
+    assert t38["mc_cds"].method == "monte_carlo"
+    assert t38["mc_cds"].route_id == "credit_default_swap"
+    assert t38["mc_cds"].route_family == "event_triggered_two_legged_contract"
+    assert t38["mc_cds"].backend_binding_id == (
+        "trellis.models.contingent_cashflows.sample_first_event_weights"
+    )
+    assert t38["mc_cds"].validation_bundle_id == "monte_carlo:credit_default_swap"
+    assert t38["mc_cds"].variant_parameters == {"sampling": "pseudo_random"}
+    assert t38["mc_cds"].semantic_axes["underlying_asset_class"] == "credit"
+    assert t38["analytical_cds"].backend_binding_id == (
+        "trellis.models.contingent_cashflows.expected_first_event_weights"
+    )
+    assert t38["analytical_cds"].validation_bundle_id == (
+        "analytical:credit_default_swap"
+    )
+    assert t38["analytical_cds"].model_family == "credit_intensity"
+    assert t38["analytical_cds"].observation_style == "fixed_schedule"
+    assert (
+        t38["analytical_cds"].semantic_axes["underlying_asset_class"]
+        == "credit"
+    )
+
+    f007_plan = build_comparison_harness_plan(_financepy_tasks()["F007"])
+    f007 = {target.target_id: target.contract for target in f007_plan.targets}
+    assert "analytical" in f007
+    assert f007["analytical"].explicit is True
+    assert f007["analytical"].backend_binding_id == (
+        "trellis.models.contingent_cashflows.expected_first_event_weights"
+    )
+    assert f007["analytical"].model_family == "credit_intensity"
+    assert f007["analytical"].semantic_axes["underlying_asset_class"] == "credit"
+
+
+def test_cds_asset_class_identity_wins_over_hazard_rate_prose():
+    from trellis.agent.knowledge.decompose import decompose_to_ir
+
+    product_ir = decompose_to_ir(
+        "CDS pricing: hazard rate MC vs survival probability analytical",
+        instrument_type="credit_default_swap",
+    )
+
+    assert product_ir.underlying_asset_class == "credit"
 
 
 def test_comparison_execution_binding_uses_validation_contract_axis_fallbacks():

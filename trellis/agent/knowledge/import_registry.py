@@ -28,7 +28,21 @@ _REPO_FACTS_CACHE: dict[str, tuple[RepoFact, ...]] = {}
 # allowlist narrow so live introspection cannot silently re-admit a product
 # helper added beside the reusable primitives.
 _CODEGEN_MODULE_EXPORT_ALLOWLIST: dict[str, frozenset[str]] = {
+    "trellis.conventions.calendar": frozenset(
+        {
+            "BusinessDayAdjustment",
+            "Calendar",
+            "WEEKEND_ONLY",
+        }
+    ),
+    "trellis.conventions.schedule": frozenset(
+        {
+            "RollConvention",
+            "StubType",
+        }
+    ),
     "trellis.models.basket_option": frozenset(),
+    "trellis.models.credit_default_swap": frozenset(),
     "trellis.models.zcb_option": frozenset(),
     "trellis.models.zcb_option_tree": frozenset(),
     "trellis.models.resolution.short_rate_claims": frozenset(
@@ -289,6 +303,7 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
     include_prefixes = (
         "trellis.models.",
         "trellis.analytics.",
+        "trellis.conventions.",
         "trellis.core.",
         "trellis.curves.",
         "trellis.execution",
@@ -326,7 +341,11 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
 
         export_allowlist = _CODEGEN_MODULE_EXPORT_ALLOWLIST.get(modname)
         if export_allowlist is not None:
-            symbols = [name for name in symbols if name in export_allowlist]
+            symbols = [
+                name
+                for name in sorted(export_allowlist)
+                if hasattr(mod, name)
+            ]
 
         if symbols:
             registry[modname] = tuple(sorted(symbols))
@@ -496,6 +515,7 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
     # Group by top-level category
     groups = {
         "Core": [],
+        "Conventions": [],
         "Contract IR": [],
         "I/O": [],
         "Curves": [],
@@ -521,6 +541,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
 
         if "trellis.analytics." in mod:
             groups["Analytics"].append(line)
+        elif "trellis.conventions." in mod:
+            groups["Conventions"].append(line)
         elif "trellis.core." in mod:
             groups["Core"].append(line)
         elif mod in {
@@ -622,6 +644,10 @@ from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention, Frequency
+
+### Conventions
+from trellis.conventions.calendar import BusinessDayAdjustment, Calendar, WEEKEND_ONLY
+from trellis.conventions.schedule import RollConvention, StubType
 
 ### Contract IR
 from trellis.agent.contract_ir import ContractIR, contract_ir_economic_identity, contract_ir_economic_summary

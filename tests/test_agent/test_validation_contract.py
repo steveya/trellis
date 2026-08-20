@@ -373,12 +373,26 @@ def test_platform_trace_persists_validation_contract_summary(tmp_path):
     assert traces[0].validation_contract["bundle_id"] == "analytical:credit_default_swap"
     assert (
         traces[0].validation_contract["backend_binding_id"]
-        == "trellis.models.credit_default_swap.price_cds_analytical"
+        == "trellis.models.contingent_cashflows.expected_first_event_weights"
     )
     assert (
         traces[0].validation_contract["exact_bundle_id"]
-        == "analytical:credit_default_swap@trellis.models.credit_default_swap.price_cds_analytical"
+        == "analytical:credit_default_swap@trellis.models.contingent_cashflows.expected_first_event_weights"
     )
+
+
+def test_cds_request_alias_uses_canonical_credit_default_swap_validation_identity():
+    from trellis.agent.platform_requests import compile_build_request
+
+    compiled = compile_build_request(
+        "Single-name CDS on ACME with quarterly premium dates",
+        instrument_type="cds",
+        preferred_method="analytical",
+    )
+
+    contract = compiled.request.metadata["validation_contract"]
+    assert contract["instrument_type"] == "credit_default_swap"
+    assert contract["bundle_id"] == "analytical:credit_default_swap"
 
 
 def test_validate_build_emits_validation_contract_summary_in_bundle_events(monkeypatch):

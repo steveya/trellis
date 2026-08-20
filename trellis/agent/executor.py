@@ -4709,40 +4709,124 @@ def _american_equity_tree_primitive_body(
     return "\n".join((prefix, *control_branches, suffix))
 
 
-def _credit_default_swap_helper_body(refs: set[str]) -> str | None:
-    """Return a thin deterministic CDS wrapper for analytical or MC exact bindings."""
-    analytical_ref = "trellis.models.credit_default_swap.price_cds_analytical"
-    monte_carlo_ref = "trellis.models.credit_default_swap.price_cds_monte_carlo"
+def _credit_default_swap_composition_body(refs: set[str]) -> str | None:
+    """Return explicit CDS leg assembly over generic first-event primitives."""
+    analytical_ref = (
+        "trellis.models.contingent_cashflows.expected_first_event_weights"
+    )
+    monte_carlo_ref = (
+        "trellis.models.contingent_cashflows.sample_first_event_weights"
+    )
     if monte_carlo_ref in refs:
-        helper = "price_cds_monte_carlo"
-        helper_extra = ',\n        n_paths=getattr(spec, "n_paths", 250000) or 250000,\n        seed=42'
+        event_weight_call = textwrap.dedent(
+            """\
+            weights = sample_first_event_weights(
+                conditional_probabilities,
+                n_paths=getattr(spec, "n_paths", 250000) or 250000,
+                seed=42,
+            )
+            """
+        ).rstrip()
     elif analytical_ref in refs:
-        helper = "price_cds_analytical"
-        helper_extra = ""
+        event_weight_call = (
+            "weights = expected_first_event_weights(conditional_probabilities)"
+        )
     else:
         return None
 
     return textwrap.dedent(
         f"""\
-spec = self._spec
 if market_state.credit_curve is None:
     raise ValueError("market_state.credit_curve is required for CDS pricing")
 if market_state.discount is None:
     raise ValueError("market_state.discount is required for CDS pricing")
-schedule = build_cds_schedule(
+schedule = build_period_schedule(
     spec.start_date,
     spec.end_date,
     spec.frequency,
-    spec.day_count,
+    day_count=spec.day_count,
     time_origin=getattr(spec, "valuation_date", None) or spec.start_date,
+    calendar=WEEKEND_ONLY,
+    bda=BusinessDayAdjustment.FOLLOWING,
+    roll_convention=RollConvention.NONE,
+    stub=StubType.SHORT_LAST,
+    payment_lag_days=0,
 )
-return {helper}(
-    notional=spec.notional,
-    spread_quote=spec.spread,
-    recovery=spec.recovery,
-    schedule=schedule,
-    credit_curve=market_state.credit_curve,
-    discount_curve=market_state.discount{helper_extra},
+event_grid = build_default_event_grid(schedule)
+conditional_probabilities = conditional_event_probabilities_from_curve(
+    market_state.credit_curve,
+    event_grid.intervals,
+)
+{event_weight_call}
+spread = float(spec.spread)
+if spread > 1.0:
+    spread *= 1e-4
+
+premium_leg = 0.0
+protection_leg = 0.0
+accrued_on_event = 0.0
+accrued_to_valuation = 0.0
+interval_start = 0
+for period_index, period in enumerate(event_grid.periods):
+    interval_stop = event_grid.period_interval_stops[period_index]
+    if interval_stop <= interval_start:
+        interval_start = interval_stop
+        continue
+
+    accrual = float(period.accrual_fraction)
+    survival_weight = weights.survival_weights[interval_stop - 1]
+    premium_leg += coupon_cashflow_pv(
+        CouponAccrual(
+            notional=spec.notional,
+            rate=spread,
+            accrual=accrual,
+            discount_factor=float(
+                market_state.discount.discount(
+                    event_grid.period_payment_times[period_index]
+                )
+            ),
+            weight=survival_weight,
+        )
+    )
+    accrued_to_valuation += (
+        float(spec.notional)
+        * spread
+        * accrual
+        * event_grid.elapsed_period_fractions[period_index]
+    )
+
+    for interval_index in range(interval_start, interval_stop):
+        interval = event_grid.intervals[interval_index]
+        event_weight = weights.event_weights[interval_index]
+        if event_weight <= 0.0:
+            continue
+        discount_factor = float(
+            market_state.discount.discount(interval.settlement_time)
+        )
+        protection_leg += protection_payment_pv(
+            ProtectionPayment(
+                notional=spec.notional,
+                recovery=spec.recovery,
+                default_probability=event_weight,
+                discount_factor=discount_factor,
+            )
+        )
+        accrued_on_event += coupon_cashflow_pv(
+            CouponAccrual(
+                notional=spec.notional,
+                rate=spread,
+                accrual=accrual * interval.period_fraction_elapsed,
+                discount_factor=discount_factor,
+                weight=event_weight,
+            )
+        )
+    interval_start = interval_stop
+
+return float(
+    protection_leg
+    - premium_leg
+    - accrued_on_event
+    + accrued_to_valuation
 )
 """
     ).rstrip()
@@ -6609,8 +6693,8 @@ def _deterministic_exact_binding_evaluate_body(
         ).rstrip()
 
     if instrument_type in {"credit_default_swap", "cds"} and normalized_target in {"mc_cds", "cds_mc"}:
-        cds_body = _credit_default_swap_helper_body(
-            {"trellis.models.credit_default_swap.price_cds_monte_carlo"}
+        cds_body = _credit_default_swap_composition_body(
+            {"trellis.models.contingent_cashflows.sample_first_event_weights"}
         )
         if cds_body is not None:
             return cds_body
@@ -6618,8 +6702,8 @@ def _deterministic_exact_binding_evaluate_body(
         "analytical_cds",
         "cds_analytical",
     }:
-        cds_body = _credit_default_swap_helper_body(
-            {"trellis.models.credit_default_swap.price_cds_analytical"}
+        cds_body = _credit_default_swap_composition_body(
+            {"trellis.models.contingent_cashflows.expected_first_event_weights"}
         )
         if cds_body is not None:
             return cds_body
@@ -6840,7 +6924,7 @@ def _deterministic_exact_binding_evaluate_body(
             f"market_state, spec{vanilla_equity_transform_kwargs})"
         )
 
-    cds_body = _credit_default_swap_helper_body(refs)
+    cds_body = _credit_default_swap_composition_body(refs)
     if cds_body is not None:
         return cds_body
 
@@ -7988,13 +8072,25 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             "from trellis.models.short_rate_bond import "
             "price_short_rate_zero_coupon_bond_tree"
         )
-    if "price_cds_analytical(" in body:
-        imports.append(
-            "from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical"
+    if "build_default_event_grid(" in body:
+        imports.extend(
+            (
+                "from trellis.core.date_utils import build_period_schedule",
+                "from trellis.conventions.calendar import BusinessDayAdjustment, WEEKEND_ONLY",
+                "from trellis.conventions.schedule import RollConvention, StubType",
+                "from trellis.models.contingent_cashflows import "
+                "CouponAccrual, ProtectionPayment, build_default_event_grid, "
+                "conditional_event_probabilities_from_curve, coupon_cashflow_pv, "
+                "protection_payment_pv",
+            )
         )
-    if "price_cds_monte_carlo(" in body:
+    if "expected_first_event_weights(" in body:
         imports.append(
-            "from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo"
+            "from trellis.models.contingent_cashflows import expected_first_event_weights"
+        )
+    if "sample_first_event_weights(" in body:
+        imports.append(
+            "from trellis.models.contingent_cashflows import sample_first_event_weights"
         )
     if "resolve_basket_semantics(" in body:
         imports.append(
@@ -10167,25 +10263,11 @@ def _route_specific_retry_lines(
             "Single-name CDS Monte Carlo does not need an equity price process, spot diffusion, or volatility path.",
             "Do not import `trellis.models.processes.gbm` or any adjacent equity-process fallback just to make Monte Carlo compile.",
             "Do not import or instantiate `MonteCarloEngine` for a single-name CDS route. That engine expects a diffusion process and is the wrong scaffold here.",
-            "Stay within the approved CDS route backbone: credit-curve default-time sampling, discounting, schedule generation, and leg aggregation.",
-            "Prefer `from trellis.models.credit_default_swap import build_cds_schedule, price_cds_monte_carlo` and delegate to those helpers from the adapter.",
-            "Prefer `build_period_schedule(spec.start_date, spec.end_date, spec.frequency, day_count=spec.day_count, time_origin=spec.start_date)` so the route iterates over explicit periods instead of rebuilding coupon boundaries by hand.",
-            "Use `from trellis.core.differentiable import get_numpy`, `np = get_numpy()`, and direct `np.random.default_rng(...)` draws for default times instead.",
-            "Track accrual dates and survival/default times separately: use `prev_date` for `year_fraction(prev_date, pay_date, ...)` and `prev_t` for survival/default-time thresholds.",
-            "Do not compare float year-fractions to `date` objects, and do not pass floats into the date positions of `year_fraction(...)`.",
-            "Use `period.payment_date`, `period.accrual_fraction`, and `period.t_payment` from that schedule object so the Monte Carlo leg covers the full CDS horizon without reconstructing payment_dates manually.",
-            "This route must price a Monte Carlo expectation over many paths. Use `n_paths = ...`, `alive = np.ones(n_paths, dtype=bool)`, and vectorized `default_in_interval` arrays.",
-            "Do not hard-code `n_paths=50000` for a comparison-quality single-name CDS build. If the spec exposes `n_paths`, pass `spec.n_paths` through to `price_cds_monte_carlo(...)`; otherwise use a comparison-stable path count such as `250000`.",
-            "Keep the CDS comparison build reproducible with `seed=42` unless the spec explicitly carries another seed.",
-            "Do not collapse the Monte Carlo CDS leg to scalar `alive`, a single `rng.random()` draw per payment date, or a one-scenario loop that breaks after default.",
-            "Compute interval default probability from survival ratios: `default_prob = max(0.0, min(1.0, 1.0 - s_pay / s_prev))` using `survival_probability(prev_t)` and `survival_probability(t_pay)`.",
-            "Do not replace that interval default probability with a midpoint-hazard shortcut like `1.0 - exp(-hazard * dt)` when survival probabilities are available.",
-            "For this comparison route, keep protection-leg discounting aligned with the analytical schedule loop: accrue interval default mass with the payment-date discount factor `discount(t_pay)`.",
-            "Do not discount protection at sampled default times `tau` or replace interval default mass with sampled settlement-time discounting in the comparison build.",
-            "Use `spec.start_date` as the time origin for Monte Carlo schedule times. Do not switch this route to `market_state.as_of` while the analytical comparator uses `spec.start_date`.",
-            "Carry a persistent `alive` indicator across the schedule; do not overwrite the default state from scratch inside each interval.",
-            "Use per-interval conditional default draws: `default_in_interval = alive & (u < conditional_default_prob)`, accrue protection on that interval only, then update `alive &= ~default_in_interval` before the next coupon date.",
-            "Update `alive` before premium accrual. The premium leg should use the fraction of paths still alive through the payment date, not the start-of-interval alive state, so the Monte Carlo leg timing matches the analytical schedule loop in expectation.",
+            "Compose `build_period_schedule`, `build_default_event_grid`, and `conditional_event_probabilities_from_curve`; do not call `build_cds_schedule` or either `price_cds_*` compatibility helper.",
+            "Call `sample_first_event_weights(conditional_probabilities, n_paths=..., seed=42)` instead of writing adapter-local RNG or alive-state loops.",
+            "If the spec exposes `n_paths`, use it; otherwise use a comparison-stable path count such as `250000`. Do not hard-code `50000`.",
+            "Assemble `CouponAccrual` / `coupon_cashflow_pv` and `ProtectionPayment` / `protection_payment_pv` explicitly over the grid's period-to-interval mapping.",
+            "Use post-interval survival weights for scheduled coupons and unconditional event weights for protection plus accrued-on-event premium.",
             "Normalize the running spread immediately with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4` before any premium-leg accrual.",
             "After that normalization step, use only the local `spread` variable; do not read raw `spec.spread` again inside the loop.",
             "Validation contract: semantically equivalent quotes `100` and `0.01` must produce the same CDS PV up to numerical tolerance.",
@@ -10198,14 +10280,12 @@ def _route_specific_retry_lines(
         return (
             "Single-name CDS analytical pricing should stay on the same explicit schedule convention as the Monte Carlo comparator.",
             "Normalize the running spread immediately with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, then use only the local `spread` variable.",
-            "Prefer `from trellis.models.credit_default_swap import build_cds_schedule, price_cds_analytical` and delegate to those helpers from the adapter.",
-            "Do not write `from trellis.models import black`; if you genuinely need Black helpers, import concrete symbols from `trellis.models.black`, but this CDS route should normally only need `trellis.models.credit_default_swap` plus core helpers.",
-            "Prefer `build_period_schedule(spec.start_date, spec.end_date, spec.frequency, day_count=spec.day_count, time_origin=spec.start_date)` and iterate over explicit periods instead of rebuilding date lists by hand.",
-            "Use `spec.start_date` as the time origin for `year_fraction(...)` schedule times so the analytical and Monte Carlo legs share the same `t` convention.",
-            "For each payment date, discount both the premium leg and the interval default mass with `market_state.discount.discount(pay_t)`.",
-            "Keep the premium leg to `spread * accrual * df * survival` only. Do not add a separate accrued-on-default premium adjustment such as `0.5 * spread * accrual * df * (prev_survival - survival)`.",
-            "Do not average adjacent discount factors, trapezoid the protection leg, or introduce `0.5 * (prev_discount + discount)`.",
-            "Keep the body as one schedule loop with `premium_leg += ... * df * surv` and `protection_leg += ... * df * max(prev_survival - survival, 0.0)`.",
+            "Compose `build_period_schedule`, `build_default_event_grid`, and `conditional_event_probabilities_from_curve`; do not call `build_cds_schedule` or either `price_cds_*` compatibility helper.",
+            "Call `expected_first_event_weights(conditional_probabilities)` and use its post-interval survival and unconditional event weights directly.",
+            "Assemble `CouponAccrual` / `coupon_cashflow_pv` and `ProtectionPayment` / `protection_payment_pv` explicitly.",
+            "Discount scheduled coupons at `period_payment_times` and protection/accrued-on-event cashflows at each interval's `settlement_time`.",
+            "Return `protection_leg - premium_leg - accrued_on_event + accrued_to_valuation`.",
+            "Do not import Black, copula, basket-credit, or product-level CDS helper modules.",
             "Return a full Python module with the spec class and payoff class. Do not emit only an `evaluate()` fragment, markdown bullets, or an indented class body snippet.",
         )
     if (

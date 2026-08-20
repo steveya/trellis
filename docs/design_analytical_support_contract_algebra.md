@@ -35,11 +35,12 @@ header-includes:
 
 Prepared as a consolidation of the available analytical-support materials, centered on the barrier proof-of-concept for `QUA-328` and on the file-map you supplied for the broader Trellis analytical-support direction.
 
-Current implementation note, 2026-04-03: the contract-algebra boundary is no
-longer only an analytical/barrier design story. The same typed semantic and
-helper-backed discipline now governs ranked-observation baskets, single-name
-CDS, and nth-to-default basket-credit lowering, with the validation contract
-loop consuming the resulting family IR and exact helper bindings.
+Current implementation note, updated 2026-07-23: the contract-algebra boundary
+is no longer only an analytical/barrier design story. The same typed semantic
+discipline now governs ranked-observation baskets, single-name CDS, and
+nth-to-default basket-credit lowering. Single-name CDS lowers to an explicit
+schedule, first-event-weight, and contingent-cashflow composition; remaining
+helper-backed families continue to carry exact helper bindings.
 
 ![Analytical support architecture](/mnt/data/analytical_support_architecture.png)
 

@@ -1266,7 +1266,7 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("short_rate_bond_option"), spec)
         assert not any(f.severity == "error" for f in findings)
 
-    def test_flags_credit_default_swap_analytical_helper_signature_mismatch(self, registry):
+    def test_rejects_credit_default_swap_analytical_product_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = '''
 from trellis.models.credit_default_swap import price_cds_analytical
@@ -1274,56 +1274,21 @@ from trellis.models.credit_default_swap import price_cds_analytical
 def evaluate(self, market_state):
     return price_cds_analytical(
         notional=self._spec.notional,
-        spread=self._spec.spread,
-        recovery=self._spec.recovery_rate,
-        schedule=schedule,
-        credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
-    )
-'''
-        validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
-
-    def test_accepts_credit_default_swap_analytical_helper_surface(self, registry):
-        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
-        source = '''
-from trellis.models.credit_default_swap import price_cds_analytical
-
-def evaluate(self, market_state):
-    return price_cds_analytical(
-        notional=self._spec.notional,
-        spread_quote=self._spec.spread_quote,
+        spread_quote=self._spec.spread,
         recovery=self._spec.recovery,
         schedule=schedule,
         credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
+        discount_curve=market_state.discount,
     )
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("credit_default_swap"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(
+            f.category == "credit_default_swap_forbidden_helper"
+            for f in findings
+        )
 
-    def test_rejects_credit_default_swap_analytical_positional_calls(self, registry):
-        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
-        source = '''
-from trellis.models.credit_default_swap import price_cds_analytical
-
-def evaluate(self, market_state):
-    return price_cds_analytical(
-        self._spec.notional,
-        self._spec.spread_quote,
-        self._spec.recovery,
-        schedule,
-        market_state.credit_curve,
-        market_state.discount_curve,
-    )
-'''
-        validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
-
-    def test_flags_credit_default_swap_monte_carlo_helper_signature_mismatch(self, registry):
+    def test_rejects_credit_default_swap_monte_carlo_product_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = '''
 from trellis.models.credit_default_swap import price_cds_monte_carlo
@@ -1331,58 +1296,72 @@ from trellis.models.credit_default_swap import price_cds_monte_carlo
 def evaluate(self, market_state):
     return price_cds_monte_carlo(
         notional=self._spec.notional,
-        spread=self._spec.spread,
-        recovery=self._spec.recovery_rate,
-        schedule=schedule,
-        credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
-        paths=self._spec.n_paths,
-    )
-'''
-        validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap", "monte_carlo"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
-
-    def test_accepts_credit_default_swap_monte_carlo_helper_surface(self, registry):
-        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
-        source = '''
-from trellis.models.credit_default_swap import price_cds_monte_carlo
-
-def evaluate(self, market_state):
-    return price_cds_monte_carlo(
-        notional=self._spec.notional,
-        spread_quote=self._spec.spread_quote,
+        spread_quote=self._spec.spread,
         recovery=self._spec.recovery,
         schedule=schedule,
         credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
+        discount_curve=market_state.discount,
         n_paths=self._spec.n_paths,
-        seed=self._spec.seed,
+        seed=42,
     )
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap", "monte_carlo"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        findings = validator.validate(
+            source,
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+        assert any(
+            f.category == "credit_default_swap_forbidden_helper"
+            for f in findings
+        )
 
-    def test_rejects_credit_default_swap_monte_carlo_positional_calls(self, registry):
+    def test_accepts_credit_default_swap_explicit_first_event_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = '''
-from trellis.models.credit_default_swap import price_cds_monte_carlo
+from trellis.core.date_utils import build_period_schedule
+from trellis.models.contingent_cashflows import (
+    CouponAccrual,
+    ProtectionPayment,
+    build_default_event_grid,
+    conditional_event_probabilities_from_curve,
+    coupon_cashflow_pv,
+    expected_first_event_weights,
+    protection_payment_pv,
+)
 
 def evaluate(self, market_state):
-    return price_cds_monte_carlo(
-        self._spec.notional,
-        self._spec.spread_quote,
-        self._spec.recovery,
-        schedule,
-        market_state.credit_curve,
-        market_state.discount_curve,
-        self._spec.n_paths,
+    schedule = build_period_schedule(
+        self._spec.start_date,
+        self._spec.end_date,
+        self._spec.frequency,
+        day_count=self._spec.day_count,
+        time_origin=self._spec.start_date,
     )
+    grid = build_default_event_grid(schedule)
+    conditional = conditional_event_probabilities_from_curve(
+        market_state.credit_curve,
+        grid.intervals,
+    )
+    weights = expected_first_event_weights(conditional)
+    premium = coupon_cashflow_pv(CouponAccrual(
+        notional=self._spec.notional,
+        rate=self._spec.spread,
+        accrual=grid.periods[0].accrual_fraction,
+        discount_factor=market_state.discount.discount(grid.period_payment_times[0]),
+        weight=weights.survival_weights[0],
+    ))
+    protection = protection_payment_pv(ProtectionPayment(
+        notional=self._spec.notional,
+        recovery=self._spec.recovery,
+        default_probability=weights.event_weights[0],
+        discount_factor=market_state.discount.discount(grid.intervals[0].settlement_time),
+    ))
+    return protection - premium
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap", "monte_carlo"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        findings = validator.validate(source, _make_plan("credit_default_swap"), spec)
+        assert not any(f.severity == "error" for f in findings)
 
     def test_flags_nth_to_default_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]

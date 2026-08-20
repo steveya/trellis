@@ -120,6 +120,7 @@ def compile_validation_contract(
         instrument_type=instrument_type,
         product_ir=product_ir,
         semantic_blueprint=semantic_blueprint,
+        generation_plan=generation_plan,
     )
     if not method or not resolved_instrument:
         return None
@@ -348,12 +349,15 @@ def _resolve_instrument_type(
     instrument_type: str | None,
     product_ir=None,
     semantic_blueprint=None,
+    generation_plan=None,
 ) -> str:
     """Return the most specific normalized instrument identifier available."""
+    primitive_plan = getattr(generation_plan, "primitive_plan", None)
     resolved = resolve_authoritative_instrument_type(
         instrument_type,
         getattr(product_ir, "instrument", None),
         getattr(semantic_blueprint, "semantic_id", None),
+        getattr(primitive_plan, "route", None),
     )
     return resolved or ""
 

@@ -646,6 +646,16 @@ single-name CDS, and
 nth-to-default basket credit now carry explicit contract, market-binding, and
 route-lowering metadata before pricing or code generation starts.
 
+For single-name CDS, the generated construction route is now the
+``single_name_default_event_composition`` card rather than a product pricer.
+It builds public coupon periods, a bounded default-event grid, survival-ratio
+probabilities, and either exact or sampled first-event weights. Generated code
+then assembles ``CouponAccrual`` and ``ProtectionPayment`` values explicitly,
+including scheduled premium, accrued-on-event premium, protection, and
+discounting. Existing ``price_cds_analytical(...)`` and
+``price_cds_monte_carlo(...)`` calls remain useful reference APIs, but new
+generated task adapters do not use them.
+
 For ranked-observation baskets, the generated construction surface is the
 basket resolver, implied-rate conversion, correlated GBM process, generic
 Monte Carlo engine, and ranked-observation state/terminal payoff primitives.
@@ -1793,10 +1803,11 @@ Trace Artifacts
 When a request goes through the build loop, Trellis records a machine-readable analytical trace plus a Markdown rendering of the same build steps. The task result and persisted task-run record keep the trace paths even for reused analytical routes, so you can inspect route selection, decomposition, validation, fallback decisions, and cache/reuse behavior after the run.
 
 For migrated semantic families, the platform trace also includes the selected
-DSL route, the typed family IR payload, the helper targets, and any structured
-lowering errors. That makes it possible to see why a request selected, for
-example, a CDS helper-backed analytical route or an nth-to-default copula
-helper instead of a generic analytical or generic copula path.
+DSL route, the typed family IR payload, exact primitive/helper targets, and any
+structured lowering errors. That makes it possible to see why a request
+selected, for example, a CDS expected-first-event composition or an
+nth-to-default copula helper instead of a generic analytical or generic copula
+path.
 
 The same trace now includes the compiled validation contract summary, including
 deterministic check ids and normalized comparison relations such as

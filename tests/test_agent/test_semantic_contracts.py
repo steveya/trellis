@@ -1731,7 +1731,10 @@ def test_credit_default_swap_contract_validates_and_compiles():
     assert compiled.product_ir.payoff_family == "event_triggered_two_legged_contract"
     assert compiled.product_ir.schedule_dependence is True
     assert compiled.pricing_plan.method == "analytical"
-    assert compiled.target_modules == ("trellis.models.credit_default_swap",)
+    assert compiled.target_modules == (
+        "trellis.core.date_utils",
+        "trellis.models.contingent_cashflows",
+    )
     assert compiled.route_modules == _expected_route_modules(compiled)
     assert compiled.primitive_routes == ("credit_default_swap",)
     assert compiled.dsl_lowering is not None

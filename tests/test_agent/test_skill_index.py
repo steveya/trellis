@@ -72,10 +72,12 @@ def test_route_hint_projection_includes_instruction_lifecycle_records():
     skill_ids = {record.skill_id for record in route_skills}
     summaries = [record.summary for record in route_skills]
 
-    assert "route_hint:credit_default_swap:route-helper" in skill_ids
+    assert "route_hint:credit_default_swap:route-helper" not in skill_ids
+    assert "route_hint:credit_default_swap:event-composition" in skill_ids
     assert "route_hint:credit_default_swap:schedule-builder" in skill_ids
     assert "route_hint:credit_default_swap:schedule-body" in skill_ids
-    assert not any("default-time" in summary.lower() or "default time" in summary.lower() for summary in summaries)
+    assert any("first-event weights" in summary.lower() for summary in summaries)
+    assert any("product-level pricing helpers" in summary.lower() for summary in summaries)
 
 
 def test_route_hint_lineage_links_back_to_matching_cookbook():

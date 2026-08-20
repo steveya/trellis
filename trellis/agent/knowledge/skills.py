@@ -718,6 +718,69 @@ def _project_route_hints(*, cookbook_ids: set[str]) -> list[SkillRecord]:
                     )
                 )
 
+        event_grid = next(
+            (
+                primitive
+                for primitive in route.primitives
+                if primitive.role == "event_grid"
+            ),
+            None,
+        )
+        if event_grid is not None:
+            event_symbols = tuple(
+                primitive.symbol
+                for primitive in route.primitives
+                if primitive.role
+                in {
+                    "event_grid",
+                    "event_probability",
+                    "numerical_evidence",
+                    "payoff_primitive",
+                    "scheduled_leg",
+                    "trigger_leg",
+                }
+            )
+            records.append(
+                SkillRecord(
+                    skill_id=f"route_hint:{route.id}:event-composition",
+                    kind="route_hint",
+                    title=f"{route.id} explicit event composition",
+                    summary=(
+                        "Compose the event grid, survival-derived probabilities, "
+                        "method-selected first-event weights, and signed scheduled/"
+                        "trigger cashflows explicitly; product-level pricing helpers "
+                        "are not route authority."
+                    ),
+                    source_artifact=route.id,
+                    source_path=source_path,
+                    instrument_types=_sorted_unique(route.match_instruments or ()),
+                    method_families=_sorted_unique(
+                        normalize_method(item) for item in route.match_methods
+                    ),
+                    route_families=route_families,
+                    failure_buckets=(),
+                    concepts=_sorted_unique([*concepts, *event_symbols]),
+                    tags=_sorted_unique(
+                        [
+                            *tags,
+                            f"module:{event_grid.module}",
+                            *(f"symbol:{symbol}" for symbol in event_symbols),
+                        ]
+                    ),
+                    origin="canonical" if not route.discovered_from else "captured",
+                    parents=parent_cookbooks,
+                    supersedes=(),
+                    status=route.status,
+                    confidence=route.confidence,
+                    updated_at="",
+                    precedence_rank=95,
+                    instruction_type="hard_constraint",
+                    source_kind="route_card",
+                    lineage_status=lineage_status,
+                    lineage_evidence=lineage_evidence,
+                )
+            )
+
         for index, note in enumerate(route.notes, start=1):
             records.append(
                 SkillRecord(

@@ -33,11 +33,11 @@ Layering
      - ``trellis/agent/semantic_contract_compiler.py``, ``trellis/agent/route_registry.py``, ``trellis/agent/build_gate.py``
    * - Backend binding catalog
      - ``BackendBindingSpec``, ``ResolvedBackendBindingSpec``, binding catalogs
-     - Canonical exact helper/kernel/schedule/cashflow binding facts used by routing and validation
+     - Canonical exact primitive, kernel, schedule, cashflow, and retained-helper facts used by routing and validation
      - ``trellis/agent/backend_bindings.py``
    * - Family lowering
      - family-specific lowering IRs + DSL lowering
-     - Narrow typed lowering onto checked-in helper-backed routes
+     - Narrow typed lowering onto checked primitive compositions or bounded helper-backed routes
      - ``trellis/agent/family_lowering_ir.py``, ``trellis/agent/dsl_lowering.py``
    * - Numerical engines
      - analytical, lattice, PDE, Monte Carlo, transforms, copulas
@@ -58,7 +58,8 @@ The current semantic pricing path is:
 3. Build a ``ValuationContext`` and compile ``RequiredDataSpec`` plus ``MarketBindingSpec``.
 4. Build ``ProductIR`` and select a pricing method plus candidate backend bindings.
 5. Apply typed admissibility through ``BuildGateDecision`` and resolve the exact binding surface.
-6. Lower onto a family-specific IR and then onto a checked helper or kernel.
+6. Lower onto a family-specific IR and then onto an explicit primitive
+   composition or a checked helper/kernel when that helper remains authority.
 7. Execute the existing deterministic numerical code.
 
 The first step is now registry-backed instead of branch-order-driven. Semantic
@@ -138,10 +139,10 @@ The current compiler boundary is:
 
    SemanticContract
      + ValuationContext
-     -> ProductIR
-     -> EventProgramIR / ControlProgramIR
-     -> family lowering IR
-     -> helper-backed numerical route
+   -> ProductIR
+   -> EventProgramIR / ControlProgramIR
+   -> family lowering IR
+   -> primitive-composed or bounded helper-backed numerical route
 
 The shipped family IRs are:
 
@@ -152,7 +153,7 @@ The shipped family IRs are:
 - ``VanillaEquityPDEIR``
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
-- ``EventTriggeredTwoLeggedContractIR`` as the structural helper-backed family
+- ``EventTriggeredTwoLeggedContractIR`` as the structural explicit-composition
   surface for event-triggered two-legged contracts, currently proven on
   single-name CDS
 - ``NthToDefaultIR``
@@ -975,25 +976,26 @@ The end-to-end typed boundary is currently proven for:
 - ``range_accrual_discounted_cashflow_v1`` on the first single-index range-accrual note slice
 - ``callable_range_accrual_deterministic_v1`` on the bounded issuer-callable
   single-index range-accrual proof slice
-- ``credit_default_swap`` on single-name CDS across analytical and Monte Carlo
-  bindings, routed through the structural
+- ``credit_default_swap`` on single-name CDS across deterministic and sampled
+  first-event bindings, routed through the structural
   ``event_triggered_two_legged_contract`` family
 - ``nth_to_default_monte_carlo`` on nth-to-default basket credit
 - ``copula_loss_distribution`` on tranche-style basket-credit comparison tasks
   through the semantic-facing basket-credit helper surface
 
-For those credit and copula routes, the route cards are now intentionally thin.
-They preserve backend binding, admissibility, validation ownership, and canary
-provenance, but no longer carry procedural guidance about schedule-step
-survival updates, copula initialization, or tranche-loss assembly when the
-checked helper surface already owns that construction.
+The single-name CDS route card is intentionally primitive-first. It preserves
+backend binding, admissibility, validation ownership, and canary provenance,
+then names the generic schedule, default-event grid, survival-ratio,
+first-event-weight, and contingent-cashflow primitives. The basket-credit and
+nth-to-default routes remain separate authority surfaces.
 
-These route IDs and helper-backed numerical kernels are preserved. The new work
-changes validation, binding, admissibility, and lowering, not the pricing math.
-For single-name CDS comparison builds, the typed boundary now also carries a
-comparison-quality ``n_paths`` control on the Monte Carlo spec so the helper
-route can tighten internal agreement without changing the checked pricing
-kernel.
+For single-name CDS comparison builds, the typed boundary carries a
+comparison-quality ``n_paths`` control on the Monte Carlo spec. Analytical and
+sampled targets share the same interval grid and signed leg assembly; only
+``expected_first_event_weights(...)`` versus
+``sample_first_event_weights(...)`` changes. The retained
+``build_cds_schedule(...)`` and ``price_cds_*`` functions remain compatibility
+and independent-reference APIs, not generated construction authority.
 
 The range-accrual route is intentionally narrow: it is a deterministic
 discounted-cashflow adapter that prices coupon periods off explicit range
@@ -1165,6 +1167,34 @@ the Hurd-Zhou implementation is a finite, damped two-dimensional Fourier grid
 for a positive-strike spread under correlated lognormal dynamics. See
 ``L59`` for unsupported dimensions, dynamics, exercise, and error-control
 claims.
+
+Single-name default-event composition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Single-name CDS generated construction starts from the
+``single_name_default_event_composition`` API-map card. The ordered public
+composition is:
+
+1. ``build_period_schedule(...)`` builds coupon periods from declared
+   conventions and an explicit valuation time origin.
+2. ``build_default_event_grid(...)`` partitions each live period into bounded
+   curve-time intervals while preserving coupon accrual measurements.
+3. ``conditional_event_probabilities_from_curve(...)`` computes interval
+   probabilities from survival ratios.
+4. ``expected_first_event_weights(...)`` supplies exact unconditional event
+   and post-interval survival mass, or
+   ``sample_first_event_weights(...)`` supplies reproducible empirical mass
+   from one persistent alive-state simulation.
+5. ``CouponAccrual`` / ``coupon_cashflow_pv(...)`` and
+   ``ProtectionPayment`` / ``protection_payment_pv(...)`` assemble the
+   scheduled premium, accrued-on-event, and trigger legs.
+
+The generated adapter owns quote normalization, schedule conventions,
+period-to-interval iteration, discount coordinates, signs, and the final
+``protection - premium - accrued_on_event + accrued_to_valuation`` result.
+The generic event primitives do not price CDS and do not hide product leg
+assembly. This boundary is limited to one reference entity, deterministic
+discount and survival curves, and fixed recovery; see ``L61``.
 
 Fixed lookback analytical composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
