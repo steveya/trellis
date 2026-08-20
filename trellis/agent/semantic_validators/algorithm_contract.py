@@ -1546,6 +1546,183 @@ def _expression_resolves_to_active_spec_field(
     )
 
 
+def _expression_resolves_to_market_settlement(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Recognize the active market-state settlement date and simple aliases."""
+    if (
+        isinstance(expression, ast.Attribute)
+        and expression.attr == "settlement"
+        and isinstance(expression.value, ast.Name)
+        and expression.value.id == "market_state"
+    ):
+        return True
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return False
+    assigned_values = _assigned_values_for_name(tree, expression.id)
+    return bool(assigned_values) and all(
+        _expression_resolves_to_market_settlement(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
+        )
+        for assigned_value in assigned_values
+    )
+
+
+def _cds_time_origin_is_active_valuation_date(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Require market settlement or valuation-date-with-start fallback."""
+    if _expression_resolves_to_market_settlement(tree, expression):
+        return True
+    if isinstance(expression, ast.Name):
+        if expression.id in seen_names:
+            return False
+        assigned_values = _assigned_values_for_name(tree, expression.id)
+        return bool(assigned_values) and all(
+            _cds_time_origin_is_active_valuation_date(
+                tree,
+                assigned_value,
+                seen_names=seen_names | {expression.id},
+            )
+            for assigned_value in assigned_values
+        )
+    if not (
+        isinstance(expression, ast.BoolOp)
+        and isinstance(expression.op, ast.Or)
+        and len(expression.values) == 2
+    ):
+        return False
+    valuation_date, fallback_date = expression.values
+    return _expression_resolves_to_active_spec_field(
+        tree,
+        valuation_date,
+        field="valuation_date",
+    ) and (
+        _expression_resolves_to_active_spec_field(
+            tree,
+            fallback_date,
+            field="start_date",
+        )
+        or _expression_resolves_to_market_settlement(tree, fallback_date)
+    )
+
+
+def _cds_schedule_uses_active_valuation_origin(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Resolve a period schedule and validate its declared time origin."""
+    if isinstance(expression, ast.Name):
+        if expression.id in seen_names:
+            return False
+        assigned_values = _assigned_values_for_name(tree, expression.id)
+        return bool(assigned_values) and all(
+            _cds_schedule_uses_active_valuation_origin(
+                tree,
+                assigned_value,
+                seen_names=seen_names | {expression.id},
+            )
+            for assigned_value in assigned_values
+        )
+    if not (
+        isinstance(expression, ast.Call)
+        and _call_matches_symbol(expression, "build_period_schedule")
+    ):
+        return False
+    time_origins = tuple(
+        keyword.value
+        for keyword in expression.keywords
+        if keyword.arg == "time_origin"
+    )
+    return len(time_origins) == 1 and _cds_time_origin_is_active_valuation_date(
+        tree,
+        time_origins[0],
+    )
+
+
+def _cds_grid_uses_active_valuation_origin(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Resolve a default-event grid back to its valuation-origin schedule."""
+    if isinstance(expression, ast.Name):
+        if expression.id in seen_names:
+            return False
+        assigned_values = _assigned_values_for_name(tree, expression.id)
+        return bool(assigned_values) and all(
+            _cds_grid_uses_active_valuation_origin(
+                tree,
+                assigned_value,
+                seen_names=seen_names | {expression.id},
+            )
+            for assigned_value in assigned_values
+        )
+    if not (
+        isinstance(expression, ast.Call)
+        and _call_matches_symbol(expression, "build_default_event_grid")
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return False
+    return _cds_schedule_uses_active_valuation_origin(
+        tree,
+        expression.args[0],
+    )
+
+
+def _cds_uses_valuation_origin_event_grid(tree: ast.AST) -> bool:
+    """Bind every accepted cashflow loop to a valuation-origin event grid."""
+    loop_pairs = _cds_full_event_grid_loops(tree)
+    if not loop_pairs:
+        return False
+    grid_expressions: list[ast.AST] = []
+    for period_loop, _, _ in loop_pairs:
+        period_collection = _enumerated_collection(period_loop, "periods")
+        if period_collection is None:
+            return False
+        _, grid_expression = period_collection
+        grid_expressions.append(grid_expression)
+    if not all(
+        _cds_grid_uses_active_valuation_origin(tree, grid_expression)
+        for grid_expression in grid_expressions
+    ):
+        return False
+    weighting_calls = tuple(
+        call
+        for symbol in (
+            "expected_first_event_weights",
+            "sample_first_event_weights",
+        )
+        for call in _find_calls_for_symbol(tree, symbol)
+    )
+    if not weighting_calls or any(not call.args for call in weighting_calls):
+        return False
+    conditional_grids = tuple(
+        _cds_conditional_event_grid(tree, call.args[0])
+        for call in weighting_calls
+    )
+    return all(
+        conditional_grid is not None
+        and any(
+            _ast_equivalent(conditional_grid, grid_expression)
+            for grid_expression in grid_expressions
+        )
+        for conditional_grid in conditional_grids
+    )
+
+
 def _multiplication_factors(expression: ast.AST) -> tuple[ast.AST, ...]:
     """Flatten an associative multiplication into its exact factors."""
     if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Mult):
@@ -2151,6 +2328,22 @@ class AlgorithmContractValidator:
                     )
                 )
             else:
+                if not _cds_uses_valuation_origin_event_grid(tree):
+                    findings.append(
+                        SemanticFinding(
+                            validator="algorithm_contract",
+                            severity="error",
+                            category="credit_default_swap_valuation_origin",
+                            message=(
+                                f"Route '{route_spec.id}' must build the active "
+                                "cashflow event grid from a period schedule whose "
+                                "time_origin is the valuation date (with the "
+                                "declared start-date fallback). Using start_date "
+                                "unconditionally prices forward-start CDS cashflows "
+                                "conditional on survival to the contract start."
+                            ),
+                        )
+                    )
                 if not _cds_uses_active_event_weights(tree):
                     findings.append(
                         SemanticFinding(

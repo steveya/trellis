@@ -439,7 +439,12 @@ initial mass exactly from credit-curve survival at the first live interval of
 the same grid used to derive conditional probabilities. Multiplying, offsetting,
 or otherwise wrapping that survival mass in arithmetic fails closed; only the
 empty-grid ``else 1.0`` guard and simple aliases/``float`` conversion are
-accepted. The validator also checks that
+accepted. The same grid must resolve back through
+``build_default_event_grid`` to a ``build_period_schedule`` whose
+``time_origin`` is the active valuation date (with the declared start-date
+fallback). An unconditional ``time_origin=spec.start_date`` makes a
+forward-start grid begin at zero and therefore fails closed. The validator also
+checks that
 premium and protection PVs are accumulated through the full
 ``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
 assemblies fail semantic validation even when they mention every required

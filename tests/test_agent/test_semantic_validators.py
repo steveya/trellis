@@ -63,10 +63,7 @@ def _cds_composition_source(
     event_discount: str = (
         "market_state.discount.discount(interval.settlement_time)"
     ),
-    initial_survival: str = (
-        "market_state.credit_curve.survival_probability("
-        "grid.intervals[0].start_time)"
-    ),
+    initial_survival: str | None = None,
     premium_notional: str = "self._spec.notional",
     protection_notional: str = "self._spec.notional",
     event_notional: str = "self._spec.notional",
@@ -77,8 +74,16 @@ def _cds_composition_source(
         "self._spec.notional * spread * period.accrual_fraction "
         "* grid.elapsed_period_fractions[period_index]"
     ),
+    time_origin: str = "self._spec.valuation_date or self._spec.start_date",
+    weight_grid: str = "grid",
+    extra_setup: str = "",
 ) -> str:
     """Build a compact, structurally complete CDS composition for validator tests."""
+    if initial_survival is None:
+        initial_survival = (
+            "market_state.credit_curve.survival_probability("
+            f"{weight_grid}.intervals[0].start_time)"
+        )
     return f'''
 def evaluate(self, market_state):
     schedule = build_period_schedule(
@@ -86,12 +91,13 @@ def evaluate(self, market_state):
         self._spec.end_date,
         self._spec.frequency,
         day_count=self._spec.day_count,
-        time_origin=self._spec.start_date,
+        time_origin={time_origin},
     )
     grid = build_default_event_grid(schedule)
+    {extra_setup}
     conditional = conditional_event_probabilities_from_curve(
         market_state.credit_curve,
-        grid.intervals,
+        {weight_grid}.intervals,
     )
     initial_survival_weight = {initial_survival}
     weights = expected_first_event_weights(
@@ -1469,6 +1475,58 @@ def evaluate(self, market_state):
 
         assert any(
             finding.category == "credit_default_swap_initial_survival_missing"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "time_origin",
+        (
+            "self._spec.start_date",
+            "self._spec.end_date",
+        ),
+    )
+    def test_rejects_credit_default_swap_non_valuation_event_grid(
+        self,
+        registry,
+        time_origin,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(time_origin=time_origin),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_valuation_origin"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_weight_grid_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        extra_setup = '''
+    other_schedule = build_period_schedule(
+        self._spec.start_date,
+        self._spec.end_date,
+        self._spec.frequency,
+        day_count=self._spec.day_count,
+        time_origin=self._spec.valuation_date or self._spec.start_date,
+    )
+    other_grid = build_default_event_grid(other_schedule)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_grid="other_grid",
+                extra_setup=extra_setup,
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_valuation_origin"
             for finding in findings
         )
 
