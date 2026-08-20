@@ -617,14 +617,6 @@ def _find_calls_for_symbol(tree: ast.AST, symbol: str) -> tuple[ast.Call, ...]:
     )
 
 
-def _node_references_attribute(node: ast.AST, attribute: str) -> bool:
-    """Return whether an AST subtree references an attribute name."""
-    return any(
-        isinstance(candidate, ast.Attribute) and candidate.attr == attribute
-        for candidate in ast.walk(node)
-    )
-
-
 def _node_calls_symbol(node: ast.AST, symbol: str) -> bool:
     """Return whether an AST subtree contains a call to ``symbol``."""
     return any(
@@ -634,14 +626,13 @@ def _node_calls_symbol(node: ast.AST, symbol: str) -> bool:
     )
 
 
-def _direct_loop_body_augments_with_call(
+def _direct_loop_body_nodes(
     loop: ast.For | ast.AsyncFor,
-    symbol: str,
-) -> bool:
-    """Detect an accumulated call in a loop body, excluding nested loops."""
-
+) -> tuple[ast.AST, ...]:
+    """Return nodes in one loop body while excluding nested loop bodies."""
     class _Visitor(ast.NodeVisitor):
-        found = False
+        def __init__(self) -> None:
+            self.nodes: list[ast.AST] = []
 
         def visit_For(self, node: ast.For) -> None:  # noqa: N802
             return None
@@ -649,15 +640,100 @@ def _direct_loop_body_augments_with_call(
         def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
             return None
 
-        def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
-            if _node_calls_symbol(node.value, symbol):
-                self.found = True
-            self.generic_visit(node)
+        def generic_visit(self, node: ast.AST) -> None:
+            self.nodes.append(node)
+            super().generic_visit(node)
 
     visitor = _Visitor()
     for statement in loop.body:
         visitor.visit(statement)
-    return visitor.found
+    return tuple(visitor.nodes)
+
+
+def _direct_loop_body_augments_with_call(
+    loop: ast.For | ast.AsyncFor,
+    symbol: str,
+) -> bool:
+    """Detect an accumulated call in a loop body, excluding nested loops."""
+    return any(
+        isinstance(node, ast.AugAssign)
+        and _node_calls_symbol(node.value, symbol)
+        for node in _direct_loop_body_nodes(loop)
+    )
+
+
+def _simple_name_assignment(node: ast.AST) -> tuple[str, ast.AST] | None:
+    """Return a simple assigned name and value, if present."""
+    if (
+        isinstance(node, ast.Assign)
+        and len(node.targets) == 1
+        and isinstance(node.targets[0], ast.Name)
+    ):
+        return node.targets[0].id, node.value
+    if (
+        isinstance(node, ast.AnnAssign)
+        and isinstance(node.target, ast.Name)
+        and node.value is not None
+    ):
+        return node.target.id, node.value
+    return None
+
+
+def _assigned_values_for_name(tree: ast.AST, name: str) -> tuple[ast.AST, ...]:
+    """Return simple assignment values for a local name."""
+    assignments = (
+        _simple_name_assignment(node)
+        for node in ast.walk(tree)
+    )
+    return tuple(
+        value
+        for assignment in assignments
+        if assignment is not None
+        for assigned_name, value in (assignment,)
+        if assigned_name == name
+    )
+
+
+def _ast_equivalent(left: ast.AST, right: ast.AST) -> bool:
+    """Compare expression structure while ignoring source coordinates."""
+    return ast.dump(left, include_attributes=False) == ast.dump(
+        right,
+        include_attributes=False,
+    )
+
+
+def _subscript_uses_name(node: ast.Subscript, name: str) -> bool:
+    return isinstance(node.slice, ast.Name) and node.slice.id == name
+
+
+def _subscript_uses_zero(node: ast.Subscript) -> bool:
+    return (
+        isinstance(node.slice, ast.Constant)
+        and isinstance(node.slice.value, int)
+        and not isinstance(node.slice.value, bool)
+        and node.slice.value == 0
+    )
+
+
+def _expression_resolves_to_credit_curve(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Recognize a direct or simply aliased ``credit_curve`` expression."""
+    if isinstance(expression, ast.Attribute) and expression.attr == "credit_curve":
+        return True
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return False
+    return any(
+        _expression_resolves_to_credit_curve(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
+        )
+        for assigned_value in _assigned_values_for_name(tree, expression.id)
+    )
 
 
 def _cds_initial_survival_expression_is_valid(
@@ -667,32 +743,142 @@ def _cds_initial_survival_expression_is_valid(
     """Recognize survival to the first live default-event interval."""
     candidates = [expression]
     if isinstance(expression, ast.Name):
-        candidates.extend(
-            node.value
-            for node in ast.walk(tree)
-            if isinstance(node, (ast.Assign, ast.AnnAssign))
-            and (
-                (
-                    isinstance(node, ast.Assign)
-                    and any(
-                        isinstance(target, ast.Name)
-                        and target.id == expression.id
-                        for target in node.targets
-                    )
-                )
-                or (
-                    isinstance(node, ast.AnnAssign)
-                    and isinstance(node.target, ast.Name)
-                    and node.target.id == expression.id
-                )
-            )
-            and node.value is not None
-        )
+        candidates.extend(_assigned_values_for_name(tree, expression.id))
+    for candidate in candidates:
+        for call in ast.walk(candidate):
+            if not isinstance(call, ast.Call) or not _call_matches_symbol(
+                call,
+                "survival_probability",
+            ):
+                continue
+            if not isinstance(call.func, ast.Attribute) or len(call.args) != 1:
+                continue
+            if not _expression_resolves_to_credit_curve(tree, call.func.value):
+                continue
+            first_interval_start = call.args[0]
+            if not (
+                isinstance(first_interval_start, ast.Attribute)
+                and first_interval_start.attr == "start_time"
+                and isinstance(first_interval_start.value, ast.Subscript)
+            ):
+                continue
+            first_interval = first_interval_start.value
+            if (
+                isinstance(first_interval.value, ast.Attribute)
+                and first_interval.value.attr == "intervals"
+                and _subscript_uses_zero(first_interval)
+            ):
+                return True
+    return False
+
+
+def _enumerated_collection(
+    loop: ast.For | ast.AsyncFor,
+    attribute: str,
+) -> tuple[str, ast.AST] | None:
+    """Return the index name and collection owner for an unsliced enumerate."""
+    if not (
+        isinstance(loop.target, ast.Tuple)
+        and len(loop.target.elts) == 2
+        and isinstance(loop.target.elts[0], ast.Name)
+        and isinstance(loop.iter, ast.Call)
+        and isinstance(loop.iter.func, ast.Name)
+        and loop.iter.func.id == "enumerate"
+        and len(loop.iter.args) == 1
+    ):
+        return None
+    collection = loop.iter.args[0]
+    if not isinstance(collection, ast.Attribute) or collection.attr != attribute:
+        return None
+    return loop.target.elts[0].id, collection.value
+
+
+def _mapping_stop_assignment(
+    period_loop: ast.For | ast.AsyncFor,
+    *,
+    grid_expression: ast.AST,
+    period_index_name: str,
+) -> str | None:
+    """Return the stop variable bound to this period's interval-map entry."""
+    for node in _direct_loop_body_nodes(period_loop):
+        assignment = _simple_name_assignment(node)
+        if assignment is None:
+            continue
+        assigned_name, value = assignment
+        if not isinstance(value, ast.Subscript):
+            continue
+        mapping = value.value
+        if (
+            isinstance(mapping, ast.Attribute)
+            and mapping.attr == "period_interval_stops"
+            and _ast_equivalent(mapping.value, grid_expression)
+            and _subscript_uses_name(value, period_index_name)
+        ):
+            return assigned_name
+    return None
+
+
+def _loop_updates_start_from_stop(
+    period_loop: ast.For | ast.AsyncFor,
+    *,
+    start_name: str,
+    stop_name: str,
+    after_line: int,
+) -> bool:
+    """Require the next interval slice to begin at the prior mapped stop."""
+    for node in _direct_loop_body_nodes(period_loop):
+        assignment = _simple_name_assignment(node)
+        if assignment is None:
+            continue
+        assigned_name, value = assignment
+        if (
+            assigned_name == start_name
+            and isinstance(value, ast.Name)
+            and value.id == stop_name
+            and getattr(node, "lineno", 0) > after_line
+        ):
+            return True
+    return False
+
+
+def _tree_initializes_name_to_zero_before(
+    tree: ast.AST,
+    *,
+    name: str,
+    before_line: int,
+) -> bool:
+    """Require an interval cursor to start at the beginning of the event grid."""
+    for node in ast.walk(tree):
+        assignment = _simple_name_assignment(node)
+        if assignment is None:
+            continue
+        assigned_name, value = assignment
+        if (
+            assigned_name == name
+            and isinstance(value, ast.Constant)
+            and isinstance(value.value, int)
+            and not isinstance(value.value, bool)
+            and value.value == 0
+            and getattr(node, "lineno", 0) < before_line
+        ):
+            return True
+    return False
+
+
+def _loop_references_indexed_grid_intervals(
+    loop: ast.For | ast.AsyncFor,
+    *,
+    grid_expression: ast.AST,
+    interval_index_name: str,
+) -> bool:
+    """Require interval lookup by the active mapped range index."""
     return any(
-        _node_calls_symbol(candidate, "survival_probability")
-        and _node_references_attribute(candidate, "intervals")
-        and _node_references_attribute(candidate, "start_time")
-        for candidate in candidates
+        isinstance(node, ast.Subscript)
+        and isinstance(node.value, ast.Attribute)
+        and node.value.attr == "intervals"
+        and _ast_equivalent(node.value.value, grid_expression)
+        and _subscript_uses_name(node, interval_index_name)
+        for node in ast.walk(loop)
     )
 
 
@@ -701,9 +887,16 @@ def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
     for period_loop in ast.walk(tree):
         if not isinstance(period_loop, (ast.For, ast.AsyncFor)):
             continue
-        if not _node_references_attribute(period_loop.iter, "periods"):
+        period_collection = _enumerated_collection(period_loop, "periods")
+        if period_collection is None:
             continue
-        if not _node_references_attribute(period_loop, "period_interval_stops"):
+        period_index_name, grid_expression = period_collection
+        stop_name = _mapping_stop_assignment(
+            period_loop,
+            grid_expression=grid_expression,
+            period_index_name=period_index_name,
+        )
+        if stop_name is None:
             continue
         if not _direct_loop_body_augments_with_call(
             period_loop,
@@ -716,11 +909,40 @@ def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
                 (ast.For, ast.AsyncFor),
             ):
                 continue
-            if not _node_references_attribute(interval_loop, "intervals"):
+            if not (
+                isinstance(interval_loop.target, ast.Name)
+                and isinstance(interval_loop.iter, ast.Call)
+                and isinstance(interval_loop.iter.func, ast.Name)
+                and interval_loop.iter.func.id == "range"
+                and len(interval_loop.iter.args) == 2
+                and isinstance(interval_loop.iter.args[0], ast.Name)
+                and isinstance(interval_loop.iter.args[1], ast.Name)
+                and interval_loop.iter.args[1].id == stop_name
+            ):
                 continue
-            if _direct_loop_body_augments_with_call(
+            start_name = interval_loop.iter.args[0].id
+            if not _tree_initializes_name_to_zero_before(
+                tree,
+                name=start_name,
+                before_line=getattr(period_loop, "lineno", 0),
+            ):
+                continue
+            if not _loop_references_indexed_grid_intervals(
+                interval_loop,
+                grid_expression=grid_expression,
+                interval_index_name=interval_loop.target.id,
+            ):
+                continue
+            if not _direct_loop_body_augments_with_call(
                 interval_loop,
                 "protection_payment_pv",
+            ):
+                continue
+            if _loop_updates_start_from_stop(
+                period_loop,
+                start_name=start_name,
+                stop_name=stop_name,
+                after_line=getattr(interval_loop, "lineno", 0),
             ):
                 return True
     return False

@@ -1321,6 +1321,11 @@ def evaluate(self, market_state):
         (
             "expected_first_event_weights(conditional)",
             "expected_first_event_weights(conditional, initial_survival_weight=1.0)",
+            (
+                "expected_first_event_weights(conditional, "
+                "initial_survival_weight=market_state.credit_curve."
+                "survival_probability(grid.intervals[-1].start_time))"
+            ),
             "sample_first_event_weights(conditional, n_paths=10000, seed=42)",
         ),
     )
@@ -1374,7 +1379,8 @@ def evaluate(self, market_state):
         market_state.credit_curve,
         grid.intervals,
     )
-    initial_survival_weight = market_state.credit_curve.survival_probability(
+    credit_curve = market_state.credit_curve
+    initial_survival_weight = credit_curve.survival_probability(
         grid.intervals[0].start_time,
     )
     weights = expected_first_event_weights(
@@ -1401,6 +1407,68 @@ def evaluate(self, market_state):
         assert any(
             f.category == "credit_default_swap_incomplete_event_grid"
             for f in findings
+        )
+        assert not any(
+            f.category == "credit_default_swap_initial_survival_missing"
+            for f in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("period_iterable", "interval_iterable"),
+        (
+            ("grid.periods[:1]", "range(interval_start, interval_stop)"),
+            ("grid.periods", "range(0, 1)"),
+        ),
+    )
+    def test_rejects_credit_default_swap_partial_grid_loops(
+        self,
+        registry,
+        period_iterable,
+        interval_iterable,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = f'''
+def evaluate(self, market_state):
+    initial_survival_weight = market_state.credit_curve.survival_probability(
+        grid.intervals[0].start_time,
+    )
+    weights = expected_first_event_weights(
+        conditional,
+        initial_survival_weight=initial_survival_weight,
+    )
+    premium_leg = 0.0
+    protection_leg = 0.0
+    interval_start = 0
+    for period_index, period in enumerate({period_iterable}):
+        interval_stop = grid.period_interval_stops[period_index]
+        premium_leg += coupon_cashflow_pv(CouponAccrual(
+            notional=1.0,
+            rate=0.01,
+            accrual=period.accrual_fraction,
+            discount_factor=1.0,
+            weight=weights.survival_weights[interval_stop - 1],
+        ))
+        for interval_index in {interval_iterable}:
+            interval = grid.intervals[interval_index]
+            protection_leg += protection_payment_pv(ProtectionPayment(
+                notional=1.0,
+                recovery=0.4,
+                default_probability=weights.event_weights[interval_index],
+                discount_factor=1.0,
+            ))
+        interval_start = interval_stop
+    return protection_leg - premium_leg
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
         )
 
     def test_accepts_credit_default_swap_explicit_first_event_composition(self, registry):
