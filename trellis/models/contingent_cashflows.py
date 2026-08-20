@@ -224,9 +224,16 @@ def conditional_event_probabilities_from_curve(
 
 def expected_first_event_weights(
     conditional_probabilities: tuple[float, ...],
+    *,
+    initial_survival_weight: float = 1.0,
 ) -> FirstEventWeights:
-    """Propagate conditional probabilities into exact first-event weights."""
-    alive = 1.0
+    """Propagate conditional probabilities into exact first-event weights.
+
+    ``initial_survival_weight`` carries unconditional survival mass from the
+    valuation origin to the first interval, which is required for forward-start
+    event grids.
+    """
+    alive = max(0.0, min(float(initial_survival_weight), 1.0))
     event_weights: list[float] = []
     survival_weights: list[float] = []
     for probability in conditional_probabilities:
@@ -241,15 +248,23 @@ def expected_first_event_weights(
 def sample_first_event_weights(
     conditional_probabilities: tuple[float, ...],
     *,
+    initial_survival_weight: float = 1.0,
     n_paths: int,
     seed: int,
 ) -> FirstEventWeights:
-    """Estimate first-event weights with one persistent alive-state simulation."""
+    """Estimate first-event weights with one persistent alive-state simulation.
+
+    ``initial_survival_weight`` carries survival from the valuation origin to
+    the first interval and seeds the alive population for forward-start grids.
+    """
     if n_paths <= 0:
         raise ValueError("n_paths must be positive")
 
     rng = raw_np.random.default_rng(seed)
     alive = raw_np.ones(int(n_paths), dtype=bool)
+    initial_survival = max(0.0, min(float(initial_survival_weight), 1.0))
+    if initial_survival < 1.0:
+        alive &= rng.uniform(size=int(n_paths)) < initial_survival
     event_weights: list[float] = []
     survival_weights: list[float] = []
     for probability in conditional_probabilities:

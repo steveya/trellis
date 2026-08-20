@@ -4981,6 +4981,8 @@ def test_deterministic_exact_binding_module_materializes_cds_target_aliases(
     assert "build_period_schedule(" in generated.code
     assert "build_default_event_grid(" in generated.code
     assert "conditional_event_probabilities_from_curve(" in generated.code
+    assert "initial_survival_weight = (" in generated.code
+    assert "initial_survival_weight=initial_survival_weight" in generated.code
     assert "coupon_cashflow_pv(" in generated.code
     assert "protection_payment_pv(" in generated.code
     assert "build_cds_schedule" not in generated.code
@@ -6859,6 +6861,7 @@ def test_deterministic_exact_binding_module_materializes_cds_analytical_composit
     assert "schedule = build_period_schedule(" in generated.code
     assert 'time_origin=getattr(spec, "valuation_date", None) or spec.start_date' in generated.code
     assert "weights = expected_first_event_weights(" in generated.code
+    assert "initial_survival_weight=initial_survival_weight" in generated.code
     assert "CouponAccrual(" in generated.code
     assert "ProtectionPayment(" in generated.code
     assert "price_cds_" not in generated.code
@@ -6903,6 +6906,7 @@ def test_deterministic_exact_binding_module_materializes_cds_monte_carlo_composi
     assert "from trellis.core.date_utils import build_period_schedule" in generated.code
     assert "schedule = build_period_schedule(" in generated.code
     assert "weights = sample_first_event_weights(" in generated.code
+    assert "initial_survival_weight=initial_survival_weight" in generated.code
     assert 'n_paths=getattr(spec, "n_paths", 250000)' in generated.code
     assert "seed=42" in generated.code
     assert "CouponAccrual(" in generated.code

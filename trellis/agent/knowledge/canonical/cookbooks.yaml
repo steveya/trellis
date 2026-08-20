@@ -245,7 +245,9 @@ analytical:
     \        stub=StubType.SHORT_LAST,\n        payment_lag_days=0,\n    )\n\
     \    grid = build_default_event_grid(schedule)\n\
     \    conditional = conditional_event_probabilities_from_curve(\n        market_state.credit_curve,\
-    \ grid.intervals\n    )\n    weights = expected_first_event_weights(conditional)\n\
+    \ grid.intervals\n    )\n    initial_survival_weight = (\n        float(market_state.credit_curve.survival_probability(grid.intervals[0].start_time))\n\
+    \        if grid.intervals else 1.0\n    )\n    weights = expected_first_event_weights(\n\
+    \        conditional, initial_survival_weight=initial_survival_weight\n    )\n\
     \    spread = float(spec.spread)\n    if spread > 1.0:\n        spread *= 1e-4\n\
     \n    premium = protection = accrued_on_event = accrued_to_valuation = 0.0\n   \
     \ cursor = 0\n    for period_index, period in enumerate(grid.periods):\n     \
@@ -423,8 +425,11 @@ monte_carlo:
     \ product-specific RNG, alive-state, schedule, or pricing helpers. Normalize the\
     \ spread once so semantically equivalent quotes such as `100` and `0.01` produce\
     \ the same PV up to Monte Carlo tolerance.\n\n```python\nconditional = conditional_event_probabilities_from_curve(\n\
-    \    market_state.credit_curve, grid.intervals\n)\nweights = sample_first_event_weights(\n\
-    \    conditional,\n    n_paths=getattr(spec, \"n_paths\", 250000) or 250000,\n\
+    \    market_state.credit_curve, grid.intervals\n)\ninitial_survival_weight = (\n\
+    \    float(market_state.credit_curve.survival_probability(grid.intervals[0].start_time))\n\
+    \    if grid.intervals else 1.0\n)\nweights = sample_first_event_weights(\n\
+    \    conditional,\n    initial_survival_weight=initial_survival_weight,\n\
+    \    n_paths=getattr(spec, \"n_paths\", 250000) or 250000,\n\
     \    seed=42,\n)\n# Use weights.event_weights and weights.survival_weights in the\
     \ same explicit signed leg loop as the analytical cookbook.\n```\nThe retained\
     \ `build_cds_schedule`, `price_cds_analytical`, and `price_cds_monte_carlo` functions\

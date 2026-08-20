@@ -100,6 +100,24 @@ def test_expected_first_event_weights_preserve_unconditional_event_mass():
         weights.event_weights = ()
 
 
+def test_first_event_weights_include_survival_to_a_forward_start():
+    exact = expected_first_event_weights(
+        (0.10, 0.20),
+        initial_survival_weight=0.80,
+    )
+    sampled = sample_first_event_weights(
+        (0.10, 0.20),
+        initial_survival_weight=0.80,
+        n_paths=400_000,
+        seed=17,
+    )
+
+    assert exact.event_weights == pytest.approx((0.08, 0.144))
+    assert exact.survival_weights == pytest.approx((0.72, 0.576))
+    assert sampled.event_weights == pytest.approx(exact.event_weights, abs=1.2e-3)
+    assert sampled.survival_weights == pytest.approx(exact.survival_weights, abs=1.2e-3)
+
+
 def test_curve_probabilities_and_sampled_first_event_weights_are_reproducible():
     schedule = build_period_schedule(
         date(2025, 1, 1),

@@ -4722,6 +4722,7 @@ def _credit_default_swap_composition_body(refs: set[str]) -> str | None:
             """\
             weights = sample_first_event_weights(
                 conditional_probabilities,
+                initial_survival_weight=initial_survival_weight,
                 n_paths=getattr(spec, "n_paths", 250000) or 250000,
                 seed=42,
             )
@@ -4729,7 +4730,10 @@ def _credit_default_swap_composition_body(refs: set[str]) -> str | None:
         ).rstrip()
     elif analytical_ref in refs:
         event_weight_call = (
-            "weights = expected_first_event_weights(conditional_probabilities)"
+            "weights = expected_first_event_weights(\n"
+            "    conditional_probabilities,\n"
+            "    initial_survival_weight=initial_survival_weight,\n"
+            ")"
         )
     else:
         return None
@@ -4756,6 +4760,11 @@ event_grid = build_default_event_grid(schedule)
 conditional_probabilities = conditional_event_probabilities_from_curve(
     market_state.credit_curve,
     event_grid.intervals,
+)
+initial_survival_weight = (
+    float(market_state.credit_curve.survival_probability(event_grid.intervals[0].start_time))
+    if event_grid.intervals
+    else 1.0
 )
 {event_weight_call}
 spread = float(spec.spread)
@@ -10264,7 +10273,7 @@ def _route_specific_retry_lines(
             "Do not import `trellis.models.processes.gbm` or any adjacent equity-process fallback just to make Monte Carlo compile.",
             "Do not import or instantiate `MonteCarloEngine` for a single-name CDS route. That engine expects a diffusion process and is the wrong scaffold here.",
             "Compose `build_period_schedule`, `build_default_event_grid`, and `conditional_event_probabilities_from_curve`; do not call `build_cds_schedule` or either `price_cds_*` compatibility helper.",
-            "Call `sample_first_event_weights(conditional_probabilities, n_paths=..., seed=42)` instead of writing adapter-local RNG or alive-state loops.",
+            "Compute survival to the first live interval and pass it as `initial_survival_weight` to `sample_first_event_weights(conditional_probabilities, initial_survival_weight=..., n_paths=..., seed=42)` instead of writing adapter-local RNG or alive-state loops.",
             "If the spec exposes `n_paths`, use it; otherwise use a comparison-stable path count such as `250000`. Do not hard-code `50000`.",
             "Assemble `CouponAccrual` / `coupon_cashflow_pv` and `ProtectionPayment` / `protection_payment_pv` explicitly over the grid's period-to-interval mapping.",
             "Use post-interval survival weights for scheduled coupons and unconditional event weights for protection plus accrued-on-event premium.",
@@ -10281,7 +10290,7 @@ def _route_specific_retry_lines(
             "Single-name CDS analytical pricing should stay on the same explicit schedule convention as the Monte Carlo comparator.",
             "Normalize the running spread immediately with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, then use only the local `spread` variable.",
             "Compose `build_period_schedule`, `build_default_event_grid`, and `conditional_event_probabilities_from_curve`; do not call `build_cds_schedule` or either `price_cds_*` compatibility helper.",
-            "Call `expected_first_event_weights(conditional_probabilities)` and use its post-interval survival and unconditional event weights directly.",
+            "Compute survival to the first live interval and pass it as `initial_survival_weight` to `expected_first_event_weights(...)`; forward-start weights must be unconditional from valuation.",
             "Assemble `CouponAccrual` / `coupon_cashflow_pv` and `ProtectionPayment` / `protection_payment_pv` explicitly.",
             "Discount scheduled coupons at `period_payment_times` and protection/accrued-on-event cashflows at each interval's `settlement_time`.",
             "Return `protection_leg - premium_leg - accrued_on_event + accrued_to_valuation`.",

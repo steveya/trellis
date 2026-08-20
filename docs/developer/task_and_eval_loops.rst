@@ -1392,7 +1392,9 @@ delegate to ``price_equity_digital_option_transform(...)``, while
 generic default-event and contingent-cashflow composition. Analytical and
 Monte Carlo target contracts bind
 ``expected_first_event_weights(...)`` and
-``sample_first_event_weights(...)`` respectively. These are task-runtime exact
+``sample_first_event_weights(...)`` respectively, with survival to the first
+live interval carried as ``initial_survival_weight`` for forward-start targets.
+These are task-runtime exact
 bindings, not cookbook-authored generated adapters; under
 ``--offline-local-agents`` they should complete without spec-design,
 code-generation, critic, or model-validator LLM calls.

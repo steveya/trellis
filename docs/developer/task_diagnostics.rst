@@ -427,8 +427,10 @@ also carries the path-count control explicitly. The planner specializes the
 CDS Monte Carlo schema with ``n_paths``, and the ``T38`` canary pins a tighter
 ``2.0`` percent comparison tolerance around the resulting internal reference.
 The exact target binds ``sample_first_event_weights(...)``; the analytical
-target binds ``expected_first_event_weights(...)``. If an artifact calls a
-product-level CDS helper, omits the event-grid/cashflow primitives, or
+target binds ``expected_first_event_weights(...)``. Both receive survival to
+the first live interval as ``initial_survival_weight`` so a forward-start target
+does not silently price conditional on survival to its start. If an artifact
+calls a product-level CDS helper, omits the event-grid/cashflow primitives, or
 hard-codes a smaller path count such as ``50000`` instead of flowing
 ``spec.n_paths``, expect a semantic or comparison-coherence failure before
 reviewer escalation.

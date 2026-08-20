@@ -69,6 +69,8 @@ analytical:
   credit_default_swap:
   - 'CREDIT-SURVIVAL CONSISTENCY: For single-name CDS, use build_period_schedule,
     build_default_event_grid, and conditional_event_probabilities_from_curve.
+    Pass survival to the first live grid interval as initial_survival_weight so
+    forward-start event and premium mass is unconditional from valuation.
     Use expected_first_event_weights for analytical evidence or
     sample_first_event_weights for Monte Carlo evidence. Do not call the retained
     build_cds_schedule or price_cds_* compatibility/reference helpers.'

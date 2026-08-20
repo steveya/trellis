@@ -149,7 +149,7 @@ def build_cds_schedule(
     """Build the canonical single-name CDS schedule.
 
     The compatibility/reference APIs use ``start_date`` as the schedule time
-    origin so analytical and Monte Carlo evidence shares the same event times.
+    origin so analytical and Monte Carlo evidence share the same event times.
     """
     origin = start_date if time_origin is None else time_origin
     return build_period_schedule(

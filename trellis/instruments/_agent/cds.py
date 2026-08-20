@@ -120,6 +120,11 @@ Implementation target: mc_cds."""
             credit_curve,
             event_grid.intervals,
         )
+        initial_survival_weight = (
+            float(credit_curve.survival_probability(event_grid.intervals[0].start_time))
+            if event_grid.intervals
+            else 1.0
+        )
         pricing_method = str(
             getattr(spec, "pricing_method", "analytical") or "analytical"
         ).strip().lower()
@@ -131,11 +136,15 @@ Implementation target: mc_cds."""
                 path_count = 10000
             weights = sample_first_event_weights(
                 conditional_probabilities,
+                initial_survival_weight=initial_survival_weight,
                 n_paths=path_count,
                 seed=42,
             )
         elif pricing_method in {"", "analytical"}:
-            weights = expected_first_event_weights(conditional_probabilities)
+            weights = expected_first_event_weights(
+                conditional_probabilities,
+                initial_survival_weight=initial_survival_weight,
+            )
         else:
             raise ValueError(f"unsupported CDS pricing_method: {pricing_method!r}")
 

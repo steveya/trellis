@@ -649,7 +649,9 @@ route-lowering metadata before pricing or code generation starts.
 For single-name CDS, the generated construction route is now the
 ``single_name_default_event_composition`` card rather than a product pricer.
 It builds public coupon periods, a bounded default-event grid, survival-ratio
-probabilities, and either exact or sampled first-event weights. Generated code
+probabilities, and either exact or sampled first-event weights. For a
+forward-starting CDS, survival to the first live interval is passed explicitly
+so those weights remain unconditional from the valuation date. Generated code
 then assembles ``CouponAccrual`` and ``ProtectionPayment`` values explicitly,
 including scheduled premium, accrued-on-event premium, protection, and
 discounting. Existing ``price_cds_analytical(...)`` and

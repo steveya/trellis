@@ -287,7 +287,9 @@
     - >-
       CREDIT-SURVIVAL: Build the public period schedule and default-event grid,
       derive conditional probabilities from curve survival ratios, then propagate
-      exact first-event and survival weights. Assemble CouponAccrual and
+      exact first-event and survival weights from survival to the first live
+      interval. Pass that initial_survival_weight explicitly so forward-start
+      mass remains unconditional from valuation. Assemble CouponAccrual and
       ProtectionPayment values explicitly through their public PV kernels.
     - >-
       MC ALTERNATIVE: Keep the same grid and leg assembly, but replace

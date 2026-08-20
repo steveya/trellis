@@ -275,6 +275,43 @@ class TestCreditDefaultSwapHelpers:
 
         assert observed == pytest.approx(reference, rel=1e-12, abs=1e-8)
 
+    def test_cds_agent_payoff_forward_start_includes_survival_to_start(self):
+        forward_start = date(2025, 11, 15)
+        spec = CDSSpec(
+            notional=10_000_000.0,
+            spread=0.015,
+            recovery=0.4,
+            valuation_date=SETTLE,
+            start_date=forward_start,
+            end_date=date(2030, 11, 15),
+            pricing_method="analytical",
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.04),
+            credit_curve=CreditCurve.flat(0.025),
+        )
+        reference_schedule = build_cds_schedule(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            spec.day_count,
+            time_origin=spec.valuation_date,
+        )
+        reference = price_cds_analytical(
+            notional=spec.notional,
+            spread_quote=spec.spread,
+            recovery=spec.recovery,
+            schedule=reference_schedule,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+        )
+
+        observed = CDSPayoff(spec).evaluate(market_state)
+
+        assert observed == pytest.approx(reference, rel=1e-12, abs=1e-8)
+
     def test_cds_agent_payoff_sampled_composition_matches_reference_monte_carlo(self):
         spec = CDSSpec(
             notional=100.0,

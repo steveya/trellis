@@ -1180,7 +1180,9 @@ composition is:
 2. ``build_default_event_grid(...)`` partitions each live period into bounded
    curve-time intervals while preserving coupon accrual measurements.
 3. ``conditional_event_probabilities_from_curve(...)`` computes interval
-   probabilities from survival ratios.
+   probabilities from survival ratios. Survival to the first live interval is
+   carried separately as ``initial_survival_weight`` so forward-start weights
+   remain unconditional from valuation.
 4. ``expected_first_event_weights(...)`` supplies exact unconditional event
    and post-interval survival mass, or
    ``sample_first_event_weights(...)`` supplies reproducible empirical mass

@@ -484,6 +484,7 @@ def _render_family_route_guidance(
             "- Build `build_period_schedule(...)` with the declared coupon day count and explicit curve-time origin, then call `build_default_event_grid(schedule)` so premium accrual and survival/discount time remain separate.",
             "- For the bounded standard-CDS route, pass `calendar=WEEKEND_ONLY`, `bda=BusinessDayAdjustment.FOLLOWING`, `roll_convention=RollConvention.NONE`, `stub=StubType.SHORT_LAST`, and `payment_lag_days=0`; use different conventions only when the request declares them.",
             "- Derive ordered conditional probabilities with `conditional_event_probabilities_from_curve(credit_curve, event_grid.intervals)`.",
+            "- Compute survival to the first live interval with `credit_curve.survival_probability(event_grid.intervals[0].start_time)` (or `1.0` for an empty grid) and pass it as `initial_survival_weight`; forward-start weights must be unconditional from valuation.",
             "- Assemble the scheduled premium/accrued leg with `CouponAccrual` plus `coupon_cashflow_pv`, and the trigger leg with `ProtectionPayment` plus `protection_payment_pv`.",
             "- Use `event_grid.period_interval_stops`, `period_payment_times`, and `elapsed_period_fractions` to align interval weights with each schedule period; do not reconstruct those mappings by hand.",
             "- CDS running spreads may arrive as basis points. Normalize once at the top of `evaluate()` with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, then use only the local decimal spread.",
@@ -493,13 +494,13 @@ def _render_family_route_guidance(
         ])
         if method == "monte_carlo":
             lines.extend([
-                "- Produce Monte Carlo weights with `sample_first_event_weights(conditional_probabilities, n_paths=..., seed=42)`; this generic primitive owns the persistent alive-state simulation.",
+                "- Produce Monte Carlo weights with `sample_first_event_weights(conditional_probabilities, initial_survival_weight=initial_survival_weight, n_paths=..., seed=42)`; this generic primitive owns the persistent alive-state simulation.",
                 "- Use `spec.n_paths` when available and otherwise a comparison-stable default such as `250000`; do not hard-code `50000` for comparison evidence.",
                 "- Do not instantiate `MonteCarloEngine` or write adapter-local RNG/default-state loops. This lane samples one first-event process, not an equity diffusion.",
             ])
         elif method == "analytical":
             lines.extend([
-                "- Produce deterministic weights with `expected_first_event_weights(conditional_probabilities)`; its event weights are unconditional first-event mass and its survival weights are post-interval alive mass.",
+                "- Produce deterministic weights with `expected_first_event_weights(conditional_probabilities, initial_survival_weight=initial_survival_weight)`; its event weights are unconditional first-event mass and its survival weights are post-interval alive mass.",
                 "- Use the final survival weight in each period for the scheduled premium and each interval event weight for protection plus accrued-on-event premium.",
             ])
         elif method == "qmc":
