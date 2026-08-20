@@ -488,6 +488,7 @@ def _render_family_route_guidance(
             "- Compute survival to the first live interval with `credit_curve.survival_probability(event_grid.intervals[0].start_time)` (or `1.0` for an empty grid) and pass it as `initial_survival_weight`; forward-start weights must be unconditional from valuation.",
             "- Assemble the scheduled premium/accrued leg with `CouponAccrual` plus `coupon_cashflow_pv`, and the trigger leg with `ProtectionPayment` plus `protection_payment_pv`.",
             "- Use `event_grid.period_interval_stops`, `period_payment_times`, and `elapsed_period_fractions` to align interval weights with each schedule period; do not reconstruct those mappings by hand.",
+            "- Keep the interval loop as a reachable direct child of the period loop and accumulate every premium, protection, event-accrual, and valuation-accrual leg with additive `+=` updates.",
             "- CDS running spreads may arrive as basis points. Normalize once at the top of `evaluate()` with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, then use only the local decimal spread.",
             "- Discount scheduled coupons at `event_grid.period_payment_times`; discount protection and accrued-on-event cashflows at each interval's `settlement_time`.",
             "- Return the explicitly signed value `protection_leg - premium_leg - accrued_on_event + accrued_to_valuation`.",

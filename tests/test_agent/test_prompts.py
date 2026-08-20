@@ -1370,6 +1370,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "period_payment_times" in prompt
     assert "settlement_time" in prompt
     assert "accrued_on_event" in prompt
+    assert "additive `+=` updates" in prompt
 
 
 def test_distilled_builder_memory_keeps_legacy_cds_labels_and_omits_nearest_products():
@@ -1449,6 +1450,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "seed=42" in prompt
     assert "period_payment_times" in prompt
     assert "settlement_time" in prompt
+    assert "additive `+=` updates" in prompt
 
 
 def test_executor_credit_default_swap_retry_pins_discount_and_time_origin():

@@ -198,6 +198,27 @@ def _guard_cds_accumulator(
     return "\n".join(lines[:start] + guarded + lines[stop:]) + "\n"
 
 
+def _guard_cds_interval_loop(source: str, *, condition: str) -> str:
+    """Move the interval loop beneath a synthetic branch guard."""
+    lines = source.splitlines()
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line.lstrip().startswith("for interval_index in range(")
+    )
+    indentation = len(lines[start]) - len(lines[start].lstrip())
+    stop = start + 1
+    while stop < len(lines):
+        line = lines[stop]
+        if line.strip() and len(line) - len(line.lstrip()) <= indentation:
+            break
+        stop += 1
+    guarded = [" " * indentation + f"if {condition}:"] + [
+        "    " + line for line in lines[start:stop]
+    ]
+    return "\n".join(lines[:start] + guarded + lines[stop:]) + "\n"
+
+
 # ---------------------------------------------------------------------------
 # MarketDataValidator
 # ---------------------------------------------------------------------------
@@ -1849,6 +1870,57 @@ def evaluate(self, market_state):
             finding.category == "credit_default_swap_incomplete_event_grid"
             for finding in findings
         )
+
+    def test_rejects_credit_default_swap_interval_loop_hidden_in_branch(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _guard_cds_interval_loop(
+            _cds_composition_source(),
+            condition="False",
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("accumulator", "category"),
+        (
+            ("premium_leg", "credit_default_swap_incomplete_event_grid"),
+            ("protection_leg", "credit_default_swap_incomplete_event_grid"),
+            ("accrued_on_event", "credit_default_swap_accrual_mapping"),
+            ("accrued_to_valuation", "credit_default_swap_economic_binding"),
+        ),
+    )
+    def test_rejects_credit_default_swap_non_additive_leg_update(
+        self,
+        registry,
+        accumulator,
+        category,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            f"{accumulator} +=",
+            f"{accumulator} -=",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(finding.category == category for finding in findings)
 
     @pytest.mark.parametrize(
         ("survival_index", "event_index"),

@@ -671,6 +671,7 @@ def _direct_loop_body_augments_with_call(
     """Detect an accumulated call in a loop body, excluding nested loops."""
     return any(
         isinstance(node, ast.AugAssign)
+        and isinstance(node.op, ast.Add)
         and _node_calls_symbol(node.value, symbol)
         for node in _direct_loop_body_nodes(loop)
     )
@@ -685,6 +686,7 @@ def _direct_loop_augmented_values_with_call(
         node.value
         for node in _direct_loop_body_nodes(loop)
         if isinstance(node, ast.AugAssign)
+        and isinstance(node.op, ast.Add)
         and _node_calls_symbol(node.value, symbol)
     )
 
@@ -699,6 +701,7 @@ def _direct_loop_augmented_target_names(
         node.target.id
         for node in _direct_loop_body_nodes(loop)
         if isinstance(node, ast.AugAssign)
+        and isinstance(node.op, ast.Add)
         and isinstance(node.target, ast.Name)
         and (symbol is None or _node_calls_symbol(node.value, symbol))
     )
@@ -1326,11 +1329,8 @@ def _cds_full_event_grid_loops(
             "coupon_cashflow_pv",
         ):
             continue
-        for interval_loop in ast.walk(period_loop):
-            if interval_loop is period_loop or not isinstance(
-                interval_loop,
-                (ast.For, ast.AsyncFor),
-            ):
+        for interval_loop in _direct_loop_body_nodes(period_loop):
+            if not isinstance(interval_loop, (ast.For, ast.AsyncFor)):
                 continue
             if not (
                 isinstance(interval_loop.target, ast.Name)
@@ -2366,6 +2366,7 @@ def _cds_binds_active_economic_terms(tree: ast.AST) -> bool:
             node.value
             for node in _direct_loop_body_nodes(period_loop)
             if isinstance(node, ast.AugAssign)
+            and isinstance(node.op, ast.Add)
             and isinstance(node.target, ast.Name)
             and node.target.id not in premium_names
         )

@@ -1199,8 +1199,9 @@ period-to-interval iteration, discount coordinates, signs, and the final
 ``protection - premium - accrued_on_event + accrued_to_valuation`` result.
 That composition must be reachable in the adapter's single ``evaluate`` body;
 unused helpers and statements after an unconditional exit are not pricing
-evidence. Required leg accumulations remain unconditional after any
-early-continue guard, and sampled weights bind the optional path control through
+evidence. The interval loop remains a reachable direct child of the period loop,
+and every leg uses an additive ``+=`` update that remains unconditional after
+any early-continue guard. Sampled weights bind the optional path control through
 an explicit non-null ``250000`` fallback.
 The current typed route admits only the documented standard schedule
 conventions (weekend calendar, following adjustment, no roll, short-last stub,
