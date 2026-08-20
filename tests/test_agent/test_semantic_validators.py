@@ -1963,6 +1963,49 @@ def evaluate(self, market_state):
             "accrued_to_valuation",
         ),
     )
+    @pytest.mark.parametrize(
+        "mutation_template",
+        (
+            "{accumulator} += 1000000.0",
+            "{accumulator} *= 0.0",
+            "{accumulator}, ignored = 0.0, None",
+            "({accumulator} := 0.0)",
+        ),
+    )
+    def test_rejects_credit_default_swap_unrecognized_accumulator_mutation(
+        self,
+        registry,
+        accumulator,
+        mutation_template,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        mutation = mutation_template.format(accumulator=accumulator)
+        source = _cds_composition_source().replace(
+            "    return float(",
+            f"    {mutation}\n    return float(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_sign_convention"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "accumulator",
+        (
+            "premium_leg",
+            "protection_leg",
+            "accrued_on_event",
+            "accrued_to_valuation",
+        ),
+    )
     def test_rejects_credit_default_swap_nonzero_leg_initialization(
         self,
         registry,

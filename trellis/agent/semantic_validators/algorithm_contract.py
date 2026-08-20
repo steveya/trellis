@@ -669,11 +669,22 @@ def _direct_loop_body_augments_with_call(
     symbol: str,
 ) -> bool:
     """Detect an accumulated call in a loop body, excluding nested loops."""
-    return any(
-        isinstance(node, ast.AugAssign)
-        and isinstance(node.op, ast.Add)
-        and _node_calls_symbol(node.value, symbol)
+    return bool(_direct_loop_augments(loop, symbol=symbol))
+
+
+def _direct_loop_augments(
+    loop: ast.For | ast.AsyncFor,
+    *,
+    symbol: str | None = None,
+) -> tuple[ast.AugAssign, ...]:
+    """Return recognized additive name updates directly owned by one loop."""
+    return tuple(
+        node
         for node in _direct_loop_body_nodes(loop)
+        if isinstance(node, ast.AugAssign)
+        and isinstance(node.op, ast.Add)
+        and isinstance(node.target, ast.Name)
+        and (symbol is None or _node_calls_symbol(node.value, symbol))
     )
 
 
@@ -699,11 +710,7 @@ def _direct_loop_augmented_target_names(
     """Return direct-loop accumulator names, optionally filtered by a call."""
     return tuple(
         node.target.id
-        for node in _direct_loop_body_nodes(loop)
-        if isinstance(node, ast.AugAssign)
-        and isinstance(node.op, ast.Add)
-        and isinstance(node.target, ast.Name)
-        and (symbol is None or _node_calls_symbol(node.value, symbol))
+        for node in _direct_loop_augments(loop, symbol=symbol)
     )
 
 
@@ -1282,13 +1289,14 @@ def _tree_initializes_name_to_zero_before(
     return False
 
 
-def _name_has_single_zero_initialization_before(
+def _name_has_only_expected_accumulator_mutations(
     tree: ast.AST,
     *,
     name: str,
     before_line: int,
+    allowed_augments: tuple[ast.AugAssign, ...],
 ) -> bool:
-    """Require one zero initialization and forbid direct reassignment."""
+    """Own every write to one zero initializer or a recognized loop update."""
     assignments = tuple(
         (node, assignment[1])
         for node in ast.walk(tree)
@@ -1298,13 +1306,36 @@ def _name_has_single_zero_initialization_before(
     if len(assignments) != 1:
         return False
     node, value = assignments[0]
-    return (
-        getattr(node, "lineno", 0) < before_line
+    initializer_target = (
+        node.targets[0] if isinstance(node, ast.Assign) else node.target
+    )
+    if not (
+        len(allowed_augments) == 1
+        and isinstance(initializer_target, ast.Name)
+        and all(
+            isinstance(augment.target, ast.Name) and augment.target.id == name
+            for augment in allowed_augments
+        )
+        and getattr(node, "lineno", 0) < before_line
         and isinstance(value, ast.Constant)
         and isinstance(value.value, (int, float))
         and not isinstance(value.value, bool)
         and float(value.value) == 0.0
-    )
+    ):
+        return False
+
+    allowed_targets = {
+        id(initializer_target),
+        *(id(augment.target) for augment in allowed_augments),
+    }
+    actual_targets = {
+        id(candidate)
+        for candidate in ast.walk(tree)
+        if isinstance(candidate, ast.Name)
+        and candidate.id == name
+        and isinstance(candidate.ctx, (ast.Store, ast.Del))
+    }
+    return actual_targets == allowed_targets
 
 
 def _loop_references_indexed_grid_intervals(
@@ -2503,27 +2534,32 @@ def _cds_preserves_sign_convention(tree: ast.AST) -> bool:
         if terms is not None:
             returned_terms.append(sorted(terms))
     for period_loop, interval_loop, _ in _cds_full_event_grid_loops(tree):
-        premium_names = _direct_loop_augmented_target_names(
+        premium_augments = _direct_loop_augments(
             period_loop,
             symbol="coupon_cashflow_pv",
         )
-        protection_names = _direct_loop_augmented_target_names(
+        protection_augments = _direct_loop_augments(
             interval_loop,
             symbol="protection_payment_pv",
         )
-        event_accrual_names = _direct_loop_augmented_target_names(
+        event_accrual_augments = _direct_loop_augments(
             interval_loop,
             symbol="coupon_cashflow_pv",
         )
-        valuation_accrual_names = tuple(
-            name
-            for name in _direct_loop_augmented_target_names(period_loop)
-            if name not in premium_names
+        premium_names = tuple(augment.target.id for augment in premium_augments)
+        valuation_accrual_augments = tuple(
+            augment
+            for augment in _direct_loop_augments(period_loop)
+            if augment.target.id not in premium_names
         )
-        for protection_name in protection_names:
-            for premium_name in premium_names:
-                for event_accrual_name in event_accrual_names:
-                    for valuation_accrual_name in valuation_accrual_names:
+        for protection_augment in protection_augments:
+            for premium_augment in premium_augments:
+                for event_accrual_augment in event_accrual_augments:
+                    for valuation_accrual_augment in valuation_accrual_augments:
+                        protection_name = protection_augment.target.id
+                        premium_name = premium_augment.target.id
+                        event_accrual_name = event_accrual_augment.target.id
+                        valuation_accrual_name = valuation_accrual_augment.target.id
                         accumulator_names = (
                             protection_name,
                             premium_name,
@@ -2541,12 +2577,22 @@ def _cds_preserves_sign_convention(tree: ast.AST) -> bool:
                         if (
                             len(set(accumulator_names)) == 4
                             and all(
-                                _name_has_single_zero_initialization_before(
+                                _name_has_only_expected_accumulator_mutations(
                                     tree,
                                     name=name,
                                     before_line=period_loop.lineno,
+                                    allowed_augments=(augment,),
                                 )
-                                for name in accumulator_names
+                                for name, augment in zip(
+                                    accumulator_names,
+                                    (
+                                        protection_augment,
+                                        premium_augment,
+                                        event_accrual_augment,
+                                        valuation_accrual_augment,
+                                    ),
+                                    strict=True,
+                                )
                             )
                             and expected in returned_terms
                         ):
