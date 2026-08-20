@@ -36,3 +36,18 @@ def test_mcp_extras_exclude_unmigrated_major_version(extra: str) -> None:
     assert Version("1.27") in requirement.specifier
     assert Version("1.99.99") in requirement.specifier
     assert Version("2.0.0") not in requirement.specifier
+
+
+def test_mcp_contract_test_dependencies_are_declared_in_dev_extra() -> None:
+    pyproject = tomllib.loads((_REPO_ROOT / "pyproject.toml").read_text())
+    dev_dependencies = pyproject["project"]["optional-dependencies"]["dev"]
+    requirements = {
+        Requirement(dependency).name: Requirement(dependency)
+        for dependency in dev_dependencies
+    }
+
+    assert "packaging" in requirements
+    assert "tomli" in requirements
+    assert requirements["tomli"].marker is not None
+    assert requirements["tomli"].marker.evaluate({"python_version": "3.10"})
+    assert not requirements["tomli"].marker.evaluate({"python_version": "3.11"})

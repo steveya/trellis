@@ -617,6 +617,115 @@ def _find_calls_for_symbol(tree: ast.AST, symbol: str) -> tuple[ast.Call, ...]:
     )
 
 
+def _node_references_attribute(node: ast.AST, attribute: str) -> bool:
+    """Return whether an AST subtree references an attribute name."""
+    return any(
+        isinstance(candidate, ast.Attribute) and candidate.attr == attribute
+        for candidate in ast.walk(node)
+    )
+
+
+def _node_calls_symbol(node: ast.AST, symbol: str) -> bool:
+    """Return whether an AST subtree contains a call to ``symbol``."""
+    return any(
+        isinstance(candidate, ast.Call)
+        and _call_matches_symbol(candidate, symbol)
+        for candidate in ast.walk(node)
+    )
+
+
+def _direct_loop_body_augments_with_call(
+    loop: ast.For | ast.AsyncFor,
+    symbol: str,
+) -> bool:
+    """Detect an accumulated call in a loop body, excluding nested loops."""
+
+    class _Visitor(ast.NodeVisitor):
+        found = False
+
+        def visit_For(self, node: ast.For) -> None:  # noqa: N802
+            return None
+
+        def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
+            return None
+
+        def visit_AugAssign(self, node: ast.AugAssign) -> None:  # noqa: N802
+            if _node_calls_symbol(node.value, symbol):
+                self.found = True
+            self.generic_visit(node)
+
+    visitor = _Visitor()
+    for statement in loop.body:
+        visitor.visit(statement)
+    return visitor.found
+
+
+def _cds_initial_survival_expression_is_valid(
+    tree: ast.AST,
+    expression: ast.AST,
+) -> bool:
+    """Recognize survival to the first live default-event interval."""
+    candidates = [expression]
+    if isinstance(expression, ast.Name):
+        candidates.extend(
+            node.value
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.Assign, ast.AnnAssign))
+            and (
+                (
+                    isinstance(node, ast.Assign)
+                    and any(
+                        isinstance(target, ast.Name)
+                        and target.id == expression.id
+                        for target in node.targets
+                    )
+                )
+                or (
+                    isinstance(node, ast.AnnAssign)
+                    and isinstance(node.target, ast.Name)
+                    and node.target.id == expression.id
+                )
+            )
+            and node.value is not None
+        )
+    return any(
+        _node_calls_symbol(candidate, "survival_probability")
+        and _node_references_attribute(candidate, "intervals")
+        and _node_references_attribute(candidate, "start_time")
+        for candidate in candidates
+    )
+
+
+def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
+    """Recognize nested period/interval aggregation across a default-event grid."""
+    for period_loop in ast.walk(tree):
+        if not isinstance(period_loop, (ast.For, ast.AsyncFor)):
+            continue
+        if not _node_references_attribute(period_loop.iter, "periods"):
+            continue
+        if not _node_references_attribute(period_loop, "period_interval_stops"):
+            continue
+        if not _direct_loop_body_augments_with_call(
+            period_loop,
+            "coupon_cashflow_pv",
+        ):
+            continue
+        for interval_loop in ast.walk(period_loop):
+            if interval_loop is period_loop or not isinstance(
+                interval_loop,
+                (ast.For, ast.AsyncFor),
+            ):
+                continue
+            if not _node_references_attribute(interval_loop, "intervals"):
+                continue
+            if _direct_loop_body_augments_with_call(
+                interval_loop,
+                "protection_payment_pv",
+            ):
+                return True
+    return False
+
+
 class AlgorithmContractValidator:
     """Validates that generated code implements the correct pricing algorithm."""
 
@@ -875,7 +984,7 @@ class AlgorithmContractValidator:
         source: str,
         route_spec: RouteSpec,
     ) -> list[SemanticFinding]:
-        """Reject product-level CDS schedule and pricing compatibility helpers."""
+        """Enforce the public CDS first-event composition boundary."""
         if route_spec.id != "credit_default_swap":
             return []
         findings: list[SemanticFinding] = []
@@ -892,6 +1001,64 @@ class AlgorithmContractValidator:
                         f"'{symbol}'. Build the public period schedule, first-event "
                         "grid, survival-derived weights, and signed premium/protection "
                         "cashflows explicitly."
+                    ),
+                )
+            )
+
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return findings
+
+        for symbol in (
+            "expected_first_event_weights",
+            "sample_first_event_weights",
+        ):
+            for call in _find_calls_for_symbol(tree, symbol):
+                initial_survival = next(
+                    (
+                        keyword.value
+                        for keyword in call.keywords
+                        if keyword.arg == "initial_survival_weight"
+                    ),
+                    None,
+                )
+                if initial_survival is not None and (
+                    _cds_initial_survival_expression_is_valid(
+                        tree,
+                        initial_survival,
+                    )
+                ):
+                    continue
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_initial_survival_missing",
+                        message=(
+                            f"Route '{route_spec.id}' must call '{symbol}' with "
+                            "initial_survival_weight equal to credit-curve survival "
+                            "at the first live event-grid interval start. Conditional "
+                            "weights alone overstate forward-start CDS cashflows."
+                        ),
+                    )
+                )
+
+        if (
+            _calls_symbol(source, "coupon_cashflow_pv")
+            and _calls_symbol(source, "protection_payment_pv")
+            and not _cds_composes_full_event_grid(tree)
+        ):
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_incomplete_event_grid",
+                    message=(
+                        f"Route '{route_spec.id}' must aggregate scheduled premium "
+                        "cashflows across every event-grid period and protection "
+                        "cashflows across the nested period-to-interval mapping. "
+                        "Pricing fixed index positions does not cover the CDS horizon."
                     ),
                 )
             )

@@ -434,6 +434,12 @@ calls a product-level CDS helper, omits the event-grid/cashflow primitives, or
 hard-codes a smaller path count such as ``50000`` instead of flowing
 ``spec.n_paths``, expect a semantic or comparison-coherence failure before
 reviewer escalation.
+The route validator also checks that the first-event weight call derives its
+initial mass from credit-curve survival at the first live interval and that
+premium and protection PVs are accumulated through the full
+``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
+assemblies fail semantic validation even when they mention every required
+primitive.
 
 For analytical rate-style swaption routes, the deterministic bundle also checks
 composition consistency against the retained
