@@ -442,18 +442,25 @@ empty-grid ``else 1.0`` guard and simple aliases/``float`` conversion are
 accepted. The same grid must resolve back through
 ``build_default_event_grid`` to a ``build_period_schedule`` whose
 ``time_origin`` is the active valuation date (with the declared start-date
-fallback). An unconditional ``time_origin=spec.start_date`` makes a
-forward-start grid begin at zero and therefore fails closed. The validator also
-checks that
-premium and protection PVs are accumulated through the full
+fallback) and whose start date, end date, frequency, and day-count convention
+are bound to the active spec. An unconditional ``time_origin=spec.start_date``
+makes a forward-start grid begin at zero and therefore fails closed. Both the
+conditional event probabilities and initial survival must come from the active
+market credit curve. The validator also checks that premium and protection PVs
+are accumulated through the full
 ``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
 assemblies fail semantic validation even when they mention every required
 primitive. Within that mapping, scheduled premium must use
 ``survival_weights[interval_stop - 1]`` while protection and accrued-on-event
 cashflows use ``event_weights[interval_index]`` (directly or through simple
-aliases). Scheduled premium discounting must use
+aliases). Those indexed weights must belong to the validated
+``expected_first_event_weights`` or ``sample_first_event_weights`` result, not
+to a separately constructed object. Scheduled coupon accrual must use the
+active period accrual; accrued-on-event must use that period accrual multiplied
+by the active interval's elapsed fraction. Scheduled premium discounting must use
 ``period_payment_times[period_index]``; protection and accrued-on-event
-discounting must use the active interval's ``settlement_time``. The accepted
+discounting must use the active interval's ``settlement_time``, and each
+discount call must be owned by the active market discount curve. The accepted
 return AST must preserve the protection-buyer convention
 ``protection_leg - premium_leg - accrued_on_event + accrued_to_valuation``;
 reversed legs, omitted accrual terms, or wrong accrual signs fail closed.

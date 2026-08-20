@@ -798,6 +798,7 @@ def _subtree_keyword_matches(
 
 
 def _is_weight_at_name(
+    tree: ast.AST,
     expression: ast.AST,
     *,
     weight_attribute: str,
@@ -808,11 +809,16 @@ def _is_weight_at_name(
         isinstance(expression, ast.Subscript)
         and isinstance(expression.value, ast.Attribute)
         and expression.value.attr == weight_attribute
+        and _expression_resolves_to_first_event_weights(
+            tree,
+            expression.value.value,
+        )
         and _subscript_uses_name(expression, index_name)
     )
 
 
 def _is_survival_weight_at_period_stop(
+    tree: ast.AST,
     expression: ast.AST,
     *,
     stop_name: str,
@@ -822,6 +828,10 @@ def _is_survival_weight_at_period_stop(
         isinstance(expression, ast.Subscript)
         and isinstance(expression.value, ast.Attribute)
         and expression.value.attr == "survival_weights"
+        and _expression_resolves_to_first_event_weights(
+            tree,
+            expression.value.value,
+        )
         and isinstance(expression.slice, ast.BinOp)
         and isinstance(expression.slice.op, ast.Sub)
         and isinstance(expression.slice.left, ast.Name)
@@ -837,7 +847,63 @@ def _is_survival_weight_at_period_stop(
     )
 
 
+def _expression_resolves_to_first_event_weights(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Recognize the result of a validated analytical or sampled weight call."""
+    if isinstance(expression, ast.Call) and any(
+        _call_matches_symbol(expression, symbol)
+        for symbol in (
+            "expected_first_event_weights",
+            "sample_first_event_weights",
+        )
+    ):
+        return True
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return False
+    assigned_values = _assigned_values_for_name(tree, expression.id)
+    return bool(assigned_values) and all(
+        _expression_resolves_to_first_event_weights(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
+        )
+        for assigned_value in assigned_values
+    )
+
+
+def _expression_resolves_to_discount_curve(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Recognize the active market discount curve and unambiguous aliases."""
+    if (
+        isinstance(expression, ast.Attribute)
+        and expression.attr == "discount"
+        and isinstance(expression.value, ast.Name)
+        and expression.value.id == "market_state"
+    ):
+        return True
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return False
+    assigned_values = _assigned_values_for_name(tree, expression.id)
+    return bool(assigned_values) and all(
+        _expression_resolves_to_discount_curve(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
+        )
+        for assigned_value in assigned_values
+    )
+
+
 def _is_discount_call_at_period_payment(
+    tree: ast.AST,
     expression: ast.AST,
     *,
     grid_expression: ast.AST,
@@ -847,6 +913,8 @@ def _is_discount_call_at_period_payment(
     if not (
         isinstance(expression, ast.Call)
         and _call_matches_symbol(expression, "discount")
+        and isinstance(expression.func, ast.Attribute)
+        and _expression_resolves_to_discount_curve(tree, expression.func.value)
         and len(expression.args) == 1
         and not expression.keywords
     ):
@@ -886,6 +954,7 @@ def _interval_alias_names(
 
 
 def _is_discount_call_at_interval_settlement(
+    tree: ast.AST,
     expression: ast.AST,
     *,
     grid_expression: ast.AST,
@@ -896,6 +965,8 @@ def _is_discount_call_at_interval_settlement(
     if not (
         isinstance(expression, ast.Call)
         and _call_matches_symbol(expression, "discount")
+        and isinstance(expression.func, ast.Attribute)
+        and _expression_resolves_to_discount_curve(tree, expression.func.value)
         and len(expression.args) == 1
         and not expression.keywords
     ):
@@ -925,7 +996,12 @@ def _expression_resolves_to_credit_curve(
     seen_names: frozenset[str] = frozenset(),
 ) -> bool:
     """Recognize a direct or simply aliased ``credit_curve`` expression."""
-    if isinstance(expression, ast.Attribute) and expression.attr == "credit_curve":
+    if (
+        isinstance(expression, ast.Attribute)
+        and expression.attr == "credit_curve"
+        and isinstance(expression.value, ast.Name)
+        and expression.value.id == "market_state"
+    ):
         return True
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return False
@@ -954,6 +1030,7 @@ def _cds_conditional_event_grid(
         )
         and len(expression.args) == 2
         and not expression.keywords
+        and _expression_resolves_to_credit_curve(tree, expression.args[0])
     ):
         intervals = expression.args[1]
         if isinstance(intervals, ast.Attribute) and intervals.attr == "intervals":
@@ -1295,6 +1372,7 @@ def _cds_uses_active_event_weights(tree: ast.AST) -> bool:
                 value,
                 keyword_name="weight",
                 predicate=lambda expression: _is_survival_weight_at_period_stop(
+                    tree,
                     expression,
                     stop_name=stop_name,
                 ),
@@ -1315,6 +1393,7 @@ def _cds_uses_active_event_weights(tree: ast.AST) -> bool:
         )
         def event_weight_matches(expression: ast.AST) -> bool:
             return _is_weight_at_name(
+                tree,
                 expression,
                 weight_attribute="event_weights",
                 index_name=interval_index_name,
@@ -1361,6 +1440,7 @@ def _cds_uses_active_discount_times(tree: ast.AST) -> bool:
 
         def scheduled_discount_matches(expression: ast.AST) -> bool:
             return _is_discount_call_at_period_payment(
+                tree,
                 expression,
                 grid_expression=grid_expression,
                 period_index_name=period_index_name,
@@ -1368,6 +1448,7 @@ def _cds_uses_active_discount_times(tree: ast.AST) -> bool:
 
         def event_discount_matches(expression: ast.AST) -> bool:
             return _is_discount_call_at_interval_settlement(
+                tree,
                 expression,
                 grid_expression=grid_expression,
                 interval_index_name=interval_index_name,
@@ -1650,6 +1731,61 @@ def _cds_schedule_uses_active_valuation_origin(
     )
 
 
+def _cds_schedule_uses_active_contract_fields(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Resolve a period schedule and bind its contract-defining spec fields."""
+    if isinstance(expression, ast.Name):
+        if expression.id in seen_names:
+            return False
+        assigned_values = _assigned_values_for_name(tree, expression.id)
+        return bool(assigned_values) and all(
+            _cds_schedule_uses_active_contract_fields(
+                tree,
+                assigned_value,
+                seen_names=seen_names | {expression.id},
+            )
+            for assigned_value in assigned_values
+        )
+    if not (
+        isinstance(expression, ast.Call)
+        and _call_matches_symbol(expression, "build_period_schedule")
+        and len(expression.args) == 3
+    ):
+        return False
+    day_counts = tuple(
+        keyword.value
+        for keyword in expression.keywords
+        if keyword.arg == "day_count"
+    )
+    return (
+        _expression_resolves_to_active_spec_field(
+            tree,
+            expression.args[0],
+            field="start_date",
+        )
+        and _expression_resolves_to_active_spec_field(
+            tree,
+            expression.args[1],
+            field="end_date",
+        )
+        and _expression_resolves_to_active_spec_field(
+            tree,
+            expression.args[2],
+            field="frequency",
+        )
+        and len(day_counts) == 1
+        and _expression_resolves_to_active_spec_field(
+            tree,
+            day_counts[0],
+            field="day_count",
+        )
+    )
+
+
 def _cds_grid_uses_active_valuation_origin(
     tree: ast.AST,
     expression: ast.AST,
@@ -1679,6 +1815,74 @@ def _cds_grid_uses_active_valuation_origin(
     return _cds_schedule_uses_active_valuation_origin(
         tree,
         expression.args[0],
+    )
+
+
+def _cds_grid_uses_active_contract_fields(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Resolve a default-event grid back to its active contract schedule."""
+    if isinstance(expression, ast.Name):
+        if expression.id in seen_names:
+            return False
+        assigned_values = _assigned_values_for_name(tree, expression.id)
+        return bool(assigned_values) and all(
+            _cds_grid_uses_active_contract_fields(
+                tree,
+                assigned_value,
+                seen_names=seen_names | {expression.id},
+            )
+            for assigned_value in assigned_values
+        )
+    if not (
+        isinstance(expression, ast.Call)
+        and _call_matches_symbol(expression, "build_default_event_grid")
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return False
+    return _cds_schedule_uses_active_contract_fields(tree, expression.args[0])
+
+
+def _cds_uses_active_schedule_fields(tree: ast.AST) -> bool:
+    """Bind every accepted cashflow grid to active CDS schedule fields."""
+    loop_pairs = _cds_full_event_grid_loops(tree)
+    if not loop_pairs:
+        return False
+    for period_loop, _, _ in loop_pairs:
+        period_collection = _enumerated_collection(period_loop, "periods")
+        if period_collection is None:
+            return False
+        _, grid_expression = period_collection
+        if not _cds_grid_uses_active_contract_fields(tree, grid_expression):
+            return False
+    return True
+
+
+def _cds_uses_active_credit_curve(tree: ast.AST) -> bool:
+    """Bind conditional probabilities and survival to the active credit curve."""
+    conditional_calls = _find_calls_for_symbol(
+        tree,
+        "conditional_event_probabilities_from_curve",
+    )
+    survival_calls = _find_calls_for_symbol(tree, "survival_probability")
+    return (
+        bool(conditional_calls)
+        and bool(survival_calls)
+        and all(
+            len(call.args) == 2
+            and not call.keywords
+            and _expression_resolves_to_credit_curve(tree, call.args[0])
+            for call in conditional_calls
+        )
+        and all(
+            isinstance(call.func, ast.Attribute)
+            and _expression_resolves_to_credit_curve(tree, call.func.value)
+            for call in survival_calls
+        )
     )
 
 
@@ -1749,6 +1953,167 @@ def _is_active_period_accrual(
             and candidate.value.id == period_name
         ),
     )
+
+
+def _is_active_interval_elapsed_fraction(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    grid_expression: ast.AST,
+    interval_index_name: str,
+    interval_aliases: frozenset[str],
+) -> bool:
+    """Recognize the active interval's within-period elapsed fraction."""
+
+    def matches(candidate: ast.AST) -> bool:
+        if not (
+            isinstance(candidate, ast.Attribute)
+            and candidate.attr == "period_fraction_elapsed"
+        ):
+            return False
+        interval = candidate.value
+        if isinstance(interval, ast.Name):
+            return interval.id in interval_aliases
+        return (
+            isinstance(interval, ast.Subscript)
+            and isinstance(interval.value, ast.Attribute)
+            and interval.value.attr == "intervals"
+            and _ast_equivalent(interval.value.value, grid_expression)
+            and _subscript_uses_name(interval, interval_index_name)
+        )
+
+    return _expression_or_alias_matches(tree, expression, matches)
+
+
+def _cds_event_accrual_matches(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    period_name: str,
+    grid_expression: ast.AST,
+    interval_index_name: str,
+    interval_aliases: frozenset[str],
+) -> bool:
+    """Require period accrual multiplied by the active interval elapsed fraction."""
+
+    def matches(candidate: ast.AST) -> bool:
+        factors = _multiplication_factors(candidate)
+        return (
+            len(factors) == 2
+            and sum(
+                _is_active_period_accrual(
+                    tree,
+                    factor,
+                    period_name=period_name,
+                )
+                for factor in factors
+            )
+            == 1
+            and sum(
+                _is_active_interval_elapsed_fraction(
+                    tree,
+                    factor,
+                    grid_expression=grid_expression,
+                    interval_index_name=interval_index_name,
+                    interval_aliases=interval_aliases,
+                )
+                for factor in factors
+            )
+            == 1
+        )
+
+    return _expression_or_alias_matches(tree, expression, matches)
+
+
+def _constructor_keyword_matches(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    constructor: str,
+    keyword_name: str,
+    predicate: Callable[[ast.AST], bool],
+) -> bool:
+    """Require every matching constructor to bind one validated keyword."""
+    constructors = tuple(
+        node
+        for node in ast.walk(expression)
+        if isinstance(node, ast.Call) and _call_matches_symbol(node, constructor)
+    )
+    return bool(constructors) and all(
+        sum(
+            keyword.arg == keyword_name
+            and _expression_or_alias_matches(tree, keyword.value, predicate)
+            for keyword in call.keywords
+        )
+        == 1
+        for call in constructors
+    )
+
+
+def _cds_uses_active_coupon_accruals(tree: ast.AST) -> bool:
+    """Bind scheduled and event coupon accruals to active grid coordinates."""
+    for period_loop, interval_loop, _ in _cds_full_event_grid_loops(tree):
+        period_collection = _enumerated_collection(period_loop, "periods")
+        if period_collection is None or not (
+            isinstance(period_loop.target, ast.Tuple)
+            and len(period_loop.target.elts) == 2
+            and isinstance(period_loop.target.elts[1], ast.Name)
+            and isinstance(interval_loop.target, ast.Name)
+        ):
+            continue
+        _, grid_expression = period_collection
+        period_name = period_loop.target.elts[1].id
+        interval_index_name = interval_loop.target.id
+        interval_aliases = _interval_alias_names(
+            interval_loop,
+            grid_expression=grid_expression,
+            interval_index_name=interval_index_name,
+        )
+        premium_values = _direct_loop_augmented_values_with_call(
+            period_loop,
+            "coupon_cashflow_pv",
+        )
+        event_accrual_values = _direct_loop_augmented_values_with_call(
+            interval_loop,
+            "coupon_cashflow_pv",
+        )
+        if (
+            premium_values
+            and event_accrual_values
+            and all(
+                _constructor_keyword_matches(
+                    tree,
+                    value,
+                    constructor="CouponAccrual",
+                    keyword_name="accrual",
+                    predicate=lambda expression: _is_active_period_accrual(
+                        tree,
+                        expression,
+                        period_name=period_name,
+                    ),
+                )
+                for value in premium_values
+            )
+            and all(
+                _constructor_keyword_matches(
+                    tree,
+                    value,
+                    constructor="CouponAccrual",
+                    keyword_name="accrual",
+                    predicate=lambda expression: _cds_event_accrual_matches(
+                        tree,
+                        expression,
+                        period_name=period_name,
+                        grid_expression=grid_expression,
+                        interval_index_name=interval_index_name,
+                        interval_aliases=interval_aliases,
+                    ),
+                )
+                for value in event_accrual_values
+            )
+        ):
+            return True
+    return False
 
 
 def _is_active_elapsed_period_fraction(
@@ -2344,6 +2709,32 @@ class AlgorithmContractValidator:
                             ),
                         )
                     )
+                if not _cds_uses_active_schedule_fields(tree):
+                    findings.append(
+                        SemanticFinding(
+                            validator="algorithm_contract",
+                            severity="error",
+                            category="credit_default_swap_schedule_binding",
+                            message=(
+                                f"Route '{route_spec.id}' must build the active "
+                                "cashflow schedule from the spec's start date, end "
+                                "date, frequency, and day-count convention."
+                            ),
+                        )
+                    )
+                if not _cds_uses_active_credit_curve(tree):
+                    findings.append(
+                        SemanticFinding(
+                            validator="algorithm_contract",
+                            severity="error",
+                            category="credit_default_swap_credit_curve_binding",
+                            message=(
+                                f"Route '{route_spec.id}' must derive conditional "
+                                "event probabilities and initial survival from the "
+                                "active market credit curve."
+                            ),
+                        )
+                    )
                 if not _cds_uses_active_event_weights(tree):
                     findings.append(
                         SemanticFinding(
@@ -2354,6 +2745,20 @@ class AlgorithmContractValidator:
                                 f"Route '{route_spec.id}' must use the mapped period-stop "
                                 "survival weight for scheduled premium and the active "
                                 "interval's event weight for protection and event accrual."
+                            ),
+                        )
+                    )
+                if not _cds_uses_active_coupon_accruals(tree):
+                    findings.append(
+                        SemanticFinding(
+                            validator="algorithm_contract",
+                            severity="error",
+                            category="credit_default_swap_accrual_mapping",
+                            message=(
+                                f"Route '{route_spec.id}' must use the active period "
+                                "accrual for scheduled premium and multiply it by "
+                                "the active interval's elapsed fraction for event "
+                                "accrual."
                             ),
                         )
                     )

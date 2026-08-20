@@ -77,6 +77,17 @@ def _cds_composition_source(
     time_origin: str = "self._spec.valuation_date or self._spec.start_date",
     weight_grid: str = "grid",
     extra_setup: str = "",
+    post_weights_setup: str = "",
+    schedule_start: str = "self._spec.start_date",
+    schedule_end: str = "self._spec.end_date",
+    schedule_frequency: str = "self._spec.frequency",
+    schedule_day_count: str = "self._spec.day_count",
+    conditional_credit_curve: str = "market_state.credit_curve",
+    weight_owner: str = "weights",
+    scheduled_accrual: str = "period.accrual_fraction",
+    event_accrual: str = (
+        "period.accrual_fraction * interval.period_fraction_elapsed"
+    ),
 ) -> str:
     """Build a compact, structurally complete CDS composition for validator tests."""
     if initial_survival is None:
@@ -87,16 +98,16 @@ def _cds_composition_source(
     return f'''
 def evaluate(self, market_state):
     schedule = build_period_schedule(
-        self._spec.start_date,
-        self._spec.end_date,
-        self._spec.frequency,
-        day_count=self._spec.day_count,
+        {schedule_start},
+        {schedule_end},
+        {schedule_frequency},
+        day_count={schedule_day_count},
         time_origin={time_origin},
     )
     grid = build_default_event_grid(schedule)
     {extra_setup}
     conditional = conditional_event_probabilities_from_curve(
-        market_state.credit_curve,
+        {conditional_credit_curve},
         {weight_grid}.intervals,
     )
     initial_survival_weight = {initial_survival}
@@ -104,6 +115,7 @@ def evaluate(self, market_state):
         conditional,
         initial_survival_weight=initial_survival_weight,
     )
+    {post_weights_setup}
     spread = float(self._spec.spread)
     if spread > 1.0:
         spread *= 1e-4
@@ -114,18 +126,18 @@ def evaluate(self, market_state):
     interval_start = 0
     for period_index, period in enumerate(grid.periods):
         interval_stop = grid.period_interval_stops[period_index]
-        survival_weight = weights.survival_weights[{survival_index}]
+        survival_weight = {weight_owner}.survival_weights[{survival_index}]
         premium_leg += coupon_cashflow_pv(CouponAccrual(
             notional={premium_notional},
             rate={premium_rate},
-            accrual=period.accrual_fraction,
+            accrual={scheduled_accrual},
             discount_factor={premium_discount},
             weight=survival_weight,
         ))
         accrued_to_valuation += {valuation_adjustment}
         for interval_index in range(interval_start, interval_stop):
             interval = grid.intervals[interval_index]
-            event_weight = weights.event_weights[{event_index}]
+            event_weight = {weight_owner}.event_weights[{event_index}]
             event_discount = {event_discount}
             protection_leg += protection_payment_pv(ProtectionPayment(
                 notional={protection_notional},
@@ -136,7 +148,7 @@ def evaluate(self, market_state):
             accrued_on_event += coupon_cashflow_pv(CouponAccrual(
                 notional={event_notional},
                 rate={event_rate},
-                accrual=period.accrual_fraction * interval.period_fraction_elapsed,
+                accrual={event_accrual},
                 discount_factor=event_discount,
                 weight=event_weight,
             ))
@@ -1704,6 +1716,27 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_unbound_weight_owner(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                post_weights_setup=(
+                    "other_weights = FirstEventWeights("
+                    "tuple(0.0 for _ in conditional), "
+                    "tuple(0.0 for _ in conditional))"
+                ),
+                weight_owner="other_weights",
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
     @pytest.mark.parametrize(
         ("premium_discount", "event_discount"),
         (
@@ -1744,6 +1777,125 @@ def evaluate(self, market_state):
 
         assert any(
             finding.category == "credit_default_swap_discount_mapping"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("premium_discount", "event_discount"),
+        (
+            (
+                "other_discount.discount(grid.period_payment_times[period_index])",
+                "market_state.discount.discount(interval.settlement_time)",
+            ),
+            (
+                "market_state.discount.discount(grid.period_payment_times[period_index])",
+                "other_discount.discount(interval.settlement_time)",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_unbound_discount_curve(
+        self,
+        registry,
+        premium_discount,
+        event_discount,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                premium_discount=premium_discount,
+                event_discount=event_discount,
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_discount_mapping"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "overrides",
+        (
+            {"scheduled_accrual": "0.0"},
+            {"event_accrual": "0.0"},
+            {"event_accrual": "period.accrual_fraction"},
+            {"event_accrual": "interval.period_fraction_elapsed"},
+        ),
+    )
+    def test_rejects_credit_default_swap_unbound_coupon_accruals(
+        self,
+        registry,
+        overrides,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(**overrides),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_accrual_mapping"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "overrides",
+        (
+            {"schedule_start": "self._spec.end_date"},
+            {"schedule_end": "self._spec.start_date"},
+            {"schedule_frequency": "Frequency.ANNUAL"},
+            {"schedule_day_count": "DayCountConvention.ACT_365F"},
+        ),
+    )
+    def test_rejects_credit_default_swap_unbound_schedule_fields(
+        self,
+        registry,
+        overrides,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(**overrides),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_schedule_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "overrides",
+        (
+            {"conditional_credit_curve": "other_credit_curve"},
+            {
+                "initial_survival": (
+                    "other_credit_curve.survival_probability("
+                    "grid.intervals[0].start_time)"
+                )
+            },
+        ),
+    )
+    def test_rejects_credit_default_swap_unbound_credit_curve(
+        self,
+        registry,
+        overrides,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(**overrides),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_credit_curve_binding"
             for finding in findings
         )
 
