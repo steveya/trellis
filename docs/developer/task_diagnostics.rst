@@ -439,7 +439,10 @@ selected by the active generation plan: merely calling both primitives does not
 let an analytical target consume sampled weights or a Monte Carlo target consume
 exact weights. Monte Carlo sampling must bind ``n_paths`` to the active spec;
 the deterministic materializer's explicit ``250000`` fallback is the only
-literal fallback admitted by this route validator.
+literal fallback admitted by this route validator. Because ``n_paths`` is an
+optional typed field, passing ``spec.n_paths`` directly is rejected: the call
+must guarantee a non-null value, for example
+``getattr(spec, "n_paths", 250000) or 250000``.
 The route validator also checks that the first-event weight call derives its
 initial mass exactly from credit-curve survival at the first live interval of
 the same grid used to derive conditional probabilities. Multiplying, offsetting,
@@ -460,7 +463,10 @@ market credit curve. The validator also checks that premium and protection PVs
 are accumulated through the full
 ``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
 assemblies fail semantic validation even when they mention every required
-primitive. Within that mapping, scheduled premium must use
+primitive. Required leg accumulations must be unconditional statements in the
+corresponding loop body. An early ``continue`` guard is admitted, but hiding
+leg algebra beneath ``if False`` or an unproved event-weight condition fails
+closed. Within that mapping, scheduled premium must use
 ``survival_weights[interval_stop - 1]`` while protection and accrued-on-event
 cashflows use ``event_weights[interval_index]`` (directly or through simple
 aliases). Those indexed weights must belong to the validated

@@ -1197,6 +1197,9 @@ composition is:
 The generated adapter owns quote normalization, schedule conventions,
 period-to-interval iteration, discount coordinates, signs, and the final
 ``protection - premium - accrued_on_event + accrued_to_valuation`` result.
+Required leg accumulations remain unconditional after any early-continue
+guard, and sampled weights bind the optional path control through an explicit
+non-null ``250000`` fallback.
 The current typed route admits only the documented standard schedule
 conventions (weekend calendar, following adjustment, no roll, short-last stub,
 and zero payment lag); alternatives require a future typed contract extension.

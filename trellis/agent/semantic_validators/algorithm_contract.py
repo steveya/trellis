@@ -630,25 +630,19 @@ def _node_calls_symbol(node: ast.AST, symbol: str) -> bool:
 def _direct_loop_body_nodes(
     loop: ast.For | ast.AsyncFor,
 ) -> tuple[ast.AST, ...]:
-    """Return nodes in one loop body while excluding nested loop bodies."""
-    class _Visitor(ast.NodeVisitor):
-        def __init__(self) -> None:
-            self.nodes: list[ast.AST] = []
+    """Return only unconditional statements directly owned by one loop body.
 
-        def visit_For(self, node: ast.For) -> None:  # noqa: N802
-            return None
-
-        def visit_AsyncFor(self, node: ast.AsyncFor) -> None:  # noqa: N802
-            return None
-
-        def generic_visit(self, node: ast.AST) -> None:
-            self.nodes.append(node)
-            super().generic_visit(node)
-
-    visitor = _Visitor()
+    CDS aggregation evidence beneath an ``if`` is not accepted here: proving
+    arbitrary branch reachability or guard polarity is outside this bounded
+    validator. Generated routes can use an early ``continue`` guard and keep
+    the required leg accumulations unconditional after it.
+    """
+    reachable: list[ast.AST] = []
     for statement in loop.body:
-        visitor.visit(statement)
-    return tuple(visitor.nodes)
+        if isinstance(statement, (ast.Break, ast.Continue, ast.Raise, ast.Return)):
+            break
+        reachable.append(statement)
+    return tuple(reachable)
 
 
 def _direct_loop_body_augments_with_call(
@@ -1677,12 +1671,6 @@ def _cds_path_count_is_active_spec_control(
     seen_names: frozenset[str] = frozenset(),
 ) -> bool:
     """Recognize the active path-count control or its declared 250k fallback."""
-    if _expression_resolves_to_active_spec_field(
-        tree,
-        expression,
-        field="n_paths",
-    ):
-        return True
     if isinstance(expression, ast.Name):
         if expression.id in seen_names:
             return False
@@ -1703,6 +1691,12 @@ def _cds_path_count_is_active_spec_control(
     ):
         return False
     configured_paths = expression.values[0]
+    if _expression_resolves_to_active_spec_field(
+        tree,
+        configured_paths,
+        field="n_paths",
+    ):
+        return True
     return (
         isinstance(configured_paths, ast.Call)
         and isinstance(configured_paths.func, ast.Name)

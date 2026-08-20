@@ -495,7 +495,7 @@ def _render_family_route_guidance(
         if method == "monte_carlo":
             lines.extend([
                 "- Produce Monte Carlo weights with `sample_first_event_weights(conditional_probabilities, initial_survival_weight=initial_survival_weight, n_paths=..., seed=42)`; this generic primitive owns the persistent alive-state simulation.",
-                "- Use `spec.n_paths` when available and otherwise a comparison-stable default such as `250000`; do not hard-code `50000` for comparison evidence.",
+                "- Bind the optional path control with a non-null fallback, for example `getattr(spec, \"n_paths\", 250000) or 250000`; passing `spec.n_paths` directly can forward `None`, and do not hard-code `50000` for comparison evidence.",
                 "- Do not instantiate `MonteCarloEngine` or write adapter-local RNG/default-state loops. This lane samples one first-event process, not an equity diffusion.",
             ])
         elif method == "analytical":
