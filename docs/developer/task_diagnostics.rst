@@ -463,10 +463,13 @@ market credit curve. The validator also checks that premium and protection PVs
 are accumulated through the full
 ``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
 assemblies fail semantic validation even when they mention every required
-primitive. Required leg accumulations must be unconditional statements in the
-corresponding loop body. An early ``continue`` guard is admitted, but hiding
-leg algebra beneath ``if False`` or an unproved event-weight condition fails
-closed. Within that mapping, scheduled premium must use
+primitive. The complete assembly must occur in exactly one reachable
+``evaluate`` body: an unused helper, a branch-hidden period loop, or composition
+after an unconditional return does not satisfy the route contract. Required leg
+accumulations must be unconditional statements in the corresponding loop body.
+An early ``continue`` guard is admitted, but hiding leg algebra beneath
+``if False`` or an unproved event-weight condition fails closed. Within that
+mapping, scheduled premium must use
 ``survival_weights[interval_stop - 1]`` while protection and accrued-on-event
 cashflows use ``event_weights[interval_index]`` (directly or through simple
 aliases). Those indexed weights must belong to the validated

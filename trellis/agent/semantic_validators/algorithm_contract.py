@@ -645,6 +645,25 @@ def _direct_loop_body_nodes(
     return tuple(reachable)
 
 
+def _reachable_evaluate_tree(tree: ast.Module) -> ast.Module | None:
+    """Return one evaluate body truncated at its first unconditional exit."""
+    evaluate_functions = tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "evaluate"
+    )
+    if len(evaluate_functions) != 1:
+        return None
+
+    reachable: list[ast.stmt] = []
+    for statement in evaluate_functions[0].body:
+        reachable.append(statement)
+        if isinstance(statement, (ast.Raise, ast.Return)):
+            break
+    return ast.Module(body=reachable, type_ignores=[])
+
+
 def _direct_loop_body_augments_with_call(
     loop: ast.For | ast.AsyncFor,
     symbol: str,
@@ -1287,7 +1306,8 @@ def _cds_full_event_grid_loops(
     matches: list[
         tuple[ast.For | ast.AsyncFor, ast.For | ast.AsyncFor, str]
     ] = []
-    for period_loop in ast.walk(tree):
+    direct_body = tree.body if isinstance(tree, ast.Module) else ()
+    for period_loop in direct_body:
         if not isinstance(period_loop, (ast.For, ast.AsyncFor)):
             continue
         period_collection = _enumerated_collection(period_loop, "periods")
@@ -2775,8 +2795,25 @@ class AlgorithmContractValidator:
             )
 
         try:
-            tree = ast.parse(source)
+            module_tree = ast.parse(source)
         except SyntaxError:
+            return findings
+
+        tree = _reachable_evaluate_tree(module_tree)
+        if tree is None:
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_incomplete_event_grid",
+                    message=(
+                        f"Route '{route_spec.id}' must expose exactly one evaluate "
+                        "body whose reachable statements assemble the complete CDS "
+                        "event grid. Composition in unused helpers does not satisfy "
+                        "the pricing contract."
+                    ),
+                )
+            )
             return findings
 
         selected_weight_symbol = _cds_selected_weight_symbol(plan)
@@ -2840,143 +2877,141 @@ class AlgorithmContractValidator:
                     )
                 )
 
-        if (
-            _calls_symbol(source, "coupon_cashflow_pv")
-            and _calls_symbol(source, "protection_payment_pv")
-        ):
-            composes_full_grid = _cds_composes_full_event_grid(tree)
-            if not composes_full_grid:
+        composes_full_grid = _cds_composes_full_event_grid(tree)
+        if not composes_full_grid:
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_incomplete_event_grid",
+                    message=(
+                        f"Route '{route_spec.id}' must aggregate scheduled premium "
+                        "cashflows across every event-grid period and protection "
+                        "cashflows across the nested period-to-interval mapping in "
+                        "the reachable evaluate body. Pricing fixed index positions, "
+                        "unreachable statements, or unused helpers does not cover "
+                        "the CDS horizon."
+                    ),
+                )
+            )
+        else:
+            if not _cds_uses_valuation_origin_event_grid(tree):
                 findings.append(
                     SemanticFinding(
                         validator="algorithm_contract",
                         severity="error",
-                        category="credit_default_swap_incomplete_event_grid",
+                        category="credit_default_swap_valuation_origin",
                         message=(
-                            f"Route '{route_spec.id}' must aggregate scheduled premium "
-                            "cashflows across every event-grid period and protection "
-                            "cashflows across the nested period-to-interval mapping. "
-                            "Pricing fixed index positions does not cover the CDS horizon."
+                            f"Route '{route_spec.id}' must build the active "
+                            "cashflow event grid from a period schedule whose "
+                            "time_origin is the valuation date (with the "
+                            "declared start-date fallback). Using start_date "
+                            "unconditionally prices forward-start CDS cashflows "
+                            "conditional on survival to the contract start."
                         ),
                     )
                 )
-            else:
-                if not _cds_uses_valuation_origin_event_grid(tree):
-                    findings.append(
-                        SemanticFinding(
-                            validator="algorithm_contract",
-                            severity="error",
-                            category="credit_default_swap_valuation_origin",
-                            message=(
-                                f"Route '{route_spec.id}' must build the active "
-                                "cashflow event grid from a period schedule whose "
-                                "time_origin is the valuation date (with the "
-                                "declared start-date fallback). Using start_date "
-                                "unconditionally prices forward-start CDS cashflows "
-                                "conditional on survival to the contract start."
-                            ),
-                        )
+            if not _cds_uses_active_schedule_fields(tree):
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_schedule_binding",
+                        message=(
+                            f"Route '{route_spec.id}' must build the active "
+                            "cashflow schedule from the spec's start date, end "
+                            "date, frequency, and day-count convention, using "
+                            "the bounded route's weekend calendar, following "
+                            "adjustment, no roll, short-last stub, and zero "
+                            "payment lag."
+                        ),
                     )
-                if not _cds_uses_active_schedule_fields(tree):
-                    findings.append(
-                        SemanticFinding(
-                            validator="algorithm_contract",
-                            severity="error",
-                            category="credit_default_swap_schedule_binding",
-                            message=(
-                                f"Route '{route_spec.id}' must build the active "
-                                "cashflow schedule from the spec's start date, end "
-                                "date, frequency, and day-count convention, using "
-                                "the bounded route's weekend calendar, following "
-                                "adjustment, no roll, short-last stub, and zero "
-                                "payment lag."
-                            ),
-                        )
+                )
+            if not _cds_uses_active_credit_curve(tree):
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_credit_curve_binding",
+                        message=(
+                            f"Route '{route_spec.id}' must derive conditional "
+                            "event probabilities and initial survival from the "
+                            "active market credit curve."
+                        ),
                     )
-                if not _cds_uses_active_credit_curve(tree):
-                    findings.append(
-                        SemanticFinding(
-                            validator="algorithm_contract",
-                            severity="error",
-                            category="credit_default_swap_credit_curve_binding",
-                            message=(
-                                f"Route '{route_spec.id}' must derive conditional "
-                                "event probabilities and initial survival from the "
-                                "active market credit curve."
-                            ),
-                        )
+                )
+            if not _cds_uses_active_event_weights(
+                tree,
+                required_symbol=selected_weight_symbol,
+            ):
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_weight_mapping",
+                        message=(
+                            f"Route '{route_spec.id}' must use the mapped period-stop "
+                            "survival weight for scheduled premium and the active "
+                            "interval's event weight for protection and event accrual."
+                        ),
                     )
-                if not _cds_uses_active_event_weights(
-                    tree,
-                    required_symbol=selected_weight_symbol,
-                ):
-                    findings.append(
-                        SemanticFinding(
-                            validator="algorithm_contract",
-                            severity="error",
-                            category="credit_default_swap_weight_mapping",
-                            message=(
-                                f"Route '{route_spec.id}' must use the mapped period-stop "
-                                "survival weight for scheduled premium and the active "
-                                "interval's event weight for protection and event accrual."
-                            ),
-                        )
+                )
+            if not _cds_uses_active_coupon_accruals(tree):
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_accrual_mapping",
+                        message=(
+                            f"Route '{route_spec.id}' must use the active period "
+                            "accrual for scheduled premium and multiply it by "
+                            "the active interval's elapsed fraction for event "
+                            "accrual."
+                        ),
                     )
-                if not _cds_uses_active_coupon_accruals(tree):
-                    findings.append(
-                        SemanticFinding(
-                            validator="algorithm_contract",
-                            severity="error",
-                            category="credit_default_swap_accrual_mapping",
-                            message=(
-                                f"Route '{route_spec.id}' must use the active period "
-                                "accrual for scheduled premium and multiply it by "
-                                "the active interval's elapsed fraction for event "
-                                "accrual."
-                            ),
-                        )
+                )
+            if not _cds_uses_active_discount_times(tree):
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_discount_mapping",
+                        message=(
+                            f"Route '{route_spec.id}' must discount scheduled "
+                            "premium at the mapped period payment time and "
+                            "protection/event accrual at the active interval's "
+                            "settlement time."
+                        ),
                     )
-                if not _cds_uses_active_discount_times(tree):
-                    findings.append(
-                        SemanticFinding(
-                            validator="algorithm_contract",
-                            severity="error",
-                            category="credit_default_swap_discount_mapping",
-                            message=(
-                                f"Route '{route_spec.id}' must discount scheduled "
-                                "premium at the mapped period payment time and "
-                                "protection/event accrual at the active interval's "
-                                "settlement time."
-                            ),
-                        )
+                )
+            if not _cds_binds_active_economic_terms(tree):
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_economic_binding",
+                        message=(
+                            f"Route '{route_spec.id}' must bind premium, "
+                            "protection, event accrual, and valuation accrual "
+                            "to the active spec's notional, normalized spread, "
+                            "and recovery fields. Hard-coded economic terms "
+                            "can produce a valid-looking but incorrect CDS PV."
+                        ),
                     )
-                if not _cds_binds_active_economic_terms(tree):
-                    findings.append(
-                        SemanticFinding(
-                            validator="algorithm_contract",
-                            severity="error",
-                            category="credit_default_swap_economic_binding",
-                            message=(
-                                f"Route '{route_spec.id}' must bind premium, "
-                                "protection, event accrual, and valuation accrual "
-                                "to the active spec's notional, normalized spread, "
-                                "and recovery fields. Hard-coded economic terms "
-                                "can produce a valid-looking but incorrect CDS PV."
-                            ),
-                        )
+                )
+            if not _cds_preserves_sign_convention(tree):
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_sign_convention",
+                        message=(
+                            f"Route '{route_spec.id}' must return the protection-buyer "
+                            "value `protection_leg - premium_leg - accrued_on_event "
+                            "+ accrued_to_valuation`."
+                        ),
                     )
-                if not _cds_preserves_sign_convention(tree):
-                    findings.append(
-                        SemanticFinding(
-                            validator="algorithm_contract",
-                            severity="error",
-                            category="credit_default_swap_sign_convention",
-                            message=(
-                                f"Route '{route_spec.id}' must return the protection-buyer "
-                                "value `protection_leg - premium_leg - accrued_on_event "
-                                "+ accrued_to_valuation`."
-                            ),
-                        )
-                    )
+                )
         return findings
 
     def _check_exact_helper_surface(

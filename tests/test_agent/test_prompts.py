@@ -1351,6 +1351,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "credit_curve" in prompt
     assert "survival probability" in prompt.lower() or "survival_probability" in prompt
     assert "Compose single-name CDS pricing" in prompt
+    assert "one reachable `evaluate()` body" in prompt
     assert "spread = float(spec.spread)" in prompt
     assert "spread *= 1e-4" in prompt
     assert "build_period_schedule" in prompt
@@ -1436,6 +1437,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "build_default_event_grid" in prompt
     assert "conditional_event_probabilities_from_curve" in prompt
     assert "sample_first_event_weights" in prompt
+    assert "one reachable `evaluate()` body" in prompt
     assert "spread = float(spec.spread)" in prompt
     assert "spread *= 1e-4" in prompt
     assert "Do not instantiate `MonteCarloEngine`" in prompt
