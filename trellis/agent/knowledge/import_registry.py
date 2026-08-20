@@ -303,12 +303,15 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
     include_prefixes = (
         "trellis.models.",
         "trellis.analytics.",
-        "trellis.conventions.",
         "trellis.core.",
         "trellis.curves.",
         "trellis.execution",
         "trellis.io.",
     )
+    include_modules = {
+        "trellis.conventions.calendar",
+        "trellis.conventions.schedule",
+    }
     exclude_prefixes = (
         "trellis.instruments._agent.",
         "trellis.agent.",
@@ -321,7 +324,10 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
     for _importer, modname, _ispkg in pkgutil.walk_packages(
         path=[str(pkg_path)], prefix="trellis.",
     ):
-        if not any(modname.startswith(prefix) for prefix in include_prefixes):
+        if (
+            modname not in include_modules
+            and not any(modname.startswith(prefix) for prefix in include_prefixes)
+        ):
             continue
         if any(modname.startswith(prefix) for prefix in exclude_prefixes):
             continue

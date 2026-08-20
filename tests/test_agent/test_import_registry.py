@@ -116,6 +116,19 @@ def test_schedule_convention_symbols_required_by_generic_composition_are_admitte
     assert is_valid_import("trellis.conventions.schedule", "StubType")
 
 
+def test_codegen_registry_limits_conventions_to_explicit_composition_modules():
+    convention_modules = {
+        module
+        for module in get_registry_snapshot()
+        if module.startswith("trellis.conventions.")
+    }
+
+    assert convention_modules == {
+        "trellis.conventions.calendar",
+        "trellis.conventions.schedule",
+    }
+
+
 def test_static_leg_economic_identity_is_visible_to_import_registry():
     module = "trellis.agent.static_leg_contract"
     symbols = {
