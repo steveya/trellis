@@ -129,6 +129,8 @@ def build_default_event_grid(
     """
     if schedule.time_origin is None:
         raise ValueError("default-event grids require schedule.time_origin")
+    if schedule.day_count is None:
+        raise ValueError("default-event grids require schedule.day_count")
     if steps_per_year <= 0:
         raise ValueError("steps_per_year must be positive")
 
@@ -158,10 +160,21 @@ def build_default_event_grid(
             max(float(year_fraction(origin, period.payment_date, curve_day_count)), 0.0)
         )
 
-        total_days = max((period.end_date - period.start_date).days, 1)
         if period.start_date < origin < period.end_date:
-            elapsed_days = max((origin - period.start_date).days, 0)
-            elapsed_fractions.append(min(elapsed_days / total_days, 1.0))
+            elapsed_accrual = float(
+                year_fraction(
+                    period.start_date,
+                    origin,
+                    schedule.day_count,
+                    ref_start=period.start_date,
+                    ref_end=period.end_date,
+                    frequency=schedule.frequency,
+                )
+            )
+            full_accrual = float(period.accrual_fraction)
+            elapsed_fractions.append(
+                min(max(elapsed_accrual / max(full_accrual, 1e-12), 0.0), 1.0)
+            )
         else:
             elapsed_fractions.append(0.0)
 

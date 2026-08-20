@@ -64,6 +64,21 @@ def test_default_event_grid_keeps_curve_time_separate_from_coupon_day_count():
         grid.period_interval_stops = ()
 
 
+def test_default_event_grid_uses_coupon_day_count_for_elapsed_fraction():
+    schedule = build_period_schedule(
+        date(2025, 1, 31),
+        date(2025, 4, 30),
+        Frequency.QUARTERLY,
+        day_count=DayCountConvention.THIRTY_E_360,
+        time_origin=date(2025, 2, 28),
+    )
+
+    grid = build_default_event_grid(schedule, steps_per_year=4)
+
+    assert schedule.periods[0].accrual_fraction == pytest.approx(0.25)
+    assert grid.elapsed_period_fractions[0] == pytest.approx(28.0 / 90.0)
+
+
 def test_default_event_grid_requires_measured_periods_and_time_origin():
     schedule = build_period_schedule(
         date(2025, 1, 15),
