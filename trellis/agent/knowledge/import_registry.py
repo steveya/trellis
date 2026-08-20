@@ -639,7 +639,7 @@ _STATIC_REGISTRY = """\
 If a module or symbol is not listed below, it does NOT exist.
 
 ### Core
-from trellis.core.date_utils import generate_schedule, year_fraction, add_months
+from trellis.core.date_utils import build_period_schedule, generate_schedule, year_fraction, add_months
 from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
@@ -692,6 +692,9 @@ from trellis.models.resolution.short_rate_claims import ResolvedDiscountBondClai
 from trellis.models.analytical.terminal_basket import two_asset_extremum_option_stulz, two_asset_spread_option_kirk, two_asset_terminal_basket_gauss_hermite
 from trellis.models.short_rate_bond import ResolvedShortRateBondInputs, price_cir_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_tree, price_vasicek_zero_coupon_bond_analytical, resolve_short_rate_bond_inputs
 from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
+
+### Models — Payoff Composition
+from trellis.models.contingent_cashflows import CouponAccrual, DefaultEventGrid, DefaultEventInterval, FirstEventWeights, ProtectionPayment, build_default_event_grid, conditional_event_probabilities_from_curve, coupon_cashflow_pv, expected_first_event_weights, protection_payment_pv, sample_first_event_weights
 
 ### Models — Trees
 from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, compile_bermudan_swaption_contract_spec, resolve_bermudan_swaption_tree_inputs

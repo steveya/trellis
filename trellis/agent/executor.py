@@ -10265,7 +10265,16 @@ def _route_specific_retry_lines(
 
     if (
         instrument in {"credit_default_swap", "cds"}
-        and pricing_method in {"monte_carlo", "qmc"}
+        and pricing_method == "qmc"
+        and stage in {"code_generation_failed", "import_validation_failed", "validation_failed", "actual_market_smoke_failed"}
+    ):
+        return (
+            "Single-name CDS QMC is not certified by the admitted default-event route.",
+            "Fail closed with an unsupported-method result; do not relabel seeded pseudo-random first-event sampling as QMC.",
+        )
+    if (
+        instrument in {"credit_default_swap", "cds"}
+        and pricing_method == "monte_carlo"
         and stage in {"code_generation_failed", "import_validation_failed", "validation_failed", "actual_market_smoke_failed"}
     ):
         return (

@@ -1479,6 +1479,30 @@ def test_executor_credit_default_swap_retry_pins_discount_and_time_origin():
     assert "product-level CDS helper modules" in text
 
 
+def test_executor_credit_default_swap_qmc_retry_fails_closed():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
+
+    request = KnowledgeRetrievalRequest(
+        audience="builder",
+        attempt_number=2,
+        knowledge_surface="compact",
+        prompt_surface="compact",
+        retry_reason="validation",
+        pricing_method="qmc",
+        instrument_type="credit_default_swap",
+        stage="validation_failed",
+        product_ir=SimpleNamespace(instrument="credit_default_swap"),
+    )
+
+    text = "\n".join(_route_specific_retry_lines(request))
+
+    assert "QMC" in text
+    assert "fail closed" in text.lower()
+    assert "sample_first_event_weights" not in text
+
+
 def test_evaluate_prompt_cds_analytical_prefers_route_bound_modules_over_generic_family_modules():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.knowledge.decompose import decompose_to_ir

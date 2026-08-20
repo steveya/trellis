@@ -888,3 +888,30 @@ def test_static_registry_fallback_covers_route_minimization_modules(monkeypatch)
     assert "price_heston_option_transform" in snapshot["trellis.models.transforms.heston"]
 
     import_registry.reset_registry_cache()
+
+
+def test_static_registry_fallback_covers_default_event_composition(monkeypatch):
+    import_registry.reset_registry_cache()
+    monkeypatch.setattr(
+        import_registry,
+        "_build_registry_data_from_introspection",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+    snapshot = import_registry.get_registry_snapshot()
+
+    assert "build_period_schedule" in snapshot["trellis.core.date_utils"]
+    assert {
+        "CouponAccrual",
+        "DefaultEventGrid",
+        "DefaultEventInterval",
+        "FirstEventWeights",
+        "ProtectionPayment",
+        "build_default_event_grid",
+        "conditional_event_probabilities_from_curve",
+        "coupon_cashflow_pv",
+        "expected_first_event_weights",
+        "protection_payment_pv",
+        "sample_first_event_weights",
+    } <= set(snapshot["trellis.models.contingent_cashflows"])
+
+    import_registry.reset_registry_cache()
