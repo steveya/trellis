@@ -125,9 +125,7 @@ Implementation target: mc_cds."""
         ).strip().lower()
         n_paths = getattr(spec, "n_paths", None)
 
-        if pricing_method == "monte_carlo" or (
-            pricing_method not in {"", "analytical"} and n_paths is not None
-        ):
+        if pricing_method == "monte_carlo":
             path_count = int(n_paths) if n_paths is not None else 250000
             if path_count < 10000:
                 path_count = 10000
@@ -136,8 +134,10 @@ Implementation target: mc_cds."""
                 n_paths=path_count,
                 seed=42,
             )
-        else:
+        elif pricing_method in {"", "analytical"}:
             weights = expected_first_event_weights(conditional_probabilities)
+        else:
+            raise ValueError(f"unsupported CDS pricing_method: {pricing_method!r}")
 
         premium_leg = 0.0
         protection_leg = 0.0

@@ -313,3 +313,24 @@ class TestCreditDefaultSwapHelpers:
         observed = CDSPayoff(spec).evaluate(market_state)
 
         assert observed == pytest.approx(reference, abs=0.02)
+
+    def test_cds_agent_payoff_rejects_qmc_instead_of_using_pseudo_random_weights(self):
+        spec = CDSSpec(
+            notional=100.0,
+            spread=0.01,
+            recovery=0.4,
+            valuation_date=SETTLE,
+            start_date=SETTLE,
+            end_date=MATURITY,
+            pricing_method="qmc",
+            n_paths=20_000,
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            credit_curve=CreditCurve.flat(0.02),
+        )
+
+        with pytest.raises(ValueError, match="unsupported CDS pricing_method.*qmc"):
+            CDSPayoff(spec).evaluate(market_state)

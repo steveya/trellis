@@ -63,6 +63,7 @@ _BASKET_HELPER_MARKERS = (
     "semantic basket helper",
 )
 _CDS_SUPERSEDED_HELPER_MARKERS = (
+    "trellis.models.credit_default_swap.interval_default_probability",
     "trellis.models.credit_default_swap.price_cds_analytical",
     "trellis.models.credit_default_swap.price_cds_monte_carlo",
     "price_cds_analytical primitive directly",
@@ -193,6 +194,7 @@ def identify_superseded_cds_lesson_ids(*, root: Path | None = None) -> list[str]
             lesson_id = str(data.get("id") or "").strip()
             if lesson_id and (
                 "credit_default_swap" in normalized_text
+                or "interval_default_probability" in normalized_text
                 or "price_cds_" in normalized_text
             ):
                 superseded.append(lesson_id)

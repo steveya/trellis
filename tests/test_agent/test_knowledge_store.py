@@ -596,6 +596,19 @@ class TestKnowledgeStore:
         assert "build_ranked_observation_basket_state_payoff" in registry
         assert "terminal_ranked_observation_basket_payoff" in registry
 
+    def test_retrieve_cds_suppresses_legacy_interval_default_helper_lessons(self):
+        from trellis.agent.knowledge import retrieve_for_task
+
+        knowledge = retrieve_for_task(
+            "monte_carlo",
+            features=["credit_risk", "fixed_coupons", "discounting"],
+            instrument="credit_default_swap",
+            max_lessons=30,
+        )
+
+        lesson_ids = {lesson.id for lesson in knowledge["lessons"]}
+        assert {"mc_066", "mc_069"}.isdisjoint(lesson_ids)
+
     def test_terminal_basket_guidance_is_cross_indexed_by_method(self):
         from trellis.agent.knowledge import retrieve_for_task
 

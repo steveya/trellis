@@ -6,14 +6,12 @@ from dataclasses import dataclass
 from math import ceil, comb
 from typing import Protocol
 
+import numpy as raw_np
 from scipy import integrate
 from scipy.stats import norm
 
 from trellis.core.date_utils import year_fraction
-from trellis.core.differentiable import get_numpy
 from trellis.core.types import DayCountConvention, EventSchedule, SchedulePeriod
-
-np = get_numpy()
 
 
 class CreditCurveLike(Protocol):
@@ -250,16 +248,16 @@ def sample_first_event_weights(
     if n_paths <= 0:
         raise ValueError("n_paths must be positive")
 
-    rng = np.random.default_rng(seed)
-    alive = np.ones(int(n_paths), dtype=bool)
+    rng = raw_np.random.default_rng(seed)
+    alive = raw_np.ones(int(n_paths), dtype=bool)
     event_weights: list[float] = []
     survival_weights: list[float] = []
     for probability in conditional_probabilities:
         conditional_probability = max(0.0, min(float(probability), 1.0))
         event = alive & (rng.uniform(size=int(n_paths)) < conditional_probability)
-        event_weights.append(float(np.mean(event)))
+        event_weights.append(float(raw_np.mean(event)))
         alive = alive & (~event)
-        survival_weights.append(float(np.mean(alive)))
+        survival_weights.append(float(raw_np.mean(alive)))
     return FirstEventWeights(tuple(event_weights), tuple(survival_weights))
 
 
