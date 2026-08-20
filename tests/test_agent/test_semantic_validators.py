@@ -1828,6 +1828,32 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_composition_in_nested_unused_helper(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        composition_lines = _cds_composition_source().strip().splitlines()
+        source = "\n".join(
+            [
+                composition_lines[0],
+                "    def unused_cds_composition(self, market_state):",
+                *("    " + line for line in composition_lines[1:]),
+                "    return 123.0",
+            ]
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_composition_after_early_return(
         self,
         registry,
@@ -1836,6 +1862,55 @@ def evaluate(self, market_state):
         source = _cds_composition_source().replace(
             "    schedule = build_period_schedule(",
             "    return 123.0\n    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("anchor", "conditional_exit"),
+        (
+            (
+                "    schedule = build_period_schedule(",
+                "    if True:\n        return 123.0",
+            ),
+            (
+                "    schedule = build_period_schedule(",
+                "    if market_state is None:\n        return 123.0",
+            ),
+            (
+                "    return float(",
+                "    if True:\n        return 123.0",
+            ),
+            (
+                "    return float(",
+                "    for _ in range(1):\n        return 123.0",
+            ),
+            (
+                "    return float(",
+                "    if True:\n        raise RuntimeError('invalid CDS')",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_conditional_exit_before_signed_return(
+        self,
+        registry,
+        anchor,
+        conditional_exit,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            anchor,
+            f"{conditional_exit}\n{anchor}",
             1,
         )
 

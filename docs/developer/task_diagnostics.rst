@@ -464,12 +464,13 @@ are accumulated through the full
 ``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
 assemblies fail semantic validation even when they mention every required
 primitive. The complete assembly must occur in exactly one reachable
-``evaluate`` body: an unused helper, a branch-hidden period loop, or composition
-after an unconditional return does not satisfy the route contract. Required leg
-accumulators must each be initialized exactly once to zero before the period
-loop and may only be written by that initializer and the unconditional additive
-(``+=``) statement in the corresponding loop body. The interval loop must be a
-reachable direct child of the period loop. An early ``continue`` guard is
+``evaluate`` body and lead to one direct final signed return. Conditional
+return/raise exits, unused or nested helpers, a branch-hidden period loop, or
+composition after the final return do not satisfy the route contract. Required
+leg accumulators must each be initialized exactly once to zero before the
+period loop and may only be written by that initializer and the unconditional
+additive (``+=``) statement in the corresponding loop body. The interval loop
+must be a reachable direct child of the period loop. An early ``continue`` guard is
 admitted, but hiding either
 the interval loop or leg algebra beneath ``if False`` or an unproved
 event-weight condition fails closed. Within that mapping, scheduled premium

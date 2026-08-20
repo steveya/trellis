@@ -481,7 +481,7 @@ def _render_family_route_guidance(
         lines.append("## Family Route Guidance")
         lines.extend([
             "- Compose single-name CDS pricing from the public schedule and contingent-cashflow primitives; do not call `build_cds_schedule`, `price_cds_analytical`, or `price_cds_monte_carlo`.",
-            "- Keep the complete CDS composition and signed result in the one reachable `evaluate()` body; unused helpers, branch-hidden assembly, and statements after an unconditional return do not satisfy the route contract.",
+            "- Keep the complete CDS composition in one reachable `evaluate()` body with one direct final signed return; conditional return/raise exits, unused or nested helpers, branch-hidden assembly, and statements after the final return do not satisfy the route contract.",
             "- Build `build_period_schedule(...)` with the declared coupon day count and explicit curve-time origin, then call `build_default_event_grid(schedule)` so premium accrual and survival/discount time remain separate.",
             "- For the bounded standard-CDS route, pass `calendar=WEEKEND_ONLY`, `bda=BusinessDayAdjustment.FOLLOWING`, `roll_convention=RollConvention.NONE`, `stub=StubType.SHORT_LAST`, and `payment_lag_days=0`; the current typed route does not admit convention overrides.",
             "- Derive ordered conditional probabilities with `conditional_event_probabilities_from_curve(credit_curve, event_grid.intervals)`.",

@@ -1370,6 +1370,8 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "period_payment_times" in prompt
     assert "settlement_time" in prompt
     assert "accrued_on_event" in prompt
+    assert "one direct final signed return" in prompt
+    assert "conditional return/raise exits" in prompt
     assert "update it only with additive `+=` in its recognized loop" in prompt
     assert "do not write to it anywhere else before return" in prompt
 
@@ -1451,6 +1453,8 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "seed=42" in prompt
     assert "period_payment_times" in prompt
     assert "settlement_time" in prompt
+    assert "one direct final signed return" in prompt
+    assert "conditional return/raise exits" in prompt
     assert "update it only with additive `+=`" in prompt
     assert "do not write to it anywhere else before return" in prompt
 

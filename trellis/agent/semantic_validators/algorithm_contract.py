@@ -645,8 +645,46 @@ def _direct_loop_body_nodes(
     return tuple(reachable)
 
 
+_NESTED_EVALUATE_SCOPES = (
+    ast.FunctionDef,
+    ast.AsyncFunctionDef,
+    ast.ClassDef,
+    ast.Lambda,
+)
+
+
+def _subtree_has_evaluate_exit(node: ast.AST) -> bool:
+    """Detect a return or raise without descending into a nested local scope."""
+    if isinstance(node, _NESTED_EVALUATE_SCOPES):
+        return False
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, _NESTED_EVALUATE_SCOPES):
+            continue
+        if isinstance(child, (ast.Return, ast.Raise)):
+            return True
+        if _subtree_has_evaluate_exit(child):
+            return True
+    return False
+
+
+class _NestedEvaluateScopePruner(ast.NodeTransformer):
+    """Remove local scopes whose bodies are not evidence from ``evaluate``."""
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return None
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return None
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return None
+
+    def visit_Lambda(self, node: ast.Lambda) -> ast.Constant:
+        return ast.copy_location(ast.Constant(value=None), node)
+
+
 def _reachable_evaluate_tree(tree: ast.Module) -> ast.Module | None:
-    """Return one evaluate body truncated at its first unconditional exit."""
+    """Return one evaluate body with one direct final exit and no local scopes."""
     evaluate_functions = tuple(
         node
         for node in ast.walk(tree)
@@ -658,10 +696,17 @@ def _reachable_evaluate_tree(tree: ast.Module) -> ast.Module | None:
 
     reachable: list[ast.stmt] = []
     for statement in evaluate_functions[0].body:
+        if not isinstance(statement, (ast.Return, ast.Raise)) and (
+            _subtree_has_evaluate_exit(statement)
+        ):
+            return None
         reachable.append(statement)
         if isinstance(statement, (ast.Raise, ast.Return)):
             break
-    return ast.Module(body=reachable, type_ignores=[])
+    pruned_tree = _NestedEvaluateScopePruner().visit(
+        ast.Module(body=reachable, type_ignores=[])
+    )
+    return pruned_tree if isinstance(pruned_tree, ast.Module) else None
 
 
 def _direct_loop_body_augments_with_call(
@@ -2895,9 +2940,9 @@ class AlgorithmContractValidator:
                     category="credit_default_swap_incomplete_event_grid",
                     message=(
                         f"Route '{route_spec.id}' must expose exactly one evaluate "
-                        "body whose reachable statements assemble the complete CDS "
-                        "event grid. Composition in unused helpers does not satisfy "
-                        "the pricing contract."
+                        "body with no conditional return/raise exits before its "
+                        "direct final signed return. Composition in unused or nested "
+                        "helpers does not satisfy the pricing contract."
                     ),
                 )
             )

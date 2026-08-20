@@ -1197,8 +1197,9 @@ composition is:
 The generated adapter owns quote normalization, schedule conventions,
 period-to-interval iteration, discount coordinates, signs, and the final
 ``protection - premium - accrued_on_event + accrued_to_valuation`` result.
-That composition must be reachable in the adapter's single ``evaluate`` body;
-unused helpers and statements after an unconditional exit are not pricing
+That composition must be reachable in the adapter's single ``evaluate`` body
+and dominate one direct final signed return; conditional return/raise exits,
+unused or nested helpers, and statements after the final return are not pricing
 evidence. The interval loop remains a reachable direct child of the period loop,
 and every leg accumulator has one zero initialization and one additive ``+=``
 update that remains unconditional after any early-continue guard, with no other
