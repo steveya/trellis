@@ -1923,6 +1923,70 @@ def evaluate(self, market_state):
         assert any(finding.category == category for finding in findings)
 
     @pytest.mark.parametrize(
+        "accumulator",
+        (
+            "premium_leg",
+            "protection_leg",
+            "accrued_on_event",
+            "accrued_to_valuation",
+        ),
+    )
+    def test_rejects_credit_default_swap_leg_reassigned_after_assembly(
+        self,
+        registry,
+        accumulator,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    return float(",
+            f"    {accumulator} = 0.0\n    return float(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_sign_convention"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "accumulator",
+        (
+            "premium_leg",
+            "protection_leg",
+            "accrued_on_event",
+            "accrued_to_valuation",
+        ),
+    )
+    def test_rejects_credit_default_swap_nonzero_leg_initialization(
+        self,
+        registry,
+        accumulator,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            f"    {accumulator} = 0.0",
+            f"    {accumulator} = 1.0",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_sign_convention"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
         ("survival_index", "event_index"),
         (
             ("0", "interval_index"),

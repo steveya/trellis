@@ -1200,9 +1200,10 @@ period-to-interval iteration, discount coordinates, signs, and the final
 That composition must be reachable in the adapter's single ``evaluate`` body;
 unused helpers and statements after an unconditional exit are not pricing
 evidence. The interval loop remains a reachable direct child of the period loop,
-and every leg uses an additive ``+=`` update that remains unconditional after
-any early-continue guard. Sampled weights bind the optional path control through
-an explicit non-null ``250000`` fallback.
+and every leg accumulator has one zero initialization, no later reassignment,
+and an additive ``+=`` update that remains unconditional after any
+early-continue guard. Sampled weights bind the optional path control through an
+explicit non-null ``250000`` fallback.
 The current typed route admits only the documented standard schedule
 conventions (weekend calendar, following adjustment, no roll, short-last stub,
 and zero payment lag); alternatives require a future typed contract extension.

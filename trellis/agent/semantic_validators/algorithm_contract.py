@@ -1282,6 +1282,31 @@ def _tree_initializes_name_to_zero_before(
     return False
 
 
+def _name_has_single_zero_initialization_before(
+    tree: ast.AST,
+    *,
+    name: str,
+    before_line: int,
+) -> bool:
+    """Require one zero initialization and forbid direct reassignment."""
+    assignments = tuple(
+        (node, assignment[1])
+        for node in ast.walk(tree)
+        for assignment in (_simple_name_assignment(node),)
+        if assignment is not None and assignment[0] == name
+    )
+    if len(assignments) != 1:
+        return False
+    node, value = assignments[0]
+    return (
+        getattr(node, "lineno", 0) < before_line
+        and isinstance(value, ast.Constant)
+        and isinstance(value.value, (int, float))
+        and not isinstance(value.value, bool)
+        and float(value.value) == 0.0
+    )
+
+
 def _loop_references_indexed_grid_intervals(
     loop: ast.For | ast.AsyncFor,
     *,
@@ -2499,6 +2524,12 @@ def _cds_preserves_sign_convention(tree: ast.AST) -> bool:
             for premium_name in premium_names:
                 for event_accrual_name in event_accrual_names:
                     for valuation_accrual_name in valuation_accrual_names:
+                        accumulator_names = (
+                            protection_name,
+                            premium_name,
+                            event_accrual_name,
+                            valuation_accrual_name,
+                        )
                         expected = sorted(
                             (
                                 (protection_name, 1),
@@ -2507,8 +2538,17 @@ def _cds_preserves_sign_convention(tree: ast.AST) -> bool:
                                 (valuation_accrual_name, 1),
                             )
                         )
-                        if len({name for name, _ in expected}) == 4 and (
-                            expected in returned_terms
+                        if (
+                            len(set(accumulator_names)) == 4
+                            and all(
+                                _name_has_single_zero_initialization_before(
+                                    tree,
+                                    name=name,
+                                    before_line=period_loop.lineno,
+                                )
+                                for name in accumulator_names
+                            )
+                            and expected in returned_terms
                         ):
                             return True
     return False
