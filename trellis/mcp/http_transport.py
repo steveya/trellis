@@ -44,7 +44,7 @@ def _require_fastmcp() -> None:
     if FastMCP is None:
         raise ImportError(
             "The local Trellis MCP HTTP transport requires the optional `mcp` package. "
-            "Install `trellis[mcp]` or `mcp>=1.27`."
+            "Install `trellis[mcp]` or `mcp>=1.27,<2`."
         ) from _FASTMCP_IMPORT_ERROR
 
 
