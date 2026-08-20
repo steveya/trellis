@@ -57,6 +57,12 @@ def _cds_composition_source(
     ),
     survival_index: str = "interval_stop - 1",
     event_index: str = "interval_index",
+    premium_discount: str = (
+        "market_state.discount.discount(grid.period_payment_times[period_index])"
+    ),
+    event_discount: str = (
+        "market_state.discount.discount(interval.settlement_time)"
+    ),
 ) -> str:
     """Build a compact, structurally complete CDS composition for validator tests."""
     return f'''
@@ -92,24 +98,25 @@ def evaluate(self, market_state):
             notional=1.0,
             rate=0.01,
             accrual=period.accrual_fraction,
-            discount_factor=1.0,
+            discount_factor={premium_discount},
             weight=survival_weight,
         ))
         accrued_to_valuation += 0.0
         for interval_index in range(interval_start, interval_stop):
             interval = grid.intervals[interval_index]
             event_weight = weights.event_weights[{event_index}]
+            event_discount = {event_discount}
             protection_leg += protection_payment_pv(ProtectionPayment(
                 notional=1.0,
                 recovery=0.4,
                 default_probability=event_weight,
-                discount_factor=1.0,
+                discount_factor=event_discount,
             ))
             accrued_on_event += coupon_cashflow_pv(CouponAccrual(
                 notional=1.0,
                 rate=0.01,
                 accrual=period.accrual_fraction * interval.period_fraction_elapsed,
-                discount_factor=1.0,
+                discount_factor=event_discount,
                 weight=event_weight,
             ))
         interval_start = interval_stop
@@ -1590,6 +1597,49 @@ def evaluate(self, market_state):
 
         assert any(
             finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("premium_discount", "event_discount"),
+        (
+            (
+                "1.0",
+                "market_state.discount.discount(interval.settlement_time)",
+            ),
+            (
+                "market_state.discount.discount(grid.period_payment_times[period_index])",
+                "1.0",
+            ),
+            (
+                "market_state.discount.discount(grid.period_payment_times[0])",
+                "market_state.discount.discount(interval.settlement_time)",
+            ),
+            (
+                "market_state.discount.discount(grid.period_payment_times[period_index])",
+                "market_state.discount.discount(grid.intervals[0].settlement_time)",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_wrong_discount_coordinates(
+        self,
+        registry,
+        premium_discount,
+        event_discount,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                premium_discount=premium_discount,
+                event_discount=event_discount,
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_discount_mapping"
             for finding in findings
         )
 

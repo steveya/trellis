@@ -837,6 +837,87 @@ def _is_survival_weight_at_period_stop(
     )
 
 
+def _is_discount_call_at_period_payment(
+    expression: ast.AST,
+    *,
+    grid_expression: ast.AST,
+    period_index_name: str,
+) -> bool:
+    """Recognize discounting at the active period's mapped payment time."""
+    if not (
+        isinstance(expression, ast.Call)
+        and _call_matches_symbol(expression, "discount")
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return False
+    payment_time = expression.args[0]
+    return (
+        isinstance(payment_time, ast.Subscript)
+        and isinstance(payment_time.value, ast.Attribute)
+        and payment_time.value.attr == "period_payment_times"
+        and _ast_equivalent(payment_time.value.value, grid_expression)
+        and _subscript_uses_name(payment_time, period_index_name)
+    )
+
+
+def _interval_alias_names(
+    interval_loop: ast.For | ast.AsyncFor,
+    *,
+    grid_expression: ast.AST,
+    interval_index_name: str,
+) -> frozenset[str]:
+    """Return aliases bound to the active grid interval in the nested loop."""
+    names: set[str] = set()
+    for node in _direct_loop_body_nodes(interval_loop):
+        assignment = _simple_name_assignment(node)
+        if assignment is None:
+            continue
+        name, value = assignment
+        if (
+            isinstance(value, ast.Subscript)
+            and isinstance(value.value, ast.Attribute)
+            and value.value.attr == "intervals"
+            and _ast_equivalent(value.value.value, grid_expression)
+            and _subscript_uses_name(value, interval_index_name)
+        ):
+            names.add(name)
+    return frozenset(names)
+
+
+def _is_discount_call_at_interval_settlement(
+    expression: ast.AST,
+    *,
+    grid_expression: ast.AST,
+    interval_index_name: str,
+    interval_aliases: frozenset[str],
+) -> bool:
+    """Recognize discounting at the active event interval's settlement time."""
+    if not (
+        isinstance(expression, ast.Call)
+        and _call_matches_symbol(expression, "discount")
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return False
+    settlement_time = expression.args[0]
+    if not (
+        isinstance(settlement_time, ast.Attribute)
+        and settlement_time.attr == "settlement_time"
+    ):
+        return False
+    interval = settlement_time.value
+    if isinstance(interval, ast.Name):
+        return interval.id in interval_aliases
+    return (
+        isinstance(interval, ast.Subscript)
+        and isinstance(interval.value, ast.Attribute)
+        and interval.value.attr == "intervals"
+        and _ast_equivalent(interval.value.value, grid_expression)
+        and _subscript_uses_name(interval, interval_index_name)
+    )
+
+
 def _expression_resolves_to_credit_curve(
     tree: ast.AST,
     expression: ast.AST,
@@ -1140,6 +1221,74 @@ def _cds_uses_active_event_weights(tree: ast.AST) -> bool:
                     predicate=event_weight_matches,
                 )
                 for value in event_accrual_values
+            )
+        ):
+            return True
+    return False
+
+
+def _cds_uses_active_discount_times(tree: ast.AST) -> bool:
+    """Bind premium and event cashflows to their mapped discount coordinates."""
+    for period_loop, interval_loop, _ in _cds_full_event_grid_loops(tree):
+        period_collection = _enumerated_collection(period_loop, "periods")
+        if period_collection is None or not isinstance(interval_loop.target, ast.Name):
+            continue
+        period_index_name, grid_expression = period_collection
+        interval_index_name = interval_loop.target.id
+        interval_aliases = _interval_alias_names(
+            interval_loop,
+            grid_expression=grid_expression,
+            interval_index_name=interval_index_name,
+        )
+
+        def scheduled_discount_matches(expression: ast.AST) -> bool:
+            return _is_discount_call_at_period_payment(
+                expression,
+                grid_expression=grid_expression,
+                period_index_name=period_index_name,
+            )
+
+        def event_discount_matches(expression: ast.AST) -> bool:
+            return _is_discount_call_at_interval_settlement(
+                expression,
+                grid_expression=grid_expression,
+                interval_index_name=interval_index_name,
+                interval_aliases=interval_aliases,
+            )
+
+        premium_values = _direct_loop_augmented_values_with_call(
+            period_loop,
+            "coupon_cashflow_pv",
+        )
+        protection_values = _direct_loop_augmented_values_with_call(
+            interval_loop,
+            "protection_payment_pv",
+        )
+        event_accrual_values = _direct_loop_augmented_values_with_call(
+            interval_loop,
+            "coupon_cashflow_pv",
+        )
+        if (
+            premium_values
+            and protection_values
+            and event_accrual_values
+            and all(
+                _subtree_keyword_matches(
+                    tree,
+                    value,
+                    keyword_name="discount_factor",
+                    predicate=scheduled_discount_matches,
+                )
+                for value in premium_values
+            )
+            and all(
+                _subtree_keyword_matches(
+                    tree,
+                    value,
+                    keyword_name="discount_factor",
+                    predicate=event_discount_matches,
+                )
+                for value in protection_values + event_accrual_values
             )
         ):
             return True
@@ -1572,6 +1721,20 @@ class AlgorithmContractValidator:
                                 f"Route '{route_spec.id}' must use the mapped period-stop "
                                 "survival weight for scheduled premium and the active "
                                 "interval's event weight for protection and event accrual."
+                            ),
+                        )
+                    )
+                if not _cds_uses_active_discount_times(tree):
+                    findings.append(
+                        SemanticFinding(
+                            validator="algorithm_contract",
+                            severity="error",
+                            category="credit_default_swap_discount_mapping",
+                            message=(
+                                f"Route '{route_spec.id}' must discount scheduled "
+                                "premium at the mapped period payment time and "
+                                "protection/event accrual at the active interval's "
+                                "settlement time."
                             ),
                         )
                     )

@@ -442,7 +442,10 @@ assemblies fail semantic validation even when they mention every required
 primitive. Within that mapping, scheduled premium must use
 ``survival_weights[interval_stop - 1]`` while protection and accrued-on-event
 cashflows use ``event_weights[interval_index]`` (directly or through simple
-aliases). The accepted return AST must preserve the protection-buyer convention
+aliases). Scheduled premium discounting must use
+``period_payment_times[period_index]``; protection and accrued-on-event
+discounting must use the active interval's ``settlement_time``. The accepted
+return AST must preserve the protection-buyer convention
 ``protection_leg - premium_leg - accrued_on_event + accrued_to_valuation``;
 reversed legs, omitted accrual terms, or wrong accrual signs fail closed.
 

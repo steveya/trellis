@@ -313,6 +313,10 @@ class TestKnowledgeStore:
         assert "expected_first_event_weights" in template
         assert "CouponAccrual" in template
         assert "ProtectionPayment" in template
+        assert "notional=spec.notional" in template
+        assert "weight=weights.survival_weights[stop - 1]" in template
+        assert "default_probability=event_weight" in template
+        assert "discount_factor=df" in template
         assert "WEEKEND_ONLY" in template
         assert "BusinessDayAdjustment.FOLLOWING" in template
         assert "StubType.SHORT_LAST" in template

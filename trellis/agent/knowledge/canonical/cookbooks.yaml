@@ -253,17 +253,17 @@ analytical:
     \ cursor = 0\n    for period_index, period in enumerate(grid.periods):\n     \
     \   stop = grid.period_interval_stops[period_index]\n        if stop <= cursor:\n\
     \            cursor = stop\n            continue\n        accrual = float(period.accrual_fraction)\n\
-    \        premium += coupon_cashflow_pv(CouponAccrual(\n            spec.notional,\
-    \ spread, accrual,\n            market_state.discount.discount(grid.period_payment_times[period_index]),\n\
-    \            weights.survival_weights[stop - 1],\n        ))\n        accrued_to_valuation\
+    \        premium += coupon_cashflow_pv(CouponAccrual(\n            notional=spec.notional,\
+    \ rate=spread, accrual=accrual,\n            discount_factor=market_state.discount.discount(grid.period_payment_times[period_index]),\n\
+    \            weight=weights.survival_weights[stop - 1],\n        ))\n        accrued_to_valuation\
     \ += spec.notional * spread * accrual * grid.elapsed_period_fractions[period_index]\n\
     \        for event_index in range(cursor, stop):\n            interval = grid.intervals[event_index]\n\
     \            event_weight = weights.event_weights[event_index]\n            df\
     \ = market_state.discount.discount(interval.settlement_time)\n            protection\
-    \ += protection_payment_pv(ProtectionPayment(\n                spec.notional,\
-    \ spec.recovery, event_weight, df\n            ))\n            accrued_on_event\
-    \ += coupon_cashflow_pv(CouponAccrual(\n                spec.notional, spread,\
-    \ accrual * interval.period_fraction_elapsed, df, event_weight\n            ))\n\
+    \ += protection_payment_pv(ProtectionPayment(\n                notional=spec.notional,\
+    \ recovery=spec.recovery, default_probability=event_weight, discount_factor=df\n            ))\n            accrued_on_event\
+    \ += coupon_cashflow_pv(CouponAccrual(\n                notional=spec.notional, rate=spread,\
+    \ accrual=accrual * interval.period_fraction_elapsed, discount_factor=df, weight=event_weight\n            ))\n\
     \        cursor = stop\n    return float(protection - premium - accrued_on_event\
     \ + accrued_to_valuation)\n```\n"
 calibration:
