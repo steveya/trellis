@@ -435,7 +435,11 @@ hard-codes a smaller path count such as ``50000`` instead of flowing
 ``spec.n_paths``, expect a semantic or comparison-coherence failure before
 reviewer escalation.
 The route validator also checks that the first-event weight call derives its
-initial mass from credit-curve survival at the first live interval and that
+initial mass exactly from credit-curve survival at the first live interval of
+the same grid used to derive conditional probabilities. Multiplying, offsetting,
+or otherwise wrapping that survival mass in arithmetic fails closed; only the
+empty-grid ``else 1.0`` guard and simple aliases/``float`` conversion are
+accepted. The validator also checks that
 premium and protection PVs are accumulated through the full
 ``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
 assemblies fail semantic validation even when they mention every required
@@ -448,6 +452,12 @@ discounting must use the active interval's ``settlement_time``. The accepted
 return AST must preserve the protection-buyer convention
 ``protection_leg - premium_leg - accrued_on_event + accrued_to_valuation``;
 reversed legs, omitted accrual terms, or wrong accrual signs fail closed.
+Every premium, protection, and accrued-on-event constructor must bind notional,
+normalized spread, and recovery to the active spec rather than literals. The
+valuation-accrual adjustment must likewise be the exact active-spec notional,
+normalized spread, active-period accrual, and mapped elapsed-period-fraction
+product. A guarded ``spread > 1.0`` multiplication by ``1e-4`` is the admitted
+basis-point normalization; other mutations of the bound spread fail closed.
 
 For analytical rate-style swaption routes, the deterministic bundle also checks
 composition consistency against the retained

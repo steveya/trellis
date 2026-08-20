@@ -939,40 +939,158 @@ def _expression_resolves_to_credit_curve(
     )
 
 
+def _cds_conditional_event_grid(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> ast.AST | None:
+    """Return the grid used to derive one conditional-probability expression."""
+    if (
+        isinstance(expression, ast.Call)
+        and _call_matches_symbol(
+            expression,
+            "conditional_event_probabilities_from_curve",
+        )
+        and len(expression.args) == 2
+        and not expression.keywords
+    ):
+        intervals = expression.args[1]
+        if isinstance(intervals, ast.Attribute) and intervals.attr == "intervals":
+            return intervals.value
+        return None
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return None
+    assigned_values = _assigned_values_for_name(tree, expression.id)
+    if not assigned_values:
+        return None
+    grids = tuple(
+        _cds_conditional_event_grid(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
+        )
+        for assigned_value in assigned_values
+    )
+    if any(grid is None for grid in grids):
+        return None
+    first_grid = grids[0]
+    if first_grid is None or not all(
+        _ast_equivalent(first_grid, grid)
+        for grid in grids[1:]
+        if grid is not None
+    ):
+        return None
+    return first_grid
+
+
+def _cds_exact_initial_survival_grid(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> ast.AST | None:
+    """Return the grid for an exact first-live survival expression."""
+    if (
+        isinstance(expression, ast.Call)
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == "float"
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return _cds_exact_initial_survival_grid(
+            tree,
+            expression.args[0],
+            seen_names=seen_names,
+        )
+    if isinstance(expression, ast.IfExp):
+        grid_expression = _cds_exact_initial_survival_grid(
+            tree,
+            expression.body,
+            seen_names=seen_names,
+        )
+        if grid_expression is None:
+            return None
+        guard = expression.test
+        fallback = expression.orelse
+        if not (
+            isinstance(guard, ast.Attribute)
+            and guard.attr == "intervals"
+            and _ast_equivalent(guard.value, grid_expression)
+            and isinstance(fallback, ast.Constant)
+            and isinstance(fallback.value, (int, float))
+            and not isinstance(fallback.value, bool)
+            and float(fallback.value) == 1.0
+        ):
+            return None
+        return grid_expression
+    if isinstance(expression, ast.Name):
+        if expression.id in seen_names:
+            return None
+        assigned_values = _assigned_values_for_name(tree, expression.id)
+        if not assigned_values:
+            return None
+        grids = tuple(
+            _cds_exact_initial_survival_grid(
+                tree,
+                assigned_value,
+                seen_names=seen_names | {expression.id},
+            )
+            for assigned_value in assigned_values
+        )
+        if any(grid is None for grid in grids):
+            return None
+        first_grid = grids[0]
+        if first_grid is None or not all(
+            _ast_equivalent(first_grid, grid)
+            for grid in grids[1:]
+            if grid is not None
+        ):
+            return None
+        return first_grid
+    if not (
+        isinstance(expression, ast.Call)
+        and _call_matches_symbol(expression, "survival_probability")
+        and isinstance(expression.func, ast.Attribute)
+        and len(expression.args) == 1
+        and not expression.keywords
+        and _expression_resolves_to_credit_curve(tree, expression.func.value)
+    ):
+        return None
+    first_interval_start = expression.args[0]
+    if not (
+        isinstance(first_interval_start, ast.Attribute)
+        and first_interval_start.attr == "start_time"
+        and isinstance(first_interval_start.value, ast.Subscript)
+    ):
+        return None
+    first_interval = first_interval_start.value
+    if not (
+        isinstance(first_interval.value, ast.Attribute)
+        and first_interval.value.attr == "intervals"
+        and _subscript_uses_zero(first_interval)
+    ):
+        return None
+    return first_interval.value.value
+
+
 def _cds_initial_survival_expression_is_valid(
     tree: ast.AST,
     expression: ast.AST,
+    *,
+    conditional_probabilities: ast.AST,
 ) -> bool:
-    """Recognize survival to the first live default-event interval."""
-    candidates = [expression]
-    if isinstance(expression, ast.Name):
-        candidates.extend(_assigned_values_for_name(tree, expression.id))
-    for candidate in candidates:
-        for call in ast.walk(candidate):
-            if not isinstance(call, ast.Call) or not _call_matches_symbol(
-                call,
-                "survival_probability",
-            ):
-                continue
-            if not isinstance(call.func, ast.Attribute) or len(call.args) != 1:
-                continue
-            if not _expression_resolves_to_credit_curve(tree, call.func.value):
-                continue
-            first_interval_start = call.args[0]
-            if not (
-                isinstance(first_interval_start, ast.Attribute)
-                and first_interval_start.attr == "start_time"
-                and isinstance(first_interval_start.value, ast.Subscript)
-            ):
-                continue
-            first_interval = first_interval_start.value
-            if (
-                isinstance(first_interval.value, ast.Attribute)
-                and first_interval.value.attr == "intervals"
-                and _subscript_uses_zero(first_interval)
-            ):
-                return True
-    return False
+    """Recognize exact survival to the active first live event interval."""
+    conditional_grid = _cds_conditional_event_grid(
+        tree,
+        conditional_probabilities,
+    )
+    survival_grid = _cds_exact_initial_survival_grid(tree, expression)
+    return (
+        conditional_grid is not None
+        and survival_grid is not None
+        and _ast_equivalent(conditional_grid, survival_grid)
+    )
 
 
 def _enumerated_collection(
@@ -1289,6 +1407,325 @@ def _cds_uses_active_discount_times(tree: ast.AST) -> bool:
                     predicate=event_discount_matches,
                 )
                 for value in protection_values + event_accrual_values
+            )
+        ):
+            return True
+    return False
+
+
+def _expression_resolves_to_active_spec(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Recognize ``self._spec``/``self.spec`` and unambiguous aliases."""
+    if (
+        isinstance(expression, ast.Attribute)
+        and expression.attr in {"_spec", "spec"}
+        and isinstance(expression.value, ast.Name)
+        and expression.value.id == "self"
+    ):
+        return True
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return False
+    assigned_values = _assigned_values_for_name(tree, expression.id)
+    return bool(assigned_values) and all(
+        _expression_resolves_to_active_spec(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
+        )
+        for assigned_value in assigned_values
+    )
+
+
+def _is_one_basis_point_scale(expression: ast.AST) -> bool:
+    return (
+        isinstance(expression, ast.Constant)
+        and isinstance(expression.value, (int, float))
+        and not isinstance(expression.value, bool)
+        and float(expression.value) == 1e-4
+    )
+
+
+def _is_basis_point_guard(test: ast.AST, name: str) -> bool:
+    return (
+        isinstance(test, ast.Compare)
+        and isinstance(test.left, ast.Name)
+        and test.left.id == name
+        and len(test.ops) == 1
+        and isinstance(test.ops[0], ast.Gt)
+        and len(test.comparators) == 1
+        and isinstance(test.comparators[0], ast.Constant)
+        and isinstance(test.comparators[0].value, (int, float))
+        and not isinstance(test.comparators[0].value, bool)
+        and float(test.comparators[0].value) == 1.0
+    )
+
+
+def _is_supported_spread_normalization(
+    tree: ast.AST,
+    assignment: ast.AugAssign,
+    *,
+    name: str,
+) -> bool:
+    """Allow only the documented guarded basis-point conversion."""
+    if not (
+        isinstance(assignment.target, ast.Name)
+        and assignment.target.id == name
+        and isinstance(assignment.op, ast.Mult)
+        and _is_one_basis_point_scale(assignment.value)
+    ):
+        return False
+    return any(
+        isinstance(node, ast.If)
+        and _is_basis_point_guard(node.test, name)
+        and assignment in node.body
+        for node in ast.walk(tree)
+    )
+
+
+def _expression_resolves_to_active_spec_field(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    field: str,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Recognize an exact active-spec field with bounded alias handling."""
+    if (
+        isinstance(expression, ast.Call)
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == "float"
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return _expression_resolves_to_active_spec_field(
+            tree,
+            expression.args[0],
+            field=field,
+            seen_names=seen_names,
+        )
+    if (
+        isinstance(expression, ast.Attribute)
+        and expression.attr == field
+        and _expression_resolves_to_active_spec(tree, expression.value)
+    ):
+        return True
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return False
+    assigned_values = _assigned_values_for_name(tree, expression.id)
+    if not assigned_values or not all(
+        _expression_resolves_to_active_spec_field(
+            tree,
+            assigned_value,
+            field=field,
+            seen_names=seen_names | {expression.id},
+        )
+        for assigned_value in assigned_values
+    ):
+        return False
+    mutations = tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.AugAssign)
+        and isinstance(node.target, ast.Name)
+        and node.target.id == expression.id
+    )
+    return not mutations or (
+        field == "spread"
+        and all(
+            _is_supported_spread_normalization(
+                tree,
+                mutation,
+                name=expression.id,
+            )
+            for mutation in mutations
+        )
+    )
+
+
+def _multiplication_factors(expression: ast.AST) -> tuple[ast.AST, ...]:
+    """Flatten an associative multiplication into its exact factors."""
+    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Mult):
+        return (
+            _multiplication_factors(expression.left)
+            + _multiplication_factors(expression.right)
+        )
+    return (expression,)
+
+
+def _is_active_period_accrual(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    period_name: str,
+) -> bool:
+    return _expression_or_alias_matches(
+        tree,
+        expression,
+        lambda candidate: (
+            isinstance(candidate, ast.Attribute)
+            and candidate.attr == "accrual_fraction"
+            and isinstance(candidate.value, ast.Name)
+            and candidate.value.id == period_name
+        ),
+    )
+
+
+def _is_active_elapsed_period_fraction(
+    expression: ast.AST,
+    *,
+    grid_expression: ast.AST,
+    period_index_name: str,
+) -> bool:
+    return (
+        isinstance(expression, ast.Subscript)
+        and isinstance(expression.value, ast.Attribute)
+        and expression.value.attr == "elapsed_period_fractions"
+        and _ast_equivalent(expression.value.value, grid_expression)
+        and _subscript_uses_name(expression, period_index_name)
+    )
+
+
+def _cds_valuation_adjustment_matches(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    grid_expression: ast.AST,
+    period_index_name: str,
+    period_name: str,
+) -> bool:
+    """Require the exact notional/spread/accrual/elapsed adjustment product."""
+    factors = _multiplication_factors(expression)
+    if len(factors) != 4:
+        return False
+    predicates = (
+        lambda factor: _expression_resolves_to_active_spec_field(
+            tree,
+            factor,
+            field="notional",
+        ),
+        lambda factor: _expression_resolves_to_active_spec_field(
+            tree,
+            factor,
+            field="spread",
+        ),
+        lambda factor: _is_active_period_accrual(
+            tree,
+            factor,
+            period_name=period_name,
+        ),
+        lambda factor: _is_active_elapsed_period_fraction(
+            factor,
+            grid_expression=grid_expression,
+            period_index_name=period_index_name,
+        ),
+    )
+    return all(
+        sum(predicate(factor) for factor in factors) == 1
+        for predicate in predicates
+    )
+
+
+def _cds_binds_active_economic_terms(tree: ast.AST) -> bool:
+    """Bind all CDS legs and valuation accrual to the active spec fields."""
+    for period_loop, interval_loop, _ in _cds_full_event_grid_loops(tree):
+        period_collection = _enumerated_collection(period_loop, "periods")
+        if period_collection is None or not (
+            isinstance(period_loop.target, ast.Tuple)
+            and len(period_loop.target.elts) == 2
+            and isinstance(period_loop.target.elts[1], ast.Name)
+        ):
+            continue
+        period_index_name, grid_expression = period_collection
+        period_name = period_loop.target.elts[1].id
+        premium_values = _direct_loop_augmented_values_with_call(
+            period_loop,
+            "coupon_cashflow_pv",
+        )
+        protection_values = _direct_loop_augmented_values_with_call(
+            interval_loop,
+            "protection_payment_pv",
+        )
+        event_accrual_values = _direct_loop_augmented_values_with_call(
+            interval_loop,
+            "coupon_cashflow_pv",
+        )
+        premium_names = set(
+            _direct_loop_augmented_target_names(
+                period_loop,
+                symbol="coupon_cashflow_pv",
+            )
+        )
+        valuation_values = tuple(
+            node.value
+            for node in _direct_loop_body_nodes(period_loop)
+            if isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id not in premium_names
+        )
+
+        def field_matches(
+            value: ast.AST,
+            constructor: str,
+            keyword_name: str,
+            field: str,
+        ) -> bool:
+            constructors = tuple(
+                node
+                for node in ast.walk(value)
+                if isinstance(node, ast.Call)
+                and _call_matches_symbol(node, constructor)
+            )
+            return bool(constructors) and all(
+                any(
+                    keyword.arg == keyword_name
+                    and _expression_resolves_to_active_spec_field(
+                        tree,
+                        keyword.value,
+                        field=field,
+                    )
+                    for keyword in call.keywords
+                )
+                for call in constructors
+            )
+
+        if (
+            len(premium_values) == 1
+            and len(protection_values) == 1
+            and len(event_accrual_values) == 1
+            and len(valuation_values) == 1
+            and all(
+                field_matches(value, "CouponAccrual", "notional", "notional")
+                and field_matches(value, "CouponAccrual", "rate", "spread")
+                for value in premium_values + event_accrual_values
+            )
+            and all(
+                field_matches(
+                    value,
+                    "ProtectionPayment",
+                    "notional",
+                    "notional",
+                )
+                and field_matches(
+                    value,
+                    "ProtectionPayment",
+                    "recovery",
+                    "recovery",
+                )
+                for value in protection_values
+            )
+            and all(
+                _cds_valuation_adjustment_matches(
+                    tree,
+                    value,
+                    grid_expression=grid_expression,
+                    period_index_name=period_index_name,
+                    period_name=period_name,
+                )
+                for value in valuation_values
             )
         ):
             return True
@@ -1670,10 +2107,13 @@ class AlgorithmContractValidator:
                     ),
                     None,
                 )
-                if initial_survival is not None and (
-                    _cds_initial_survival_expression_is_valid(
+                if (
+                    initial_survival is not None
+                    and call.args
+                    and _cds_initial_survival_expression_is_valid(
                         tree,
                         initial_survival,
+                        conditional_probabilities=call.args[0],
                     )
                 ):
                     continue
@@ -1735,6 +2175,21 @@ class AlgorithmContractValidator:
                                 "premium at the mapped period payment time and "
                                 "protection/event accrual at the active interval's "
                                 "settlement time."
+                            ),
+                        )
+                    )
+                if not _cds_binds_active_economic_terms(tree):
+                    findings.append(
+                        SemanticFinding(
+                            validator="algorithm_contract",
+                            severity="error",
+                            category="credit_default_swap_economic_binding",
+                            message=(
+                                f"Route '{route_spec.id}' must bind premium, "
+                                "protection, event accrual, and valuation accrual "
+                                "to the active spec's notional, normalized spread, "
+                                "and recovery fields. Hard-coded economic terms "
+                                "can produce a valid-looking but incorrect CDS PV."
                             ),
                         )
                     )
