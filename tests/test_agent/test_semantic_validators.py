@@ -2251,6 +2251,69 @@ def evaluate(self, market_state):
         assert not any(f.severity == "error" for f in findings)
 
     @pytest.mark.parametrize(
+        ("seed", "extra_setup"),
+        (
+            ("None", ""),
+            ("41", ""),
+            ("seed_value", "seed_value = None"),
+            (
+                "seed_value",
+                "seed_value = 42\n    seed_value = None",
+            ),
+            (
+                "seed_value",
+                "seed_value = 42\n    seed_value += 1",
+            ),
+            ("1" + "0" * 400, ""),
+        ),
+    )
+    def test_rejects_credit_default_swap_unreproducible_sampling_seed(
+        self,
+        registry,
+        seed,
+        extra_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol="sample_first_event_weights",
+                weight_controls=(
+                    "n_paths=self._spec.n_paths or 250000, "
+                    f"seed={seed},"
+                ),
+                extra_setup=extra_setup,
+            ),
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_seed_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_reproducible_sampling_seed_alias(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol="sample_first_event_weights",
+                weight_controls=(
+                    "n_paths=self._spec.n_paths or 250000, seed=seed_value,"
+                ),
+                extra_setup="seed_value = 42",
+            ),
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+
+        assert not any(f.severity == "error" for f in findings)
+
+    @pytest.mark.parametrize(
         ("premium_discount", "event_discount"),
         (
             (
@@ -2444,6 +2507,109 @@ def evaluate(self, market_state):
 
         findings = AlgorithmContractValidator().validate(
             _cds_composition_source(**overrides),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("anchor", "sign_line"),
+        (
+            (
+                "            weight=survival_weight,\n",
+                "            sign=-1.0,\n",
+            ),
+            (
+                "                discount_factor=event_discount,\n",
+                "                sign=-1.0,\n",
+            ),
+            (
+                "                weight=event_weight,\n",
+                "                sign=-1.0,\n",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_negative_constructor_sign(
+        self,
+        registry,
+        anchor,
+        sign_line,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            anchor,
+            anchor + sign_line,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_positive_constructor_sign_alias(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(extra_setup="leg_sign = 1.0")
+        for anchor, sign_line in (
+            (
+                "            weight=survival_weight,\n",
+                "            sign=leg_sign,\n",
+            ),
+            (
+                "                discount_factor=event_discount,\n",
+                "                sign=leg_sign,\n",
+            ),
+            (
+                "                weight=event_weight,\n",
+                "                sign=leg_sign,\n",
+            ),
+        ):
+            source = source.replace(anchor, anchor + sign_line, 1)
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert not any(f.severity == "error" for f in findings)
+
+    @pytest.mark.parametrize(
+        "extra_setup",
+        (
+            "leg_sign = 1.0\n    leg_sign = -1.0",
+            "leg_sign = 1.0\n    leg_sign *= -1.0",
+        ),
+    )
+    def test_rejects_credit_default_swap_reassigned_constructor_sign_alias(
+        self,
+        registry,
+        extra_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=extra_setup,
+        ).replace(
+            "            weight=survival_weight,\n",
+            "            weight=survival_weight,\n            sign=leg_sign,\n",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
             _make_plan("credit_default_swap"),
             spec,
         )

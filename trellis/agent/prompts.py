@@ -487,6 +487,7 @@ def _render_family_route_guidance(
             "- Derive ordered conditional probabilities with `conditional_event_probabilities_from_curve(credit_curve, event_grid.intervals)`.",
             "- Compute survival to the first live interval with `credit_curve.survival_probability(event_grid.intervals[0].start_time)` (or `1.0` for an empty grid) and pass it as `initial_survival_weight`; forward-start weights must be unconditional from valuation.",
             "- Assemble the scheduled premium/accrued leg with `CouponAccrual` plus `coupon_cashflow_pv`, and the trigger leg with `ProtectionPayment` plus `protection_payment_pv`.",
+            "- Leave every `CouponAccrual` and `ProtectionPayment` sign absent or explicitly positive one; the final signed CDS return owns leg polarity.",
             "- Use `event_grid.period_interval_stops`, `period_payment_times`, and `elapsed_period_fractions` to align interval weights with each schedule period; do not reconstruct those mappings by hand.",
             "- Keep the interval loop as a reachable direct child of the period loop. Initialize each premium, protection, event-accrual, and valuation-accrual accumulator exactly once to `0.0`, update it only with additive `+=` in its recognized loop, and do not write to it anywhere else before return.",
             "- CDS running spreads may arrive as basis points. Normalize once at the top of `evaluate()` with `spread = float(spec.spread)` and `if spread > 1.0: spread *= 1e-4`, then use only the local decimal spread.",
@@ -496,7 +497,7 @@ def _render_family_route_guidance(
         ])
         if method == "monte_carlo":
             lines.extend([
-                "- Produce Monte Carlo weights with `sample_first_event_weights(conditional_probabilities, initial_survival_weight=initial_survival_weight, n_paths=..., seed=42)`; this generic primitive owns the persistent alive-state simulation.",
+                "- Produce Monte Carlo weights with `sample_first_event_weights(conditional_probabilities, initial_survival_weight=initial_survival_weight, n_paths=..., seed=42)`; this generic primitive owns the persistent alive-state simulation, and `seed=None` or any value other than the fixed reproducible `42` is not admitted.",
                 "- Bind the optional path control with a non-null fallback, for example `getattr(spec, \"n_paths\", 250000) or 250000`; passing `spec.n_paths` directly can forward `None`, and do not hard-code `50000` for comparison evidence.",
                 "- Do not instantiate `MonteCarloEngine` or write adapter-local RNG/default-state loops. This lane samples one first-event process, not an equity diffusion.",
             ])

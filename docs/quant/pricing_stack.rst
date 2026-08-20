@@ -1189,10 +1189,12 @@ composition is:
 4. ``expected_first_event_weights(...)`` supplies exact unconditional event
    and post-interval survival mass, or
    ``sample_first_event_weights(...)`` supplies reproducible empirical mass
-   from one persistent alive-state simulation.
+   from one persistent alive-state simulation with the canonical fixed seed
+   ``42``.
 5. ``CouponAccrual`` / ``coupon_cashflow_pv(...)`` and
    ``ProtectionPayment`` / ``protection_payment_pv(...)`` assemble the
-   scheduled premium, accrued-on-event, and trigger legs.
+   scheduled premium, accrued-on-event, and trigger legs. Their constructor
+   signs remain absent or positive one; the final CDS expression owns polarity.
 
 The generated adapter owns quote normalization, schedule conventions,
 period-to-interval iteration, discount coordinates, signs, and the final

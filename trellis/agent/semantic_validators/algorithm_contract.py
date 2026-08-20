@@ -1785,6 +1785,48 @@ def _is_integer_constant(expression: ast.AST, value: int) -> bool:
     )
 
 
+def _expression_resolves_to_exact_number(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    value: float,
+    integer_only: bool = False,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Resolve one immutable local alias chain to an exact numeric constant."""
+    if isinstance(expression, ast.Constant) and not isinstance(
+        expression.value,
+        bool,
+    ):
+        if integer_only and not isinstance(expression.value, int):
+            return False
+        return (
+            isinstance(expression.value, (int, float))
+            and expression.value == value
+        )
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return False
+    assigned_values = _assigned_values_for_name(tree, expression.id)
+    bindings = tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name)
+        and node.id == expression.id
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+    )
+    return (
+        len(assigned_values) == 1
+        and len(bindings) == 1
+        and _expression_resolves_to_exact_number(
+            tree,
+            assigned_values[0],
+            value=value,
+            integer_only=integer_only,
+            seen_names=seen_names | {expression.id},
+        )
+    )
+
+
 def _cds_path_count_is_active_spec_control(
     tree: ast.AST,
     expression: ast.AST,
@@ -1841,6 +1883,23 @@ def _cds_sample_path_count_is_valid(tree: ast.AST, call: ast.Call) -> bool:
     return len(path_counts) == 1 and _cds_path_count_is_active_spec_control(
         tree,
         path_counts[0],
+    )
+
+
+def _cds_sample_seed_is_valid(tree: ast.AST, call: ast.Call) -> bool:
+    """Require the canonical reproducible seed, including simple aliases."""
+    if any(keyword.arg is None for keyword in call.keywords):
+        return False
+    seeds = tuple(
+        keyword.value
+        for keyword in call.keywords
+        if keyword.arg == "seed"
+    )
+    return len(seeds) == 1 and _expression_resolves_to_exact_number(
+        tree,
+        seeds[0],
+        value=42.0,
+        integer_only=True,
     )
 
 
@@ -2312,6 +2371,40 @@ def _constructor_keyword_matches(
     )
 
 
+def _constructor_signs_are_positive(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    constructor: str,
+) -> bool:
+    """Require constructor signs to be absent or resolve exactly to positive one."""
+    constructors = tuple(
+        node
+        for node in ast.walk(expression)
+        if isinstance(node, ast.Call) and _call_matches_symbol(node, constructor)
+    )
+    if not constructors:
+        return False
+    for call in constructors:
+        if any(keyword.arg is None for keyword in call.keywords):
+            return False
+        signs = tuple(
+            keyword.value
+            for keyword in call.keywords
+            if keyword.arg == "sign"
+        )
+        if signs and not (
+            len(signs) == 1
+            and _expression_resolves_to_exact_number(
+                tree,
+                signs[0],
+                value=1.0,
+            )
+        ):
+            return False
+    return True
+
+
 def _cds_uses_active_coupon_accruals(tree: ast.AST) -> bool:
     """Bind scheduled and event coupon accruals to active grid coordinates."""
     for period_loop, interval_loop, _ in _cds_full_event_grid_loops(tree):
@@ -2505,6 +2598,11 @@ def _cds_binds_active_economic_terms(tree: ast.AST) -> bool:
             and all(
                 field_matches(value, "CouponAccrual", "notional", "notional")
                 and field_matches(value, "CouponAccrual", "rate", "spread")
+                and _constructor_signs_are_positive(
+                    tree,
+                    value,
+                    constructor="CouponAccrual",
+                )
                 for value in premium_values + event_accrual_values
             )
             and all(
@@ -2519,6 +2617,11 @@ def _cds_binds_active_economic_terms(tree: ast.AST) -> bool:
                     "ProtectionPayment",
                     "recovery",
                     "recovery",
+                )
+                and _constructor_signs_are_positive(
+                    tree,
+                    value,
+                    constructor="ProtectionPayment",
                 )
                 for value in protection_values
             )
@@ -2988,12 +3091,13 @@ class AlgorithmContractValidator:
                 )
 
         if selected_weight_symbol == "sample_first_event_weights":
+            sampled_weight_calls = _find_calls_for_symbol(
+                tree,
+                "sample_first_event_weights",
+            )
             invalid_path_count = any(
                 not _cds_sample_path_count_is_valid(tree, call)
-                for call in _find_calls_for_symbol(
-                    tree,
-                    "sample_first_event_weights",
-                )
+                for call in sampled_weight_calls
             )
             if invalid_path_count:
                 findings.append(
@@ -3005,6 +3109,23 @@ class AlgorithmContractValidator:
                             f"Route '{route_spec.id}' must bind sampled first-event "
                             "weights to the active spec's n_paths control, with only "
                             "the declared 250000-path fallback."
+                        ),
+                    )
+                )
+            invalid_seed = any(
+                not _cds_sample_seed_is_valid(tree, call)
+                for call in sampled_weight_calls
+            )
+            if invalid_seed:
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_seed_binding",
+                        message=(
+                            f"Route '{route_spec.id}' must bind sampled first-event "
+                            "weights to the canonical reproducible seed 42; omitted, "
+                            "None, opaque, or other seed values are not admitted."
                         ),
                     )
                 )

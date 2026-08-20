@@ -443,6 +443,10 @@ literal fallback admitted by this route validator. Because ``n_paths`` is an
 optional typed field, passing ``spec.n_paths`` directly is rejected: the call
 must guarantee a non-null value, for example
 ``getattr(spec, "n_paths", 250000) or 250000``.
+The sampler seed must resolve exactly to the canonical reproducible integer
+``42``; omitted, ``None``, opaque, or other seed values fail closed. Constructor
+signs on ``CouponAccrual`` and ``ProtectionPayment`` must be absent or resolve
+to positive one because the final signed CDS return owns leg polarity.
 The route validator also checks that the first-event weight call derives its
 initial mass exactly from credit-curve survival at the first live interval of
 the same grid used to derive conditional probabilities. Multiplying, offsetting,
