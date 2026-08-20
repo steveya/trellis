@@ -10,6 +10,7 @@ Checks:
 from __future__ import annotations
 
 import ast
+from collections.abc import Callable
 
 from trellis.agent.codegen_guardrails import GenerationPlan
 from trellis.agent.route_registry import RouteSpec, resolve_route_primitives
@@ -662,6 +663,34 @@ def _direct_loop_body_augments_with_call(
     )
 
 
+def _direct_loop_augmented_values_with_call(
+    loop: ast.For | ast.AsyncFor,
+    symbol: str,
+) -> tuple[ast.AST, ...]:
+    """Return accumulated expressions containing a call, excluding nested loops."""
+    return tuple(
+        node.value
+        for node in _direct_loop_body_nodes(loop)
+        if isinstance(node, ast.AugAssign)
+        and _node_calls_symbol(node.value, symbol)
+    )
+
+
+def _direct_loop_augmented_target_names(
+    loop: ast.For | ast.AsyncFor,
+    *,
+    symbol: str | None = None,
+) -> tuple[str, ...]:
+    """Return direct-loop accumulator names, optionally filtered by a call."""
+    return tuple(
+        node.target.id
+        for node in _direct_loop_body_nodes(loop)
+        if isinstance(node, ast.AugAssign)
+        and isinstance(node.target, ast.Name)
+        and (symbol is None or _node_calls_symbol(node.value, symbol))
+    )
+
+
 def _simple_name_assignment(node: ast.AST) -> tuple[str, ast.AST] | None:
     """Return a simple assigned name and value, if present."""
     if (
@@ -712,6 +741,99 @@ def _subscript_uses_zero(node: ast.Subscript) -> bool:
         and isinstance(node.slice.value, int)
         and not isinstance(node.slice.value, bool)
         and node.slice.value == 0
+    )
+
+
+def _expression_or_alias_matches(
+    tree: ast.AST,
+    expression: ast.AST,
+    predicate: Callable[[ast.AST], bool],
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Apply a structural predicate through simple aliases and ``float`` wrappers."""
+    if predicate(expression):
+        return True
+    if (
+        isinstance(expression, ast.Call)
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == "float"
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return _expression_or_alias_matches(
+            tree,
+            expression.args[0],
+            predicate,
+            seen_names=seen_names,
+        )
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return False
+    return any(
+        _expression_or_alias_matches(
+            tree,
+            assigned_value,
+            predicate,
+            seen_names=seen_names | {expression.id},
+        )
+        for assigned_value in _assigned_values_for_name(tree, expression.id)
+    )
+
+
+def _subtree_keyword_matches(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    keyword_name: str,
+    predicate: Callable[[ast.AST], bool],
+) -> bool:
+    """Require one nested constructor keyword to resolve to the expected shape."""
+    return any(
+        keyword.arg == keyword_name
+        and _expression_or_alias_matches(tree, keyword.value, predicate)
+        for node in ast.walk(expression)
+        if isinstance(node, ast.Call)
+        for keyword in node.keywords
+    )
+
+
+def _is_weight_at_name(
+    expression: ast.AST,
+    *,
+    weight_attribute: str,
+    index_name: str,
+) -> bool:
+    """Recognize ``*.{weight_attribute}[index_name]``."""
+    return (
+        isinstance(expression, ast.Subscript)
+        and isinstance(expression.value, ast.Attribute)
+        and expression.value.attr == weight_attribute
+        and _subscript_uses_name(expression, index_name)
+    )
+
+
+def _is_survival_weight_at_period_stop(
+    expression: ast.AST,
+    *,
+    stop_name: str,
+) -> bool:
+    """Recognize the post-event survival mass at ``period_stop - 1``."""
+    if not (
+        isinstance(expression, ast.Subscript)
+        and isinstance(expression.value, ast.Attribute)
+        and expression.value.attr == "survival_weights"
+        and isinstance(expression.slice, ast.BinOp)
+        and isinstance(expression.slice.op, ast.Sub)
+        and isinstance(expression.slice.left, ast.Name)
+        and expression.slice.left.id == stop_name
+    ):
+        return False
+    decrement = expression.slice.right
+    return (
+        isinstance(decrement, ast.Constant)
+        and isinstance(decrement.value, int)
+        and not isinstance(decrement.value, bool)
+        and decrement.value == 1
     )
 
 
@@ -882,8 +1004,16 @@ def _loop_references_indexed_grid_intervals(
     )
 
 
-def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
-    """Recognize nested period/interval aggregation across a default-event grid."""
+def _cds_full_event_grid_loops(
+    tree: ast.AST,
+) -> tuple[
+    tuple[ast.For | ast.AsyncFor, ast.For | ast.AsyncFor, str],
+    ...,
+]:
+    """Return complete period/interval loop pairs and their mapped stop name."""
+    matches: list[
+        tuple[ast.For | ast.AsyncFor, ast.For | ast.AsyncFor, str]
+    ] = []
     for period_loop in ast.walk(tree):
         if not isinstance(period_loop, (ast.For, ast.AsyncFor)):
             continue
@@ -944,7 +1074,153 @@ def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
                 stop_name=stop_name,
                 after_line=getattr(interval_loop, "lineno", 0),
             ):
-                return True
+                matches.append((period_loop, interval_loop, stop_name))
+    return tuple(matches)
+
+
+def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
+    """Recognize nested period/interval aggregation across a default-event grid."""
+    return bool(_cds_full_event_grid_loops(tree))
+
+
+def _cds_uses_active_event_weights(tree: ast.AST) -> bool:
+    """Bind CDS premium and event cashflows to their active grid positions."""
+    for period_loop, interval_loop, stop_name in _cds_full_event_grid_loops(tree):
+        premium_values = _direct_loop_augmented_values_with_call(
+            period_loop,
+            "coupon_cashflow_pv",
+        )
+        if not premium_values or not all(
+            _subtree_keyword_matches(
+                tree,
+                value,
+                keyword_name="weight",
+                predicate=lambda expression: _is_survival_weight_at_period_stop(
+                    expression,
+                    stop_name=stop_name,
+                ),
+            )
+            for value in premium_values
+        ):
+            continue
+        if not isinstance(interval_loop.target, ast.Name):
+            continue
+        interval_index_name = interval_loop.target.id
+        protection_values = _direct_loop_augmented_values_with_call(
+            interval_loop,
+            "protection_payment_pv",
+        )
+        event_accrual_values = _direct_loop_augmented_values_with_call(
+            interval_loop,
+            "coupon_cashflow_pv",
+        )
+        def event_weight_matches(expression: ast.AST) -> bool:
+            return _is_weight_at_name(
+                expression,
+                weight_attribute="event_weights",
+                index_name=interval_index_name,
+            )
+        if (
+            protection_values
+            and event_accrual_values
+            and all(
+                _subtree_keyword_matches(
+                    tree,
+                    value,
+                    keyword_name="default_probability",
+                    predicate=event_weight_matches,
+                )
+                for value in protection_values
+            )
+            and all(
+                _subtree_keyword_matches(
+                    tree,
+                    value,
+                    keyword_name="weight",
+                    predicate=event_weight_matches,
+                )
+                for value in event_accrual_values
+            )
+        ):
+            return True
+    return False
+
+
+def _signed_name_terms(
+    expression: ast.AST,
+    *,
+    sign: int = 1,
+) -> tuple[tuple[str, int], ...] | None:
+    """Flatten a signed additive expression into exact local-name terms."""
+    if isinstance(expression, ast.Name):
+        return ((expression.id, sign),)
+    if isinstance(expression, ast.UnaryOp) and isinstance(expression.op, ast.USub):
+        return _signed_name_terms(expression.operand, sign=-sign)
+    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Add):
+        left = _signed_name_terms(expression.left, sign=sign)
+        right = _signed_name_terms(expression.right, sign=sign)
+    elif isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.Sub):
+        left = _signed_name_terms(expression.left, sign=sign)
+        right = _signed_name_terms(expression.right, sign=-sign)
+    else:
+        return None
+    if left is None or right is None:
+        return None
+    return left + right
+
+
+def _cds_preserves_sign_convention(tree: ast.AST) -> bool:
+    """Require protection-buyer signs on the active four leg accumulators."""
+    returned_terms: list[list[tuple[str, int]]] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        expression = node.value
+        if (
+            isinstance(expression, ast.Call)
+            and isinstance(expression.func, ast.Name)
+            and expression.func.id == "float"
+            and len(expression.args) == 1
+            and not expression.keywords
+        ):
+            expression = expression.args[0]
+        terms = _signed_name_terms(expression)
+        if terms is not None:
+            returned_terms.append(sorted(terms))
+    for period_loop, interval_loop, _ in _cds_full_event_grid_loops(tree):
+        premium_names = _direct_loop_augmented_target_names(
+            period_loop,
+            symbol="coupon_cashflow_pv",
+        )
+        protection_names = _direct_loop_augmented_target_names(
+            interval_loop,
+            symbol="protection_payment_pv",
+        )
+        event_accrual_names = _direct_loop_augmented_target_names(
+            interval_loop,
+            symbol="coupon_cashflow_pv",
+        )
+        valuation_accrual_names = tuple(
+            name
+            for name in _direct_loop_augmented_target_names(period_loop)
+            if name not in premium_names
+        )
+        for protection_name in protection_names:
+            for premium_name in premium_names:
+                for event_accrual_name in event_accrual_names:
+                    for valuation_accrual_name in valuation_accrual_names:
+                        expected = sorted(
+                            (
+                                (protection_name, 1),
+                                (premium_name, -1),
+                                (event_accrual_name, -1),
+                                (valuation_accrual_name, 1),
+                            )
+                        )
+                        if len({name for name, _ in expected}) == 4 and (
+                            expected in returned_terms
+                        ):
+                            return True
     return False
 
 
@@ -1269,21 +1545,49 @@ class AlgorithmContractValidator:
         if (
             _calls_symbol(source, "coupon_cashflow_pv")
             and _calls_symbol(source, "protection_payment_pv")
-            and not _cds_composes_full_event_grid(tree)
         ):
-            findings.append(
-                SemanticFinding(
-                    validator="algorithm_contract",
-                    severity="error",
-                    category="credit_default_swap_incomplete_event_grid",
-                    message=(
-                        f"Route '{route_spec.id}' must aggregate scheduled premium "
-                        "cashflows across every event-grid period and protection "
-                        "cashflows across the nested period-to-interval mapping. "
-                        "Pricing fixed index positions does not cover the CDS horizon."
-                    ),
+            composes_full_grid = _cds_composes_full_event_grid(tree)
+            if not composes_full_grid:
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_incomplete_event_grid",
+                        message=(
+                            f"Route '{route_spec.id}' must aggregate scheduled premium "
+                            "cashflows across every event-grid period and protection "
+                            "cashflows across the nested period-to-interval mapping. "
+                            "Pricing fixed index positions does not cover the CDS horizon."
+                        ),
+                    )
                 )
-            )
+            else:
+                if not _cds_uses_active_event_weights(tree):
+                    findings.append(
+                        SemanticFinding(
+                            validator="algorithm_contract",
+                            severity="error",
+                            category="credit_default_swap_weight_mapping",
+                            message=(
+                                f"Route '{route_spec.id}' must use the mapped period-stop "
+                                "survival weight for scheduled premium and the active "
+                                "interval's event weight for protection and event accrual."
+                            ),
+                        )
+                    )
+                if not _cds_preserves_sign_convention(tree):
+                    findings.append(
+                        SemanticFinding(
+                            validator="algorithm_contract",
+                            severity="error",
+                            category="credit_default_swap_sign_convention",
+                            message=(
+                                f"Route '{route_spec.id}' must return the protection-buyer "
+                                "value `protection_leg - premium_leg - accrued_on_event "
+                                "+ accrued_to_valuation`."
+                            ),
+                        )
+                    )
         return findings
 
     def _check_exact_helper_surface(

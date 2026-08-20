@@ -50,6 +50,73 @@ def _make_plan(
     )
 
 
+def _cds_composition_source(
+    *,
+    return_expression: str = (
+        "protection_leg - premium_leg - accrued_on_event + accrued_to_valuation"
+    ),
+    survival_index: str = "interval_stop - 1",
+    event_index: str = "interval_index",
+) -> str:
+    """Build a compact, structurally complete CDS composition for validator tests."""
+    return f'''
+def evaluate(self, market_state):
+    schedule = build_period_schedule(
+        self._spec.start_date,
+        self._spec.end_date,
+        self._spec.frequency,
+        day_count=self._spec.day_count,
+        time_origin=self._spec.start_date,
+    )
+    grid = build_default_event_grid(schedule)
+    conditional = conditional_event_probabilities_from_curve(
+        market_state.credit_curve,
+        grid.intervals,
+    )
+    initial_survival_weight = market_state.credit_curve.survival_probability(
+        grid.intervals[0].start_time,
+    )
+    weights = expected_first_event_weights(
+        conditional,
+        initial_survival_weight=initial_survival_weight,
+    )
+    premium_leg = 0.0
+    protection_leg = 0.0
+    accrued_on_event = 0.0
+    accrued_to_valuation = 0.0
+    interval_start = 0
+    for period_index, period in enumerate(grid.periods):
+        interval_stop = grid.period_interval_stops[period_index]
+        survival_weight = weights.survival_weights[{survival_index}]
+        premium_leg += coupon_cashflow_pv(CouponAccrual(
+            notional=1.0,
+            rate=0.01,
+            accrual=period.accrual_fraction,
+            discount_factor=1.0,
+            weight=survival_weight,
+        ))
+        accrued_to_valuation += 0.0
+        for interval_index in range(interval_start, interval_stop):
+            interval = grid.intervals[interval_index]
+            event_weight = weights.event_weights[{event_index}]
+            protection_leg += protection_payment_pv(ProtectionPayment(
+                notional=1.0,
+                recovery=0.4,
+                default_probability=event_weight,
+                discount_factor=1.0,
+            ))
+            accrued_on_event += coupon_cashflow_pv(CouponAccrual(
+                notional=1.0,
+                rate=0.01,
+                accrual=period.accrual_fraction * interval.period_fraction_elapsed,
+                discount_factor=1.0,
+                weight=event_weight,
+            ))
+        interval_start = interval_stop
+    return float({return_expression})
+'''
+
+
 # ---------------------------------------------------------------------------
 # MarketDataValidator
 # ---------------------------------------------------------------------------
@@ -1471,69 +1538,85 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        "return_expression",
+        (
+            "premium_leg - protection_leg - accrued_on_event + accrued_to_valuation",
+            "protection_leg - premium_leg + accrued_on_event + accrued_to_valuation",
+            "protection_leg - premium_leg",
+        ),
+    )
+    def test_rejects_credit_default_swap_wrong_leg_signs(
+        self,
+        registry,
+        return_expression,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(return_expression=return_expression),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_sign_convention"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("survival_index", "event_index"),
+        (
+            ("0", "interval_index"),
+            ("interval_stop - 1", "0"),
+        ),
+    )
+    def test_rejects_credit_default_swap_inactive_event_weights(
+        self,
+        registry,
+        survival_index,
+        event_index,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                survival_index=survival_index,
+                event_index=event_index,
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
     def test_accepts_credit_default_swap_explicit_first_event_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
-        source = '''
-from trellis.core.date_utils import build_period_schedule
-from trellis.models.contingent_cashflows import (
-    CouponAccrual,
-    ProtectionPayment,
-    build_default_event_grid,
-    conditional_event_probabilities_from_curve,
-    coupon_cashflow_pv,
-    expected_first_event_weights,
-    protection_payment_pv,
-)
-
-def evaluate(self, market_state):
-    schedule = build_period_schedule(
-        self._spec.start_date,
-        self._spec.end_date,
-        self._spec.frequency,
-        day_count=self._spec.day_count,
-        time_origin=self._spec.start_date,
-    )
-    grid = build_default_event_grid(schedule)
-    conditional = conditional_event_probabilities_from_curve(
-        market_state.credit_curve,
-        grid.intervals,
-    )
-    initial_survival_weight = market_state.credit_curve.survival_probability(
-        grid.intervals[0].start_time,
-    )
-    weights = expected_first_event_weights(
-        conditional,
-        initial_survival_weight=initial_survival_weight,
-    )
-    premium_leg = 0.0
-    protection_leg = 0.0
-    interval_start = 0
-    for period_index, period in enumerate(grid.periods):
-        interval_stop = grid.period_interval_stops[period_index]
-        premium_leg += coupon_cashflow_pv(CouponAccrual(
-            notional=self._spec.notional,
-            rate=self._spec.spread,
-            accrual=period.accrual_fraction,
-            discount_factor=market_state.discount.discount(
-                grid.period_payment_times[period_index],
-            ),
-            weight=weights.survival_weights[interval_stop - 1],
-        ))
-        for interval_index in range(interval_start, interval_stop):
-            interval = grid.intervals[interval_index]
-            protection_leg += protection_payment_pv(ProtectionPayment(
-                notional=self._spec.notional,
-                recovery=self._spec.recovery,
-                default_probability=weights.event_weights[interval_index],
-                discount_factor=market_state.discount.discount(
-                    interval.settlement_time,
-                ),
-            ))
-        interval_start = interval_stop
-    return protection_leg - premium_leg
-'''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap"), spec)
+        findings = validator.validate(
+            _cds_composition_source(),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+        assert not any(f.severity == "error" for f in findings)
+
+    def test_accepts_credit_default_swap_semantic_leg_names(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            _cds_composition_source()
+            .replace("protection_leg", "protection")
+            .replace("premium_leg", "premium")
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
         assert not any(f.severity == "error" for f in findings)
 
     def test_flags_nth_to_default_helper_signature_mismatch(self, registry):

@@ -439,7 +439,12 @@ initial mass from credit-curve survival at the first live interval and that
 premium and protection PVs are accumulated through the full
 ``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
 assemblies fail semantic validation even when they mention every required
-primitive.
+primitive. Within that mapping, scheduled premium must use
+``survival_weights[interval_stop - 1]`` while protection and accrued-on-event
+cashflows use ``event_weights[interval_index]`` (directly or through simple
+aliases). The accepted return AST must preserve the protection-buyer convention
+``protection_leg - premium_leg - accrued_on_event + accrued_to_valuation``;
+reversed legs, omitted accrual terms, or wrong accrual signs fail closed.
 
 For analytical rate-style swaption routes, the deterministic bundle also checks
 composition consistency against the retained
