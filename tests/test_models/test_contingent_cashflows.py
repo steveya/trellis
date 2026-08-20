@@ -77,6 +77,8 @@ def test_default_event_grid_uses_coupon_day_count_for_elapsed_fraction():
 
     assert schedule.periods[0].accrual_fraction == pytest.approx(0.25)
     assert grid.elapsed_period_fractions[0] == pytest.approx(28.0 / 90.0)
+    assert grid.intervals[0].settlement_date == date(2025, 3, 31)
+    assert grid.intervals[0].period_fraction_elapsed == pytest.approx(60.0 / 90.0)
 
 
 def test_default_event_grid_requires_measured_periods_and_time_origin():

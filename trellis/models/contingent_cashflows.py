@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date, timedelta
 from math import ceil, comb
 from typing import Protocol
 
@@ -24,12 +25,18 @@ class CreditCurveLike(Protocol):
 
 @dataclass(frozen=True)
 class DefaultEventInterval:
-    """One bounded interval in a first-event integration grid."""
+    """One bounded interval in a first-event integration grid.
+
+    ``settlement_time`` is the curve coordinate used for model discounting,
+    while ``settlement_date`` anchors ``period_fraction_elapsed`` to the
+    schedule's coupon day-count convention.
+    """
 
     period_index: int
     start_time: float
     end_time: float
     settlement_time: float
+    settlement_date: date
     period_fraction_elapsed: float
 
 
@@ -123,7 +130,9 @@ def build_default_event_grid(
 
     Coupon accrual remains on each period's declared day-count convention.
     Curve, survival, and discount times use ``curve_day_count`` so callers do
-    not accidentally reuse premium-accrual fractions as model times.
+    not accidentally reuse premium-accrual fractions as model times. Each
+    interval exposes a midpoint settlement date, and its elapsed-period
+    fraction is measured from that date under ``schedule.day_count``.
     """
     if schedule.time_origin is None:
         raise ValueError("default-event grids require schedule.time_origin")
@@ -179,13 +188,32 @@ def build_default_event_grid(
         if end > start:
             step_count = max(int(ceil((end - start) * steps_per_year)), 1)
             step_size = (end - start) / step_count
-            total_period_time = max(raw_end - raw_start, 1e-12)
+            active_start_date = max(period.start_date, origin)
+            active_period_days = (period.end_date - active_start_date).days
+            full_accrual = float(period.accrual_fraction)
             for step in range(step_count):
                 interval_start = start + step * step_size
                 interval_end = start + (step + 1) * step_size
                 settlement_time = 0.5 * (interval_start + interval_end)
+                settlement_day_offset = min(
+                    int(((step + 0.5) * active_period_days / step_count) + 0.5),
+                    active_period_days,
+                )
+                settlement_date = active_start_date + timedelta(
+                    days=settlement_day_offset
+                )
+                elapsed_event_accrual = float(
+                    year_fraction(
+                        period.start_date,
+                        settlement_date,
+                        schedule.day_count,
+                        ref_start=period.start_date,
+                        ref_end=period.end_date,
+                        frequency=schedule.frequency,
+                    )
+                )
                 period_fraction_elapsed = min(
-                    max((settlement_time - raw_start) / total_period_time, 0.0),
+                    max(elapsed_event_accrual / max(full_accrual, 1e-12), 0.0),
                     1.0,
                 )
                 intervals.append(
@@ -194,6 +222,7 @@ def build_default_event_grid(
                         start_time=interval_start,
                         end_time=interval_end,
                         settlement_time=settlement_time,
+                        settlement_date=settlement_date,
                         period_fraction_elapsed=period_fraction_elapsed,
                     )
                 )

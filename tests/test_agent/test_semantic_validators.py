@@ -82,6 +82,11 @@ def _cds_composition_source(
     schedule_end: str = "self._spec.end_date",
     schedule_frequency: str = "self._spec.frequency",
     schedule_day_count: str = "self._spec.day_count",
+    schedule_calendar: str = "WEEKEND_ONLY",
+    schedule_bda: str = "BusinessDayAdjustment.FOLLOWING",
+    schedule_roll: str = "RollConvention.NONE",
+    schedule_stub: str = "StubType.SHORT_LAST",
+    schedule_payment_lag: str = "0",
     conditional_credit_curve: str = "market_state.credit_curve",
     weight_symbol: str = "expected_first_event_weights",
     weight_controls: str = "",
@@ -106,6 +111,11 @@ def evaluate(self, market_state):
         {schedule_frequency},
         day_count={schedule_day_count},
         time_origin={time_origin},
+        calendar={schedule_calendar},
+        bda={schedule_bda},
+        roll_convention={schedule_roll},
+        stub={schedule_stub},
+        payment_lag_days={schedule_payment_lag},
     )
     grid = build_default_event_grid(schedule)
     {extra_setup}
@@ -1945,6 +1955,11 @@ def evaluate(self, market_state):
             {"schedule_end": "self._spec.start_date"},
             {"schedule_frequency": "Frequency.ANNUAL"},
             {"schedule_day_count": "DayCountConvention.ACT_365F"},
+            {"schedule_calendar": "other_calendar"},
+            {"schedule_bda": "BusinessDayAdjustment.PRECEDING"},
+            {"schedule_roll": "RollConvention.IMM"},
+            {"schedule_stub": "StubType.LONG_FIRST"},
+            {"schedule_payment_lag": "30"},
         ),
     )
     def test_rejects_credit_default_swap_unbound_schedule_fields(

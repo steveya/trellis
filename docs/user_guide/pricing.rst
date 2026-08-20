@@ -651,12 +651,18 @@ For single-name CDS, the generated construction route is now the
 It builds public coupon periods, a bounded default-event grid, survival-ratio
 probabilities, and either exact or sampled first-event weights. For a
 forward-starting CDS, survival to the first live interval is passed explicitly
-so those weights remain unconditional from the valuation date. Generated code
+so those weights remain unconditional from the valuation date. The event grid
+keeps curve settlement time separate from coupon settlement date, so
+accrued-on-event premium follows the declared coupon day count across month
+ends. Generated code
 then assembles ``CouponAccrual`` and ``ProtectionPayment`` values explicitly,
 including scheduled premium, accrued-on-event premium, protection, and
 discounting. Existing ``price_cds_analytical(...)`` and
 ``price_cds_monte_carlo(...)`` calls remain useful reference APIs, but new
 generated task adapters do not use them.
+The bounded typed route currently fixes the weekend calendar, following
+business-day adjustment, no-roll schedule, short-last stub, and zero payment
+lag; it rejects untyped convention overrides rather than silently changing PV.
 
 For ranked-observation baskets, the generated construction surface is the
 basket resolver, implied-rate conversion, correlated GBM process, generic

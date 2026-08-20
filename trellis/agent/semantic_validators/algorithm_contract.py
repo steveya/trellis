@@ -1863,6 +1863,31 @@ def _cds_schedule_uses_active_contract_fields(
         for keyword in expression.keywords
         if keyword.arg == "day_count"
     )
+    calendars = tuple(
+        keyword.value
+        for keyword in expression.keywords
+        if keyword.arg == "calendar"
+    )
+    business_day_adjustments = tuple(
+        keyword.value
+        for keyword in expression.keywords
+        if keyword.arg == "bda"
+    )
+    roll_conventions = tuple(
+        keyword.value
+        for keyword in expression.keywords
+        if keyword.arg == "roll_convention"
+    )
+    stubs = tuple(
+        keyword.value
+        for keyword in expression.keywords
+        if keyword.arg == "stub"
+    )
+    payment_lags = tuple(
+        keyword.value
+        for keyword in expression.keywords
+        if keyword.arg == "payment_lag_days"
+    )
     return (
         _expression_resolves_to_active_spec_field(
             tree,
@@ -1885,6 +1910,26 @@ def _cds_schedule_uses_active_contract_fields(
             day_counts[0],
             field="day_count",
         )
+        and len(calendars) == 1
+        and isinstance(calendars[0], ast.Name)
+        and calendars[0].id == "WEEKEND_ONLY"
+        and len(business_day_adjustments) == 1
+        and isinstance(business_day_adjustments[0], ast.Attribute)
+        and isinstance(business_day_adjustments[0].value, ast.Name)
+        and business_day_adjustments[0].value.id == "BusinessDayAdjustment"
+        and business_day_adjustments[0].attr == "FOLLOWING"
+        and len(roll_conventions) == 1
+        and isinstance(roll_conventions[0], ast.Attribute)
+        and isinstance(roll_conventions[0].value, ast.Name)
+        and roll_conventions[0].value.id == "RollConvention"
+        and roll_conventions[0].attr == "NONE"
+        and len(stubs) == 1
+        and isinstance(stubs[0], ast.Attribute)
+        and isinstance(stubs[0].value, ast.Name)
+        and stubs[0].value.id == "StubType"
+        and stubs[0].attr == "SHORT_LAST"
+        and len(payment_lags) == 1
+        and _is_integer_constant(payment_lags[0], 0)
     )
 
 
@@ -2846,7 +2891,10 @@ class AlgorithmContractValidator:
                             message=(
                                 f"Route '{route_spec.id}' must build the active "
                                 "cashflow schedule from the spec's start date, end "
-                                "date, frequency, and day-count convention."
+                                "date, frequency, and day-count convention, using "
+                                "the bounded route's weekend calendar, following "
+                                "adjustment, no roll, short-last stub, and zero "
+                                "payment lag."
                             ),
                         )
                     )

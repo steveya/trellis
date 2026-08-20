@@ -482,7 +482,7 @@ def _render_family_route_guidance(
         lines.extend([
             "- Compose single-name CDS pricing from the public schedule and contingent-cashflow primitives; do not call `build_cds_schedule`, `price_cds_analytical`, or `price_cds_monte_carlo`.",
             "- Build `build_period_schedule(...)` with the declared coupon day count and explicit curve-time origin, then call `build_default_event_grid(schedule)` so premium accrual and survival/discount time remain separate.",
-            "- For the bounded standard-CDS route, pass `calendar=WEEKEND_ONLY`, `bda=BusinessDayAdjustment.FOLLOWING`, `roll_convention=RollConvention.NONE`, `stub=StubType.SHORT_LAST`, and `payment_lag_days=0`; use different conventions only when the request declares them.",
+            "- For the bounded standard-CDS route, pass `calendar=WEEKEND_ONLY`, `bda=BusinessDayAdjustment.FOLLOWING`, `roll_convention=RollConvention.NONE`, `stub=StubType.SHORT_LAST`, and `payment_lag_days=0`; the current typed route does not admit convention overrides.",
             "- Derive ordered conditional probabilities with `conditional_event_probabilities_from_curve(credit_curve, event_grid.intervals)`.",
             "- Compute survival to the first live interval with `credit_curve.survival_probability(event_grid.intervals[0].start_time)` (or `1.0` for an empty grid) and pass it as `initial_survival_weight`; forward-start weights must be unconditional from valuation.",
             "- Assemble the scheduled premium/accrued leg with `CouponAccrual` plus `coupon_cashflow_pv`, and the trigger leg with `ProtectionPayment` plus `protection_payment_pv`.",

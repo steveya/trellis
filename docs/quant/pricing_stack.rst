@@ -1178,7 +1178,10 @@ composition is:
 1. ``build_period_schedule(...)`` builds coupon periods from declared
    conventions and an explicit valuation time origin.
 2. ``build_default_event_grid(...)`` partitions each live period into bounded
-   curve-time intervals while preserving coupon accrual measurements.
+   curve-time intervals while preserving coupon accrual measurements. Every
+   interval carries both a model ``settlement_time`` and a midpoint
+   ``settlement_date``; accrued-on-event fractions use the coupon day count at
+   that date rather than reusing the ACT/365 curve coordinate.
 3. ``conditional_event_probabilities_from_curve(...)`` computes interval
    probabilities from survival ratios. Survival to the first live interval is
    carried separately as ``initial_survival_weight`` so forward-start weights
@@ -1194,6 +1197,9 @@ composition is:
 The generated adapter owns quote normalization, schedule conventions,
 period-to-interval iteration, discount coordinates, signs, and the final
 ``protection - premium - accrued_on_event + accrued_to_valuation`` result.
+The current typed route admits only the documented standard schedule
+conventions (weekend calendar, following adjustment, no roll, short-last stub,
+and zero payment lag); alternatives require a future typed contract extension.
 The generic event primitives do not price CDS and do not hide product leg
 assembly. This boundary is limited to one reference entity, deterministic
 discount and survival curves, and fixed recovery; see ``L61``.

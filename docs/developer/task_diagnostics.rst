@@ -449,7 +449,11 @@ accepted. The same grid must resolve back through
 ``build_default_event_grid`` to a ``build_period_schedule`` whose
 ``time_origin`` is the active valuation date (with the declared start-date
 fallback) and whose start date, end date, frequency, and day-count convention
-are bound to the active spec. An unconditional ``time_origin=spec.start_date``
+are bound to the active spec. The bounded route also requires its declared
+standard conventions exactly: ``WEEKEND_ONLY``, following adjustment, no roll,
+short-last stub, and zero payment lag. Convention overrides fail closed until
+the typed CDS contract carries those fields. An unconditional
+``time_origin=spec.start_date``
 makes a forward-start grid begin at zero and therefore fails closed. Both the
 conditional event probabilities and initial survival must come from the active
 market credit curve. The validator also checks that premium and protection PVs
@@ -463,7 +467,9 @@ aliases). Those indexed weights must belong to the validated
 ``expected_first_event_weights`` or ``sample_first_event_weights`` result, not
 to a separately constructed object. Scheduled coupon accrual must use the
 active period accrual; accrued-on-event must use that period accrual multiplied
-by the active interval's elapsed fraction. Scheduled premium discounting must use
+by the active interval's elapsed fraction. That elapsed fraction is measured at
+the interval's midpoint settlement date under the schedule's coupon day count;
+it is not an ACT/365 curve-time ratio. Scheduled premium discounting must use
 ``period_payment_times[period_index]``; protection and accrued-on-event
 discounting must use the active interval's ``settlement_time``, and each
 discount call must be owned by the active market discount curve. The accepted
