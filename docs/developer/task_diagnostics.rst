@@ -434,6 +434,12 @@ calls a product-level CDS helper, omits the event-grid/cashflow primitives, or
 hard-codes a smaller path count such as ``50000`` instead of flowing
 ``spec.n_paths``, expect a semantic or comparison-coherence failure before
 reviewer escalation.
+The cashflow weight owner must resolve to the numerical-evidence primitive
+selected by the active generation plan: merely calling both primitives does not
+let an analytical target consume sampled weights or a Monte Carlo target consume
+exact weights. Monte Carlo sampling must bind ``n_paths`` to the active spec;
+the deterministic materializer's explicit ``250000`` fallback is the only
+literal fallback admitted by this route validator.
 The route validator also checks that the first-event weight call derives its
 initial mass exactly from credit-curve survival at the first live interval of
 the same grid used to derive conditional probabilities. Multiplying, offsetting,

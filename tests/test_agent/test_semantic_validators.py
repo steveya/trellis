@@ -83,6 +83,9 @@ def _cds_composition_source(
     schedule_frequency: str = "self._spec.frequency",
     schedule_day_count: str = "self._spec.day_count",
     conditional_credit_curve: str = "market_state.credit_curve",
+    weight_symbol: str = "expected_first_event_weights",
+    weight_controls: str = "",
+    additional_weight_call: str = "",
     weight_owner: str = "weights",
     scheduled_accrual: str = "period.accrual_fraction",
     event_accrual: str = (
@@ -111,10 +114,12 @@ def evaluate(self, market_state):
         {weight_grid}.intervals,
     )
     initial_survival_weight = {initial_survival}
-    weights = expected_first_event_weights(
+    weights = {weight_symbol}(
         conditional,
         initial_survival_weight=initial_survival_weight,
+        {weight_controls}
     )
+    {additional_weight_call}
     {post_weights_setup}
     spread = float(self._spec.spread)
     if spread > 1.0:
@@ -1736,6 +1741,97 @@ def evaluate(self, market_state):
             finding.category == "credit_default_swap_weight_mapping"
             for finding in findings
         )
+
+    @pytest.mark.parametrize(
+        ("method", "weight_symbol", "weight_controls", "additional_weight_call"),
+        (
+            (
+                "analytical",
+                "sample_first_event_weights",
+                "n_paths=self._spec.n_paths, seed=42,",
+                (
+                    "expected_first_event_weights(conditional, "
+                    "initial_survival_weight=initial_survival_weight)"
+                ),
+            ),
+            (
+                "monte_carlo",
+                "expected_first_event_weights",
+                "",
+                (
+                    "sample_first_event_weights(conditional, "
+                    "initial_survival_weight=initial_survival_weight, "
+                    "n_paths=self._spec.n_paths, seed=42)"
+                ),
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_weights_from_wrong_method(
+        self,
+        registry,
+        method,
+        weight_symbol,
+        weight_controls,
+        additional_weight_call,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol=weight_symbol,
+                weight_controls=weight_controls,
+                additional_weight_call=additional_weight_call,
+            ),
+            _make_plan("credit_default_swap", method),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_unbound_path_count(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol="sample_first_event_weights",
+                weight_controls="n_paths=10, seed=42,",
+            ),
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_path_count_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "n_paths",
+        (
+            "self._spec.n_paths",
+            'getattr(self._spec, "n_paths", 250000) or 250000',
+        ),
+    )
+    def test_accepts_credit_default_swap_active_monte_carlo_path_count(
+        self,
+        registry,
+        n_paths,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol="sample_first_event_weights",
+                weight_controls=f"n_paths={n_paths}, seed=42,",
+            ),
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+
+        assert not any(f.severity == "error" for f in findings)
 
     @pytest.mark.parametrize(
         ("premium_discount", "event_discount"),

@@ -803,6 +803,7 @@ def _is_weight_at_name(
     *,
     weight_attribute: str,
     index_name: str,
+    required_symbol: str,
 ) -> bool:
     """Recognize ``*.{weight_attribute}[index_name]``."""
     return (
@@ -812,6 +813,7 @@ def _is_weight_at_name(
         and _expression_resolves_to_first_event_weights(
             tree,
             expression.value.value,
+            required_symbol=required_symbol,
         )
         and _subscript_uses_name(expression, index_name)
     )
@@ -822,6 +824,7 @@ def _is_survival_weight_at_period_stop(
     expression: ast.AST,
     *,
     stop_name: str,
+    required_symbol: str,
 ) -> bool:
     """Recognize the post-event survival mass at ``period_stop - 1``."""
     if not (
@@ -831,6 +834,7 @@ def _is_survival_weight_at_period_stop(
         and _expression_resolves_to_first_event_weights(
             tree,
             expression.value.value,
+            required_symbol=required_symbol,
         )
         and isinstance(expression.slice, ast.BinOp)
         and isinstance(expression.slice.op, ast.Sub)
@@ -851,15 +855,13 @@ def _expression_resolves_to_first_event_weights(
     tree: ast.AST,
     expression: ast.AST,
     *,
+    required_symbol: str,
     seen_names: frozenset[str] = frozenset(),
 ) -> bool:
-    """Recognize the result of a validated analytical or sampled weight call."""
-    if isinstance(expression, ast.Call) and any(
-        _call_matches_symbol(expression, symbol)
-        for symbol in (
-            "expected_first_event_weights",
-            "sample_first_event_weights",
-        )
+    """Recognize the selected method's validated first-event weight result."""
+    if isinstance(expression, ast.Call) and _call_matches_symbol(
+        expression,
+        required_symbol,
     ):
         return True
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
@@ -869,6 +871,7 @@ def _expression_resolves_to_first_event_weights(
         _expression_resolves_to_first_event_weights(
             tree,
             assigned_value,
+            required_symbol=required_symbol,
             seen_names=seen_names | {expression.id},
         )
         for assigned_value in assigned_values
@@ -1359,7 +1362,36 @@ def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
     return bool(_cds_full_event_grid_loops(tree))
 
 
-def _cds_uses_active_event_weights(tree: ast.AST) -> bool:
+def _cds_selected_weight_symbol(plan: GenerationPlan) -> str:
+    """Return the first-event primitive selected by the active generation plan."""
+    weight_symbols = {
+        primitive.symbol
+        for primitive in (
+            plan.primitive_plan.primitives
+            if plan.primitive_plan is not None
+            else ()
+        )
+        if primitive.required
+        and not primitive.excluded
+        and primitive.symbol
+        in {
+            "expected_first_event_weights",
+            "sample_first_event_weights",
+        }
+    }
+    if len(weight_symbols) == 1:
+        return next(iter(weight_symbols))
+    method = str(plan.method or "").strip().lower().replace("-", "_").replace(" ", "_")
+    if method in {"mc", "monte_carlo"}:
+        return "sample_first_event_weights"
+    return "expected_first_event_weights"
+
+
+def _cds_uses_active_event_weights(
+    tree: ast.AST,
+    *,
+    required_symbol: str,
+) -> bool:
     """Bind CDS premium and event cashflows to their active grid positions."""
     for period_loop, interval_loop, stop_name in _cds_full_event_grid_loops(tree):
         premium_values = _direct_loop_augmented_values_with_call(
@@ -1375,6 +1407,7 @@ def _cds_uses_active_event_weights(tree: ast.AST) -> bool:
                     tree,
                     expression,
                     stop_name=stop_name,
+                    required_symbol=required_symbol,
                 ),
             )
             for value in premium_values
@@ -1397,6 +1430,7 @@ def _cds_uses_active_event_weights(tree: ast.AST) -> bool:
                 expression,
                 weight_attribute="event_weights",
                 index_name=interval_index_name,
+                required_symbol=required_symbol,
             )
         if (
             protection_values
@@ -1624,6 +1658,74 @@ def _expression_resolves_to_active_spec_field(
             )
             for mutation in mutations
         )
+    )
+
+
+def _is_integer_constant(expression: ast.AST, value: int) -> bool:
+    return (
+        isinstance(expression, ast.Constant)
+        and isinstance(expression.value, int)
+        and not isinstance(expression.value, bool)
+        and expression.value == value
+    )
+
+
+def _cds_path_count_is_active_spec_control(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Recognize the active path-count control or its declared 250k fallback."""
+    if _expression_resolves_to_active_spec_field(
+        tree,
+        expression,
+        field="n_paths",
+    ):
+        return True
+    if isinstance(expression, ast.Name):
+        if expression.id in seen_names:
+            return False
+        assigned_values = _assigned_values_for_name(tree, expression.id)
+        return bool(assigned_values) and all(
+            _cds_path_count_is_active_spec_control(
+                tree,
+                assigned_value,
+                seen_names=seen_names | {expression.id},
+            )
+            for assigned_value in assigned_values
+        )
+    if not (
+        isinstance(expression, ast.BoolOp)
+        and isinstance(expression.op, ast.Or)
+        and len(expression.values) == 2
+        and _is_integer_constant(expression.values[1], 250000)
+    ):
+        return False
+    configured_paths = expression.values[0]
+    return (
+        isinstance(configured_paths, ast.Call)
+        and isinstance(configured_paths.func, ast.Name)
+        and configured_paths.func.id == "getattr"
+        and len(configured_paths.args) == 3
+        and not configured_paths.keywords
+        and _expression_resolves_to_active_spec(tree, configured_paths.args[0])
+        and isinstance(configured_paths.args[1], ast.Constant)
+        and configured_paths.args[1].value == "n_paths"
+        and _is_integer_constant(configured_paths.args[2], 250000)
+    )
+
+
+def _cds_sample_path_count_is_valid(tree: ast.AST, call: ast.Call) -> bool:
+    """Require one sampled-weight path count bound to the active spec control."""
+    path_counts = tuple(
+        keyword.value
+        for keyword in call.keywords
+        if keyword.arg == "n_paths"
+    )
+    return len(path_counts) == 1 and _cds_path_count_is_active_spec_control(
+        tree,
+        path_counts[0],
     )
 
 
@@ -2412,6 +2514,7 @@ class AlgorithmContractValidator:
         findings.extend(
             self._check_credit_default_swap_boundary(
                 source,
+                plan,
                 route_spec,
             )
         )
@@ -2608,6 +2711,7 @@ class AlgorithmContractValidator:
     def _check_credit_default_swap_boundary(
         self,
         source: str,
+        plan: GenerationPlan,
         route_spec: RouteSpec,
     ) -> list[SemanticFinding]:
         """Enforce the public CDS first-event composition boundary."""
@@ -2635,6 +2739,8 @@ class AlgorithmContractValidator:
             tree = ast.parse(source)
         except SyntaxError:
             return findings
+
+        selected_weight_symbol = _cds_selected_weight_symbol(plan)
 
         for symbol in (
             "expected_first_event_weights",
@@ -2669,6 +2775,28 @@ class AlgorithmContractValidator:
                             "initial_survival_weight equal to credit-curve survival "
                             "at the first live event-grid interval start. Conditional "
                             "weights alone overstate forward-start CDS cashflows."
+                        ),
+                    )
+                )
+
+        if selected_weight_symbol == "sample_first_event_weights":
+            invalid_path_count = any(
+                not _cds_sample_path_count_is_valid(tree, call)
+                for call in _find_calls_for_symbol(
+                    tree,
+                    "sample_first_event_weights",
+                )
+            )
+            if invalid_path_count:
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_default_swap_path_count_binding",
+                        message=(
+                            f"Route '{route_spec.id}' must bind sampled first-event "
+                            "weights to the active spec's n_paths control, with only "
+                            "the declared 250000-path fallback."
                         ),
                     )
                 )
@@ -2735,7 +2863,10 @@ class AlgorithmContractValidator:
                             ),
                         )
                     )
-                if not _cds_uses_active_event_weights(tree):
+                if not _cds_uses_active_event_weights(
+                    tree,
+                    required_symbol=selected_weight_symbol,
+                ):
                     findings.append(
                         SemanticFinding(
                             validator="algorithm_contract",
