@@ -485,6 +485,11 @@ the declared Trellis calendar, schedule, market-state, payoff-type, core-type,
 date-utils, and contingent-cashflow modules. Module-style, relative, aliased,
 and other arbitrary imports fail before dynamic import so an uninspected
 initializer cannot execute ahead of smoke validation.
+The leading ``from __future__ import annotations`` scaffold import postpones
+annotation evaluation. Without it, every annotation name must resolve before
+its definition to an unshadowed inert builtin or an approved direct type
+import; undefined, late, and rebound names fail closed instead of raising
+during dynamic import.
 When annotations are eagerly evaluated, subscript annotations admit only the
 inert builtin ``dict``, ``frozenset``, ``list``, ``set``, ``tuple``, and
 ``type`` bases. Custom subscript bases fail before import because their

@@ -659,6 +659,35 @@ _CDS_APPROVED_IMPORTS = {
 _CDS_INERT_ANNOTATION_SUBSCRIPT_BASES = frozenset(
     {"dict", "frozenset", "list", "set", "tuple", "type"}
 )
+_CDS_INERT_EAGER_ANNOTATION_BUILTINS = frozenset(
+    {
+        "bool",
+        "bytes",
+        "complex",
+        "dict",
+        "float",
+        "frozenset",
+        "int",
+        "list",
+        "object",
+        "set",
+        "str",
+        "tuple",
+        "type",
+    }
+)
+_CDS_INERT_EAGER_ANNOTATION_IMPORTS = {
+    "BusinessDayAdjustment": _CDS_CALENDAR_CONVENTION_MODULE,
+    "CouponAccrual": _CDS_CASHFLOW_PRIMITIVE_MODULE,
+    "DayCountConvention": "trellis.core.types",
+    "Frequency": "trellis.core.types",
+    "MarketState": "trellis.core.market_state",
+    "PricingValue": "trellis.core.payoff",
+    "ProtectionPayment": _CDS_CASHFLOW_PRIMITIVE_MODULE,
+    "RollConvention": _CDS_SCHEDULE_CONVENTION_MODULE,
+    "StubType": _CDS_SCHEDULE_CONVENTION_MODULE,
+    "date": "datetime",
+}
 _CDS_OPAQUE_NAMESPACE_CALLS = frozenset({
     "__import__",
     "__delattr__",
@@ -1365,6 +1394,139 @@ def _statement_binds_name(statement: ast.stmt, name: str) -> bool:
     return False
 
 
+def _module_uses_postponed_annotations(tree: ast.Module) -> bool:
+    """Recognize one legally positioned future-annotations import."""
+    future_imports = tuple(
+        statement
+        for statement in tree.body
+        if isinstance(statement, ast.ImportFrom)
+        and statement.module == "__future__"
+    )
+    if len(future_imports) != 1:
+        return False
+    future_import = future_imports[0]
+    if not (
+        future_import.level == 0
+        and len(future_import.names) == 1
+        and future_import.names[0].name == "annotations"
+        and future_import.names[0].asname is None
+    ):
+        return False
+    import_index = tree.body.index(future_import)
+    return all(
+        index == 0
+        and isinstance(statement, ast.Expr)
+        and isinstance(statement.value, ast.Constant)
+        and isinstance(statement.value.value, str)
+        for index, statement in enumerate(tree.body[:import_index])
+    )
+
+
+def _module_annotation_expressions(tree: ast.Module) -> tuple[ast.AST, ...]:
+    """Return annotations evaluated while defining module and class objects."""
+    annotations: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            arguments = node.args
+            annotations.extend(
+                argument.annotation
+                for argument in (
+                    *arguments.posonlyargs,
+                    *arguments.args,
+                    *arguments.kwonlyargs,
+                    arguments.vararg,
+                    arguments.kwarg,
+                )
+                if argument is not None and argument.annotation is not None
+            )
+            if node.returns is not None:
+                annotations.append(node.returns)
+        elif isinstance(node, ast.AnnAssign):
+            annotations.append(node.annotation)
+    return tuple(annotations)
+
+
+def _definition_time_scopes_rebind_name(
+    statements: list[ast.stmt],
+    *,
+    name: str,
+    ignored_node_ids: frozenset[int] = frozenset(),
+) -> bool:
+    """Detect module/class bindings that can replace an eager annotation name."""
+    for statement in statements:
+        if id(statement) in ignored_node_ids:
+            continue
+        if _node_binds_name_in_current_scope(
+            statement,
+            name=name,
+            ignored_node_ids=ignored_node_ids,
+        ):
+            return True
+        if isinstance(statement, ast.ClassDef) and _definition_time_scopes_rebind_name(
+            statement.body,
+            name=name,
+            ignored_node_ids=ignored_node_ids,
+        ):
+            return True
+    return False
+
+
+def _module_has_authoritative_eager_annotation_import(
+    tree: ast.Module,
+    *,
+    name: str,
+    module: str,
+    before_node: ast.AST,
+) -> bool:
+    """Prove an eager annotation name is an approved direct type import."""
+    imports = tuple(
+        statement
+        for statement in tree.body
+        if _is_direct_approved_symbol_import(statement, name, module=module)
+    )
+    if len(imports) != 1 or getattr(imports[0], "lineno", 0) >= getattr(
+        before_node,
+        "lineno",
+        0,
+    ):
+        return False
+    ignored = frozenset({id(imports[0])})
+    return not _definition_time_scopes_rebind_name(
+        tree.body,
+        name=name,
+        ignored_node_ids=ignored,
+    )
+
+
+def _module_annotations_are_bounded(tree: ast.Module) -> bool:
+    """Require eager annotation names to resolve to inert proven bindings."""
+    has_future_import = any(
+        isinstance(statement, ast.ImportFrom)
+        and statement.module == "__future__"
+        for statement in tree.body
+    )
+    if has_future_import:
+        return _module_uses_postponed_annotations(tree)
+
+    for annotation in _module_annotation_expressions(tree):
+        for node in ast.walk(annotation):
+            if not isinstance(node, ast.Name):
+                continue
+            if node.id in _CDS_INERT_EAGER_ANNOTATION_BUILTINS:
+                if _definition_time_scopes_rebind_name(tree.body, name=node.id):
+                    return False
+                continue
+            module = _CDS_INERT_EAGER_ANNOTATION_IMPORTS.get(node.id)
+            if module is None or not _module_has_authoritative_eager_annotation_import(
+                tree,
+                name=node.id,
+                module=module,
+                before_node=node,
+            ):
+                return False
+    return True
+
+
 def _cds_import_surface_is_approved(tree: ast.Module) -> bool:
     """Admit only direct imports from the bounded CDS scaffold modules."""
     for node in ast.walk(tree):
@@ -1383,7 +1545,10 @@ def _cds_import_surface_is_approved(tree: ast.Module) -> bool:
 
 def _module_definition_time_is_bounded(tree: ast.Module) -> bool:
     """Reject statements that could hang or mutate during adapter import."""
-    if not _cds_import_surface_is_approved(tree):
+    if not (
+        _cds_import_surface_is_approved(tree)
+        and _module_annotations_are_bounded(tree)
+    ):
         return False
     dataclass_imports = tuple(
         statement

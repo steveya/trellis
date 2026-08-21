@@ -1230,6 +1230,10 @@ generated tree: only direct, unaliased names from the exact CDS scaffold
 modules, including the ``PricingValue`` payoff-type scaffold, are admitted,
 while module-style, relative, aliased, and other arbitrary imports are rejected
 before dynamic import.
+The canonical leading ``from __future__ import annotations`` import postpones
+annotation evaluation. If it is absent, every eager annotation name must be an
+unshadowed inert builtin or an approved direct type import that is already
+bound; undefined, late, or rebound names are rejected before dynamic import.
 Eager subscript annotations are similarly bounded to inert builtin container
 bases; custom bases are rejected before their ``__class_getitem__`` hooks can
 run.

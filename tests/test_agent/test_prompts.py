@@ -1379,6 +1379,8 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "preserve the directly imported `dataclasses.dataclass` binding" in prompt
     assert "only the explicit `@dataclass(frozen=True)` form" in prompt
     assert "field declarations only, without methods or behavior hooks" in prompt
+    assert "Prefer the leading `from __future__ import annotations`" in prompt
+    assert "undefined, late, or rebound names fail closed before import" in prompt
     assert "Eager subscript annotations may use only the inert builtin" in prompt
     assert "custom subscript bases fail closed before import" in prompt
     assert "unshadowed builtin `property`, `staticmethod`, and `classmethod`" in prompt
@@ -1515,6 +1517,8 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "preserve the directly imported `dataclasses.dataclass` binding" in prompt
     assert "only the explicit `@dataclass(frozen=True)` form" in prompt
     assert "field declarations only, without methods or behavior hooks" in prompt
+    assert "Prefer the leading `from __future__ import annotations`" in prompt
+    assert "undefined, late, or rebound names fail closed before import" in prompt
     assert "Eager subscript annotations may use only the inert builtin" in prompt
     assert "custom subscript bases fail closed before import" in prompt
     assert "unshadowed builtin `property`, `staticmethod`, and `classmethod`" in prompt

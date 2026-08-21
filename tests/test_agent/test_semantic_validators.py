@@ -2273,6 +2273,29 @@ def evaluate(self, market_state):
         errors = [finding for finding in findings if finding.severity == "error"]
         assert not errors, errors
 
+    def test_accepts_credit_default_swap_postponed_annotation_name(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from __future__ import annotations\n"
+            + _cds_composition_source().replace(
+                "def evaluate(self, market_state):",
+                "def evaluate(self, market_state) -> MissingType:",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
     def test_rejects_credit_default_swap_wildcard_import(
         self,
         registry,
@@ -4078,6 +4101,22 @@ def evaluate(self, market_state):
             "class ImportTrap:\n    while True:\n        pass\n\n",
             (
                 "def import_trap(value: tuple(iter(int, 1))):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def annotation_trap(value: MissingType):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def annotation_trap(value: PricingValue):\n"
+                "    return value\n\n"
+                "from trellis.core.payoff import PricingValue\n\n"
+            ),
+            (
+                "from trellis.core.payoff import PricingValue\n\n"
+                "def PricingValue():\n"
+                "    return float\n\n"
+                "def annotation_trap(value: PricingValue):\n"
                 "    return value\n\n"
             ),
             (
