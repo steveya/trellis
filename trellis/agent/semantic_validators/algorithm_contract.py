@@ -2254,6 +2254,21 @@ def _cds_selected_weight_symbol(plan: GenerationPlan) -> str:
     return "expected_first_event_weights"
 
 
+def _cds_weight_call_has_exact_surface(call: ast.Call, symbol: str) -> bool:
+    """Require one explicit probability argument and the admitted keywords."""
+    required_keywords = {"initial_survival_weight"}
+    if symbol == "sample_first_event_weights":
+        required_keywords.update({"n_paths", "seed"})
+    keyword_names = tuple(keyword.arg for keyword in call.keywords)
+    return (
+        len(call.args) == 1
+        and not isinstance(call.args[0], ast.Starred)
+        and len(keyword_names) == len(required_keywords)
+        and all(keyword_name is not None for keyword_name in keyword_names)
+        and set(keyword_names) == required_keywords
+    )
+
+
 def _cds_uses_active_event_weights(
     tree: ast.AST,
     *,
@@ -4011,6 +4026,23 @@ class AlgorithmContractValidator:
             "sample_first_event_weights",
         ):
             for call in _find_calls_for_symbol(tree, symbol):
+                if not _cds_weight_call_has_exact_surface(call, symbol):
+                    findings.append(
+                        SemanticFinding(
+                            validator="algorithm_contract",
+                            severity="error",
+                            category=(
+                                "credit_default_swap_first_event_call_shape"
+                            ),
+                            message=(
+                                f"Route '{route_spec.id}' must call '{symbol}' "
+                                "with exactly one positional conditional-"
+                                "probability argument and its declared explicit "
+                                "keywords, without *args, **kwargs, duplicates, "
+                                "or extra controls."
+                            ),
+                        )
+                    )
                 initial_survival = next(
                     (
                         keyword.value

@@ -1190,7 +1190,10 @@ composition is:
    and post-interval survival mass, or
    ``sample_first_event_weights(...)`` supplies reproducible empirical mass
    from one persistent alive-state simulation with the canonical fixed seed
-   ``42``.
+   ``42``. The selected primitive receives exactly one positional conditional-
+   probability argument and only its declared explicit keywords; opaque
+   ``*args`` or ``**kwargs``, duplicate keywords, and extra controls are not an
+   admitted pricing surface.
 5. ``CouponAccrual`` / ``coupon_cashflow_pv(...)`` and
    ``ProtectionPayment`` / ``protection_payment_pv(...)`` assemble the
    scheduled premium, accrued-on-event, and trigger legs. Their constructor

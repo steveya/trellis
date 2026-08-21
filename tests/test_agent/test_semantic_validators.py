@@ -1539,6 +1539,36 @@ def evaluate(self, market_state):
         )
 
     @pytest.mark.parametrize(
+        ("extra_setup", "weight_controls"),
+        (
+            ("opaque_args = ()", "*opaque_args,"),
+            ("opaque_kwargs = {}", "**opaque_kwargs,"),
+        ),
+    )
+    def test_rejects_credit_default_swap_opaque_weight_arguments(
+        self,
+        registry,
+        extra_setup,
+        weight_controls,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=extra_setup,
+            weight_controls=weight_controls,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_first_event_call_shape"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
         "initial_survival",
         (
             (

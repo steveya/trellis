@@ -429,7 +429,11 @@ CDS Monte Carlo schema with ``n_paths``, and the ``T38`` canary pins a tighter
 The exact target binds ``sample_first_event_weights(...)``; the analytical
 target binds ``expected_first_event_weights(...)``. Both receive survival to
 the first live interval as ``initial_survival_weight`` so a forward-start target
-does not silently price conditional on survival to its start. If an artifact
+does not silently price conditional on survival to its start. Each call must
+have exactly one positional conditional-probability argument and only the
+primitive's declared explicit keywords. Opaque ``*args`` or ``**kwargs``,
+duplicate keywords, and extra controls fail closed because they can alter or
+duplicate the validated binding at runtime. If an artifact
 calls a product-level CDS helper, omits the event-grid/cashflow primitives, or
 hard-codes a smaller path count such as ``50000`` instead of flowing
 ``spec.n_paths``, expect a semantic or comparison-coherence failure before
