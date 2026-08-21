@@ -1063,12 +1063,12 @@ def _direct_loop_body_nodes(
     reachable: list[ast.AST] = []
     for statement in loop.body:
         if isinstance(statement, (ast.Break, ast.Continue, ast.Raise, ast.Return)):
-            break
+            return ()
         if (
             _subtree_has_current_loop_exit(statement)
             and not _is_supported_cds_early_continue_guard(loop, statement)
         ):
-            break
+            return ()
         reachable.append(statement)
     return tuple(reachable)
 

@@ -1864,6 +1864,48 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        "replacement",
+        (
+            "            break\n"
+            "        interval_start = interval_stop\n"
+            "    return",
+            "            if True:\n"
+            "                break\n"
+            "        interval_start = interval_stop\n"
+            "    return",
+            "        interval_start = interval_stop\n"
+            "        break\n"
+            "    return",
+            "        interval_start = interval_stop\n"
+            "        if True:\n"
+            "            break\n"
+            "    return",
+        ),
+    )
+    def test_rejects_credit_default_swap_loop_exit_after_assembly(
+        self,
+        registry,
+        replacement,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "        interval_start = interval_stop\n    return",
+            replacement,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_missing_empty_period_guard(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = _cds_composition_source().replace(
