@@ -474,6 +474,11 @@ Every assignment must also be a simple binding consumed by the canonical
 composition before any rebinding. Dead assignment expressions, opaque writes,
 and augmented writes outside the exact spread and four-leg accumulators fail
 closed for the same reason.
+Local definitions inside ``evaluate()`` never count as composition evidence.
+Before their runtime bodies are pruned, local class bodies and the eager
+defaults, decorators, and annotations of local functions or lambdas are checked
+as definition-time surfaces. Executable or unbounded construction therefore
+fails closed before synchronous smoke execution.
 The module and its class bodies are definition-time declarative: docstrings,
 approved imports, frozen spec declarations, and the plain payoff declaration
 are admitted, while executable module/class control flow is rejected before

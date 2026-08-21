@@ -1394,6 +1394,8 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "exact inert `requirements` property" in prompt
     assert "store the submitted `spec` exactly as `self._spec`" in prompt
     assert "Preserve the caller's `market_state` parameter unchanged" in prompt
+    assert "Local definitions never count as composition evidence" in prompt
+    assert "local class bodies and local function/lambda defaults" in prompt
     assert "simple binding consumed by the canonical composition" in prompt
     assert "conditional return/raise exits" in prompt
     assert "additional `for`, `async for`, or `while` loops" in prompt
@@ -1537,6 +1539,8 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "exact inert `requirements` property" in prompt
     assert "store the submitted `spec` exactly as `self._spec`" in prompt
     assert "Preserve the caller's `market_state` parameter unchanged" in prompt
+    assert "Local definitions never count as composition evidence" in prompt
+    assert "local class bodies and local function/lambda defaults" in prompt
     assert "simple binding consumed by the canonical composition" in prompt
     assert "conditional return/raise exits" in prompt
     assert "additional `for`, `async for`, or `while` loops" in prompt

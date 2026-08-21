@@ -1733,6 +1733,24 @@ def _module_definition_time_is_bounded(tree: ast.Module) -> bool:
     return True
 
 
+def _evaluate_definition_time_is_bounded(
+    node: ast.AST,
+    *,
+    tree: ast.Module,
+) -> bool:
+    """Prove nested definitions are inert when ``evaluate`` creates them."""
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        return _definition_time_function_is_bounded(node, tree=tree)
+    if isinstance(node, ast.ClassDef):
+        return _definition_time_class_is_bounded(node, tree=tree)
+    if isinstance(node, ast.Lambda):
+        return _definition_time_expression_is_declarative(node, tree=tree)
+    return all(
+        _evaluate_definition_time_is_bounded(child, tree=tree)
+        for child in ast.iter_child_nodes(node)
+    )
+
+
 def _function_body_without_docstring(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
 ) -> tuple[ast.stmt, ...]:
@@ -1967,7 +1985,10 @@ def _reachable_evaluate_tree(
 
     reachable: list[ast.stmt] = []
     for statement in evaluate.body:
-        if isinstance(statement, ast.Assert) or (
+        if not _evaluate_definition_time_is_bounded(
+            statement,
+            tree=tree,
+        ) or isinstance(statement, ast.Assert) or (
             not isinstance(statement, (ast.Return, ast.Raise))
             and _subtree_has_evaluate_exit(statement)
             and not _is_supported_cds_market_guard(statement)

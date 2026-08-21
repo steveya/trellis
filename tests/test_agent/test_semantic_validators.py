@@ -4212,6 +4212,44 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        "evaluate_definition",
+        (
+            "class Trap:\n        while True:\n            pass",
+            (
+                "def trap(value=tuple(iter(int, 1))):\n"
+                "        return value"
+            ),
+            (
+                "def spin():\n"
+                "        while True:\n"
+                "            pass\n"
+                "    @spin()\n"
+                "    def decorated():\n"
+                "        pass"
+            ),
+            "trap = lambda value=tuple(iter(int, 1)): value",
+        ),
+    )
+    def test_rejects_credit_default_swap_evaluate_definition_time_control_flow(
+        self,
+        registry,
+        evaluate_definition,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(extra_setup=evaluate_definition)
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_accepts_credit_default_swap_authoritative_enum_function_default(
         self,
         registry,

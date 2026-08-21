@@ -1219,6 +1219,10 @@ comprehension, or standalone executable constructs are not pricing evidence.
 Assignments must be simple bindings consumed by that canonical composition
 before rebinding; dead or opaque writes and non-composition augmented writes are
 not admitted.
+Nested definitions inside ``evaluate()`` are not pricing evidence. Their
+definition-time surfaces are nevertheless validated before pruning: local
+class bodies and local function/lambda defaults, decorators, and annotations
+must remain declarative so definition creation cannot hang ahead of pricing.
 The surrounding generated module and class bodies are definition-time
 declarative, and the payoff scaffold preserves economics by storing the
 submitted spec exactly once as ``self._spec`` and returning that same object
