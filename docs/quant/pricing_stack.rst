@@ -1223,6 +1223,8 @@ Nested definitions inside ``evaluate()`` are not pricing evidence. Their
 definition-time surfaces are nevertheless validated before pruning: local
 class bodies and local function/lambda defaults, decorators, and annotations
 must remain declarative so definition creation cannot hang ahead of pricing.
+Frozen local dataclass fields additionally reject mutable list, dictionary, and
+set defaults before Python applies the decorator.
 The surrounding generated module and class bodies are definition-time
 declarative, and the payoff scaffold preserves economics by storing the
 submitted spec exactly once as ``self._spec`` and returning that same object
@@ -1258,10 +1260,12 @@ enum attributes must select an existing member of the authoritative imported
 enum. Undefined, late, rebound, or nonexistent bindings are rejected before
 module definition can fail at runtime. Literal container defaults are checked
 with an inert construction proxy, including recursive hashability for
-dictionary keys and set elements. Eager annotation unions may contain only
-proven type operands or ``None``; arbitrary values and attribute/member
-expressions are not admitted. The payoff ``requirements`` property must remain
-the inert scaffold return of exactly ``{"credit_curve", "discount_curve"}``.
+dictionary keys and set elements. Mutable list, dictionary, and set field
+defaults are not admitted on frozen dataclasses. Eager annotation unions may
+contain only proven type operands or ``None``; arbitrary values and
+attribute/member expressions are not admitted. The payoff ``requirements``
+property must remain the inert scaffold return of exactly
+``{"credit_curve", "discount_curve"}``.
 Exact fail-fast ``ValueError``
 guards for missing credit and discount market handles are admitted;
 the builtin must remain unshadowed and receive exactly one literal string

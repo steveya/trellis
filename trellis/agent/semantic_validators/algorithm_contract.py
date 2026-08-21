@@ -1327,6 +1327,22 @@ def _definition_time_expression_is_declarative(
     return True
 
 
+def _definition_time_dataclass_default_is_declarative(
+    expression: ast.AST,
+    *,
+    tree: ast.Module,
+) -> bool:
+    """Reject literal defaults that ``dataclass`` treats as mutable fields."""
+    proxy = _definition_time_literal_proxy(expression, tree=tree)
+    if proxy is None:
+        return False
+    try:
+        value = ast.literal_eval(proxy)
+    except (TypeError, ValueError, MemoryError, RecursionError):
+        return False
+    return not isinstance(value, (dict, list, set))
+
+
 def _definition_time_annotation_is_union_operand(expression: ast.AST) -> bool:
     """Recognize operands whose proven eager binding supports PEP 604 union."""
     if isinstance(expression, ast.Name):
@@ -1477,9 +1493,16 @@ def _definition_time_class_is_bounded(
                 )
                 and (
                     statement.value is None
-                    or _definition_time_expression_is_declarative(
-                        statement.value,
-                        tree=tree,
+                    or (
+                        _definition_time_dataclass_default_is_declarative(
+                            statement.value,
+                            tree=tree,
+                        )
+                        if class_node.decorator_list
+                        else _definition_time_expression_is_declarative(
+                            statement.value,
+                            tree=tree,
+                        )
                     )
                 )
             ):

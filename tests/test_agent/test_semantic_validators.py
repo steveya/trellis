@@ -4250,6 +4250,32 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize("field_default", ("[]", "{}", "{1}"))
+    def test_rejects_credit_default_swap_local_dataclass_mutable_default(
+        self,
+        registry,
+        field_default,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = "from dataclasses import dataclass\n\n" + _cds_composition_source(
+            extra_setup=(
+                "@dataclass(frozen=True)\n"
+                "    class Trap:\n"
+                f"        items: list = {field_default}"
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_accepts_credit_default_swap_authoritative_enum_function_default(
         self,
         registry,
