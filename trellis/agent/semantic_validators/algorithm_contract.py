@@ -1139,6 +1139,300 @@ class _NestedEvaluateScopePruner(ast.NodeTransformer):
         return ast.copy_location(ast.Constant(value=None), node)
 
 
+def _definition_time_expression_is_declarative(expression: ast.AST) -> bool:
+    """Recognize values that cannot introduce definition-time control flow."""
+    if isinstance(expression, (ast.Constant, ast.Name)):
+        return True
+    if isinstance(expression, ast.Attribute):
+        return (
+            isinstance(expression.value, ast.Name)
+            and expression.value.id
+            in {
+                "BusinessDayAdjustment",
+                "DayCountConvention",
+                "Frequency",
+                "RollConvention",
+                "StubType",
+            }
+        )
+    if isinstance(expression, (ast.Tuple, ast.List, ast.Set)):
+        return all(
+            _definition_time_expression_is_declarative(element)
+            for element in expression.elts
+        )
+    if isinstance(expression, ast.Dict):
+        return all(
+            key is None or _definition_time_expression_is_declarative(key)
+            for key in expression.keys
+        ) and all(
+            _definition_time_expression_is_declarative(value)
+            for value in expression.values
+        )
+    if isinstance(expression, ast.UnaryOp):
+        return isinstance(expression.op, (ast.UAdd, ast.USub, ast.Not)) and (
+            isinstance(expression.operand, ast.Constant)
+        )
+    if isinstance(expression, ast.Lambda):
+        return not expression.args.defaults and not any(
+            default is not None for default in expression.args.kw_defaults
+        )
+    return False
+
+
+def _definition_time_annotation_is_declarative(expression: ast.AST) -> bool:
+    """Reject calls and other effects in eagerly evaluated annotations."""
+    if isinstance(expression, (ast.Constant, ast.Name)):
+        return True
+    if isinstance(expression, ast.Attribute):
+        return _definition_time_annotation_is_declarative(expression.value)
+    if isinstance(expression, ast.Subscript):
+        return _definition_time_annotation_is_declarative(
+            expression.value
+        ) and _definition_time_annotation_is_declarative(expression.slice)
+    if isinstance(expression, ast.Tuple):
+        return all(
+            _definition_time_annotation_is_declarative(element)
+            for element in expression.elts
+        )
+    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.BitOr):
+        return _definition_time_annotation_is_declarative(
+            expression.left
+        ) and _definition_time_annotation_is_declarative(expression.right)
+    return False
+
+
+def _definition_time_function_is_bounded(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    """Reject executable defaults and decorators on generated definitions."""
+    arguments = function.args
+    defaults = (*arguments.defaults, *arguments.kw_defaults)
+    annotations = tuple(
+        annotation
+        for argument in (
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+            arguments.vararg,
+            arguments.kwarg,
+        )
+        if argument is not None
+        for annotation in (argument.annotation,)
+        if annotation is not None
+    ) + ((function.returns,) if function.returns is not None else ())
+    return (
+        all(
+            default is None or _definition_time_expression_is_declarative(default)
+            for default in defaults
+        )
+        and all(
+            isinstance(decorator, ast.Name)
+            and decorator.id in {"property", "staticmethod", "classmethod"}
+            for decorator in function.decorator_list
+        )
+        and all(
+            _definition_time_annotation_is_declarative(annotation)
+            for annotation in annotations
+        )
+    )
+
+
+def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
+    """Allow declarations in class bodies, never executable control flow."""
+    if class_node.bases or class_node.keywords:
+        return False
+    if not all(
+        (
+            isinstance(decorator, ast.Name)
+            and decorator.id == "dataclass"
+        )
+        or (
+            isinstance(decorator, ast.Call)
+            and isinstance(decorator.func, ast.Name)
+            and decorator.func.id == "dataclass"
+            and not decorator.args
+            and len(decorator.keywords) == 1
+            and decorator.keywords[0].arg == "frozen"
+            and isinstance(decorator.keywords[0].value, ast.Constant)
+            and decorator.keywords[0].value.value is True
+        )
+        for decorator in class_node.decorator_list
+    ):
+        return False
+    for statement in class_node.body:
+        if isinstance(statement, ast.Pass):
+            continue
+        if isinstance(statement, ast.Expr) and (
+            isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            continue
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if _definition_time_function_is_bounded(statement):
+                continue
+            return False
+        if isinstance(statement, ast.ClassDef):
+            if _definition_time_class_is_bounded(statement):
+                continue
+            return False
+        if isinstance(statement, ast.Assign):
+            if (
+                len(statement.targets) == 1
+                and isinstance(statement.targets[0], ast.Name)
+                and statement.targets[0].id == "__trellis_comparison_bindings__"
+                and _definition_time_expression_is_declarative(statement.value)
+            ):
+                continue
+            return False
+        if isinstance(statement, ast.AnnAssign):
+            if (
+                isinstance(statement.target, ast.Name)
+                and _definition_time_annotation_is_declarative(
+                    statement.annotation
+                )
+                and (
+                    statement.value is None
+                    or _definition_time_expression_is_declarative(statement.value)
+                )
+            ):
+                continue
+            return False
+        return False
+    return True
+
+
+def _module_definition_time_is_bounded(tree: ast.Module) -> bool:
+    """Reject statements that could hang or mutate during adapter import."""
+    dataclass_imports = tuple(
+        statement
+        for statement in tree.body
+        if isinstance(statement, ast.ImportFrom)
+        and statement.module == "dataclasses"
+        and statement.level == 0
+        and any(
+            alias.name == "dataclass" and alias.asname is None
+            for alias in statement.names
+        )
+    )
+    uses_dataclass = any(
+        isinstance(statement, ast.ClassDef) and statement.decorator_list
+        for statement in tree.body
+    )
+    if uses_dataclass and len(dataclass_imports) != 1:
+        return False
+    for statement in tree.body:
+        if isinstance(statement, (ast.Import, ast.ImportFrom, ast.Pass)):
+            continue
+        if isinstance(statement, ast.Expr) and (
+            isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            continue
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if _definition_time_function_is_bounded(statement):
+                continue
+            return False
+        if isinstance(statement, ast.ClassDef):
+            if _definition_time_class_is_bounded(statement):
+                continue
+            return False
+        return False
+    return True
+
+
+def _function_body_without_docstring(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.stmt, ...]:
+    """Return executable statements after an optional function docstring."""
+    body = tuple(function.body)
+    if body and isinstance(body[0], ast.Expr) and (
+        isinstance(body[0].value, ast.Constant)
+        and isinstance(body[0].value.value, str)
+    ):
+        return body[1:]
+    return body
+
+
+def _payoff_spec_binding_is_authoritative(owner: ast.ClassDef) -> bool:
+    """Require the generated payoff to retain the submitted spec unchanged."""
+    constructors = tuple(
+        statement
+        for statement in owner.body
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and statement.name == "__init__"
+    )
+    spec_properties = tuple(
+        statement
+        for statement in owner.body
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and statement.name == "spec"
+    )
+    if not (
+        len(constructors) == 1
+        and isinstance(constructors[0], ast.FunctionDef)
+        and len(spec_properties) == 1
+        and isinstance(spec_properties[0], ast.FunctionDef)
+    ):
+        return False
+    constructor = constructors[0]
+    constructor_arguments = constructor.args
+    if not (
+        not constructor.decorator_list
+        and not constructor_arguments.posonlyargs
+        and [argument.arg for argument in constructor_arguments.args]
+        == ["self", "spec"]
+        and not constructor_arguments.vararg
+        and not constructor_arguments.kwonlyargs
+        and not constructor_arguments.kwarg
+        and not constructor_arguments.defaults
+    ):
+        return False
+    constructor_body = _function_body_without_docstring(constructor)
+    if not (
+        len(constructor_body) == 1
+        and isinstance(constructor_body[0], ast.Assign)
+        and len(constructor_body[0].targets) == 1
+        and isinstance(constructor_body[0].targets[0], ast.Attribute)
+        and isinstance(constructor_body[0].targets[0].value, ast.Name)
+        and constructor_body[0].targets[0].value.id == "self"
+        and constructor_body[0].targets[0].attr == "_spec"
+        and isinstance(constructor_body[0].value, ast.Name)
+        and constructor_body[0].value.id == "spec"
+    ):
+        return False
+
+    spec_property = spec_properties[0]
+    property_arguments = spec_property.args
+    property_body = _function_body_without_docstring(spec_property)
+    if not (
+        len(spec_property.decorator_list) == 1
+        and isinstance(spec_property.decorator_list[0], ast.Name)
+        and spec_property.decorator_list[0].id == "property"
+        and not property_arguments.posonlyargs
+        and [argument.arg for argument in property_arguments.args] == ["self"]
+        and not property_arguments.vararg
+        and not property_arguments.kwonlyargs
+        and not property_arguments.kwarg
+        and not property_arguments.defaults
+        and len(property_body) == 1
+        and isinstance(property_body[0], ast.Return)
+        and isinstance(property_body[0].value, ast.Attribute)
+        and isinstance(property_body[0].value.value, ast.Name)
+        and property_body[0].value.value.id == "self"
+        and property_body[0].value.attr == "_spec"
+    ):
+        return False
+
+    admitted_store_id = id(constructor_body[0].targets[0])
+    return not any(
+        isinstance(node, ast.Attribute)
+        and node.attr == "_spec"
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+        and id(node) != admitted_store_id
+        for node in ast.walk(owner)
+    )
+
+
 def _evaluate_definition_is_authoritative(
     tree: ast.Module,
     evaluate: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -1164,9 +1458,16 @@ def _evaluate_definition_is_authoritative(
             return False
         if any(
             isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and statement.name in {"__getattr__", "__getattribute__", "__new__"}
+            and statement.name
+            in {
+                "__delattr__",
+                "__getattr__",
+                "__getattribute__",
+                "__new__",
+                "__setattr__",
+            }
             for statement in owner.body
-        ):
+        ) or not _payoff_spec_binding_is_authoritative(owner):
             return False
     elif evaluate not in tree.body:
         return False
@@ -4250,6 +4551,9 @@ class AlgorithmContractValidator:
         except SyntaxError:
             return findings
 
+        module_definition_time_is_bounded = _module_definition_time_is_bounded(
+            module_tree
+        )
         tree = _reachable_evaluate_tree(
             module_tree,
             payoff_class_name=getattr(plan, "payoff_class_name", ""),
@@ -4262,15 +4566,30 @@ class AlgorithmContractValidator:
                     category="credit_default_swap_incomplete_event_grid",
                     message=(
                         f"Route '{route_spec.id}' must expose exactly one evaluate "
-                        "body with no assertions or unsupported conditional "
-                        "return/raise exits "
-                        "before its "
+                        "body from a definition-time-declarative module with an "
+                        "authoritative constructor/spec binding, no assertions or "
+                        "unsupported conditional return/raise exits before its "
                         "direct final signed return. Composition in unused or nested "
                         "helpers does not satisfy the pricing contract."
                     ),
                 )
             )
             return findings
+
+        if not module_definition_time_is_bounded:
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_incomplete_event_grid",
+                    message=(
+                        f"Route '{route_spec.id}' must keep module and class "
+                        "definition time declarative; executable control flow, "
+                        "opaque writes, and other import-time effects are not "
+                        "admitted before payoff smoke validation."
+                    ),
+                )
+            )
 
         if not _module_preserves_cds_builtin_bindings(module_tree):
             findings.append(

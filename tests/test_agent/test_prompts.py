@@ -1373,6 +1373,8 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "settlement_time" in prompt
     assert "accrued_on_event" in prompt
     assert "one direct final signed return" in prompt
+    assert "module and class definition time declarative" in prompt
+    assert "store the submitted `spec` exactly as `self._spec`" in prompt
     assert "simple binding consumed by the canonical composition" in prompt
     assert "conditional return/raise exits" in prompt
     assert "additional `for`, `async for`, or `while` loops" in prompt
@@ -1486,6 +1488,8 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "period_payment_times" in prompt
     assert "settlement_time" in prompt
     assert "one direct final signed return" in prompt
+    assert "module and class definition time declarative" in prompt
+    assert "store the submitted `spec` exactly as `self._spec`" in prompt
     assert "simple binding consumed by the canonical composition" in prompt
     assert "conditional return/raise exits" in prompt
     assert "additional `for`, `async for`, or `while` loops" in prompt

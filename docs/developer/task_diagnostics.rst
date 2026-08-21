@@ -468,6 +468,13 @@ Every assignment must also be a simple binding consumed by the canonical
 composition before any rebinding. Dead assignment expressions, opaque writes,
 and augmented writes outside the exact spread and four-leg accumulators fail
 closed for the same reason.
+The module and its class bodies are definition-time declarative: docstrings,
+approved imports, frozen spec declarations, and the plain payoff declaration
+are admitted, while executable module/class control flow is rejected before
+dynamic import. For generated payoff classes, the constructor must store the
+submitted ``spec`` exactly as ``self._spec`` and the sole ``@property spec``
+must return that object; alternate writers and dynamic attribute hooks fail
+closed.
 The guarded basis-point normalization must dominate the period loop, every
 spread alias, and every cashflow use; omitting it or moving it after assembly
 fails the economic-binding check. The sampler seed must resolve exactly to the

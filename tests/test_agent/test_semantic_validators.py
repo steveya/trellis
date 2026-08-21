@@ -3890,6 +3890,94 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        "definition_time_setup",
+        (
+            "while True:\n    pass\n\n",
+            "class ImportTrap:\n    while True:\n        pass\n\n",
+            (
+                "def import_trap(value: tuple(iter(int, 1))):\n"
+                "    return value\n\n"
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_definition_time_control_flow(
+        self,
+        registry,
+        definition_time_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = definition_time_setup + _cds_composition_source()
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("constructor_body", "property_body"),
+        (
+            ("self._spec = object()", "return self._spec"),
+            ("self._spec = spec", "return object()"),
+        ),
+    )
+    def test_rejects_credit_default_swap_substituted_payoff_spec(
+        self,
+        registry,
+        constructor_body,
+        property_body,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class CDSPayoff:\n"
+            "    def __init__(self, spec):\n"
+            f"        {constructor_body}\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            f"        {property_body}\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_authoritative_payoff_spec(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class CDSPayoff:\n"
+            "    def __init__(self, spec):\n"
+            "        self._spec = spec\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            "        return self._spec\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert not any(finding.severity == "error" for finding in findings)
+
     def test_accepts_credit_default_swap_optional_valuation_date_fallback(
         self,
         registry,
