@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-07-23`
+Status mirror last synced: `2026-08-21`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
@@ -70,7 +70,7 @@ Status mirror last synced: `2026-07-23`
 | `QUA-1231` | Semantic ranked-observation basket: primitive-composed Monte Carlo lane | Done |
 | `QUA-1232` | Terminal basket pricing: retire analytical, Monte Carlo, and transform helper authority | Done |
 | `QUA-1233` | Semantic ZCB option: raw Jamshidian and partial-horizon lattice composition | Done |
-| `QUA-1234` | Semantic CDS: survival-weighted leg and first-event composition | In Progress |
+| `QUA-1234` | Semantic CDS: survival-weighted leg and first-event composition | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
