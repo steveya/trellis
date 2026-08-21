@@ -1213,13 +1213,17 @@ direct or dynamic namespace shadowing, reflection, negation, scaling, or other
 wrappers are not pricing evidence. The schedule builder, default-event grid,
 conditional-probability transform, selected first-event weighting primitive,
 cashflow constructors, and cashflow PV functions must each retain their direct,
-unaliased public import binding; a same-name local or module replacement fails
-closed. Simple value aliases used as semantic evidence must have one immutable
-assignment that dominates their use, so a correct historical assignment cannot
-hide a later reassignment. Period iteration uses the unshadowed zero-based
-``enumerate(event_grid.periods)`` form, interval iteration uses the unshadowed
-two-argument ``range(interval_start, interval_stop)`` form, and neither loop's
-bound targets may be reassigned. The interval cursor has one reachable direct
+unaliased public import binding. The declared calendar and schedule convention
+symbols must likewise retain direct public bindings; a same-name local or module
+replacement fails closed. Every active-spec, market-curve, schedule, grid,
+weight, and cashflow-value alias used as semantic evidence must have one
+immutable assignment that dominates its use, so a correct historical assignment
+cannot hide a later reassignment. The composition preserves the unshadowed
+builtin bindings for ``enumerate``, ``float``, ``getattr``, and ``range``.
+Period iteration uses the zero-based ``enumerate(event_grid.periods)`` form,
+interval iteration uses the two-argument
+``range(interval_start, interval_stop)`` form, and neither loop's bound targets
+may be reassigned. The interval cursor has one reachable direct
 zero initializer before the period loop and only the mapped guard/tail updates
 inside it; dead or competing initializers are not pricing evidence. The
 empty-period guard is required before

@@ -105,6 +105,8 @@ def _cds_composition_source(
         )
     return f'''
 def evaluate(self, market_state):
+    from trellis.conventions.calendar import BusinessDayAdjustment, WEEKEND_ONLY
+    from trellis.conventions.schedule import RollConvention, StubType
     from trellis.core.date_utils import build_period_schedule
     from trellis.models.contingent_cashflows import (
         CouponAccrual,
@@ -2070,6 +2072,10 @@ def evaluate(self, market_state):
         "symbol",
         (
             "build_period_schedule",
+            "BusinessDayAdjustment",
+            "WEEKEND_ONLY",
+            "RollConvention",
+            "StubType",
             "CouponAccrual",
             "ProtectionPayment",
             "build_default_event_grid",
@@ -2107,6 +2113,9 @@ def evaluate(self, market_state):
     ):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         local_imports = (
+            "    from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "    from trellis.conventions.schedule import RollConvention, StubType\n"
             "    from trellis.core.date_utils import build_period_schedule\n"
             "    from trellis.models.contingent_cashflows import (\n"
             "        CouponAccrual,\n"
@@ -2119,6 +2128,9 @@ def evaluate(self, market_state):
             "    )\n\n"
         )
         top_level_imports = (
+            "from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "from trellis.conventions.schedule import RollConvention, StubType\n"
             "from trellis.core.date_utils import build_period_schedule\n"
             "from trellis.models.contingent_cashflows import (\n"
             "    CouponAccrual,\n"
@@ -2178,6 +2190,9 @@ def evaluate(self, market_state):
     ):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         local_imports = (
+            "    from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "    from trellis.conventions.schedule import RollConvention, StubType\n"
             "    from trellis.core.date_utils import build_period_schedule\n"
             "    from trellis.models.contingent_cashflows import (\n"
             "        CouponAccrual,\n"
@@ -2235,6 +2250,9 @@ def evaluate(self, market_state):
     ):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         local_imports = (
+            "    from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "    from trellis.conventions.schedule import RollConvention, StubType\n"
             "    from trellis.core.date_utils import build_period_schedule\n"
             "    from trellis.models.contingent_cashflows import (\n"
             "        CouponAccrual,\n"
@@ -2247,6 +2265,9 @@ def evaluate(self, market_state):
             "    )\n\n"
         )
         top_level_imports = (
+            "from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "from trellis.conventions.schedule import RollConvention, StubType\n"
             "from trellis.core.date_utils import build_period_schedule\n"
             "from trellis.models.contingent_cashflows import (\n"
             "    CouponAccrual,\n"
@@ -2684,6 +2705,57 @@ def evaluate(self, market_state):
 
         assert any(
             finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_shadowed_float_builtin(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    float = lambda value: 0.0\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_reassigned_credit_curve_alias(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "market_state.credit_curve",
+            "credit_curve",
+        )
+        source = source.replace(
+            "    schedule = build_period_schedule(",
+            "    credit_curve = market_state.credit_curve\n"
+            "    credit_curve = other_curve\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_credit_curve_binding"
             for finding in findings
         )
 

@@ -1383,8 +1383,12 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "right-hand side must be exactly its corresponding" in prompt
     assert "directly imported public" in prompt
     assert "directly and without aliases from its public Trellis module" in prompt
-    assert "one immutable assignment that dominates their use" in prompt
-    assert "unshadowed builtin `enumerate(event_grid.periods)`" in prompt
+    assert "declared calendar/schedule convention symbols" in prompt
+    assert "one immutable assignment that dominates its use" in prompt
+    assert (
+        "unshadowed builtin bindings for `enumerate`, `float`, `getattr`, and `range`"
+        in prompt
+    )
     assert (
         "Initialize `interval_start` exactly once with a reachable direct `0`"
         in prompt

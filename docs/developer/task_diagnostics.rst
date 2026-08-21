@@ -488,15 +488,17 @@ must be exactly the corresponding directly imported public
 ``coupon_cashflow_pv(...)`` or ``protection_payment_pv(...)`` call; attribute
 dispatch, aliases, direct or dynamic namespace shadowing, reflection, negation,
 scaling, or other wrappers fail closed. The full public route chain---schedule
-builder, event grid, conditional probabilities, selected first-event weights,
-cashflow constructors, and PV functions---must retain direct, unaliased imports
-from its approved modules. A same-name replacement fails closed. Simple value
-aliases used as semantic evidence must have one immutable assignment that
-dominates the use; the validator does not accept an earlier correct assignment
-after that name is rebound. The grid walk must preserve the unshadowed builtin
-``enumerate`` and ``range`` bindings, use zero-based one-argument period
-enumeration and two-argument interval ranges without keywords, and leave all
-loop targets unchanged. The interval cursor requires exactly one reachable
+builder, declared calendar and schedule convention symbols, event grid,
+conditional probabilities, selected first-event weights, cashflow constructors,
+and PV functions---must retain direct, unaliased imports from its approved
+modules. A same-name replacement fails closed. Every active-spec, market-curve,
+schedule, grid, weight, and cashflow-value alias used as semantic evidence must
+have one immutable assignment that dominates the use; the validator does not
+accept an earlier correct assignment after that name is rebound. The grid walk
+must preserve the unshadowed builtin ``enumerate``, ``float``, ``getattr``, and
+``range`` bindings, use zero-based one-argument period enumeration and
+two-argument interval ranges without keywords, and leave all loop targets
+unchanged. The interval cursor requires exactly one reachable
 direct zero initializer before the period loop; dead, duplicate, or competing
 initializers fail closed. The interval loop must be a reachable
 direct child of

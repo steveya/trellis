@@ -629,6 +629,8 @@ def _is_exact_call_to_symbol(expression: ast.AST, symbol: str) -> bool:
 
 _CDS_CASHFLOW_PRIMITIVE_MODULE = "trellis.models.contingent_cashflows"
 _CDS_SCHEDULE_PRIMITIVE_MODULE = "trellis.core.date_utils"
+_CDS_CALENDAR_CONVENTION_MODULE = "trellis.conventions.calendar"
+_CDS_SCHEDULE_CONVENTION_MODULE = "trellis.conventions.schedule"
 _CDS_OPAQUE_NAMESPACE_CALLS = frozenset({
     "__import__",
     "__delattr__",
@@ -820,6 +822,7 @@ def _module_has_authoritative_cds_primitive_import(
     *,
     symbol: str,
     module: str,
+    require_call: bool = True,
 ) -> bool:
     """Require the public import to own the unshadowed name used by ``evaluate``."""
     if _tree_uses_opaque_namespace_access(tree):
@@ -844,15 +847,24 @@ def _module_has_authoritative_cds_primitive_import(
     if local_imports:
         if len(local_imports) != 1:
             return False
-        direct_calls = tuple(
+        direct_uses = tuple(
             node
             for node in ast.walk(evaluate)
-            if isinstance(node, ast.Call)
-            and isinstance(node.func, ast.Name)
-            and node.func.id == symbol
+            if (
+                require_call
+                and isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Name)
+                and node.func.id == symbol
+            )
+            or (
+                not require_call
+                and isinstance(node, ast.Name)
+                and isinstance(node.ctx, ast.Load)
+                and node.id == symbol
+            )
         )
-        if not direct_calls or getattr(local_imports[0], "lineno", 0) >= min(
-            getattr(call, "lineno", 0) for call in direct_calls
+        if not direct_uses or getattr(local_imports[0], "lineno", 0) >= min(
+            getattr(use, "lineno", 0) for use in direct_uses
         ):
             return False
         ignored = frozenset({id(local_imports[0])})
@@ -889,8 +901,12 @@ def _module_has_authoritative_cds_primitive_import(
     )
 
 
-def _module_preserves_cds_loop_builtins(tree: ast.Module) -> bool:
-    """Require CDS grid loops to retain the real ``enumerate`` and ``range``."""
+def _module_preserves_cds_builtin_binding(
+    tree: ast.Module,
+    *,
+    symbol: str,
+) -> bool:
+    """Require one admitted unqualified CDS builtin to retain its binding."""
     evaluate_functions = tuple(
         node
         for node in ast.walk(tree)
@@ -900,21 +916,26 @@ def _module_preserves_cds_loop_builtins(tree: ast.Module) -> bool:
     if len(evaluate_functions) != 1:
         return False
     evaluate = evaluate_functions[0]
-    for symbol in ("enumerate", "range"):
-        if symbol in _function_argument_names(evaluate):
-            return False
-        if any(
+    return (
+        symbol not in _function_argument_names(evaluate)
+        and not any(
             _node_binds_name_in_current_scope(statement, name=symbol)
             for statement in evaluate.body
-        ):
-            return False
-        if any(
+        )
+        and not any(
             _node_binds_name_in_current_scope(statement, name=symbol)
             for statement in tree.body
             if statement is not evaluate
-        ):
-            return False
-    return True
+        )
+    )
+
+
+def _module_preserves_cds_builtin_bindings(tree: ast.Module) -> bool:
+    """Require every admitted unqualified CDS builtin to retain its binding."""
+    return all(
+        _module_preserves_cds_builtin_binding(tree, symbol=symbol)
+        for symbol in ("enumerate", "float", "getattr", "range")
+    )
 
 
 _NESTED_LOOP_EXIT_SCOPES = (
@@ -1277,21 +1298,6 @@ def _simple_name_assignment(node: ast.AST) -> tuple[str, ast.AST] | None:
     return None
 
 
-def _assigned_values_for_name(tree: ast.AST, name: str) -> tuple[ast.AST, ...]:
-    """Return simple assignment values for a local name."""
-    assignments = (
-        _simple_name_assignment(node)
-        for node in ast.walk(tree)
-    )
-    return tuple(
-        value
-        for assignment in assignments
-        if assignment is not None
-        for assigned_name, value in (assignment,)
-        if assigned_name == name
-    )
-
-
 def _single_immutable_assignment_value(
     tree: ast.AST,
     name: str,
@@ -1514,15 +1520,16 @@ def _expression_resolves_to_first_event_weights(
         return True
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return False
-    assigned_values = _assigned_values_for_name(tree, expression.id)
-    return bool(assigned_values) and all(
-        _expression_resolves_to_first_event_weights(
-            tree,
-            assigned_value,
-            required_symbol=required_symbol,
-            seen_names=seen_names | {expression.id},
-        )
-        for assigned_value in assigned_values
+    assigned_value = _single_immutable_assignment_value(
+        tree,
+        expression.id,
+        before_line=getattr(expression, "lineno", 0),
+    )
+    return assigned_value is not None and _expression_resolves_to_first_event_weights(
+        tree,
+        assigned_value,
+        required_symbol=required_symbol,
+        seen_names=seen_names | {expression.id},
     )
 
 
@@ -1542,14 +1549,15 @@ def _expression_resolves_to_discount_curve(
         return True
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return False
-    assigned_values = _assigned_values_for_name(tree, expression.id)
-    return bool(assigned_values) and all(
-        _expression_resolves_to_discount_curve(
-            tree,
-            assigned_value,
-            seen_names=seen_names | {expression.id},
-        )
-        for assigned_value in assigned_values
+    assigned_value = _single_immutable_assignment_value(
+        tree,
+        expression.id,
+        before_line=getattr(expression, "lineno", 0),
+    )
+    return assigned_value is not None and _expression_resolves_to_discount_curve(
+        tree,
+        assigned_value,
+        seen_names=seen_names | {expression.id},
     )
 
 
@@ -1656,13 +1664,15 @@ def _expression_resolves_to_credit_curve(
         return True
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return False
-    return any(
-        _expression_resolves_to_credit_curve(
-            tree,
-            assigned_value,
-            seen_names=seen_names | {expression.id},
-        )
-        for assigned_value in _assigned_values_for_name(tree, expression.id)
+    assigned_value = _single_immutable_assignment_value(
+        tree,
+        expression.id,
+        before_line=getattr(expression, "lineno", 0),
+    )
+    return assigned_value is not None and _expression_resolves_to_credit_curve(
+        tree,
+        assigned_value,
+        seen_names=seen_names | {expression.id},
     )
 
 
@@ -1689,27 +1699,18 @@ def _cds_conditional_event_grid(
         return None
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return None
-    assigned_values = _assigned_values_for_name(tree, expression.id)
-    if not assigned_values:
-        return None
-    grids = tuple(
-        _cds_conditional_event_grid(
-            tree,
-            assigned_value,
-            seen_names=seen_names | {expression.id},
-        )
-        for assigned_value in assigned_values
+    assigned_value = _single_immutable_assignment_value(
+        tree,
+        expression.id,
+        before_line=getattr(expression, "lineno", 0),
     )
-    if any(grid is None for grid in grids):
+    if assigned_value is None:
         return None
-    first_grid = grids[0]
-    if first_grid is None or not all(
-        _ast_equivalent(first_grid, grid)
-        for grid in grids[1:]
-        if grid is not None
-    ):
-        return None
-    return first_grid
+    return _cds_conditional_event_grid(
+        tree,
+        assigned_value,
+        seen_names=seen_names | {expression.id},
+    )
 
 
 def _cds_exact_initial_survival_grid(
@@ -1755,27 +1756,18 @@ def _cds_exact_initial_survival_grid(
     if isinstance(expression, ast.Name):
         if expression.id in seen_names:
             return None
-        assigned_values = _assigned_values_for_name(tree, expression.id)
-        if not assigned_values:
-            return None
-        grids = tuple(
-            _cds_exact_initial_survival_grid(
-                tree,
-                assigned_value,
-                seen_names=seen_names | {expression.id},
-            )
-            for assigned_value in assigned_values
+        assigned_value = _single_immutable_assignment_value(
+            tree,
+            expression.id,
+            before_line=getattr(expression, "lineno", 0),
         )
-        if any(grid is None for grid in grids):
+        if assigned_value is None:
             return None
-        first_grid = grids[0]
-        if first_grid is None or not all(
-            _ast_equivalent(first_grid, grid)
-            for grid in grids[1:]
-            if grid is not None
-        ):
-            return None
-        return first_grid
+        return _cds_exact_initial_survival_grid(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
+        )
     if not (
         isinstance(expression, ast.Call)
         and _call_matches_symbol(expression, "survival_probability")
@@ -2363,14 +2355,15 @@ def _expression_resolves_to_active_spec(
         return True
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return False
-    assigned_values = _assigned_values_for_name(tree, expression.id)
-    return bool(assigned_values) and all(
-        _expression_resolves_to_active_spec(
-            tree,
-            assigned_value,
-            seen_names=seen_names | {expression.id},
-        )
-        for assigned_value in assigned_values
+    assigned_value = _single_immutable_assignment_value(
+        tree,
+        expression.id,
+        before_line=getattr(expression, "lineno", 0),
+    )
+    return assigned_value is not None and _expression_resolves_to_active_spec(
+        tree,
+        assigned_value,
+        seen_names=seen_names | {expression.id},
     )
 
 
@@ -2568,25 +2561,19 @@ def _expression_resolves_to_active_spec_field(
         return True
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return False
-    assigned_values = _assigned_values_for_name(tree, expression.id)
-    if not assigned_values or not all(
-        _expression_resolves_to_active_spec_field(
-            tree,
-            assigned_value,
-            field=field,
-            seen_names=seen_names | {expression.id},
-        )
-        for assigned_value in assigned_values
-    ):
-        return False
-    mutations = tuple(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.AugAssign)
-        and isinstance(node.target, ast.Name)
-        and node.target.id == expression.id
+    assigned_value = _single_immutable_assignment_value(
+        tree,
+        expression.id,
+        before_line=getattr(expression, "lineno", 0),
     )
-    return not mutations
+    if assigned_value is None:
+        return False
+    return _expression_resolves_to_active_spec_field(
+        tree,
+        assigned_value,
+        field=field,
+        seen_names=seen_names | {expression.id},
+    )
 
 
 def _is_integer_constant(expression: ast.AST, value: int) -> bool:
@@ -2619,20 +2606,16 @@ def _expression_resolves_to_exact_number(
         )
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return False
-    assigned_values = _assigned_values_for_name(tree, expression.id)
-    bindings = tuple(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Name)
-        and node.id == expression.id
-        and isinstance(node.ctx, (ast.Store, ast.Del))
+    assigned_value = _single_immutable_assignment_value(
+        tree,
+        expression.id,
+        before_line=getattr(expression, "lineno", 0),
     )
     return (
-        len(assigned_values) == 1
-        and len(bindings) == 1
+        assigned_value is not None
         and _expression_resolves_to_exact_number(
             tree,
-            assigned_values[0],
+            assigned_value,
             value=value,
             integer_only=integer_only,
             seen_names=seen_names | {expression.id},
@@ -2650,14 +2633,15 @@ def _cds_path_count_is_active_spec_control(
     if isinstance(expression, ast.Name):
         if expression.id in seen_names:
             return False
-        assigned_values = _assigned_values_for_name(tree, expression.id)
-        return bool(assigned_values) and all(
-            _cds_path_count_is_active_spec_control(
-                tree,
-                assigned_value,
-                seen_names=seen_names | {expression.id},
-            )
-            for assigned_value in assigned_values
+        assigned_value = _single_immutable_assignment_value(
+            tree,
+            expression.id,
+            before_line=getattr(expression, "lineno", 0),
+        )
+        return assigned_value is not None and _cds_path_count_is_active_spec_control(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
         )
     if not (
         isinstance(expression, ast.BoolOp)
@@ -2732,14 +2716,15 @@ def _expression_resolves_to_market_settlement(
         return True
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return False
-    assigned_values = _assigned_values_for_name(tree, expression.id)
-    return bool(assigned_values) and all(
-        _expression_resolves_to_market_settlement(
-            tree,
-            assigned_value,
-            seen_names=seen_names | {expression.id},
-        )
-        for assigned_value in assigned_values
+    assigned_value = _single_immutable_assignment_value(
+        tree,
+        expression.id,
+        before_line=getattr(expression, "lineno", 0),
+    )
+    return assigned_value is not None and _expression_resolves_to_market_settlement(
+        tree,
+        assigned_value,
+        seen_names=seen_names | {expression.id},
     )
 
 
@@ -2755,14 +2740,15 @@ def _cds_time_origin_is_active_valuation_date(
     if isinstance(expression, ast.Name):
         if expression.id in seen_names:
             return False
-        assigned_values = _assigned_values_for_name(tree, expression.id)
-        return bool(assigned_values) and all(
-            _cds_time_origin_is_active_valuation_date(
-                tree,
-                assigned_value,
-                seen_names=seen_names | {expression.id},
-            )
-            for assigned_value in assigned_values
+        assigned_value = _single_immutable_assignment_value(
+            tree,
+            expression.id,
+            before_line=getattr(expression, "lineno", 0),
+        )
+        return assigned_value is not None and _cds_time_origin_is_active_valuation_date(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
         )
     if not (
         isinstance(expression, ast.BoolOp)
@@ -2797,49 +2783,6 @@ def _cds_time_origin_is_active_valuation_date(
     )
 
 
-def _module_evaluate_uses_unshadowed_builtin_name(
-    tree: ast.AST,
-    *,
-    name: str,
-) -> bool:
-    """Require an unqualified call target to resolve to its builtin binding."""
-    if not isinstance(tree, ast.Module):
-        return False
-    evaluate_functions = tuple(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == "evaluate"
-    )
-    if len(evaluate_functions) != 1:
-        return False
-    evaluate = evaluate_functions[0]
-    if name in _function_argument_names(evaluate) or any(
-        _node_binds_name_in_current_scope(statement, name=name)
-        for statement in evaluate.body
-    ):
-        return False
-    return not any(
-        _node_binds_name_in_current_scope(statement, name=name)
-        for statement in tree.body
-    )
-
-
-def _tree_uses_optional_active_valuation_date_getattr(tree: ast.AST) -> bool:
-    """Detect the bounded optional valuation-date access admitted for CDS."""
-    return any(
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "getattr"
-        and len(node.args) == 3
-        and not node.keywords
-        and _constant_string(node.args[1]) == "valuation_date"
-        and isinstance(node.args[2], ast.Constant)
-        and node.args[2].value is None
-        for node in ast.walk(tree)
-    )
-
-
 def _cds_schedule_uses_active_valuation_origin(
     tree: ast.AST,
     expression: ast.AST,
@@ -2850,14 +2793,15 @@ def _cds_schedule_uses_active_valuation_origin(
     if isinstance(expression, ast.Name):
         if expression.id in seen_names:
             return False
-        assigned_values = _assigned_values_for_name(tree, expression.id)
-        return bool(assigned_values) and all(
-            _cds_schedule_uses_active_valuation_origin(
-                tree,
-                assigned_value,
-                seen_names=seen_names | {expression.id},
-            )
-            for assigned_value in assigned_values
+        assigned_value = _single_immutable_assignment_value(
+            tree,
+            expression.id,
+            before_line=getattr(expression, "lineno", 0),
+        )
+        return assigned_value is not None and _cds_schedule_uses_active_valuation_origin(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
         )
     if not (
         isinstance(expression, ast.Call)
@@ -2885,14 +2829,15 @@ def _cds_schedule_uses_active_contract_fields(
     if isinstance(expression, ast.Name):
         if expression.id in seen_names:
             return False
-        assigned_values = _assigned_values_for_name(tree, expression.id)
-        return bool(assigned_values) and all(
-            _cds_schedule_uses_active_contract_fields(
-                tree,
-                assigned_value,
-                seen_names=seen_names | {expression.id},
-            )
-            for assigned_value in assigned_values
+        assigned_value = _single_immutable_assignment_value(
+            tree,
+            expression.id,
+            before_line=getattr(expression, "lineno", 0),
+        )
+        return assigned_value is not None and _cds_schedule_uses_active_contract_fields(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
         )
     if not (
         isinstance(expression, ast.Call)
@@ -2985,14 +2930,15 @@ def _cds_grid_uses_active_valuation_origin(
     if isinstance(expression, ast.Name):
         if expression.id in seen_names:
             return False
-        assigned_values = _assigned_values_for_name(tree, expression.id)
-        return bool(assigned_values) and all(
-            _cds_grid_uses_active_valuation_origin(
-                tree,
-                assigned_value,
-                seen_names=seen_names | {expression.id},
-            )
-            for assigned_value in assigned_values
+        assigned_value = _single_immutable_assignment_value(
+            tree,
+            expression.id,
+            before_line=getattr(expression, "lineno", 0),
+        )
+        return assigned_value is not None and _cds_grid_uses_active_valuation_origin(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
         )
     if not (
         isinstance(expression, ast.Call)
@@ -3017,14 +2963,15 @@ def _cds_grid_uses_active_contract_fields(
     if isinstance(expression, ast.Name):
         if expression.id in seen_names:
             return False
-        assigned_values = _assigned_values_for_name(tree, expression.id)
-        return bool(assigned_values) and all(
-            _cds_grid_uses_active_contract_fields(
-                tree,
-                assigned_value,
-                seen_names=seen_names | {expression.id},
-            )
-            for assigned_value in assigned_values
+        assigned_value = _single_immutable_assignment_value(
+            tree,
+            expression.id,
+            before_line=getattr(expression, "lineno", 0),
+        )
+        return assigned_value is not None and _cds_grid_uses_active_contract_fields(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
         )
     if not (
         isinstance(expression, ast.Call)
@@ -3920,41 +3867,51 @@ class AlgorithmContractValidator:
             )
             return findings
 
-        if not _module_preserves_cds_loop_builtins(module_tree):
+        if not _module_preserves_cds_builtin_bindings(module_tree):
             findings.append(
                 SemanticFinding(
                     validator="algorithm_contract",
                     severity="error",
                     category="credit_default_swap_incomplete_event_grid",
                     message=(
-                        f"Route '{route_spec.id}' must use the unshadowed builtin "
-                        "enumerate and range functions for its zero-based period "
-                        "and interval grid loops."
+                        f"Route '{route_spec.id}' must retain the unshadowed builtin "
+                        "enumerate, float, getattr, and range bindings used by its "
+                        "period/event-grid composition."
                     ),
                 )
             )
 
         selected_weight_symbol = _cds_selected_weight_symbol(plan)
         required_primitive_imports = (
-            ("build_period_schedule", _CDS_SCHEDULE_PRIMITIVE_MODULE),
-            ("CouponAccrual", _CDS_CASHFLOW_PRIMITIVE_MODULE),
-            ("ProtectionPayment", _CDS_CASHFLOW_PRIMITIVE_MODULE),
-            ("build_default_event_grid", _CDS_CASHFLOW_PRIMITIVE_MODULE),
+            ("build_period_schedule", _CDS_SCHEDULE_PRIMITIVE_MODULE, True),
+            (
+                "BusinessDayAdjustment",
+                _CDS_CALENDAR_CONVENTION_MODULE,
+                False,
+            ),
+            ("WEEKEND_ONLY", _CDS_CALENDAR_CONVENTION_MODULE, False),
+            ("RollConvention", _CDS_SCHEDULE_CONVENTION_MODULE, False),
+            ("StubType", _CDS_SCHEDULE_CONVENTION_MODULE, False),
+            ("CouponAccrual", _CDS_CASHFLOW_PRIMITIVE_MODULE, True),
+            ("ProtectionPayment", _CDS_CASHFLOW_PRIMITIVE_MODULE, True),
+            ("build_default_event_grid", _CDS_CASHFLOW_PRIMITIVE_MODULE, True),
             (
                 "conditional_event_probabilities_from_curve",
                 _CDS_CASHFLOW_PRIMITIVE_MODULE,
+                True,
             ),
-            (selected_weight_symbol, _CDS_CASHFLOW_PRIMITIVE_MODULE),
-            ("coupon_cashflow_pv", _CDS_CASHFLOW_PRIMITIVE_MODULE),
-            ("protection_payment_pv", _CDS_CASHFLOW_PRIMITIVE_MODULE),
+            (selected_weight_symbol, _CDS_CASHFLOW_PRIMITIVE_MODULE, True),
+            ("coupon_cashflow_pv", _CDS_CASHFLOW_PRIMITIVE_MODULE, True),
+            ("protection_payment_pv", _CDS_CASHFLOW_PRIMITIVE_MODULE, True),
         )
         invalid_primitive_imports = tuple(
             symbol
-            for symbol, module in required_primitive_imports
+            for symbol, module, require_call in required_primitive_imports
             if not _module_has_authoritative_cds_primitive_import(
                 module_tree,
                 symbol=symbol,
                 module=module,
+                require_call=require_call,
             )
         )
         if invalid_primitive_imports:
@@ -3964,8 +3921,9 @@ class AlgorithmContractValidator:
                     severity="error",
                     category="credit_default_swap_cashflow_primitive_binding",
                     message=(
-                        f"Route '{route_spec.id}' must call the directly imported "
-                        "public CDS schedule and cashflow primitives from their "
+                        f"Route '{route_spec.id}' must use the directly imported "
+                        "public CDS schedule, convention, and cashflow symbols "
+                        "from their "
                         "approved modules without attribute "
                         "dispatch, aliases, or local/module shadowing. Invalid "
                         f"bindings: {', '.join(invalid_primitive_imports)}."
@@ -4069,13 +4027,9 @@ class AlgorithmContractValidator:
             )
         else:
             valuation_origin_is_valid = _cds_uses_valuation_origin_event_grid(tree)
-            if (
-                valuation_origin_is_valid
-                and _tree_uses_optional_active_valuation_date_getattr(tree)
-                and not _module_evaluate_uses_unshadowed_builtin_name(
-                    module_tree,
-                    name="getattr",
-                )
+            if valuation_origin_is_valid and not _module_preserves_cds_builtin_binding(
+                module_tree,
+                symbol="getattr",
             ):
                 valuation_origin_is_valid = False
             if not valuation_origin_is_valid:
