@@ -3672,6 +3672,34 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_opaque_schedule_keywords(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            + _cds_composition_source().replace(
+                "        payment_lag_days=0,\n",
+                "        payment_lag_days=0,\n"
+                "        **((self._spec.notional == 0 and spin()) or {}),\n",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_schedule_binding"
+            for finding in findings
+        )
+
     @pytest.mark.parametrize(
         "overrides",
         (

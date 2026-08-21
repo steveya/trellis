@@ -511,7 +511,11 @@ business-day source instead of failing after schedule construction. The
 bounded route also requires its declared
 standard conventions exactly: ``WEEKEND_ONLY``, following adjustment, no roll,
 short-last stub, and zero payment lag. Convention overrides fail closed until
-the typed CDS contract carries those fields. An unconditional
+the typed CDS contract carries those fields. The call has exactly three
+positional contract fields and the seven named ``day_count``, ``time_origin``,
+``calendar``, ``bda``, ``roll_convention``, ``stub``, and
+``payment_lag_days`` arguments; opaque ``*args``/``**kwargs``, duplicate names,
+and extra keywords fail the schedule binding. An unconditional
 ``time_origin=spec.start_date``
 makes a forward-start grid begin at zero and therefore fails closed. Both the
 conditional event probabilities and initial survival must come from the active

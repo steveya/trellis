@@ -1178,7 +1178,11 @@ composition is:
 1. ``build_period_schedule(...)`` builds coupon periods from declared
    conventions and an explicit valuation time origin. Its ``EventSchedule``
    retains the construction calendar so downstream BUS/252 measurements use
-   the same business-day source.
+   the same business-day source. The bounded CDS route admits exactly three
+   positional contract fields and the seven named ``day_count``,
+   ``time_origin``, ``calendar``, ``bda``, ``roll_convention``, ``stub``, and
+   ``payment_lag_days`` arguments; opaque ``*args``/``**kwargs``, duplicate
+   names, and extra keywords are rejected.
 2. ``build_default_event_grid(...)`` partitions each live period into bounded
    curve-time intervals while preserving coupon accrual measurements. Every
    interval carries both a model ``settlement_time`` and a midpoint

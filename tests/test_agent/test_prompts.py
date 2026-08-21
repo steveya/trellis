@@ -1362,6 +1362,8 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "WEEKEND_ONLY" in prompt
     assert "BusinessDayAdjustment.FOLLOWING" in prompt
     assert "StubType.SHORT_LAST" in prompt
+    assert "exactly the three positional contract fields and the seven named" in prompt
+    assert "opaque `*args`/`**kwargs`, duplicate names, and extra keywords" in prompt
     assert "CouponAccrual" in prompt
     assert "ProtectionPayment" in prompt
     assert "build_cds_schedule" in prompt
@@ -1494,6 +1496,8 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "adapter-local RNG/default-state loops" in prompt
     assert "do not hard-code `50000`" in prompt
     assert "seed=42" in prompt
+    assert "exactly the three positional contract fields and the seven named" in prompt
+    assert "opaque `*args`/`**kwargs`, duplicate names, and extra keywords" in prompt
     assert "period_payment_times" in prompt
     assert "settlement_time" in prompt
     assert "one direct final signed return" in prompt

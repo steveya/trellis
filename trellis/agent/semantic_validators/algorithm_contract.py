@@ -3602,10 +3602,7 @@ def _cds_schedule_uses_active_valuation_origin(
             assigned_value,
             seen_names=seen_names | {expression.id},
         )
-    if not (
-        isinstance(expression, ast.Call)
-        and _call_matches_symbol(expression, "build_period_schedule")
-    ):
+    if not _is_exact_cds_schedule_call(expression):
         return False
     time_origins = tuple(
         keyword.value
@@ -3615,6 +3612,26 @@ def _cds_schedule_uses_active_valuation_origin(
     return len(time_origins) == 1 and _cds_time_origin_is_active_valuation_date(
         tree,
         time_origins[0],
+    )
+
+
+def _is_exact_cds_schedule_call(expression: ast.AST) -> bool:
+    """Require only the bounded standard-CDS period-schedule arguments."""
+    expected_keywords = {
+        "day_count",
+        "time_origin",
+        "calendar",
+        "bda",
+        "roll_convention",
+        "stub",
+        "payment_lag_days",
+    }
+    return (
+        isinstance(expression, ast.Call)
+        and _call_matches_symbol(expression, "build_period_schedule")
+        and len(expression.args) == 3
+        and len(expression.keywords) == len(expected_keywords)
+        and {keyword.arg for keyword in expression.keywords} == expected_keywords
     )
 
 
@@ -3638,11 +3655,7 @@ def _cds_schedule_uses_active_contract_fields(
             assigned_value,
             seen_names=seen_names | {expression.id},
         )
-    if not (
-        isinstance(expression, ast.Call)
-        and _call_matches_symbol(expression, "build_period_schedule")
-        and len(expression.args) == 3
-    ):
+    if not _is_exact_cds_schedule_call(expression):
         return False
     day_counts = tuple(
         keyword.value
