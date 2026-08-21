@@ -9,7 +9,9 @@ import pytest
 
 from trellis.conventions.day_count import DayCountConvention
 from trellis.core.date_utils import build_period_schedule
+from trellis.core.differentiable import get_numpy
 from trellis.core.types import Frequency
+from trellis.models import contingent_cashflows
 from trellis.models.contingent_cashflows import (
     CouponAccrual,
     DefaultEventGrid,
@@ -29,6 +31,11 @@ from trellis.models.contingent_cashflows import (
     sample_first_event_weights,
     trigger_settlement_pv,
 )
+
+
+def test_contingent_cashflow_arrays_use_differentiable_backend():
+    assert contingent_cashflows.np is get_numpy()
+    assert not hasattr(contingent_cashflows, "raw_np")
 
 
 class _FlatHazardCurve:
