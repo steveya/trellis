@@ -631,6 +631,31 @@ _CDS_CASHFLOW_PRIMITIVE_MODULE = "trellis.models.contingent_cashflows"
 _CDS_SCHEDULE_PRIMITIVE_MODULE = "trellis.core.date_utils"
 _CDS_CALENDAR_CONVENTION_MODULE = "trellis.conventions.calendar"
 _CDS_SCHEDULE_CONVENTION_MODULE = "trellis.conventions.schedule"
+_CDS_APPROVED_IMPORTS = {
+    "__future__": frozenset({"annotations"}),
+    "dataclasses": frozenset({"dataclass"}),
+    "datetime": frozenset({"date"}),
+    _CDS_CALENDAR_CONVENTION_MODULE: frozenset(
+        {"BusinessDayAdjustment", "WEEKEND_ONLY"}
+    ),
+    _CDS_SCHEDULE_CONVENTION_MODULE: frozenset({"RollConvention", "StubType"}),
+    _CDS_SCHEDULE_PRIMITIVE_MODULE: frozenset({"build_period_schedule"}),
+    "trellis.core.market_state": frozenset({"MarketState"}),
+    "trellis.core.payoff": frozenset({"PricingValue"}),
+    "trellis.core.types": frozenset({"DayCountConvention", "Frequency"}),
+    _CDS_CASHFLOW_PRIMITIVE_MODULE: frozenset(
+        {
+            "CouponAccrual",
+            "ProtectionPayment",
+            "build_default_event_grid",
+            "conditional_event_probabilities_from_curve",
+            "coupon_cashflow_pv",
+            "expected_first_event_weights",
+            "protection_payment_pv",
+            "sample_first_event_weights",
+        }
+    ),
+}
 _CDS_OPAQUE_NAMESPACE_CALLS = frozenset({
     "__import__",
     "__delattr__",
@@ -1335,13 +1360,25 @@ def _statement_binds_name(statement: ast.stmt, name: str) -> bool:
     return False
 
 
+def _cds_import_surface_is_approved(tree: ast.Module) -> bool:
+    """Admit only direct imports from the bounded CDS scaffold modules."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            return False
+        if not isinstance(node, ast.ImportFrom):
+            continue
+        approved_names = _CDS_APPROVED_IMPORTS.get(node.module or "")
+        if node.level != 0 or approved_names is None or any(
+            alias.asname is not None or alias.name not in approved_names
+            for alias in node.names
+        ):
+            return False
+    return True
+
+
 def _module_definition_time_is_bounded(tree: ast.Module) -> bool:
     """Reject statements that could hang or mutate during adapter import."""
-    if any(
-        isinstance(statement, ast.ImportFrom)
-        and any(alias.name == "*" for alias in statement.names)
-        for statement in tree.body
-    ):
+    if not _cds_import_surface_is_approved(tree):
         return False
     dataclass_imports = tuple(
         statement

@@ -476,6 +476,12 @@ approved imports, frozen spec declarations, and the plain payoff declaration
 are admitted, while executable module/class control flow is rejected before
 dynamic import. Wildcard imports are rejected because they make primitive and
 builtin ownership opaque even when approved direct imports are also present.
+At both module and ``evaluate`` scope, the bounded CDS surface admits only
+direct, unaliased names from ``__future__``, ``dataclasses``, ``datetime``, and
+the declared Trellis calendar, schedule, market-state, payoff-type, core-type,
+date-utils, and contingent-cashflow modules. Module-style, relative, aliased,
+and other arbitrary imports fail before dynamic import so an uninspected
+initializer cannot execute ahead of smoke validation.
 A frozen spec decorator must retain the directly imported
 ``dataclasses.dataclass`` binding and use the explicit
 ``@dataclass(frozen=True)`` form; module- or class-scope shadowing and

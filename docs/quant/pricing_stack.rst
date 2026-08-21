@@ -1225,7 +1225,11 @@ submitted spec exactly once as ``self._spec`` and returning that same object
 from its sole ``spec`` property. Executable definition-time control flow,
 substituted specs, alternate writers, and dynamic attribute hooks are rejected.
 Wildcard imports are also rejected because they make approved primitive and
-builtin bindings opaque.
+builtin bindings opaque. The same fail-closed rule applies across the whole
+generated tree: only direct, unaliased names from the exact CDS scaffold
+modules, including the ``PricingValue`` payoff-type scaffold, are admitted,
+while module-style, relative, aliased, and other arbitrary imports are rejected
+before dynamic import.
 The payoff class may define only ``__init__``, ``spec``, ``requirements``, and
 ``evaluate``; extra helpers, lifecycle hooks such as ``__del__``, and other
 data-model methods are not admitted.

@@ -1401,7 +1401,13 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "right-hand side must be exactly its corresponding" in prompt
     assert "directly imported public" in prompt
     assert "directly and without aliases from its public Trellis module" in prompt
-    assert "Wildcard imports are never admitted" in prompt
+    assert (
+        "both module and `evaluate` imports on the exact CDS scaffold surface" in prompt
+    )
+    assert (
+        "Module-style, relative, aliased, wildcard, and other arbitrary imports"
+        in prompt
+    )
     assert "declared calendar/schedule convention symbols" in prompt
     assert "one immutable assignment that dominates its use" in prompt
     assert (
@@ -1528,7 +1534,13 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
     assert "right-hand side must be exactly its corresponding" in prompt
     assert "directly imported public" in prompt
-    assert "Wildcard imports are never admitted" in prompt
+    assert (
+        "both module and `evaluate` imports on the exact CDS scaffold surface" in prompt
+    )
+    assert (
+        "Module-style, relative, aliased, wildcard, and other arbitrary imports"
+        in prompt
+    )
     assert "direct or dynamic namespace shadowing, reflection" in prompt
     assert "authoritative `evaluate()` method undecorated" in prompt
     assert "CDS contract findings are blocking" in prompt

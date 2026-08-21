@@ -2250,12 +2250,64 @@ def evaluate(self, market_state):
         errors = [finding for finding in findings if finding.severity == "error"]
         assert not errors, errors
 
+    def test_accepts_credit_default_swap_pricing_value_scaffold_import(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from trellis.core.payoff import PricingValue\n"
+            + _cds_composition_source().replace(
+                "def evaluate(self, market_state):",
+                "def evaluate(self, market_state) -> PricingValue:",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
     def test_rejects_credit_default_swap_wildcard_import(
         self,
         registry,
     ):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = _cds_composition_source() + "\nfrom user_helpers import *\n"
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize("scope", ("module", "evaluate"))
+    def test_rejects_credit_default_swap_unapproved_import(
+        self,
+        registry,
+        scope,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source()
+        if scope == "module":
+            source = "import user_helpers\n\n" + source
+        else:
+            source = source.replace(
+                "    schedule = build_period_schedule(",
+                "    import user_helpers\n"
+                "    schedule = build_period_schedule(",
+                1,
+            )
 
         findings = AlgorithmContractValidator().validate(
             source,
