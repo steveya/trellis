@@ -628,6 +628,27 @@ def _is_exact_call_to_symbol(expression: ast.AST, symbol: str) -> bool:
 
 
 _CDS_CASHFLOW_PRIMITIVE_MODULE = "trellis.models.contingent_cashflows"
+_CDS_OPAQUE_NAMESPACE_CALLS = frozenset({
+    "__import__",
+    "__delattr__",
+    "__delitem__",
+    "__setattr__",
+    "__setitem__",
+    "clear",
+    "delattr",
+    "delitem",
+    "eval",
+    "exec",
+    "globals",
+    "locals",
+    "pop",
+    "popitem",
+    "setdefault",
+    "setattr",
+    "setitem",
+    "update",
+    "vars",
+})
 
 
 def _is_direct_approved_symbol_import(node: ast.AST, symbol: str) -> bool:
@@ -660,6 +681,61 @@ def _import_binds_name(node: ast.Import | ast.ImportFrom, name: str) -> bool:
     return any((alias.asname or alias.name) == name for alias in node.names)
 
 
+def _constant_string(expression: ast.AST) -> str | None:
+    """Return the exact string represented by a literal expression."""
+    if isinstance(expression, ast.Constant) and isinstance(expression.value, str):
+        return expression.value
+    return None
+
+
+def _expression_is_rooted_at_name(expression: ast.AST, name: str) -> bool:
+    """Recognize attribute/subscript chains rooted at one local name."""
+    while isinstance(expression, (ast.Attribute, ast.Subscript)):
+        expression = expression.value
+    return isinstance(expression, ast.Name) and expression.id == name
+
+
+def _tree_uses_opaque_namespace_access(tree: ast.AST) -> bool:
+    """Reject dynamic namespace APIs that prevent proving import immutability."""
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Name) and node.id in _CDS_OPAQUE_NAMESPACE_CALLS:
+            return True
+        if (
+            isinstance(node, ast.ImportFrom)
+            and node.module == "builtins"
+            and any(
+                alias.name in _CDS_OPAQUE_NAMESPACE_CALLS
+                for alias in node.names
+            )
+        ):
+            return True
+        if isinstance(node, ast.Attribute) and node.attr in {"__dict__", "modules"}:
+            return True
+        if (
+            isinstance(node, ast.Subscript)
+            and _constant_string(node.slice) in _CDS_OPAQUE_NAMESPACE_CALLS
+        ):
+            return True
+        if not isinstance(node, ast.Call):
+            continue
+        if (
+            isinstance(node.func, ast.Name)
+            and node.func.id in _CDS_OPAQUE_NAMESPACE_CALLS
+        ) or (
+            isinstance(node.func, ast.Attribute)
+            and node.func.attr in _CDS_OPAQUE_NAMESPACE_CALLS
+        ):
+            return True
+        if (
+            isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) >= 2
+            and _constant_string(node.args[1]) in _CDS_OPAQUE_NAMESPACE_CALLS
+        ):
+            return True
+    return False
+
+
 def _node_binds_name_in_current_scope(
     node: ast.AST,
     *,
@@ -678,6 +754,24 @@ def _node_binds_name_in_current_scope(
     if isinstance(node, ast.ExceptHandler) and node.name == name:
         return True
     if isinstance(node, ast.MatchAs) and node.name == name:
+        return True
+    if (
+        isinstance(node, ast.Attribute)
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+        and (
+            node.attr == name
+            or _expression_is_rooted_at_name(node.value, name)
+        )
+    ):
+        return True
+    if (
+        isinstance(node, ast.Subscript)
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+        and (
+            _constant_string(node.slice) == name
+            or _expression_is_rooted_at_name(node.value, name)
+        )
+    ):
         return True
     if (
         isinstance(node, ast.Name)
@@ -721,6 +815,8 @@ def _module_has_authoritative_cds_cashflow_import(
     symbol: str,
 ) -> bool:
     """Require the public import to own the unshadowed name used by ``evaluate``."""
+    if _tree_uses_opaque_namespace_access(tree):
+        return False
     evaluate_functions = tuple(
         node
         for node in ast.walk(tree)

@@ -479,8 +479,9 @@ period loop and may only be written by that initializer and the unconditional
 additive (``+=``) statement in the corresponding loop body. Its right-hand side
 must be exactly the corresponding directly imported public
 ``coupon_cashflow_pv(...)`` or ``protection_payment_pv(...)`` call; attribute
-dispatch, aliases, shadowing, negation, scaling, or other wrappers fail closed.
-The interval loop must be a reachable direct child of
+dispatch, aliases, direct or dynamic namespace shadowing, reflection, negation,
+scaling, or other wrappers fail closed. The interval loop must be a reachable
+direct child of
 the period loop. Before leg assembly, only
 the bounded empty-period guard (which advances ``interval_start`` to
 ``interval_stop`` before continuing) and the non-positive ``event_weight``

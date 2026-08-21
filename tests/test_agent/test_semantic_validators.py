@@ -2118,6 +2118,60 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        "symbol",
+        ("coupon_cashflow_pv", "protection_payment_pv"),
+    )
+    @pytest.mark.parametrize(
+        "mutation",
+        (
+            'globals()["{symbol}"] = lambda cashflow: 0.0',
+            'globals().update({{"{symbol}": lambda cashflow: 0.0}})',
+            "import sys\nsys.modules[__name__].{symbol} = lambda cashflow: 0.0",
+            'exec("{symbol} = lambda cashflow: 0.0", globals())',
+            (
+                "from builtins import globals as namespace\n"
+                'namespace().update({{"{symbol}": lambda cashflow: 0.0}})'
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_indirect_global_primitive_rebinding(
+        self,
+        registry,
+        symbol,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        local_imports = (
+            "    from trellis.models.contingent_cashflows import (\n"
+            "        coupon_cashflow_pv,\n"
+            "        protection_payment_pv,\n"
+            "    )\n\n"
+        )
+        top_level_imports = (
+            "from trellis.models.contingent_cashflows import (\n"
+            "    coupon_cashflow_pv,\n"
+            "    protection_payment_pv,\n"
+            ")\n"
+        )
+        source = (
+            top_level_imports
+            + mutation.format(symbol=symbol)
+            + "\n"
+            + _cds_composition_source().replace(local_imports, "", 1)
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_spread_normalization_after_assembly(
         self,
         registry,

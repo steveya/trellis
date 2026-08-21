@@ -1207,8 +1207,8 @@ and every leg accumulator has one zero initialization and one additive ``+=``
 update that remains unconditional after any admitted early-continue guard, with
 no other writes before return. Each update value is exactly the corresponding
 directly imported public cashflow PV call; attribute dispatch, aliases,
-shadowing, negation, scaling, or other wrappers are not pricing evidence. The
-admitted guards are the empty-period guard,
+direct or dynamic namespace shadowing, reflection, negation, scaling, or other
+wrappers are not pricing evidence. The admitted guards are the empty-period guard,
 which advances the interval cursor before continuing, and the non-positive
 event-weight guard. Other conditional ``break`` or ``continue`` exits before
 assembly fail closed because they can dominate required leg updates. The guard

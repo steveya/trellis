@@ -1381,7 +1381,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
     assert "right-hand side must be exactly its corresponding" in prompt
     assert "directly imported public" in prompt
-    assert "do not use attribute dispatch, aliases, shadowing" in prompt
+    assert "direct or dynamic namespace shadowing, reflection" in prompt
     assert "before the period loop and every spread alias or cashflow use" in prompt
 
 
@@ -1474,7 +1474,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
     assert "right-hand side must be exactly its corresponding" in prompt
     assert "directly imported public" in prompt
-    assert "do not use attribute dispatch, aliases, shadowing" in prompt
+    assert "direct or dynamic namespace shadowing, reflection" in prompt
     assert "before the period loop and every spread alias or cashflow use" in prompt
 
 
