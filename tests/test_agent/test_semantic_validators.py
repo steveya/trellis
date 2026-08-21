@@ -105,6 +105,11 @@ def _cds_composition_source(
         )
     return f'''
 def evaluate(self, market_state):
+    from trellis.models.contingent_cashflows import (
+        coupon_cashflow_pv,
+        protection_payment_pv,
+    )
+
     schedule = build_period_schedule(
         {schedule_start},
         {schedule_end},
@@ -1973,6 +1978,145 @@ def evaluate(self, market_state):
         )
 
         assert any(finding.severity == "error" for finding in findings)
+
+    @pytest.mark.parametrize(
+        "symbol",
+        ("coupon_cashflow_pv", "protection_payment_pv"),
+    )
+    def test_rejects_credit_default_swap_impersonated_cashflow_primitive(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            f"{symbol}(",
+            f"self.{symbol}(",
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(finding.severity == "error" for finding in findings)
+
+    @pytest.mark.parametrize(
+        "symbol",
+        ("coupon_cashflow_pv", "protection_payment_pv"),
+    )
+    def test_rejects_credit_default_swap_shadowed_cashflow_import(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            f"    {symbol} = lambda cashflow: 0.0\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(finding.severity == "error" for finding in findings)
+
+    def test_accepts_credit_default_swap_top_level_cashflow_imports(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        local_imports = (
+            "    from trellis.models.contingent_cashflows import (\n"
+            "        coupon_cashflow_pv,\n"
+            "        protection_payment_pv,\n"
+            "    )\n\n"
+        )
+        top_level_imports = (
+            "from trellis.models.contingent_cashflows import (\n"
+            "    coupon_cashflow_pv,\n"
+            "    protection_payment_pv,\n"
+            ")\n"
+        )
+        source = top_level_imports + _cds_composition_source().replace(
+            local_imports,
+            "",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    @pytest.mark.parametrize(
+        "symbol",
+        ("coupon_cashflow_pv", "protection_payment_pv"),
+    )
+    def test_rejects_credit_default_swap_aliased_cashflow_import(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            f"        {symbol},",
+            f"        {symbol} as {symbol},",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_late_local_cashflow_imports(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        local_imports = (
+            "    from trellis.models.contingent_cashflows import (\n"
+            "        coupon_cashflow_pv,\n"
+            "        protection_payment_pv,\n"
+            "    )\n\n"
+        )
+        source = (
+            _cds_composition_source()
+            .replace(local_imports, "", 1)
+            .replace(
+                "    return float(",
+                local_imports + "    return float(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in findings
+        )
 
     def test_rejects_credit_default_swap_spread_normalization_after_assembly(
         self,

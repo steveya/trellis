@@ -619,10 +619,170 @@ def _find_calls_for_symbol(tree: ast.AST, symbol: str) -> tuple[ast.Call, ...]:
 
 
 def _is_exact_call_to_symbol(expression: ast.AST, symbol: str) -> bool:
-    """Return whether an expression is exactly one call to ``symbol``."""
-    return isinstance(expression, ast.Call) and _call_matches_symbol(
-        expression,
-        symbol,
+    """Return whether an expression directly calls the local ``symbol`` name."""
+    return (
+        isinstance(expression, ast.Call)
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == symbol
+    )
+
+
+_CDS_CASHFLOW_PRIMITIVE_MODULE = "trellis.models.contingent_cashflows"
+
+
+def _is_direct_approved_symbol_import(node: ast.AST, symbol: str) -> bool:
+    """Recognize an unaliased import of one public CDS cashflow primitive."""
+    if not (
+        isinstance(node, ast.ImportFrom)
+        and node.level == 0
+        and node.module == _CDS_CASHFLOW_PRIMITIVE_MODULE
+    ):
+        return False
+    bindings = tuple(
+        alias
+        for alias in node.names
+        if (alias.asname or alias.name) == symbol
+    )
+    return (
+        len(bindings) == 1
+        and bindings[0].name == symbol
+        and bindings[0].asname is None
+    )
+
+
+def _import_binds_name(node: ast.Import | ast.ImportFrom, name: str) -> bool:
+    """Return whether an import statement binds ``name`` in its current scope."""
+    if isinstance(node, ast.Import):
+        return any(
+            (alias.asname or alias.name.split(".", 1)[0]) == name
+            for alias in node.names
+        )
+    return any((alias.asname or alias.name) == name for alias in node.names)
+
+
+def _node_binds_name_in_current_scope(
+    node: ast.AST,
+    *,
+    name: str,
+    ignored_node_ids: frozenset[int] = frozenset(),
+) -> bool:
+    """Detect a binding without descending into a genuinely nested scope."""
+    if id(node) in ignored_node_ids:
+        return False
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return node.name == name
+    if isinstance(node, ast.Lambda):
+        return False
+    if isinstance(node, (ast.Import, ast.ImportFrom)):
+        return _import_binds_name(node, name)
+    if isinstance(node, ast.ExceptHandler) and node.name == name:
+        return True
+    if isinstance(node, ast.MatchAs) and node.name == name:
+        return True
+    if (
+        isinstance(node, ast.Name)
+        and node.id == name
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+    ):
+        return True
+    return any(
+        _node_binds_name_in_current_scope(
+            child,
+            name=name,
+            ignored_node_ids=ignored_node_ids,
+        )
+        for child in ast.iter_child_nodes(node)
+    )
+
+
+def _function_argument_names(
+    function: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> frozenset[str]:
+    """Return every name bound by a function signature."""
+    arguments = function.args
+    names = {
+        argument.arg
+        for argument in (
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+        )
+    }
+    if arguments.vararg is not None:
+        names.add(arguments.vararg.arg)
+    if arguments.kwarg is not None:
+        names.add(arguments.kwarg.arg)
+    return frozenset(names)
+
+
+def _module_has_authoritative_cds_cashflow_import(
+    tree: ast.Module,
+    *,
+    symbol: str,
+) -> bool:
+    """Require the public import to own the unshadowed name used by ``evaluate``."""
+    evaluate_functions = tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "evaluate"
+    )
+    if len(evaluate_functions) != 1:
+        return False
+    evaluate = evaluate_functions[0]
+    if symbol in _function_argument_names(evaluate):
+        return False
+
+    local_imports = tuple(
+        node
+        for node in evaluate.body
+        if _is_direct_approved_symbol_import(node, symbol)
+    )
+    if local_imports:
+        if len(local_imports) != 1:
+            return False
+        direct_calls = tuple(
+            node
+            for node in ast.walk(evaluate)
+            if isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == symbol
+        )
+        if not direct_calls or getattr(local_imports[0], "lineno", 0) >= min(
+            getattr(call, "lineno", 0) for call in direct_calls
+        ):
+            return False
+        ignored = frozenset({id(local_imports[0])})
+        return not any(
+            _node_binds_name_in_current_scope(
+                statement,
+                name=symbol,
+                ignored_node_ids=ignored,
+            )
+            for statement in evaluate.body
+        )
+
+    if any(
+        _node_binds_name_in_current_scope(statement, name=symbol)
+        for statement in evaluate.body
+    ):
+        return False
+    module_imports = tuple(
+        node
+        for node in tree.body
+        if _is_direct_approved_symbol_import(node, symbol)
+    )
+    if len(module_imports) != 1:
+        return False
+    ignored = frozenset({id(module_imports[0])})
+    return not any(
+        _node_binds_name_in_current_scope(
+            statement,
+            name=symbol,
+            ignored_node_ids=ignored,
+        )
+        for statement in tree.body
+        if statement is not evaluate
     )
 
 
@@ -3311,6 +3471,33 @@ class AlgorithmContractValidator:
                 )
             )
             return findings
+
+        invalid_cashflow_imports = tuple(
+            symbol
+            for symbol in (
+                "coupon_cashflow_pv",
+                "protection_payment_pv",
+            )
+            if not _module_has_authoritative_cds_cashflow_import(
+                module_tree,
+                symbol=symbol,
+            )
+        )
+        if invalid_cashflow_imports:
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_cashflow_primitive_binding",
+                    message=(
+                        f"Route '{route_spec.id}' must call the directly imported "
+                        "public cashflow primitives from "
+                        f"'{_CDS_CASHFLOW_PRIMITIVE_MODULE}' without attribute "
+                        "dispatch, aliases, or local/module shadowing. Invalid "
+                        f"bindings: {', '.join(invalid_cashflow_imports)}."
+                    ),
+                )
+            )
 
         selected_weight_symbol = _cds_selected_weight_symbol(plan)
 
