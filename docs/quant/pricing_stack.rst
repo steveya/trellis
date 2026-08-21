@@ -1210,11 +1210,15 @@ update that remains unconditional after any admitted early-continue guard, with
 no other writes before return. Each update value is exactly the corresponding
 directly imported public cashflow PV call; attribute dispatch, aliases,
 direct or dynamic namespace shadowing, reflection, negation, scaling, or other
-wrappers are not pricing evidence. The admitted guards are the empty-period guard,
-which advances the interval cursor before continuing, and the non-positive
-event-weight guard. Other conditional ``break`` or ``continue`` exits before
+wrappers are not pricing evidence. The empty-period guard is required before
+scheduled-leg pricing and advances the interval cursor before continuing, so
+expired periods cannot index an unrelated survival weight. The non-positive
+event-weight guard is also admitted. Other conditional ``break`` or ``continue`` exits before
 assembly fail closed because they can dominate required leg updates. The guard
-controls are not reassignable. Sampled weights bind the optional path
+controls are not reassignable. Weight, default-probability, and discount-factor
+keywords must bind on the direct cashflow constructor passed to each validated
+PV primitive; descendant calls and decoy keywords are not pricing evidence.
+Sampled weights bind the optional path
 control through an explicit non-null ``250000`` fallback.
 The guarded basis-point spread normalization precedes the period loop and every
 spread alias or cashflow use; a missing or late normalization fails closed.

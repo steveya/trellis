@@ -146,6 +146,9 @@ def evaluate(self, market_state):
     interval_start = 0
     for period_index, period in enumerate(grid.periods):
         interval_stop = grid.period_interval_stops[period_index]
+        if interval_stop <= interval_start:
+            interval_start = interval_stop
+            continue
         survival_weight = {weight_owner}.survival_weights[{survival_index}]
         premium_leg += coupon_cashflow_pv(CouponAccrual(
             notional={premium_notional},
@@ -1853,28 +1856,66 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_missing_empty_period_guard(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "        if interval_stop <= interval_start:\n"
+            "            interval_start = interval_stop\n"
+            "            continue\n",
+            "",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_late_empty_period_guard(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        guard = (
+            "        if interval_stop <= interval_start:\n"
+            "            interval_start = interval_stop\n"
+            "            continue\n"
+        )
+        source = (
+            _cds_composition_source()
+            .replace(guard, "", 1)
+            .replace(
+                "        premium_leg += coupon_cashflow_pv(",
+                guard + "        premium_leg += coupon_cashflow_pv(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_accepts_credit_default_swap_recognized_early_continue_guards(
         self,
         registry,
     ):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
-        source = (
-            _cds_composition_source()
-            .replace(
-                "        survival_weight =",
-                "        if interval_stop <= interval_start:\n"
-                "            interval_start = interval_stop\n"
-                "            continue\n"
-                "        survival_weight =",
-                1,
-            )
-            .replace(
-                "            event_discount =",
-                "            if event_weight <= 0.0:\n"
-                "                continue\n"
-                "            event_discount =",
-                1,
-            )
+        source = _cds_composition_source().replace(
+            "            event_discount =",
+            "            if event_weight <= 0.0:\n"
+            "                continue\n"
+            "            event_discount =",
+            1,
         )
 
         findings = AlgorithmContractValidator().validate(
@@ -1912,14 +1953,6 @@ def evaluate(self, market_state):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = (
             _cds_composition_source()
-            .replace(
-                "        survival_weight =",
-                "        if interval_stop <= interval_start:\n"
-                "            interval_start = interval_stop\n"
-                "            continue\n"
-                "        survival_weight =",
-                1,
-            )
             .replace(
                 "            event_discount =",
                 "            if event_weight <= 0.0:\n"
@@ -2712,6 +2745,28 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_nested_decoy_weight_keyword(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "            weight=survival_weight,",
+            "            weight=(dict(weight=survival_weight) and 0.0),",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_unbound_weight_owner(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
 
@@ -2926,6 +2981,31 @@ def evaluate(self, market_state):
                 premium_discount=premium_discount,
                 event_discount=event_discount,
             ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_discount_mapping"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_nested_decoy_discount_keyword(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "            discount_factor=market_state.discount.discount("
+            "grid.period_payment_times[period_index]),",
+            "            discount_factor=(dict(discount_factor="
+            "market_state.discount.discount("
+            "grid.period_payment_times[period_index])) and 1.0),",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
             _make_plan("credit_default_swap"),
             spec,
         )

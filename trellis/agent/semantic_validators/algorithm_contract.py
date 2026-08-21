@@ -945,30 +945,52 @@ def _is_supported_cds_early_continue_guard(
         is not None
     ):
         return True
+    return _is_supported_cds_empty_period_guard(
+        loop,
+        statement,
+        start_name="interval_start",
+        stop_name="interval_stop",
+    )
+
+
+def _is_supported_cds_empty_period_guard(
+    loop: ast.For | ast.AsyncFor,
+    statement: ast.AST,
+    *,
+    start_name: str,
+    stop_name: str,
+) -> bool:
+    """Recognize the exact skip required before pricing a period with no events."""
     return (
-        isinstance(statement.test, ast.Compare)
+        isinstance(statement, ast.If)
+        and not statement.orelse
+        and isinstance(statement.test, ast.Compare)
         and isinstance(statement.test.left, ast.Name)
-        and statement.test.left.id == "interval_stop"
+        and statement.test.left.id == stop_name
         and len(statement.test.ops) == 1
         and isinstance(statement.test.ops[0], ast.LtE)
         and len(statement.test.comparators) == 1
         and isinstance(statement.test.comparators[0], ast.Name)
-        and statement.test.comparators[0].id == "interval_start"
+        and statement.test.comparators[0].id == start_name
         and len(statement.body) == 2
         and isinstance(statement.body[0], ast.Assign)
         and len(statement.body[0].targets) == 1
         and isinstance(statement.body[0].targets[0], ast.Name)
-        and statement.body[0].targets[0].id == "interval_start"
+        and statement.body[0].targets[0].id == start_name
         and isinstance(statement.body[0].value, ast.Name)
-        and statement.body[0].value.id == "interval_stop"
+        and statement.body[0].value.id == stop_name
         and isinstance(statement.body[1], ast.Continue)
         and _single_immutable_assignment_value(
             loop,
-            "interval_stop",
+            stop_name,
             before_line=getattr(statement, "lineno", 0),
         )
         is not None
-        and _cds_interval_cursor_writes_are_bounded(loop)
+        and _cds_interval_cursor_writes_are_bounded(
+            loop,
+            start_name=start_name,
+            stop_name=stop_name,
+        )
     )
 
 
@@ -1268,26 +1290,29 @@ def _single_immutable_assignment_value(
 
 def _cds_interval_cursor_writes_are_bounded(
     period_loop: ast.For | ast.AsyncFor,
+    *,
+    start_name: str = "interval_start",
+    stop_name: str = "interval_stop",
 ) -> bool:
     """Admit only the guard and tail updates of the CDS interval cursor."""
     assignments = tuple(
         assignment[1]
         for node in ast.walk(period_loop)
         for assignment in (_simple_name_assignment(node),)
-        if assignment is not None and assignment[0] == "interval_start"
+        if assignment is not None and assignment[0] == start_name
     )
     bindings = tuple(
         node
         for node in ast.walk(period_loop)
         if isinstance(node, ast.Name)
-        and node.id == "interval_start"
+        and node.id == start_name
         and isinstance(node.ctx, (ast.Store, ast.Del))
     )
     return (
         len(assignments) == 2
         and len(bindings) == 2
         and all(
-            isinstance(value, ast.Name) and value.id == "interval_stop"
+            isinstance(value, ast.Name) and value.id == stop_name
             for value in assignments
         )
     )
@@ -1350,20 +1375,34 @@ def _expression_or_alias_matches(
     )
 
 
-def _subtree_keyword_matches(
+def _cashflow_constructor_keyword_matches(
     tree: ast.AST,
     expression: ast.AST,
     *,
+    constructor_symbol: str,
     keyword_name: str,
     predicate: Callable[[ast.AST], bool],
 ) -> bool:
-    """Require one nested constructor keyword to resolve to the expected shape."""
-    return any(
-        keyword.arg == keyword_name
-        and _expression_or_alias_matches(tree, keyword.value, predicate)
-        for node in ast.walk(expression)
-        if isinstance(node, ast.Call)
-        for keyword in node.keywords
+    """Match one keyword on the constructor passed directly to a PV primitive."""
+    if not (
+        isinstance(expression, ast.Call)
+        and len(expression.args) == 1
+        and not expression.keywords
+        and isinstance(expression.args[0], ast.Call)
+        and isinstance(expression.args[0].func, ast.Name)
+        and expression.args[0].func.id == constructor_symbol
+        and not expression.args[0].args
+    ):
+        return False
+    matching_keywords = tuple(
+        keyword
+        for keyword in expression.args[0].keywords
+        if keyword.arg == keyword_name
+    )
+    return len(matching_keywords) == 1 and _expression_or_alias_matches(
+        tree,
+        matching_keywords[0].value,
+        predicate,
     )
 
 
@@ -1902,6 +1941,48 @@ def _loop_references_indexed_grid_intervals(
     )
 
 
+def _period_loop_has_required_empty_interval_guard(
+    period_loop: ast.For | ast.AsyncFor,
+    *,
+    start_name: str,
+    stop_name: str,
+) -> bool:
+    """Require the bounded no-live-interval skip before scheduled-leg pricing."""
+    premium_augments = _direct_loop_augments(
+        period_loop,
+        symbol="coupon_cashflow_pv",
+    )
+    if not premium_augments:
+        return False
+    first_premium_line = min(
+        getattr(augment, "lineno", 0)
+        for augment in premium_augments
+    )
+    stop_assignment_indexes = tuple(
+        index
+        for index, statement in enumerate(period_loop.body)
+        for assignment in (_simple_name_assignment(statement),)
+        if assignment is not None and assignment[0] == stop_name
+    )
+    guard_indexes = tuple(
+        index
+        for index, statement in enumerate(period_loop.body)
+        if _is_supported_cds_empty_period_guard(
+            period_loop,
+            statement,
+            start_name=start_name,
+            stop_name=stop_name,
+        )
+    )
+    return (
+        len(stop_assignment_indexes) == 1
+        and len(guard_indexes) == 1
+        and guard_indexes[0] == stop_assignment_indexes[0] + 1
+        and getattr(period_loop.body[guard_indexes[0]], "lineno", 0)
+        < first_premium_line
+    )
+
+
 def _cds_full_event_grid_loops(
     tree: ast.AST,
 ) -> tuple[
@@ -1951,6 +2032,12 @@ def _cds_full_event_grid_loops(
                 tree,
                 name=start_name,
                 before_line=getattr(period_loop, "lineno", 0),
+            ):
+                continue
+            if not _period_loop_has_required_empty_interval_guard(
+                period_loop,
+                start_name=start_name,
+                stop_name=stop_name,
             ):
                 continue
             if not _loop_references_indexed_grid_intervals(
@@ -2016,9 +2103,10 @@ def _cds_uses_active_event_weights(
             "coupon_cashflow_pv",
         )
         if not premium_values or not all(
-            _subtree_keyword_matches(
+            _cashflow_constructor_keyword_matches(
                 tree,
                 value,
+                constructor_symbol="CouponAccrual",
                 keyword_name="weight",
                 predicate=lambda expression: _is_survival_weight_at_period_stop(
                     tree,
@@ -2053,18 +2141,20 @@ def _cds_uses_active_event_weights(
             protection_values
             and event_accrual_values
             and all(
-                _subtree_keyword_matches(
+                _cashflow_constructor_keyword_matches(
                     tree,
                     value,
+                    constructor_symbol="ProtectionPayment",
                     keyword_name="default_probability",
                     predicate=event_weight_matches,
                 )
                 for value in protection_values
             )
             and all(
-                _subtree_keyword_matches(
+                _cashflow_constructor_keyword_matches(
                     tree,
                     value,
+                    constructor_symbol="CouponAccrual",
                     keyword_name="weight",
                     predicate=event_weight_matches,
                 )
@@ -2123,22 +2213,34 @@ def _cds_uses_active_discount_times(tree: ast.AST) -> bool:
             and protection_values
             and event_accrual_values
             and all(
-                _subtree_keyword_matches(
+                _cashflow_constructor_keyword_matches(
                     tree,
                     value,
+                    constructor_symbol="CouponAccrual",
                     keyword_name="discount_factor",
                     predicate=scheduled_discount_matches,
                 )
                 for value in premium_values
             )
             and all(
-                _subtree_keyword_matches(
+                _cashflow_constructor_keyword_matches(
                     tree,
                     value,
+                    constructor_symbol="ProtectionPayment",
                     keyword_name="discount_factor",
                     predicate=event_discount_matches,
                 )
-                for value in protection_values + event_accrual_values
+                for value in protection_values
+            )
+            and all(
+                _cashflow_constructor_keyword_matches(
+                    tree,
+                    value,
+                    constructor_symbol="CouponAccrual",
+                    keyword_name="discount_factor",
+                    predicate=event_discount_matches,
+                )
+                for value in event_accrual_values
             )
         ):
             return True

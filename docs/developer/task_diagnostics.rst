@@ -489,10 +489,11 @@ must be exactly the corresponding directly imported public
 dispatch, aliases, direct or dynamic namespace shadowing, reflection, negation,
 scaling, or other wrappers fail closed. The interval loop must be a reachable
 direct child of
-the period loop. Before leg assembly, only
-the bounded empty-period guard (which advances ``interval_start`` to
-``interval_stop`` before continuing) and the non-positive ``event_weight``
-continue guard are admitted. Any other conditional ``break`` or ``continue``
+the period loop. Before scheduled-leg assembly, the bounded empty-period guard
+must advance ``interval_start`` to ``interval_stop`` and continue; otherwise an
+expired or empty period can index the wrong survival weight. The non-positive
+``event_weight`` continue guard is also admitted before event-leg assembly. Any
+other conditional ``break`` or ``continue``
 can dominate the required updates and therefore fails closed, as does hiding
 either the interval loop or leg algebra beneath ``if False`` or an unproved
 event-weight condition. Reassigning ``interval_stop``, ``interval_start``, or
@@ -502,7 +503,11 @@ mapping, scheduled premium must use
 cashflows use ``event_weights[interval_index]`` (directly or through simple
 aliases). Those indexed weights must belong to the validated
 ``expected_first_event_weights`` or ``sample_first_event_weights`` result, not
-to a separately constructed object. Scheduled coupon accrual must use the
+to a separately constructed object. ``weight``, ``default_probability``, and
+``discount_factor`` must bind on the direct ``CouponAccrual`` or
+``ProtectionPayment`` constructor passed to the validated PV primitive; nested
+calls and decoy keywords are not constructor evidence. Scheduled coupon accrual
+must use the
 active period accrual; accrued-on-event must use that period accrual multiplied
 by the active interval's elapsed fraction. That elapsed fraction is measured at
 the interval's midpoint settlement date under the schedule's coupon day count;
