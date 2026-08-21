@@ -2332,6 +2332,118 @@ def _is_supported_cds_spread_guard(statement: ast.AST) -> bool:
     return True
 
 
+def _cds_assignment_is_consumed_before_rebinding(
+    tree: ast.AST,
+    assignment_node: ast.Assign | ast.AnnAssign,
+    *,
+    name: str,
+) -> bool:
+    """Require a simple binding to feed a later read before replacement."""
+    assignment_line = getattr(assignment_node, "lineno", 0)
+    read_lines = tuple(
+        getattr(node, "lineno", 0)
+        for node in ast.walk(tree)
+        if (
+            isinstance(node, ast.Name)
+            and isinstance(node.ctx, ast.Load)
+            and node.id == name
+            and getattr(node, "lineno", 0) > assignment_line
+        )
+        or (
+            isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == name
+            and getattr(node, "lineno", 0) > assignment_line
+        )
+    )
+    if not read_lines:
+        return False
+    rebinding_lines = tuple(
+        getattr(node, "lineno", 0)
+        for node in ast.walk(tree)
+        for assignment in (_simple_name_assignment(node),)
+        if (
+            node is not assignment_node
+            and assignment is not None
+            and assignment[0] == name
+            and getattr(node, "lineno", 0) > assignment_line
+        )
+    )
+    return min(read_lines) <= min(rebinding_lines, default=float("inf"))
+
+
+def _cds_has_only_consumed_simple_assignments(
+    tree: ast.AST,
+    *,
+    period_loop: ast.For | ast.AsyncFor,
+    interval_loop: ast.For | ast.AsyncFor,
+    start_name: str,
+    stop_name: str,
+) -> bool:
+    """Reject dead, opaque, or non-composition writes in the bounded route."""
+    returned_names: set[str] = set()
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Return) or node.value is None:
+            continue
+        expression = node.value
+        if (
+            isinstance(expression, ast.Call)
+            and isinstance(expression.func, ast.Name)
+            and expression.func.id == "float"
+            and len(expression.args) == 1
+            and not expression.keywords
+        ):
+            expression = expression.args[0]
+        terms = _signed_name_terms(expression)
+        if terms is not None:
+            returned_names.update(name for name, _ in terms)
+
+    admitted_augassign_ids = {
+        id(node)
+        for loop in (period_loop, interval_loop)
+        for node in loop.body
+        if (
+            isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id in returned_names
+        )
+    }
+    admitted_augassign_ids.update(
+        id(statement.body[0])
+        for statement in tree.body
+        if _is_supported_cds_spread_guard(statement)
+    )
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.NamedExpr, ast.Delete, ast.Global, ast.Nonlocal)):
+            return False
+        if isinstance(node, ast.AugAssign):
+            if id(node) not in admitted_augassign_ids:
+                return False
+            continue
+        if not isinstance(node, (ast.Assign, ast.AnnAssign)):
+            continue
+        assignment = _simple_name_assignment(node)
+        if assignment is None:
+            return False
+        name, value = assignment
+        if (
+            node in period_loop.body
+            and name == start_name
+            and isinstance(value, ast.Name)
+            and value.id == stop_name
+            and getattr(node, "lineno", 0) > getattr(interval_loop, "lineno", 0)
+        ):
+            continue
+        if not _cds_assignment_is_consumed_before_rebinding(
+            tree,
+            node,
+            name=name,
+        ):
+            return False
+    return True
+
+
 def _cds_has_only_admitted_control_constructs(
     tree: ast.AST,
     *,
@@ -2348,6 +2460,14 @@ def _cds_has_only_admitted_control_constructs(
     ):
         return False
     start_name = interval_loop.iter.args[0].id
+    if not _cds_has_only_consumed_simple_assignments(
+        tree,
+        period_loop=period_loop,
+        interval_loop=interval_loop,
+        start_name=start_name,
+        stop_name=stop_name,
+    ):
+        return False
     admitted_ifexp_ids = _cds_admitted_initial_survival_ifexp_ids(tree)
     for node in ast.walk(tree):
         if isinstance(node, ast.IfExp):

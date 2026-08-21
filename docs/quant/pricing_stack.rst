@@ -1212,6 +1212,9 @@ before runtime smoke evaluation. Conditionals are limited to the exact market,
 spread-normalization, initial-survival empty-grid fallback, empty-period, and
 optional nonpositive-event guards; other branching, exception-handling,
 comprehension, or standalone executable constructs are not pricing evidence.
+Assignments must be simple bindings consumed by that canonical composition
+before rebinding; dead or opaque writes and non-composition augmented writes are
+not admitted.
 Exact fail-fast ``ValueError``
 guards for missing credit and discount market handles are admitted;
 input-dependent assertions and other conditional return/raise exits, unused or

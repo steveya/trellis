@@ -3277,6 +3277,7 @@ def evaluate(self, market_state):
                 "            1 / 0"
             ),
             "1 / self._spec.notional",
+            "probe = 1 / self._spec.notional",
             "_ = 1 / 0 if self._spec.notional == 0 else 0",
             "_ = tuple(1 for _ in iter(int, 1))",
         ),

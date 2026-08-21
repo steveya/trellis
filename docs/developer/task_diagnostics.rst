@@ -464,6 +464,10 @@ optional nonpositive-event guard. Other ``if`` or ternary branches, ``try``,
 ``with``, ``match``, comprehensions, and standalone executable expressions fail
 closed so input-dependent implicit exceptions cannot hide behind the ordinary
 smoke case.
+Every assignment must also be a simple binding consumed by the canonical
+composition before any rebinding. Dead assignment expressions, opaque writes,
+and augmented writes outside the exact spread and four-leg accumulators fail
+closed for the same reason.
 The guarded basis-point normalization must dominate the period loop, every
 spread alias, and every cashflow use; omitting it or moving it after assembly
 fails the economic-binding check. The sampler seed must resolve exactly to the
