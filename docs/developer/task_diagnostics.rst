@@ -478,9 +478,10 @@ assemblies fail semantic validation even when they mention every required
 primitive. The complete assembly must occur in exactly one reachable
 ``evaluate`` body and lead to one direct final signed return. Exact fail-fast
 ``ValueError`` guards for missing ``market_state.credit_curve`` and
-``market_state.discount`` are admitted; other conditional return/raise exits,
-unused or nested helpers, a branch-hidden period loop, or composition after the
-final return do not satisfy the route contract. Required
+``market_state.discount`` are admitted; input-dependent assertions and other
+conditional return/raise exits, unused or nested helpers, a branch-hidden
+period loop, or composition after the final return do not satisfy the route
+contract. Required
 leg accumulators must each be initialized exactly once to zero before the
 period loop and may only be written by that initializer and the unconditional
 additive (``+=``) statement in the corresponding loop body. Its right-hand side

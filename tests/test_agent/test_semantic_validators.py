@@ -1907,6 +1907,26 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_assert_before_assembly(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    assert self._spec.notional\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_missing_empty_period_guard(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = _cds_composition_source().replace(

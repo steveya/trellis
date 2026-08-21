@@ -1082,13 +1082,13 @@ _NESTED_EVALUATE_SCOPES = (
 
 
 def _subtree_has_evaluate_exit(node: ast.AST) -> bool:
-    """Detect a return or raise without descending into a nested local scope."""
+    """Detect an assert, return, or raise outside a nested local scope."""
     if isinstance(node, _NESTED_EVALUATE_SCOPES):
         return False
     for child in ast.iter_child_nodes(node):
         if isinstance(child, _NESTED_EVALUATE_SCOPES):
             continue
-        if isinstance(child, (ast.Return, ast.Raise)):
+        if isinstance(child, (ast.Assert, ast.Return, ast.Raise)):
             return True
         if _subtree_has_evaluate_exit(child):
             return True
@@ -1237,9 +1237,11 @@ def _reachable_evaluate_tree(
 
     reachable: list[ast.stmt] = []
     for statement in evaluate.body:
-        if not isinstance(statement, (ast.Return, ast.Raise)) and (
-            _subtree_has_evaluate_exit(statement)
-        ) and not _is_supported_cds_market_guard(statement):
+        if isinstance(statement, ast.Assert) or (
+            not isinstance(statement, (ast.Return, ast.Raise))
+            and _subtree_has_evaluate_exit(statement)
+            and not _is_supported_cds_market_guard(statement)
+        ):
             return None
         reachable.append(statement)
         if isinstance(statement, (ast.Raise, ast.Return)):
@@ -3930,7 +3932,8 @@ class AlgorithmContractValidator:
                     category="credit_default_swap_incomplete_event_grid",
                     message=(
                         f"Route '{route_spec.id}' must expose exactly one evaluate "
-                        "body with no unsupported conditional return/raise exits "
+                        "body with no assertions or unsupported conditional "
+                        "return/raise exits "
                         "before its "
                         "direct final signed return. Composition in unused or nested "
                         "helpers does not satisfy the pricing contract."

@@ -1201,10 +1201,10 @@ period-to-interval iteration, discount coordinates, signs, and the final
 ``protection - premium - accrued_on_event + accrued_to_valuation`` result.
 That composition must be reachable in the adapter's single ``evaluate`` body
 and dominate one direct final signed return. Exact fail-fast ``ValueError``
-guards for missing credit and discount market handles are admitted; other
-conditional return/raise exits, unused or nested helpers, and statements after
-the final return are not pricing evidence. The interval loop remains a reachable
-direct child of the period loop,
+guards for missing credit and discount market handles are admitted;
+input-dependent assertions and other conditional return/raise exits, unused or
+nested helpers, and statements after the final return are not pricing evidence.
+The interval loop remains a reachable direct child of the period loop,
 and every leg accumulator has one zero initialization and one additive ``+=``
 update that remains unconditional after any admitted early-continue guard, with
 no other writes before return. Each update value is exactly the corresponding
