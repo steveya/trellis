@@ -1351,12 +1351,10 @@ def _definition_time_dataclass_default_is_declarative(
     return not isinstance(value, (dict, list, set))
 
 
-def _definition_time_annotation_is_union_operand(expression: ast.AST) -> bool:
-    """Recognize operands whose proven eager binding supports PEP 604 union."""
+def _definition_time_annotation_contains_type_operand(expression: ast.AST) -> bool:
+    """Return whether an eager union operand resolves to at least one type."""
     if isinstance(expression, ast.Name):
         return True
-    if isinstance(expression, ast.Constant):
-        return expression.value is None
     if isinstance(expression, ast.Subscript):
         return (
             isinstance(expression.value, ast.Name)
@@ -1364,9 +1362,27 @@ def _definition_time_annotation_is_union_operand(expression: ast.AST) -> bool:
             and _definition_time_annotation_is_declarative(expression.slice)
         )
     if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.BitOr):
+        return _definition_time_annotation_is_union_operand(expression)
+    return False
+
+
+def _definition_time_annotation_is_union_operand(expression: ast.AST) -> bool:
+    """Recognize operands whose proven eager binding supports PEP 604 union."""
+    if isinstance(expression, ast.Name):
+        return True
+    if isinstance(expression, ast.Constant):
+        return expression.value is None
+    if isinstance(expression, ast.Subscript):
+        return _definition_time_annotation_contains_type_operand(expression)
+    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.BitOr):
         return _definition_time_annotation_is_union_operand(
             expression.left
-        ) and _definition_time_annotation_is_union_operand(expression.right)
+        ) and _definition_time_annotation_is_union_operand(
+            expression.right
+        ) and (
+            _definition_time_annotation_contains_type_operand(expression.left)
+            or _definition_time_annotation_contains_type_operand(expression.right)
+        )
     return False
 
 
@@ -1388,9 +1404,7 @@ def _definition_time_annotation_is_declarative(expression: ast.AST) -> bool:
             for element in expression.elts
         )
     if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.BitOr):
-        return _definition_time_annotation_is_union_operand(
-            expression.left
-        ) and _definition_time_annotation_is_union_operand(expression.right)
+        return _definition_time_annotation_is_union_operand(expression)
     return False
 
 

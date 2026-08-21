@@ -4158,6 +4158,14 @@ def evaluate(self, market_state):
                 "    return value\n\n"
             ),
             (
+                "def annotation_trap(value: None | None):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def annotation_trap(value: int | (None | None)):\n"
+                "    return value\n\n"
+            ),
+            (
                 "from trellis.core.types import Frequency\n\n"
                 "def annotation_trap(value: Frequency.MISSING):\n"
                 "    return value\n\n"
@@ -4436,6 +4444,8 @@ def evaluate(self, market_state):
             "):\n"
             "    return value\n\n"
             "def inert_union_annotation(value: int | None):\n"
+            "    return value\n\n"
+            "def inert_nested_union_annotation(value: int | (None | str)):\n"
             "    return value\n\n"
             + _cds_composition_source()
         )

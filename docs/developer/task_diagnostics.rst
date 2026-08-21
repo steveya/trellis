@@ -529,7 +529,9 @@ Python can raise during module definition. Literal containers are validated by
 constructing an inert proxy, so dictionary keys and set elements must remain
 recursively hashable even through nested tuples. Eager annotation unions admit
 only proven type operands or ``None``; arbitrary values and attribute/member
-expressions fail closed before Python applies ``|``.
+expressions fail closed before Python applies ``|``. Every union operation must
+contain at least one proven type operand: ``None`` may accompany a type-producing
+operand, but ``None | None`` and nested all-``None`` union nodes fail closed.
 
 The admitted ``property``,
 ``staticmethod``, and ``classmethod`` decorators must also retain their

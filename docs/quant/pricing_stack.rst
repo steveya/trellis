@@ -1270,7 +1270,9 @@ with an inert construction proxy, including recursive hashability for
 dictionary keys and set elements. Mutable list, dictionary, and set field
 defaults are not admitted on frozen dataclasses. Eager annotation unions may
 contain only proven type operands or ``None``; arbitrary values and
-attribute/member expressions are not admitted. The payoff ``requirements``
+attribute/member expressions are not admitted. Each union operation must
+contain at least one proven type operand, so ``None | None`` and nested
+all-``None`` union nodes fail closed. The payoff ``requirements``
 property must remain the inert scaffold return of exactly
 ``{"credit_curve", "discount_curve"}``.
 Exact fail-fast ``ValueError``
