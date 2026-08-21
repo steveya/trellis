@@ -464,8 +464,9 @@ optional nonpositive-event guard. Other ``if`` or ternary branches, ``try``,
 ``with``, ``match``, comprehensions, and standalone executable expressions fail
 closed so input-dependent implicit exceptions cannot hide behind the ordinary
 smoke case. Each market guard raises the unshadowed builtin ``ValueError``
-with exactly one literal string message; shadowed exception names and
-executable exception arguments fail closed.
+with exactly one literal string message and no explicit ``raise ... from``
+cause; shadowed exception names, executable exception arguments, and
+executable cause expressions fail closed.
 Every assignment must also be a simple binding consumed by the canonical
 composition before any rebinding. Dead assignment expressions, opaque writes,
 and augmented writes outside the exact spread and four-leg accumulators fail

@@ -1229,9 +1229,10 @@ import.
 Exact fail-fast ``ValueError``
 guards for missing credit and discount market handles are admitted;
 the builtin must remain unshadowed and receive exactly one literal string
-message. Input-dependent assertions, executable exception arguments, and other
-conditional return/raise exits, unused or nested helpers, and statements after
-the final return are not pricing evidence.
+message with no explicit cause. Input-dependent assertions, executable
+exception arguments or causes, and other conditional return/raise exits,
+unused or nested helpers, and statements after the final return are not pricing
+evidence.
 The interval loop remains a reachable direct child of the period loop,
 and every leg accumulator has one zero initialization and one additive ``+=``
 update that remains unconditional after any admitted early-continue guard, with

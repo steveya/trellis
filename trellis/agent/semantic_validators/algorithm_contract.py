@@ -1116,7 +1116,8 @@ def _is_supported_cds_market_guard(statement: ast.AST) -> bool:
         return False
     raised = statement.body[0].exc
     return (
-        isinstance(raised, ast.Call)
+        statement.body[0].cause is None
+        and isinstance(raised, ast.Call)
         and isinstance(raised.func, ast.Name)
         and raised.func.id == "ValueError"
         and len(raised.args) == 1

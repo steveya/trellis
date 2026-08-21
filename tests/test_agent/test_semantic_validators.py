@@ -2723,15 +2723,23 @@ def evaluate(self, market_state):
         assert not errors, errors
 
     @pytest.mark.parametrize(
-        ("module_setup", "exception_expression"),
+        ("module_setup", "exception_expression", "raise_suffix"),
         (
             (
                 "def ValueError(message):\n"
                 "    while True:\n"
                 "        pass\n\n",
                 "'credit curve is required'",
+                "",
             ),
-            ("", "1 / self._spec.notional"),
+            ("", "1 / self._spec.notional", ""),
+            (
+                "def spin():\n"
+                "    while True:\n"
+                "        pass\n\n",
+                "'credit curve is required'",
+                " from spin()",
+            ),
         ),
     )
     def test_rejects_credit_default_swap_unsafe_market_guards(
@@ -2739,12 +2747,13 @@ def evaluate(self, market_state):
         registry,
         module_setup,
         exception_expression,
+        raise_suffix,
     ):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = module_setup + _cds_composition_source().replace(
             "    schedule = build_period_schedule(",
             "    if market_state.credit_curve is None:\n"
-            f"        raise ValueError({exception_expression})\n"
+            f"        raise ValueError({exception_expression}){raise_suffix}\n"
             "    schedule = build_period_schedule(",
             1,
         )
