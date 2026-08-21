@@ -618,12 +618,11 @@ def _find_calls_for_symbol(tree: ast.AST, symbol: str) -> tuple[ast.Call, ...]:
     )
 
 
-def _node_calls_symbol(node: ast.AST, symbol: str) -> bool:
-    """Return whether an AST subtree contains a call to ``symbol``."""
-    return any(
-        isinstance(candidate, ast.Call)
-        and _call_matches_symbol(candidate, symbol)
-        for candidate in ast.walk(node)
+def _is_exact_call_to_symbol(expression: ast.AST, symbol: str) -> bool:
+    """Return whether an expression is exactly one call to ``symbol``."""
+    return isinstance(expression, ast.Call) and _call_matches_symbol(
+        expression,
+        symbol,
     )
 
 
@@ -824,7 +823,7 @@ def _direct_loop_augments(
         if isinstance(node, ast.AugAssign)
         and isinstance(node.op, ast.Add)
         and isinstance(node.target, ast.Name)
-        and (symbol is None or _node_calls_symbol(node.value, symbol))
+        and (symbol is None or _is_exact_call_to_symbol(node.value, symbol))
     )
 
 
@@ -838,7 +837,7 @@ def _direct_loop_augmented_values_with_call(
         for node in _direct_loop_body_nodes(loop)
         if isinstance(node, ast.AugAssign)
         and isinstance(node.op, ast.Add)
-        and _node_calls_symbol(node.value, symbol)
+        and _is_exact_call_to_symbol(node.value, symbol)
     )
 
 
@@ -1852,6 +1851,7 @@ def _is_supported_spread_normalization(
     assignment: ast.AugAssign,
     *,
     name: str,
+    before_line: int | None = None,
 ) -> bool:
     """Allow only the documented guarded basis-point conversion."""
     if not (
@@ -1862,10 +1862,122 @@ def _is_supported_spread_normalization(
     ):
         return False
     return any(
-        isinstance(node, ast.If)
+        isinstance(tree, ast.Module)
+        and isinstance(node, ast.If)
+        and node in tree.body
         and _is_basis_point_guard(node.test, name)
         and assignment in node.body
+        and (
+            before_line is None
+            or (
+                getattr(node, "lineno", 0) < before_line
+                and getattr(assignment, "lineno", 0) < before_line
+            )
+        )
         for node in ast.walk(tree)
+    )
+
+
+def _expression_is_direct_active_spec_field(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    field: str,
+) -> bool:
+    """Recognize a direct active-spec field, including one float wrapper."""
+    if (
+        isinstance(expression, ast.Call)
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == "float"
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return _expression_is_direct_active_spec_field(
+            tree,
+            expression.args[0],
+            field=field,
+        )
+    return (
+        isinstance(expression, ast.Attribute)
+        and expression.attr == field
+        and _expression_resolves_to_active_spec(tree, expression.value)
+    )
+
+
+def _expression_resolves_to_normalized_spread(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> bool:
+    """Require one dominating guarded basis-point normalization before use."""
+    if (
+        isinstance(expression, ast.Call)
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == "float"
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return _expression_resolves_to_normalized_spread(
+            tree,
+            expression.args[0],
+            seen_names=seen_names,
+        )
+    if not isinstance(expression, ast.Name) or expression.id in seen_names:
+        return False
+    assignments = tuple(
+        (node, assignment[1])
+        for node in ast.walk(tree)
+        for assignment in (_simple_name_assignment(node),)
+        if assignment is not None and assignment[0] == expression.id
+    )
+    use_line = getattr(expression, "lineno", 0)
+    if len(assignments) != 1:
+        return False
+    assignment, value = assignments[0]
+    if getattr(assignment, "lineno", 0) >= use_line:
+        return False
+    assignment_target = (
+        assignment.targets[0]
+        if isinstance(assignment, ast.Assign)
+        else assignment.target
+    )
+    actual_targets = {
+        id(node)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name)
+        and node.id == expression.id
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+    }
+    if _expression_is_direct_active_spec_field(tree, value, field="spread"):
+        mutations = tuple(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == expression.id
+        )
+        if len(mutations) != 1:
+            return False
+        mutation = mutations[0]
+        return (
+            getattr(assignment, "lineno", 0)
+            < getattr(mutation, "lineno", 0)
+            and actual_targets == {id(assignment_target), id(mutation.target)}
+            and _is_supported_spread_normalization(
+                tree,
+                mutation,
+                name=expression.id,
+                before_line=use_line,
+            )
+        )
+    return (
+        actual_targets == {id(assignment_target)}
+        and _expression_resolves_to_normalized_spread(
+            tree,
+            value,
+            seen_names=seen_names | {expression.id},
+        )
     )
 
 
@@ -1877,6 +1989,12 @@ def _expression_resolves_to_active_spec_field(
     seen_names: frozenset[str] = frozenset(),
 ) -> bool:
     """Recognize an exact active-spec field with bounded alias handling."""
+    if field == "spread":
+        return _expression_resolves_to_normalized_spread(
+            tree,
+            expression,
+            seen_names=seen_names,
+        )
     if (
         isinstance(expression, ast.Call)
         and isinstance(expression.func, ast.Name)
@@ -1916,17 +2034,7 @@ def _expression_resolves_to_active_spec_field(
         and isinstance(node.target, ast.Name)
         and node.target.id == expression.id
     )
-    return not mutations or (
-        field == "spread"
-        and all(
-            _is_supported_spread_normalization(
-                tree,
-                mutation,
-                name=expression.id,
-            )
-            for mutation in mutations
-        )
-    )
+    return not mutations
 
 
 def _is_integer_constant(expression: ast.AST, value: int) -> bool:
@@ -3295,8 +3403,8 @@ class AlgorithmContractValidator:
                         "cashflows across every event-grid period and protection "
                         "cashflows across the nested period-to-interval mapping in "
                         "the reachable evaluate body. Pricing fixed index positions, "
-                        "unreachable statements, or unused helpers does not cover "
-                        "the CDS horizon."
+                        "unreachable statements, unused helpers, or wrapped, negated, "
+                        "or scaled cashflow calls does not cover the CDS horizon."
                     ),
                 )
             )
@@ -3400,8 +3508,10 @@ class AlgorithmContractValidator:
                             f"Route '{route_spec.id}' must bind premium, "
                             "protection, event accrual, and valuation accrual "
                             "to the active spec's notional, normalized spread, "
-                            "and recovery fields. Hard-coded economic terms "
-                            "can produce a valid-looking but incorrect CDS PV."
+                            "and recovery fields. The guarded spread normalization "
+                            "must dominate every alias and cashflow use. Hard-coded "
+                            "or raw economic terms can produce a valid-looking but "
+                            "incorrect CDS PV."
                         ),
                     )
                 )

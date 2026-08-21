@@ -1936,6 +1936,168 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        ("original", "replacement"),
+        (
+            (
+                "        premium_leg += coupon_cashflow_pv(",
+                "        premium_leg += -coupon_cashflow_pv(",
+            ),
+            (
+                "            protection_leg += protection_payment_pv(",
+                "            protection_leg += 0.0 * protection_payment_pv(",
+            ),
+            (
+                "            accrued_on_event += coupon_cashflow_pv(",
+                "            accrued_on_event += -coupon_cashflow_pv(",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_wrapped_leg_cashflow_call(
+        self,
+        registry,
+        original,
+        replacement,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            original,
+            replacement,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(finding.severity == "error" for finding in findings)
+
+    def test_rejects_credit_default_swap_spread_normalization_after_assembly(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        normalization = "    if spread > 1.0:\n        spread *= 1e-4\n"
+        source = (
+            _cds_composition_source()
+            .replace(normalization, "", 1)
+            .replace(
+                "    return float(",
+                normalization + "    return float(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_missing_spread_normalization(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    if spread > 1.0:\n        spread *= 1e-4\n",
+            "",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_branch_hidden_spread_normalization(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    if spread > 1.0:\n        spread *= 1e-4\n",
+            "    if False:\n"
+            "        if spread > 1.0:\n"
+            "            spread *= 1e-4\n",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_normalized_spread_alias_after_guard(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        normalization = "    if spread > 1.0:\n        spread *= 1e-4\n"
+        source = (
+            _cds_composition_source()
+            .replace(
+                normalization,
+                normalization + "    coupon_rate = spread\n",
+                1,
+            )
+            .replace("rate=spread", "rate=coupon_rate", 2)
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    def test_rejects_credit_default_swap_spread_alias_before_guard(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            _cds_composition_source()
+            .replace(
+                "    if spread > 1.0:",
+                "    coupon_rate = spread\n    if spread > 1.0:",
+                1,
+            )
+            .replace("rate=spread", "rate=coupon_rate", 2)
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_composition_in_unused_helper(
         self,
         registry,

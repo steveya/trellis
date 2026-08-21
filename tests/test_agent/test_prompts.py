@@ -1379,6 +1379,9 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "if event_weight <= 0.0" in prompt
     assert "conditional `break` or `continue` exits fail closed" in prompt
     assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
+    assert "right-hand side must be exactly its corresponding" in prompt
+    assert "do not negate, scale, or otherwise wrap the call" in prompt
+    assert "before the period loop and every spread alias or cashflow use" in prompt
 
 
 def test_distilled_builder_memory_keeps_legacy_cds_labels_and_omits_nearest_products():
@@ -1468,6 +1471,9 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "if event_weight <= 0.0" in prompt
     assert "conditional `break` or `continue` exits fail closed" in prompt
     assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
+    assert "right-hand side must be exactly its corresponding" in prompt
+    assert "do not negate, scale, or otherwise wrap the call" in prompt
+    assert "before the period loop and every spread alias or cashflow use" in prompt
 
 
 def test_executor_credit_default_swap_retry_pins_discount_and_time_origin():

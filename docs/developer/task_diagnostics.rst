@@ -443,9 +443,12 @@ literal fallback admitted by this route validator. Because ``n_paths`` is an
 optional typed field, passing ``spec.n_paths`` directly is rejected: the call
 must guarantee a non-null value, for example
 ``getattr(spec, "n_paths", 250000) or 250000``.
-The sampler seed must resolve exactly to the canonical reproducible integer
-``42``; omitted, ``None``, opaque, or other seed values fail closed. Constructor
-signs on ``CouponAccrual`` and ``ProtectionPayment`` must be absent or resolve
+The guarded basis-point normalization must dominate the period loop, every
+spread alias, and every cashflow use; omitting it or moving it after assembly
+fails the economic-binding check. The sampler seed must resolve exactly to the
+canonical reproducible integer ``42``; omitted, ``None``, opaque, or other seed
+values fail closed. Constructor signs on ``CouponAccrual`` and
+``ProtectionPayment`` must be absent or resolve
 to positive one because the final signed CDS return owns leg polarity.
 The route validator also checks that the first-event weight call derives its
 initial mass exactly from credit-curve survival at the first live interval of
@@ -473,8 +476,11 @@ return/raise exits, unused or nested helpers, a branch-hidden period loop, or
 composition after the final return do not satisfy the route contract. Required
 leg accumulators must each be initialized exactly once to zero before the
 period loop and may only be written by that initializer and the unconditional
-additive (``+=``) statement in the corresponding loop body. The interval loop
-must be a reachable direct child of the period loop. Before leg assembly, only
+additive (``+=``) statement in the corresponding loop body. Its right-hand side
+must be exactly the corresponding ``coupon_cashflow_pv(...)`` or
+``protection_payment_pv(...)`` call; negating, scaling, or otherwise wrapping
+that call fails closed. The interval loop must be a reachable direct child of
+the period loop. Before leg assembly, only
 the bounded empty-period guard (which advances ``interval_start`` to
 ``interval_stop`` before continuing) and the non-positive ``event_weight``
 continue guard are admitted. Any other conditional ``break`` or ``continue``
@@ -482,8 +488,7 @@ can dominate the required updates and therefore fails closed, as does hiding
 either the interval loop or leg algebra beneath ``if False`` or an unproved
 event-weight condition. Reassigning ``interval_stop``, ``interval_start``, or
 ``event_weight`` before an admitted guard also fails closed. Within that
-mapping, scheduled premium
-must use
+mapping, scheduled premium must use
 ``survival_weights[interval_stop - 1]`` while protection and accrued-on-event
 cashflows use ``event_weights[interval_index]`` (directly or through simple
 aliases). Those indexed weights must belong to the validated
