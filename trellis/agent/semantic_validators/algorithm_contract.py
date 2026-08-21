@@ -1217,34 +1217,38 @@ class _NestedEvaluateScopePruner(ast.NodeTransformer):
         return ast.copy_location(ast.Constant(value=None), node)
 
 
-def _definition_time_expression_is_declarative(
+def _definition_time_literal_proxy(
     expression: ast.AST,
     *,
     tree: ast.Module,
-) -> bool:
-    """Recognize eager values whose bindings are proven safe to resolve."""
+) -> ast.AST | None:
+    """Build an inert literal proxy while proving every eager leaf binding."""
     if isinstance(expression, ast.Constant):
-        return True
+        return ast.Constant(value=expression.value)
     if isinstance(expression, ast.Name):
         if expression.id in _CDS_INERT_EAGER_ANNOTATION_BUILTINS:
-            return not _definition_time_scopes_rebind_name(
+            if _definition_time_scopes_rebind_name(
                 tree.body,
                 name=expression.id,
-            )
-        module = _CDS_INERT_EAGER_DEFAULT_IMPORTS.get(expression.id)
-        return module is not None and _module_has_authoritative_eager_import(
-            tree,
-            name=expression.id,
-            module=module,
-            before_node=expression,
-        )
+            ):
+                return None
+        else:
+            module = _CDS_INERT_EAGER_DEFAULT_IMPORTS.get(expression.id)
+            if module is None or not _module_has_authoritative_eager_import(
+                tree,
+                name=expression.id,
+                module=module,
+                before_node=expression,
+            ):
+                return None
+        return ast.Constant(value=f"binding:{expression.id}")
     if isinstance(expression, ast.Attribute):
         if not isinstance(expression.value, ast.Name):
-            return False
+            return None
         base_name = expression.value.id
         members = _CDS_INERT_EAGER_DEFAULT_ENUM_MEMBERS.get(base_name)
         module = _CDS_INERT_EAGER_DEFAULT_IMPORTS.get(base_name)
-        return (
+        if not (
             members is not None
             and expression.attr in members
             and module is not None
@@ -1254,34 +1258,91 @@ def _definition_time_expression_is_declarative(
                 module=module,
                 before_node=expression,
             )
-        )
+        ):
+            return None
+        return ast.Constant(value=f"enum:{base_name}.{expression.attr}")
     if isinstance(expression, (ast.Tuple, ast.List, ast.Set)):
-        return all(
-            _definition_time_expression_is_declarative(element, tree=tree)
-            for element in expression.elts
-        )
+        elements: list[ast.AST] = []
+        for element in expression.elts:
+            proxy = _definition_time_literal_proxy(element, tree=tree)
+            if proxy is None:
+                return None
+            elements.append(proxy)
+        if isinstance(expression, ast.Tuple):
+            return ast.Tuple(elts=elements, ctx=ast.Load())
+        if isinstance(expression, ast.List):
+            return ast.List(elts=elements, ctx=ast.Load())
+        return ast.Set(elts=elements)
     if isinstance(expression, ast.Dict):
-        return all(
-            key is None
-            or _definition_time_expression_is_declarative(key, tree=tree)
-            for key in expression.keys
-        ) and all(
-            _definition_time_expression_is_declarative(value, tree=tree)
-            for value in expression.values
-        )
+        if any(key is None for key in expression.keys):
+            return None
+        keys: list[ast.AST] = []
+        values: list[ast.AST] = []
+        for key, value in zip(expression.keys, expression.values):
+            if key is None:
+                return None
+            key_proxy = _definition_time_literal_proxy(key, tree=tree)
+            value_proxy = _definition_time_literal_proxy(value, tree=tree)
+            if key_proxy is None or value_proxy is None:
+                return None
+            keys.append(key_proxy)
+            values.append(value_proxy)
+        return ast.Dict(keys=keys, values=values)
     if isinstance(expression, ast.UnaryOp):
-        return (
-            isinstance(expression.op, ast.Not)
-            and isinstance(expression.operand, ast.Constant)
-        ) or (
-            isinstance(expression.op, (ast.UAdd, ast.USub))
-            and isinstance(expression.operand, ast.Constant)
-            and isinstance(expression.operand.value, (int, float, complex))
-        )
+        if isinstance(expression.op, ast.Not) and isinstance(
+            expression.operand,
+            ast.Constant,
+        ):
+            return ast.Constant(value=not expression.operand.value)
+        if isinstance(expression.op, (ast.UAdd, ast.USub)) and isinstance(
+            expression.operand,
+            ast.Constant,
+        ):
+            return ast.UnaryOp(
+                op=expression.op,
+                operand=ast.Constant(value=expression.operand.value),
+            )
+        return None
     if isinstance(expression, ast.Lambda):
-        return not expression.args.defaults and not any(
+        if not expression.args.defaults and not any(
             default is not None for default in expression.args.kw_defaults
+        ):
+            return ast.Constant(value="inert-lambda")
+    return None
+
+
+def _definition_time_expression_is_declarative(
+    expression: ast.AST,
+    *,
+    tree: ast.Module,
+) -> bool:
+    """Prove eager default construction cannot fail before function entry."""
+    proxy = _definition_time_literal_proxy(expression, tree=tree)
+    if proxy is None:
+        return False
+    try:
+        ast.literal_eval(proxy)
+    except (TypeError, ValueError, MemoryError, RecursionError):
+        return False
+    return True
+
+
+def _definition_time_annotation_is_union_operand(expression: ast.AST) -> bool:
+    """Recognize operands whose proven eager binding supports PEP 604 union."""
+    if isinstance(expression, ast.Name):
+        return True
+    if isinstance(expression, ast.Constant):
+        return expression.value is None
+    if isinstance(expression, ast.Subscript):
+        return (
+            isinstance(expression.value, ast.Name)
+            and expression.value.id in _CDS_INERT_ANNOTATION_SUBSCRIPT_BASES
+            and _definition_time_annotation_is_declarative(expression.slice)
         )
+    if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.BitOr):
+        return _definition_time_annotation_is_union_operand(
+            expression.left
+        ) and _definition_time_annotation_is_union_operand(expression.right)
     return False
 
 
@@ -1290,7 +1351,7 @@ def _definition_time_annotation_is_declarative(expression: ast.AST) -> bool:
     if isinstance(expression, (ast.Constant, ast.Name)):
         return True
     if isinstance(expression, ast.Attribute):
-        return _definition_time_annotation_is_declarative(expression.value)
+        return False
     if isinstance(expression, ast.Subscript):
         return (
             isinstance(expression.value, ast.Name)
@@ -1303,9 +1364,9 @@ def _definition_time_annotation_is_declarative(expression: ast.AST) -> bool:
             for element in expression.elts
         )
     if isinstance(expression, ast.BinOp) and isinstance(expression.op, ast.BitOr):
-        return _definition_time_annotation_is_declarative(
+        return _definition_time_annotation_is_union_operand(
             expression.left
-        ) and _definition_time_annotation_is_declarative(expression.right)
+        ) and _definition_time_annotation_is_union_operand(expression.right)
     return False
 
 

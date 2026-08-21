@@ -4112,7 +4112,28 @@ def evaluate(self, market_state):
                 "    return value\n\n"
             ),
             (
+                "def annotation_trap(value: int | 1):\n"
+                "    return value\n\n"
+            ),
+            (
+                "from trellis.core.types import Frequency\n\n"
+                "def annotation_trap(value: Frequency.MISSING):\n"
+                "    return value\n\n"
+            ),
+            (
                 "def default_trap(value=MISSING):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value={[]: 1}):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value={((), []): 1}):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value={[]}):\n"
                 "    return value\n\n"
             ),
             (
@@ -4199,6 +4220,12 @@ def evaluate(self, market_state):
         source = (
             "from trellis.core.types import Frequency\n\n"
             "def inert_default(value=Frequency.QUARTERLY):\n"
+            "    return value\n\n"
+            "def inert_container_default(\n"
+            "    value={'frequencies': (Frequency.QUARTERLY,)},\n"
+            "):\n"
+            "    return value\n\n"
+            "def inert_union_annotation(value: int | None):\n"
             "    return value\n\n"
             + _cds_composition_source()
         )

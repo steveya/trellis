@@ -506,7 +506,12 @@ Eager function defaults are resolved before dynamic import: bare names must be
 unshadowed inert builtins or approved direct imports already in scope, and an
 enum attribute must name a real member on its authoritative imported enum.
 Undefined, late, rebound, or nonexistent default bindings fail closed before
-Python can raise during module definition.
+Python can raise during module definition. Literal containers are validated by
+constructing an inert proxy, so dictionary keys and set elements must remain
+recursively hashable even through nested tuples. Eager annotation unions admit
+only proven type operands or ``None``; arbitrary values and attribute/member
+expressions fail closed before Python applies ``|``.
+
 The admitted ``property``,
 ``staticmethod``, and ``classmethod`` decorators must also retain their
 unshadowed builtin bindings. For generated payoff classes, the constructor
