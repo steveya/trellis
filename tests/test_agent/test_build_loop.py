@@ -9,7 +9,7 @@ from unittest.mock import patch
 
 import pytest
 
-from trellis.agent.planner import FieldDef, SpecSchema
+from trellis.agent.planner import STATIC_SPECS, FieldDef, SpecSchema
 from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
@@ -504,11 +504,7 @@ def test_generate_module_strips_fenced_python_and_compiles(monkeypatch):
 
     result = _generate_module(
         skeleton=MOCK_MODULE_CODE,
-        spec_schema=SimpleNamespace(
-            class_name="SwaptionPayoff",
-            spec_name="SwaptionSpec",
-            fields=[],
-        ),
+        spec_schema=STATIC_SPECS["swaption"],
         reference_sources={},
         model="test-model",
         max_retries=1,
