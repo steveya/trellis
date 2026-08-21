@@ -3256,6 +3256,79 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        "extra_setup",
+        (
+            "if self._spec.notional == 0:\n        1 / 0",
+            (
+                "try:\n"
+                "        1 / self._spec.notional\n"
+                "    except ZeroDivisionError:\n"
+                "        raise"
+            ),
+            (
+                "from contextlib import nullcontext\n"
+                "    with nullcontext():\n"
+                "        1 / self._spec.notional"
+            ),
+            (
+                "match self._spec.notional:\n"
+                "        case 0:\n"
+                "            1 / 0"
+            ),
+            "1 / self._spec.notional",
+            "_ = 1 / 0 if self._spec.notional == 0 else 0",
+            "_ = tuple(1 for _ in iter(int, 1))",
+        ),
+    )
+    def test_rejects_credit_default_swap_implicit_preassembly_exception(
+        self,
+        registry,
+        extra_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=extra_setup,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap", "analytical"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_exact_initial_survival_fallback(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            initial_survival=(
+                "float(market_state.credit_curve.survival_probability("
+                "grid.intervals[0].start_time)) if grid.intervals else 1.0"
+            ),
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap", "analytical"),
+            spec,
+        )
+
+        assert not any(
+            finding.category
+            in {
+                "credit_default_swap_incomplete_event_grid",
+                "credit_default_swap_initial_survival_missing",
+            }
+            for finding in findings
+        )
+
     @pytest.mark.parametrize("n_paths", ("10", "self._spec.n_paths"))
     def test_rejects_credit_default_swap_unbound_path_count(
         self,

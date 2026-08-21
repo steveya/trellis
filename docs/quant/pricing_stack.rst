@@ -1208,7 +1208,11 @@ period-to-interval iteration, discount coordinates, signs, and the final
 That composition must be reachable in the adapter's single ``evaluate`` body
 and dominate one direct final signed return. The canonical period loop and its
 mapped interval loop are the only admitted loops; additional loops fail closed
-before runtime smoke evaluation. Exact fail-fast ``ValueError``
+before runtime smoke evaluation. Conditionals are limited to the exact market,
+spread-normalization, initial-survival empty-grid fallback, empty-period, and
+optional nonpositive-event guards; other branching, exception-handling,
+comprehension, or standalone executable constructs are not pricing evidence.
+Exact fail-fast ``ValueError``
 guards for missing credit and discount market handles are admitted;
 input-dependent assertions and other conditional return/raise exits, unused or
 nested helpers, and statements after the final return are not pricing evidence.

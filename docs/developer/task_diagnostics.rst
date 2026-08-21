@@ -458,6 +458,12 @@ lookup hooks, and post-definition method rebinding fail closed. Its canonical
 period loop and mapped interval loop are the only admitted loops; any additional
 ``for``, async loop, or ``while`` invalidates the composition before synchronous
 smoke execution, preventing nonterminating setup code from hanging the build.
+The only admitted conditionals are the exact market guards, basis-point spread
+normalization, initial-survival empty-grid fallback, empty-period guard, and
+optional nonpositive-event guard. Other ``if`` or ternary branches, ``try``,
+``with``, ``match``, comprehensions, and standalone executable expressions fail
+closed so input-dependent implicit exceptions cannot hide behind the ordinary
+smoke case.
 The guarded basis-point normalization must dominate the period loop, every
 spread alias, and every cashflow use; omitting it or moving it after assembly
 fails the economic-binding check. The sampler seed must resolve exactly to the

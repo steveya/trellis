@@ -1884,6 +1884,86 @@ def _cds_initial_survival_expression_is_valid(
     )
 
 
+def _cds_initial_survival_ifexp_ids(
+    tree: ast.AST,
+    expression: ast.AST,
+    *,
+    seen_names: frozenset[str] = frozenset(),
+) -> frozenset[int]:
+    """Return ternaries reached through one validated survival expression."""
+    if isinstance(expression, ast.Name):
+        if expression.id in seen_names:
+            return frozenset()
+        assigned_value = _single_immutable_assignment_value(
+            tree,
+            expression.id,
+            before_node=expression,
+        )
+        if assigned_value is None:
+            return frozenset()
+        return _cds_initial_survival_ifexp_ids(
+            tree,
+            assigned_value,
+            seen_names=seen_names | {expression.id},
+        )
+    if (
+        isinstance(expression, ast.Call)
+        and isinstance(expression.func, ast.Name)
+        and expression.func.id == "float"
+        and len(expression.args) == 1
+        and not expression.keywords
+    ):
+        return _cds_initial_survival_ifexp_ids(
+            tree,
+            expression.args[0],
+            seen_names=seen_names,
+        )
+    if isinstance(expression, ast.IfExp):
+        return frozenset(
+            {
+                id(expression),
+                *_cds_initial_survival_ifexp_ids(
+                    tree,
+                    expression.body,
+                    seen_names=seen_names,
+                ),
+            }
+        )
+    return frozenset()
+
+
+def _cds_admitted_initial_survival_ifexp_ids(tree: ast.AST) -> frozenset[int]:
+    """Return ternaries owned by an exact first-event-weight fallback."""
+    admitted: set[int] = set()
+    for symbol in (
+        "expected_first_event_weights",
+        "sample_first_event_weights",
+    ):
+        for call in _find_calls_for_symbol(tree, symbol):
+            initial_survival = next(
+                (
+                    keyword.value
+                    for keyword in call.keywords
+                    if keyword.arg == "initial_survival_weight"
+                ),
+                None,
+            )
+            if not (
+                initial_survival is not None
+                and call.args
+                and _cds_initial_survival_expression_is_valid(
+                    tree,
+                    initial_survival,
+                    conditional_probabilities=call.args[0],
+                )
+            ):
+                continue
+            admitted.update(
+                _cds_initial_survival_ifexp_ids(tree, initial_survival)
+            )
+    return frozenset(admitted)
+
+
 def _loop_target_name_is_immutable(
     loop: ast.For | ast.AsyncFor,
     target: ast.Name,
@@ -2224,19 +2304,124 @@ def _cds_full_event_grid_loops(
     return tuple(matches)
 
 
-def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
-    """Recognize one bounded period/interval aggregation and no other loops."""
+def _is_supported_cds_spread_guard(statement: ast.AST) -> bool:
+    """Recognize the one admitted top-level basis-point normalization branch."""
+    if not (
+        isinstance(statement, ast.If)
+        and not statement.orelse
+        and len(statement.body) == 1
+        and isinstance(statement.body[0], ast.AugAssign)
+        and isinstance(statement.body[0].target, ast.Name)
+        and isinstance(statement.body[0].op, ast.Mult)
+        and isinstance(statement.body[0].value, ast.Constant)
+        and isinstance(statement.body[0].value.value, (int, float))
+        and not isinstance(statement.body[0].value.value, bool)
+        and float(statement.body[0].value.value) == 1e-4
+        and isinstance(statement.test, ast.Compare)
+        and isinstance(statement.test.left, ast.Name)
+        and statement.test.left.id == statement.body[0].target.id
+        and len(statement.test.ops) == 1
+        and isinstance(statement.test.ops[0], ast.Gt)
+        and len(statement.test.comparators) == 1
+        and isinstance(statement.test.comparators[0], ast.Constant)
+        and isinstance(statement.test.comparators[0].value, (int, float))
+        and not isinstance(statement.test.comparators[0].value, bool)
+        and float(statement.test.comparators[0].value) == 1.0
+    ):
+        return False
+    return True
+
+
+def _cds_has_only_admitted_control_constructs(
+    tree: ast.AST,
+    *,
+    period_loop: ast.For | ast.AsyncFor,
+    interval_loop: ast.For | ast.AsyncFor,
+    stop_name: str,
+) -> bool:
+    """Reject executable constructs outside the bounded CDS composition."""
+    if not (
+        isinstance(tree, ast.Module)
+        and isinstance(interval_loop.iter, ast.Call)
+        and interval_loop.iter.args
+        and isinstance(interval_loop.iter.args[0], ast.Name)
+    ):
+        return False
+    start_name = interval_loop.iter.args[0].id
+    admitted_ifexp_ids = _cds_admitted_initial_survival_ifexp_ids(tree)
+    for node in ast.walk(tree):
+        if isinstance(node, ast.IfExp):
+            if id(node) in admitted_ifexp_ids:
+                continue
+            return False
+        if isinstance(
+            node,
+            (
+                ast.Try,
+                ast.With,
+                ast.AsyncWith,
+                ast.Match,
+                ast.comprehension,
+                ast.Yield,
+                ast.YieldFrom,
+            ),
+        ):
+            return False
+        if isinstance(node, ast.Expr) and not (
+            isinstance(node.value, ast.Constant)
+            and isinstance(node.value.value, str)
+        ):
+            return False
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.If):
+            continue
+        if node in tree.body and (
+            _is_supported_cds_market_guard(node)
+            or _is_supported_cds_spread_guard(node)
+        ):
+            continue
+        if node in period_loop.body and _is_supported_cds_empty_period_guard(
+            period_loop,
+            node,
+            start_name=start_name,
+            stop_name=stop_name,
+        ):
+            continue
+        if node in interval_loop.body and _is_supported_cds_early_continue_guard(
+            interval_loop,
+            node,
+        ):
+            continue
+        return False
+    return True
+
+
+def _cds_has_only_admitted_control_flow(tree: ast.AST) -> bool:
+    """Require one bounded aggregation with only its admitted control flow."""
     loop_pairs = _cds_full_event_grid_loops(tree)
     if len(loop_pairs) != 1:
         return False
-    period_loop, interval_loop, _ = loop_pairs[0]
+    period_loop, interval_loop, stop_name = loop_pairs[0]
     admitted_loop_ids = {id(period_loop), id(interval_loop)}
     actual_loop_ids = {
         id(node)
         for node in ast.walk(tree)
         if isinstance(node, (ast.For, ast.AsyncFor, ast.While))
     }
-    return actual_loop_ids == admitted_loop_ids
+    return (
+        actual_loop_ids == admitted_loop_ids
+        and _cds_has_only_admitted_control_constructs(
+            tree,
+            period_loop=period_loop,
+            interval_loop=interval_loop,
+            stop_name=stop_name,
+        )
+    )
+
+
+def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
+    """Recognize exactly one canonical period/interval aggregation."""
+    return len(_cds_full_event_grid_loops(tree)) == 1
 
 
 def _cds_selected_weight_symbol(plan: GenerationPlan) -> str:
@@ -4146,7 +4331,10 @@ class AlgorithmContractValidator:
                 )
 
         composes_full_grid = _cds_composes_full_event_grid(tree)
-        if not composes_full_grid:
+        admitted_control_flow = (
+            composes_full_grid and _cds_has_only_admitted_control_flow(tree)
+        )
+        if not composes_full_grid or not admitted_control_flow:
             findings.append(
                 SemanticFinding(
                     validator="algorithm_contract",
@@ -4158,11 +4346,13 @@ class AlgorithmContractValidator:
                         "cashflows across the nested period-to-interval mapping in "
                         "the reachable evaluate body. Pricing fixed index positions, "
                         "unreachable statements, unused helpers, or wrapped, negated, "
-                        "or scaled cashflow calls does not cover the CDS horizon."
+                        "or scaled cashflow calls does not cover the CDS horizon; "
+                        "additional loops or unsupported executable/control-flow "
+                        "constructs are not admitted."
                     ),
                 )
             )
-        else:
+        if composes_full_grid:
             valuation_origin_is_valid = _cds_uses_valuation_origin_event_grid(tree)
             if valuation_origin_is_valid and not _module_preserves_cds_builtin_binding(
                 module_tree,
