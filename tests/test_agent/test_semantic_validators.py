@@ -4680,6 +4680,39 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_annotated_payoff_behavior_hook(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            "class CDSPayoff:\n"
+            "    __getattribute__: object = lambda self, name: spin()\n\n"
+            "    def __init__(self, spec):\n"
+            "        self._spec = spec\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            "        return self._spec\n\n"
+            "    @property\n"
+            "    def requirements(self):\n"
+            "        return {'credit_curve', 'discount_curve'}\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_accepts_credit_default_swap_authoritative_payoff_spec(
         self,
         registry,

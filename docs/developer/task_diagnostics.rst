@@ -538,7 +538,10 @@ must store the submitted ``spec`` exactly as ``self._spec`` and the sole
 ``@property spec`` must return that object; alternate writers and dynamic
 attribute hooks fail closed. The payoff class may define only ``__init__``,
 ``spec``, ``requirements``, and ``evaluate``; extra helpers, lifecycle hooks
-such as ``__del__``, and other data-model methods fail closed. Its
+such as ``__del__``, and other data-model methods fail closed. Its class body
+admits only optional docstrings, trusted comparison-binding metadata, and those
+four methods; annotated fields and other class-level behavior declarations are
+rejected before attribute lookup can invoke them. Its
 ``requirements`` property is the exact inert
 scaffold return of the literal ``{"credit_curve", "discount_curve"}`` set.
 The guarded basis-point normalization must dominate the period loop, every

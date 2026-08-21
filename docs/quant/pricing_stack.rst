@@ -1250,7 +1250,9 @@ bases; custom bases are rejected before their ``__class_getitem__`` hooks can
 run.
 The payoff class may define only ``__init__``, ``spec``, ``requirements``, and
 ``evaluate``; extra helpers, lifecycle hooks such as ``__del__``, and other
-data-model methods are not admitted.
+data-model methods are not admitted. Apart from optional docstrings and trusted
+comparison-binding metadata, annotated fields and other class-level behavior
+declarations are rejected as well.
 Frozen spec declarations must preserve the directly imported
 ``dataclasses.dataclass`` decorator binding and use only the explicit
 ``@dataclass(frozen=True)`` form. The sole generated spec class must match the

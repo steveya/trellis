@@ -1389,6 +1389,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "place every required field before any defaulted field" in prompt
     assert "exactly `evaluate(self, market_state)`" in prompt
     assert "Do not bind `dataclass`, `property`, `staticmethod`, or `classmethod`" in prompt
+    assert "annotated fields and other class-level behavior declarations" in prompt
     assert "Eager annotation unions admit only proven type operands" in prompt
     assert "Eager subscript annotations may use only the inert builtin" in prompt
     assert "custom subscript bases fail closed before import" in prompt
@@ -1538,6 +1539,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "place every required field before any defaulted field" in prompt
     assert "exactly `evaluate(self, market_state)`" in prompt
     assert "Do not bind `dataclass`, `property`, `staticmethod`, or `classmethod`" in prompt
+    assert "annotated fields and other class-level behavior declarations" in prompt
     assert "Eager annotation unions admit only proven type operands" in prompt
     assert "Eager subscript annotations may use only the inert builtin" in prompt
     assert "custom subscript bases fail closed before import" in prompt

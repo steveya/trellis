@@ -1920,6 +1920,31 @@ def _payoff_requirements_binding_is_authoritative(owner: ast.ClassDef) -> bool:
     )
 
 
+def _payoff_class_declarations_are_authoritative(owner: ast.ClassDef) -> bool:
+    """Admit only the canonical CDS payoff methods and trusted target metadata."""
+    for statement in owner.body:
+        if (
+            isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and statement.name in {"__init__", "spec", "requirements", "evaluate"}
+        ):
+            continue
+        if (
+            isinstance(statement, ast.Expr)
+            and isinstance(statement.value, ast.Constant)
+            and isinstance(statement.value.value, str)
+        ):
+            continue
+        if (
+            isinstance(statement, ast.Assign)
+            and len(statement.targets) == 1
+            and isinstance(statement.targets[0], ast.Name)
+            and statement.targets[0].id == "__trellis_comparison_bindings__"
+        ):
+            continue
+        return False
+    return True
+
+
 def _evaluate_definition_is_authoritative(
     tree: ast.Module,
     evaluate: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -1960,11 +1985,8 @@ def _evaluate_definition_is_authoritative(
             or owner.decorator_list
         ):
             return False
-        if any(
-            isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
-            and statement.name
-            not in {"__init__", "spec", "requirements", "evaluate"}
-            for statement in owner.body
+        if not _payoff_class_declarations_are_authoritative(
+            owner
         ) or not _payoff_spec_binding_is_authoritative(
             owner
         ) or not _payoff_requirements_binding_is_authoritative(owner):
