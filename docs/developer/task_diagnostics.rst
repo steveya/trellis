@@ -474,10 +474,15 @@ composition after the final return do not satisfy the route contract. Required
 leg accumulators must each be initialized exactly once to zero before the
 period loop and may only be written by that initializer and the unconditional
 additive (``+=``) statement in the corresponding loop body. The interval loop
-must be a reachable direct child of the period loop. An early ``continue`` guard is
-admitted, but hiding either
-the interval loop or leg algebra beneath ``if False`` or an unproved
-event-weight condition fails closed. Within that mapping, scheduled premium
+must be a reachable direct child of the period loop. Before leg assembly, only
+the bounded empty-period guard (which advances ``interval_start`` to
+``interval_stop`` before continuing) and the non-positive ``event_weight``
+continue guard are admitted. Any other conditional ``break`` or ``continue``
+can dominate the required updates and therefore fails closed, as does hiding
+either the interval loop or leg algebra beneath ``if False`` or an unproved
+event-weight condition. Reassigning ``interval_stop``, ``interval_start``, or
+``event_weight`` before an admitted guard also fails closed. Within that
+mapping, scheduled premium
 must use
 ``survival_weights[interval_stop - 1]`` while protection and accrued-on-event
 cashflows use ``event_weights[interval_index]`` (directly or through simple

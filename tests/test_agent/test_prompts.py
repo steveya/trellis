@@ -1375,6 +1375,10 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "sign absent or explicitly positive one" in prompt
     assert "update it only with additive `+=` in its recognized loop" in prompt
     assert "do not write to it anywhere else before return" in prompt
+    assert "if interval_stop <= interval_start" in prompt
+    assert "if event_weight <= 0.0" in prompt
+    assert "conditional `break` or `continue` exits fail closed" in prompt
+    assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
 
 
 def test_distilled_builder_memory_keeps_legacy_cds_labels_and_omits_nearest_products():
@@ -1460,6 +1464,10 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "fixed reproducible `42`" in prompt
     assert "update it only with additive `+=`" in prompt
     assert "do not write to it anywhere else before return" in prompt
+    assert "if interval_stop <= interval_start" in prompt
+    assert "if event_weight <= 0.0" in prompt
+    assert "conditional `break` or `continue` exits fail closed" in prompt
+    assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
 
 
 def test_executor_credit_default_swap_retry_pins_discount_and_time_origin():

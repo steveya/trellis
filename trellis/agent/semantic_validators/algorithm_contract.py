@@ -627,6 +627,96 @@ def _node_calls_symbol(node: ast.AST, symbol: str) -> bool:
     )
 
 
+_NESTED_LOOP_EXIT_SCOPES = (
+    ast.For,
+    ast.AsyncFor,
+    ast.While,
+    ast.FunctionDef,
+    ast.AsyncFunctionDef,
+    ast.ClassDef,
+    ast.Lambda,
+)
+
+
+def _subtree_has_current_loop_exit(node: ast.AST) -> bool:
+    """Detect break/continue targeting the current loop, not a nested scope."""
+    if isinstance(node, _NESTED_LOOP_EXIT_SCOPES):
+        return False
+    for child in ast.iter_child_nodes(node):
+        if isinstance(child, _NESTED_LOOP_EXIT_SCOPES):
+            continue
+        if isinstance(child, (ast.Break, ast.Continue)):
+            return True
+        if _subtree_has_current_loop_exit(child):
+            return True
+    return False
+
+
+def _is_nonpositive_name_guard(
+    expression: ast.AST,
+    *,
+    name: str,
+) -> bool:
+    """Recognize ``name <= 0`` with an integer or floating-point zero."""
+    return (
+        isinstance(expression, ast.Compare)
+        and isinstance(expression.left, ast.Name)
+        and expression.left.id == name
+        and len(expression.ops) == 1
+        and isinstance(expression.ops[0], ast.LtE)
+        and len(expression.comparators) == 1
+        and isinstance(expression.comparators[0], ast.Constant)
+        and not isinstance(expression.comparators[0].value, bool)
+        and expression.comparators[0].value == 0
+    )
+
+
+def _is_supported_cds_early_continue_guard(
+    loop: ast.For | ast.AsyncFor,
+    statement: ast.AST,
+) -> bool:
+    """Recognize the two bounded CDS guards that may precede leg assembly."""
+    if not isinstance(statement, ast.If) or statement.orelse:
+        return False
+    if (
+        _is_nonpositive_name_guard(statement.test, name="event_weight")
+        and len(statement.body) == 1
+        and isinstance(statement.body[0], ast.Continue)
+        and _single_immutable_assignment_value(
+            loop,
+            "event_weight",
+            before_line=getattr(statement, "lineno", 0),
+        )
+        is not None
+    ):
+        return True
+    return (
+        isinstance(statement.test, ast.Compare)
+        and isinstance(statement.test.left, ast.Name)
+        and statement.test.left.id == "interval_stop"
+        and len(statement.test.ops) == 1
+        and isinstance(statement.test.ops[0], ast.LtE)
+        and len(statement.test.comparators) == 1
+        and isinstance(statement.test.comparators[0], ast.Name)
+        and statement.test.comparators[0].id == "interval_start"
+        and len(statement.body) == 2
+        and isinstance(statement.body[0], ast.Assign)
+        and len(statement.body[0].targets) == 1
+        and isinstance(statement.body[0].targets[0], ast.Name)
+        and statement.body[0].targets[0].id == "interval_start"
+        and isinstance(statement.body[0].value, ast.Name)
+        and statement.body[0].value.id == "interval_stop"
+        and isinstance(statement.body[1], ast.Continue)
+        and _single_immutable_assignment_value(
+            loop,
+            "interval_stop",
+            before_line=getattr(statement, "lineno", 0),
+        )
+        is not None
+        and _cds_interval_cursor_writes_are_bounded(loop)
+    )
+
+
 def _direct_loop_body_nodes(
     loop: ast.For | ast.AsyncFor,
 ) -> tuple[ast.AST, ...]:
@@ -640,6 +730,11 @@ def _direct_loop_body_nodes(
     reachable: list[ast.AST] = []
     for statement in loop.body:
         if isinstance(statement, (ast.Break, ast.Continue, ast.Raise, ast.Return)):
+            break
+        if (
+            _subtree_has_current_loop_exit(statement)
+            and not _is_supported_cds_early_continue_guard(loop, statement)
+        ):
             break
         reachable.append(statement)
     return tuple(reachable)
@@ -788,6 +883,64 @@ def _assigned_values_for_name(tree: ast.AST, name: str) -> tuple[ast.AST, ...]:
         if assignment is not None
         for assigned_name, value in (assignment,)
         if assigned_name == name
+    )
+
+
+def _single_immutable_assignment_value(
+    tree: ast.AST,
+    name: str,
+    *,
+    before_line: int | None = None,
+) -> ast.AST | None:
+    """Return one simple assignment value when no other binding mutates it."""
+    assignments = tuple(
+        (node, assignment[1])
+        for node in ast.walk(tree)
+        for assignment in (_simple_name_assignment(node),)
+        if assignment is not None and assignment[0] == name
+    )
+    bindings = tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name)
+        and node.id == name
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+    )
+    if len(assignments) != 1 or len(bindings) != 1:
+        return None
+    assignment, value = assignments[0]
+    if (
+        before_line is not None
+        and getattr(assignment, "lineno", 0) >= before_line
+    ):
+        return None
+    return value
+
+
+def _cds_interval_cursor_writes_are_bounded(
+    period_loop: ast.For | ast.AsyncFor,
+) -> bool:
+    """Admit only the guard and tail updates of the CDS interval cursor."""
+    assignments = tuple(
+        assignment[1]
+        for node in ast.walk(period_loop)
+        for assignment in (_simple_name_assignment(node),)
+        if assignment is not None and assignment[0] == "interval_start"
+    )
+    bindings = tuple(
+        node
+        for node in ast.walk(period_loop)
+        if isinstance(node, ast.Name)
+        and node.id == "interval_start"
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+    )
+    return (
+        len(assignments) == 2
+        and len(bindings) == 2
+        and all(
+            isinstance(value, ast.Name) and value.id == "interval_stop"
+            for value in assignments
+        )
     )
 
 

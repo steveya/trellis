@@ -1204,9 +1204,13 @@ and dominate one direct final signed return; conditional return/raise exits,
 unused or nested helpers, and statements after the final return are not pricing
 evidence. The interval loop remains a reachable direct child of the period loop,
 and every leg accumulator has one zero initialization and one additive ``+=``
-update that remains unconditional after any early-continue guard, with no other
-writes before return. Sampled weights bind the optional path control through an
-explicit non-null ``250000`` fallback.
+update that remains unconditional after any admitted early-continue guard, with
+no other writes before return. The admitted guards are the empty-period guard,
+which advances the interval cursor before continuing, and the non-positive
+event-weight guard. Other conditional ``break`` or ``continue`` exits before
+assembly fail closed because they can dominate required leg updates. The guard
+controls are not reassignable. Sampled weights bind the optional path
+control through an explicit non-null ``250000`` fallback.
 The current typed route admits only the documented standard schedule
 conventions (weekend calendar, following adjustment, no roll, short-last stub,
 and zero payment lag); alternatives require a future typed contract extension.

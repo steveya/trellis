@@ -1803,6 +1803,139 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        ("anchor", "guard"),
+        (
+            (
+                "        survival_weight =",
+                "        if True:\n            continue\n",
+            ),
+            (
+                "        survival_weight =",
+                "        if True:\n            break\n",
+            ),
+            (
+                "            interval =",
+                "            if True:\n                continue\n",
+            ),
+            (
+                "            interval =",
+                "            if True:\n                break\n",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_conditional_loop_exit_before_assembly(
+        self,
+        registry,
+        anchor,
+        guard,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            anchor,
+            guard + anchor,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_recognized_early_continue_guards(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            _cds_composition_source()
+            .replace(
+                "        survival_weight =",
+                "        if interval_stop <= interval_start:\n"
+                "            interval_start = interval_stop\n"
+                "            continue\n"
+                "        survival_weight =",
+                1,
+            )
+            .replace(
+                "            event_discount =",
+                "            if event_weight <= 0.0:\n"
+                "                continue\n"
+                "            event_discount =",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    @pytest.mark.parametrize(
+        ("anchor", "mutation"),
+        (
+            (
+                "        if interval_stop <= interval_start:",
+                "        interval_stop = -1\n",
+            ),
+            (
+                "        if interval_stop <= interval_start:",
+                "        interval_start = 1000000\n",
+            ),
+            (
+                "            if event_weight <= 0.0:",
+                "            event_weight = 0.0\n",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_mutated_early_continue_guard_control(
+        self,
+        registry,
+        anchor,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            _cds_composition_source()
+            .replace(
+                "        survival_weight =",
+                "        if interval_stop <= interval_start:\n"
+                "            interval_start = interval_stop\n"
+                "            continue\n"
+                "        survival_weight =",
+                1,
+            )
+            .replace(
+                "            event_discount =",
+                "            if event_weight <= 0.0:\n"
+                "                continue\n"
+                "            event_discount =",
+                1,
+            )
+            .replace(anchor, mutation + anchor, 1)
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_composition_in_unused_helper(
         self,
         registry,
