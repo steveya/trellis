@@ -1314,6 +1314,12 @@ assembly fail closed because they can dominate required leg updates. The guard
 controls are not reassignable. Weight, default-probability, and discount-factor
 keywords must bind on the direct cashflow constructor passed to each validated
 PV primitive; descendant calls and decoy keywords are not pricing evidence.
+Those constructors use their exact public keyword surfaces: ``CouponAccrual``
+requires ``notional``, ``rate``, ``accrual``, ``discount_factor``, and
+``weight``; ``ProtectionPayment`` requires ``notional``, ``recovery``,
+``default_probability``, and ``discount_factor``. The only optional field is a
+positive ``sign``; positional arguments, unpacking, duplicates, missing fields,
+and extra keywords fail closed.
 Sampled weights bind the optional path
 control through an explicit non-null ``250000`` fallback.
 The guarded basis-point spread normalization precedes the period loop and every

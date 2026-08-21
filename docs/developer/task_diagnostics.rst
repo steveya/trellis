@@ -623,8 +623,14 @@ aliases). Those indexed weights must belong to the validated
 to a separately constructed object. ``weight``, ``default_probability``, and
 ``discount_factor`` must bind on the direct ``CouponAccrual`` or
 ``ProtectionPayment`` constructor passed to the validated PV primitive; nested
-calls and decoy keywords are not constructor evidence. Scheduled coupon accrual
-must use the
+calls and decoy keywords are not constructor evidence. Each constructor must
+use its exact declared keyword surface: ``CouponAccrual`` requires
+``notional``, ``rate``, ``accrual``, ``discount_factor``, and ``weight``;
+``ProtectionPayment`` requires ``notional``, ``recovery``,
+``default_probability``, and ``discount_factor``. Either may add only an
+explicit positive ``sign``. Positional arguments, unpacking, duplicates,
+missing fields, and extra keywords fail closed before smoke evaluation.
+Scheduled coupon accrual must use the
 active period accrual; accrued-on-event must use that period accrual multiplied
 by the active interval's elapsed fraction. That elapsed fraction is measured at
 the interval's midpoint settlement date under the schedule's coupon day count;

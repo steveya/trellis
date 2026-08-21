@@ -1440,6 +1440,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "CDS contract findings are blocking" in prompt
     assert "required period guard" in prompt
     assert "direct cashflow constructor" in prompt
+    assert "cashflow constructor's exact declared keyword surface" in prompt
     assert "before the period loop and every spread alias or cashflow use" in prompt
 
 
@@ -1580,6 +1581,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "CDS contract findings are blocking" in prompt
     assert "required period guard" in prompt
     assert "direct cashflow constructor" in prompt
+    assert "cashflow constructor's exact declared keyword surface" in prompt
     assert "before the period loop and every spread alias or cashflow use" in prompt
 
 

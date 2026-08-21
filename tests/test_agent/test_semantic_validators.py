@@ -3312,6 +3312,48 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        ("constructor_line", "extra_keyword_line"),
+        (
+            (
+                "        premium_leg += coupon_cashflow_pv(CouponAccrual(",
+                "            probe=spin(),",
+            ),
+            (
+                "            protection_leg += protection_payment_pv(ProtectionPayment(",
+                "                probe=spin(),",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_extra_cashflow_constructor_keyword(
+        self,
+        registry,
+        constructor_line,
+        extra_keyword_line,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            + _cds_composition_source().replace(
+                constructor_line,
+                f"{constructor_line}\n{extra_keyword_line}",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_unbound_weight_owner(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
 

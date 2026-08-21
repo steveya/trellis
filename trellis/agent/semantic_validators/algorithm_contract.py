@@ -660,6 +660,14 @@ _CDS_APPROVED_IMPORTS = {
         }
     ),
 }
+_CDS_CASHFLOW_CONSTRUCTOR_REQUIRED_KEYWORDS = {
+    "CouponAccrual": frozenset(
+        {"notional", "rate", "accrual", "discount_factor", "weight"}
+    ),
+    "ProtectionPayment": frozenset(
+        {"notional", "recovery", "default_probability", "discount_factor"}
+    ),
+}
 _CDS_INERT_ANNOTATION_SUBSCRIPT_BASES = frozenset(
     {"dict", "frozenset", "list", "set", "tuple", "type"}
 )
@@ -2336,15 +2344,42 @@ def _cashflow_constructor_keyword_matches(
         and not expression.args[0].args
     ):
         return False
+    constructor_call = expression.args[0]
+    if not _cashflow_constructor_has_exact_surface(
+        constructor_call,
+        constructor_symbol=constructor_symbol,
+    ):
+        return False
     matching_keywords = tuple(
         keyword
-        for keyword in expression.args[0].keywords
+        for keyword in constructor_call.keywords
         if keyword.arg == keyword_name
     )
     return len(matching_keywords) == 1 and _expression_or_alias_matches(
         tree,
         matching_keywords[0].value,
         predicate,
+    )
+
+
+def _cashflow_constructor_has_exact_surface(
+    call: ast.Call,
+    *,
+    constructor_symbol: str,
+) -> bool:
+    """Require the declared CDS cashflow fields and only optional ``sign``."""
+    required_keywords = _CDS_CASHFLOW_CONSTRUCTOR_REQUIRED_KEYWORDS.get(
+        constructor_symbol
+    )
+    if required_keywords is None or call.args:
+        return False
+    keyword_names = tuple(keyword.arg for keyword in call.keywords)
+    if any(keyword_name is None for keyword_name in keyword_names):
+        return False
+    keyword_set = frozenset(keyword_names)
+    return (
+        len(keyword_names) == len(keyword_set)
+        and keyword_set in {required_keywords, required_keywords | {"sign"}}
     )
 
 
@@ -4511,7 +4546,11 @@ def _constructor_keyword_matches(
         if isinstance(node, ast.Call) and _call_matches_symbol(node, constructor)
     )
     return bool(constructors) and all(
-        sum(
+        _cashflow_constructor_has_exact_surface(
+            call,
+            constructor_symbol=constructor,
+        )
+        and sum(
             keyword.arg == keyword_name
             and _expression_or_alias_matches(tree, keyword.value, predicate)
             for keyword in call.keywords
@@ -4536,7 +4575,10 @@ def _constructor_signs_are_positive(
     if not constructors:
         return False
     for call in constructors:
-        if any(keyword.arg is None for keyword in call.keywords):
+        if not _cashflow_constructor_has_exact_surface(
+            call,
+            constructor_symbol=constructor,
+        ):
             return False
         signs = tuple(
             keyword.value
