@@ -298,6 +298,7 @@ class GenerationPlan:
     validation_check_ids: tuple[str, ...] = ()
     validation_residual_risks: tuple[str, ...] = ()
     route_binding_authority: object | None = None
+    payoff_class_name: str = ""
 
 
 @dataclass(frozen=True)

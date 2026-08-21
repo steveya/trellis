@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import textwrap
 from dataclasses import replace
 
 import pytest
@@ -3624,6 +3625,92 @@ def evaluate(self, market_state):
             spec,
         )
         assert not any(f.severity == "error" for f in findings)
+
+    @pytest.mark.parametrize(
+        ("extra_setup", "replacements", "expected_category"),
+        (
+            (
+                "if False:\n        discount_curve = market_state.discount",
+                (
+                    ("market_state.discount.discount(", "discount_curve.discount("),
+                ),
+                "credit_default_swap_discount_mapping",
+            ),
+            (
+                "if False:\n        credit_curve = market_state.credit_curve",
+                (
+                    ("market_state.credit_curve", "credit_curve"),
+                ),
+                "credit_default_swap_credit_curve_binding",
+            ),
+            (
+                "if False:\n        grid_alias = grid",
+                (
+                    ("grid.", "grid_alias."),
+                ),
+                "credit_default_swap_valuation_origin",
+            ),
+            (
+                "if False:\n        weights_alias = weights",
+                (
+                    ("weights.survival_weights", "weights_alias.survival_weights"),
+                    ("weights.event_weights", "weights_alias.event_weights"),
+                ),
+                "credit_default_swap_weight_mapping",
+            ),
+            (
+                "if False:\n        spec_alias = self._spec",
+                (
+                    ("self._spec.", "spec_alias."),
+                ),
+                "credit_default_swap_economic_binding",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_conditionally_assigned_aliases(
+        self,
+        registry,
+        extra_setup,
+        replacements,
+        expected_category,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(extra_setup=extra_setup)
+        for original, replacement in replacements:
+            source = source.replace(original, replacement)
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == expected_category
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_evaluate_on_unrelated_class(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class UnrelatedPayoff:\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+            + "\n\nclass CDSPayoff:\n    pass\n"
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
 
     def test_accepts_credit_default_swap_optional_valuation_date_fallback(
         self,

@@ -1774,6 +1774,11 @@ def build_payoff(
         ),
         product_ir=product_ir,
     )
+    if getattr(generation_plan, "payoff_class_name", "") != spec_schema.class_name:
+        generation_plan = replace_dataclass(
+            generation_plan,
+            payoff_class_name=spec_schema.class_name,
+        )
     _record_comparison_execution_binding(
         build_meta,
         compiled_request=compiled_request,

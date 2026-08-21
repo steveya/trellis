@@ -1632,7 +1632,7 @@ class QuantoOptionAnalyticalPayoff:
         ), patch(
             "trellis.agent.semantic_validators.validate_generated_semantics",
             return_value=SimpleNamespace(ok=True, errors=(), findings=[]),
-        ), patch(
+        ) as mock_validate_generated_semantics, patch(
             "trellis.agent.lite_review.review_generated_code",
             return_value=SimpleNamespace(ok=True, errors=(), issues=[]),
         ):
@@ -1649,6 +1649,10 @@ class QuantoOptionAnalyticalPayoff:
 
         write_path = mock_write_module.call_args.args[0]
         assert write_path == "instruments/_agent/_fresh/quantooptionanalytical.py"
+        assert (
+            mock_validate_generated_semantics.call_args.args[1].payoff_class_name
+            == "QuantoOptionAnalyticalPayoff"
+        )
         assert build_meta["generation_evidence"] == {
             "policy": "builder_synthesis_required",
             "artifact_origin": "model_generated_source",

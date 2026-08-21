@@ -996,7 +996,7 @@ def _is_supported_cds_early_continue_guard(
         and _single_immutable_assignment_value(
             loop,
             "event_weight",
-            before_line=getattr(statement, "lineno", 0),
+            before_node=statement,
         )
         is not None
     ):
@@ -1039,7 +1039,7 @@ def _is_supported_cds_empty_period_guard(
         and _single_immutable_assignment_value(
             loop,
             stop_name,
-            before_line=getattr(statement, "lineno", 0),
+            before_node=statement,
         )
         is not None
         and _cds_interval_cursor_writes_are_bounded(
@@ -1202,14 +1202,33 @@ def _evaluate_definition_is_authoritative(
     return True
 
 
-def _reachable_evaluate_tree(tree: ast.Module) -> ast.Module | None:
+def _reachable_evaluate_tree(
+    tree: ast.Module,
+    *,
+    payoff_class_name: str = "",
+) -> ast.Module | None:
     """Return one evaluate body with one direct final exit and no local scopes."""
-    evaluate_functions = tuple(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
-        and node.name == "evaluate"
-    )
+    if payoff_class_name:
+        payoff_classes = tuple(
+            node
+            for node in tree.body
+            if isinstance(node, ast.ClassDef) and node.name == payoff_class_name
+        )
+        if len(payoff_classes) != 1:
+            return None
+        evaluate_functions = tuple(
+            node
+            for node in payoff_classes[0].body
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "evaluate"
+        )
+    else:
+        evaluate_functions = tuple(
+            node
+            for node in ast.walk(tree)
+            if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and node.name == "evaluate"
+        )
     if len(evaluate_functions) != 1:
         return None
     evaluate = evaluate_functions[0]
@@ -1302,9 +1321,9 @@ def _single_immutable_assignment_value(
     tree: ast.AST,
     name: str,
     *,
-    before_line: int | None = None,
+    before_node: ast.AST | None = None,
 ) -> ast.AST | None:
-    """Return one simple assignment value when no other binding mutates it."""
+    """Return one immutable assignment that structurally dominates its use."""
     assignments = tuple(
         (node, assignment[1])
         for node in ast.walk(tree)
@@ -1321,12 +1340,62 @@ def _single_immutable_assignment_value(
     if len(assignments) != 1 or len(bindings) != 1:
         return None
     assignment, value = assignments[0]
-    if (
-        before_line is not None
-        and getattr(assignment, "lineno", 0) >= before_line
+    if before_node is not None and not _assignment_dominates_node(
+        tree,
+        assignment,
+        before_node,
     ):
         return None
     return value
+
+
+def _assignment_dominates_node(
+    tree: ast.AST,
+    assignment: ast.AST,
+    use: ast.AST,
+) -> bool:
+    """Prove a simple assignment executes on every admitted path to one use."""
+    if getattr(assignment, "lineno", 0) >= getattr(use, "lineno", 0):
+        return False
+
+    parents = {
+        child: parent
+        for parent in ast.walk(tree)
+        for child in ast.iter_child_nodes(parent)
+    }
+    if assignment is not tree and assignment not in parents:
+        return False
+    if use is not tree and use not in parents:
+        return False
+
+    use_ancestors: set[ast.AST] = set()
+    current = use
+    while current in parents:
+        current = parents[current]
+        use_ancestors.add(current)
+
+    conditional_ancestors = (
+        ast.If,
+        ast.Try,
+        ast.Match,
+        ast.With,
+        ast.AsyncWith,
+        ast.While,
+    )
+    current = assignment
+    while current in parents:
+        current = parents[current]
+        if isinstance(current, conditional_ancestors):
+            return False
+        if isinstance(current, (ast.For, ast.AsyncFor)):
+            if current not in use_ancestors:
+                return False
+            branch = assignment
+            while parents.get(branch) is not current:
+                branch = parents[branch]
+            if branch in current.orelse:
+                return False
+    return True
 
 
 def _cds_interval_cursor_writes_are_bounded(
@@ -1408,7 +1477,7 @@ def _expression_or_alias_matches(
     assigned_value = _single_immutable_assignment_value(
         tree,
         expression.id,
-        before_line=getattr(expression, "lineno", 0),
+        before_node=expression,
     )
     if assigned_value is None:
         return False
@@ -1523,7 +1592,7 @@ def _expression_resolves_to_first_event_weights(
     assigned_value = _single_immutable_assignment_value(
         tree,
         expression.id,
-        before_line=getattr(expression, "lineno", 0),
+        before_node=expression,
     )
     return assigned_value is not None and _expression_resolves_to_first_event_weights(
         tree,
@@ -1552,7 +1621,7 @@ def _expression_resolves_to_discount_curve(
     assigned_value = _single_immutable_assignment_value(
         tree,
         expression.id,
-        before_line=getattr(expression, "lineno", 0),
+        before_node=expression,
     )
     return assigned_value is not None and _expression_resolves_to_discount_curve(
         tree,
@@ -1667,7 +1736,7 @@ def _expression_resolves_to_credit_curve(
     assigned_value = _single_immutable_assignment_value(
         tree,
         expression.id,
-        before_line=getattr(expression, "lineno", 0),
+        before_node=expression,
     )
     return assigned_value is not None and _expression_resolves_to_credit_curve(
         tree,
@@ -1702,7 +1771,7 @@ def _cds_conditional_event_grid(
     assigned_value = _single_immutable_assignment_value(
         tree,
         expression.id,
-        before_line=getattr(expression, "lineno", 0),
+        before_node=expression,
     )
     if assigned_value is None:
         return None
@@ -1759,7 +1828,7 @@ def _cds_exact_initial_survival_grid(
         assigned_value = _single_immutable_assignment_value(
             tree,
             expression.id,
-            before_line=getattr(expression, "lineno", 0),
+            before_node=expression,
         )
         if assigned_value is None:
             return None
@@ -2358,7 +2427,7 @@ def _expression_resolves_to_active_spec(
     assigned_value = _single_immutable_assignment_value(
         tree,
         expression.id,
-        before_line=getattr(expression, "lineno", 0),
+        before_node=expression,
     )
     return assigned_value is not None and _expression_resolves_to_active_spec(
         tree,
@@ -2564,7 +2633,7 @@ def _expression_resolves_to_active_spec_field(
     assigned_value = _single_immutable_assignment_value(
         tree,
         expression.id,
-        before_line=getattr(expression, "lineno", 0),
+        before_node=expression,
     )
     if assigned_value is None:
         return False
@@ -2609,7 +2678,7 @@ def _expression_resolves_to_exact_number(
     assigned_value = _single_immutable_assignment_value(
         tree,
         expression.id,
-        before_line=getattr(expression, "lineno", 0),
+        before_node=expression,
     )
     return (
         assigned_value is not None
@@ -2636,7 +2705,7 @@ def _cds_path_count_is_active_spec_control(
         assigned_value = _single_immutable_assignment_value(
             tree,
             expression.id,
-            before_line=getattr(expression, "lineno", 0),
+            before_node=expression,
         )
         return assigned_value is not None and _cds_path_count_is_active_spec_control(
             tree,
@@ -2719,7 +2788,7 @@ def _expression_resolves_to_market_settlement(
     assigned_value = _single_immutable_assignment_value(
         tree,
         expression.id,
-        before_line=getattr(expression, "lineno", 0),
+        before_node=expression,
     )
     return assigned_value is not None and _expression_resolves_to_market_settlement(
         tree,
@@ -2743,7 +2812,7 @@ def _cds_time_origin_is_active_valuation_date(
         assigned_value = _single_immutable_assignment_value(
             tree,
             expression.id,
-            before_line=getattr(expression, "lineno", 0),
+            before_node=expression,
         )
         return assigned_value is not None and _cds_time_origin_is_active_valuation_date(
             tree,
@@ -2796,7 +2865,7 @@ def _cds_schedule_uses_active_valuation_origin(
         assigned_value = _single_immutable_assignment_value(
             tree,
             expression.id,
-            before_line=getattr(expression, "lineno", 0),
+            before_node=expression,
         )
         return assigned_value is not None and _cds_schedule_uses_active_valuation_origin(
             tree,
@@ -2832,7 +2901,7 @@ def _cds_schedule_uses_active_contract_fields(
         assigned_value = _single_immutable_assignment_value(
             tree,
             expression.id,
-            before_line=getattr(expression, "lineno", 0),
+            before_node=expression,
         )
         return assigned_value is not None and _cds_schedule_uses_active_contract_fields(
             tree,
@@ -2933,7 +3002,7 @@ def _cds_grid_uses_active_valuation_origin(
         assigned_value = _single_immutable_assignment_value(
             tree,
             expression.id,
-            before_line=getattr(expression, "lineno", 0),
+            before_node=expression,
         )
         return assigned_value is not None and _cds_grid_uses_active_valuation_origin(
             tree,
@@ -2966,7 +3035,7 @@ def _cds_grid_uses_active_contract_fields(
         assigned_value = _single_immutable_assignment_value(
             tree,
             expression.id,
-            before_line=getattr(expression, "lineno", 0),
+            before_node=expression,
         )
         return assigned_value is not None and _cds_grid_uses_active_contract_fields(
             tree,
@@ -3849,7 +3918,10 @@ class AlgorithmContractValidator:
         except SyntaxError:
             return findings
 
-        tree = _reachable_evaluate_tree(module_tree)
+        tree = _reachable_evaluate_tree(
+            module_tree,
+            payoff_class_name=getattr(plan, "payoff_class_name", ""),
+        )
         if tree is None:
             findings.append(
                 SemanticFinding(
