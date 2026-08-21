@@ -1220,6 +1220,9 @@ declarative, and the payoff scaffold preserves economics by storing the
 submitted spec exactly once as ``self._spec`` and returning that same object
 from its sole ``spec`` property. Executable definition-time control flow,
 substituted specs, alternate writers, and dynamic attribute hooks are rejected.
+The payoff class may define only ``__init__``, ``spec``, ``requirements``, and
+``evaluate``; extra helpers, lifecycle hooks such as ``__del__``, and other
+data-model methods are not admitted.
 Frozen spec declarations must preserve the directly imported
 ``dataclasses.dataclass`` decorator binding and use only the explicit
 ``@dataclass(frozen=True)`` form with field declarations only; methods and

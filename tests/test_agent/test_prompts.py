@@ -1378,6 +1378,8 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "only the explicit `@dataclass(frozen=True)` form" in prompt
     assert "field declarations only, without methods or behavior hooks" in prompt
     assert "unshadowed builtin `property`, `staticmethod`, and `classmethod`" in prompt
+    assert "may define only `__init__`, `spec`, `requirements`, and `evaluate`" in prompt
+    assert "extra helpers, lifecycle hooks, and data-model methods fail closed" in prompt
     assert "exact inert `requirements` property" in prompt
     assert "store the submitted `spec` exactly as `self._spec`" in prompt
     assert "simple binding consumed by the canonical composition" in prompt
@@ -1500,6 +1502,8 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "only the explicit `@dataclass(frozen=True)` form" in prompt
     assert "field declarations only, without methods or behavior hooks" in prompt
     assert "unshadowed builtin `property`, `staticmethod`, and `classmethod`" in prompt
+    assert "may define only `__init__`, `spec`, `requirements`, and `evaluate`" in prompt
+    assert "extra helpers, lifecycle hooks, and data-model methods fail closed" in prompt
     assert "exact inert `requirements` property" in prompt
     assert "store the submitted `spec` exactly as `self._spec`" in prompt
     assert "simple binding consumed by the canonical composition" in prompt

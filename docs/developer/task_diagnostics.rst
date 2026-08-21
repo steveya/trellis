@@ -484,7 +484,10 @@ The admitted ``property``,
 unshadowed builtin bindings. For generated payoff classes, the constructor
 must store the submitted ``spec`` exactly as ``self._spec`` and the sole
 ``@property spec`` must return that object; alternate writers and dynamic
-attribute hooks fail closed. Its ``requirements`` property is the exact inert
+attribute hooks fail closed. The payoff class may define only ``__init__``,
+``spec``, ``requirements``, and ``evaluate``; extra helpers, lifecycle hooks
+such as ``__del__``, and other data-model methods fail closed. Its
+``requirements`` property is the exact inert
 scaffold return of the literal ``{"credit_curve", "discount_curve"}`` set.
 The guarded basis-point normalization must dominate the period loop, every
 spread alias, and every cashflow use; omitting it or moving it after assembly

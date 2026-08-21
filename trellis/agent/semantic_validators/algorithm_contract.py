@@ -1560,13 +1560,7 @@ def _evaluate_definition_is_authoritative(
         if any(
             isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
             and statement.name
-            in {
-                "__delattr__",
-                "__getattr__",
-                "__getattribute__",
-                "__new__",
-                "__setattr__",
-            }
+            not in {"__init__", "spec", "requirements", "evaluate"}
             for statement in owner.body
         ) or not _payoff_spec_binding_is_authoritative(
             owner
