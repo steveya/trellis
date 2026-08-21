@@ -1382,6 +1382,8 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
     assert "right-hand side must be exactly its corresponding" in prompt
     assert "directly imported public" in prompt
+    assert "directly and without aliases from its public Trellis module" in prompt
+    assert "one immutable assignment that dominates their use" in prompt
     assert "direct or dynamic namespace shadowing, reflection" in prompt
     assert "authoritative `evaluate()` method undecorated" in prompt
     assert "CDS contract findings are blocking" in prompt

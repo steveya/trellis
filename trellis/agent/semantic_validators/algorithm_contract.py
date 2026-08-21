@@ -628,6 +628,7 @@ def _is_exact_call_to_symbol(expression: ast.AST, symbol: str) -> bool:
 
 
 _CDS_CASHFLOW_PRIMITIVE_MODULE = "trellis.models.contingent_cashflows"
+_CDS_SCHEDULE_PRIMITIVE_MODULE = "trellis.core.date_utils"
 _CDS_OPAQUE_NAMESPACE_CALLS = frozenset({
     "__import__",
     "__delattr__",
@@ -651,12 +652,17 @@ _CDS_OPAQUE_NAMESPACE_CALLS = frozenset({
 })
 
 
-def _is_direct_approved_symbol_import(node: ast.AST, symbol: str) -> bool:
-    """Recognize an unaliased import of one public CDS cashflow primitive."""
+def _is_direct_approved_symbol_import(
+    node: ast.AST,
+    symbol: str,
+    *,
+    module: str,
+) -> bool:
+    """Recognize an unaliased import of one public CDS route primitive."""
     if not (
         isinstance(node, ast.ImportFrom)
         and node.level == 0
-        and node.module == _CDS_CASHFLOW_PRIMITIVE_MODULE
+        and node.module == module
     ):
         return False
     bindings = tuple(
@@ -809,10 +815,11 @@ def _function_argument_names(
     return frozenset(names)
 
 
-def _module_has_authoritative_cds_cashflow_import(
+def _module_has_authoritative_cds_primitive_import(
     tree: ast.Module,
     *,
     symbol: str,
+    module: str,
 ) -> bool:
     """Require the public import to own the unshadowed name used by ``evaluate``."""
     if _tree_uses_opaque_namespace_access(tree):
@@ -832,7 +839,7 @@ def _module_has_authoritative_cds_cashflow_import(
     local_imports = tuple(
         node
         for node in evaluate.body
-        if _is_direct_approved_symbol_import(node, symbol)
+        if _is_direct_approved_symbol_import(node, symbol, module=module)
     )
     if local_imports:
         if len(local_imports) != 1:
@@ -866,7 +873,7 @@ def _module_has_authoritative_cds_cashflow_import(
     module_imports = tuple(
         node
         for node in tree.body
-        if _is_direct_approved_symbol_import(node, symbol)
+        if _is_direct_approved_symbol_import(node, symbol, module=module)
     )
     if len(module_imports) != 1:
         return False
@@ -1364,14 +1371,18 @@ def _expression_or_alias_matches(
         )
     if not isinstance(expression, ast.Name) or expression.id in seen_names:
         return False
-    return any(
-        _expression_or_alias_matches(
-            tree,
-            assigned_value,
-            predicate,
-            seen_names=seen_names | {expression.id},
-        )
-        for assigned_value in _assigned_values_for_name(tree, expression.id)
+    assigned_value = _single_immutable_assignment_value(
+        tree,
+        expression.id,
+        before_line=getattr(expression, "lineno", 0),
+    )
+    if assigned_value is None:
+        return False
+    return _expression_or_alias_matches(
+        tree,
+        assigned_value,
+        predicate,
+        seen_names=seen_names | {expression.id},
     )
 
 
@@ -3820,18 +3831,30 @@ class AlgorithmContractValidator:
             )
             return findings
 
-        invalid_cashflow_imports = tuple(
+        selected_weight_symbol = _cds_selected_weight_symbol(plan)
+        required_primitive_imports = (
+            ("build_period_schedule", _CDS_SCHEDULE_PRIMITIVE_MODULE),
+            ("CouponAccrual", _CDS_CASHFLOW_PRIMITIVE_MODULE),
+            ("ProtectionPayment", _CDS_CASHFLOW_PRIMITIVE_MODULE),
+            ("build_default_event_grid", _CDS_CASHFLOW_PRIMITIVE_MODULE),
+            (
+                "conditional_event_probabilities_from_curve",
+                _CDS_CASHFLOW_PRIMITIVE_MODULE,
+            ),
+            (selected_weight_symbol, _CDS_CASHFLOW_PRIMITIVE_MODULE),
+            ("coupon_cashflow_pv", _CDS_CASHFLOW_PRIMITIVE_MODULE),
+            ("protection_payment_pv", _CDS_CASHFLOW_PRIMITIVE_MODULE),
+        )
+        invalid_primitive_imports = tuple(
             symbol
-            for symbol in (
-                "coupon_cashflow_pv",
-                "protection_payment_pv",
-            )
-            if not _module_has_authoritative_cds_cashflow_import(
+            for symbol, module in required_primitive_imports
+            if not _module_has_authoritative_cds_primitive_import(
                 module_tree,
                 symbol=symbol,
+                module=module,
             )
         )
-        if invalid_cashflow_imports:
+        if invalid_primitive_imports:
             findings.append(
                 SemanticFinding(
                     validator="algorithm_contract",
@@ -3839,15 +3862,13 @@ class AlgorithmContractValidator:
                     category="credit_default_swap_cashflow_primitive_binding",
                     message=(
                         f"Route '{route_spec.id}' must call the directly imported "
-                        "public cashflow primitives from "
-                        f"'{_CDS_CASHFLOW_PRIMITIVE_MODULE}' without attribute "
+                        "public CDS schedule and cashflow primitives from their "
+                        "approved modules without attribute "
                         "dispatch, aliases, or local/module shadowing. Invalid "
-                        f"bindings: {', '.join(invalid_cashflow_imports)}."
+                        f"bindings: {', '.join(invalid_primitive_imports)}."
                     ),
                 )
             )
-
-        selected_weight_symbol = _cds_selected_weight_symbol(plan)
 
         for symbol in (
             "expected_first_event_weights",

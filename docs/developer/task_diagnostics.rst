@@ -487,7 +487,13 @@ additive (``+=``) statement in the corresponding loop body. Its right-hand side
 must be exactly the corresponding directly imported public
 ``coupon_cashflow_pv(...)`` or ``protection_payment_pv(...)`` call; attribute
 dispatch, aliases, direct or dynamic namespace shadowing, reflection, negation,
-scaling, or other wrappers fail closed. The interval loop must be a reachable
+scaling, or other wrappers fail closed. The full public route chain---schedule
+builder, event grid, conditional probabilities, selected first-event weights,
+cashflow constructors, and PV functions---must retain direct, unaliased imports
+from its approved modules. A same-name replacement fails closed. Simple value
+aliases used as semantic evidence must have one immutable assignment that
+dominates the use; the validator does not accept an earlier correct assignment
+after that name is rebound. The interval loop must be a reachable
 direct child of
 the period loop. Before scheduled-leg assembly, the bounded empty-period guard
 must advance ``interval_start`` to ``interval_stop`` and continue; otherwise an

@@ -1210,7 +1210,13 @@ update that remains unconditional after any admitted early-continue guard, with
 no other writes before return. Each update value is exactly the corresponding
 directly imported public cashflow PV call; attribute dispatch, aliases,
 direct or dynamic namespace shadowing, reflection, negation, scaling, or other
-wrappers are not pricing evidence. The empty-period guard is required before
+wrappers are not pricing evidence. The schedule builder, default-event grid,
+conditional-probability transform, selected first-event weighting primitive,
+cashflow constructors, and cashflow PV functions must each retain their direct,
+unaliased public import binding; a same-name local or module replacement fails
+closed. Simple value aliases used as semantic evidence must have one immutable
+assignment that dominates their use, so a correct historical assignment cannot
+hide a later reassignment. The empty-period guard is required before
 scheduled-leg pricing and advances the interval cursor before continuing, so
 expired periods cannot index an unrelated survival weight. The non-positive
 event-weight guard is also admitted. Other conditional ``break`` or ``continue`` exits before

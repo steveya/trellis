@@ -105,8 +105,14 @@ def _cds_composition_source(
         )
     return f'''
 def evaluate(self, market_state):
+    from trellis.core.date_utils import build_period_schedule
     from trellis.models.contingent_cashflows import (
+        CouponAccrual,
+        ProtectionPayment,
+        build_default_event_grid,
+        conditional_event_probabilities_from_curve,
         coupon_cashflow_pv,
+        {weight_symbol},
         protection_payment_pv,
     )
 
@@ -2060,20 +2066,67 @@ def evaluate(self, market_state):
 
         assert any(finding.severity == "error" for finding in findings)
 
+    @pytest.mark.parametrize(
+        "symbol",
+        (
+            "build_period_schedule",
+            "CouponAccrual",
+            "ProtectionPayment",
+            "build_default_event_grid",
+            "conditional_event_probabilities_from_curve",
+            "expected_first_event_weights",
+        ),
+    )
+    def test_rejects_credit_default_swap_shadowed_route_primitive(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            f"    {symbol} = lambda *args, **kwargs: None\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in findings
+        )
+
     def test_accepts_credit_default_swap_top_level_cashflow_imports(
         self,
         registry,
     ):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         local_imports = (
+            "    from trellis.core.date_utils import build_period_schedule\n"
             "    from trellis.models.contingent_cashflows import (\n"
+            "        CouponAccrual,\n"
+            "        ProtectionPayment,\n"
+            "        build_default_event_grid,\n"
+            "        conditional_event_probabilities_from_curve,\n"
             "        coupon_cashflow_pv,\n"
+            "        expected_first_event_weights,\n"
             "        protection_payment_pv,\n"
             "    )\n\n"
         )
         top_level_imports = (
+            "from trellis.core.date_utils import build_period_schedule\n"
             "from trellis.models.contingent_cashflows import (\n"
+            "    CouponAccrual,\n"
+            "    ProtectionPayment,\n"
+            "    build_default_event_grid,\n"
+            "    conditional_event_probabilities_from_curve,\n"
             "    coupon_cashflow_pv,\n"
+            "    expected_first_event_weights,\n"
             "    protection_payment_pv,\n"
             ")\n"
         )
@@ -2125,8 +2178,14 @@ def evaluate(self, market_state):
     ):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         local_imports = (
+            "    from trellis.core.date_utils import build_period_schedule\n"
             "    from trellis.models.contingent_cashflows import (\n"
+            "        CouponAccrual,\n"
+            "        ProtectionPayment,\n"
+            "        build_default_event_grid,\n"
+            "        conditional_event_probabilities_from_curve,\n"
             "        coupon_cashflow_pv,\n"
+            "        expected_first_event_weights,\n"
             "        protection_payment_pv,\n"
             "    )\n\n"
         )
@@ -2176,14 +2235,26 @@ def evaluate(self, market_state):
     ):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         local_imports = (
+            "    from trellis.core.date_utils import build_period_schedule\n"
             "    from trellis.models.contingent_cashflows import (\n"
+            "        CouponAccrual,\n"
+            "        ProtectionPayment,\n"
+            "        build_default_event_grid,\n"
+            "        conditional_event_probabilities_from_curve,\n"
             "        coupon_cashflow_pv,\n"
+            "        expected_first_event_weights,\n"
             "        protection_payment_pv,\n"
             "    )\n\n"
         )
         top_level_imports = (
+            "from trellis.core.date_utils import build_period_schedule\n"
             "from trellis.models.contingent_cashflows import (\n"
+            "    CouponAccrual,\n"
+            "    ProtectionPayment,\n"
+            "    build_default_event_grid,\n"
+            "    conditional_event_probabilities_from_curve,\n"
             "    coupon_cashflow_pv,\n"
+            "    expected_first_event_weights,\n"
             "    protection_payment_pv,\n"
             ")\n"
         )
@@ -3001,6 +3072,29 @@ def evaluate(self, market_state):
             "            discount_factor=(dict(discount_factor="
             "market_state.discount.discount("
             "grid.period_payment_times[period_index])) and 1.0),",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_discount_mapping"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_reassigned_discount_alias(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "            protection_leg += protection_payment_pv(",
+            "            event_discount = 0.0\n"
+            "            protection_leg += protection_payment_pv(",
             1,
         )
 
