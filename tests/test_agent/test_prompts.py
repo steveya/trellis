@@ -1386,6 +1386,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "extra helpers, lifecycle hooks, and data-model methods fail closed" in prompt
     assert "exact inert `requirements` property" in prompt
     assert "store the submitted `spec` exactly as `self._spec`" in prompt
+    assert "Preserve the caller's `market_state` parameter unchanged" in prompt
     assert "simple binding consumed by the canonical composition" in prompt
     assert "conditional return/raise exits" in prompt
     assert "additional `for`, `async for`, or `while` loops" in prompt
@@ -1521,6 +1522,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "extra helpers, lifecycle hooks, and data-model methods fail closed" in prompt
     assert "exact inert `requirements` property" in prompt
     assert "store the submitted `spec` exactly as `self._spec`" in prompt
+    assert "Preserve the caller's `market_state` parameter unchanged" in prompt
     assert "simple binding consumed by the canonical composition" in prompt
     assert "conditional return/raise exits" in prompt
     assert "additional `for`, `async for`, or `while` loops" in prompt

@@ -3882,6 +3882,16 @@ def _cds_uses_active_credit_curve(tree: ast.AST) -> bool:
     )
 
 
+def _cds_preserves_market_state_parameter(tree: ast.AST) -> bool:
+    """Require every active market lookup to retain the caller's parameter."""
+    return not any(
+        isinstance(node, ast.Name)
+        and node.id == "market_state"
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+        for node in ast.walk(tree)
+    )
+
+
 def _cds_uses_valuation_origin_event_grid(tree: ast.AST) -> bool:
     """Bind every accepted cashflow loop to a valuation-origin event grid."""
     loop_pairs = _cds_full_event_grid_loops(tree)
@@ -4760,6 +4770,21 @@ class AlgorithmContractValidator:
                         "ValueError, enumerate, float, getattr, and range bindings "
                         "used by its fail-fast guards and period/event-grid "
                         "composition."
+                    ),
+                )
+            )
+
+        if not _cds_preserves_market_state_parameter(tree):
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_market_state_binding",
+                    message=(
+                        f"Route '{route_spec.id}' must preserve the caller's "
+                        "market_state parameter unchanged throughout evaluate; "
+                        "rebinding or deleting it can substitute different "
+                        "discount or credit curves behind valid-looking names."
                     ),
                 )
             )

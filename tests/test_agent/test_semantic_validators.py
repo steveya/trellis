@@ -2793,6 +2793,42 @@ def evaluate(self, market_state):
         assert not errors, errors
 
     @pytest.mark.parametrize(
+        "mutation",
+        (
+            "market_state = MarketProxy(market_state)",
+            "del market_state",
+        ),
+    )
+    def test_rejects_credit_default_swap_mutated_market_state_parameter(
+        self,
+        registry,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class MarketProxy:\n"
+            "    def __init__(self, market_state):\n"
+            "        self.credit_curve = market_state.credit_curve\n"
+            "        self.discount = market_state.discount\n\n"
+            + _cds_composition_source().replace(
+                "    schedule = build_period_schedule(",
+                f"    {mutation}\n    schedule = build_period_schedule(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_market_state_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
         ("module_setup", "exception_expression", "raise_suffix"),
         (
             (
