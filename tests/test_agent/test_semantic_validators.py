@@ -2722,6 +2722,44 @@ def evaluate(self, market_state):
         errors = [finding for finding in findings if finding.severity == "error"]
         assert not errors, errors
 
+    @pytest.mark.parametrize(
+        ("module_setup", "exception_expression"),
+        (
+            (
+                "def ValueError(message):\n"
+                "    while True:\n"
+                "        pass\n\n",
+                "'credit curve is required'",
+            ),
+            ("", "1 / self._spec.notional"),
+        ),
+    )
+    def test_rejects_credit_default_swap_unsafe_market_guards(
+        self,
+        registry,
+        module_setup,
+        exception_expression,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = module_setup + _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    if market_state.credit_curve is None:\n"
+            f"        raise ValueError({exception_expression})\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_period_loop_hidden_in_branch(
         self,
         registry,

@@ -934,7 +934,7 @@ def _module_preserves_cds_builtin_bindings(tree: ast.Module) -> bool:
     """Require every admitted unqualified CDS builtin to retain its binding."""
     return all(
         _module_preserves_cds_builtin_binding(tree, symbol=symbol)
-        for symbol in ("enumerate", "float", "getattr", "range")
+        for symbol in ("ValueError", "enumerate", "float", "getattr", "range")
     )
 
 
@@ -1119,6 +1119,9 @@ def _is_supported_cds_market_guard(statement: ast.AST) -> bool:
         isinstance(raised, ast.Call)
         and isinstance(raised.func, ast.Name)
         and raised.func.id == "ValueError"
+        and len(raised.args) == 1
+        and isinstance(raised.args[0], ast.Constant)
+        and isinstance(raised.args[0].value, str)
         and not raised.keywords
     )
 
@@ -4651,8 +4654,9 @@ class AlgorithmContractValidator:
                     category="credit_default_swap_incomplete_event_grid",
                     message=(
                         f"Route '{route_spec.id}' must retain the unshadowed builtin "
-                        "enumerate, float, getattr, and range bindings used by its "
-                        "period/event-grid composition."
+                        "ValueError, enumerate, float, getattr, and range bindings "
+                        "used by its fail-fast guards and period/event-grid "
+                        "composition."
                     ),
                 )
             )
