@@ -1286,6 +1286,9 @@ The reachable composition also preserves the caller's ``market_state``
 parameter unchanged. Rebinding or deleting that parameter is rejected before
 its direct credit-curve and discount-curve attributes can count as active
 market inputs.
+The ``self`` receiver must also remain unchanged. Rebinding or deleting it is
+rejected before any ``self._spec`` access can count as the submitted product
+economics, preventing proxy receivers from substituting a different spec.
 The interval loop remains a reachable direct child of the period loop,
 and every leg accumulator has one zero initialization and one additive ``+=``
 update that remains unconditional after any admitted early-continue guard, with

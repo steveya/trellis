@@ -1388,6 +1388,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "Frozen dataclass fields may not use mutable list" in prompt
     assert "place every required field before any defaulted field" in prompt
     assert "exactly `evaluate(self, market_state)`" in prompt
+    assert "Preserve the authoritative `self` receiver unchanged" in prompt
     assert "Do not bind `dataclass`, `property`, `staticmethod`, or `classmethod`" in prompt
     assert "annotated fields and other class-level behavior declarations" in prompt
     assert "Eager annotation unions admit only proven type operands" in prompt
@@ -1540,6 +1541,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "Frozen dataclass fields may not use mutable list" in prompt
     assert "place every required field before any defaulted field" in prompt
     assert "exactly `evaluate(self, market_state)`" in prompt
+    assert "Preserve the authoritative `self` receiver unchanged" in prompt
     assert "Do not bind `dataclass`, `property`, `staticmethod`, or `classmethod`" in prompt
     assert "annotated fields and other class-level behavior declarations" in prompt
     assert "Eager annotation unions admit only proven type operands" in prompt

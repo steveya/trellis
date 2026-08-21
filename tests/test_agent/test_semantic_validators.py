@@ -2856,6 +2856,41 @@ def evaluate(self, market_state):
         )
 
     @pytest.mark.parametrize(
+        "mutation",
+        (
+            "self = ReceiverProxy(self)",
+            "del self",
+        ),
+    )
+    def test_rejects_credit_default_swap_mutated_evaluate_receiver(
+        self,
+        registry,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class ReceiverProxy:\n"
+            "    def __init__(self, payoff):\n"
+            "        self._spec = payoff._spec\n\n"
+            + _cds_composition_source().replace(
+                "    schedule = build_period_schedule(",
+                f"    {mutation}\n    schedule = build_period_schedule(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_evaluate_receiver_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
         ("module_setup", "exception_expression", "raise_suffix"),
         (
             (

@@ -473,6 +473,10 @@ executable cause expressions fail closed.
 The caller's ``market_state`` parameter must remain unchanged throughout the
 reachable composition; rebinding or deleting it fails closed before direct
 credit-curve and discount-curve names can be accepted as active market data.
+The ``self`` receiver is equally authoritative: rebinding or deleting it fails
+closed before ``self._spec`` can be accepted as the submitted pricing
+specification. This prevents a proxy receiver from substituting different
+economics behind otherwise canonical field accesses.
 Every assignment must also be a simple binding consumed by the canonical
 composition before any rebinding. Dead assignment expressions, opaque writes,
 and augmented writes outside the exact spread and four-leg accumulators fail

@@ -4311,11 +4311,11 @@ def _cds_uses_active_credit_curve(tree: ast.AST) -> bool:
     )
 
 
-def _cds_preserves_market_state_parameter(tree: ast.AST) -> bool:
-    """Require every active market lookup to retain the caller's parameter."""
+def _cds_preserves_evaluate_parameter(tree: ast.AST, *, name: str) -> bool:
+    """Require one authoritative ``evaluate`` parameter to remain unchanged."""
     return not any(
         isinstance(node, ast.Name)
-        and node.id == "market_state"
+        and node.id == name
         and isinstance(node.ctx, (ast.Store, ast.Del))
         for node in ast.walk(tree)
     )
@@ -5295,7 +5295,7 @@ class AlgorithmContractValidator:
                 )
             )
 
-        if not _cds_preserves_market_state_parameter(tree):
+        if not _cds_preserves_evaluate_parameter(tree, name="market_state"):
             findings.append(
                 SemanticFinding(
                     validator="algorithm_contract",
@@ -5306,6 +5306,21 @@ class AlgorithmContractValidator:
                         "market_state parameter unchanged throughout evaluate; "
                         "rebinding or deleting it can substitute different "
                         "discount or credit curves behind valid-looking names."
+                    ),
+                )
+            )
+
+        if not _cds_preserves_evaluate_parameter(tree, name="self"):
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_evaluate_receiver_binding",
+                    message=(
+                        f"Route '{route_spec.id}' must preserve the evaluate "
+                        "receiver unchanged; rebinding or deleting self can "
+                        "substitute a different specification behind "
+                        "valid-looking self._spec accesses."
                     ),
                 )
             )
