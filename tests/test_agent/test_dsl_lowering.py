@@ -651,7 +651,7 @@ def test_bermudan_swaption_analytical_lowers_to_resolver_then_raw_kernel():
     )
 
 
-def test_credit_default_swap_analytical_lowers_to_schedule_then_helper():
+def test_credit_default_swap_analytical_lowers_to_explicit_first_event_composition():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_credit_default_swap_contract
 
@@ -666,24 +666,28 @@ def test_credit_default_swap_analytical_lowers_to_schedule_then_helper():
     assert lowering.route_id == "credit_default_swap"
     assert lowering.route_family == "event_triggered_two_legged_contract"
     assert lowering.admissibility_errors == ()
-    assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_analytical"
+    assert (
+        lowering.binding_id
+        == "trellis.models.contingent_cashflows.expected_first_event_weights"
+    )
     assert isinstance(lowering.family_ir, EventTriggeredTwoLeggedContractIR)
     assert lowering.family_ir.pricing_mode == "analytical"
     assert isinstance(lowering.normalized_expr, ThenExpr)
-    schedule_builder, helper = lowering.normalized_expr.terms
-    assert isinstance(schedule_builder, ContractAtom)
-    assert isinstance(helper, ContractAtom)
-    assert schedule_builder.atom_id == (
-        "trellis.models.credit_default_swap.price_cds_analytical:schedule_builder"
+    assert all(isinstance(term, ContractAtom) for term in lowering.normalized_expr.terms)
+    assert tuple(term.primitive_ref for term in lowering.normalized_expr.terms) == (
+        "trellis.core.date_utils.build_period_schedule",
+        "trellis.models.contingent_cashflows.build_default_event_grid",
+        "trellis.models.contingent_cashflows.conditional_event_probabilities_from_curve",
+        "trellis.models.contingent_cashflows.expected_first_event_weights",
+        "trellis.models.contingent_cashflows.CouponAccrual",
+        "trellis.models.contingent_cashflows.coupon_cashflow_pv",
+        "trellis.models.contingent_cashflows.ProtectionPayment",
+        "trellis.models.contingent_cashflows.protection_payment_pv",
     )
-    assert helper.atom_id == (
-        "trellis.models.credit_default_swap.price_cds_analytical:route_helper"
-    )
-    assert schedule_builder.primitive_ref == "trellis.models.credit_default_swap.build_cds_schedule"
-    assert helper.primitive_ref == "trellis.models.credit_default_swap.price_cds_analytical"
+    assert lowering.route_helper_refs == ()
 
 
-def test_credit_default_swap_monte_carlo_lowers_to_schedule_then_helper():
+def test_credit_default_swap_monte_carlo_lowers_to_sampled_first_event_composition():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_credit_default_swap_contract
 
@@ -699,17 +703,29 @@ def test_credit_default_swap_monte_carlo_lowers_to_schedule_then_helper():
     assert lowering.route_id == "credit_default_swap"
     assert lowering.route_family == "event_triggered_two_legged_contract"
     assert lowering.admissibility_errors == ()
-    assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_monte_carlo"
+    assert (
+        lowering.binding_id
+        == "trellis.models.contingent_cashflows.sample_first_event_weights"
+    )
     assert isinstance(lowering.family_ir, EventTriggeredTwoLeggedContractIR)
     assert lowering.family_ir.pricing_mode == "monte_carlo"
     assert isinstance(lowering.normalized_expr, ThenExpr)
-    schedule_builder, helper = lowering.normalized_expr.terms
-    assert schedule_builder.primitive_ref == "trellis.models.credit_default_swap.build_cds_schedule"
-    assert helper.primitive_ref == "trellis.models.credit_default_swap.price_cds_monte_carlo"
+    assert tuple(term.primitive_ref for term in lowering.normalized_expr.terms) == (
+        "trellis.core.date_utils.build_period_schedule",
+        "trellis.models.contingent_cashflows.build_default_event_grid",
+        "trellis.models.contingent_cashflows.conditional_event_probabilities_from_curve",
+        "trellis.models.contingent_cashflows.sample_first_event_weights",
+        "trellis.models.contingent_cashflows.CouponAccrual",
+        "trellis.models.contingent_cashflows.coupon_cashflow_pv",
+        "trellis.models.contingent_cashflows.ProtectionPayment",
+        "trellis.models.contingent_cashflows.protection_payment_pv",
+    )
+    assert lowering.route_helper_refs == ()
 
 
 def test_credit_default_swap_missing_schedule_builder_reports_binding_first_error(monkeypatch):
     from trellis.agent import backend_bindings as backend_bindings_module
+    from trellis.agent import family_lowering_ir as family_lowering_ir_module
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_credit_default_swap_contract
 
@@ -719,23 +735,67 @@ def test_credit_default_swap_missing_schedule_builder_reports_binding_first_erro
             route_id="credit_default_swap",
             engine_family="analytical",
             route_family="event_triggered_two_legged_contract",
-            binding_id="trellis.models.credit_default_swap.price_cds_analytical",
+            binding_id="trellis.models.contingent_cashflows.expected_first_event_weights",
             primitives=(
                 PrimitiveRef(
-                    "trellis.models.credit_default_swap",
-                    "price_cds_analytical",
-                    "route_helper",
+                    "trellis.models.contingent_cashflows",
+                    "build_default_event_grid",
+                    "event_grid",
+                ),
+                PrimitiveRef(
+                    "trellis.models.contingent_cashflows",
+                    "conditional_event_probabilities_from_curve",
+                    "event_probability",
+                ),
+                PrimitiveRef(
+                    "trellis.models.contingent_cashflows",
+                    "expected_first_event_weights",
+                    "numerical_evidence",
+                ),
+                PrimitiveRef(
+                    "trellis.models.contingent_cashflows",
+                    "CouponAccrual",
+                    "payoff_primitive",
+                ),
+                PrimitiveRef(
+                    "trellis.models.contingent_cashflows",
+                    "ProtectionPayment",
+                    "payoff_primitive",
+                ),
+                PrimitiveRef(
+                    "trellis.models.contingent_cashflows",
+                    "coupon_cashflow_pv",
+                    "scheduled_leg",
+                ),
+                PrimitiveRef(
+                    "trellis.models.contingent_cashflows",
+                    "protection_payment_pv",
+                    "trigger_leg",
                 ),
             ),
-            primitive_refs=("trellis.models.credit_default_swap.price_cds_analytical",),
-            helper_refs=("trellis.models.credit_default_swap.price_cds_analytical",),
-            exact_target_refs=("trellis.models.credit_default_swap.price_cds_analytical",),
+            primitive_refs=(
+                "trellis.models.contingent_cashflows.build_default_event_grid",
+                "trellis.models.contingent_cashflows.conditional_event_probabilities_from_curve",
+                "trellis.models.contingent_cashflows.expected_first_event_weights",
+                "trellis.models.contingent_cashflows.CouponAccrual",
+                "trellis.models.contingent_cashflows.ProtectionPayment",
+                "trellis.models.contingent_cashflows.coupon_cashflow_pv",
+                "trellis.models.contingent_cashflows.protection_payment_pv",
+            ),
+            exact_target_refs=(
+                "trellis.models.contingent_cashflows.expected_first_event_weights",
+            ),
         )
 
     monkeypatch.setattr(
         backend_bindings_module,
         "resolve_backend_binding_by_route_id",
         _binding_without_schedule_builder,
+    )
+    monkeypatch.setattr(
+        family_lowering_ir_module,
+        "_binding_supports_credit_default_swap",
+        lambda *args, **kwargs: True,
     )
 
     contract = make_credit_default_swap_contract(
@@ -747,11 +807,14 @@ def test_credit_default_swap_missing_schedule_builder_reports_binding_first_erro
     lowering = blueprint.dsl_lowering
     assert lowering is not None
     assert lowering.expr is None
-    assert lowering.binding_id == "trellis.models.credit_default_swap.price_cds_analytical"
+    assert (
+        lowering.binding_id
+        == "trellis.models.contingent_cashflows.expected_first_event_weights"
+    )
     assert lowering.errors[0].code == "missing_schedule_builder"
     assert lowering.errors[0].message == (
-        "Binding 'trellis.models.credit_default_swap.price_cds_analytical' is missing "
-        "the required schedule builder primitive 'build_cds_schedule'."
+        "Binding 'trellis.models.contingent_cashflows.expected_first_event_weights' is missing "
+        "the required schedule builder primitive 'build_period_schedule'."
     )
 
 

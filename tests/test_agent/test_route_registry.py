@@ -641,6 +641,12 @@ class TestCreditRoutes:
         new = resolve_route_family(spec, self.CDS_IR)
         assert new == "event_triggered_two_legged_contract"
 
+    def test_cds_route_does_not_advertise_uncertified_qmc(self, registry):
+        spec = find_route_by_id("credit_default_swap", registry)
+
+        assert spec is not None
+        assert spec.match_methods == ("analytical", "monte_carlo")
+
     def test_cds_analytical_does_not_require_instrument_key(self, registry):
         structural_only_ir = ProductIR(
             instrument="synthetic_event_wrapper",

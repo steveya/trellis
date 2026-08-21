@@ -1,6 +1,7 @@
 """Tests for reusable single-name CDS pricing helpers."""
 
 from datetime import date
+from pathlib import Path
 
 import pytest
 import numpy as np
@@ -36,6 +37,26 @@ def _schedule():
 
 
 class TestCreditDefaultSwapHelpers:
+
+    def test_checked_cds_adapter_composes_generic_default_event_primitives(self):
+        source = (
+            Path(__file__).parents[2]
+            / "trellis"
+            / "instruments"
+            / "_agent"
+            / "cds.py"
+        ).read_text(encoding="utf-8")
+
+        assert "build_period_schedule(" in source
+        assert "build_default_event_grid(" in source
+        assert "conditional_event_probabilities_from_curve(" in source
+        assert "expected_first_event_weights(" in source
+        assert "sample_first_event_weights(" in source
+        assert "CouponAccrual(" in source
+        assert "ProtectionPayment(" in source
+        assert "build_cds_schedule" not in source
+        assert "price_cds_analytical" not in source
+        assert "price_cds_monte_carlo" not in source
 
     def test_build_cds_schedule_accepts_legacy_time_origin_keyword(self):
         schedule = build_cds_schedule(
@@ -217,3 +238,136 @@ class TestCreditDefaultSwapHelpers:
         observed = payoff.evaluate(market_state)
 
         assert observed == pytest.approx(-5650.965650176979, rel=0.02)
+
+    def test_cds_agent_payoff_explicit_analytical_composition_matches_reference(self):
+        spec = CDSSpec(
+            notional=10_000_000.0,
+            spread=0.015,
+            recovery=0.4,
+            valuation_date=SETTLE,
+            start_date=date(2024, 9, 20),
+            end_date=date(2029, 12, 20),
+            pricing_method="analytical",
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.04),
+            credit_curve=CreditCurve.flat(0.025),
+        )
+        reference_schedule = build_cds_schedule(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            spec.day_count,
+            time_origin=spec.valuation_date,
+        )
+        reference = price_cds_analytical(
+            notional=spec.notional,
+            spread_quote=spec.spread,
+            recovery=spec.recovery,
+            schedule=reference_schedule,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+        )
+
+        observed = CDSPayoff(spec).evaluate(market_state)
+
+        assert observed == pytest.approx(reference, rel=1e-12, abs=1e-8)
+
+    def test_cds_agent_payoff_forward_start_includes_survival_to_start(self):
+        forward_start = date(2025, 11, 15)
+        spec = CDSSpec(
+            notional=10_000_000.0,
+            spread=0.015,
+            recovery=0.4,
+            valuation_date=SETTLE,
+            start_date=forward_start,
+            end_date=date(2030, 11, 15),
+            pricing_method="analytical",
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.04),
+            credit_curve=CreditCurve.flat(0.025),
+        )
+        reference_schedule = build_cds_schedule(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            spec.day_count,
+            time_origin=spec.valuation_date,
+        )
+        reference = price_cds_analytical(
+            notional=spec.notional,
+            spread_quote=spec.spread,
+            recovery=spec.recovery,
+            schedule=reference_schedule,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+        )
+
+        observed = CDSPayoff(spec).evaluate(market_state)
+
+        assert observed == pytest.approx(reference, rel=1e-12, abs=1e-8)
+
+    def test_cds_agent_payoff_sampled_composition_matches_reference_monte_carlo(self):
+        spec = CDSSpec(
+            notional=100.0,
+            spread=0.01,
+            recovery=0.4,
+            valuation_date=SETTLE,
+            start_date=SETTLE,
+            end_date=MATURITY,
+            pricing_method="monte_carlo",
+            n_paths=200_000,
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            credit_curve=CreditCurve.flat(0.02),
+        )
+        reference_schedule = build_cds_schedule(
+            spec.start_date,
+            spec.end_date,
+            spec.frequency,
+            spec.day_count,
+            time_origin=spec.valuation_date,
+        )
+        reference = price_cds_monte_carlo(
+            notional=spec.notional,
+            spread_quote=spec.spread,
+            recovery=spec.recovery,
+            schedule=reference_schedule,
+            credit_curve=market_state.credit_curve,
+            discount_curve=market_state.discount,
+            n_paths=spec.n_paths,
+            seed=42,
+        )
+
+        observed = CDSPayoff(spec).evaluate(market_state)
+
+        assert observed == pytest.approx(reference, abs=0.02)
+
+    def test_cds_agent_payoff_rejects_qmc_instead_of_using_pseudo_random_weights(self):
+        spec = CDSSpec(
+            notional=100.0,
+            spread=0.01,
+            recovery=0.4,
+            valuation_date=SETTLE,
+            start_date=SETTLE,
+            end_date=MATURITY,
+            pricing_method="qmc",
+            n_paths=20_000,
+        )
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.05),
+            credit_curve=CreditCurve.flat(0.02),
+        )
+
+        with pytest.raises(ValueError, match="unsupported CDS pricing_method.*qmc"):
+            CDSPayoff(spec).evaluate(market_state)

@@ -658,7 +658,13 @@ def test_platform_trace_persists_dsl_family_ir_summary(tmp_path):
     raw = Path(trace_path).read_text()
 
     assert "dsl_family_ir_type: EventTriggeredTwoLeggedContractIR" in raw
-    assert "schedule_builder_symbol: build_cds_schedule" in raw
+    assert "schedule_builder_symbol: build_period_schedule" in raw
+    assert "event_grid_symbol: build_default_event_grid" in raw
+    assert (
+        "event_probability_symbol: conditional_event_probabilities_from_curve"
+        in raw
+    )
+    assert "event_weight_symbol: expected_first_event_weights" in raw
 
 
 def test_platform_trace_summarizes_event_aware_pde_family_ir(tmp_path):

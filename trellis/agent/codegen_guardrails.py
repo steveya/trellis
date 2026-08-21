@@ -173,7 +173,14 @@ FAMILY_SUPPORT_MODULES = {
     "rainbow_option": (
         "trellis.execution",
     ),
-    "credit_default_swap": (),
+    "cds": (
+        "trellis.conventions.calendar",
+        "trellis.conventions.schedule",
+    ),
+    "credit_default_swap": (
+        "trellis.conventions.calendar",
+        "trellis.conventions.schedule",
+    ),
 }
 
 INSTRUMENT_TEST_TARGETS = {
@@ -291,6 +298,9 @@ class GenerationPlan:
     validation_check_ids: tuple[str, ...] = ()
     validation_residual_risks: tuple[str, ...] = ()
     route_binding_authority: object | None = None
+    payoff_class_name: str = ""
+    payoff_spec_name: str = ""
+    payoff_spec_fields: tuple[tuple[str, str, str | None], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1050,6 +1060,56 @@ def _build_instruction_records(plan: GenerationPlan) -> tuple[InstructionRecord,
                 precedence_rank=85,
                 statement="Do not hard-code observation or payment grids inside the payoff body.",
                 rationale="Route plans should delegate date construction to the shared primitive.",
+            )
+        )
+
+    event_grid = next(
+        (
+            primitive
+            for primitive in primitive_plan.primitives
+            if not primitive.excluded and primitive.role == "event_grid"
+        ),
+        None,
+    )
+    if event_grid is not None:
+        event_modules = tuple(
+            dict.fromkeys(
+                primitive.module
+                for primitive in primitive_plan.primitives
+                if not primitive.excluded
+                and primitive.role
+                in {
+                    "event_grid",
+                    "event_probability",
+                    "numerical_evidence",
+                    "payoff_primitive",
+                    "scheduled_leg",
+                    "trigger_leg",
+                }
+            )
+        )
+        records.append(
+            InstructionRecord(
+                id=f"{route}:event-composition",
+                title="Compose first-event cashflows explicitly",
+                instruction_type="hard_constraint",
+                source_kind="route_card",
+                source_id=f"{route}:event-composition",
+                scope_methods=route_scope_methods,
+                scope_instruments=route_scope_instruments,
+                scope_routes=route_scope_routes,
+                scope_modules=event_modules,
+                precedence_rank=95,
+                statement=(
+                    "Compose the event grid, survival-derived probabilities, "
+                    "method-selected first-event weights, and signed scheduled/"
+                    "trigger cashflows from the declared primitives. Do not replace "
+                    "the composition with a product-level pricing helper."
+                ),
+                rationale=(
+                    "The route contract keeps product leg assembly visible while "
+                    "sharing only product-neutral event and cashflow primitives."
+                ),
             )
         )
 

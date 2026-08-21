@@ -10,7 +10,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 from enum import Enum
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
+
+if TYPE_CHECKING:
+    from trellis.conventions.calendar import Calendar
 
 # ---------------------------------------------------------------------------
 # Greek specification types
@@ -157,7 +160,11 @@ class SchedulePeriod:
 
 @dataclass(frozen=True)
 class EventSchedule:
-    """Immutable sequence of explicit schedule periods for event-style routes."""
+    """Immutable sequence of explicit schedule periods for event-style routes.
+
+    ``calendar`` retains the business-day source used to build the periods so
+    downstream day-count measurements such as BUS/252 remain reproducible.
+    """
 
     start_date: date
     end_date: date
@@ -165,6 +172,7 @@ class EventSchedule:
     day_count: DayCountConvention | None
     time_origin: date | None
     periods: tuple[SchedulePeriod, ...]
+    calendar: Calendar | None = None
 
     def __iter__(self):
         return iter(self.periods)

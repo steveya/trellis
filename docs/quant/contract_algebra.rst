@@ -356,9 +356,10 @@ Shipped family IRs:
   theta-method PDE route
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
-- ``EventTriggeredTwoLeggedContractIR`` as the structural helper-backed family
+- ``EventTriggeredTwoLeggedContractIR`` as the structural explicit-composition
   surface for event-triggered two-legged contracts, currently proven on
-  single-name CDS
+  single-name CDS through schedule, first-event-weight, and contingent-cashflow
+  primitives
 - ``NthToDefaultIR``
 
 For transform routes, the compiler now also carries an explicit bounded family

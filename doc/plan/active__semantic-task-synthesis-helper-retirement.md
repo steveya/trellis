@@ -70,6 +70,7 @@ Status mirror last synced: `2026-07-23`
 | `QUA-1231` | Semantic ranked-observation basket: primitive-composed Monte Carlo lane | Done |
 | `QUA-1232` | Terminal basket pricing: retire analytical, Monte Carlo, and transform helper authority | Done |
 | `QUA-1233` | Semantic ZCB option: raw Jamshidian and partial-horizon lattice composition | Done |
+| `QUA-1234` | Semantic CDS: survival-weighted leg and first-event composition | In Progress |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -150,6 +151,11 @@ Status mirror last synced: `2026-07-23`
     kernel, extend generic lattice rollback to bounded partial horizons, and
     use that generic API for distinct Ho-Lee and Hull-White tree artifacts while
     retaining product wrappers only as compatibility and reference evidence.
+22. Apply QUA-1234 to single-name CDS: share a product-neutral default-event
+    grid and expected/sampled first-event weights, keep signed premium and
+    protection leg assembly visible, bind F007/T38 targets explicitly, and
+    retain product-level CDS schedule/pricing functions only as compatibility
+    and independent-reference evidence.
 
 ## Completion Evidence
 

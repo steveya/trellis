@@ -276,6 +276,36 @@ def test_current_repository_retires_arithmetic_asian_helper_authority():
     ]
 
 
+def test_current_repository_retires_single_name_cds_helper_authority():
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    root = Path(__file__).resolve().parents[2]
+    report = build_helper_authority_report(root)
+    retired_symbols = {
+        "build_cds_schedule",
+        "price_cds_analytical",
+        "price_cds_monte_carlo",
+    }
+
+    assert not [
+        item
+        for item in (*report.route_authority, *report.binding_authority)
+        if item.symbol in retired_symbols
+    ]
+    assert not [
+        item
+        for item in report.adapter_calls
+        if item.path == "trellis/instruments/_agent/cds.py"
+        and item.symbol in retired_symbols
+    ]
+    summary = report.to_dict()["summary"]
+    assert summary["route_authority_reference_count"] <= 39
+    assert summary["binding_authority_reference_count"] <= 43
+    assert summary["adapter_authority_call_count"] <= 2
+    assert summary["route_only_reference_count"] <= 2
+    assert summary["binding_only_reference_count"] <= 6
+
+
 def test_current_repository_classifies_scalar_barrier_formula_as_pricing_kernel():
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 

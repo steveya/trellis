@@ -33,11 +33,11 @@ Layering
      - ``trellis/agent/semantic_contract_compiler.py``, ``trellis/agent/route_registry.py``, ``trellis/agent/build_gate.py``
    * - Backend binding catalog
      - ``BackendBindingSpec``, ``ResolvedBackendBindingSpec``, binding catalogs
-     - Canonical exact helper/kernel/schedule/cashflow binding facts used by routing and validation
+     - Canonical exact primitive, kernel, schedule, cashflow, and retained-helper facts used by routing and validation
      - ``trellis/agent/backend_bindings.py``
    * - Family lowering
      - family-specific lowering IRs + DSL lowering
-     - Narrow typed lowering onto checked-in helper-backed routes
+     - Narrow typed lowering onto checked primitive compositions or bounded helper-backed routes
      - ``trellis/agent/family_lowering_ir.py``, ``trellis/agent/dsl_lowering.py``
    * - Numerical engines
      - analytical, lattice, PDE, Monte Carlo, transforms, copulas
@@ -58,7 +58,8 @@ The current semantic pricing path is:
 3. Build a ``ValuationContext`` and compile ``RequiredDataSpec`` plus ``MarketBindingSpec``.
 4. Build ``ProductIR`` and select a pricing method plus candidate backend bindings.
 5. Apply typed admissibility through ``BuildGateDecision`` and resolve the exact binding surface.
-6. Lower onto a family-specific IR and then onto a checked helper or kernel.
+6. Lower onto a family-specific IR and then onto an explicit primitive
+   composition or a checked helper/kernel when that helper remains authority.
 7. Execute the existing deterministic numerical code.
 
 The first step is now registry-backed instead of branch-order-driven. Semantic
@@ -138,10 +139,10 @@ The current compiler boundary is:
 
    SemanticContract
      + ValuationContext
-     -> ProductIR
-     -> EventProgramIR / ControlProgramIR
-     -> family lowering IR
-     -> helper-backed numerical route
+   -> ProductIR
+   -> EventProgramIR / ControlProgramIR
+   -> family lowering IR
+   -> primitive-composed or bounded helper-backed numerical route
 
 The shipped family IRs are:
 
@@ -152,7 +153,7 @@ The shipped family IRs are:
 - ``VanillaEquityPDEIR``
 - ``ExerciseLatticeIR``
 - ``CorrelatedBasketMonteCarloIR``
-- ``EventTriggeredTwoLeggedContractIR`` as the structural helper-backed family
+- ``EventTriggeredTwoLeggedContractIR`` as the structural explicit-composition
   surface for event-triggered two-legged contracts, currently proven on
   single-name CDS
 - ``NthToDefaultIR``
@@ -975,25 +976,26 @@ The end-to-end typed boundary is currently proven for:
 - ``range_accrual_discounted_cashflow_v1`` on the first single-index range-accrual note slice
 - ``callable_range_accrual_deterministic_v1`` on the bounded issuer-callable
   single-index range-accrual proof slice
-- ``credit_default_swap`` on single-name CDS across analytical and Monte Carlo
-  bindings, routed through the structural
+- ``credit_default_swap`` on single-name CDS across deterministic and sampled
+  first-event bindings, routed through the structural
   ``event_triggered_two_legged_contract`` family
 - ``nth_to_default_monte_carlo`` on nth-to-default basket credit
 - ``copula_loss_distribution`` on tranche-style basket-credit comparison tasks
   through the semantic-facing basket-credit helper surface
 
-For those credit and copula routes, the route cards are now intentionally thin.
-They preserve backend binding, admissibility, validation ownership, and canary
-provenance, but no longer carry procedural guidance about schedule-step
-survival updates, copula initialization, or tranche-loss assembly when the
-checked helper surface already owns that construction.
+The single-name CDS route card is intentionally primitive-first. It preserves
+backend binding, admissibility, validation ownership, and canary provenance,
+then names the generic schedule, default-event grid, survival-ratio,
+first-event-weight, and contingent-cashflow primitives. The basket-credit and
+nth-to-default routes remain separate authority surfaces.
 
-These route IDs and helper-backed numerical kernels are preserved. The new work
-changes validation, binding, admissibility, and lowering, not the pricing math.
-For single-name CDS comparison builds, the typed boundary now also carries a
-comparison-quality ``n_paths`` control on the Monte Carlo spec so the helper
-route can tighten internal agreement without changing the checked pricing
-kernel.
+For single-name CDS comparison builds, the typed boundary carries a
+comparison-quality ``n_paths`` control on the Monte Carlo spec. Analytical and
+sampled targets share the same interval grid and signed leg assembly; only
+``expected_first_event_weights(...)`` versus
+``sample_first_event_weights(...)`` changes. The retained
+``build_cds_schedule(...)`` and ``price_cds_*`` functions remain compatibility
+and independent-reference APIs, not generated construction authority.
 
 The range-accrual route is intentionally narrow: it is a deterministic
 discounted-cashflow adapter that prices coupon periods off explicit range
@@ -1165,6 +1167,178 @@ the Hurd-Zhou implementation is a finite, damped two-dimensional Fourier grid
 for a positive-strike spread under correlated lognormal dynamics. See
 ``L59`` for unsupported dimensions, dynamics, exercise, and error-control
 claims.
+
+Single-name default-event composition
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Single-name CDS generated construction starts from the
+``single_name_default_event_composition`` API-map card. The ordered public
+composition is:
+
+1. ``build_period_schedule(...)`` builds coupon periods from declared
+   conventions and an explicit valuation time origin. Its ``EventSchedule``
+   retains the construction calendar so downstream BUS/252 measurements use
+   the same business-day source. The bounded CDS route admits exactly three
+   positional contract fields and the seven named ``day_count``,
+   ``time_origin``, ``calendar``, ``bda``, ``roll_convention``, ``stub``, and
+   ``payment_lag_days`` arguments; opaque ``*args``/``**kwargs``, duplicate
+   names, and extra keywords are rejected.
+2. ``build_default_event_grid(...)`` partitions each live period into bounded
+   curve-time intervals while preserving coupon accrual measurements. Every
+   interval carries both a model ``settlement_time`` and a midpoint
+   ``settlement_date``; accrued-on-event fractions use the coupon day count at
+   that date rather than reusing the ACT/365 curve coordinate.
+3. ``conditional_event_probabilities_from_curve(...)`` computes interval
+   probabilities from survival ratios. Survival to the first live interval is
+   carried separately as ``initial_survival_weight`` so forward-start weights
+   remain unconditional from valuation.
+4. ``expected_first_event_weights(...)`` supplies exact unconditional event
+   and post-interval survival mass, or
+   ``sample_first_event_weights(...)`` supplies reproducible empirical mass
+   from one persistent alive-state simulation with the canonical fixed seed
+   ``42``. The selected primitive receives exactly one positional conditional-
+   probability argument and only its declared explicit keywords; opaque
+   ``*args`` or ``**kwargs``, duplicate keywords, and extra controls are not an
+   admitted pricing surface. The method-unselected first-event primitive must
+   not be executed, even when its result is otherwise unused.
+5. ``CouponAccrual`` / ``coupon_cashflow_pv(...)`` and
+   ``ProtectionPayment`` / ``protection_payment_pv(...)`` assemble the
+   scheduled premium, accrued-on-event, and trigger legs. Their constructor
+   signs remain absent or positive one; the final CDS expression owns polarity.
+
+The generated adapter owns quote normalization, schedule conventions,
+period-to-interval iteration, discount coordinates, signs, and the final
+``protection - premium - accrued_on_event + accrued_to_valuation`` result.
+That composition must be reachable in the adapter's single ``evaluate`` body
+and dominate one direct final signed return. The method signature is exactly
+``evaluate(self, market_state)`` with no positional-only, variadic,
+keyword-only, extra, or defaulted parameters. The canonical period loop and its
+mapped interval loop are the only admitted loops; additional loops fail closed
+before runtime smoke evaluation. Conditionals are limited to the exact market,
+spread-normalization, initial-survival empty-grid fallback, empty-period, and
+optional nonpositive-event guards; other branching, exception-handling,
+comprehension, or standalone executable constructs are not pricing evidence.
+Assignments must be simple bindings consumed by that canonical composition
+before rebinding; dead or opaque writes and non-composition augmented writes are
+not admitted.
+Nested definitions inside ``evaluate()`` are not pricing evidence. Their
+definition-time surfaces are nevertheless validated before pruning: local
+class bodies and local function/lambda defaults, decorators, and annotations
+must remain declarative so definition creation cannot hang ahead of pricing.
+Frozen local dataclass fields additionally reject mutable list, dictionary, and
+set defaults before Python applies the decorator. The decorator must resolve to
+one earlier direct import, and required fields precede defaulted fields. The
+``evaluate()`` scope cannot bind ``dataclass``, ``property``, ``staticmethod``,
+or ``classmethod`` locally before nested definitions are pruned.
+The surrounding generated module and class bodies are definition-time
+declarative, and the payoff scaffold preserves economics by storing the
+submitted spec exactly once as ``self._spec`` and returning that same object
+from its sole ``spec`` property. Executable definition-time control flow,
+substituted specs, alternate writers, and dynamic attribute hooks are rejected.
+Wildcard imports are also rejected because they make approved primitive and
+builtin bindings opaque. The same fail-closed rule applies across the whole
+generated tree: only direct, unaliased names from the exact CDS scaffold
+modules, including the ``PricingValue`` payoff-type scaffold, are admitted,
+while module-style, relative, aliased, and other arbitrary imports are rejected
+before dynamic import.
+The canonical leading ``from __future__ import annotations`` import postpones
+annotation evaluation. If it is absent, every eager annotation name must be an
+unshadowed inert builtin or an approved direct type import that is already
+bound; undefined, late, or rebound names are rejected before dynamic import.
+Eager subscript annotations are similarly bounded to inert builtin container
+bases; custom bases are rejected before their ``__class_getitem__`` hooks can
+run.
+The payoff class may define only ``__init__``, ``spec``, ``requirements``, and
+``evaluate``; extra helpers, lifecycle hooks such as ``__del__``, and other
+data-model methods are not admitted. Apart from optional docstrings and trusted
+comparison-binding metadata, annotated fields and other class-level behavior
+declarations are rejected as well.
+Frozen spec declarations must preserve the directly imported
+``dataclasses.dataclass`` decorator binding and use only the explicit
+``@dataclass(frozen=True)`` form. The sole generated spec class must match the
+authoritative planned field order, annotations, required fields, and optional
+defaults exactly; duplicates, changed defaults, extra or missing fields,
+methods, and runtime data-model hooks are not admitted. Module- or class-scope
+shadowing and rebinding of that name, or of the admitted builtin ``property``,
+``staticmethod``, and ``classmethod`` decorators, are rejected before dynamic
+import. Eager function defaults are also resolved statically: names must bind
+to unshadowed inert builtins or approved direct imports already in scope, and
+enum attributes must select an existing member of the authoritative imported
+enum. Undefined, late, rebound, or nonexistent bindings are rejected before
+module definition can fail at runtime. Literal container defaults are checked
+with an inert construction proxy, including recursive hashability for
+dictionary keys and set elements. Mutable list, dictionary, and set field
+defaults are not admitted on frozen dataclasses. Eager annotation unions may
+contain only proven type operands or ``None``; arbitrary values and
+attribute/member expressions are not admitted. Each union operation must
+contain at least one proven type operand, so ``None | None`` and nested
+all-``None`` union nodes fail closed. The payoff ``requirements``
+property must remain the inert scaffold return of exactly
+``{"credit_curve", "discount_curve"}``.
+Exact fail-fast ``ValueError``
+guards for missing credit and discount market handles are admitted;
+the builtin must remain unshadowed and receive exactly one literal string
+message with no explicit cause. Input-dependent assertions, executable
+exception arguments or causes, and other conditional return/raise exits,
+unused or nested helpers, and statements after the final return are not pricing
+evidence.
+The reachable composition also preserves the caller's ``market_state``
+parameter unchanged. Rebinding or deleting that parameter is rejected before
+its direct credit-curve and discount-curve attributes can count as active
+market inputs.
+The ``self`` receiver must also remain unchanged. Rebinding or deleting it is
+rejected before any ``self._spec`` access can count as the submitted product
+economics, preventing proxy receivers from substituting a different spec.
+The interval loop remains a reachable direct child of the period loop,
+and every leg accumulator has one zero initialization and one additive ``+=``
+update that remains unconditional after any admitted early-continue guard, with
+no other writes before return. Each update value is exactly the corresponding
+directly imported public cashflow PV call; attribute dispatch, aliases,
+direct or dynamic namespace shadowing, reflection, negation, scaling, or other
+wrappers are not pricing evidence. The schedule builder, default-event grid,
+conditional-probability transform, selected first-event weighting primitive,
+cashflow constructors, and cashflow PV functions must each retain their direct,
+unaliased public import binding. The declared calendar and schedule convention
+symbols must likewise retain direct public bindings; a same-name local or module
+replacement fails closed. Every active-spec, market-curve, schedule, grid,
+weight, and cashflow-value alias used as semantic evidence must have one
+immutable assignment that dominates its use, so a correct historical assignment
+cannot hide a later reassignment. The composition preserves the unshadowed
+builtin bindings for ``enumerate``, ``float``, ``getattr``, and ``range``.
+Period iteration uses the zero-based ``enumerate(event_grid.periods)`` form,
+interval iteration uses the two-argument
+``range(interval_start, interval_stop)`` form, and neither loop's bound targets
+may be reassigned. The interval cursor has one reachable direct
+zero initializer before the period loop and only the mapped guard/tail updates
+inside it; dead or competing initializers are not pricing evidence. The
+empty-period guard is required before
+scheduled-leg pricing and advances the interval cursor before continuing, so
+expired periods cannot index an unrelated survival weight. The non-positive
+event-weight guard is also admitted. Other conditional ``break`` or ``continue`` exits before
+assembly fail closed because they can dominate required leg updates. The guard
+controls are not reassignable. Weight, default-probability, and discount-factor
+keywords must bind on the direct cashflow constructor passed to each validated
+PV primitive; descendant calls and decoy keywords are not pricing evidence.
+Those constructors use their exact public keyword surfaces: ``CouponAccrual``
+requires ``notional``, ``rate``, ``accrual``, ``discount_factor``, and
+``weight``; ``ProtectionPayment`` requires ``notional``, ``recovery``,
+``default_probability``, and ``discount_factor``. The only optional field is a
+positive ``sign``; positional arguments, unpacking, duplicates, missing fields,
+and extra keywords fail closed.
+Sampled weights bind the optional path
+control through an explicit non-null ``250000`` fallback.
+The guarded basis-point spread normalization precedes the period loop and every
+spread alias or cashflow use; a missing or late normalization fails closed.
+The current typed route admits only the documented standard schedule
+conventions (weekend calendar, following adjustment, no roll, short-last stub,
+and zero payment lag); alternatives require a future typed contract extension.
+Every ``credit_default_swap_*`` semantic contract finding is blocking at the
+executor boundary. The validated ``evaluate()`` body must remain the runtime
+method: decorators, class/metaclass indirection, dynamic lookup hooks, and
+post-definition rebinding are rejected.
+The generic event primitives do not price CDS and do not hide product leg
+assembly. This boundary is limited to one reference entity, deterministic
+discount and survival curves, and fixed recovery; see ``L61``.
 
 Fixed lookback analytical composition
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~

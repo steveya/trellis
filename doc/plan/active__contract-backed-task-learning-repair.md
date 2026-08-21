@@ -427,6 +427,13 @@ zero LLM calls; the full pending pack reports `10/10` passed expectations,
 all first-attempt offline successes, zero actionable failures, and zero token
 usage; bounded remediation reports `0` failures.
 
+Superseded on 2026-07-23 by `QUA-1234`: this paragraph records the historical
+closure mechanism, not current generation authority. F007 and T38 now compose
+the public period schedule, default-event grid, survival-ratio probabilities,
+expected or sampled first-event weights, and signed contingent cashflows
+directly. The product-level CDS schedule and pricing functions remain
+compatibility and independent-reference evidence only.
+
 ### 2026-07-03 QUA-1154 pack-2 route-materialization slice
 
 Started `QUA-1154` after the next offline local-agent pack reported actionable

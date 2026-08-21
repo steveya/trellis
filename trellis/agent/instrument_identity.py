@@ -136,6 +136,7 @@ _INSTRUMENT_PATTERNS: tuple[tuple[str, str], ...] = (
 
 _REFINABLE_INSTRUMENT_FAMILIES: dict[str, frozenset[str]] = {
     "generic": frozenset(),
+    "cds": frozenset({"credit_default_swap"}),
     "european_option": frozenset(
         {
             "asian_option",

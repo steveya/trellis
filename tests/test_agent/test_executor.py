@@ -4941,15 +4941,15 @@ def test_deterministic_exact_binding_module_materializes_digital_transform_targe
 
 
 @pytest.mark.parametrize(
-    ("comparison_target", "expected_call"),
+    ("comparison_target", "expected_weight_call"),
     [
-        ("mc_cds", "price_cds_monte_carlo("),
-        ("analytical_cds", "price_cds_analytical("),
+        ("mc_cds", "sample_first_event_weights("),
+        ("analytical_cds", "expected_first_event_weights("),
     ],
 )
 def test_deterministic_exact_binding_module_materializes_cds_target_aliases(
     comparison_target,
-    expected_call,
+    expected_weight_call,
 ):
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
@@ -4977,8 +4977,17 @@ def test_deterministic_exact_binding_module_materializes_cds_target_aliases(
     )
 
     assert generated is not None
-    assert expected_call in generated.code
-    assert "build_cds_schedule(" in generated.code
+    assert expected_weight_call in generated.code
+    assert "build_period_schedule(" in generated.code
+    assert "build_default_event_grid(" in generated.code
+    assert "conditional_event_probabilities_from_curve(" in generated.code
+    assert "initial_survival_weight = (" in generated.code
+    assert "initial_survival_weight=initial_survival_weight" in generated.code
+    assert "coupon_cashflow_pv(" in generated.code
+    assert "protection_payment_pv(" in generated.code
+    assert "build_cds_schedule" not in generated.code
+    assert "price_cds_" not in generated.code
+    assert generated.code.count("spec = self._spec") == 1
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -5011,8 +5020,10 @@ def test_deterministic_exact_binding_module_uses_metadata_for_cds_target_alias()
     )
 
     assert generated is not None
-    assert "price_cds_analytical(" in generated.code
-    assert "build_cds_schedule(" in generated.code
+    assert "expected_first_event_weights(" in generated.code
+    assert "build_period_schedule(" in generated.code
+    assert "build_default_event_grid(" in generated.code
+    assert "price_cds_" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
@@ -6764,7 +6775,7 @@ def test_generate_skeleton_prefills_exact_binding_imports_without_generic_noise(
     assert "from trellis.models.black import black76_call, black76_put" not in skeleton
 
 
-def test_generate_skeleton_prefills_cds_exact_bindings_from_compiler_plan():
+def test_generate_skeleton_prefills_cds_explicit_composition_from_compiler_plan():
     from trellis.agent.executor import _generate_skeleton
     from trellis.agent.planner import FieldDef, SpecSchema
 
@@ -6795,23 +6806,68 @@ def test_generate_skeleton_prefills_cds_exact_bindings_from_compiler_plan():
             method="analytical",
             instrument_type="credit_default_swap",
             lane_exact_binding_refs=(
-                "trellis.models.credit_default_swap.build_cds_schedule",
-                "trellis.models.credit_default_swap.price_cds_analytical",
+                "trellis.core.date_utils.build_period_schedule",
+                "trellis.models.contingent_cashflows.build_default_event_grid",
+                "trellis.models.contingent_cashflows.conditional_event_probabilities_from_curve",
+                "trellis.models.contingent_cashflows.expected_first_event_weights",
+                "trellis.models.contingent_cashflows.CouponAccrual",
+                "trellis.models.contingent_cashflows.ProtectionPayment",
+                "trellis.models.contingent_cashflows.coupon_cashflow_pv",
+                "trellis.models.contingent_cashflows.protection_payment_pv",
             ),
             primitive_plan=None,
         ),
     )
 
-    assert (
-        "from trellis.models.credit_default_swap import build_cds_schedule, "
-        "price_cds_analytical" in skeleton
-    )
+    assert "from trellis.core.date_utils import build_period_schedule" in skeleton
+    assert "expected_first_event_weights" in skeleton
+    assert "CouponAccrual" in skeleton
+    assert "ProtectionPayment" in skeleton
+    assert "trellis.models.credit_default_swap" not in skeleton
     assert "from trellis.core.types import DayCountConvention, Frequency" in skeleton
     assert "from trellis.core.date_utils import generate_schedule, year_fraction" not in skeleton
     assert "from trellis.models.black import black76_call, black76_put" not in skeleton
 
 
-def test_deterministic_exact_binding_module_materializes_cds_analytical_wrapper():
+@pytest.mark.parametrize(
+    ("recovery_default", "duplicate_spec", "expected"),
+    (
+        ("0.4", False, True),
+        ("0.9", False, False),
+        ("0.4", True, False),
+    ),
+)
+def test_module_expected_structure_preserves_planned_spec_defaults(
+    recovery_default,
+    duplicate_spec,
+    expected,
+):
+    from trellis.agent.executor import _module_has_expected_structure
+    from trellis.agent.planner import FieldDef, SpecSchema
+
+    spec_schema = SpecSchema(
+        class_name="CDSPayoff",
+        spec_name="CDSSpec",
+        requirements=["credit_curve", "discount_curve"],
+        fields=[FieldDef("recovery", "float", "Recovery", "0.4")],
+    )
+    spec_class = (
+        "@dataclass(frozen=True)\n"
+        "class CDSSpec:\n"
+        f"    recovery: float = {recovery_default}\n\n"
+    )
+    source = (
+        "from dataclasses import dataclass\n\n"
+        + spec_class
+        + (spec_class if duplicate_spec else "")
+        + "class CDSPayoff:\n"
+        "    pass\n"
+    )
+
+    assert _module_has_expected_structure(source, spec_schema) is expected
+
+
+def test_deterministic_exact_binding_module_materializes_cds_analytical_composition():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
         _generate_skeleton,
@@ -6820,7 +6876,9 @@ def test_deterministic_exact_binding_module_materializes_cds_analytical_wrapper(
     from trellis.agent.planner import STATIC_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=("trellis.models.credit_default_swap.price_cds_analytical",),
+        lane_exact_binding_refs=(
+            "trellis.models.contingent_cashflows.expected_first_event_weights",
+        ),
         primitive_plan=None,
         method="analytical",
         instrument_type="credit_default_swap",
@@ -6837,16 +6895,25 @@ def test_deterministic_exact_binding_module_materializes_cds_analytical_wrapper(
     )
 
     assert generated is not None
-    assert "from trellis.models.credit_default_swap import build_cds_schedule" in generated.code
-    assert "schedule = build_cds_schedule(" in generated.code
+    assert "from trellis.core.date_utils import build_period_schedule" in generated.code
+    assert "schedule = build_period_schedule(" in generated.code
     assert 'time_origin=getattr(spec, "valuation_date", None) or spec.start_date' in generated.code
-    assert "return price_cds_analytical(" in generated.code
-    assert "credit_curve=market_state.credit_curve" in generated.code
-    assert "discount_curve=market_state.discount" in generated.code
+    assert "weights = expected_first_event_weights(" in generated.code
+    assert "initial_survival_weight=initial_survival_weight" in generated.code
+    assert "CouponAccrual(" in generated.code
+    assert "ProtectionPayment(" in generated.code
+    assert "price_cds_" not in generated.code
+    assert "build_cds_schedule" not in generated.code
+    assert (
+        "from trellis.conventions.calendar import "
+        "BusinessDayAdjustment, WEEKEND_ONLY"
+        in generated.code
+    )
+    assert "from trellis.conventions.schedule import RollConvention, StubType" in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 
-def test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper():
+def test_deterministic_exact_binding_module_materializes_cds_monte_carlo_composition():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
         _generate_skeleton,
@@ -6855,7 +6922,9 @@ def test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper
     from trellis.agent.planner import SPECIALIZED_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=("trellis.models.credit_default_swap.price_cds_monte_carlo",),
+        lane_exact_binding_refs=(
+            "trellis.models.contingent_cashflows.sample_first_event_weights",
+        ),
         primitive_plan=None,
         method="monte_carlo",
         instrument_type="credit_default_swap",
@@ -6872,11 +6941,22 @@ def test_deterministic_exact_binding_module_materializes_cds_monte_carlo_wrapper
     )
 
     assert generated is not None
-    assert "from trellis.models.credit_default_swap import build_cds_schedule" in generated.code
-    assert "schedule = build_cds_schedule(" in generated.code
-    assert "return price_cds_monte_carlo(" in generated.code
+    assert "from trellis.core.date_utils import build_period_schedule" in generated.code
+    assert "schedule = build_period_schedule(" in generated.code
+    assert "weights = sample_first_event_weights(" in generated.code
+    assert "initial_survival_weight=initial_survival_weight" in generated.code
     assert 'n_paths=getattr(spec, "n_paths", 250000)' in generated.code
     assert "seed=42" in generated.code
+    assert "CouponAccrual(" in generated.code
+    assert "ProtectionPayment(" in generated.code
+    assert "price_cds_" not in generated.code
+    assert "build_cds_schedule" not in generated.code
+    assert (
+        "from trellis.conventions.calendar import "
+        "BusinessDayAdjustment, WEEKEND_ONLY"
+        in generated.code
+    )
+    assert "from trellis.conventions.schedule import RollConvention, StubType" in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 

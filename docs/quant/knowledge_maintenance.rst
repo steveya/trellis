@@ -141,6 +141,15 @@ builder, swaption contract compiler, and generic rollback kernel. The retained
 ``price_swaption_tree(...)`` wrapper is reference evidence; it does not replace
 that ordered composition packet.
 
+Single-name CDS follows the same navigation rule through
+``single_name_default_event_composition``. The card leads from
+``build_period_schedule`` to a default-event grid, survival-derived
+conditional probabilities, method-selected expected or sampled first-event
+weights, and the ``CouponAccrual`` / ``ProtectionPayment`` cashflow kernels.
+Generated code keeps the signed premium, accrued-on-event, and protection leg
+loop visible. Product-level CDS schedule and pricing functions remain
+reference evidence and are absent from the generated import registry.
+
 When the available primitives do not yet compose correctly, fail closed with a
 structured capability packet. The packet should distinguish capabilities that
 already exist from the missing glue. For Bermudan swaption Monte Carlo, Trellis

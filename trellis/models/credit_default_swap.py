@@ -1,13 +1,14 @@
-"""Reusable single-name CDS schedule and pricing helpers.
+"""Compatibility and reference pricing APIs for single-name CDS.
 
-These functions provide a stable deterministic surface for single-name CDS
-routes so adapters do not have to reconstruct schedule periods, spread
-normalization, or premium/protection leg timing by hand.
+Generated construction uses the product-neutral schedule, default-event, and
+contingent-cashflow primitives directly.  The functions in this module remain
+useful as independent numerical references and for callers of the historical
+product API, but they are not code-generation authority.
 """
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from math import ceil
 from typing import Protocol
 
@@ -32,7 +33,7 @@ _CDS_PROTECTION_STEPS_PER_YEAR = 25
 
 
 class CreditCurveLike(Protocol):
-    """Curve interface required by the CDS helpers."""
+    """Curve interface required by the compatibility CDS reference APIs."""
 
     def survival_probability(self, t: float) -> float:
         """Return survival probability to time ``t``."""
@@ -40,7 +41,7 @@ class CreditCurveLike(Protocol):
 
 
 class DiscountCurveLike(Protocol):
-    """Discount interface required by the CDS helpers."""
+    """Discount interface required by the compatibility CDS reference APIs."""
 
     def discount(self, t: float) -> float:
         """Return discount factor to time ``t``."""
@@ -114,15 +115,19 @@ def _price_cds_with_decimal_running_spread(
             notional
             * spread
             * accrual
-            * _elapsed_coupon_fraction(period, valuation_origin=valuation_origin)
+            * _elapsed_coupon_fraction(
+                period,
+                settlement_date=valuation_origin,
+                schedule=schedule,
+            )
         )
         period_protection, period_accrued_default = _integrated_default_leg_terms(
             notional=notional,
             spread=spread,
             recovery=recovery,
-            accrual_fraction=accrual,
-            period_start=t_start,
-            period_end=t_end,
+            period=period,
+            schedule=schedule,
+            valuation_origin=valuation_origin,
             credit_curve=credit_curve,
             discount_curve=discount_curve,
         )
@@ -147,8 +152,8 @@ def build_cds_schedule(
 ) -> EventSchedule:
     """Build the canonical single-name CDS schedule.
 
-    The CDS helpers use ``start_date`` as the schedule time origin so
-    analytical and Monte Carlo routes can share the same event times.
+    The compatibility/reference APIs use ``start_date`` as the schedule time
+    origin so analytical and Monte Carlo evidence share the same event times.
     """
     origin = start_date if time_origin is None else time_origin
     return build_period_schedule(
@@ -202,14 +207,48 @@ def _curve_time(origin: date, target: date) -> float:
 def _elapsed_coupon_fraction(
     period: SchedulePeriod,
     *,
-    valuation_origin: date,
+    settlement_date: date,
+    schedule: EventSchedule,
 ) -> float:
-    """Return the clean-accrual fraction already earned at valuation."""
-    if period.start_date >= valuation_origin or period.end_date <= valuation_origin:
+    """Return coupon accrual earned through one bounded settlement date."""
+    if settlement_date <= period.start_date:
         return 0.0
-    total_days = max((period.end_date - period.start_date).days, 1)
-    elapsed_days = max((valuation_origin - period.start_date).days, 0)
-    return min(max(elapsed_days / total_days, 0.0), 1.0)
+    if settlement_date >= period.end_date:
+        return 1.0
+    if schedule.day_count is None or period.accrual_fraction is None:
+        return 0.0
+    elapsed_accrual = float(
+        year_fraction(
+            period.start_date,
+            settlement_date,
+            schedule.day_count,
+            ref_start=period.start_date,
+            ref_end=period.end_date,
+            frequency=schedule.frequency,
+            calendar=schedule.calendar,
+        )
+    )
+    return min(
+        max(elapsed_accrual / max(float(period.accrual_fraction), 1e-12), 0.0),
+        1.0,
+    )
+
+
+def _event_interval_settlement_date(
+    period: SchedulePeriod,
+    *,
+    valuation_origin: date,
+    step: int,
+    step_count: int,
+) -> date:
+    """Return the date-only midpoint used for coupon accrual in one interval."""
+    active_start_date = max(period.start_date, valuation_origin)
+    active_period_days = (period.end_date - active_start_date).days
+    settlement_day_offset = min(
+        int(((step + 0.5) * active_period_days / step_count) + 0.5),
+        active_period_days,
+    )
+    return active_start_date + timedelta(days=settlement_day_offset)
 
 
 def _integrated_default_leg_terms(
@@ -217,14 +256,17 @@ def _integrated_default_leg_terms(
     notional: float,
     spread: float,
     recovery: float,
-    accrual_fraction: float,
-    period_start: float,
-    period_end: float,
+    period: SchedulePeriod,
+    schedule: EventSchedule,
+    valuation_origin: date,
     credit_curve: CreditCurveLike,
     discount_curve: DiscountCurveLike,
     steps_per_year: int = _CDS_PROTECTION_STEPS_PER_YEAR,
 ) -> tuple[float, float]:
     """Integrate protection and accrued-on-default terms over one period."""
+    accrual_fraction = float(period.accrual_fraction)
+    period_start = _curve_time(valuation_origin, period.start_date)
+    period_end = _curve_time(valuation_origin, period.end_date)
     start = max(float(period_start), 0.0)
     end = max(float(period_end), 0.0)
     if end <= start:
@@ -232,8 +274,6 @@ def _integrated_default_leg_terms(
 
     n_steps = max(int(ceil((end - start) * max(int(steps_per_year), 1))), 1)
     dt = (end - start) / n_steps
-    total_interval = max(float(period_end) - float(period_start), 1e-12)
-
     protection_leg = 0.0
     accrued_on_default = 0.0
     for step in range(n_steps):
@@ -254,9 +294,16 @@ def _integrated_default_leg_terms(
                 discount_factor=discount,
             )
         )
-        accrued_fraction_elapsed = max(
-            0.0,
-            min((t_mid - float(period_start)) / total_interval, 1.0),
+        settlement_date = _event_interval_settlement_date(
+            period,
+            valuation_origin=valuation_origin,
+            step=step,
+            step_count=n_steps,
+        )
+        accrued_fraction_elapsed = _elapsed_coupon_fraction(
+            period,
+            settlement_date=settlement_date,
+            schedule=schedule,
         )
         accrued_on_default += coupon_cashflow_pv(
             CouponAccrual(
@@ -375,7 +422,11 @@ def price_cds_monte_carlo(
             notional
             * spread
             * accrual
-            * _elapsed_coupon_fraction(period, valuation_origin=valuation_origin)
+            * _elapsed_coupon_fraction(
+                period,
+                settlement_date=valuation_origin,
+                schedule=schedule,
+            )
         )
 
         start = max(t_start, 0.0)
@@ -383,7 +434,6 @@ def price_cds_monte_carlo(
         if end > start:
             n_steps = max(int(ceil((end - start) * _CDS_PROTECTION_STEPS_PER_YEAR)), 1)
             dt = (end - start) / n_steps
-            total_interval = max(t_end - t_start, 1e-12)
             for step in range(n_steps):
                 step_start = start + step * dt
                 step_end = start + (step + 1) * dt
@@ -402,9 +452,16 @@ def price_cds_monte_carlo(
                             discount_factor=discount,
                         )
                     )
-                    accrued_fraction_elapsed = max(
-                        0.0,
-                        min((step_mid - t_start) / total_interval, 1.0),
+                    settlement_date = _event_interval_settlement_date(
+                        period,
+                        valuation_origin=valuation_origin,
+                        step=step,
+                        step_count=n_steps,
+                    )
+                    accrued_fraction_elapsed = _elapsed_coupon_fraction(
+                        period,
+                        settlement_date=settlement_date,
+                        schedule=schedule,
                     )
                     accrued_on_default += coupon_cashflow_pv(
                         CouponAccrual(

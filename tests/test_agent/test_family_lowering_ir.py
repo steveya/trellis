@@ -1012,9 +1012,13 @@ def test_credit_default_swap_compiles_to_analytical_family_ir():
     assert family_ir.product_instrument == "cds"
     assert family_ir.payoff_family == "event_triggered_two_legged_contract"
     assert family_ir.pricing_mode == "analytical"
-    assert family_ir.schedule_builder_symbol == "build_cds_schedule"
-    assert family_ir.helper_symbol == "price_cds_analytical"
-    assert family_ir.market_mapping == "discount_curve_credit_curve_to_cds_legs"
+    assert family_ir.schedule_builder_symbol == "build_period_schedule"
+    assert family_ir.event_grid_symbol == "build_default_event_grid"
+    assert family_ir.event_probability_symbol == "conditional_event_probabilities_from_curve"
+    assert family_ir.event_weight_symbol == "expected_first_event_weights"
+    assert family_ir.scheduled_leg_symbol == "coupon_cashflow_pv"
+    assert family_ir.trigger_leg_symbol == "protection_payment_pv"
+    assert family_ir.market_mapping == "discount_curve_credit_curve_to_event_weighted_legs"
     assert family_ir.required_input_ids == blueprint.required_market_data
     assert family_ir.requested_outputs == ("price", "scenario_pnl")
     assert family_ir.payment_dates == ("2026-06-20", "2026-09-20", "2026-12-20", "2027-03-20", "2027-06-20")
@@ -1039,7 +1043,7 @@ def test_credit_default_swap_compiles_to_monte_carlo_family_ir():
     assert isinstance(family_ir, EventTriggeredTwoLeggedContractIR)
     assert family_ir.route_id == "credit_default_swap"
     assert family_ir.pricing_mode == "monte_carlo"
-    assert family_ir.helper_symbol == "price_cds_monte_carlo"
+    assert family_ir.event_weight_symbol == "sample_first_event_weights"
     assert family_ir.payment_dates[-1] == "2027-06-20"
 
 
@@ -1286,20 +1290,44 @@ def test_credit_default_swap_dispatches_from_binding_surface_not_route_id(monkey
         monkeypatch,
         _resolved_binding_spec(
             PrimitiveRef(
-                "trellis.models.credit_schedule",
-                "build_cds_schedule",
+                "trellis.core.date_utils",
+                "build_period_schedule",
                 "schedule_builder",
             ),
             PrimitiveRef(
-                "trellis.models.credit_survival",
-                "interval_default_probability",
+                "trellis.models.contingent_cashflows",
+                "build_default_event_grid",
+                "event_grid",
+            ),
+            PrimitiveRef(
+                "trellis.models.contingent_cashflows",
+                "conditional_event_probabilities_from_curve",
                 "event_probability",
             ),
-            PrimitiveRef("trellis.models.cds", "price_cds_monte_carlo", "route_helper"),
             PrimitiveRef(
-                "trellis.core.differentiable",
-                "get_numpy",
-                "array_backend",
+                "trellis.models.contingent_cashflows",
+                "sample_first_event_weights",
+                "numerical_evidence",
+            ),
+            PrimitiveRef(
+                "trellis.models.contingent_cashflows",
+                "CouponAccrual",
+                "payoff_primitive",
+            ),
+            PrimitiveRef(
+                "trellis.models.contingent_cashflows",
+                "ProtectionPayment",
+                "payoff_primitive",
+            ),
+            PrimitiveRef(
+                "trellis.models.contingent_cashflows",
+                "coupon_cashflow_pv",
+                "scheduled_leg",
+            ),
+            PrimitiveRef(
+                "trellis.models.contingent_cashflows",
+                "protection_payment_pv",
+                "trigger_leg",
             ),
             route_id=synthetic_route_id,
             route_family="event_triggered_two_legged_contract",
@@ -1318,7 +1346,7 @@ def test_credit_default_swap_dispatches_from_binding_surface_not_route_id(monkey
     assert family_ir.route_id == synthetic_route_id
     assert family_ir.route_family == "event_triggered_two_legged_contract"
     assert family_ir.pricing_mode == "monte_carlo"
-    assert family_ir.helper_symbol == "price_cds_monte_carlo"
+    assert family_ir.event_weight_symbol == "sample_first_event_weights"
 
 
 def test_nth_to_default_dispatches_from_binding_surface_not_route_id(monkeypatch):

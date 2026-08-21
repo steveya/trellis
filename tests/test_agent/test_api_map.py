@@ -56,6 +56,10 @@ def test_api_map_contains_expected_core_entries():
         == "trellis.models.resolution.single_state_diffusion"
     )
     assert (
+        api_map["single_name_default_event_composition"]["module"]
+        == "trellis.models.contingent_cashflows"
+    )
+    assert (
         api_map["rate_monte_carlo_composition"]["module"]
         == "trellis.models.monte_carlo.simulation_substrate"
     )
@@ -102,6 +106,7 @@ def test_api_map_key_imports_are_registry_valid():
         "weighted_lognormal_sum_composition",
         "observation_return_composition",
         "digital_option_composition",
+        "single_name_default_event_composition",
         "quanto_option_composition",
         "terminal_basket_option_composition",
         "rate_monte_carlo_composition",
@@ -349,6 +354,31 @@ def test_api_map_semantic_selection_reaches_composition_cards():
     for query, expected_family in cases:
         selection = select_api_map_sections(query)
         assert expected_family in selection.selected_families
+
+
+def test_api_map_routes_cds_queries_to_single_name_default_event_composition():
+    query = ApiMapQuery(
+        instrument_type="credit_default_swap",
+        payoff_family="event_triggered_two_legged_contract",
+        method="monte_carlo",
+        features=("credit_risk", "fixed_coupons"),
+    )
+
+    selection = select_api_map_sections(query)
+    text = format_api_map_for_prompt(compact=True, query=query)
+
+    assert selection.selected_families[0] == "single_name_default_event_composition"
+    assert get_api_map()["single_name_default_event_composition"]["methods"] == [
+        "analytical",
+        "monte_carlo",
+    ]
+    assert "build_default_event_grid" in text
+    assert "sample_first_event_weights" in text
+    assert "CouponAccrual" in text
+    assert any(
+        "compatibility and independent reference evidence only" in note
+        for note in get_api_map()["single_name_default_event_composition"]["notes"]
+    )
 
 
 def test_api_map_exposes_bermudan_final_exercise_lower_bound_composition():

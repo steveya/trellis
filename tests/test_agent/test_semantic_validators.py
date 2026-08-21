@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import textwrap
 from dataclasses import replace
 
 import pytest
@@ -30,6 +31,8 @@ def _make_plan(
     adapters: tuple[str, ...] = (),
     notes: tuple[str, ...] = (),
     route_family: str = "",
+    payoff_spec_name: str = "",
+    payoff_spec_fields: tuple[tuple[str, str, str | None], ...] = (),
 ) -> GenerationPlan:
     return GenerationPlan(
         method=engine_family,
@@ -38,6 +41,8 @@ def _make_plan(
         approved_modules=(),
         symbols_to_reuse=(),
         proposed_tests=(),
+        payoff_spec_name=payoff_spec_name,
+        payoff_spec_fields=payoff_spec_fields,
         primitive_plan=PrimitivePlan(
             route=route,
             engine_family=engine_family,
@@ -48,6 +53,191 @@ def _make_plan(
             route_family=route_family,
         ),
     )
+
+
+def _cds_composition_source(
+    *,
+    return_expression: str = (
+        "protection_leg - premium_leg - accrued_on_event + accrued_to_valuation"
+    ),
+    survival_index: str = "interval_stop - 1",
+    event_index: str = "interval_index",
+    premium_discount: str = (
+        "market_state.discount.discount(grid.period_payment_times[period_index])"
+    ),
+    event_discount: str = (
+        "market_state.discount.discount(interval.settlement_time)"
+    ),
+    initial_survival: str | None = None,
+    premium_notional: str = "self._spec.notional",
+    protection_notional: str = "self._spec.notional",
+    event_notional: str = "self._spec.notional",
+    premium_rate: str = "spread",
+    event_rate: str = "spread",
+    recovery: str = "self._spec.recovery",
+    valuation_adjustment: str = (
+        "self._spec.notional * spread * period.accrual_fraction "
+        "* grid.elapsed_period_fractions[period_index]"
+    ),
+    time_origin: str = "self._spec.valuation_date or self._spec.start_date",
+    weight_grid: str = "grid",
+    extra_setup: str = "",
+    post_weights_setup: str = "",
+    schedule_start: str = "self._spec.start_date",
+    schedule_end: str = "self._spec.end_date",
+    schedule_frequency: str = "self._spec.frequency",
+    schedule_day_count: str = "self._spec.day_count",
+    schedule_calendar: str = "WEEKEND_ONLY",
+    schedule_bda: str = "BusinessDayAdjustment.FOLLOWING",
+    schedule_roll: str = "RollConvention.NONE",
+    schedule_stub: str = "StubType.SHORT_LAST",
+    schedule_payment_lag: str = "0",
+    conditional_credit_curve: str = "market_state.credit_curve",
+    weight_symbol: str = "expected_first_event_weights",
+    weight_controls: str = "",
+    additional_weight_call: str = "",
+    weight_owner: str = "weights",
+    scheduled_accrual: str = "period.accrual_fraction",
+    event_accrual: str = (
+        "period.accrual_fraction * interval.period_fraction_elapsed"
+    ),
+) -> str:
+    """Build a compact, structurally complete CDS composition for validator tests."""
+    if initial_survival is None:
+        initial_survival = (
+            "market_state.credit_curve.survival_probability("
+            f"{weight_grid}.intervals[0].start_time)"
+        )
+    return f'''
+def evaluate(self, market_state):
+    from trellis.conventions.calendar import BusinessDayAdjustment, WEEKEND_ONLY
+    from trellis.conventions.schedule import RollConvention, StubType
+    from trellis.core.date_utils import build_period_schedule
+    from trellis.models.contingent_cashflows import (
+        CouponAccrual,
+        ProtectionPayment,
+        build_default_event_grid,
+        conditional_event_probabilities_from_curve,
+        coupon_cashflow_pv,
+        {weight_symbol},
+        protection_payment_pv,
+    )
+
+    schedule = build_period_schedule(
+        {schedule_start},
+        {schedule_end},
+        {schedule_frequency},
+        day_count={schedule_day_count},
+        time_origin={time_origin},
+        calendar={schedule_calendar},
+        bda={schedule_bda},
+        roll_convention={schedule_roll},
+        stub={schedule_stub},
+        payment_lag_days={schedule_payment_lag},
+    )
+    grid = build_default_event_grid(schedule)
+    {extra_setup}
+    conditional = conditional_event_probabilities_from_curve(
+        {conditional_credit_curve},
+        {weight_grid}.intervals,
+    )
+    initial_survival_weight = {initial_survival}
+    weights = {weight_symbol}(
+        conditional,
+        initial_survival_weight=initial_survival_weight,
+        {weight_controls}
+    )
+    {additional_weight_call}
+    {post_weights_setup}
+    spread = float(self._spec.spread)
+    if spread > 1.0:
+        spread *= 1e-4
+    premium_leg = 0.0
+    protection_leg = 0.0
+    accrued_on_event = 0.0
+    accrued_to_valuation = 0.0
+    interval_start = 0
+    for period_index, period in enumerate(grid.periods):
+        interval_stop = grid.period_interval_stops[period_index]
+        if interval_stop <= interval_start:
+            interval_start = interval_stop
+            continue
+        survival_weight = {weight_owner}.survival_weights[{survival_index}]
+        premium_leg += coupon_cashflow_pv(CouponAccrual(
+            notional={premium_notional},
+            rate={premium_rate},
+            accrual={scheduled_accrual},
+            discount_factor={premium_discount},
+            weight=survival_weight,
+        ))
+        accrued_to_valuation += {valuation_adjustment}
+        for interval_index in range(interval_start, interval_stop):
+            interval = grid.intervals[interval_index]
+            event_weight = {weight_owner}.event_weights[{event_index}]
+            event_discount = {event_discount}
+            protection_leg += protection_payment_pv(ProtectionPayment(
+                notional={protection_notional},
+                recovery={recovery},
+                default_probability=event_weight,
+                discount_factor=event_discount,
+            ))
+            accrued_on_event += coupon_cashflow_pv(CouponAccrual(
+                notional={event_notional},
+                rate={event_rate},
+                accrual={event_accrual},
+                discount_factor=event_discount,
+                weight=event_weight,
+            ))
+        interval_start = interval_stop
+    return float({return_expression})
+'''
+
+
+def _guard_cds_accumulator(
+    source: str,
+    *,
+    accumulator: str,
+    condition: str,
+) -> str:
+    """Move one loop accumulator block beneath a synthetic branch guard."""
+    lines = source.splitlines()
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line.lstrip().startswith(f"{accumulator} +=")
+    )
+    indentation = len(lines[start]) - len(lines[start].lstrip())
+    stop = start + 1
+    while stop < len(lines):
+        line = lines[stop]
+        if line.strip() and len(line) - len(line.lstrip()) <= indentation:
+            break
+        stop += 1
+    guarded = [" " * indentation + f"if {condition}:"] + [
+        "    " + line for line in lines[start:stop]
+    ]
+    return "\n".join(lines[:start] + guarded + lines[stop:]) + "\n"
+
+
+def _guard_cds_interval_loop(source: str, *, condition: str) -> str:
+    """Move the interval loop beneath a synthetic branch guard."""
+    lines = source.splitlines()
+    start = next(
+        index
+        for index, line in enumerate(lines)
+        if line.lstrip().startswith("for interval_index in range(")
+    )
+    indentation = len(lines[start]) - len(lines[start].lstrip())
+    stop = start + 1
+    while stop < len(lines):
+        line = lines[stop]
+        if line.strip() and len(line) - len(line.lstrip()) <= indentation:
+            break
+        stop += 1
+    guarded = [" " * indentation + f"if {condition}:"] + [
+        "    " + line for line in lines[start:stop]
+    ]
+    return "\n".join(lines[:start] + guarded + lines[stop:]) + "\n"
 
 
 # ---------------------------------------------------------------------------
@@ -1266,7 +1456,7 @@ def evaluate(self, market_state):
         findings = validator.validate(source, _make_plan("short_rate_bond_option"), spec)
         assert not any(f.severity == "error" for f in findings)
 
-    def test_flags_credit_default_swap_analytical_helper_signature_mismatch(self, registry):
+    def test_rejects_credit_default_swap_analytical_product_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = '''
 from trellis.models.credit_default_swap import price_cds_analytical
@@ -1274,56 +1464,21 @@ from trellis.models.credit_default_swap import price_cds_analytical
 def evaluate(self, market_state):
     return price_cds_analytical(
         notional=self._spec.notional,
-        spread=self._spec.spread,
-        recovery=self._spec.recovery_rate,
-        schedule=schedule,
-        credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
-    )
-'''
-        validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
-
-    def test_accepts_credit_default_swap_analytical_helper_surface(self, registry):
-        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
-        source = '''
-from trellis.models.credit_default_swap import price_cds_analytical
-
-def evaluate(self, market_state):
-    return price_cds_analytical(
-        notional=self._spec.notional,
-        spread_quote=self._spec.spread_quote,
+        spread_quote=self._spec.spread,
         recovery=self._spec.recovery,
         schedule=schedule,
         credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
+        discount_curve=market_state.discount,
     )
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("credit_default_swap"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(
+            f.category == "credit_default_swap_forbidden_helper"
+            for f in findings
+        )
 
-    def test_rejects_credit_default_swap_analytical_positional_calls(self, registry):
-        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
-        source = '''
-from trellis.models.credit_default_swap import price_cds_analytical
-
-def evaluate(self, market_state):
-    return price_cds_analytical(
-        self._spec.notional,
-        self._spec.spread_quote,
-        self._spec.recovery,
-        schedule,
-        market_state.credit_curve,
-        market_state.discount_curve,
-    )
-'''
-        validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
-
-    def test_flags_credit_default_swap_monte_carlo_helper_signature_mismatch(self, registry):
+    def test_rejects_credit_default_swap_monte_carlo_product_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = '''
 from trellis.models.credit_default_swap import price_cds_monte_carlo
@@ -1331,58 +1486,3406 @@ from trellis.models.credit_default_swap import price_cds_monte_carlo
 def evaluate(self, market_state):
     return price_cds_monte_carlo(
         notional=self._spec.notional,
-        spread=self._spec.spread,
-        recovery=self._spec.recovery_rate,
-        schedule=schedule,
-        credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
-        paths=self._spec.n_paths,
-    )
-'''
-        validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap", "monte_carlo"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
-
-    def test_accepts_credit_default_swap_monte_carlo_helper_surface(self, registry):
-        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
-        source = '''
-from trellis.models.credit_default_swap import price_cds_monte_carlo
-
-def evaluate(self, market_state):
-    return price_cds_monte_carlo(
-        notional=self._spec.notional,
-        spread_quote=self._spec.spread_quote,
+        spread_quote=self._spec.spread,
         recovery=self._spec.recovery,
         schedule=schedule,
         credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
+        discount_curve=market_state.discount,
         n_paths=self._spec.n_paths,
-        seed=self._spec.seed,
+        seed=42,
     )
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap", "monte_carlo"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        findings = validator.validate(
+            source,
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+        assert any(
+            f.category == "credit_default_swap_forbidden_helper"
+            for f in findings
+        )
 
-    def test_rejects_credit_default_swap_monte_carlo_positional_calls(self, registry):
+    @pytest.mark.parametrize(
+        "weight_call",
+        (
+            "expected_first_event_weights(conditional)",
+            "expected_first_event_weights(conditional, initial_survival_weight=1.0)",
+            (
+                "expected_first_event_weights(conditional, "
+                "initial_survival_weight=market_state.credit_curve."
+                "survival_probability(grid.intervals[-1].start_time))"
+            ),
+            "sample_first_event_weights(conditional, n_paths=10000, seed=42)",
+        ),
+    )
+    def test_rejects_credit_default_swap_weights_without_initial_survival(
+        self,
+        registry,
+        weight_call,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = f'''
+def evaluate(self, market_state):
+    weights = {weight_call}
+    return weights
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_initial_survival_missing"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("extra_setup", "weight_controls"),
+        (
+            ("opaque_args = ()", "*opaque_args,"),
+            ("opaque_kwargs = {}", "**opaque_kwargs,"),
+        ),
+    )
+    def test_rejects_credit_default_swap_opaque_weight_arguments(
+        self,
+        registry,
+        extra_setup,
+        weight_controls,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=extra_setup,
+            weight_controls=weight_controls,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_first_event_call_shape"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "initial_survival",
+        (
+            (
+                "0.5 * market_state.credit_curve.survival_probability("
+                "grid.intervals[0].start_time)"
+            ),
+            (
+                "market_state.credit_curve.survival_probability("
+                "grid.intervals[0].start_time) + 0.1"
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_scaled_initial_survival(
+        self,
+        registry,
+        initial_survival,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(initial_survival=initial_survival),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_initial_survival_missing"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "time_origin",
+        (
+            "self._spec.start_date",
+            "self._spec.end_date",
+        ),
+    )
+    def test_rejects_credit_default_swap_non_valuation_event_grid(
+        self,
+        registry,
+        time_origin,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(time_origin=time_origin),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_valuation_origin"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_weight_grid_mismatch(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        extra_setup = '''
+    other_schedule = build_period_schedule(
+        self._spec.start_date,
+        self._spec.end_date,
+        self._spec.frequency,
+        day_count=self._spec.day_count,
+        time_origin=self._spec.valuation_date or self._spec.start_date,
+    )
+    other_grid = build_default_event_grid(other_schedule)
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_grid="other_grid",
+                extra_setup=extra_setup,
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_valuation_origin"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_single_period_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = '''
-from trellis.models.credit_default_swap import price_cds_monte_carlo
+from trellis.core.date_utils import build_period_schedule
+from trellis.models.contingent_cashflows import (
+    CouponAccrual,
+    ProtectionPayment,
+    build_default_event_grid,
+    conditional_event_probabilities_from_curve,
+    coupon_cashflow_pv,
+    expected_first_event_weights,
+    protection_payment_pv,
+)
 
 def evaluate(self, market_state):
-    return price_cds_monte_carlo(
-        self._spec.notional,
-        self._spec.spread_quote,
-        self._spec.recovery,
-        schedule,
-        market_state.credit_curve,
-        market_state.discount_curve,
-        self._spec.n_paths,
+    schedule = build_period_schedule(
+        self._spec.start_date,
+        self._spec.end_date,
+        self._spec.frequency,
+        day_count=self._spec.day_count,
+        time_origin=self._spec.start_date,
     )
+    grid = build_default_event_grid(schedule)
+    conditional = conditional_event_probabilities_from_curve(
+        market_state.credit_curve,
+        grid.intervals,
+    )
+    credit_curve = market_state.credit_curve
+    initial_survival_weight = credit_curve.survival_probability(
+        grid.intervals[0].start_time,
+    )
+    weights = expected_first_event_weights(
+        conditional,
+        initial_survival_weight=initial_survival_weight,
+    )
+    premium = coupon_cashflow_pv(CouponAccrual(
+        notional=self._spec.notional,
+        rate=self._spec.spread,
+        accrual=grid.periods[0].accrual_fraction,
+        discount_factor=market_state.discount.discount(grid.period_payment_times[0]),
+        weight=weights.survival_weights[0],
+    ))
+    protection = protection_payment_pv(ProtectionPayment(
+        notional=self._spec.notional,
+        recovery=self._spec.recovery,
+        default_probability=weights.event_weights[0],
+        discount_factor=market_state.discount.discount(grid.intervals[0].settlement_time),
+    ))
+    return protection - premium
 '''
         validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_default_swap", "monte_carlo"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        findings = validator.validate(source, _make_plan("credit_default_swap"), spec)
+        assert any(
+            f.category == "credit_default_swap_incomplete_event_grid"
+            for f in findings
+        )
+        assert not any(
+            f.category == "credit_default_swap_initial_survival_missing"
+            for f in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("period_iterable", "interval_iterable"),
+        (
+            ("grid.periods[:1]", "range(interval_start, interval_stop)"),
+            ("grid.periods", "range(0, 1)"),
+        ),
+    )
+    def test_rejects_credit_default_swap_partial_grid_loops(
+        self,
+        registry,
+        period_iterable,
+        interval_iterable,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = f'''
+def evaluate(self, market_state):
+    initial_survival_weight = market_state.credit_curve.survival_probability(
+        grid.intervals[0].start_time,
+    )
+    weights = expected_first_event_weights(
+        conditional,
+        initial_survival_weight=initial_survival_weight,
+    )
+    premium_leg = 0.0
+    protection_leg = 0.0
+    interval_start = 0
+    for period_index, period in enumerate({period_iterable}):
+        interval_stop = grid.period_interval_stops[period_index]
+        premium_leg += coupon_cashflow_pv(CouponAccrual(
+            notional=1.0,
+            rate=0.01,
+            accrual=period.accrual_fraction,
+            discount_factor=1.0,
+            weight=weights.survival_weights[interval_stop - 1],
+        ))
+        for interval_index in {interval_iterable}:
+            interval = grid.intervals[interval_index]
+            protection_leg += protection_payment_pv(ProtectionPayment(
+                notional=1.0,
+                recovery=0.4,
+                default_probability=weights.event_weights[interval_index],
+                discount_factor=1.0,
+            ))
+        interval_start = interval_stop
+    return protection_leg - premium_leg
+'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "return_expression",
+        (
+            "premium_leg - protection_leg - accrued_on_event + accrued_to_valuation",
+            "protection_leg - premium_leg + accrued_on_event + accrued_to_valuation",
+            "protection_leg - premium_leg",
+        ),
+    )
+    def test_rejects_credit_default_swap_wrong_leg_signs(
+        self,
+        registry,
+        return_expression,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(return_expression=return_expression),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_sign_convention"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("accumulator", "condition"),
+        (
+            ("premium_leg", "False"),
+            ("protection_leg", "False"),
+            ("protection_leg", "event_weight <= 0.0"),
+        ),
+    )
+    def test_rejects_credit_default_swap_legs_hidden_in_invalid_branch(
+        self,
+        registry,
+        accumulator,
+        condition,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _guard_cds_accumulator(
+            _cds_composition_source(),
+            accumulator=accumulator,
+            condition=condition,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_leg_after_unconditional_continue(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "            protection_leg +=",
+            "            continue\n            protection_leg +=",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("anchor", "guard"),
+        (
+            (
+                "        survival_weight =",
+                "        if True:\n            continue\n",
+            ),
+            (
+                "        survival_weight =",
+                "        if True:\n            break\n",
+            ),
+            (
+                "            interval =",
+                "            if True:\n                continue\n",
+            ),
+            (
+                "            interval =",
+                "            if True:\n                break\n",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_conditional_loop_exit_before_assembly(
+        self,
+        registry,
+        anchor,
+        guard,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            anchor,
+            guard + anchor,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "replacement",
+        (
+            "            break\n"
+            "        interval_start = interval_stop\n"
+            "    return",
+            "            if True:\n"
+            "                break\n"
+            "        interval_start = interval_stop\n"
+            "    return",
+            "        interval_start = interval_stop\n"
+            "        break\n"
+            "    return",
+            "        interval_start = interval_stop\n"
+            "        if True:\n"
+            "            break\n"
+            "    return",
+        ),
+    )
+    def test_rejects_credit_default_swap_loop_exit_after_assembly(
+        self,
+        registry,
+        replacement,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "        interval_start = interval_stop\n    return",
+            replacement,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_assert_before_assembly(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    assert self._spec.notional\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_missing_empty_period_guard(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "        if interval_stop <= interval_start:\n"
+            "            interval_start = interval_stop\n"
+            "            continue\n",
+            "",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_late_empty_period_guard(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        guard = (
+            "        if interval_stop <= interval_start:\n"
+            "            interval_start = interval_stop\n"
+            "            continue\n"
+        )
+        source = (
+            _cds_composition_source()
+            .replace(guard, "", 1)
+            .replace(
+                "        premium_leg += coupon_cashflow_pv(",
+                guard + "        premium_leg += coupon_cashflow_pv(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_recognized_early_continue_guards(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "            event_discount =",
+            "            if event_weight <= 0.0:\n"
+            "                continue\n"
+            "            event_discount =",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    @pytest.mark.parametrize(
+        ("anchor", "mutation"),
+        (
+            (
+                "        if interval_stop <= interval_start:",
+                "        interval_stop = -1\n",
+            ),
+            (
+                "        if interval_stop <= interval_start:",
+                "        interval_start = 1000000\n",
+            ),
+            (
+                "            if event_weight <= 0.0:",
+                "            event_weight = 0.0\n",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_mutated_early_continue_guard_control(
+        self,
+        registry,
+        anchor,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            _cds_composition_source()
+            .replace(
+                "            event_discount =",
+                "            if event_weight <= 0.0:\n"
+                "                continue\n"
+                "            event_discount =",
+                1,
+            )
+            .replace(anchor, mutation + anchor, 1)
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("original", "replacement"),
+        (
+            (
+                "        premium_leg += coupon_cashflow_pv(",
+                "        premium_leg += -coupon_cashflow_pv(",
+            ),
+            (
+                "            protection_leg += protection_payment_pv(",
+                "            protection_leg += 0.0 * protection_payment_pv(",
+            ),
+            (
+                "            accrued_on_event += coupon_cashflow_pv(",
+                "            accrued_on_event += -coupon_cashflow_pv(",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_wrapped_leg_cashflow_call(
+        self,
+        registry,
+        original,
+        replacement,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            original,
+            replacement,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(finding.severity == "error" for finding in findings)
+
+    @pytest.mark.parametrize(
+        "symbol",
+        ("coupon_cashflow_pv", "protection_payment_pv"),
+    )
+    def test_rejects_credit_default_swap_impersonated_cashflow_primitive(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            f"{symbol}(",
+            f"self.{symbol}(",
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(finding.severity == "error" for finding in findings)
+
+    @pytest.mark.parametrize(
+        "symbol",
+        ("coupon_cashflow_pv", "protection_payment_pv"),
+    )
+    def test_rejects_credit_default_swap_shadowed_cashflow_import(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            f"    {symbol} = lambda cashflow: 0.0\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(finding.severity == "error" for finding in findings)
+
+    @pytest.mark.parametrize(
+        "symbol",
+        (
+            "build_period_schedule",
+            "BusinessDayAdjustment",
+            "WEEKEND_ONLY",
+            "RollConvention",
+            "StubType",
+            "CouponAccrual",
+            "ProtectionPayment",
+            "build_default_event_grid",
+            "conditional_event_probabilities_from_curve",
+            "expected_first_event_weights",
+        ),
+    )
+    def test_rejects_credit_default_swap_shadowed_route_primitive(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            f"    {symbol} = lambda *args, **kwargs: None\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_top_level_cashflow_imports(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        local_imports = (
+            "    from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "    from trellis.conventions.schedule import RollConvention, StubType\n"
+            "    from trellis.core.date_utils import build_period_schedule\n"
+            "    from trellis.models.contingent_cashflows import (\n"
+            "        CouponAccrual,\n"
+            "        ProtectionPayment,\n"
+            "        build_default_event_grid,\n"
+            "        conditional_event_probabilities_from_curve,\n"
+            "        coupon_cashflow_pv,\n"
+            "        expected_first_event_weights,\n"
+            "        protection_payment_pv,\n"
+            "    )\n\n"
+        )
+        top_level_imports = (
+            "from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "from trellis.conventions.schedule import RollConvention, StubType\n"
+            "from trellis.core.date_utils import build_period_schedule\n"
+            "from trellis.models.contingent_cashflows import (\n"
+            "    CouponAccrual,\n"
+            "    ProtectionPayment,\n"
+            "    build_default_event_grid,\n"
+            "    conditional_event_probabilities_from_curve,\n"
+            "    coupon_cashflow_pv,\n"
+            "    expected_first_event_weights,\n"
+            "    protection_payment_pv,\n"
+            ")\n"
+        )
+        source = top_level_imports + _cds_composition_source().replace(
+            local_imports,
+            "",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    def test_accepts_credit_default_swap_pricing_value_scaffold_import(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from trellis.core.payoff import PricingValue\n"
+            + _cds_composition_source().replace(
+                "def evaluate(self, market_state):",
+                "def evaluate(self, market_state) -> PricingValue:",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    def test_accepts_credit_default_swap_postponed_annotation_name(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from __future__ import annotations\n"
+            + _cds_composition_source().replace(
+                "def evaluate(self, market_state):",
+                "def evaluate(self, market_state) -> MissingType:",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    def test_rejects_credit_default_swap_wildcard_import(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source() + "\nfrom user_helpers import *\n"
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize("scope", ("module", "evaluate"))
+    def test_rejects_credit_default_swap_unapproved_import(
+        self,
+        registry,
+        scope,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source()
+        if scope == "module":
+            source = "import user_helpers\n\n" + source
+        else:
+            source = source.replace(
+                "    schedule = build_period_schedule(",
+                "    import user_helpers\n"
+                "    schedule = build_period_schedule(",
+                1,
+            )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "symbol",
+        ("coupon_cashflow_pv", "protection_payment_pv"),
+    )
+    def test_rejects_credit_default_swap_aliased_cashflow_import(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            f"        {symbol},",
+            f"        {symbol} as {symbol},",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_late_local_cashflow_imports(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        local_imports = (
+            "    from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "    from trellis.conventions.schedule import RollConvention, StubType\n"
+            "    from trellis.core.date_utils import build_period_schedule\n"
+            "    from trellis.models.contingent_cashflows import (\n"
+            "        CouponAccrual,\n"
+            "        ProtectionPayment,\n"
+            "        build_default_event_grid,\n"
+            "        conditional_event_probabilities_from_curve,\n"
+            "        coupon_cashflow_pv,\n"
+            "        expected_first_event_weights,\n"
+            "        protection_payment_pv,\n"
+            "    )\n\n"
+        )
+        source = (
+            _cds_composition_source()
+            .replace(local_imports, "", 1)
+            .replace(
+                "    return float(",
+                local_imports + "    return float(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "symbol",
+        ("coupon_cashflow_pv", "protection_payment_pv"),
+    )
+    @pytest.mark.parametrize(
+        "mutation",
+        (
+            'globals()["{symbol}"] = lambda cashflow: 0.0',
+            'globals().update({{"{symbol}": lambda cashflow: 0.0}})',
+            "import sys\nsys.modules[__name__].{symbol} = lambda cashflow: 0.0",
+            'exec("{symbol} = lambda cashflow: 0.0", globals())',
+            (
+                "from builtins import globals as namespace\n"
+                'namespace().update({{"{symbol}": lambda cashflow: 0.0}})'
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_indirect_global_primitive_rebinding(
+        self,
+        registry,
+        symbol,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        local_imports = (
+            "    from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "    from trellis.conventions.schedule import RollConvention, StubType\n"
+            "    from trellis.core.date_utils import build_period_schedule\n"
+            "    from trellis.models.contingent_cashflows import (\n"
+            "        CouponAccrual,\n"
+            "        ProtectionPayment,\n"
+            "        build_default_event_grid,\n"
+            "        conditional_event_probabilities_from_curve,\n"
+            "        coupon_cashflow_pv,\n"
+            "        expected_first_event_weights,\n"
+            "        protection_payment_pv,\n"
+            "    )\n\n"
+        )
+        top_level_imports = (
+            "from trellis.conventions.calendar import "
+            "BusinessDayAdjustment, WEEKEND_ONLY\n"
+            "from trellis.conventions.schedule import RollConvention, StubType\n"
+            "from trellis.core.date_utils import build_period_schedule\n"
+            "from trellis.models.contingent_cashflows import (\n"
+            "    CouponAccrual,\n"
+            "    ProtectionPayment,\n"
+            "    build_default_event_grid,\n"
+            "    conditional_event_probabilities_from_curve,\n"
+            "    coupon_cashflow_pv,\n"
+            "    expected_first_event_weights,\n"
+            "    protection_payment_pv,\n"
+            ")\n"
+        )
+        source = (
+            top_level_imports
+            + mutation.format(symbol=symbol)
+            + "\n"
+            + _cds_composition_source().replace(local_imports, "", 1)
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_decorated_evaluate(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def replace_evaluate(function):\n"
+            "    return lambda self, market_state: 0.0\n\n"
+            + _cds_composition_source().replace(
+                "def evaluate(self, market_state):",
+                "@replace_evaluate\ndef evaluate(self, market_state):",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_nested_evaluate_definition(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        composition = _cds_composition_source().strip()
+        source = "def build_payoff():\n" + "\n".join(
+            f"    {line}" if line else ""
+            for line in composition.splitlines()
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_post_class_evaluate_rebinding(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        composition = _cds_composition_source().strip()
+        source = "class Payoff:\n" + "\n".join(
+            f"    {line}" if line else ""
+            for line in composition.splitlines()
+        )
+        source += "\nPayoff.evaluate = lambda self, market_state: 0.0\n"
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_spread_normalization_after_assembly(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        normalization = "    if spread > 1.0:\n        spread *= 1e-4\n"
+        source = (
+            _cds_composition_source()
+            .replace(normalization, "", 1)
+            .replace(
+                "    return float(",
+                normalization + "    return float(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_missing_spread_normalization(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    if spread > 1.0:\n        spread *= 1e-4\n",
+            "",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_branch_hidden_spread_normalization(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    if spread > 1.0:\n        spread *= 1e-4\n",
+            "    if False:\n"
+            "        if spread > 1.0:\n"
+            "            spread *= 1e-4\n",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_normalized_spread_alias_after_guard(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        normalization = "    if spread > 1.0:\n        spread *= 1e-4\n"
+        source = (
+            _cds_composition_source()
+            .replace(
+                normalization,
+                normalization + "    coupon_rate = spread\n",
+                1,
+            )
+            .replace("rate=spread", "rate=coupon_rate", 2)
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    def test_rejects_credit_default_swap_spread_alias_before_guard(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            _cds_composition_source()
+            .replace(
+                "    if spread > 1.0:",
+                "    coupon_rate = spread\n    if spread > 1.0:",
+                1,
+            )
+            .replace("rate=spread", "rate=coupon_rate", 2)
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_composition_in_unused_helper(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = """
+def evaluate(self, market_state):
+    return 123.0
+""" + _cds_composition_source().replace(
+            "def evaluate(self, market_state):",
+            "def unused_cds_composition(self, market_state):",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_composition_in_nested_unused_helper(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        composition_lines = _cds_composition_source().strip().splitlines()
+        source = "\n".join(
+            [
+                composition_lines[0],
+                "    def unused_cds_composition(self, market_state):",
+                *("    " + line for line in composition_lines[1:]),
+                "    return 123.0",
+            ]
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_composition_after_early_return(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    return 123.0\n    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("anchor", "conditional_exit"),
+        (
+            (
+                "    schedule = build_period_schedule(",
+                "    if True:\n        return 123.0",
+            ),
+            (
+                "    schedule = build_period_schedule(",
+                "    if market_state is None:\n        return 123.0",
+            ),
+            (
+                "    return float(",
+                "    if True:\n        return 123.0",
+            ),
+            (
+                "    return float(",
+                "    for _ in range(1):\n        return 123.0",
+            ),
+            (
+                "    return float(",
+                "    if True:\n        raise RuntimeError('invalid CDS')",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_conditional_exit_before_signed_return(
+        self,
+        registry,
+        anchor,
+        conditional_exit,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            anchor,
+            f"{conditional_exit}\n{anchor}",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_required_market_guards(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    if market_state.credit_curve is None:\n"
+            "        raise ValueError('credit curve is required')\n"
+            "    if market_state.discount is None:\n"
+            "        raise ValueError('discount curve is required')\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    @pytest.mark.parametrize(
+        "mutation",
+        (
+            "market_state = MarketProxy(market_state)",
+            "del market_state",
+        ),
+    )
+    def test_rejects_credit_default_swap_mutated_market_state_parameter(
+        self,
+        registry,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class MarketProxy:\n"
+            "    def __init__(self, market_state):\n"
+            "        self.credit_curve = market_state.credit_curve\n"
+            "        self.discount = market_state.discount\n\n"
+            + _cds_composition_source().replace(
+                "    schedule = build_period_schedule(",
+                f"    {mutation}\n    schedule = build_period_schedule(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_market_state_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "mutation",
+        (
+            "self = ReceiverProxy(self)",
+            "del self",
+        ),
+    )
+    def test_rejects_credit_default_swap_mutated_evaluate_receiver(
+        self,
+        registry,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class ReceiverProxy:\n"
+            "    def __init__(self, payoff):\n"
+            "        self._spec = payoff._spec\n\n"
+            + _cds_composition_source().replace(
+                "    schedule = build_period_schedule(",
+                f"    {mutation}\n    schedule = build_period_schedule(",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_evaluate_receiver_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("module_setup", "exception_expression", "raise_suffix"),
+        (
+            (
+                "def ValueError(message):\n"
+                "    while True:\n"
+                "        pass\n\n",
+                "'credit curve is required'",
+                "",
+            ),
+            ("", "1 / self._spec.notional", ""),
+            (
+                "def spin():\n"
+                "    while True:\n"
+                "        pass\n\n",
+                "'credit curve is required'",
+                " from spin()",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_unsafe_market_guards(
+        self,
+        registry,
+        module_setup,
+        exception_expression,
+        raise_suffix,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = module_setup + _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    if market_state.credit_curve is None:\n"
+            f"        raise ValueError({exception_expression}){raise_suffix}\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_period_loop_hidden_in_branch(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        lines = _cds_composition_source().splitlines()
+        source = "\n".join(
+            lines[:2] + ["    if False:"] + ["    " + line for line in lines[2:]]
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("anchor", "replacement"),
+        (
+            (
+                "enumerate(grid.periods)",
+                "enumerate(grid.periods, start=1)",
+            ),
+            (
+                "range(interval_start, interval_stop)",
+                "range(interval_start, interval_stop, step=1)",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_modified_grid_iteration_call(
+        self,
+        registry,
+        anchor,
+        replacement,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(anchor, replacement, 1)
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize("symbol", ("enumerate", "range"))
+    def test_rejects_credit_default_swap_shadowed_grid_iteration_builtin(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            f"    {symbol} = lambda *args: ()\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_shadowed_float_builtin(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    float = lambda value: 0.0\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_reassigned_credit_curve_alias(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "market_state.credit_curve",
+            "credit_curve",
+        )
+        source = source.replace(
+            "    schedule = build_period_schedule(",
+            "    credit_curve = market_state.credit_curve\n"
+            "    credit_curve = other_curve\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_credit_curve_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("anchor", "mutation"),
+        (
+            (
+                "    for period_index, period in enumerate(grid.periods):\n",
+                "        period_index = 0\n",
+            ),
+            (
+                "    for period_index, period in enumerate(grid.periods):\n",
+                "        period = grid.periods[0]\n",
+            ),
+            (
+                "        for interval_index in range(interval_start, interval_stop):\n",
+                "            interval_index = 0\n",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_rebound_grid_loop_target(
+        self,
+        registry,
+        anchor,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            anchor,
+            anchor + mutation,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "cursor_setup",
+        (
+            "    if False:\n        interval_start = 0\n",
+            "    interval_start = 0\n    interval_start = 1\n",
+        ),
+    )
+    def test_rejects_credit_default_swap_invalid_cursor_initialization(
+        self,
+        registry,
+        cursor_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    interval_start = 0\n",
+            cursor_setup,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_interval_loop_hidden_in_branch(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _guard_cds_interval_loop(
+            _cds_composition_source(),
+            condition="False",
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("accumulator", "category"),
+        (
+            ("premium_leg", "credit_default_swap_incomplete_event_grid"),
+            ("protection_leg", "credit_default_swap_incomplete_event_grid"),
+            ("accrued_on_event", "credit_default_swap_accrual_mapping"),
+            ("accrued_to_valuation", "credit_default_swap_economic_binding"),
+        ),
+    )
+    def test_rejects_credit_default_swap_non_additive_leg_update(
+        self,
+        registry,
+        accumulator,
+        category,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            f"{accumulator} +=",
+            f"{accumulator} -=",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(finding.category == category for finding in findings)
+
+    @pytest.mark.parametrize(
+        "accumulator",
+        (
+            "premium_leg",
+            "protection_leg",
+            "accrued_on_event",
+            "accrued_to_valuation",
+        ),
+    )
+    def test_rejects_credit_default_swap_leg_reassigned_after_assembly(
+        self,
+        registry,
+        accumulator,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    return float(",
+            f"    {accumulator} = 0.0\n    return float(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_sign_convention"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "accumulator",
+        (
+            "premium_leg",
+            "protection_leg",
+            "accrued_on_event",
+            "accrued_to_valuation",
+        ),
+    )
+    @pytest.mark.parametrize(
+        "mutation_template",
+        (
+            "{accumulator} += 1000000.0",
+            "{accumulator} *= 0.0",
+            "{accumulator}, ignored = 0.0, None",
+            "({accumulator} := 0.0)",
+        ),
+    )
+    def test_rejects_credit_default_swap_unrecognized_accumulator_mutation(
+        self,
+        registry,
+        accumulator,
+        mutation_template,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        mutation = mutation_template.format(accumulator=accumulator)
+        source = _cds_composition_source().replace(
+            "    return float(",
+            f"    {mutation}\n    return float(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_sign_convention"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "accumulator",
+        (
+            "premium_leg",
+            "protection_leg",
+            "accrued_on_event",
+            "accrued_to_valuation",
+        ),
+    )
+    def test_rejects_credit_default_swap_nonzero_leg_initialization(
+        self,
+        registry,
+        accumulator,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            f"    {accumulator} = 0.0",
+            f"    {accumulator} = 1.0",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_sign_convention"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("survival_index", "event_index"),
+        (
+            ("0", "interval_index"),
+            ("interval_stop - 1", "0"),
+        ),
+    )
+    def test_rejects_credit_default_swap_inactive_event_weights(
+        self,
+        registry,
+        survival_index,
+        event_index,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                survival_index=survival_index,
+                event_index=event_index,
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_nested_decoy_weight_keyword(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "            weight=survival_weight,",
+            "            weight=(dict(weight=survival_weight) and 0.0),",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("constructor_line", "extra_keyword_line"),
+        (
+            (
+                "        premium_leg += coupon_cashflow_pv(CouponAccrual(",
+                "            probe=spin(),",
+            ),
+            (
+                "            protection_leg += protection_payment_pv(ProtectionPayment(",
+                "                probe=spin(),",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_extra_cashflow_constructor_keyword(
+        self,
+        registry,
+        constructor_line,
+        extra_keyword_line,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            + _cds_composition_source().replace(
+                constructor_line,
+                f"{constructor_line}\n{extra_keyword_line}",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_unbound_weight_owner(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                post_weights_setup=(
+                    "other_weights = FirstEventWeights("
+                    "tuple(0.0 for _ in conditional), "
+                    "tuple(0.0 for _ in conditional))"
+                ),
+                weight_owner="other_weights",
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("method", "weight_symbol", "weight_controls", "additional_weight_call"),
+        (
+            (
+                "analytical",
+                "sample_first_event_weights",
+                "n_paths=self._spec.n_paths, seed=42,",
+                (
+                    "expected_first_event_weights(conditional, "
+                    "initial_survival_weight=initial_survival_weight)"
+                ),
+            ),
+            (
+                "monte_carlo",
+                "expected_first_event_weights",
+                "",
+                (
+                    "sample_first_event_weights(conditional, "
+                    "initial_survival_weight=initial_survival_weight, "
+                    "n_paths=self._spec.n_paths, seed=42)"
+                ),
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_weights_from_wrong_method(
+        self,
+        registry,
+        method,
+        weight_symbol,
+        weight_controls,
+        additional_weight_call,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol=weight_symbol,
+                weight_controls=weight_controls,
+                additional_weight_call=additional_weight_call,
+            ),
+            _make_plan("credit_default_swap", method),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_weight_mapping"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_unselected_weight_call(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=(
+                "from trellis.models.contingent_cashflows import "
+                "sample_first_event_weights"
+            ),
+            additional_weight_call=(
+                "sample_first_event_weights(conditional, "
+                "initial_survival_weight=initial_survival_weight, "
+                "n_paths=0 if self._spec.notional == 0 else 1, seed=None)"
+            ),
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap", "analytical"),
+            spec,
+        )
+
+        assert any(
+            finding.category
+            == "credit_default_swap_unselected_first_event_primitive"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "loop_setup",
+        (
+            "while True:\n        pass",
+            "for _ in iter(int, 1):\n        pass",
+        ),
+    )
+    def test_rejects_credit_default_swap_nonterminating_preassembly_loop(
+        self,
+        registry,
+        loop_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=loop_setup,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap", "analytical"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "extra_setup",
+        (
+            "if self._spec.notional == 0:\n        1 / 0",
+            (
+                "try:\n"
+                "        1 / self._spec.notional\n"
+                "    except ZeroDivisionError:\n"
+                "        raise"
+            ),
+            (
+                "from contextlib import nullcontext\n"
+                "    with nullcontext():\n"
+                "        1 / self._spec.notional"
+            ),
+            (
+                "match self._spec.notional:\n"
+                "        case 0:\n"
+                "            1 / 0"
+            ),
+            "1 / self._spec.notional",
+            "probe = 1 / self._spec.notional",
+            "_ = 1 / 0 if self._spec.notional == 0 else 0",
+            "_ = tuple(1 for _ in iter(int, 1))",
+        ),
+    )
+    def test_rejects_credit_default_swap_implicit_preassembly_exception(
+        self,
+        registry,
+        extra_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=extra_setup,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap", "analytical"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_exact_initial_survival_fallback(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            initial_survival=(
+                "float(market_state.credit_curve.survival_probability("
+                "grid.intervals[0].start_time)) if grid.intervals else 1.0"
+            ),
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap", "analytical"),
+            spec,
+        )
+
+        assert not any(
+            finding.category
+            in {
+                "credit_default_swap_incomplete_event_grid",
+                "credit_default_swap_initial_survival_missing",
+            }
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize("n_paths", ("10", "self._spec.n_paths"))
+    def test_rejects_credit_default_swap_unbound_path_count(
+        self,
+        registry,
+        n_paths,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol="sample_first_event_weights",
+                weight_controls=f"n_paths={n_paths}, seed=42,",
+            ),
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_path_count_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "n_paths",
+        (
+            "self._spec.n_paths or 250000",
+            'getattr(self._spec, "n_paths", 250000) or 250000',
+        ),
+    )
+    def test_accepts_credit_default_swap_active_monte_carlo_path_count(
+        self,
+        registry,
+        n_paths,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol="sample_first_event_weights",
+                weight_controls=f"n_paths={n_paths}, seed=42,",
+            ),
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+
+        assert not any(f.severity == "error" for f in findings)
+
+    @pytest.mark.parametrize(
+        ("seed", "extra_setup"),
+        (
+            ("None", ""),
+            ("41", ""),
+            ("seed_value", "seed_value = None"),
+            (
+                "seed_value",
+                "seed_value = 42\n    seed_value = None",
+            ),
+            (
+                "seed_value",
+                "seed_value = 42\n    seed_value += 1",
+            ),
+            ("1" + "0" * 400, ""),
+        ),
+    )
+    def test_rejects_credit_default_swap_unreproducible_sampling_seed(
+        self,
+        registry,
+        seed,
+        extra_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol="sample_first_event_weights",
+                weight_controls=(
+                    "n_paths=self._spec.n_paths or 250000, "
+                    f"seed={seed},"
+                ),
+                extra_setup=extra_setup,
+            ),
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_seed_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_reproducible_sampling_seed_alias(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                weight_symbol="sample_first_event_weights",
+                weight_controls=(
+                    "n_paths=self._spec.n_paths or 250000, seed=seed_value,"
+                ),
+                extra_setup="seed_value = 42",
+            ),
+            _make_plan("credit_default_swap", "monte_carlo"),
+            spec,
+        )
+
+        assert not any(f.severity == "error" for f in findings)
+
+    @pytest.mark.parametrize(
+        ("premium_discount", "event_discount"),
+        (
+            (
+                "1.0",
+                "market_state.discount.discount(interval.settlement_time)",
+            ),
+            (
+                "market_state.discount.discount(grid.period_payment_times[period_index])",
+                "1.0",
+            ),
+            (
+                "market_state.discount.discount(grid.period_payment_times[0])",
+                "market_state.discount.discount(interval.settlement_time)",
+            ),
+            (
+                "market_state.discount.discount(grid.period_payment_times[period_index])",
+                "market_state.discount.discount(grid.intervals[0].settlement_time)",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_wrong_discount_coordinates(
+        self,
+        registry,
+        premium_discount,
+        event_discount,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                premium_discount=premium_discount,
+                event_discount=event_discount,
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_discount_mapping"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_nested_decoy_discount_keyword(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "            discount_factor=market_state.discount.discount("
+            "grid.period_payment_times[period_index]),",
+            "            discount_factor=(dict(discount_factor="
+            "market_state.discount.discount("
+            "grid.period_payment_times[period_index])) and 1.0),",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_discount_mapping"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_reassigned_discount_alias(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "            protection_leg += protection_payment_pv(",
+            "            event_discount = 0.0\n"
+            "            protection_leg += protection_payment_pv(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_discount_mapping"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("premium_discount", "event_discount"),
+        (
+            (
+                "other_discount.discount(grid.period_payment_times[period_index])",
+                "market_state.discount.discount(interval.settlement_time)",
+            ),
+            (
+                "market_state.discount.discount(grid.period_payment_times[period_index])",
+                "other_discount.discount(interval.settlement_time)",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_unbound_discount_curve(
+        self,
+        registry,
+        premium_discount,
+        event_discount,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                premium_discount=premium_discount,
+                event_discount=event_discount,
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_discount_mapping"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "overrides",
+        (
+            {"scheduled_accrual": "0.0"},
+            {"event_accrual": "0.0"},
+            {"event_accrual": "period.accrual_fraction"},
+            {"event_accrual": "interval.period_fraction_elapsed"},
+        ),
+    )
+    def test_rejects_credit_default_swap_unbound_coupon_accruals(
+        self,
+        registry,
+        overrides,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(**overrides),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_accrual_mapping"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "overrides",
+        (
+            {"schedule_start": "self._spec.end_date"},
+            {"schedule_end": "self._spec.start_date"},
+            {"schedule_frequency": "Frequency.ANNUAL"},
+            {"schedule_day_count": "DayCountConvention.ACT_365F"},
+            {"schedule_calendar": "other_calendar"},
+            {"schedule_bda": "BusinessDayAdjustment.PRECEDING"},
+            {"schedule_roll": "RollConvention.IMM"},
+            {"schedule_stub": "StubType.LONG_FIRST"},
+            {"schedule_payment_lag": "30"},
+        ),
+    )
+    def test_rejects_credit_default_swap_unbound_schedule_fields(
+        self,
+        registry,
+        overrides,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(**overrides),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_schedule_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_opaque_schedule_keywords(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            + _cds_composition_source().replace(
+                "        payment_lag_days=0,\n",
+                "        payment_lag_days=0,\n"
+                "        **((self._spec.notional == 0 and spin()) or {}),\n",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_schedule_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "overrides",
+        (
+            {"conditional_credit_curve": "other_credit_curve"},
+            {
+                "initial_survival": (
+                    "other_credit_curve.survival_probability("
+                    "grid.intervals[0].start_time)"
+                )
+            },
+        ),
+    )
+    def test_rejects_credit_default_swap_unbound_credit_curve(
+        self,
+        registry,
+        overrides,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(**overrides),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_credit_curve_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "overrides",
+        (
+            {"premium_notional": "1.0"},
+            {"protection_notional": "1.0"},
+            {"event_notional": "1.0"},
+            {"premium_rate": "0.01"},
+            {"event_rate": "0.01"},
+            {"recovery": "0.4"},
+            {"valuation_adjustment": "0.0"},
+            {
+                "valuation_adjustment": (
+                    "1.0 * spread * period.accrual_fraction "
+                    "* grid.elapsed_period_fractions[period_index]"
+                )
+            },
+        ),
+    )
+    def test_rejects_credit_default_swap_unbound_economic_terms(
+        self,
+        registry,
+        overrides,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(**overrides),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("anchor", "sign_line"),
+        (
+            (
+                "            weight=survival_weight,\n",
+                "            sign=-1.0,\n",
+            ),
+            (
+                "                discount_factor=event_discount,\n",
+                "                sign=-1.0,\n",
+            ),
+            (
+                "                weight=event_weight,\n",
+                "                sign=-1.0,\n",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_negative_constructor_sign(
+        self,
+        registry,
+        anchor,
+        sign_line,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            anchor,
+            anchor + sign_line,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_positive_constructor_sign_alias(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(extra_setup="leg_sign = 1.0")
+        for anchor, sign_line in (
+            (
+                "            weight=survival_weight,\n",
+                "            sign=leg_sign,\n",
+            ),
+            (
+                "                discount_factor=event_discount,\n",
+                "                sign=leg_sign,\n",
+            ),
+            (
+                "                weight=event_weight,\n",
+                "                sign=leg_sign,\n",
+            ),
+        ):
+            source = source.replace(anchor, anchor + sign_line, 1)
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert not any(f.severity == "error" for f in findings)
+
+    @pytest.mark.parametrize(
+        "extra_setup",
+        (
+            "leg_sign = 1.0\n    leg_sign = -1.0",
+            "leg_sign = 1.0\n    leg_sign *= -1.0",
+        ),
+    )
+    def test_rejects_credit_default_swap_reassigned_constructor_sign_alias(
+        self,
+        registry,
+        extra_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=extra_setup,
+        ).replace(
+            "            weight=survival_weight,\n",
+            "            weight=survival_weight,\n            sign=leg_sign,\n",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_economic_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_explicit_first_event_composition(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(
+            _cds_composition_source(),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+        assert not any(f.severity == "error" for f in findings)
+
+    @pytest.mark.parametrize(
+        ("extra_setup", "replacements", "expected_category"),
+        (
+            (
+                "if False:\n        discount_curve = market_state.discount",
+                (
+                    ("market_state.discount.discount(", "discount_curve.discount("),
+                ),
+                "credit_default_swap_discount_mapping",
+            ),
+            (
+                "if False:\n        credit_curve = market_state.credit_curve",
+                (
+                    ("market_state.credit_curve", "credit_curve"),
+                ),
+                "credit_default_swap_credit_curve_binding",
+            ),
+            (
+                "if False:\n        grid_alias = grid",
+                (
+                    ("grid.", "grid_alias."),
+                ),
+                "credit_default_swap_valuation_origin",
+            ),
+            (
+                "if False:\n        weights_alias = weights",
+                (
+                    ("weights.survival_weights", "weights_alias.survival_weights"),
+                    ("weights.event_weights", "weights_alias.event_weights"),
+                ),
+                "credit_default_swap_weight_mapping",
+            ),
+            (
+                "if False:\n        spec_alias = self._spec",
+                (
+                    ("self._spec.", "spec_alias."),
+                ),
+                "credit_default_swap_economic_binding",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_conditionally_assigned_aliases(
+        self,
+        registry,
+        extra_setup,
+        replacements,
+        expected_category,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(extra_setup=extra_setup)
+        for original, replacement in replacements:
+            source = source.replace(original, replacement)
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == expected_category
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_evaluate_on_unrelated_class(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class UnrelatedPayoff:\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+            + "\n\nclass CDSPayoff:\n    pass\n"
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "definition_time_setup",
+        (
+            "while True:\n    pass\n\n",
+            "class ImportTrap:\n    while True:\n        pass\n\n",
+            (
+                "def import_trap(value: tuple(iter(int, 1))):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def annotation_trap(value: MissingType):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def annotation_trap(value: int | 1):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def annotation_trap(value: None | None):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def annotation_trap(value: int | (None | None)):\n"
+                "    return value\n\n"
+            ),
+            (
+                "from trellis.core.types import Frequency\n\n"
+                "def annotation_trap(value: Frequency.MISSING):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value=MISSING):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value={[]: 1}):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value={((), []): 1}):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value={[]}):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value=Frequency.QUARTERLY):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value=Frequency.QUARTERLY):\n"
+                "    return value\n\n"
+                "from trellis.core.types import Frequency\n\n"
+            ),
+            (
+                "from trellis.core.types import Frequency\n\n"
+                "def default_trap(value=Frequency.MISSING):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def annotation_trap(value: PricingValue):\n"
+                "    return value\n\n"
+                "from trellis.core.payoff import PricingValue\n\n"
+            ),
+            (
+                "from trellis.core.payoff import PricingValue\n\n"
+                "def PricingValue():\n"
+                "    return float\n\n"
+                "def annotation_trap(value: PricingValue):\n"
+                "    return value\n\n"
+            ),
+            (
+                "class Spin:\n"
+                "    def __class_getitem__(cls, item):\n"
+                "        while True:\n"
+                "            pass\n\n"
+                "def annotation_trap(value: Spin[int]):\n"
+                "    return value\n\n"
+            ),
+            (
+                "from dataclasses import dataclass\n\n"
+                "def dataclass(*args, **kwargs):\n"
+                "    def replace_spec(spec_class):\n"
+                "        return spec_class\n"
+                "    return replace_spec\n\n"
+                "@dataclass(frozen=True)\n"
+                "class CDSSpec:\n"
+                "    notional: float = 1.0\n\n"
+            ),
+            (
+                "from dataclasses import dataclass\n\n"
+                "class SpecNamespace:\n"
+                "    def dataclass(*args, **kwargs):\n"
+                "        def replace_spec(spec_class):\n"
+                "            return spec_class\n"
+                "        return replace_spec\n\n"
+                "    @dataclass(frozen=True)\n"
+                "    class CDSSpec:\n"
+                "        notional: float = 1.0\n\n"
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_definition_time_control_flow(
+        self,
+        registry,
+        definition_time_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = definition_time_setup + _cds_composition_source()
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "evaluate_definition",
+        (
+            "class Trap:\n        while True:\n            pass",
+            (
+                "def trap(value=tuple(iter(int, 1))):\n"
+                "        return value"
+            ),
+            (
+                "def spin():\n"
+                "        while True:\n"
+                "            pass\n"
+                "    @spin()\n"
+                "    def decorated():\n"
+                "        pass"
+            ),
+            "trap = lambda value=tuple(iter(int, 1)): value",
+        ),
+    )
+    def test_rejects_credit_default_swap_evaluate_definition_time_control_flow(
+        self,
+        registry,
+        evaluate_definition,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(extra_setup=evaluate_definition)
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize("field_default", ("[]", "{}", "{1}"))
+    def test_rejects_credit_default_swap_local_dataclass_mutable_default(
+        self,
+        registry,
+        field_default,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = "from dataclasses import dataclass\n\n" + _cds_composition_source(
+            extra_setup=(
+                "@dataclass(frozen=True)\n"
+                "    class Trap:\n"
+                f"        items: list = {field_default}"
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("module_setup", "class_definition"),
+        (
+            (
+                "",
+                "@dataclass(frozen=True)\n"
+                "    class Trap:\n"
+                "        value: int = 1",
+            ),
+            (
+                "from dataclasses import dataclass\n\n",
+                "@dataclass(frozen=True)\n"
+                "    class Trap:\n"
+                "        optional: int = 1\n"
+                "        required: int",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_invalid_local_dataclass_definition(
+        self,
+        registry,
+        module_setup,
+        class_definition,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = module_setup + _cds_composition_source(
+            extra_setup=class_definition
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_extra_parameter_shadowed_decorator(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            + _cds_composition_source(
+                extra_setup="@property\n    def trap():\n        return 1"
+            ).replace(
+                "def evaluate(self, market_state):",
+                (
+                    "def evaluate(\n"
+                    "    self, market_state, property=lambda fn: spin(),\n"
+                    "):"
+                ),
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_local_shadowed_decorator(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            + _cds_composition_source(
+                extra_setup=(
+                    "def property(fn):\n"
+                    "        return spin()\n"
+                    "    @property\n"
+                    "    def trap():\n"
+                    "        return 1"
+                )
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_authoritative_enum_function_default(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from trellis.core.types import Frequency\n\n"
+            "def inert_default(value=Frequency.QUARTERLY):\n"
+            "    return value\n\n"
+            "def inert_container_default(\n"
+            "    value={'frequencies': (Frequency.QUARTERLY,)},\n"
+            "):\n"
+            "    return value\n\n"
+            "def inert_union_annotation(value: int | None):\n"
+            "    return value\n\n"
+            "def inert_nested_union_annotation(value: int | (None | str)):\n"
+            "    return value\n\n"
+            + _cds_composition_source()
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    @pytest.mark.parametrize(
+        ("constructor_body", "property_body"),
+        (
+            ("self._spec = object()", "return self._spec"),
+            ("self._spec = spec", "return object()"),
+        ),
+    )
+    def test_rejects_credit_default_swap_substituted_payoff_spec(
+        self,
+        registry,
+        constructor_body,
+        property_body,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class CDSPayoff:\n"
+            "    def __init__(self, spec):\n"
+            f"        {constructor_body}\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            f"        {property_body}\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_shadowed_property_decorator(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def property(function):\n"
+            "    while True:\n"
+            "        pass\n\n"
+            "class CDSPayoff:\n"
+            "    def __init__(self, spec):\n"
+            "        self._spec = spec\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            "        return self._spec\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_mutable_spec_dataclass(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from dataclasses import dataclass\n\n"
+            "@dataclass\n"
+            "class CDSSpec:\n"
+            "    notional: float = 1.0\n\n"
+            + _cds_composition_source()
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_frozen_spec_dataclass(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from dataclasses import dataclass\n\n"
+            "@dataclass(frozen=True)\n"
+            "class CDSSpec:\n"
+            "    notional: float = 1.0\n\n"
+            + _cds_composition_source()
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert not any(finding.severity == "error" for finding in findings)
+
+    def test_rejects_credit_default_swap_changed_planned_spec_default(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from dataclasses import dataclass\n\n"
+            "@dataclass(frozen=True)\n"
+            "class CDSSpec:\n"
+            "    recovery: float = 0.9\n\n"
+            + _cds_composition_source()
+        )
+        plan = _make_plan(
+            "credit_default_swap",
+            payoff_spec_name="CDSSpec",
+            payoff_spec_fields=(("recovery", "float", "0.4"),),
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_spec_schema_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_exact_planned_spec_schema(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from dataclasses import dataclass\n\n"
+            "@dataclass(frozen=True)\n"
+            "class CDSSpec:\n"
+            "    recovery: float = 0.4\n\n"
+            + _cds_composition_source()
+        )
+        plan = _make_plan(
+            "credit_default_swap",
+            payoff_spec_name="CDSSpec",
+            payoff_spec_fields=(("recovery", "float", "0.4"),),
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert not any(finding.severity == "error" for finding in findings)
+
+    def test_rejects_credit_default_swap_duplicate_planned_spec_class(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        spec_class = (
+            "@dataclass(frozen=True)\n"
+            "class CDSSpec:\n"
+            "    recovery: float = 0.4\n\n"
+        )
+        source = (
+            "from dataclasses import dataclass\n\n"
+            + spec_class
+            + spec_class
+            + _cds_composition_source()
+        )
+        plan = _make_plan(
+            "credit_default_swap",
+            payoff_spec_name="CDSSpec",
+            payoff_spec_fields=(("recovery", "float", "0.4"),),
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_spec_schema_binding"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_spec_behavior_override(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from dataclasses import dataclass\n\n"
+            "@dataclass(frozen=True)\n"
+            "class CDSSpec:\n"
+            "    notional: float = 1.0\n\n"
+            "    def __getattribute__(self, name):\n"
+            "        return 1.0\n\n"
+            + _cds_composition_source()
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_unsafe_requirements_property(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class CDSPayoff:\n"
+            "    def __init__(self, spec):\n"
+            "        self._spec = spec\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            "        return self._spec\n\n"
+            "    @property\n"
+            "    def requirements(self):\n"
+            "        while True:\n"
+            "            pass\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_payoff_destructor(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class CDSPayoff:\n"
+            "    def __init__(self, spec):\n"
+            "        self._spec = spec\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            "        return self._spec\n\n"
+            "    @property\n"
+            "    def requirements(self):\n"
+            "        return {'credit_curve', 'discount_curve'}\n\n"
+            "    def __del__(self):\n"
+            "        while True:\n"
+            "            pass\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_annotated_payoff_behavior_hook(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            "class CDSPayoff:\n"
+            "    __getattribute__: object = lambda self, name: spin()\n\n"
+            "    def __init__(self, spec):\n"
+            "        self._spec = spec\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            "        return self._spec\n\n"
+            "    @property\n"
+            "    def requirements(self):\n"
+            "        return {'credit_curve', 'discount_curve'}\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_authoritative_payoff_spec(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class CDSPayoff:\n"
+            "    def __init__(self, spec):\n"
+            "        self._spec = spec\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            "        return self._spec\n\n"
+            "    @property\n"
+            "    def requirements(self):\n"
+            "        return {'credit_curve', 'discount_curve'}\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert not any(finding.severity == "error" for finding in findings)
+
+    def test_accepts_credit_default_swap_optional_valuation_date_fallback(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                time_origin=(
+                    'getattr(self._spec, "valuation_date", None) '
+                    "or self._spec.start_date"
+                ),
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    def test_rejects_credit_default_swap_shadowed_optional_valuation_getattr(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "getattr = lambda instance, field, default: instance.start_date\n"
+            + _cds_composition_source(
+                time_origin=(
+                    'getattr(self._spec, "valuation_date", None) '
+                    "or self._spec.start_date"
+                ),
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_valuation_origin"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_semantic_leg_names(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            _cds_composition_source()
+            .replace("protection_leg", "protection")
+            .replace("premium_leg", "premium")
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert not any(f.severity == "error" for f in findings)
 
     def test_flags_nth_to_default_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
@@ -1515,6 +5018,31 @@ class TestIntegratedValidation:
         plan = _make_plan("analytical_black76")
         report = validate_generated_semantics(source, plan, mode="warning")
         assert report.ok  # warnings never block
+
+    def test_credit_default_swap_contract_failure_is_blocking_by_default(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    coupon_cashflow_pv = lambda cashflow: 0.0\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        report = validate_generated_semantics(
+            source,
+            _make_plan("credit_default_swap"),
+            route_spec=spec,
+        )
+
+        assert not report.ok
+        assert report.mode == "blocking"
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in report.errors
+        )
 
     def test_blocking_mode_can_fail(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]

@@ -28,7 +28,21 @@ _REPO_FACTS_CACHE: dict[str, tuple[RepoFact, ...]] = {}
 # allowlist narrow so live introspection cannot silently re-admit a product
 # helper added beside the reusable primitives.
 _CODEGEN_MODULE_EXPORT_ALLOWLIST: dict[str, frozenset[str]] = {
+    "trellis.conventions.calendar": frozenset(
+        {
+            "BusinessDayAdjustment",
+            "Calendar",
+            "WEEKEND_ONLY",
+        }
+    ),
+    "trellis.conventions.schedule": frozenset(
+        {
+            "RollConvention",
+            "StubType",
+        }
+    ),
     "trellis.models.basket_option": frozenset(),
+    "trellis.models.credit_default_swap": frozenset(),
     "trellis.models.zcb_option": frozenset(),
     "trellis.models.zcb_option_tree": frozenset(),
     "trellis.models.resolution.short_rate_claims": frozenset(
@@ -294,6 +308,10 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
         "trellis.execution",
         "trellis.io.",
     )
+    include_modules = {
+        "trellis.conventions.calendar",
+        "trellis.conventions.schedule",
+    }
     exclude_prefixes = (
         "trellis.instruments._agent.",
         "trellis.agent.",
@@ -306,7 +324,10 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
     for _importer, modname, _ispkg in pkgutil.walk_packages(
         path=[str(pkg_path)], prefix="trellis.",
     ):
-        if not any(modname.startswith(prefix) for prefix in include_prefixes):
+        if (
+            modname not in include_modules
+            and not any(modname.startswith(prefix) for prefix in include_prefixes)
+        ):
             continue
         if any(modname.startswith(prefix) for prefix in exclude_prefixes):
             continue
@@ -326,7 +347,11 @@ def _build_registry_data_from_introspection() -> dict[str, tuple[str, ...]]:
 
         export_allowlist = _CODEGEN_MODULE_EXPORT_ALLOWLIST.get(modname)
         if export_allowlist is not None:
-            symbols = [name for name in symbols if name in export_allowlist]
+            symbols = [
+                name
+                for name in sorted(export_allowlist)
+                if hasattr(mod, name)
+            ]
 
         if symbols:
             registry[modname] = tuple(sorted(symbols))
@@ -496,6 +521,7 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
     # Group by top-level category
     groups = {
         "Core": [],
+        "Conventions": [],
         "Contract IR": [],
         "I/O": [],
         "Curves": [],
@@ -521,6 +547,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
 
         if "trellis.analytics." in mod:
             groups["Analytics"].append(line)
+        elif "trellis.conventions." in mod:
+            groups["Conventions"].append(line)
         elif "trellis.core." in mod:
             groups["Core"].append(line)
         elif mod in {
@@ -617,11 +645,15 @@ _STATIC_REGISTRY = """\
 If a module or symbol is not listed below, it does NOT exist.
 
 ### Core
-from trellis.core.date_utils import generate_schedule, year_fraction, add_months
+from trellis.core.date_utils import build_period_schedule, generate_schedule, year_fraction, add_months
 from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.payoff import PricingValue
 from trellis.core.types import DayCountConvention, Frequency
+
+### Conventions
+from trellis.conventions.calendar import BusinessDayAdjustment, Calendar, WEEKEND_ONLY
+from trellis.conventions.schedule import RollConvention, StubType
 
 ### Contract IR
 from trellis.agent.contract_ir import ContractIR, contract_ir_economic_identity, contract_ir_economic_summary
@@ -666,6 +698,9 @@ from trellis.models.resolution.short_rate_claims import ResolvedDiscountBondClai
 from trellis.models.analytical.terminal_basket import two_asset_extremum_option_stulz, two_asset_spread_option_kirk, two_asset_terminal_basket_gauss_hermite
 from trellis.models.short_rate_bond import ResolvedShortRateBondInputs, price_cir_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_analytical, price_short_rate_zero_coupon_bond_tree, price_vasicek_zero_coupon_bond_analytical, resolve_short_rate_bond_inputs
 from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
+
+### Models — Payoff Composition
+from trellis.models.contingent_cashflows import CouponAccrual, DefaultEventGrid, DefaultEventInterval, FirstEventWeights, ProtectionPayment, build_default_event_grid, conditional_event_probabilities_from_curve, coupon_cashflow_pv, expected_first_event_weights, protection_payment_pv, sample_first_event_weights
 
 ### Models — Trees
 from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, compile_bermudan_swaption_contract_spec, resolve_bermudan_swaption_tree_inputs

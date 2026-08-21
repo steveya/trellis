@@ -888,7 +888,7 @@ message behind a method-level success/failure split.
 Comparison-target planning is now stricter about method-family labels as well.
 Task-level construct hints such as ``credit`` or ``volatility`` are treated as
 domain labels, not as canonical pricing methods, so they no longer bleed into
-comparison-target routing. That keeps helper-backed canaries such as ``T51`` on
+comparison-target routing. That keeps credit canaries such as ``T51`` on
 the analytical CDS route instead of degrading into an unbound generic lane.
 
 The same lower-layer authority rule now applies to instrument families. Once a
@@ -1387,12 +1387,17 @@ materializes a deterministic exact wrapper around the checked Black76 kernels.
 The same rule applies to sparse transform and credit comparison targets:
 ``fft``/``cos`` GBM lanes delegate to
 ``price_vanilla_equity_option_transform(...)``, digital ``fft``/``cos`` lanes
-delegate to ``price_equity_digital_option_transform(...)``, and
-``credit_default_swap`` analytical lanes reuse the static ``CDSSpec`` and
-``price_cds_analytical(...)`` binding.  These are task-runtime exact bindings,
-not cookbook-authored generated adapters; under ``--offline-local-agents`` they
-should complete without spec-design, code-generation, critic, or
-model-validator LLM calls.
+delegate to ``price_equity_digital_option_transform(...)``, while
+``credit_default_swap`` targets materialize the static ``CDSSpec`` around the
+generic default-event and contingent-cashflow composition. Analytical and
+Monte Carlo target contracts bind
+``expected_first_event_weights(...)`` and
+``sample_first_event_weights(...)`` respectively, with survival to the first
+live interval carried as ``initial_survival_weight`` for forward-start targets.
+These are task-runtime exact
+bindings, not cookbook-authored generated adapters; under
+``--offline-local-agents`` they should complete without spec-design,
+code-generation, critic, or model-validator LLM calls.
 That wrapper binds ``year_fraction(...)``, discounting, and expiry-vol lookup
 through the actual runtime market-state protocols instead of asking the build
 loop to regenerate a tiny analytical adapter for every transform comparison.

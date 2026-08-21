@@ -111,39 +111,84 @@ bindings:
     engine_family: analytical
     route_family: event_triggered_two_legged_contract
     primitives:
-      - module: trellis.models.credit_default_swap
-        symbol: build_cds_schedule
+      - module: trellis.core.date_utils
+        symbol: build_period_schedule
         role: schedule_builder
-        required: false
-      - module: trellis.models.credit_default_swap
-        symbol: price_cds_analytical
-        role: route_helper
+      - module: trellis.models.contingent_cashflows
+        symbol: build_default_event_grid
+        role: event_grid
+      - module: trellis.models.contingent_cashflows
+        symbol: conditional_event_probabilities_from_curve
+        role: event_probability
+      - module: trellis.models.contingent_cashflows
+        symbol: expected_first_event_weights
+        role: numerical_evidence
+      - module: trellis.models.contingent_cashflows
+        symbol: CouponAccrual
+        role: payoff_primitive
+      - module: trellis.models.contingent_cashflows
+        symbol: ProtectionPayment
+        role: payoff_primitive
+      - module: trellis.models.contingent_cashflows
+        symbol: coupon_cashflow_pv
+        role: scheduled_leg
+      - module: trellis.models.contingent_cashflows
+        symbol: protection_payment_pv
+        role: trigger_leg
     conditional_primitives:
       - when:
-          methods: [monte_carlo, qmc]
+          methods: [monte_carlo]
         primitives:
-          - module: trellis.models.credit_default_swap
-            symbol: build_cds_schedule
+          - module: trellis.core.date_utils
+            symbol: build_period_schedule
             role: schedule_builder
-            required: false
-          - module: trellis.models.credit_default_swap
-            symbol: interval_default_probability
+          - module: trellis.models.contingent_cashflows
+            symbol: build_default_event_grid
+            role: event_grid
+          - module: trellis.models.contingent_cashflows
+            symbol: conditional_event_probabilities_from_curve
             role: event_probability
-          - module: trellis.models.credit_default_swap
-            symbol: price_cds_monte_carlo
-            role: route_helper
-          - module: trellis.core.differentiable
-            symbol: get_numpy
-            role: array_backend
+          - module: trellis.models.contingent_cashflows
+            symbol: sample_first_event_weights
+            role: numerical_evidence
+          - module: trellis.models.contingent_cashflows
+            symbol: CouponAccrual
+            role: payoff_primitive
+          - module: trellis.models.contingent_cashflows
+            symbol: ProtectionPayment
+            role: payoff_primitive
+          - module: trellis.models.contingent_cashflows
+            symbol: coupon_cashflow_pv
+            role: scheduled_leg
+          - module: trellis.models.contingent_cashflows
+            symbol: protection_payment_pv
+            role: trigger_leg
       - when: default
         primitives:
-          - module: trellis.models.credit_default_swap
-            symbol: build_cds_schedule
+          - module: trellis.core.date_utils
+            symbol: build_period_schedule
             role: schedule_builder
-            required: false
-          - module: trellis.models.credit_default_swap
-            symbol: price_cds_analytical
-            role: route_helper
+          - module: trellis.models.contingent_cashflows
+            symbol: build_default_event_grid
+            role: event_grid
+          - module: trellis.models.contingent_cashflows
+            symbol: conditional_event_probabilities_from_curve
+            role: event_probability
+          - module: trellis.models.contingent_cashflows
+            symbol: expected_first_event_weights
+            role: numerical_evidence
+          - module: trellis.models.contingent_cashflows
+            symbol: CouponAccrual
+            role: payoff_primitive
+          - module: trellis.models.contingent_cashflows
+            symbol: ProtectionPayment
+            role: payoff_primitive
+          - module: trellis.models.contingent_cashflows
+            symbol: coupon_cashflow_pv
+            role: scheduled_leg
+          - module: trellis.models.contingent_cashflows
+            symbol: protection_payment_pv
+            role: trigger_leg
 
   - route_id: credit_basket_nth_to_default
     engine_family: analytical

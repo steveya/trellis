@@ -803,6 +803,18 @@ def _family_ir_trace_summary(family_ir_payload: dict[str, Any]) -> dict[str, Any
         "event_dates": event_dates,
         "semantic_event_dates": semantic_event_dates,
         "helper_symbol": family_ir_payload.get("helper_symbol"),
+        "schedule_builder_symbol": family_ir_payload.get("schedule_builder_symbol"),
+        "event_grid_symbol": family_ir_payload.get("event_grid_symbol"),
+        "event_probability_symbol": family_ir_payload.get(
+            "event_probability_symbol"
+        ),
+        "event_weight_symbol": family_ir_payload.get("event_weight_symbol"),
+        "coupon_accrual_symbol": family_ir_payload.get("coupon_accrual_symbol"),
+        "protection_payment_symbol": family_ir_payload.get(
+            "protection_payment_symbol"
+        ),
+        "scheduled_leg_symbol": family_ir_payload.get("scheduled_leg_symbol"),
+        "trigger_leg_symbol": family_ir_payload.get("trigger_leg_symbol"),
         "market_mapping": family_ir_payload.get("market_mapping"),
         "compatibility_wrapper": compatibility_wrapper or None,
         "compatibility_status": (

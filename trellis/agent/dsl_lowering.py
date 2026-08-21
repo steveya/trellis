@@ -1940,65 +1940,90 @@ def _build_event_triggered_two_legged_expr_from_family_ir(
     family_ir: EventTriggeredTwoLeggedContractIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
-    """Build a typed event-triggered two-legged schedule-builder and helper lowering."""
-    schedule_builder = next(
+    """Build the explicit schedule, event, weight, and signed-leg lowering."""
+    required = (
+        ("schedule_builder", "schedule builder", family_ir.schedule_builder_symbol),
+        ("event_grid", "default-event grid", family_ir.event_grid_symbol),
+        ("event_probability", "event probability", family_ir.event_probability_symbol),
+        ("numerical_evidence", "first-event weights", family_ir.event_weight_symbol),
+        ("payoff_primitive", "coupon accrual contract", family_ir.coupon_accrual_symbol),
         (
-            binding
-            for binding in bindings
-            if binding.role == "schedule_builder" and binding.symbol == family_ir.schedule_builder_symbol
+            "scheduled_leg",
+            "scheduled-leg present-value kernel",
+            family_ir.scheduled_leg_symbol,
         ),
-        None,
+        (
+            "payoff_primitive",
+            "protection payment contract",
+            family_ir.protection_payment_symbol,
+        ),
+        ("trigger_leg", "trigger-leg present-value kernel", family_ir.trigger_leg_symbol),
     )
-    if schedule_builder is None:
-        return None, (
-            _missing_primitive_message(
-                route_id,
-                binding_id,
-                "schedule builder",
-                family_ir.schedule_builder_symbol,
+    resolved: list[DslTargetBinding] = []
+    for role, label, symbol in required:
+        binding = next(
+            (
+                candidate
+                for candidate in bindings
+                if candidate.role == role and candidate.symbol == symbol
             ),
+            None,
         )
-
-    route_helper = next(
-        (
-            binding
-            for binding in bindings
-            if binding.role == "route_helper" and binding.symbol == family_ir.helper_symbol
-        ),
-        None,
-    )
-    if route_helper is None:
-        return None, (
-            _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
-        )
+        if binding is None:
+            return None, (
+                _missing_primitive_message(route_id, binding_id, label, symbol),
+            )
+        resolved.append(binding)
 
     market_signature = _market_signature_from_family_ir(family_ir)
-    schedule_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "schedule_builder"),
-        primitive_ref=schedule_builder.primitive_ref,
-        description="Build the canonical CDS premium schedule shared by the checked-in route helpers.",
-        signature=ContractSignature(
-            inputs=market_signature.inputs,
-            outputs=("payment_schedule:schedule", *market_signature.inputs),
-            timeline_roles=market_signature.timeline_roles,
-            market_data_requirements=market_signature.market_data_requirements,
-        ),
+    stage_roles = (
+        "schedule_builder",
+        "event_grid",
+        "event_probability",
+        "event_weight",
+        "coupon_accrual",
+        "scheduled_leg",
+        "protection_payment",
+        "trigger_leg",
     )
-    helper_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
-        primitive_ref=route_helper.primitive_ref,
-        description=(
-            f"Typed single-name CDS {family_ir.pricing_mode} helper using the checked-in "
-            "premium/protection-leg pricing contract."
-        ),
-        signature=ContractSignature(
-            inputs=("payment_schedule:schedule", *market_signature.inputs),
-            outputs=("price:scalar",),
-            timeline_roles=market_signature.timeline_roles,
-            market_data_requirements=market_signature.market_data_requirements,
-        ),
+    descriptions = (
+        "Build the explicit premium-payment schedule from public date conventions.",
+        "Partition schedule periods into a bounded first-event integration grid.",
+        "Read conditional event probabilities from survival-curve ratios.",
+        f"Produce {family_ir.pricing_mode} unconditional event and survival weights.",
+        "Construct scheduled premium and accrued-on-event cashflow values.",
+        "Discount and aggregate the signed scheduled-leg cashflows.",
+        "Construct loss-given-default protection cashflow values.",
+        "Discount the trigger leg and combine the explicitly signed two-leg value.",
     )
-    return ThenExpr(terms=(schedule_atom, helper_atom)), ()
+    ports = (
+        market_signature.inputs,
+        ("payment_schedule:schedule", *market_signature.inputs),
+        ("default_event_grid:grid", *market_signature.inputs),
+        ("conditional_event_probabilities:vector", "default_event_grid:grid", *market_signature.inputs),
+        ("first_event_weights:weights", "default_event_grid:grid", *market_signature.inputs),
+        ("scheduled_cashflows:sequence", "first_event_weights:weights", "default_event_grid:grid", *market_signature.inputs),
+        ("scheduled_leg_pv:scalar", "first_event_weights:weights", "default_event_grid:grid", *market_signature.inputs),
+        ("trigger_cashflows:sequence", "scheduled_leg_pv:scalar", "first_event_weights:weights", "default_event_grid:grid", *market_signature.inputs),
+        ("price:scalar",),
+    )
+    atoms = tuple(
+        ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, stage_role),
+            primitive_ref=binding.primitive_ref,
+            description=description,
+            signature=ContractSignature(
+                inputs=ports[index],
+                outputs=ports[index + 1],
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        for index, (stage_role, binding, description) in enumerate(
+            zip(stage_roles, resolved, descriptions, strict=True)
+        )
+    )
+    return ThenExpr(terms=atoms), ()
 
 
 def _build_nth_to_default_expr_from_family_ir(

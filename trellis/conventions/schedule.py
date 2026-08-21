@@ -132,7 +132,8 @@ def build_period_schedule(
 
     Unlike :func:`generate_schedule`, this returns accrual periods with
     explicit period boundaries, payment dates, optional accrual fractions, and
-    optional model times measured from ``time_origin``.
+    optional model times measured from ``time_origin``. The returned schedule
+    retains ``calendar`` for downstream convention-aware measurements.
     """
     start_d = _to_date(start)
     end_d = _to_date(end)
@@ -194,6 +195,7 @@ def build_period_schedule(
         day_count=day_count,
         time_origin=origin_d,
         periods=tuple(periods),
+        calendar=calendar,
     )
 
 

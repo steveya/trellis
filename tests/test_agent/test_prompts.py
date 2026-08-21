@@ -883,15 +883,16 @@ def test_executor_credit_default_swap_retry_adds_disambiguation_guidance():
     assert "Do not import `trellis.models.processes.gbm`" in text
     assert "Do not import or instantiate `MonteCarloEngine`" in text
     assert "Single-name CDS Monte Carlo does not need an equity price process" in text
-    assert "np.random.default_rng" in text
-    assert "build_period_schedule" in text or "build_cds_schedule" in text
-    assert "use `prev_date` for `year_fraction(prev_date, pay_date, ...)` and `prev_t` for survival/default-time thresholds" in text
-    assert "persistent `alive` indicator" in text
-    assert "Update `alive` before premium accrual" in text
+    assert "sample_first_event_weights" in text
+    assert "build_period_schedule" in text
+    assert "build_default_event_grid" in text
+    assert "conditional_event_probabilities_from_curve" in text
+    assert "CouponAccrual" in text
+    assert "ProtectionPayment" in text
+    assert "adapter-local RNG or alive-state loops" in text
     assert "spread = float(spec.spread)" in text
     assert "spread *= 1e-4" in text
-    assert "Do not hard-code `n_paths=50000`" in text
-    assert "`spec.n_paths`" in text
+    assert "Do not hard-code `50000`" in text
     assert "seed=42" in text
     assert "`100` and `0.01` must produce the same CDS PV" in text
 
@@ -1349,18 +1350,100 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
 
     assert "credit_curve" in prompt
     assert "survival probability" in prompt.lower() or "survival_probability" in prompt
-    assert "single-name CDS analytical routes" in prompt
-    assert "150 bp -> 0.015" in prompt
-    assert "explicit payment/default schedule" in prompt
+    assert "Compose single-name CDS pricing" in prompt
+    assert "one reachable `evaluate()` body" in prompt
+    assert "spread = float(spec.spread)" in prompt
+    assert "spread *= 1e-4" in prompt
+    assert "build_period_schedule" in prompt
+    assert "build_default_event_grid" in prompt
+    assert "expected_first_event_weights" in prompt
+    assert "without `*args`, `**kwargs`" in prompt
+    assert "do not call the unselected primitive" in prompt
+    assert "WEEKEND_ONLY" in prompt
+    assert "BusinessDayAdjustment.FOLLOWING" in prompt
+    assert "StubType.SHORT_LAST" in prompt
+    assert "exactly the three positional contract fields and the seven named" in prompt
+    assert "opaque `*args`/`**kwargs`, duplicate names, and extra keywords" in prompt
+    assert "CouponAccrual" in prompt
+    assert "ProtectionPayment" in prompt
     assert "build_cds_schedule" in prompt
     assert "price_cds_analytical" in prompt
+    assert "do not call `build_cds_schedule`" in prompt.lower()
     assert "Route family: `credit_default_swap`" in prompt
     assert "Route family: `event_triggered_two_legged_contract`" not in prompt
-    assert "market_state.discount.discount(t)" in prompt
-    assert "spec.start_date` as the time origin" in prompt
-    assert "accrued-on-default premium adjustment" in prompt
-    assert "Do not average adjacent discount factors" in prompt
-    assert "price_cds_analytical" in prompt
+    assert "period_payment_times" in prompt
+    assert "settlement_time" in prompt
+    assert "accrued_on_event" in prompt
+    assert "one direct final signed return" in prompt
+    assert "module and class definition time declarative" in prompt
+    assert "preserve the directly imported `dataclasses.dataclass` binding" in prompt
+    assert "exactly one explicit `@dataclass(frozen=True)` class" in prompt
+    assert "planned field order, annotations, required fields, and optional defaults" in prompt
+    assert "duplicate spec classes, changed defaults, extra fields" in prompt
+    assert "Prefer the leading `from __future__ import annotations`" in prompt
+    assert "undefined, late, or rebound names fail closed before import" in prompt
+    assert "Every eager function default must likewise resolve" in prompt
+    assert "enum attributes must name an existing member" in prompt
+    assert "dictionary keys and set elements must remain recursively hashable" in prompt
+    assert "Frozen dataclass fields may not use mutable list" in prompt
+    assert "place every required field before any defaulted field" in prompt
+    assert "exactly `evaluate(self, market_state)`" in prompt
+    assert "Preserve the authoritative `self` receiver unchanged" in prompt
+    assert "Do not bind `dataclass`, `property`, `staticmethod`, or `classmethod`" in prompt
+    assert "annotated fields and other class-level behavior declarations" in prompt
+    assert "Eager annotation unions admit only proven type operands" in prompt
+    assert "every eager annotation union operation" in prompt
+    assert "Eager subscript annotations may use only the inert builtin" in prompt
+    assert "custom subscript bases fail closed before import" in prompt
+    assert "unshadowed builtin `property`, `staticmethod`, and `classmethod`" in prompt
+    assert "may define only `__init__`, `spec`, `requirements`, and `evaluate`" in prompt
+    assert "extra helpers, lifecycle hooks, and data-model methods fail closed" in prompt
+    assert "exact inert `requirements` property" in prompt
+    assert "store the submitted `spec` exactly as `self._spec`" in prompt
+    assert "Preserve the caller's `market_state` parameter unchanged" in prompt
+    assert "Local definitions never count as composition evidence" in prompt
+    assert "local class bodies and local function/lambda defaults" in prompt
+    assert "simple binding consumed by the canonical composition" in prompt
+    assert "conditional return/raise exits" in prompt
+    assert "additional `for`, `async for`, or `while` loops" in prompt
+    assert "other `if`/ternary, `try`, `with`, `match`, comprehension" in prompt
+    assert "exact fail-fast `ValueError` guards" in prompt
+    assert "unshadowed builtin `ValueError` with one literal string message" in prompt
+    assert "and no explicit cause" in prompt
+    assert "sign absent or explicitly positive one" in prompt
+    assert "update it only with additive `+=` in its recognized loop" in prompt
+    assert "do not write to it anywhere else before return" in prompt
+    assert "if interval_stop <= interval_start" in prompt
+    assert "if event_weight <= 0.0" in prompt
+    assert "conditional `break` or `continue` exits fail closed" in prompt
+    assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
+    assert "right-hand side must be exactly its corresponding" in prompt
+    assert "directly imported public" in prompt
+    assert "directly and without aliases from its public Trellis module" in prompt
+    assert (
+        "both module and `evaluate` imports on the exact CDS scaffold surface" in prompt
+    )
+    assert (
+        "Module-style, relative, aliased, wildcard, and other arbitrary imports"
+        in prompt
+    )
+    assert "declared calendar/schedule convention symbols" in prompt
+    assert "one immutable assignment that dominates its use" in prompt
+    assert (
+        "unshadowed builtin bindings for `enumerate`, `float`, `getattr`, and `range`"
+        in prompt
+    )
+    assert (
+        "Initialize `interval_start` exactly once with a reachable direct `0`"
+        in prompt
+    )
+    assert "direct or dynamic namespace shadowing, reflection" in prompt
+    assert "authoritative `evaluate()` method undecorated" in prompt
+    assert "CDS contract findings are blocking" in prompt
+    assert "required period guard" in prompt
+    assert "direct cashflow constructor" in prompt
+    assert "cashflow constructor's exact declared keyword surface" in prompt
+    assert "before the period loop and every spread alias or cashflow use" in prompt
 
 
 def test_distilled_builder_memory_keeps_legacy_cds_labels_and_omits_nearest_products():
@@ -1424,31 +1507,86 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
         prompt_surface="compact",
     )
 
-    assert "get_numpy" in prompt
-    assert "np = get_numpy()" in prompt
-    assert "explicit payment/default schedule" in prompt
-    assert "hazard_rate" in prompt or "survival_probability" in prompt
-    assert "150 bp -> 0.015" in prompt
+    assert "build_period_schedule" in prompt
+    assert "build_default_event_grid" in prompt
+    assert "conditional_event_probabilities_from_curve" in prompt
+    assert "sample_first_event_weights" in prompt
+    assert "without `*args`, `**kwargs`" in prompt
+    assert "do not call the unselected primitive" in prompt
+    assert "one reachable `evaluate()` body" in prompt
     assert "spread = float(spec.spread)" in prompt
     assert "spread *= 1e-4" in prompt
-    assert "`100` and `0.01`" in prompt
-    assert "Do not import or instantiate `MonteCarloEngine`" in prompt
-    assert "np.random.default_rng" in prompt
+    assert "Do not instantiate `MonteCarloEngine`" in prompt
     assert "build_cds_schedule" in prompt
     assert "price_cds_monte_carlo" in prompt
-    assert "many paths" in prompt
-    assert "scalar `alive`" in prompt
-    assert "1.0 - s_pay / s_prev" in prompt
-    assert "1.0 - exp(-hazard * dt)" in prompt
-    assert "Do not discount protection at sampled default times `tau`" in prompt
-    assert "Use `spec.start_date` as the time origin for Monte Carlo schedule times" in prompt
-    assert "keep `prev_date` and `prev_t` as separate variables" in prompt
-    assert "persistent `alive` indicator" in prompt
-    assert "Update `alive` immediately after drawing `default_in_interval`" in prompt
-    assert "Do not hard-code `n_paths=50000`" in prompt
-    assert "`spec.n_paths`" in prompt
+    assert "do not call `build_cds_schedule`" in prompt.lower()
+    assert "adapter-local RNG/default-state loops" in prompt
+    assert "do not hard-code `50000`" in prompt
     assert "seed=42" in prompt
-    assert "market_state.discount.discount(t)" in prompt
+    assert "exactly the three positional contract fields and the seven named" in prompt
+    assert "opaque `*args`/`**kwargs`, duplicate names, and extra keywords" in prompt
+    assert "period_payment_times" in prompt
+    assert "settlement_time" in prompt
+    assert "one direct final signed return" in prompt
+    assert "module and class definition time declarative" in prompt
+    assert "preserve the directly imported `dataclasses.dataclass` binding" in prompt
+    assert "exactly one explicit `@dataclass(frozen=True)` class" in prompt
+    assert "planned field order, annotations, required fields, and optional defaults" in prompt
+    assert "duplicate spec classes, changed defaults, extra fields" in prompt
+    assert "Prefer the leading `from __future__ import annotations`" in prompt
+    assert "undefined, late, or rebound names fail closed before import" in prompt
+    assert "Every eager function default must likewise resolve" in prompt
+    assert "enum attributes must name an existing member" in prompt
+    assert "dictionary keys and set elements must remain recursively hashable" in prompt
+    assert "Frozen dataclass fields may not use mutable list" in prompt
+    assert "place every required field before any defaulted field" in prompt
+    assert "exactly `evaluate(self, market_state)`" in prompt
+    assert "Preserve the authoritative `self` receiver unchanged" in prompt
+    assert "Do not bind `dataclass`, `property`, `staticmethod`, or `classmethod`" in prompt
+    assert "annotated fields and other class-level behavior declarations" in prompt
+    assert "Eager annotation unions admit only proven type operands" in prompt
+    assert "every eager annotation union operation" in prompt
+    assert "Eager subscript annotations may use only the inert builtin" in prompt
+    assert "custom subscript bases fail closed before import" in prompt
+    assert "unshadowed builtin `property`, `staticmethod`, and `classmethod`" in prompt
+    assert "may define only `__init__`, `spec`, `requirements`, and `evaluate`" in prompt
+    assert "extra helpers, lifecycle hooks, and data-model methods fail closed" in prompt
+    assert "exact inert `requirements` property" in prompt
+    assert "store the submitted `spec` exactly as `self._spec`" in prompt
+    assert "Preserve the caller's `market_state` parameter unchanged" in prompt
+    assert "Local definitions never count as composition evidence" in prompt
+    assert "local class bodies and local function/lambda defaults" in prompt
+    assert "simple binding consumed by the canonical composition" in prompt
+    assert "conditional return/raise exits" in prompt
+    assert "additional `for`, `async for`, or `while` loops" in prompt
+    assert "other `if`/ternary, `try`, `with`, `match`, comprehension" in prompt
+    assert "exact fail-fast `ValueError` guards" in prompt
+    assert "unshadowed builtin `ValueError` with one literal string message" in prompt
+    assert "and no explicit cause" in prompt
+    assert "sign absent or explicitly positive one" in prompt
+    assert "fixed reproducible `42`" in prompt
+    assert "update it only with additive `+=`" in prompt
+    assert "do not write to it anywhere else before return" in prompt
+    assert "if interval_stop <= interval_start" in prompt
+    assert "if event_weight <= 0.0" in prompt
+    assert "conditional `break` or `continue` exits fail closed" in prompt
+    assert "Do not reassign `interval_stop`, `interval_start`, or `event_weight`" in prompt
+    assert "right-hand side must be exactly its corresponding" in prompt
+    assert "directly imported public" in prompt
+    assert (
+        "both module and `evaluate` imports on the exact CDS scaffold surface" in prompt
+    )
+    assert (
+        "Module-style, relative, aliased, wildcard, and other arbitrary imports"
+        in prompt
+    )
+    assert "direct or dynamic namespace shadowing, reflection" in prompt
+    assert "authoritative `evaluate()` method undecorated" in prompt
+    assert "CDS contract findings are blocking" in prompt
+    assert "required period guard" in prompt
+    assert "direct cashflow constructor" in prompt
+    assert "cashflow constructor's exact declared keyword surface" in prompt
+    assert "before the period loop and every spread alias or cashflow use" in prompt
 
 
 def test_executor_credit_default_swap_retry_pins_discount_and_time_origin():
@@ -1470,12 +1608,39 @@ def test_executor_credit_default_swap_retry_pins_discount_and_time_origin():
 
     text = "\n".join(_route_specific_retry_lines(request))
 
-    assert "spec.start_date" in text
-    assert "accrued-on-default premium adjustment" in text
-    assert "Do not average adjacent discount factors" in text
-    assert "0.5 * (prev_discount + discount)" in text
-    assert "market_state.discount.discount(pay_t)" in text
-    assert "from trellis.models import black" in text
+    assert "build_period_schedule" in text
+    assert "build_default_event_grid" in text
+    assert "expected_first_event_weights" in text
+    assert "CouponAccrual" in text
+    assert "ProtectionPayment" in text
+    assert "period_payment_times" in text
+    assert "settlement_time" in text
+    assert "accrued_on_event" in text
+    assert "product-level CDS helper modules" in text
+
+
+def test_executor_credit_default_swap_qmc_retry_fails_closed():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import KnowledgeRetrievalRequest, _route_specific_retry_lines
+
+    request = KnowledgeRetrievalRequest(
+        audience="builder",
+        attempt_number=2,
+        knowledge_surface="compact",
+        prompt_surface="compact",
+        retry_reason="validation",
+        pricing_method="qmc",
+        instrument_type="credit_default_swap",
+        stage="validation_failed",
+        product_ir=SimpleNamespace(instrument="credit_default_swap"),
+    )
+
+    text = "\n".join(_route_specific_retry_lines(request))
+
+    assert "QMC" in text
+    assert "fail closed" in text.lower()
+    assert "sample_first_event_weights" not in text
 
 
 def test_evaluate_prompt_cds_analytical_prefers_route_bound_modules_over_generic_family_modules():
@@ -1514,7 +1679,9 @@ def test_evaluate_prompt_cds_analytical_prefers_route_bound_modules_over_generic
     marker = "Route-bound modules to import and use:"
     assert marker in prompt
     modules_block = prompt.split(marker, 1)[1].split("\n\n", 1)[0]
-    assert "`trellis.models.credit_default_swap`" in modules_block
+    assert "`trellis.core.date_utils`" in modules_block
+    assert "`trellis.models.contingent_cashflows`" in modules_block
+    assert "`trellis.models.credit_default_swap`" not in modules_block
     assert "`trellis.models.black`" not in modules_block
     assert "Do not import a generic parent package such as `from trellis.models import ...`" in prompt
 

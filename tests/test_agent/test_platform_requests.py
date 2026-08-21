@@ -2209,19 +2209,19 @@ def test_request_missing_schedule_returns_semantic_error():
 
 
 @pytest.mark.parametrize(
-    "preferred_method,expected_route,expected_expr_kind,expected_helper",
+    "preferred_method,expected_route,expected_expr_kind,expected_weight",
     [
         (
             "analytical",
             "credit_default_swap",
             "ThenExpr",
-            "trellis.models.credit_default_swap.price_cds_analytical",
+            "trellis.models.contingent_cashflows.expected_first_event_weights",
         ),
         (
             "monte_carlo",
             "credit_default_swap",
             "ThenExpr",
-            "trellis.models.credit_default_swap.price_cds_monte_carlo",
+            "trellis.models.contingent_cashflows.sample_first_event_weights",
         ),
     ],
 )
@@ -2229,7 +2229,7 @@ def test_compile_build_request_uses_credit_default_swap_semantic_contract_bluepr
     preferred_method,
     expected_route,
     expected_expr_kind,
-    expected_helper,
+    expected_weight,
 ):
     from trellis.agent.platform_requests import compile_build_request
 
@@ -2260,13 +2260,14 @@ def test_compile_build_request_uses_credit_default_swap_semantic_contract_bluepr
     assert compiled.request.metadata["semantic_blueprint"]["dsl_expr_kind"] == expected_expr_kind
     assert (
         compiled.request.metadata["semantic_blueprint"]["dsl_family_ir"]["schedule_builder_symbol"]
-        == "build_cds_schedule"
+        == "build_period_schedule"
     )
     authority = compiled.request.metadata["route_binding_authority"]
     primitive_refs = authority["backend_binding"]["primitive_refs"]
-    assert expected_helper in primitive_refs
-    assert any(ref.endswith(".build_cds_schedule") for ref in primitive_refs)
-    assert "trellis.models.credit_default_swap" in compiled.semantic_blueprint.target_modules
+    assert expected_weight in primitive_refs
+    assert any(ref.endswith(".build_period_schedule") for ref in primitive_refs)
+    assert "trellis.models.contingent_cashflows" in compiled.semantic_blueprint.target_modules
+    assert "trellis.models.credit_default_swap" not in compiled.semantic_blueprint.target_modules
 
 
 def test_compile_build_request_uses_nth_to_default_semantic_contract_blueprint():

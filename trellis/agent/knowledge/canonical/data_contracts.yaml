@@ -19,6 +19,27 @@
   conversion: None — use directly in black76_call(F, K, sigma, T)
   model_range: 0.10 to 0.60
   warning: ''
+- name: SINGLE_NAME_DEFAULT_EVENT_COMPOSITION
+  method: analytical
+  source: build_default_event_grid(...) plus survival_curve.survival_probability(t)
+  convention: Curve times use ACT/365 from the valuation origin; coupon accrual
+    uses the declared contract day count; interval probabilities are conditional
+    survival ratios, survival to the first live interval supplies the initial
+    unconditional mass, and expected_first_event_weights propagates exact first-event
+    and post-interval survival mass.
+  typical_range: survival probabilities in [0, 1], non-negative interval event
+    probabilities, positive discount factors, recovery in [0, 1]
+  model_expects: one deterministic discount curve, one deterministic survival
+    curve, one bounded event grid, and explicit CouponAccrual and ProtectionPayment
+    leg assembly
+  conversion: normalize spread quotes once, preserve coupon and curve time bases
+    separately, pass survival to the first live interval as initial_survival_weight,
+    and apply notional and signs only in the visible leg assembly
+  model_range: one reference entity with fixed recovery and bounded within-period
+    integration
+  warning: Do not call product-level CDS schedule or pricing helpers from generated
+    code, and do not treat conditional interval probabilities as unconditional
+    default mass.
 - name: TERMINAL_BASKET_MARKET_BINDING
   method: analytical
   source: resolve_terminal_basket_inputs(market_state, spec)
@@ -61,6 +82,28 @@
   conversion: Use directly as sigma in GBM(mu=r, sigma=sigma_Black)
   model_range: 0.10 to 0.60
   warning: ''
+- name: SINGLE_NAME_DEFAULT_EVENT_COMPOSITION
+  method: monte_carlo
+  source: build_default_event_grid(...) plus survival_curve.survival_probability(t)
+  convention: Curve times use ACT/365 from the valuation origin; coupon accrual
+    uses the declared contract day count; interval probabilities are conditional
+    survival ratios, survival to the first live interval seeds the initial alive
+    mass, and sample_first_event_weights produces empirical first-event and
+    post-interval survival mass.
+  typical_range: survival probabilities in [0, 1], non-negative interval event
+    probabilities, positive discount factors, positive path count, recovery in
+    [0, 1]
+  model_expects: one deterministic discount curve, one deterministic survival
+    curve, one bounded event grid, an explicit path count and seed, and explicit
+    CouponAccrual and ProtectionPayment leg assembly
+  conversion: normalize spread quotes once, preserve coupon and curve time bases
+    separately, pass survival to the first live interval as initial_survival_weight,
+    use one seeded sampling pass, and apply notional and signs only in the visible
+    leg assembly
+  model_range: one reference entity with fixed recovery and pseudo-random
+    first-event sampling
+  warning: Do not resample independently by interval, call product-level CDS
+    helpers, or silently replace the task path count with a smaller constant.
 - name: TERMINAL_BASKET_MARKET_BINDING
   method: monte_carlo
   source: resolve_terminal_basket_inputs(market_state, spec)

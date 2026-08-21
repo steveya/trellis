@@ -426,9 +426,233 @@ For comparison-quality single-name CDS Monte Carlo runs, the typed spec now
 also carries the path-count control explicitly. The planner specializes the
 CDS Monte Carlo schema with ``n_paths``, and the ``T38`` canary pins a tighter
 ``2.0`` percent comparison tolerance around the resulting internal reference.
-If the generated adapter hard-codes a smaller path count such as ``50000``
-instead of flowing ``spec.n_paths``, expect a route-specific diagnosis packet
-that fails on internal comparison spread long before reviewer escalation.
+The exact target binds ``sample_first_event_weights(...)``; the analytical
+target binds ``expected_first_event_weights(...)``. Both receive survival to
+the first live interval as ``initial_survival_weight`` so a forward-start target
+does not silently price conditional on survival to its start. Each call must
+have exactly one positional conditional-probability argument and only the
+primitive's declared explicit keywords. Opaque ``*args`` or ``**kwargs``,
+duplicate keywords, and extra controls fail closed because they can alter or
+duplicate the validated binding at runtime. If an artifact
+calls a product-level CDS helper, omits the event-grid/cashflow primitives, or
+hard-codes a smaller path count such as ``50000`` instead of flowing
+``spec.n_paths``, expect a semantic or comparison-coherence failure before
+reviewer escalation.
+The cashflow weight owner must resolve to the numerical-evidence primitive
+selected by the active generation plan: merely calling both primitives does not
+let an analytical target consume sampled weights or a Monte Carlo target consume
+exact weights. Executing the unselected primitive is itself rejected, including
+when its result appears unused, because its method-specific controls would
+otherwise escape the active route validation. Monte Carlo sampling must bind
+``n_paths`` to the active spec;
+the deterministic materializer's explicit ``250000`` fallback is the only
+literal fallback admitted by this route validator. Because ``n_paths`` is an
+optional typed field, passing ``spec.n_paths`` directly is rejected: the call
+must guarantee a non-null value, for example
+``getattr(spec, "n_paths", 250000) or 250000``.
+All ``credit_default_swap_*`` contract findings are blocking in the executor,
+including while the broader algorithm-contract validator remains in warning
+mode. The inspected ``evaluate()`` must be an undecorated authoritative method
+on a plain payoff class; class decorators, metaclass/base indirection, dynamic
+lookup hooks, and post-definition method rebinding fail closed. Its canonical
+signature is exactly ``evaluate(self, market_state)``; positional-only,
+variadic, keyword-only, extra, and defaulted parameters are rejected so they
+cannot shadow trusted definition-time bindings. The canonical period loop and
+mapped interval loop are the only admitted loops; any additional
+``for``, async loop, or ``while`` invalidates the composition before synchronous
+smoke execution, preventing nonterminating setup code from hanging the build.
+The only admitted conditionals are the exact market guards, basis-point spread
+normalization, initial-survival empty-grid fallback, empty-period guard, and
+optional nonpositive-event guard. Other ``if`` or ternary branches, ``try``,
+``with``, ``match``, comprehensions, and standalone executable expressions fail
+closed so input-dependent implicit exceptions cannot hide behind the ordinary
+smoke case. Each market guard raises the unshadowed builtin ``ValueError``
+with exactly one literal string message and no explicit ``raise ... from``
+cause; shadowed exception names, executable exception arguments, and
+executable cause expressions fail closed.
+The caller's ``market_state`` parameter must remain unchanged throughout the
+reachable composition; rebinding or deleting it fails closed before direct
+credit-curve and discount-curve names can be accepted as active market data.
+The ``self`` receiver is equally authoritative: rebinding or deleting it fails
+closed before ``self._spec`` can be accepted as the submitted pricing
+specification. This prevents a proxy receiver from substituting different
+economics behind otherwise canonical field accesses.
+Every assignment must also be a simple binding consumed by the canonical
+composition before any rebinding. Dead assignment expressions, opaque writes,
+and augmented writes outside the exact spread and four-leg accumulators fail
+closed for the same reason.
+Local definitions inside ``evaluate()`` never count as composition evidence.
+Before their runtime bodies are pruned, local class bodies and the eager
+defaults, decorators, and annotations of local functions or lambdas are checked
+as definition-time surfaces. Executable or unbounded construction therefore
+fails closed before synchronous smoke execution. A decorated local dataclass
+also rejects mutable list, dictionary, and set field defaults under the same
+rules that Python applies while creating the class. It requires one earlier
+authoritative direct ``dataclass`` import and places required fields before
+defaulted fields. The enclosing ``evaluate()`` scope may not bind
+``dataclass``, ``property``, ``staticmethod``, or ``classmethod`` anywhere in
+its body, including unreachable statements, because Python resolves those as
+locals before definition creation begins.
+The module and its class bodies are definition-time declarative: docstrings,
+approved imports, frozen spec declarations, and the plain payoff declaration
+are admitted, while executable module/class control flow is rejected before
+dynamic import. Wildcard imports are rejected because they make primitive and
+builtin ownership opaque even when approved direct imports are also present.
+At both module and ``evaluate`` scope, the bounded CDS surface admits only
+direct, unaliased names from ``__future__``, ``dataclasses``, ``datetime``, and
+the declared Trellis calendar, schedule, market-state, payoff-type, core-type,
+date-utils, and contingent-cashflow modules. Module-style, relative, aliased,
+and other arbitrary imports fail before dynamic import so an uninspected
+initializer cannot execute ahead of smoke validation.
+The leading ``from __future__ import annotations`` scaffold import postpones
+annotation evaluation. Without it, every annotation name must resolve before
+its definition to an unshadowed inert builtin or an approved direct type
+import; undefined, late, and rebound names fail closed instead of raising
+during dynamic import.
+When annotations are eagerly evaluated, subscript annotations admit only the
+inert builtin ``dict``, ``frozenset``, ``list``, ``set``, ``tuple``, and
+``type`` bases. Custom subscript bases fail before import because their
+``__class_getitem__`` hook could execute arbitrary code.
+A frozen spec decorator must retain the directly imported
+``dataclasses.dataclass`` binding and use the explicit
+``@dataclass(frozen=True)`` form; module- or class-scope shadowing and
+rebinding of ``dataclass`` fail closed. Frozen specification classes contain
+exactly the authoritative planned field order, annotations, required-field
+positions, and optional defaults. Duplicate same-named spec classes, changed
+defaults, extra or missing fields, methods, and runtime data-model hooks fail
+closed before smoke fixtures can mask the drift with explicit values.
+Mutable list, dictionary, and set field defaults are rejected before the
+dataclass decorator can raise during class creation. The same bounded proof
+requires the authoritative decorator import and rejects a required field after
+any defaulted field.
+Eager function defaults are resolved before dynamic import: bare names must be
+unshadowed inert builtins or approved direct imports already in scope, and an
+enum attribute must name a real member on its authoritative imported enum.
+Undefined, late, rebound, or nonexistent default bindings fail closed before
+Python can raise during module definition. Literal containers are validated by
+constructing an inert proxy, so dictionary keys and set elements must remain
+recursively hashable even through nested tuples. Eager annotation unions admit
+only proven type operands or ``None``; arbitrary values and attribute/member
+expressions fail closed before Python applies ``|``. Every union operation must
+contain at least one proven type operand: ``None`` may accompany a type-producing
+operand, but ``None | None`` and nested all-``None`` union nodes fail closed.
+
+The admitted ``property``,
+``staticmethod``, and ``classmethod`` decorators must also retain their
+unshadowed builtin bindings. For generated payoff classes, the constructor
+must store the submitted ``spec`` exactly as ``self._spec`` and the sole
+``@property spec`` must return that object; alternate writers and dynamic
+attribute hooks fail closed. The payoff class may define only ``__init__``,
+``spec``, ``requirements``, and ``evaluate``; extra helpers, lifecycle hooks
+such as ``__del__``, and other data-model methods fail closed. Its class body
+admits only optional docstrings, trusted comparison-binding metadata, and those
+four methods; annotated fields and other class-level behavior declarations are
+rejected before attribute lookup can invoke them. Its
+``requirements`` property is the exact inert
+scaffold return of the literal ``{"credit_curve", "discount_curve"}`` set.
+The guarded basis-point normalization must dominate the period loop, every
+spread alias, and every cashflow use; omitting it or moving it after assembly
+fails the economic-binding check. The sampler seed must resolve exactly to the
+canonical reproducible integer ``42``; omitted, ``None``, opaque, or other seed
+values fail closed. Constructor signs on ``CouponAccrual`` and
+``ProtectionPayment`` must be absent or resolve
+to positive one because the final signed CDS return owns leg polarity.
+The route validator also checks that the first-event weight call derives its
+initial mass exactly from credit-curve survival at the first live interval of
+the same grid used to derive conditional probabilities. Multiplying, offsetting,
+or otherwise wrapping that survival mass in arithmetic fails closed; only the
+empty-grid ``else 1.0`` guard and simple aliases/``float`` conversion are
+accepted. The same grid must resolve back through
+``build_default_event_grid`` to a ``build_period_schedule`` whose
+``time_origin`` is the active valuation date (with the declared start-date
+fallback) and whose start date, end date, frequency, and day-count convention
+are bound to the active spec. ``EventSchedule`` retains the construction
+calendar so BUS/252 coupon and event-accrual measurements use the same
+business-day source instead of failing after schedule construction. The
+bounded route also requires its declared
+standard conventions exactly: ``WEEKEND_ONLY``, following adjustment, no roll,
+short-last stub, and zero payment lag. Convention overrides fail closed until
+the typed CDS contract carries those fields. The call has exactly three
+positional contract fields and the seven named ``day_count``, ``time_origin``,
+``calendar``, ``bda``, ``roll_convention``, ``stub``, and
+``payment_lag_days`` arguments; opaque ``*args``/``**kwargs``, duplicate names,
+and extra keywords fail the schedule binding. An unconditional
+``time_origin=spec.start_date``
+makes a forward-start grid begin at zero and therefore fails closed. Both the
+conditional event probabilities and initial survival must come from the active
+market credit curve. The validator also checks that premium and protection PVs
+are accumulated through the full
+``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
+assemblies fail semantic validation even when they mention every required
+primitive. The complete assembly must occur in exactly one reachable
+``evaluate`` body and lead to one direct final signed return. Exact fail-fast
+``ValueError`` guards for missing ``market_state.credit_curve`` and
+``market_state.discount`` are admitted; input-dependent assertions and other
+conditional return/raise exits, unused or nested helpers, a branch-hidden
+period loop, or composition after the final return do not satisfy the route
+contract. Required
+leg accumulators must each be initialized exactly once to zero before the
+period loop and may only be written by that initializer and the unconditional
+additive (``+=``) statement in the corresponding loop body. Its right-hand side
+must be exactly the corresponding directly imported public
+``coupon_cashflow_pv(...)`` or ``protection_payment_pv(...)`` call; attribute
+dispatch, aliases, direct or dynamic namespace shadowing, reflection, negation,
+scaling, or other wrappers fail closed. The full public route chain---schedule
+builder, declared calendar and schedule convention symbols, event grid,
+conditional probabilities, selected first-event weights, cashflow constructors,
+and PV functions---must retain direct, unaliased imports from its approved
+modules. A same-name replacement fails closed. Every active-spec, market-curve,
+schedule, grid, weight, and cashflow-value alias used as semantic evidence must
+have one immutable assignment that dominates the use; the validator does not
+accept an earlier correct assignment after that name is rebound. The grid walk
+must preserve the unshadowed builtin ``enumerate``, ``float``, ``getattr``, and
+``range`` bindings, use zero-based one-argument period enumeration and
+two-argument interval ranges without keywords, and leave all loop targets
+unchanged. The interval cursor requires exactly one reachable
+direct zero initializer before the period loop; dead, duplicate, or competing
+initializers fail closed. The interval loop must be a reachable
+direct child of
+the period loop. Before scheduled-leg assembly, the bounded empty-period guard
+must advance ``interval_start`` to ``interval_stop`` and continue; otherwise an
+expired or empty period can index the wrong survival weight. The non-positive
+``event_weight`` continue guard is also admitted before event-leg assembly. Any
+other conditional ``break`` or ``continue``
+can dominate the required updates and therefore fails closed, as does hiding
+either the interval loop or leg algebra beneath ``if False`` or an unproved
+event-weight condition. Reassigning ``interval_stop``, ``interval_start``, or
+``event_weight`` before an admitted guard also fails closed. Within that
+mapping, scheduled premium must use
+``survival_weights[interval_stop - 1]`` while protection and accrued-on-event
+cashflows use ``event_weights[interval_index]`` (directly or through simple
+aliases). Those indexed weights must belong to the validated
+``expected_first_event_weights`` or ``sample_first_event_weights`` result, not
+to a separately constructed object. ``weight``, ``default_probability``, and
+``discount_factor`` must bind on the direct ``CouponAccrual`` or
+``ProtectionPayment`` constructor passed to the validated PV primitive; nested
+calls and decoy keywords are not constructor evidence. Each constructor must
+use its exact declared keyword surface: ``CouponAccrual`` requires
+``notional``, ``rate``, ``accrual``, ``discount_factor``, and ``weight``;
+``ProtectionPayment`` requires ``notional``, ``recovery``,
+``default_probability``, and ``discount_factor``. Either may add only an
+explicit positive ``sign``. Positional arguments, unpacking, duplicates,
+missing fields, and extra keywords fail closed before smoke evaluation.
+Scheduled coupon accrual must use the
+active period accrual; accrued-on-event must use that period accrual multiplied
+by the active interval's elapsed fraction. That elapsed fraction is measured at
+the interval's midpoint settlement date under the schedule's coupon day count;
+it is not an ACT/365 curve-time ratio. Scheduled premium discounting must use
+``period_payment_times[period_index]``; protection and accrued-on-event
+discounting must use the active interval's ``settlement_time``, and each
+discount call must be owned by the active market discount curve. The accepted
+return AST must preserve the protection-buyer convention
+``protection_leg - premium_leg - accrued_on_event + accrued_to_valuation``;
+reversed legs, omitted accrual terms, or wrong accrual signs fail closed.
+Every premium, protection, and accrued-on-event constructor must bind notional,
+normalized spread, and recovery to the active spec rather than literals. The
+valuation-accrual adjustment must likewise be the exact active-spec notional,
+normalized spread, active-period accrual, and mapped elapsed-period-fraction
+product. A guarded ``spread > 1.0`` multiplication by ``1e-4`` is the admitted
+basis-point normalization; other mutations of the bound spread fail closed.
 
 For analytical rate-style swaption routes, the deterministic bundle also checks
 composition consistency against the retained

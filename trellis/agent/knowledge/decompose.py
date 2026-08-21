@@ -2920,6 +2920,8 @@ def _underlying_asset_class_for(
         or any(_looks_like_currency_pair(part) for part in normalized_description.split("_"))
     ):
         return "fx"
+    if normalized_instrument in {"cds", "credit_default_swap", "nth_to_default", "cdo"}:
+        return "credit"
     if (
         normalized_instrument in {"swaption", "bermudan_swaption", "cap", "floor", "period_rate_option_strip"}
         or normalized_payoff in {"swaption", "period_rate_option_strip", "rate_cap_floor_strip"}
@@ -2930,8 +2932,6 @@ def _underlying_asset_class_for(
         return "rate"
     if "future" in description_tokens or "futures" in description_tokens:
         return "future"
-    if normalized_instrument in {"cds", "credit_default_swap", "nth_to_default", "cdo"}:
-        return "credit"
     if "commodity" in description_tokens:
         return "commodity"
     if (

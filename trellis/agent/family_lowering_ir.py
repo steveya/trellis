@@ -641,12 +641,18 @@ class CorrelatedBasketMonteCarloIR(BaseFamilyLoweringIR):
 
 @dataclass(frozen=True)
 class EventTriggeredTwoLeggedContractIR(BaseFamilyLoweringIR):
-    """Typed lowering payload for helper-backed event-triggered two-legged routes."""
+    """Typed lowering payload for explicit event-triggered two-legged routes."""
 
     pricing_mode: str = "analytical"
-    schedule_builder_symbol: str = "build_cds_schedule"
-    helper_symbol: str = "price_cds_analytical"
-    market_mapping: str = "discount_curve_credit_curve_to_cds_legs"
+    schedule_builder_symbol: str = "build_period_schedule"
+    event_grid_symbol: str = "build_default_event_grid"
+    event_probability_symbol: str = "conditional_event_probabilities_from_curve"
+    event_weight_symbol: str = "expected_first_event_weights"
+    coupon_accrual_symbol: str = "CouponAccrual"
+    protection_payment_symbol: str = "ProtectionPayment"
+    scheduled_leg_symbol: str = "coupon_cashflow_pv"
+    trigger_leg_symbol: str = "protection_payment_pv"
+    market_mapping: str = "discount_curve_credit_curve_to_event_weighted_legs"
     schedule_role: str = "payment_dates"
     leg_semantics: tuple[str, ...] = ("scheduled_leg", "trigger_leg")
     payment_dates: tuple[str, ...] = ()
@@ -1248,19 +1254,27 @@ def _binding_supports_credit_default_swap(
     *,
     route_id: str,
 ) -> bool:
-    """Return whether the binding surface fits the CDS lowering lane.
-
-    QUA-794 slice 2: the canonical CDS helper binding lives in the
-    canonical
-    catalog; the historical ``route_id in {...} and binding_spec is None``
-    fallback is dead code and has been retired.
-    """
+    """Return whether the binding exposes the complete default-event substrate."""
     del route_id
-    if _binding_has_symbol(binding_spec, "schedule_builder", "build_cds_schedule"):
-        return True
-    if _binding_has_any_symbol(binding_spec, "route_helper", "price_cds_analytical", "price_cds_monte_carlo"):
-        return True
-    return False
+    return bool(
+        _binding_has_symbol(binding_spec, "schedule_builder", "build_period_schedule")
+        and _binding_has_symbol(binding_spec, "event_grid", "build_default_event_grid")
+        and _binding_has_symbol(
+            binding_spec,
+            "event_probability",
+            "conditional_event_probabilities_from_curve",
+        )
+        and _binding_has_any_symbol(
+            binding_spec,
+            "numerical_evidence",
+            "expected_first_event_weights",
+            "sample_first_event_weights",
+        )
+        and _binding_has_symbol(binding_spec, "payoff_primitive", "CouponAccrual")
+        and _binding_has_symbol(binding_spec, "payoff_primitive", "ProtectionPayment")
+        and _binding_has_symbol(binding_spec, "scheduled_leg", "coupon_cashflow_pv")
+        and _binding_has_symbol(binding_spec, "trigger_leg", "protection_payment_pv")
+    )
 
 
 def _binding_supports_nth_to_default(
@@ -2606,27 +2620,29 @@ def _credit_default_swap_pricing_mode(
 ) -> str:
     """Return the CDS pricing mode implied by the binding surface."""
     del route_id
-    if _binding_has_symbol(binding_spec, "event_probability", "interval_default_probability"):
+    if _binding_has_symbol(
+        binding_spec,
+        "numerical_evidence",
+        "sample_first_event_weights",
+    ):
         return "monte_carlo"
-    if _binding_has_symbol(binding_spec, "route_helper", "price_cds_monte_carlo"):
-        return "monte_carlo"
-    if _binding_has_symbol(binding_spec, "route_helper", "price_cds_analytical"):
-        return "analytical"
     return "analytical"
 
 
-def _credit_default_swap_helper_symbol(
+def _credit_default_swap_event_weight_symbol(
     binding_spec: ResolvedBackendBindingSpec | None,
     *,
     route_id: str,
 ) -> str:
-    """Return the CDS helper symbol implied by the binding surface."""
+    """Return the first-event weighting primitive implied by the binding."""
     del route_id
-    if _binding_has_symbol(binding_spec, "route_helper", "price_cds_monte_carlo"):
-        return "price_cds_monte_carlo"
-    if _binding_has_symbol(binding_spec, "route_helper", "price_cds_analytical"):
-        return "price_cds_analytical"
-    return "price_cds_analytical"
+    if _binding_has_symbol(
+        binding_spec,
+        "numerical_evidence",
+        "sample_first_event_weights",
+    ):
+        return "sample_first_event_weights"
+    return "expected_first_event_weights"
 
 
 def _build_credit_default_swap_ir(
@@ -2644,7 +2660,7 @@ def _build_credit_default_swap_ir(
     requested_outputs: tuple[str, ...],
     reporting_currency: str,
 ) -> EventTriggeredTwoLeggedContractIR | None:
-    """Build the structural two-legged event-contract IR for CDS helper-backed routes."""
+    """Build the structural two-legged event-contract IR for explicit CDS composition."""
     if not _is_credit_default_swap_contract(contract, product_ir):
         return None
 
@@ -2665,7 +2681,10 @@ def _build_credit_default_swap_ir(
         route_name="Credit-default-swap",
     )
 
-    helper_symbol = _credit_default_swap_helper_symbol(binding_spec, route_id=route_id)
+    event_weight_symbol = _credit_default_swap_event_weight_symbol(
+        binding_spec,
+        route_id=route_id,
+    )
     pricing_mode = _credit_default_swap_pricing_mode(binding_spec, route_id=route_id)
     state_tags = (
         ("pathwise_only", "schedule_state")
@@ -2684,7 +2703,7 @@ def _build_credit_default_swap_ir(
         requested_outputs=requested_outputs,
         reporting_currency=reporting_currency,
         pricing_mode=pricing_mode,
-        helper_symbol=helper_symbol,
+        event_weight_symbol=event_weight_symbol,
         payment_dates=tuple(product.timeline.observation_dates or product.observation_schedule),
         observable_ids=tuple(item.observable_id for item in product.observables),
         observable_types=tuple(item.observable_type for item in product.observables),

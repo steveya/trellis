@@ -47,6 +47,13 @@ _ALWAYS_BLOCKING_CATEGORIES = {
 }
 
 
+def _is_always_blocking_category(category: str) -> bool:
+    """Return whether a finding represents a proven contract violation."""
+    return category.startswith("credit_default_swap_") or (
+        category in _ALWAYS_BLOCKING_CATEGORIES
+    )
+
+
 def _resolved_route_spec(
     plan: GenerationPlan,
     route_spec: RouteSpec | None,
@@ -111,12 +118,12 @@ def validate_generated_semantics(
             validator_name = findings[0].validator if findings else ""
             validator_mode = _VALIDATOR_MODES.get(validator_name, "warning")
             if validator_mode == "warning":
-                if any(f.category in _ALWAYS_BLOCKING_CATEGORIES for f in findings):
+                if any(_is_always_blocking_category(f.category) for f in findings):
                     force_blocking = True
                 # Downgrade non-contract-breaking errors to warnings
                 findings = tuple(
                     f
-                    if f.category in _ALWAYS_BLOCKING_CATEGORIES
+                    if _is_always_blocking_category(f.category)
                     else SemanticFinding(
                         validator=f.validator,
                         severity="warning",
