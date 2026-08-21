@@ -454,7 +454,10 @@ All ``credit_default_swap_*`` contract findings are blocking in the executor,
 including while the broader algorithm-contract validator remains in warning
 mode. The inspected ``evaluate()`` must be an undecorated authoritative method
 on a plain payoff class; class decorators, metaclass/base indirection, dynamic
-lookup hooks, and post-definition method rebinding fail closed.
+lookup hooks, and post-definition method rebinding fail closed. Its canonical
+period loop and mapped interval loop are the only admitted loops; any additional
+``for``, async loop, or ``while`` invalidates the composition before synchronous
+smoke execution, preventing nonterminating setup code from hanging the build.
 The guarded basis-point normalization must dominate the period loop, every
 spread alias, and every cashflow use; omitting it or moving it after assembly
 fails the economic-binding check. The sampler seed must resolve exactly to the

@@ -3228,6 +3228,34 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        "loop_setup",
+        (
+            "while True:\n        pass",
+            "for _ in iter(int, 1):\n        pass",
+        ),
+    )
+    def test_rejects_credit_default_swap_nonterminating_preassembly_loop(
+        self,
+        registry,
+        loop_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=loop_setup,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap", "analytical"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     @pytest.mark.parametrize("n_paths", ("10", "self._spec.n_paths"))
     def test_rejects_credit_default_swap_unbound_path_count(
         self,

@@ -1374,6 +1374,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "accrued_on_event" in prompt
     assert "one direct final signed return" in prompt
     assert "conditional return/raise exits" in prompt
+    assert "additional `for`, `async for`, or `while` loops" in prompt
     assert "exact fail-fast `ValueError` guards" in prompt
     assert "sign absent or explicitly positive one" in prompt
     assert "update it only with additive `+=` in its recognized loop" in prompt
@@ -1484,6 +1485,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "settlement_time" in prompt
     assert "one direct final signed return" in prompt
     assert "conditional return/raise exits" in prompt
+    assert "additional `for`, `async for`, or `while` loops" in prompt
     assert "exact fail-fast `ValueError` guards" in prompt
     assert "sign absent or explicitly positive one" in prompt
     assert "fixed reproducible `42`" in prompt

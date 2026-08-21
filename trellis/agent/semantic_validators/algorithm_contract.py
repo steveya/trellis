@@ -2225,8 +2225,18 @@ def _cds_full_event_grid_loops(
 
 
 def _cds_composes_full_event_grid(tree: ast.AST) -> bool:
-    """Recognize nested period/interval aggregation across a default-event grid."""
-    return bool(_cds_full_event_grid_loops(tree))
+    """Recognize one bounded period/interval aggregation and no other loops."""
+    loop_pairs = _cds_full_event_grid_loops(tree)
+    if len(loop_pairs) != 1:
+        return False
+    period_loop, interval_loop, _ = loop_pairs[0]
+    admitted_loop_ids = {id(period_loop), id(interval_loop)}
+    actual_loop_ids = {
+        id(node)
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.For, ast.AsyncFor, ast.While))
+    }
+    return actual_loop_ids == admitted_loop_ids
 
 
 def _cds_selected_weight_symbol(plan: GenerationPlan) -> str:
