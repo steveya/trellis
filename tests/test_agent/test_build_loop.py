@@ -533,10 +533,13 @@ def test_generate_module_recovers_partial_repair_fragment(monkeypatch):
     )
 
     result = _generate_module(
-        skeleton="""from trellis.core.market_state import MarketState
+        skeleton="""from dataclasses import dataclass
 
+from trellis.core.market_state import MarketState
+
+@dataclass(frozen=True)
 class QuantoOptionSpec:
-    pass
+    \"\"\"Synthetic zero-field spec for fragment recovery.\"\"\"
 
 
 class QuantoOptionAnalyticalPayoff:
@@ -576,8 +579,11 @@ def test_generate_module_recovers_compilable_evaluate_only_fragment(monkeypatch)
     )
 
     result = _generate_module(
-        skeleton="""from trellis.core.market_state import MarketState
+        skeleton="""from dataclasses import dataclass
 
+from trellis.core.market_state import MarketState
+
+@dataclass(frozen=True)
 class SmokeSpec:
     strike: float
 
@@ -592,7 +598,7 @@ class SmokePayoff:
         spec_schema=SimpleNamespace(
             class_name="SmokePayoff",
             spec_name="SmokeSpec",
-            fields=[],
+            fields=[FieldDef("strike", "float", "Strike")],
         ),
         reference_sources={},
         model="test-model",
@@ -621,10 +627,13 @@ def evaluate(self, market_state: MarketState) -> float:
     )
 
     result = _generate_module(
-        skeleton="""from trellis.core.market_state import MarketState
+        skeleton="""from dataclasses import dataclass
 
+from trellis.core.market_state import MarketState
+
+@dataclass(frozen=True)
 class QuantoOptionSpec:
-    pass
+    \"\"\"Synthetic zero-field spec for fragment recovery.\"\"\"
 
 
 class QuantoOptionAnalyticalPayoff:
@@ -668,8 +677,11 @@ def test_generate_module_recovers_fragment_with_offset_tail_indentation(monkeypa
     )
 
     result = _generate_module(
-        skeleton="""from trellis.core.market_state import MarketState
+        skeleton="""from dataclasses import dataclass
 
+from trellis.core.market_state import MarketState
+
+@dataclass(frozen=True)
 class SmokeSpec:
     spread: float
 
@@ -684,7 +696,7 @@ class SmokePayoff:
         spec_schema=SimpleNamespace(
             class_name="SmokePayoff",
             spec_name="SmokeSpec",
-            fields=[],
+            fields=[FieldDef("spread", "float", "Spread")],
         ),
         reference_sources={},
         model="test-model",
@@ -711,8 +723,11 @@ return spread
     )
 
     result = _generate_module(
-        skeleton="""from trellis.core.market_state import MarketState
+        skeleton="""from dataclasses import dataclass
 
+from trellis.core.market_state import MarketState
+
+@dataclass(frozen=True)
 class SmokeSpec:
     spread: float
 
@@ -727,7 +742,7 @@ class SmokePayoff:
         spec_schema=SimpleNamespace(
             class_name="SmokePayoff",
             spec_name="SmokeSpec",
-            fields=[],
+            fields=[FieldDef("spread", "float", "Spread")],
         ),
         reference_sources={},
         model="test-model",
@@ -791,11 +806,14 @@ class QuantoOptionAnalyticalPayoff:
     )
 
     result = _generate_module(
-        skeleton="""from trellis.core.market_state import MarketState
+        skeleton="""from dataclasses import dataclass
+
+from trellis.core.market_state import MarketState
 from trellis.models.quanto_option import price_quanto_option_analytical_from_market_state
 
+@dataclass(frozen=True)
 class QuantoOptionSpec:
-    pass
+    \"\"\"Synthetic zero-field spec for fragment recovery.\"\"\"
 
 
 class QuantoOptionAnalyticalPayoff:
