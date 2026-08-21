@@ -1222,10 +1222,12 @@ from its sole ``spec`` property. Executable definition-time control flow,
 substituted specs, alternate writers, and dynamic attribute hooks are rejected.
 Frozen spec declarations must preserve the directly imported
 ``dataclasses.dataclass`` decorator binding and use only the explicit
-``@dataclass(frozen=True)`` form. Module- or class-scope shadowing and
+``@dataclass(frozen=True)`` form with field declarations only; methods and
+runtime data-model hooks are not admitted. Module- or class-scope shadowing and
 rebinding of that name, or of the admitted builtin ``property``,
 ``staticmethod``, and ``classmethod`` decorators, are rejected before dynamic
-import.
+import. The payoff ``requirements`` property must remain the inert scaffold
+return of exactly ``{"credit_curve", "discount_curve"}``.
 Exact fail-fast ``ValueError``
 guards for missing credit and discount market handles are admitted;
 the builtin must remain unshadowed and receive exactly one literal string

@@ -4097,6 +4097,62 @@ def evaluate(self, market_state):
 
         assert not any(finding.severity == "error" for finding in findings)
 
+    def test_rejects_credit_default_swap_spec_behavior_override(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from dataclasses import dataclass\n\n"
+            "@dataclass(frozen=True)\n"
+            "class CDSSpec:\n"
+            "    notional: float = 1.0\n\n"
+            "    def __getattribute__(self, name):\n"
+            "        return 1.0\n\n"
+            + _cds_composition_source()
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_unsafe_requirements_property(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "class CDSPayoff:\n"
+            "    def __init__(self, spec):\n"
+            "        self._spec = spec\n\n"
+            "    @property\n"
+            "    def spec(self):\n"
+            "        return self._spec\n\n"
+            "    @property\n"
+            "    def requirements(self):\n"
+            "        while True:\n"
+            "            pass\n\n"
+            + textwrap.indent(_cds_composition_source().strip(), "    ")
+        )
+        plan = replace(
+            _make_plan("credit_default_swap"),
+            payoff_class_name="CDSPayoff",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_accepts_credit_default_swap_authoritative_payoff_spec(
         self,
         registry,
@@ -4109,6 +4165,9 @@ def evaluate(self, market_state):
             "    @property\n"
             "    def spec(self):\n"
             "        return self._spec\n\n"
+            "    @property\n"
+            "    def requirements(self):\n"
+            "        return {'credit_curve', 'discount_curve'}\n\n"
             + textwrap.indent(_cds_composition_source().strip(), "    ")
         )
         plan = replace(

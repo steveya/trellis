@@ -1265,6 +1265,11 @@ def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
             for name in ("dataclass", "property", "staticmethod", "classmethod")
         ):
             return False
+        if class_node.decorator_list and not isinstance(
+            statement,
+            (ast.Pass, ast.Expr, ast.AnnAssign),
+        ):
+            return False
         if isinstance(statement, ast.Pass):
             continue
         if isinstance(statement, ast.Expr) and (
@@ -1489,6 +1494,46 @@ def _payoff_spec_binding_is_authoritative(owner: ast.ClassDef) -> bool:
     )
 
 
+def _payoff_requirements_binding_is_authoritative(owner: ast.ClassDef) -> bool:
+    """Require the inert CDS market-requirements scaffold property."""
+    requirements_properties = tuple(
+        statement
+        for statement in owner.body
+        if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and statement.name == "requirements"
+    )
+    if not (
+        len(requirements_properties) == 1
+        and isinstance(requirements_properties[0], ast.FunctionDef)
+    ):
+        return False
+    requirements = requirements_properties[0]
+    arguments = requirements.args
+    body = _function_body_without_docstring(requirements)
+    return (
+        len(requirements.decorator_list) == 1
+        and isinstance(requirements.decorator_list[0], ast.Name)
+        and requirements.decorator_list[0].id == "property"
+        and not arguments.posonlyargs
+        and [argument.arg for argument in arguments.args] == ["self"]
+        and not arguments.vararg
+        and not arguments.kwonlyargs
+        and not arguments.kwarg
+        and not arguments.defaults
+        and len(body) == 1
+        and isinstance(body[0], ast.Return)
+        and isinstance(body[0].value, ast.Set)
+        and len(body[0].value.elts) == 2
+        and {
+            element.value
+            for element in body[0].value.elts
+            if isinstance(element, ast.Constant)
+            and isinstance(element.value, str)
+        }
+        == {"credit_curve", "discount_curve"}
+    )
+
+
 def _evaluate_definition_is_authoritative(
     tree: ast.Module,
     evaluate: ast.FunctionDef | ast.AsyncFunctionDef,
@@ -1523,7 +1568,9 @@ def _evaluate_definition_is_authoritative(
                 "__setattr__",
             }
             for statement in owner.body
-        ) or not _payoff_spec_binding_is_authoritative(owner):
+        ) or not _payoff_spec_binding_is_authoritative(
+            owner
+        ) or not _payoff_requirements_binding_is_authoritative(owner):
             return False
     elif evaluate not in tree.body:
         return False

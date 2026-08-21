@@ -477,12 +477,15 @@ are admitted, while executable module/class control flow is rejected before
 dynamic import. A frozen spec decorator must retain the directly imported
 ``dataclasses.dataclass`` binding and use the explicit
 ``@dataclass(frozen=True)`` form; module- or class-scope shadowing and
-rebinding of ``dataclass`` fail closed. The admitted ``property``,
+rebinding of ``dataclass`` fail closed. Frozen specification classes contain
+field declarations only; methods and runtime data-model hooks fail closed.
+The admitted ``property``,
 ``staticmethod``, and ``classmethod`` decorators must also retain their
 unshadowed builtin bindings. For generated payoff classes, the constructor
 must store the submitted ``spec`` exactly as ``self._spec`` and the sole
 ``@property spec`` must return that object; alternate writers and dynamic
-attribute hooks fail closed.
+attribute hooks fail closed. Its ``requirements`` property is the exact inert
+scaffold return of the literal ``{"credit_curve", "discount_curve"}`` set.
 The guarded basis-point normalization must dominate the period loop, every
 spread alias, and every cashflow use; omitting it or moving it after assembly
 fails the economic-binding check. The sampler seed must resolve exactly to the
