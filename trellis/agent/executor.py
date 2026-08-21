@@ -1774,14 +1774,18 @@ def build_payoff(
         ),
         product_ir=product_ir,
     )
-    if (
-        is_dataclass(generation_plan)
-        and getattr(generation_plan, "payoff_class_name", "")
-        != spec_schema.class_name
+    payoff_spec_fields = _normalized_spec_schema_fields(spec_schema)
+    if is_dataclass(generation_plan) and (
+        getattr(generation_plan, "payoff_class_name", "") != spec_schema.class_name
+        or getattr(generation_plan, "payoff_spec_name", "") != spec_schema.spec_name
+        or tuple(getattr(generation_plan, "payoff_spec_fields", ()) or ())
+        != payoff_spec_fields
     ):
         generation_plan = replace_dataclass(
             generation_plan,
             payoff_class_name=spec_schema.class_name,
+            payoff_spec_name=spec_schema.spec_name,
+            payoff_spec_fields=payoff_spec_fields,
         )
     _record_comparison_execution_binding(
         build_meta,
@@ -8686,24 +8690,100 @@ def _recover_generated_module_from_module_like_source(
     )
 
 
-def _module_has_expected_structure(code: str, spec_schema) -> bool:
-    """Whether the generated code defines the expected spec and payoff classes."""
-    import ast
+def _normalized_spec_schema_fields(
+    spec_schema,
+) -> tuple[tuple[str, str, str | None], ...]:
+    """Return the exact generated field order and expression contract."""
+    required = tuple(field for field in spec_schema.fields if field.default is None)
+    optional = tuple(field for field in spec_schema.fields if field.default is not None)
+    return tuple(
+        (
+            str(field.name),
+            str(field.type),
+            None if field.default is None else str(field.default),
+        )
+        for field in (*required, *optional)
+    )
 
+
+def _module_has_expected_structure(code: str, spec_schema) -> bool:
+    """Whether generated classes preserve the authoritative spec schema."""
     try:
         module = ast.parse(code)
     except SyntaxError:
         return False
 
-    class_names = {
-        node.name
+    spec_classes = tuple(
+        node
         for node in module.body
-        if isinstance(node, ast.ClassDef)
-    }
-    return (
-        spec_schema.spec_name in class_names
-        and spec_schema.class_name in class_names
+        if isinstance(node, ast.ClassDef) and node.name == spec_schema.spec_name
     )
+    payoff_classes = tuple(
+        node
+        for node in module.body
+        if isinstance(node, ast.ClassDef) and node.name == spec_schema.class_name
+    )
+    if len(spec_classes) != 1 or len(payoff_classes) != 1:
+        return False
+
+    spec_class = spec_classes[0]
+    if len(spec_class.decorator_list) != 1:
+        return False
+    decorator = spec_class.decorator_list[0]
+    if not (
+        isinstance(decorator, ast.Call)
+        and isinstance(decorator.func, ast.Name)
+        and decorator.func.id == "dataclass"
+        and not decorator.args
+        and len(decorator.keywords) == 1
+        and decorator.keywords[0].arg == "frozen"
+        and isinstance(decorator.keywords[0].value, ast.Constant)
+        and decorator.keywords[0].value.value is True
+    ):
+        return False
+
+    spec_body = tuple(spec_class.body)
+    if spec_body and isinstance(spec_body[0], ast.Expr) and (
+        isinstance(spec_body[0].value, ast.Constant)
+        and isinstance(spec_body[0].value.value, str)
+    ):
+        spec_body = spec_body[1:]
+    if not all(isinstance(statement, ast.AnnAssign) for statement in spec_body):
+        return False
+
+    planned_fields = _normalized_spec_schema_fields(spec_schema)
+    if len(spec_body) != len(planned_fields):
+        return False
+    for declared, (field_name, field_type, field_default) in zip(
+        spec_body,
+        planned_fields,
+    ):
+        try:
+            planned_annotation = ast.parse(field_type, mode="eval").body
+            planned_default = (
+                None
+                if field_default is None
+                else ast.parse(field_default, mode="eval").body
+            )
+        except SyntaxError:
+            return False
+        if not (
+            isinstance(declared.target, ast.Name)
+            and declared.target.id == field_name
+            and declared.simple == 1
+            and ast.dump(declared.annotation, include_attributes=False)
+            == ast.dump(planned_annotation, include_attributes=False)
+        ):
+            return False
+        if field_default is None:
+            if declared.value is not None:
+                return False
+        elif declared.value is None or ast.dump(
+            declared.value,
+            include_attributes=False,
+        ) != ast.dump(planned_default, include_attributes=False):
+            return False
+    return True
 
 
 def _extract_fragment_body(body_lines: list[str]) -> str:

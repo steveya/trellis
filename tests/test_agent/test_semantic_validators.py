@@ -31,6 +31,8 @@ def _make_plan(
     adapters: tuple[str, ...] = (),
     notes: tuple[str, ...] = (),
     route_family: str = "",
+    payoff_spec_name: str = "",
+    payoff_spec_fields: tuple[tuple[str, str, str | None], ...] = (),
 ) -> GenerationPlan:
     return GenerationPlan(
         method=engine_family,
@@ -39,6 +41,8 @@ def _make_plan(
         approved_modules=(),
         symbols_to_reuse=(),
         proposed_tests=(),
+        payoff_spec_name=payoff_spec_name,
+        payoff_spec_fields=payoff_spec_fields,
         primitive_plan=PrimitivePlan(
             route=route,
             engine_family=engine_family,
@@ -4277,6 +4281,82 @@ def evaluate(self, market_state):
         )
 
         assert not any(finding.severity == "error" for finding in findings)
+
+    def test_rejects_credit_default_swap_changed_planned_spec_default(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from dataclasses import dataclass\n\n"
+            "@dataclass(frozen=True)\n"
+            "class CDSSpec:\n"
+            "    recovery: float = 0.9\n\n"
+            + _cds_composition_source()
+        )
+        plan = _make_plan(
+            "credit_default_swap",
+            payoff_spec_name="CDSSpec",
+            payoff_spec_fields=(("recovery", "float", "0.4"),),
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_spec_schema_binding"
+            for finding in findings
+        )
+
+    def test_accepts_credit_default_swap_exact_planned_spec_schema(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from dataclasses import dataclass\n\n"
+            "@dataclass(frozen=True)\n"
+            "class CDSSpec:\n"
+            "    recovery: float = 0.4\n\n"
+            + _cds_composition_source()
+        )
+        plan = _make_plan(
+            "credit_default_swap",
+            payoff_spec_name="CDSSpec",
+            payoff_spec_fields=(("recovery", "float", "0.4"),),
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert not any(finding.severity == "error" for finding in findings)
+
+    def test_rejects_credit_default_swap_duplicate_planned_spec_class(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        spec_class = (
+            "@dataclass(frozen=True)\n"
+            "class CDSSpec:\n"
+            "    recovery: float = 0.4\n\n"
+        )
+        source = (
+            "from dataclasses import dataclass\n\n"
+            + spec_class
+            + spec_class
+            + _cds_composition_source()
+        )
+        plan = _make_plan(
+            "credit_default_swap",
+            payoff_spec_name="CDSSpec",
+            payoff_spec_fields=(("recovery", "float", "0.4"),),
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert any(
+            finding.category == "credit_default_swap_spec_schema_binding"
+            for finding in findings
+        )
 
     def test_rejects_credit_default_swap_spec_behavior_override(
         self,

@@ -1242,8 +1242,11 @@ The payoff class may define only ``__init__``, ``spec``, ``requirements``, and
 data-model methods are not admitted.
 Frozen spec declarations must preserve the directly imported
 ``dataclasses.dataclass`` decorator binding and use only the explicit
-``@dataclass(frozen=True)`` form with field declarations only; methods and
-runtime data-model hooks are not admitted. Module- or class-scope shadowing and
+``@dataclass(frozen=True)`` form. The sole generated spec class must match the
+authoritative planned field order, annotations, required fields, and optional
+defaults exactly; duplicates, changed defaults, extra or missing fields,
+methods, and runtime data-model hooks are not admitted. Module- or class-scope
+shadowing and
 rebinding of that name, or of the admitted builtin ``property``,
 ``staticmethod``, and ``classmethod`` decorators, are rejected before dynamic
 import. The payoff ``requirements`` property must remain the inert scaffold

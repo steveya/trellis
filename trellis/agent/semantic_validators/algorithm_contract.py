@@ -4057,6 +4057,91 @@ def _cds_preserves_market_state_parameter(tree: ast.AST) -> bool:
     )
 
 
+def _is_exact_frozen_dataclass(class_node: ast.ClassDef) -> bool:
+    """Recognize the generated value-spec dataclass decorator contract."""
+    if len(class_node.decorator_list) != 1:
+        return False
+    decorator = class_node.decorator_list[0]
+    return (
+        isinstance(decorator, ast.Call)
+        and isinstance(decorator.func, ast.Name)
+        and decorator.func.id == "dataclass"
+        and not decorator.args
+        and len(decorator.keywords) == 1
+        and decorator.keywords[0].arg == "frozen"
+        and isinstance(decorator.keywords[0].value, ast.Constant)
+        and decorator.keywords[0].value.value is True
+    )
+
+
+def _parse_planned_spec_expression(source: str) -> ast.AST | None:
+    """Parse one planned field annotation/default expression."""
+    if not isinstance(source, str) or not source.strip():
+        return None
+    try:
+        return ast.parse(source, mode="eval").body
+    except SyntaxError:
+        return None
+
+
+def _module_matches_planned_cds_spec_schema(
+    tree: ast.Module,
+    plan: GenerationPlan,
+) -> bool:
+    """Bind the generated frozen value spec to the authoritative plan schema."""
+    spec_name = str(getattr(plan, "payoff_spec_name", "") or "").strip()
+    planned_fields = tuple(getattr(plan, "payoff_spec_fields", ()) or ())
+    if not spec_name and not planned_fields:
+        return True
+    if not spec_name or not planned_fields:
+        return False
+
+    spec_classes = tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and node.name == spec_name
+    )
+    if not (
+        len(spec_classes) == 1
+        and spec_classes[0] in tree.body
+        and _is_exact_frozen_dataclass(spec_classes[0])
+    ):
+        return False
+
+    declared_fields = tuple(
+        statement
+        for statement in spec_classes[0].body
+        if isinstance(statement, ast.AnnAssign)
+    )
+    if len(declared_fields) != len(planned_fields):
+        return False
+    for declared, planned in zip(declared_fields, planned_fields):
+        if len(planned) != 3:
+            return False
+        field_name, field_type, field_default = planned
+        planned_annotation = _parse_planned_spec_expression(field_type)
+        if not (
+            isinstance(declared.target, ast.Name)
+            and declared.target.id == field_name
+            and declared.simple == 1
+            and planned_annotation is not None
+            and _ast_equivalent(declared.annotation, planned_annotation)
+        ):
+            return False
+        if field_default is None:
+            if declared.value is not None:
+                return False
+            continue
+        planned_default = _parse_planned_spec_expression(field_default)
+        if (
+            declared.value is None
+            or planned_default is None
+            or not _ast_equivalent(declared.value, planned_default)
+        ):
+            return False
+    return True
+
+
 def _cds_uses_valuation_origin_event_grid(tree: ast.AST) -> bool:
     """Bind every accepted cashflow loop to a valuation-origin event grid."""
     loop_pairs = _cds_full_event_grid_loops(tree)
@@ -4950,6 +5035,21 @@ class AlgorithmContractValidator:
                         "market_state parameter unchanged throughout evaluate; "
                         "rebinding or deleting it can substitute different "
                         "discount or credit curves behind valid-looking names."
+                    ),
+                )
+            )
+
+        if not _module_matches_planned_cds_spec_schema(module_tree, plan):
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_spec_schema_binding",
+                    message=(
+                        f"Route '{route_spec.id}' must define exactly one top-level "
+                        "frozen specification class whose ordered field names, "
+                        "annotations, required fields, and optional defaults match "
+                        "the authoritative planned SpecSchema."
                     ),
                 )
             )

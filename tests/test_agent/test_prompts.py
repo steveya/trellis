@@ -1377,8 +1377,9 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "one direct final signed return" in prompt
     assert "module and class definition time declarative" in prompt
     assert "preserve the directly imported `dataclasses.dataclass` binding" in prompt
-    assert "only the explicit `@dataclass(frozen=True)` form" in prompt
-    assert "field declarations only, without methods or behavior hooks" in prompt
+    assert "exactly one explicit `@dataclass(frozen=True)` class" in prompt
+    assert "planned field order, annotations, required fields, and optional defaults" in prompt
+    assert "duplicate spec classes, changed defaults, extra fields" in prompt
     assert "Prefer the leading `from __future__ import annotations`" in prompt
     assert "undefined, late, or rebound names fail closed before import" in prompt
     assert "Eager subscript annotations may use only the inert builtin" in prompt
@@ -1515,8 +1516,9 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "one direct final signed return" in prompt
     assert "module and class definition time declarative" in prompt
     assert "preserve the directly imported `dataclasses.dataclass` binding" in prompt
-    assert "only the explicit `@dataclass(frozen=True)` form" in prompt
-    assert "field declarations only, without methods or behavior hooks" in prompt
+    assert "exactly one explicit `@dataclass(frozen=True)` class" in prompt
+    assert "planned field order, annotations, required fields, and optional defaults" in prompt
+    assert "duplicate spec classes, changed defaults, extra fields" in prompt
     assert "Prefer the leading `from __future__ import annotations`" in prompt
     assert "undefined, late, or rebound names fail closed before import" in prompt
     assert "Eager subscript annotations may use only the inert builtin" in prompt

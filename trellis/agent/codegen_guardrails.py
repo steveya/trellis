@@ -299,6 +299,8 @@ class GenerationPlan:
     validation_residual_risks: tuple[str, ...] = ()
     route_binding_authority: object | None = None
     payoff_class_name: str = ""
+    payoff_spec_name: str = ""
+    payoff_spec_fields: tuple[tuple[str, str, str | None], ...] = ()
 
 
 @dataclass(frozen=True)

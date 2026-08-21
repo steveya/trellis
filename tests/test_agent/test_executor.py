@@ -6829,6 +6829,44 @@ def test_generate_skeleton_prefills_cds_explicit_composition_from_compiler_plan(
     assert "from trellis.models.black import black76_call, black76_put" not in skeleton
 
 
+@pytest.mark.parametrize(
+    ("recovery_default", "duplicate_spec", "expected"),
+    (
+        ("0.4", False, True),
+        ("0.9", False, False),
+        ("0.4", True, False),
+    ),
+)
+def test_module_expected_structure_preserves_planned_spec_defaults(
+    recovery_default,
+    duplicate_spec,
+    expected,
+):
+    from trellis.agent.executor import _module_has_expected_structure
+    from trellis.agent.planner import FieldDef, SpecSchema
+
+    spec_schema = SpecSchema(
+        class_name="CDSPayoff",
+        spec_name="CDSSpec",
+        requirements=["credit_curve", "discount_curve"],
+        fields=[FieldDef("recovery", "float", "Recovery", "0.4")],
+    )
+    spec_class = (
+        "@dataclass(frozen=True)\n"
+        "class CDSSpec:\n"
+        f"    recovery: float = {recovery_default}\n\n"
+    )
+    source = (
+        "from dataclasses import dataclass\n\n"
+        + spec_class
+        + (spec_class if duplicate_spec else "")
+        + "class CDSPayoff:\n"
+        "    pass\n"
+    )
+
+    assert _module_has_expected_structure(source, spec_schema) is expected
+
+
 def test_deterministic_exact_binding_module_materializes_cds_analytical_composition():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,

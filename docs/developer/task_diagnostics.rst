@@ -498,7 +498,10 @@ A frozen spec decorator must retain the directly imported
 ``dataclasses.dataclass`` binding and use the explicit
 ``@dataclass(frozen=True)`` form; module- or class-scope shadowing and
 rebinding of ``dataclass`` fail closed. Frozen specification classes contain
-field declarations only; methods and runtime data-model hooks fail closed.
+exactly the authoritative planned field order, annotations, required-field
+positions, and optional defaults. Duplicate same-named spec classes, changed
+defaults, extra or missing fields, methods, and runtime data-model hooks fail
+closed before smoke fixtures can mask the drift with explicit values.
 The admitted ``property``,
 ``staticmethod``, and ``classmethod`` decorators must also retain their
 unshadowed builtin bindings. For generated payoff classes, the constructor
