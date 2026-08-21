@@ -4276,6 +4276,39 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_extra_parameter_shadowed_decorator(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            + _cds_composition_source(
+                extra_setup="@property\n    def trap():\n        return 1"
+            ).replace(
+                "def evaluate(self, market_state):",
+                (
+                    "def evaluate(\n"
+                    "    self, market_state, property=lambda fn: spin(),\n"
+                    "):"
+                ),
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_accepts_credit_default_swap_authoritative_enum_function_default(
         self,
         registry,

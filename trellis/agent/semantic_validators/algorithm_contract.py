@@ -1914,6 +1914,17 @@ def _evaluate_definition_is_authoritative(
     """Require the inspected CDS method to remain the runtime method binding."""
     if isinstance(evaluate, ast.AsyncFunctionDef) or evaluate.decorator_list:
         return False
+    arguments = evaluate.args
+    if not (
+        not arguments.posonlyargs
+        and [argument.arg for argument in arguments.args]
+        == ["self", "market_state"]
+        and not arguments.vararg
+        and not arguments.kwonlyargs
+        and not arguments.kwarg
+        and not arguments.defaults
+    ):
+        return False
     owners = tuple(
         node
         for node in ast.walk(tree)

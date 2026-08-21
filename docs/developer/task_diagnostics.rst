@@ -455,7 +455,10 @@ including while the broader algorithm-contract validator remains in warning
 mode. The inspected ``evaluate()`` must be an undecorated authoritative method
 on a plain payoff class; class decorators, metaclass/base indirection, dynamic
 lookup hooks, and post-definition method rebinding fail closed. Its canonical
-period loop and mapped interval loop are the only admitted loops; any additional
+signature is exactly ``evaluate(self, market_state)``; positional-only,
+variadic, keyword-only, extra, and defaulted parameters are rejected so they
+cannot shadow trusted definition-time bindings. The canonical period loop and
+mapped interval loop are the only admitted loops; any additional
 ``for``, async loop, or ``while`` invalidates the composition before synchronous
 smoke execution, preventing nonterminating setup code from hanging the build.
 The only admitted conditionals are the exact market guards, basis-point spread

@@ -1210,7 +1210,9 @@ The generated adapter owns quote normalization, schedule conventions,
 period-to-interval iteration, discount coordinates, signs, and the final
 ``protection - premium - accrued_on_event + accrued_to_valuation`` result.
 That composition must be reachable in the adapter's single ``evaluate`` body
-and dominate one direct final signed return. The canonical period loop and its
+and dominate one direct final signed return. The method signature is exactly
+``evaluate(self, market_state)`` with no positional-only, variadic,
+keyword-only, extra, or defaulted parameters. The canonical period loop and its
 mapped interval loop are the only admitted loops; additional loops fail closed
 before runtime smoke evaluation. Conditionals are limited to the exact market,
 spread-normalization, initial-survival empty-grid fallback, empty-period, and
