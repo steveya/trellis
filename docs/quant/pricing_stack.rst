@@ -1221,8 +1221,11 @@ submitted spec exactly once as ``self._spec`` and returning that same object
 from its sole ``spec`` property. Executable definition-time control flow,
 substituted specs, alternate writers, and dynamic attribute hooks are rejected.
 Frozen spec declarations must preserve the directly imported
-``dataclasses.dataclass`` decorator binding; module- or class-scope shadowing
-and rebinding of ``dataclass`` are rejected before dynamic import.
+``dataclasses.dataclass`` decorator binding and use only the explicit
+``@dataclass(frozen=True)`` form. Module- or class-scope shadowing and
+rebinding of that name, or of the admitted builtin ``property``,
+``staticmethod``, and ``classmethod`` decorators, are rejected before dynamic
+import.
 Exact fail-fast ``ValueError``
 guards for missing credit and discount market handles are admitted;
 input-dependent assertions and other conditional return/raise exits, unused or

@@ -1243,10 +1243,6 @@ def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
         return False
     if not all(
         (
-            isinstance(decorator, ast.Name)
-            and decorator.id == "dataclass"
-        )
-        or (
             isinstance(decorator, ast.Call)
             and isinstance(decorator.func, ast.Name)
             and decorator.func.id == "dataclass"
@@ -1260,7 +1256,10 @@ def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
     ):
         return False
     for statement in class_node.body:
-        if _statement_binds_name(statement, "dataclass"):
+        if any(
+            _statement_binds_name(statement, name)
+            for name in ("dataclass", "property", "staticmethod", "classmethod")
+        ):
             return False
         if isinstance(statement, ast.Pass):
             continue
@@ -1367,6 +1366,12 @@ def _module_definition_time_is_bounded(tree: ast.Module) -> bool:
             for alias in dataclass_import.names
         ) != 1:
             return False
+    if any(
+        _statement_binds_name(statement, name)
+        for statement in tree.body
+        for name in ("property", "staticmethod", "classmethod")
+    ):
+        return False
     for statement in tree.body:
         if isinstance(statement, (ast.Import, ast.ImportFrom, ast.Pass)):
             continue
