@@ -1433,20 +1433,29 @@ def _definition_time_class_is_bounded(
     """Allow declarations in class bodies, never executable control flow."""
     if class_node.bases or class_node.keywords:
         return False
-    if not all(
-        (
-            isinstance(decorator, ast.Call)
-            and isinstance(decorator.func, ast.Name)
-            and decorator.func.id == "dataclass"
-            and not decorator.args
-            and len(decorator.keywords) == 1
-            and decorator.keywords[0].arg == "frozen"
-            and isinstance(decorator.keywords[0].value, ast.Constant)
-            and decorator.keywords[0].value.value is True
-        )
-        for decorator in class_node.decorator_list
-    ):
-        return False
+    if class_node.decorator_list:
+        if not (
+            len(class_node.decorator_list) == 1
+            and isinstance(class_node.decorator_list[0], ast.Call)
+            and isinstance(class_node.decorator_list[0].func, ast.Name)
+            and class_node.decorator_list[0].func.id == "dataclass"
+            and not class_node.decorator_list[0].args
+            and len(class_node.decorator_list[0].keywords) == 1
+            and class_node.decorator_list[0].keywords[0].arg == "frozen"
+            and isinstance(
+                class_node.decorator_list[0].keywords[0].value,
+                ast.Constant,
+            )
+            and class_node.decorator_list[0].keywords[0].value.value is True
+            and _module_has_authoritative_eager_import(
+                tree,
+                name="dataclass",
+                module="dataclasses",
+                before_node=class_node,
+            )
+        ):
+            return False
+    saw_dataclass_default = False
     for statement in class_node.body:
         if any(
             _statement_binds_name(statement, name)
@@ -1486,6 +1495,10 @@ def _definition_time_class_is_bounded(
                 continue
             return False
         if isinstance(statement, ast.AnnAssign):
+            if class_node.decorator_list:
+                if statement.value is None and saw_dataclass_default:
+                    return False
+                saw_dataclass_default = statement.value is not None
             if (
                 isinstance(statement.target, ast.Name)
                 and _definition_time_annotation_is_declarative(
@@ -1923,6 +1936,12 @@ def _evaluate_definition_is_authoritative(
         and not arguments.kwonlyargs
         and not arguments.kwarg
         and not arguments.defaults
+    ):
+        return False
+    if any(
+        _node_binds_name_in_current_scope(statement, name=name)
+        for statement in evaluate.body
+        for name in ("dataclass", "property", "staticmethod", "classmethod")
     ):
         return False
     owners = tuple(

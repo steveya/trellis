@@ -483,7 +483,12 @@ defaults, decorators, and annotations of local functions or lambdas are checked
 as definition-time surfaces. Executable or unbounded construction therefore
 fails closed before synchronous smoke execution. A decorated local dataclass
 also rejects mutable list, dictionary, and set field defaults under the same
-rules that Python applies while creating the class.
+rules that Python applies while creating the class. It requires one earlier
+authoritative direct ``dataclass`` import and places required fields before
+defaulted fields. The enclosing ``evaluate()`` scope may not bind
+``dataclass``, ``property``, ``staticmethod``, or ``classmethod`` anywhere in
+its body, including unreachable statements, because Python resolves those as
+locals before definition creation begins.
 The module and its class bodies are definition-time declarative: docstrings,
 approved imports, frozen spec declarations, and the plain payoff declaration
 are admitted, while executable module/class control flow is rejected before
@@ -513,7 +518,9 @@ positions, and optional defaults. Duplicate same-named spec classes, changed
 defaults, extra or missing fields, methods, and runtime data-model hooks fail
 closed before smoke fixtures can mask the drift with explicit values.
 Mutable list, dictionary, and set field defaults are rejected before the
-dataclass decorator can raise during class creation.
+dataclass decorator can raise during class creation. The same bounded proof
+requires the authoritative decorator import and rejects a required field after
+any defaulted field.
 Eager function defaults are resolved before dynamic import: bare names must be
 unshadowed inert builtins or approved direct imports already in scope, and an
 enum attribute must name a real member on its authoritative imported enum.

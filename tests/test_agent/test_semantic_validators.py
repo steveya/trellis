@@ -4276,6 +4276,46 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        ("module_setup", "class_definition"),
+        (
+            (
+                "",
+                "@dataclass(frozen=True)\n"
+                "    class Trap:\n"
+                "        value: int = 1",
+            ),
+            (
+                "from dataclasses import dataclass\n\n",
+                "@dataclass(frozen=True)\n"
+                "    class Trap:\n"
+                "        optional: int = 1\n"
+                "        required: int",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_invalid_local_dataclass_definition(
+        self,
+        registry,
+        module_setup,
+        class_definition,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = module_setup + _cds_composition_source(
+            extra_setup=class_definition
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_extra_parameter_shadowed_decorator(
         self,
         registry,
@@ -4295,6 +4335,37 @@ def evaluate(self, market_state):
                     "):"
                 ),
                 1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_local_shadowed_decorator(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def spin():\n"
+            "    while True:\n"
+            "        pass\n\n"
+            + _cds_composition_source(
+                extra_setup=(
+                    "def property(fn):\n"
+                    "        return spin()\n"
+                    "    @property\n"
+                    "    def trap():\n"
+                    "        return 1"
+                )
             )
         )
 

@@ -1226,7 +1226,10 @@ definition-time surfaces are nevertheless validated before pruning: local
 class bodies and local function/lambda defaults, decorators, and annotations
 must remain declarative so definition creation cannot hang ahead of pricing.
 Frozen local dataclass fields additionally reject mutable list, dictionary, and
-set defaults before Python applies the decorator.
+set defaults before Python applies the decorator. The decorator must resolve to
+one earlier direct import, and required fields precede defaulted fields. The
+``evaluate()`` scope cannot bind ``dataclass``, ``property``, ``staticmethod``,
+or ``classmethod`` locally before nested definitions are pruned.
 The surrounding generated module and class bodies are definition-time
 declarative, and the payoff scaffold preserves economics by storing the
 submitted spec exactly once as ``self._spec`` and returning that same object
