@@ -889,6 +889,34 @@ def _module_has_authoritative_cds_primitive_import(
     )
 
 
+def _module_preserves_cds_loop_builtins(tree: ast.Module) -> bool:
+    """Require CDS grid loops to retain the real ``enumerate`` and ``range``."""
+    evaluate_functions = tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "evaluate"
+    )
+    if len(evaluate_functions) != 1:
+        return False
+    evaluate = evaluate_functions[0]
+    for symbol in ("enumerate", "range"):
+        if symbol in _function_argument_names(evaluate):
+            return False
+        if any(
+            _node_binds_name_in_current_scope(statement, name=symbol)
+            for statement in evaluate.body
+        ):
+            return False
+        if any(
+            _node_binds_name_in_current_scope(statement, name=symbol)
+            for statement in tree.body
+            if statement is not evaluate
+        ):
+            return False
+    return True
+
+
 _NESTED_LOOP_EXIT_SCOPES = (
     ast.For,
     ast.AsyncFor,
@@ -1793,6 +1821,21 @@ def _cds_initial_survival_expression_is_valid(
     )
 
 
+def _loop_target_name_is_immutable(
+    loop: ast.For | ast.AsyncFor,
+    target: ast.Name,
+) -> bool:
+    """Require one loop-bound name to retain its active iteration value."""
+    bindings = {
+        id(node)
+        for node in ast.walk(loop)
+        if isinstance(node, ast.Name)
+        and node.id == target.id
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+    }
+    return bindings == {id(target)}
+
+
 def _enumerated_collection(
     loop: ast.For | ast.AsyncFor,
     attribute: str,
@@ -1802,10 +1845,18 @@ def _enumerated_collection(
         isinstance(loop.target, ast.Tuple)
         and len(loop.target.elts) == 2
         and isinstance(loop.target.elts[0], ast.Name)
+        and isinstance(loop.target.elts[1], ast.Name)
         and isinstance(loop.iter, ast.Call)
         and isinstance(loop.iter.func, ast.Name)
         and loop.iter.func.id == "enumerate"
         and len(loop.iter.args) == 1
+        and not loop.iter.keywords
+    ):
+        return None
+    if not all(
+        _loop_target_name_is_immutable(loop, target)
+        for target in loop.target.elts
+        if isinstance(target, ast.Name)
     ):
         return None
     collection = loop.iter.args[0]
@@ -1862,28 +1913,60 @@ def _loop_updates_start_from_stop(
     return False
 
 
-def _tree_initializes_name_to_zero_before(
+def _tree_has_exact_interval_cursor(
     tree: ast.AST,
     *,
     name: str,
-    before_line: int,
+    stop_name: str,
+    period_loop: ast.For | ast.AsyncFor,
 ) -> bool:
-    """Require an interval cursor to start at the beginning of the event grid."""
-    for node in ast.walk(tree):
-        assignment = _simple_name_assignment(node)
-        if assignment is None:
-            continue
-        assigned_name, value = assignment
-        if (
-            assigned_name == name
-            and isinstance(value, ast.Constant)
-            and isinstance(value.value, int)
-            and not isinstance(value.value, bool)
-            and value.value == 0
-            and getattr(node, "lineno", 0) < before_line
-        ):
-            return True
-    return False
+    """Require one reachable zero initializer and only mapped cursor updates."""
+    if not isinstance(tree, ast.Module):
+        return False
+    initializers = tuple(
+        (node, assignment[1])
+        for node in tree.body
+        for assignment in (_simple_name_assignment(node),)
+        if assignment is not None
+        and assignment[0] == name
+        and getattr(node, "lineno", 0) < getattr(period_loop, "lineno", 0)
+    )
+    if len(initializers) != 1:
+        return False
+    initializer, value = initializers[0]
+    initializer_target = (
+        initializer.targets[0]
+        if isinstance(initializer, ast.Assign)
+        else initializer.target
+    )
+    if not (
+        isinstance(initializer_target, ast.Name)
+        and isinstance(value, ast.Constant)
+        and isinstance(value.value, int)
+        and not isinstance(value.value, bool)
+        and value.value == 0
+        and _cds_interval_cursor_writes_are_bounded(
+            period_loop,
+            start_name=name,
+            stop_name=stop_name,
+        )
+    ):
+        return False
+    loop_targets = {
+        id(node)
+        for node in ast.walk(period_loop)
+        if isinstance(node, ast.Name)
+        and node.id == name
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+    }
+    actual_targets = {
+        id(node)
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Name)
+        and node.id == name
+        and isinstance(node.ctx, (ast.Store, ast.Del))
+    }
+    return actual_targets == {id(initializer_target), *loop_targets}
 
 
 def _name_has_only_expected_accumulator_mutations(
@@ -2033,16 +2116,22 @@ def _cds_full_event_grid_loops(
                 and isinstance(interval_loop.iter.func, ast.Name)
                 and interval_loop.iter.func.id == "range"
                 and len(interval_loop.iter.args) == 2
+                and not interval_loop.iter.keywords
                 and isinstance(interval_loop.iter.args[0], ast.Name)
                 and isinstance(interval_loop.iter.args[1], ast.Name)
                 and interval_loop.iter.args[1].id == stop_name
+                and _loop_target_name_is_immutable(
+                    interval_loop,
+                    interval_loop.target,
+                )
             ):
                 continue
             start_name = interval_loop.iter.args[0].id
-            if not _tree_initializes_name_to_zero_before(
+            if not _tree_has_exact_interval_cursor(
                 tree,
                 name=start_name,
-                before_line=getattr(period_loop, "lineno", 0),
+                stop_name=stop_name,
+                period_loop=period_loop,
             ):
                 continue
             if not _period_loop_has_required_empty_interval_guard(
@@ -3830,6 +3919,20 @@ class AlgorithmContractValidator:
                 )
             )
             return findings
+
+        if not _module_preserves_cds_loop_builtins(module_tree):
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_default_swap_incomplete_event_grid",
+                    message=(
+                        f"Route '{route_spec.id}' must use the unshadowed builtin "
+                        "enumerate and range functions for its zero-based period "
+                        "and interval grid loops."
+                    ),
+                )
+            )
 
         selected_weight_symbol = _cds_selected_weight_symbol(plan)
         required_primitive_imports = (

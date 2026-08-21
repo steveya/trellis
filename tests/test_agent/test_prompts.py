@@ -1384,6 +1384,11 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "directly imported public" in prompt
     assert "directly and without aliases from its public Trellis module" in prompt
     assert "one immutable assignment that dominates their use" in prompt
+    assert "unshadowed builtin `enumerate(event_grid.periods)`" in prompt
+    assert (
+        "Initialize `interval_start` exactly once with a reachable direct `0`"
+        in prompt
+    )
     assert "direct or dynamic namespace shadowing, reflection" in prompt
     assert "authoritative `evaluate()` method undecorated" in prompt
     assert "CDS contract findings are blocking" in prompt

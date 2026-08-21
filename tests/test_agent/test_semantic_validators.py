@@ -2629,6 +2629,135 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    @pytest.mark.parametrize(
+        ("anchor", "replacement"),
+        (
+            (
+                "enumerate(grid.periods)",
+                "enumerate(grid.periods, start=1)",
+            ),
+            (
+                "range(interval_start, interval_stop)",
+                "range(interval_start, interval_stop, step=1)",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_modified_grid_iteration_call(
+        self,
+        registry,
+        anchor,
+        replacement,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(anchor, replacement, 1)
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize("symbol", ("enumerate", "range"))
+    def test_rejects_credit_default_swap_shadowed_grid_iteration_builtin(
+        self,
+        registry,
+        symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            f"    {symbol} = lambda *args: ()\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("anchor", "mutation"),
+        (
+            (
+                "    for period_index, period in enumerate(grid.periods):\n",
+                "        period_index = 0\n",
+            ),
+            (
+                "    for period_index, period in enumerate(grid.periods):\n",
+                "        period = grid.periods[0]\n",
+            ),
+            (
+                "        for interval_index in range(interval_start, interval_stop):\n",
+                "            interval_index = 0\n",
+            ),
+        ),
+    )
+    def test_rejects_credit_default_swap_rebound_grid_loop_target(
+        self,
+        registry,
+        anchor,
+        mutation,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            anchor,
+            anchor + mutation,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        "cursor_setup",
+        (
+            "    if False:\n        interval_start = 0\n",
+            "    interval_start = 0\n    interval_start = 1\n",
+        ),
+    )
+    def test_rejects_credit_default_swap_invalid_cursor_initialization(
+        self,
+        registry,
+        cursor_setup,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    interval_start = 0\n",
+            cursor_setup,
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_interval_loop_hidden_in_branch(
         self,
         registry,

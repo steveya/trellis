@@ -493,7 +493,12 @@ cashflow constructors, and PV functions---must retain direct, unaliased imports
 from its approved modules. A same-name replacement fails closed. Simple value
 aliases used as semantic evidence must have one immutable assignment that
 dominates the use; the validator does not accept an earlier correct assignment
-after that name is rebound. The interval loop must be a reachable
+after that name is rebound. The grid walk must preserve the unshadowed builtin
+``enumerate`` and ``range`` bindings, use zero-based one-argument period
+enumeration and two-argument interval ranges without keywords, and leave all
+loop targets unchanged. The interval cursor requires exactly one reachable
+direct zero initializer before the period loop; dead, duplicate, or competing
+initializers fail closed. The interval loop must be a reachable
 direct child of
 the period loop. Before scheduled-leg assembly, the bounded empty-period guard
 must advance ``interval_start`` to ``interval_stop`` and continue; otherwise an
