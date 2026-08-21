@@ -1220,6 +1220,9 @@ declarative, and the payoff scaffold preserves economics by storing the
 submitted spec exactly once as ``self._spec`` and returning that same object
 from its sole ``spec`` property. Executable definition-time control flow,
 substituted specs, alternate writers, and dynamic attribute hooks are rejected.
+Frozen spec declarations must preserve the directly imported
+``dataclasses.dataclass`` decorator binding; module- or class-scope shadowing
+and rebinding of ``dataclass`` are rejected before dynamic import.
 Exact fail-fast ``ValueError``
 guards for missing credit and discount market handles are admitted;
 input-dependent assertions and other conditional return/raise exits, unused or

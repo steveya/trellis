@@ -3899,6 +3899,27 @@ def evaluate(self, market_state):
                 "def import_trap(value: tuple(iter(int, 1))):\n"
                 "    return value\n\n"
             ),
+            (
+                "from dataclasses import dataclass\n\n"
+                "def dataclass(*args, **kwargs):\n"
+                "    def replace_spec(spec_class):\n"
+                "        return spec_class\n"
+                "    return replace_spec\n\n"
+                "@dataclass(frozen=True)\n"
+                "class CDSSpec:\n"
+                "    notional: float = 1.0\n\n"
+            ),
+            (
+                "from dataclasses import dataclass\n\n"
+                "class SpecNamespace:\n"
+                "    def dataclass(*args, **kwargs):\n"
+                "        def replace_spec(spec_class):\n"
+                "            return spec_class\n"
+                "        return replace_spec\n\n"
+                "    @dataclass(frozen=True)\n"
+                "    class CDSSpec:\n"
+                "        notional: float = 1.0\n\n"
+            ),
         ),
     )
     def test_rejects_credit_default_swap_definition_time_control_flow(

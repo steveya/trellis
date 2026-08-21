@@ -1260,6 +1260,8 @@ def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
     ):
         return False
     for statement in class_node.body:
+        if _statement_binds_name(statement, "dataclass"):
+            return False
         if isinstance(statement, ast.Pass):
             continue
         if isinstance(statement, ast.Expr) and (
@@ -1301,6 +1303,30 @@ def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
     return True
 
 
+def _statement_binds_name(statement: ast.stmt, name: str) -> bool:
+    """Return whether a statement replaces a direct scope-local binding."""
+    if isinstance(statement, ast.Import):
+        return any(
+            (alias.asname or alias.name.split(".", 1)[0]) == name
+            for alias in statement.names
+        )
+    if isinstance(statement, ast.ImportFrom):
+        return any((alias.asname or alias.name) == name for alias in statement.names)
+    if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        return statement.name == name
+    if isinstance(statement, (ast.Assign, ast.AnnAssign, ast.AugAssign)):
+        targets = (
+            statement.targets
+            if isinstance(statement, ast.Assign)
+            else (statement.target,)
+        )
+        return any(
+            isinstance(target, ast.Name) and target.id == name
+            for target in targets
+        )
+    return False
+
+
 def _module_definition_time_is_bounded(tree: ast.Module) -> bool:
     """Reject statements that could hang or mutate during adapter import."""
     dataclass_imports = tuple(
@@ -1320,6 +1346,27 @@ def _module_definition_time_is_bounded(tree: ast.Module) -> bool:
     )
     if uses_dataclass and len(dataclass_imports) != 1:
         return False
+    if dataclass_imports:
+        dataclass_import = dataclass_imports[0]
+        import_index = tree.body.index(dataclass_import)
+        if any(
+            isinstance(statement, ast.ClassDef)
+            and statement.decorator_list
+            and index < import_index
+            for index, statement in enumerate(tree.body)
+        ):
+            return False
+        if any(
+            statement is not dataclass_import
+            and _statement_binds_name(statement, "dataclass")
+            for statement in tree.body
+        ):
+            return False
+        if sum(
+            (alias.asname or alias.name) == "dataclass"
+            for alias in dataclass_import.names
+        ) != 1:
+            return False
     for statement in tree.body:
         if isinstance(statement, (ast.Import, ast.ImportFrom, ast.Pass)):
             continue
