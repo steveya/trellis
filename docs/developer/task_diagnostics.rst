@@ -502,6 +502,11 @@ exactly the authoritative planned field order, annotations, required-field
 positions, and optional defaults. Duplicate same-named spec classes, changed
 defaults, extra or missing fields, methods, and runtime data-model hooks fail
 closed before smoke fixtures can mask the drift with explicit values.
+Eager function defaults are resolved before dynamic import: bare names must be
+unshadowed inert builtins or approved direct imports already in scope, and an
+enum attribute must name a real member on its authoritative imported enum.
+Undefined, late, rebound, or nonexistent default bindings fail closed before
+Python can raise during module definition.
 The admitted ``property``,
 ``staticmethod``, and ``classmethod`` decorators must also retain their
 unshadowed builtin bindings. For generated payoff classes, the constructor

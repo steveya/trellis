@@ -4112,6 +4112,24 @@ def evaluate(self, market_state):
                 "    return value\n\n"
             ),
             (
+                "def default_trap(value=MISSING):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value=Frequency.QUARTERLY):\n"
+                "    return value\n\n"
+            ),
+            (
+                "def default_trap(value=Frequency.QUARTERLY):\n"
+                "    return value\n\n"
+                "from trellis.core.types import Frequency\n\n"
+            ),
+            (
+                "from trellis.core.types import Frequency\n\n"
+                "def default_trap(value=Frequency.MISSING):\n"
+                "    return value\n\n"
+            ),
+            (
                 "def annotation_trap(value: PricingValue):\n"
                 "    return value\n\n"
                 "from trellis.core.payoff import PricingValue\n\n"
@@ -4172,6 +4190,27 @@ def evaluate(self, market_state):
             finding.category == "credit_default_swap_incomplete_event_grid"
             for finding in findings
         )
+
+    def test_accepts_credit_default_swap_authoritative_enum_function_default(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "from trellis.core.types import Frequency\n\n"
+            "def inert_default(value=Frequency.QUARTERLY):\n"
+            "    return value\n\n"
+            + _cds_composition_source()
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
 
     @pytest.mark.parametrize(
         ("constructor_body", "property_body"),

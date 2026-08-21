@@ -1246,10 +1246,14 @@ Frozen spec declarations must preserve the directly imported
 authoritative planned field order, annotations, required fields, and optional
 defaults exactly; duplicates, changed defaults, extra or missing fields,
 methods, and runtime data-model hooks are not admitted. Module- or class-scope
-shadowing and
-rebinding of that name, or of the admitted builtin ``property``,
+shadowing and rebinding of that name, or of the admitted builtin ``property``,
 ``staticmethod``, and ``classmethod`` decorators, are rejected before dynamic
-import. The payoff ``requirements`` property must remain the inert scaffold
+import. Eager function defaults are also resolved statically: names must bind
+to unshadowed inert builtins or approved direct imports already in scope, and
+enum attributes must select an existing member of the authoritative imported
+enum. Undefined, late, rebound, or nonexistent bindings are rejected before
+module definition can fail at runtime. The payoff ``requirements`` property
+must remain the inert scaffold
 return of exactly ``{"credit_curve", "discount_curve"}``.
 Exact fail-fast ``ValueError``
 guards for missing credit and discount market handles are admitted;

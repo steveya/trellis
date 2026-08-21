@@ -15,6 +15,10 @@ from collections.abc import Callable
 from trellis.agent.codegen_guardrails import GenerationPlan
 from trellis.agent.route_registry import RouteSpec, resolve_route_primitives
 from trellis.agent.semantic_validators.base import SemanticFinding
+from trellis.conventions.calendar import BusinessDayAdjustment
+from trellis.conventions.day_count import DayCountConvention
+from trellis.conventions.schedule import RollConvention, StubType
+from trellis.core.types import Frequency
 
 
 # Engine family → expected code signatures
@@ -688,6 +692,19 @@ _CDS_INERT_EAGER_ANNOTATION_IMPORTS = {
     "StubType": _CDS_SCHEDULE_CONVENTION_MODULE,
     "date": "datetime",
 }
+_CDS_INERT_EAGER_DEFAULT_IMPORTS = {
+    name: module
+    for module, names in _CDS_APPROVED_IMPORTS.items()
+    if module != "__future__"
+    for name in names
+}
+_CDS_INERT_EAGER_DEFAULT_ENUM_MEMBERS = {
+    "BusinessDayAdjustment": frozenset(BusinessDayAdjustment.__members__),
+    "DayCountConvention": frozenset(DayCountConvention.__members__),
+    "Frequency": frozenset(Frequency.__members__),
+    "RollConvention": frozenset(RollConvention.__members__),
+    "StubType": frozenset(StubType.__members__),
+}
 _CDS_OPAQUE_NAMESPACE_CALLS = frozenset({
     "__import__",
     "__delattr__",
@@ -1200,38 +1217,66 @@ class _NestedEvaluateScopePruner(ast.NodeTransformer):
         return ast.copy_location(ast.Constant(value=None), node)
 
 
-def _definition_time_expression_is_declarative(expression: ast.AST) -> bool:
-    """Recognize values that cannot introduce definition-time control flow."""
-    if isinstance(expression, (ast.Constant, ast.Name)):
+def _definition_time_expression_is_declarative(
+    expression: ast.AST,
+    *,
+    tree: ast.Module,
+) -> bool:
+    """Recognize eager values whose bindings are proven safe to resolve."""
+    if isinstance(expression, ast.Constant):
         return True
+    if isinstance(expression, ast.Name):
+        if expression.id in _CDS_INERT_EAGER_ANNOTATION_BUILTINS:
+            return not _definition_time_scopes_rebind_name(
+                tree.body,
+                name=expression.id,
+            )
+        module = _CDS_INERT_EAGER_DEFAULT_IMPORTS.get(expression.id)
+        return module is not None and _module_has_authoritative_eager_import(
+            tree,
+            name=expression.id,
+            module=module,
+            before_node=expression,
+        )
     if isinstance(expression, ast.Attribute):
+        if not isinstance(expression.value, ast.Name):
+            return False
+        base_name = expression.value.id
+        members = _CDS_INERT_EAGER_DEFAULT_ENUM_MEMBERS.get(base_name)
+        module = _CDS_INERT_EAGER_DEFAULT_IMPORTS.get(base_name)
         return (
-            isinstance(expression.value, ast.Name)
-            and expression.value.id
-            in {
-                "BusinessDayAdjustment",
-                "DayCountConvention",
-                "Frequency",
-                "RollConvention",
-                "StubType",
-            }
+            members is not None
+            and expression.attr in members
+            and module is not None
+            and _module_has_authoritative_eager_import(
+                tree,
+                name=base_name,
+                module=module,
+                before_node=expression,
+            )
         )
     if isinstance(expression, (ast.Tuple, ast.List, ast.Set)):
         return all(
-            _definition_time_expression_is_declarative(element)
+            _definition_time_expression_is_declarative(element, tree=tree)
             for element in expression.elts
         )
     if isinstance(expression, ast.Dict):
         return all(
-            key is None or _definition_time_expression_is_declarative(key)
+            key is None
+            or _definition_time_expression_is_declarative(key, tree=tree)
             for key in expression.keys
         ) and all(
-            _definition_time_expression_is_declarative(value)
+            _definition_time_expression_is_declarative(value, tree=tree)
             for value in expression.values
         )
     if isinstance(expression, ast.UnaryOp):
-        return isinstance(expression.op, (ast.UAdd, ast.USub, ast.Not)) and (
-            isinstance(expression.operand, ast.Constant)
+        return (
+            isinstance(expression.op, ast.Not)
+            and isinstance(expression.operand, ast.Constant)
+        ) or (
+            isinstance(expression.op, (ast.UAdd, ast.USub))
+            and isinstance(expression.operand, ast.Constant)
+            and isinstance(expression.operand.value, (int, float, complex))
         )
     if isinstance(expression, ast.Lambda):
         return not expression.args.defaults and not any(
@@ -1266,6 +1311,8 @@ def _definition_time_annotation_is_declarative(expression: ast.AST) -> bool:
 
 def _definition_time_function_is_bounded(
     function: ast.FunctionDef | ast.AsyncFunctionDef,
+    *,
+    tree: ast.Module,
 ) -> bool:
     """Reject executable defaults and decorators on generated definitions."""
     arguments = function.args
@@ -1285,7 +1332,8 @@ def _definition_time_function_is_bounded(
     ) + ((function.returns,) if function.returns is not None else ())
     return (
         all(
-            default is None or _definition_time_expression_is_declarative(default)
+            default is None
+            or _definition_time_expression_is_declarative(default, tree=tree)
             for default in defaults
         )
         and all(
@@ -1300,7 +1348,11 @@ def _definition_time_function_is_bounded(
     )
 
 
-def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
+def _definition_time_class_is_bounded(
+    class_node: ast.ClassDef,
+    *,
+    tree: ast.Module,
+) -> bool:
     """Allow declarations in class bodies, never executable control flow."""
     if class_node.bases or class_node.keywords:
         return False
@@ -1337,11 +1389,11 @@ def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
         ):
             continue
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if _definition_time_function_is_bounded(statement):
+            if _definition_time_function_is_bounded(statement, tree=tree):
                 continue
             return False
         if isinstance(statement, ast.ClassDef):
-            if _definition_time_class_is_bounded(statement):
+            if _definition_time_class_is_bounded(statement, tree=tree):
                 continue
             return False
         if isinstance(statement, ast.Assign):
@@ -1349,7 +1401,10 @@ def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
                 len(statement.targets) == 1
                 and isinstance(statement.targets[0], ast.Name)
                 and statement.targets[0].id == "__trellis_comparison_bindings__"
-                and _definition_time_expression_is_declarative(statement.value)
+                and _definition_time_expression_is_declarative(
+                    statement.value,
+                    tree=tree,
+                )
             ):
                 continue
             return False
@@ -1361,7 +1416,10 @@ def _definition_time_class_is_bounded(class_node: ast.ClassDef) -> bool:
                 )
                 and (
                     statement.value is None
-                    or _definition_time_expression_is_declarative(statement.value)
+                    or _definition_time_expression_is_declarative(
+                        statement.value,
+                        tree=tree,
+                    )
                 )
             ):
                 continue
@@ -1471,14 +1529,14 @@ def _definition_time_scopes_rebind_name(
     return False
 
 
-def _module_has_authoritative_eager_annotation_import(
+def _module_has_authoritative_eager_import(
     tree: ast.Module,
     *,
     name: str,
     module: str,
     before_node: ast.AST,
 ) -> bool:
-    """Prove an eager annotation name is an approved direct type import."""
+    """Prove an eager name is bound by one approved direct import."""
     imports = tuple(
         statement
         for statement in tree.body
@@ -1517,7 +1575,7 @@ def _module_annotations_are_bounded(tree: ast.Module) -> bool:
                     return False
                 continue
             module = _CDS_INERT_EAGER_ANNOTATION_IMPORTS.get(node.id)
-            if module is None or not _module_has_authoritative_eager_annotation_import(
+            if module is None or not _module_has_authoritative_eager_import(
                 tree,
                 name=node.id,
                 module=module,
@@ -1603,11 +1661,11 @@ def _module_definition_time_is_bounded(tree: ast.Module) -> bool:
         ):
             continue
         if isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            if _definition_time_function_is_bounded(statement):
+            if _definition_time_function_is_bounded(statement, tree=tree):
                 continue
             return False
         if isinstance(statement, ast.ClassDef):
-            if _definition_time_class_is_bounded(statement):
+            if _definition_time_class_is_bounded(statement, tree=tree):
                 continue
             return False
         return False
