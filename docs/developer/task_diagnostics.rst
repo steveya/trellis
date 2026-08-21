@@ -482,6 +482,10 @@ the declared Trellis calendar, schedule, market-state, payoff-type, core-type,
 date-utils, and contingent-cashflow modules. Module-style, relative, aliased,
 and other arbitrary imports fail before dynamic import so an uninspected
 initializer cannot execute ahead of smoke validation.
+When annotations are eagerly evaluated, subscript annotations admit only the
+inert builtin ``dict``, ``frozenset``, ``list``, ``set``, ``tuple``, and
+``type`` bases. Custom subscript bases fail before import because their
+``__class_getitem__`` hook could execute arbitrary code.
 A frozen spec decorator must retain the directly imported
 ``dataclasses.dataclass`` binding and use the explicit
 ``@dataclass(frozen=True)`` form; module- or class-scope shadowing and

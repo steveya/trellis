@@ -656,6 +656,9 @@ _CDS_APPROVED_IMPORTS = {
         }
     ),
 }
+_CDS_INERT_ANNOTATION_SUBSCRIPT_BASES = frozenset(
+    {"dict", "frozenset", "list", "set", "tuple", "type"}
+)
 _CDS_OPAQUE_NAMESPACE_CALLS = frozenset({
     "__import__",
     "__delattr__",
@@ -1215,9 +1218,11 @@ def _definition_time_annotation_is_declarative(expression: ast.AST) -> bool:
     if isinstance(expression, ast.Attribute):
         return _definition_time_annotation_is_declarative(expression.value)
     if isinstance(expression, ast.Subscript):
-        return _definition_time_annotation_is_declarative(
-            expression.value
-        ) and _definition_time_annotation_is_declarative(expression.slice)
+        return (
+            isinstance(expression.value, ast.Name)
+            and expression.value.id in _CDS_INERT_ANNOTATION_SUBSCRIPT_BASES
+            and _definition_time_annotation_is_declarative(expression.slice)
+        )
     if isinstance(expression, ast.Tuple):
         return all(
             _definition_time_annotation_is_declarative(element)

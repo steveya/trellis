@@ -4045,6 +4045,14 @@ def evaluate(self, market_state):
                 "    return value\n\n"
             ),
             (
+                "class Spin:\n"
+                "    def __class_getitem__(cls, item):\n"
+                "        while True:\n"
+                "            pass\n\n"
+                "def annotation_trap(value: Spin[int]):\n"
+                "    return value\n\n"
+            ),
+            (
                 "from dataclasses import dataclass\n\n"
                 "def dataclass(*args, **kwargs):\n"
                 "    def replace_spec(spec_class):\n"

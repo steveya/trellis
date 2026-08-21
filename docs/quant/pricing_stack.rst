@@ -1230,6 +1230,9 @@ generated tree: only direct, unaliased names from the exact CDS scaffold
 modules, including the ``PricingValue`` payoff-type scaffold, are admitted,
 while module-style, relative, aliased, and other arbitrary imports are rejected
 before dynamic import.
+Eager subscript annotations are similarly bounded to inert builtin container
+bases; custom bases are rejected before their ``__class_getitem__`` hooks can
+run.
 The payoff class may define only ``__init__``, ``spec``, ``requirements``, and
 ``evaluate``; extra helpers, lifecycle hooks such as ``__del__``, and other
 data-model methods are not admitted.
