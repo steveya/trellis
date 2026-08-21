@@ -162,12 +162,36 @@ def build_default_event_grid(
     elapsed_fractions: list[float] = []
 
     for period_index, period in enumerate(schedule.periods):
-        raw_start = float(year_fraction(origin, period.start_date, curve_day_count))
-        raw_end = float(year_fraction(origin, period.end_date, curve_day_count))
+        raw_start = float(
+            year_fraction(
+                origin,
+                period.start_date,
+                curve_day_count,
+                calendar=schedule.calendar,
+            )
+        )
+        raw_end = float(
+            year_fraction(
+                origin,
+                period.end_date,
+                curve_day_count,
+                calendar=schedule.calendar,
+            )
+        )
         start = max(raw_start, 0.0)
         end = max(raw_end, 0.0)
         payment_times.append(
-            max(float(year_fraction(origin, period.payment_date, curve_day_count)), 0.0)
+            max(
+                float(
+                    year_fraction(
+                        origin,
+                        period.payment_date,
+                        curve_day_count,
+                        calendar=schedule.calendar,
+                    )
+                ),
+                0.0,
+            )
         )
 
         if period.start_date < origin < period.end_date:
@@ -179,6 +203,7 @@ def build_default_event_grid(
                     ref_start=period.start_date,
                     ref_end=period.end_date,
                     frequency=schedule.frequency,
+                    calendar=schedule.calendar,
                 )
             )
             full_accrual = float(period.accrual_fraction)
@@ -213,6 +238,7 @@ def build_default_event_grid(
                         ref_start=period.start_date,
                         ref_end=period.end_date,
                         frequency=schedule.frequency,
+                        calendar=schedule.calendar,
                     )
                 )
                 period_fraction_elapsed = min(

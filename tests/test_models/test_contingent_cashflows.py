@@ -7,7 +7,8 @@ from datetime import date
 
 import pytest
 
-from trellis.conventions.day_count import DayCountConvention
+from trellis.conventions.calendar import WEEKEND_ONLY
+from trellis.conventions.day_count import DayCountConvention, year_fraction
 from trellis.core.date_utils import build_period_schedule
 from trellis.core.differentiable import get_numpy
 from trellis.core.types import Frequency
@@ -86,6 +87,38 @@ def test_default_event_grid_uses_coupon_day_count_for_elapsed_fraction():
     assert grid.elapsed_period_fractions[0] == pytest.approx(28.0 / 90.0)
     assert grid.intervals[0].settlement_date == date(2025, 3, 31)
     assert grid.intervals[0].period_fraction_elapsed == pytest.approx(60.0 / 90.0)
+
+
+def test_default_event_grid_uses_schedule_calendar_for_bus_252_accrual():
+    schedule = build_period_schedule(
+        date(2025, 1, 6),
+        date(2025, 4, 7),
+        Frequency.QUARTERLY,
+        calendar=WEEKEND_ONLY,
+        day_count=DayCountConvention.BUS_252,
+        time_origin=date(2025, 2, 3),
+    )
+
+    grid = build_default_event_grid(schedule, steps_per_year=4)
+
+    period = schedule.periods[0]
+    full_accrual = year_fraction(
+        period.start_date,
+        period.end_date,
+        DayCountConvention.BUS_252,
+        calendar=WEEKEND_ONLY,
+    )
+    elapsed_accrual = year_fraction(
+        period.start_date,
+        schedule.time_origin,
+        DayCountConvention.BUS_252,
+        calendar=WEEKEND_ONLY,
+    )
+    assert schedule.calendar is WEEKEND_ONLY
+    assert grid.elapsed_period_fractions[0] == pytest.approx(
+        elapsed_accrual / full_accrual
+    )
+    assert 0.0 < grid.intervals[0].period_fraction_elapsed <= 1.0
 
 
 def test_default_event_grid_requires_measured_periods_and_time_origin():

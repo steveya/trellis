@@ -67,6 +67,7 @@ class TestEventSchedule:
         second = schedule.periods[1]
         assert second.end_date == date(2024, 4, 1)
         assert second.payment_date == date(2024, 4, 3)
+        assert schedule.calendar is WEEKEND_ONLY
 
     def test_time_origin_requires_day_count(self):
         with pytest.raises(ValueError, match="day_count is required"):

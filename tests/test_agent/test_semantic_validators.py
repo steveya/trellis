@@ -3202,6 +3202,32 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_unselected_weight_call(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source(
+            extra_setup=(
+                "from trellis.models.contingent_cashflows import "
+                "sample_first_event_weights"
+            ),
+            additional_weight_call=(
+                "sample_first_event_weights(conditional, "
+                "initial_survival_weight=initial_survival_weight, "
+                "n_paths=0 if self._spec.notional == 0 else 1, seed=None)"
+            ),
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap", "analytical"),
+            spec,
+        )
+
+        assert any(
+            finding.category
+            == "credit_default_swap_unselected_first_event_primitive"
+            for finding in findings
+        )
+
     @pytest.mark.parametrize("n_paths", ("10", "self._spec.n_paths"))
     def test_rejects_credit_default_swap_unbound_path_count(
         self,

@@ -3972,6 +3972,26 @@ class AlgorithmContractValidator:
             )
 
         selected_weight_symbol = _cds_selected_weight_symbol(plan)
+        unselected_weight_symbol = (
+            "expected_first_event_weights"
+            if selected_weight_symbol == "sample_first_event_weights"
+            else "sample_first_event_weights"
+        )
+        if _find_calls_for_symbol(tree, unselected_weight_symbol):
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category=(
+                        "credit_default_swap_unselected_first_event_primitive"
+                    ),
+                    message=(
+                        f"Route '{route_spec.id}' selects "
+                        f"'{selected_weight_symbol}' and must not execute the "
+                        f"unselected '{unselected_weight_symbol}' primitive."
+                    ),
+                )
+            )
         required_primitive_imports = (
             ("build_period_schedule", _CDS_SCHEDULE_PRIMITIVE_MODULE, True),
             (

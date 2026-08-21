@@ -441,7 +441,10 @@ reviewer escalation.
 The cashflow weight owner must resolve to the numerical-evidence primitive
 selected by the active generation plan: merely calling both primitives does not
 let an analytical target consume sampled weights or a Monte Carlo target consume
-exact weights. Monte Carlo sampling must bind ``n_paths`` to the active spec;
+exact weights. Executing the unselected primitive is itself rejected, including
+when its result appears unused, because its method-specific controls would
+otherwise escape the active route validation. Monte Carlo sampling must bind
+``n_paths`` to the active spec;
 the deterministic materializer's explicit ``250000`` fallback is the only
 literal fallback admitted by this route validator. Because ``n_paths`` is an
 optional typed field, passing ``spec.n_paths`` directly is rejected: the call
@@ -468,7 +471,10 @@ accepted. The same grid must resolve back through
 ``build_default_event_grid`` to a ``build_period_schedule`` whose
 ``time_origin`` is the active valuation date (with the declared start-date
 fallback) and whose start date, end date, frequency, and day-count convention
-are bound to the active spec. The bounded route also requires its declared
+are bound to the active spec. ``EventSchedule`` retains the construction
+calendar so BUS/252 coupon and event-accrual measurements use the same
+business-day source instead of failing after schedule construction. The
+bounded route also requires its declared
 standard conventions exactly: ``WEEKEND_ONLY``, following adjustment, no roll,
 short-last stub, and zero payment lag. Convention overrides fail closed until
 the typed CDS contract carries those fields. An unconditional

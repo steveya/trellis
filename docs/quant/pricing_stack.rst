@@ -1176,7 +1176,9 @@ Single-name CDS generated construction starts from the
 composition is:
 
 1. ``build_period_schedule(...)`` builds coupon periods from declared
-   conventions and an explicit valuation time origin.
+   conventions and an explicit valuation time origin. Its ``EventSchedule``
+   retains the construction calendar so downstream BUS/252 measurements use
+   the same business-day source.
 2. ``build_default_event_grid(...)`` partitions each live period into bounded
    curve-time intervals while preserving coupon accrual measurements. Every
    interval carries both a model ``settlement_time`` and a midpoint
@@ -1193,7 +1195,8 @@ composition is:
    ``42``. The selected primitive receives exactly one positional conditional-
    probability argument and only its declared explicit keywords; opaque
    ``*args`` or ``**kwargs``, duplicate keywords, and extra controls are not an
-   admitted pricing surface.
+   admitted pricing surface. The method-unselected first-event primitive must
+   not be executed, even when its result is otherwise unused.
 5. ``CouponAccrual`` / ``coupon_cashflow_pv(...)`` and
    ``ProtectionPayment`` / ``protection_payment_pv(...)`` assemble the
    scheduled premium, accrued-on-event, and trigger legs. Their constructor

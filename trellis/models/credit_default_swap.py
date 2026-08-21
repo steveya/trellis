@@ -225,6 +225,7 @@ def _elapsed_coupon_fraction(
             ref_start=period.start_date,
             ref_end=period.end_date,
             frequency=schedule.frequency,
+            calendar=schedule.calendar,
         )
     )
     return min(

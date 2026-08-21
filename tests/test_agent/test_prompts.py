@@ -1358,6 +1358,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "build_default_event_grid" in prompt
     assert "expected_first_event_weights" in prompt
     assert "without `*args`, `**kwargs`" in prompt
+    assert "do not call the unselected primitive" in prompt
     assert "WEEKEND_ONLY" in prompt
     assert "BusinessDayAdjustment.FOLLOWING" in prompt
     assert "StubType.SHORT_LAST" in prompt
@@ -1468,6 +1469,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "conditional_event_probabilities_from_curve" in prompt
     assert "sample_first_event_weights" in prompt
     assert "without `*args`, `**kwargs`" in prompt
+    assert "do not call the unselected primitive" in prompt
     assert "one reachable `evaluate()` body" in prompt
     assert "spread = float(spec.spread)" in prompt
     assert "spread *= 1e-4" in prompt
