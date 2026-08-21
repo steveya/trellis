@@ -1372,6 +1372,7 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "accrued_on_event" in prompt
     assert "one direct final signed return" in prompt
     assert "conditional return/raise exits" in prompt
+    assert "exact fail-fast `ValueError` guards" in prompt
     assert "sign absent or explicitly positive one" in prompt
     assert "update it only with additive `+=` in its recognized loop" in prompt
     assert "do not write to it anywhere else before return" in prompt
@@ -1382,6 +1383,8 @@ def test_evaluate_prompt_cds_surface_mentions_credit_curve_contract():
     assert "right-hand side must be exactly its corresponding" in prompt
     assert "directly imported public" in prompt
     assert "direct or dynamic namespace shadowing, reflection" in prompt
+    assert "authoritative `evaluate()` method undecorated" in prompt
+    assert "CDS contract findings are blocking" in prompt
     assert "before the period loop and every spread alias or cashflow use" in prompt
 
 
@@ -1464,6 +1467,7 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "settlement_time" in prompt
     assert "one direct final signed return" in prompt
     assert "conditional return/raise exits" in prompt
+    assert "exact fail-fast `ValueError` guards" in prompt
     assert "sign absent or explicitly positive one" in prompt
     assert "fixed reproducible `42`" in prompt
     assert "update it only with additive `+=`" in prompt
@@ -1475,6 +1479,8 @@ def test_evaluate_prompt_cds_monte_carlo_surface_mentions_get_numpy_and_schedule
     assert "right-hand side must be exactly its corresponding" in prompt
     assert "directly imported public" in prompt
     assert "direct or dynamic namespace shadowing, reflection" in prompt
+    assert "authoritative `evaluate()` method undecorated" in prompt
+    assert "CDS contract findings are blocking" in prompt
     assert "before the period loop and every spread alias or cashflow use" in prompt
 
 

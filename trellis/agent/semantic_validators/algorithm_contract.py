@@ -1017,6 +1017,34 @@ def _subtree_has_evaluate_exit(node: ast.AST) -> bool:
     return False
 
 
+def _is_supported_cds_market_guard(statement: ast.AST) -> bool:
+    """Admit exact fail-fast checks for the two required CDS market handles."""
+    if not (
+        isinstance(statement, ast.If)
+        and len(statement.body) == 1
+        and not statement.orelse
+        and isinstance(statement.body[0], ast.Raise)
+        and isinstance(statement.test, ast.Compare)
+        and len(statement.test.ops) == 1
+        and isinstance(statement.test.ops[0], ast.Is)
+        and len(statement.test.comparators) == 1
+        and isinstance(statement.test.comparators[0], ast.Constant)
+        and statement.test.comparators[0].value is None
+        and isinstance(statement.test.left, ast.Attribute)
+        and statement.test.left.attr in {"credit_curve", "discount"}
+        and isinstance(statement.test.left.value, ast.Name)
+        and statement.test.left.value.id == "market_state"
+    ):
+        return False
+    raised = statement.body[0].exc
+    return (
+        isinstance(raised, ast.Call)
+        and isinstance(raised.func, ast.Name)
+        and raised.func.id == "ValueError"
+        and not raised.keywords
+    )
+
+
 class _NestedEvaluateScopePruner(ast.NodeTransformer):
     """Remove local scopes whose bodies are not evidence from ``evaluate``."""
 
@@ -1033,6 +1061,69 @@ class _NestedEvaluateScopePruner(ast.NodeTransformer):
         return ast.copy_location(ast.Constant(value=None), node)
 
 
+def _evaluate_definition_is_authoritative(
+    tree: ast.Module,
+    evaluate: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> bool:
+    """Require the inspected CDS method to remain the runtime method binding."""
+    if isinstance(evaluate, ast.AsyncFunctionDef) or evaluate.decorator_list:
+        return False
+    owners = tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ClassDef) and evaluate in node.body
+    )
+    if len(owners) > 1:
+        return False
+    if owners:
+        owner = owners[0]
+        if (
+            owner not in tree.body
+            or owner.bases
+            or owner.keywords
+            or owner.decorator_list
+        ):
+            return False
+        if any(
+            isinstance(statement, (ast.FunctionDef, ast.AsyncFunctionDef))
+            and statement.name in {"__getattr__", "__getattribute__", "__new__"}
+            for statement in owner.body
+        ):
+            return False
+    elif evaluate not in tree.body:
+        return False
+    for node in ast.walk(tree):
+        if (
+            isinstance(node, ast.Name)
+            and node.id == "evaluate"
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+        ):
+            return False
+        if isinstance(node, ast.Attribute) and isinstance(
+            node.ctx,
+            (ast.Store, ast.Del),
+        ):
+            if node.attr == "evaluate" or any(
+                isinstance(part, ast.Attribute) and part.attr == "evaluate"
+                for part in ast.walk(node.value)
+            ) or _expression_is_rooted_at_name(node.value, "evaluate"):
+                return False
+        if (
+            isinstance(node, ast.Subscript)
+            and isinstance(node.ctx, (ast.Store, ast.Del))
+            and (
+                _constant_string(node.slice) == "evaluate"
+                or any(
+                    isinstance(part, ast.Attribute) and part.attr == "evaluate"
+                    for part in ast.walk(node.value)
+                )
+                or _expression_is_rooted_at_name(node.value, "evaluate")
+            )
+        ):
+            return False
+    return True
+
+
 def _reachable_evaluate_tree(tree: ast.Module) -> ast.Module | None:
     """Return one evaluate body with one direct final exit and no local scopes."""
     evaluate_functions = tuple(
@@ -1043,12 +1134,15 @@ def _reachable_evaluate_tree(tree: ast.Module) -> ast.Module | None:
     )
     if len(evaluate_functions) != 1:
         return None
+    evaluate = evaluate_functions[0]
+    if not _evaluate_definition_is_authoritative(tree, evaluate):
+        return None
 
     reachable: list[ast.stmt] = []
-    for statement in evaluate_functions[0].body:
+    for statement in evaluate.body:
         if not isinstance(statement, (ast.Return, ast.Raise)) and (
             _subtree_has_evaluate_exit(statement)
-        ):
+        ) and not _is_supported_cds_market_guard(statement):
             return None
         reachable.append(statement)
         if isinstance(statement, (ast.Raise, ast.Return)):
@@ -2475,17 +2569,72 @@ def _cds_time_origin_is_active_valuation_date(
     ):
         return False
     valuation_date, fallback_date = expression.values
-    return _expression_resolves_to_active_spec_field(
+    direct_valuation_date = _expression_resolves_to_active_spec_field(
         tree,
         valuation_date,
         field="valuation_date",
-    ) and (
+    )
+    optional_valuation_date = (
+        isinstance(valuation_date, ast.Call)
+        and isinstance(valuation_date.func, ast.Name)
+        and valuation_date.func.id == "getattr"
+        and len(valuation_date.args) == 3
+        and not valuation_date.keywords
+        and _expression_resolves_to_active_spec(tree, valuation_date.args[0])
+        and _constant_string(valuation_date.args[1]) == "valuation_date"
+        and isinstance(valuation_date.args[2], ast.Constant)
+        and valuation_date.args[2].value is None
+    )
+    return (direct_valuation_date or optional_valuation_date) and (
         _expression_resolves_to_active_spec_field(
             tree,
             fallback_date,
             field="start_date",
         )
         or _expression_resolves_to_market_settlement(tree, fallback_date)
+    )
+
+
+def _module_evaluate_uses_unshadowed_builtin_name(
+    tree: ast.AST,
+    *,
+    name: str,
+) -> bool:
+    """Require an unqualified call target to resolve to its builtin binding."""
+    if not isinstance(tree, ast.Module):
+        return False
+    evaluate_functions = tuple(
+        node
+        for node in ast.walk(tree)
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+        and node.name == "evaluate"
+    )
+    if len(evaluate_functions) != 1:
+        return False
+    evaluate = evaluate_functions[0]
+    if name in _function_argument_names(evaluate) or any(
+        _node_binds_name_in_current_scope(statement, name=name)
+        for statement in evaluate.body
+    ):
+        return False
+    return not any(
+        _node_binds_name_in_current_scope(statement, name=name)
+        for statement in tree.body
+    )
+
+
+def _tree_uses_optional_active_valuation_date_getattr(tree: ast.AST) -> bool:
+    """Detect the bounded optional valuation-date access admitted for CDS."""
+    return any(
+        isinstance(node, ast.Call)
+        and isinstance(node.func, ast.Name)
+        and node.func.id == "getattr"
+        and len(node.args) == 3
+        and not node.keywords
+        and _constant_string(node.args[1]) == "valuation_date"
+        and isinstance(node.args[2], ast.Constant)
+        and node.args[2].value is None
+        for node in ast.walk(tree)
     )
 
 
@@ -3560,7 +3709,8 @@ class AlgorithmContractValidator:
                     category="credit_default_swap_incomplete_event_grid",
                     message=(
                         f"Route '{route_spec.id}' must expose exactly one evaluate "
-                        "body with no conditional return/raise exits before its "
+                        "body with no unsupported conditional return/raise exits "
+                        "before its "
                         "direct final signed return. Composition in unused or nested "
                         "helpers does not satisfy the pricing contract."
                     ),
@@ -3692,7 +3842,17 @@ class AlgorithmContractValidator:
                 )
             )
         else:
-            if not _cds_uses_valuation_origin_event_grid(tree):
+            valuation_origin_is_valid = _cds_uses_valuation_origin_event_grid(tree)
+            if (
+                valuation_origin_is_valid
+                and _tree_uses_optional_active_valuation_date_getattr(tree)
+                and not _module_evaluate_uses_unshadowed_builtin_name(
+                    module_tree,
+                    name="getattr",
+                )
+            ):
+                valuation_origin_is_valid = False
+            if not valuation_origin_is_valid:
                 findings.append(
                     SemanticFinding(
                         validator="algorithm_contract",

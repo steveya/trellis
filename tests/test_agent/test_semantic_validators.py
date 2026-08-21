@@ -2172,6 +2172,71 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
+    def test_rejects_credit_default_swap_decorated_evaluate(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "def replace_evaluate(function):\n"
+            "    return lambda self, market_state: 0.0\n\n"
+            + _cds_composition_source().replace(
+                "def evaluate(self, market_state):",
+                "@replace_evaluate\ndef evaluate(self, market_state):",
+                1,
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_nested_evaluate_definition(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        composition = _cds_composition_source().strip()
+        source = "def build_payoff():\n" + "\n".join(
+            f"    {line}" if line else ""
+            for line in composition.splitlines()
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
+    def test_rejects_credit_default_swap_post_class_evaluate_rebinding(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        composition = _cds_composition_source().strip()
+        source = "class Payoff:\n" + "\n".join(
+            f"    {line}" if line else ""
+            for line in composition.splitlines()
+        )
+        source += "\nPayoff.evaluate = lambda self, market_state: 0.0\n"
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     def test_rejects_credit_default_swap_spread_normalization_after_assembly(
         self,
         registry,
@@ -2417,6 +2482,27 @@ def evaluate(self, market_state):
             finding.category == "credit_default_swap_incomplete_event_grid"
             for finding in findings
         )
+
+    def test_accepts_credit_default_swap_required_market_guards(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    if market_state.credit_curve is None:\n"
+            "        raise ValueError('credit curve is required')\n"
+            "    if market_state.discount is None:\n"
+            "        raise ValueError('discount curve is required')\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
 
     def test_rejects_credit_default_swap_period_loop_hidden_in_branch(
         self,
@@ -3122,6 +3208,51 @@ def evaluate(self, market_state):
         )
         assert not any(f.severity == "error" for f in findings)
 
+    def test_accepts_credit_default_swap_optional_valuation_date_fallback(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        findings = AlgorithmContractValidator().validate(
+            _cds_composition_source(
+                time_origin=(
+                    'getattr(self._spec, "valuation_date", None) '
+                    "or self._spec.start_date"
+                ),
+            ),
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        errors = [finding for finding in findings if finding.severity == "error"]
+        assert not errors, errors
+
+    def test_rejects_credit_default_swap_shadowed_optional_valuation_getattr(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = (
+            "getattr = lambda instance, field, default: instance.start_date\n"
+            + _cds_composition_source(
+                time_origin=(
+                    'getattr(self._spec, "valuation_date", None) '
+                    "or self._spec.start_date"
+                ),
+            )
+        )
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_valuation_origin"
+            for finding in findings
+        )
+
     def test_accepts_credit_default_swap_semantic_leg_names(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
         source = (
@@ -3269,6 +3400,31 @@ class TestIntegratedValidation:
         plan = _make_plan("analytical_black76")
         report = validate_generated_semantics(source, plan, mode="warning")
         assert report.ok  # warnings never block
+
+    def test_credit_default_swap_contract_failure_is_blocking_by_default(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source().replace(
+            "    schedule = build_period_schedule(",
+            "    coupon_cashflow_pv = lambda cashflow: 0.0\n"
+            "    schedule = build_period_schedule(",
+            1,
+        )
+
+        report = validate_generated_semantics(
+            source,
+            _make_plan("credit_default_swap"),
+            route_spec=spec,
+        )
+
+        assert not report.ok
+        assert report.mode == "blocking"
+        assert any(
+            finding.category == "credit_default_swap_cashflow_primitive_binding"
+            for finding in report.errors
+        )
 
     def test_blocking_mode_can_fail(self, registry):
         spec = [r for r in registry.routes if r.id == "equity_quanto"][0]

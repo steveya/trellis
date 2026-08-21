@@ -443,6 +443,11 @@ literal fallback admitted by this route validator. Because ``n_paths`` is an
 optional typed field, passing ``spec.n_paths`` directly is rejected: the call
 must guarantee a non-null value, for example
 ``getattr(spec, "n_paths", 250000) or 250000``.
+All ``credit_default_swap_*`` contract findings are blocking in the executor,
+including while the broader algorithm-contract validator remains in warning
+mode. The inspected ``evaluate()`` must be an undecorated authoritative method
+on a plain payoff class; class decorators, metaclass/base indirection, dynamic
+lookup hooks, and post-definition method rebinding fail closed.
 The guarded basis-point normalization must dominate the period loop, every
 spread alias, and every cashflow use; omitting it or moving it after assembly
 fails the economic-binding check. The sampler seed must resolve exactly to the
@@ -471,9 +476,11 @@ are accumulated through the full
 ``period_interval_stops`` period-to-interval mapping. Fixed-index, first-period
 assemblies fail semantic validation even when they mention every required
 primitive. The complete assembly must occur in exactly one reachable
-``evaluate`` body and lead to one direct final signed return. Conditional
-return/raise exits, unused or nested helpers, a branch-hidden period loop, or
-composition after the final return do not satisfy the route contract. Required
+``evaluate`` body and lead to one direct final signed return. Exact fail-fast
+``ValueError`` guards for missing ``market_state.credit_curve`` and
+``market_state.discount`` are admitted; other conditional return/raise exits,
+unused or nested helpers, a branch-hidden period loop, or composition after the
+final return do not satisfy the route contract. Required
 leg accumulators must each be initialized exactly once to zero before the
 period loop and may only be written by that initializer and the unconditional
 additive (``+=``) statement in the corresponding loop body. Its right-hand side

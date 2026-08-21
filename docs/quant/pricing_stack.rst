@@ -1200,9 +1200,11 @@ The generated adapter owns quote normalization, schedule conventions,
 period-to-interval iteration, discount coordinates, signs, and the final
 ``protection - premium - accrued_on_event + accrued_to_valuation`` result.
 That composition must be reachable in the adapter's single ``evaluate`` body
-and dominate one direct final signed return; conditional return/raise exits,
-unused or nested helpers, and statements after the final return are not pricing
-evidence. The interval loop remains a reachable direct child of the period loop,
+and dominate one direct final signed return. Exact fail-fast ``ValueError``
+guards for missing credit and discount market handles are admitted; other
+conditional return/raise exits, unused or nested helpers, and statements after
+the final return are not pricing evidence. The interval loop remains a reachable
+direct child of the period loop,
 and every leg accumulator has one zero initialization and one additive ``+=``
 update that remains unconditional after any admitted early-continue guard, with
 no other writes before return. Each update value is exactly the corresponding
@@ -1219,6 +1221,10 @@ spread alias or cashflow use; a missing or late normalization fails closed.
 The current typed route admits only the documented standard schedule
 conventions (weekend calendar, following adjustment, no roll, short-last stub,
 and zero payment lag); alternatives require a future typed contract extension.
+Every ``credit_default_swap_*`` semantic contract finding is blocking at the
+executor boundary. The validated ``evaluate()`` body must remain the runtime
+method: decorators, class/metaclass indirection, dynamic lookup hooks, and
+post-definition rebinding are rejected.
 The generic event primitives do not price CDS and do not hide product leg
 assembly. This boundary is limited to one reference entity, deterministic
 discount and survival curves, and fixed recovery; see ``L61``.
