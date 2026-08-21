@@ -474,7 +474,9 @@ closed for the same reason.
 The module and its class bodies are definition-time declarative: docstrings,
 approved imports, frozen spec declarations, and the plain payoff declaration
 are admitted, while executable module/class control flow is rejected before
-dynamic import. A frozen spec decorator must retain the directly imported
+dynamic import. Wildcard imports are rejected because they make primitive and
+builtin ownership opaque even when approved direct imports are also present.
+A frozen spec decorator must retain the directly imported
 ``dataclasses.dataclass`` binding and use the explicit
 ``@dataclass(frozen=True)`` form; module- or class-scope shadowing and
 rebinding of ``dataclass`` fail closed. Frozen specification classes contain

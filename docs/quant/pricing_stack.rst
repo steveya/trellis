@@ -1224,6 +1224,8 @@ declarative, and the payoff scaffold preserves economics by storing the
 submitted spec exactly once as ``self._spec`` and returning that same object
 from its sole ``spec`` property. Executable definition-time control flow,
 substituted specs, alternate writers, and dynamic attribute hooks are rejected.
+Wildcard imports are also rejected because they make approved primitive and
+builtin bindings opaque.
 The payoff class may define only ``__init__``, ``spec``, ``requirements``, and
 ``evaluate``; extra helpers, lifecycle hooks such as ``__del__``, and other
 data-model methods are not admitted.

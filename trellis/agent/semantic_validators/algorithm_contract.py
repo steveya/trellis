@@ -1337,6 +1337,12 @@ def _statement_binds_name(statement: ast.stmt, name: str) -> bool:
 
 def _module_definition_time_is_bounded(tree: ast.Module) -> bool:
     """Reject statements that could hang or mutate during adapter import."""
+    if any(
+        isinstance(statement, ast.ImportFrom)
+        and any(alias.name == "*" for alias in statement.names)
+        for statement in tree.body
+    ):
+        return False
     dataclass_imports = tuple(
         statement
         for statement in tree.body

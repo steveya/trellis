@@ -2250,6 +2250,24 @@ def evaluate(self, market_state):
         errors = [finding for finding in findings if finding.severity == "error"]
         assert not errors, errors
 
+    def test_rejects_credit_default_swap_wildcard_import(
+        self,
+        registry,
+    ):
+        spec = [r for r in registry.routes if r.id == "credit_default_swap"][0]
+        source = _cds_composition_source() + "\nfrom user_helpers import *\n"
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_default_swap"),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_default_swap_incomplete_event_grid"
+            for finding in findings
+        )
+
     @pytest.mark.parametrize(
         "symbol",
         ("coupon_cashflow_pv", "protection_payment_pv"),
