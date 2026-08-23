@@ -1,7 +1,7 @@
 category: convention
 title: Missing tranche payoff adapter
 severity: critical
-status: promoted
+status: archived
 confidence: 1.0
 created: '2026-04-07T10:13:21.722849'
 version: ''
@@ -28,4 +28,6 @@ fix: Wrap the CDO tranche valuation in a minimal adapter that maps tranche attac
   transforms inputs/outputs around that kernel.
 validation: Discovered during build (attempt 3)
 supersedes: []
+archive_reason: QUA-1235 retired nth-to-default helper authority; tranche requests must
+  use their own bounded semantic contract and cannot be routed through the NTD compatibility helper.
 id: con_040

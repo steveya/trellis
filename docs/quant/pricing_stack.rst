@@ -849,12 +849,16 @@ The first migrated vanilla cases now use that boundary directly:
   those object names in provenance and refuses missing exact keys. Explicit
   quanto correlation descriptors also take precedence over legacy ``rho`` so
   an ambient Heston pack cannot silently define cross-asset dependence
-- the copula basket-credit slice now also exposes a semantic-facing helper
-  layer in ``trellis.models.credit_basket_copula`` so tranche-style CDO,
-  nth-to-default, and portfolio loss-distribution requests can bind
-  discount/credit inputs, tranche bounds or portfolio horizon, and
-  dependence-family controls without exposing the raw scalar copula kernels as
-  the public route helper
+- the homogeneous nth-to-default slice uses
+  ``resolve_credit_basket_inputs`` as a public market contract. Analytical and
+  ``copula`` lanes combine its terminal marginal default mass with
+  ``nth_to_default_probability``; Monte Carlo combines its flat-equivalent
+  hazard with seeded ``GaussianCopula.sample_default_times`` and the generic
+  ``rank_trigger_probability`` path reducer. Both construct
+  ``ProtectionPayment`` and ``protection_payment_pv`` explicitly. The retained
+  product helper is reference evidence only. Tranche-style CDO and general
+  portfolio-loss routes remain separate, and weighted-name/running-spread
+  semantics are outside this bounded contract
 - bounded credit-index spread-option comparisons use
   ``trellis.models.credit_index_option``. The Black-on-spread helper and the
   antithetic lognormal MC helper share one ``CreditIndexOptionSpec`` carrying
@@ -979,7 +983,8 @@ The end-to-end typed boundary is currently proven for:
 - ``credit_default_swap`` on single-name CDS across deterministic and sampled
   first-event bindings, routed through the structural
   ``event_triggered_two_legged_contract`` family
-- ``nth_to_default_monte_carlo`` on nth-to-default basket credit
+- ``credit_basket_nth_to_default`` on homogeneous nth-to-default protection,
+  with distinct analytical rank-integration and sampled default-time bindings
 - ``copula_loss_distribution`` on tranche-style basket-credit comparison tasks
   through the semantic-facing basket-credit helper surface
 
@@ -996,6 +1001,14 @@ sampled targets share the same interval grid and signed leg assembly; only
 ``sample_first_event_weights(...)`` changes. The retained
 ``build_cds_schedule(...)`` and ``price_cds_*`` functions remain compatibility
 and independent-reference APIs, not generated construction authority.
+
+The nth-to-default route is likewise primitive-first but is not a CDS schedule
+route. ``resolve_credit_basket_inputs`` owns the bounded terminal market
+mapping. Analytical evidence integrates the equicorrelated rank probability;
+sampled evidence preserves one path-by-name default-time matrix and reduces its
+nth order statistic. The common protection-payment value contract makes
+discounting and loss-given-default visible. QMC, name weights, heterogeneous
+curves/recoveries, running premium legs, and spread risk are not admitted.
 
 The range-accrual route is intentionally narrow: it is a deterministic
 discounted-cashflow adapter that prices coupon periods off explicit range

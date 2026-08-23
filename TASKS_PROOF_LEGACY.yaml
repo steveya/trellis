@@ -904,6 +904,29 @@ tasks:
     internal:
     - mc_defaults
     - factor_copula_analytical
+    target_contracts:
+      mc_defaults:
+        method: monte_carlo
+        route_id: credit_basket_nth_to_default
+        route_family: nth_to_default
+        backend_binding_id: trellis.models.copulas.gaussian.GaussianCopula
+        validation_bundle_id: monte_carlo:nth_to_default
+        payoff_family: nth_to_default
+        exercise_style: none
+        model_family: credit_copula
+        observation_style: terminal
+        variant_parameters: {sampling: pseudo_random, rank_evidence: sampled_default_times}
+      factor_copula_analytical:
+        method: copula
+        route_id: credit_basket_nth_to_default
+        route_family: nth_to_default
+        backend_binding_id: trellis.models.contingent_cashflows.nth_to_default_probability
+        validation_bundle_id: copula:nth_to_default
+        payoff_family: nth_to_default
+        exercise_style: none
+        model_family: credit_copula
+        observation_style: terminal
+        variant_parameters: {rank_evidence: one_factor_integration}
     external:
     - financepy
   status: pending
@@ -2211,6 +2234,29 @@ tasks:
     internal:
     - gaussian_copula
     - mc_default_times
+    target_contracts:
+      gaussian_copula:
+        method: copula
+        route_id: credit_basket_nth_to_default
+        route_family: nth_to_default
+        backend_binding_id: trellis.models.contingent_cashflows.nth_to_default_probability
+        validation_bundle_id: copula:nth_to_default
+        payoff_family: nth_to_default
+        exercise_style: none
+        model_family: credit_copula
+        observation_style: terminal
+        variant_parameters: {rank_evidence: one_factor_integration}
+      mc_default_times:
+        method: monte_carlo
+        route_id: credit_basket_nth_to_default
+        route_family: nth_to_default
+        backend_binding_id: trellis.models.copulas.gaussian.GaussianCopula
+        validation_bundle_id: monte_carlo:nth_to_default
+        payoff_family: nth_to_default
+        exercise_style: none
+        model_family: credit_copula
+        observation_style: terminal
+        variant_parameters: {sampling: pseudo_random, rank_evidence: sampled_default_times}
   status: pending
 - id: E27
   title: 'American Asian barrier under Heston: PDE vs MC vs FFT should block honestly'

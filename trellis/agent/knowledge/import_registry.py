@@ -42,6 +42,20 @@ _CODEGEN_MODULE_EXPORT_ALLOWLIST: dict[str, frozenset[str]] = {
         }
     ),
     "trellis.models.basket_option": frozenset(),
+    "trellis.models.credit_basket_copula": frozenset(
+        {
+            "CreditBasketTrancheResult",
+            "CreditLossDistributionSpecLike",
+            "ResolvedCreditBasketInputs",
+            "price_credit_basket_tranche",
+            "price_credit_basket_tranche_result",
+            "price_credit_portfolio_loss_distribution_monte_carlo",
+            "price_credit_portfolio_loss_distribution_recursive",
+            "price_credit_portfolio_loss_distribution_transform_proxy",
+            "resolve_credit_basket_correlation",
+            "resolve_credit_basket_inputs",
+        }
+    ),
     "trellis.models.credit_default_swap": frozenset(),
     "trellis.models.zcb_option": frozenset(),
     "trellis.models.zcb_option_tree": frozenset(),
@@ -503,6 +517,9 @@ def _merge_registry_snapshots(
     for module_path in sorted(set(primary) | set(fallback)):
         symbols = set(primary.get(module_path, ()))
         symbols.update(fallback.get(module_path, ()))
+        export_allowlist = _CODEGEN_MODULE_EXPORT_ALLOWLIST.get(module_path)
+        if export_allowlist is not None:
+            symbols.intersection_update(export_allowlist)
         if symbols:
             merged[module_path] = tuple(sorted(symbols))
     return merged
@@ -700,7 +717,7 @@ from trellis.models.short_rate_bond import ResolvedShortRateBondInputs, price_ci
 from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
 
 ### Models — Payoff Composition
-from trellis.models.contingent_cashflows import CouponAccrual, DefaultEventGrid, DefaultEventInterval, FirstEventWeights, ProtectionPayment, build_default_event_grid, conditional_event_probabilities_from_curve, coupon_cashflow_pv, expected_first_event_weights, protection_payment_pv, sample_first_event_weights
+from trellis.models.contingent_cashflows import CouponAccrual, DefaultEventGrid, DefaultEventInterval, FirstEventWeights, ProtectionPayment, build_default_event_grid, conditional_event_probabilities_from_curve, coupon_cashflow_pv, expected_first_event_weights, nth_to_default_probability, protection_payment_pv, rank_trigger_probability, sample_first_event_weights
 
 ### Models — Trees
 from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, compile_bermudan_swaption_contract_spec, resolve_bermudan_swaption_tree_inputs
@@ -776,7 +793,7 @@ from trellis.models.processes.local_vol import LocalVol
 from trellis.models.copulas.gaussian import GaussianCopula
 from trellis.models.copulas.factor import FactorCopula
 from trellis.models.copulas.student_t import StudentTCopula
-from trellis.models.credit_basket_copula import price_credit_basket_nth_to_default, price_credit_basket_tranche, price_credit_basket_tranche_result, price_nth_to_default_basket, resolve_credit_basket_inputs
+from trellis.models.credit_basket_copula import CreditBasketTrancheResult, CreditLossDistributionSpecLike, ResolvedCreditBasketInputs, price_credit_basket_tranche, price_credit_basket_tranche_result, price_credit_portfolio_loss_distribution_monte_carlo, price_credit_portfolio_loss_distribution_recursive, price_credit_portfolio_loss_distribution_transform_proxy, resolve_credit_basket_correlation, resolve_credit_basket_inputs
 
 ### Models — Calibration
 from trellis.models.calibration.implied_vol import implied_vol, implied_vol_jaeckel

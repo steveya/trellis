@@ -1,7 +1,7 @@
 category: market_data
 title: Use required pricing primitive
 severity: high
-status: validated
+status: archived
 confidence: 0.6
 created: '2026-04-08T16:46:07.911159'
 version: ''
@@ -36,4 +36,6 @@ validation: "Resolved during build of Build a pricer for: CDO tranche: Gaussian 
   \  external targets: quantlib\n\nImplementation target: student_t_copula\nPreferred\
   \ method family: copula\n\nImplementation target: student_t_copula"
 supersedes: []
+archive_reason: QUA-1235 retired the NTD compatibility helper as generated authority;
+  CDO tranche construction remains a separate semantic route.
 id: md_156

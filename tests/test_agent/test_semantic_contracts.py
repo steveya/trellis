@@ -1555,7 +1555,9 @@ class TestCreditConceptResolution:
         assert ntd is not None
         assert cds.required_primitives != ntd.required_primitives
         assert "credit_curve_survival_probability" in cds.required_primitives
-        assert "gaussian_copula" in ntd.required_primitives
+        assert "gaussian_copula_default_times" in ntd.required_primitives
+        assert "nth_to_default_probability" in ntd.required_primitives
+        assert "rank_trigger_probability" in ntd.required_primitives
 
     def test_credit_concepts_have_distinct_route_families(self):
         from trellis.agent.semantic_concepts import get_semantic_concept_definition
@@ -1782,11 +1784,15 @@ def test_nth_to_default_contract_validates_and_compiles():
     assert compiled.product_ir.payoff_family == "nth_to_default"
     assert compiled.product_ir.schedule_dependence is True
     assert compiled.pricing_plan.method == "copula"
-    assert compiled.target_modules == ("trellis.instruments.nth_to_default",)
+    assert compiled.target_modules == (
+        "trellis.models.credit_basket_copula",
+        "trellis.models.contingent_cashflows",
+    )
     assert compiled.route_modules == _expected_route_modules(compiled)
     assert compiled.primitive_routes == ("credit_basket_nth_to_default",)
     assert compiled.dsl_lowering is not None
     assert compiled.dsl_lowering.route_id == "credit_basket_nth_to_default"
+    assert compiled.dsl_lowering.family_ir.pricing_mode == "analytical"
 
 
 def test_nth_to_default_summary_is_stable_and_route_specific():

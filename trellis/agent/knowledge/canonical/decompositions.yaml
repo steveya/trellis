@@ -267,13 +267,26 @@
   features: [credit_risk]
   method: copula
   method_modules:
+    - trellis.models.credit_basket_copula
+    - trellis.models.contingent_cashflows
     - trellis.models.copulas.gaussian
   required_market_data: [discount_curve, credit_curve]
   modeling_requirements:
     - >-
       CALIBRATION: Default probabilities must be consistent with the input credit curve.
       For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).
-  reasoning: "Correlated defaults simulated via copula."
+    - >-
+      ANALYTICAL COMPOSITION: Resolve homogeneous terminal basket inputs, integrate
+      nth_to_default_probability, and construct ProtectionPayment plus
+      protection_payment_pv explicitly.
+    - >-
+      SAMPLED COMPOSITION: Sample one persistent GaussianCopula default-time matrix
+      with explicit n_paths and seed, reduce its nth order statistic through
+      rank_trigger_probability, then reuse the same protection-payment assembly.
+    - >-
+      SUPPORT BOUNDARY: Do not map weighted names, heterogeneous curves/recoveries,
+      running spreads, or spread sensitivities onto this homogeneous terminal route.
+  reasoning: "Homogeneous nth-to-default lanes compose terminal rank evidence and contingent cashflows from public primitives."
   learned: false
 
 - instrument: cds

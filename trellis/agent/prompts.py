@@ -334,7 +334,7 @@ defined in the skeleton.
 - Never use wall-clock dates such as `date.today()` or `datetime.now()` inside `evaluate()`; derive valuation time from `market_state` or shared resolver outputs.
 - Black76: `black76_call(F, K, sigma, T)`, `black76_put(F, K, sigma, T)` — undiscounted
 - Black76 digital: `black76_cash_or_nothing_call(F, K, sigma, T)`, `black76_cash_or_nothing_put(F, K, sigma, T)` — undiscounted cash-or-nothing digitals
-- For CDS / nth-to-default: use `market_state.credit_curve.survival_probability(t)` and `market_state.credit_curve.hazard_rate(t)` on an explicit payment/default schedule; do not route credit-default pricing through Black76 call/put primitives.
+- For CDS, resolve survival on an explicit payment/default-event schedule. For homogeneous nth-to-default, resolve the terminal basket with `resolve_credit_basket_inputs` and keep analytical rank integration distinct from sampled default-time evidence. Never route credit-default pricing through Black76 call/put primitives.
 - For equity trees: resolve scalar inputs with `resolve_single_state_diffusion_inputs`, declare the claim with `equity_tree`, attach `with_control`, then use `compile_lattice_recipe`, `build_lattice`, and `price_on_lattice`
 - For vanilla European PDE routes: compose `resolve_single_state_diffusion_inputs`, `terminal_intrinsic_from_resolved`, `EventAwarePDEProblemSpec`, `build_event_aware_pde_problem`, `solve_event_aware_pde`, and `interpolate_pde_values`
 - For rate lattices: follow the selected route card and compose its market resolver, topology, mesh, calibration target, contract compiler, and generic rollback primitive; do not default to a product-specific pricing wrapper
@@ -623,13 +623,25 @@ def _render_family_route_guidance(
 
     if instrument_type == "nth_to_default":
         lines.append("## Family Route Guidance")
-        if method in {"monte_carlo", "qmc", "copula"}:
+        lines.extend([
+            "- Start with `resolve_credit_basket_inputs(market_state, spec)` and validate `1 <= n_th <= n_names`; keep pool size, trigger rank, terminal horizon, marginal credit mass, recovery, discounting, and correlation visible.",
+            "- Construct `ProtectionPayment` from the resulting trigger probability and return `protection_payment_pv(payment)`. `price_nth_to_default_basket(...)` is compatibility/reference evidence, not generated construction authority.",
+            "- This route is homogeneous terminal protection only. Weighted name exposures, heterogeneous curves or recoveries, running spread legs, and spread sensitivities must block honestly rather than being dropped.",
+            "- Do not collapse the request into a single-name CDS premium/protection loop or import equity/Black option machinery.",
+        ])
+        if method in {"analytical", "copula"}:
+            lines.append(
+                "- Analytical/copula evidence must call `nth_to_default_probability(...)` with the resolved terminal marginal default mass and equicorrelation; do not sample default-time paths in this lane."
+            )
+        elif method == "monte_carlo":
             lines.extend([
-                "- For nth-to-default and first-to-default basket-credit routes, keep the multi-name contract explicit: reference entities, default order, and correlation model stay visible in the code.",
-                "- Use approved copula helpers such as `GaussianCopula` or `FactorCopula` only for multi-name basket credit. Do not collapse the request into a single-name CDS premium/protection loop.",
-                "- Treat credit-curve access and default-correlation access as separate concerns: marginal default probabilities come from `market_state.credit_curve`, while dependence comes from the approved copula layer.",
-                "- Do not reuse single-name CDS route notes or helpers unless the request explicitly reduces to one reference entity and first-default order is no longer part of the contract.",
+                "- Monte Carlo evidence must bind positive `n_paths` and an explicit `seed`, instantiate `GaussianCopula`, and call `sample_default_times(...)` once for a persistent path-by-name matrix.",
+                "- Reduce that matrix with `rank_trigger_probability(default_times, rank=n_th, horizon=resolved.horizon)`; do not substitute the analytical probability integral or resample ranks independently.",
             ])
+        elif method == "qmc":
+            lines.append(
+                "- QMC nth-to-default sampling is not admitted by the bounded route; fail closed instead of relabeling pseudo-random Gaussian-copula paths as QMC."
+            )
 
     if instrument_type == "barrier_option":
         lines.append("## Family Route Guidance")

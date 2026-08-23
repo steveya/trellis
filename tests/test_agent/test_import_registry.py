@@ -903,6 +903,16 @@ def test_static_registry_fallback_covers_route_minimization_modules(monkeypatch)
     import_registry.reset_registry_cache()
 
 
+def test_codegen_registry_excludes_nth_to_default_compatibility_wrappers():
+    module = "trellis.models.credit_basket_copula"
+    exports = set(list_module_exports(module))
+
+    assert "resolve_credit_basket_inputs" in exports
+    assert "price_credit_basket_tranche" in exports
+    assert "price_credit_basket_nth_to_default" not in exports
+    assert "price_nth_to_default_basket" not in exports
+
+
 def test_static_registry_fallback_covers_default_event_composition(monkeypatch):
     import_registry.reset_registry_cache()
     monkeypatch.setattr(

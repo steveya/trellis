@@ -2290,12 +2290,14 @@ def test_compile_build_request_uses_nth_to_default_semantic_contract_blueprint()
     assert compiled.semantic_blueprint.primitive_routes == ("credit_basket_nth_to_default",)
     assert compiled.request.metadata["semantic_blueprint"]["dsl_route"] == "credit_basket_nth_to_default"
     assert compiled.request.metadata["semantic_blueprint"]["dsl_family_ir_type"] == "NthToDefaultIR"
-    assert compiled.request.metadata["semantic_blueprint"]["dsl_expr_kind"] == "ContractAtom"
+    assert compiled.request.metadata["semantic_blueprint"]["dsl_expr_kind"] == "ThenExpr"
     assert (
-        compiled.request.metadata["semantic_blueprint"]["dsl_family_ir"]["helper_symbol"]
-        == "price_nth_to_default_basket"
+        compiled.request.metadata["semantic_blueprint"]["dsl_family_ir"]["pricing_mode"]
+        == "analytical"
     )
-    assert "trellis.instruments.nth_to_default" in compiled.semantic_blueprint.target_modules
+    assert "trellis.models.credit_basket_copula" in compiled.semantic_blueprint.target_modules
+    assert "trellis.models.contingent_cashflows" in compiled.semantic_blueprint.target_modules
+    assert "trellis.instruments.nth_to_default" not in compiled.semantic_blueprint.target_modules
 
 
 def test_request_contract_ir_compiler_summary_surfaces_binding_diagnostic(monkeypatch):

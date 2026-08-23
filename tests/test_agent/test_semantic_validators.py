@@ -4887,28 +4887,7 @@ def evaluate(self, market_state):
 
         assert not any(f.severity == "error" for f in findings)
 
-    def test_flags_nth_to_default_helper_signature_mismatch(self, registry):
-        spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
-        source = '''
-from trellis.instruments.nth_to_default import price_nth_to_default_basket
-
-def evaluate(self, market_state):
-    return price_nth_to_default_basket(
-        notional=self._spec.notional,
-        n_names=len(self._spec.reference_entities),
-        n_th=self._spec.nth_default,
-        maturity=self._spec.maturity,
-        correlation=self._spec.correlation,
-        recovery=self._spec.recovery,
-        credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
-    )
-'''
-        validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("credit_basket_nth_to_default", "monte_carlo"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
-
-    def test_accepts_nth_to_default_helper_surface(self, registry):
+    def test_rejects_nth_to_default_compatibility_helper_substitution(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
         source = '''
 from trellis.instruments.nth_to_default import price_nth_to_default_basket
@@ -4922,33 +4901,99 @@ def evaluate(self, market_state):
         correlation=self._spec.correlation,
         recovery=self._spec.recovery,
         credit_curve=market_state.credit_curve,
-        discount_curve=market_state.discount_curve,
+        discount_curve=market_state.discount,
     )
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("credit_basket_nth_to_default", "monte_carlo"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(f.category == "nth_to_default_forbidden_helper" for f in findings)
 
-    def test_rejects_nth_to_default_positional_calls(self, registry):
+    def test_accepts_analytical_nth_to_default_primitive_composition(self, registry):
         spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
         source = '''
-from trellis.instruments.nth_to_default import price_nth_to_default_basket
+from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
+from trellis.models.contingent_cashflows import (
+    ProtectionPayment,
+    nth_to_default_probability,
+    protection_payment_pv,
+)
 
 def evaluate(self, market_state):
-    return price_nth_to_default_basket(
-        self._spec.notional,
-        len(self._spec.reference_entities),
-        self._spec.nth_default,
-        self._spec.horizon,
-        self._spec.correlation,
-        self._spec.recovery,
-        market_state.credit_curve,
-        market_state.discount_curve,
+    spec = self._spec
+    resolved = resolve_credit_basket_inputs(market_state, spec)
+    trigger_probability = nth_to_default_probability(
+        resolved.n_names, spec.n_th, resolved.default_probability, resolved.correlation
     )
+    payment = ProtectionPayment(
+        notional=resolved.notional,
+        recovery=resolved.recovery,
+        default_probability=trigger_probability,
+        discount_factor=resolved.discount_factor,
+    )
+    return protection_payment_pv(payment)
+'''
+        validator = AlgorithmContractValidator()
+        findings = validator.validate(source, _make_plan("credit_basket_nth_to_default", "analytical"), spec)
+        assert not any(f.severity == "error" for f in findings)
+
+    def test_accepts_sampled_nth_to_default_primitive_composition(self, registry):
+        spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
+        source = '''
+from trellis.core.differentiable import get_numpy
+from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
+from trellis.models.copulas.gaussian import GaussianCopula
+from trellis.models.contingent_cashflows import (
+    ProtectionPayment,
+    protection_payment_pv,
+    rank_trigger_probability,
+)
+
+def evaluate(self, market_state):
+    spec = self._spec
+    resolved = resolve_credit_basket_inputs(market_state, spec)
+    np = get_numpy()
+    copula = GaussianCopula(correlation=resolved.correlation, n_names=resolved.n_names)
+    default_times = copula.sample_default_times(
+        np.full(resolved.n_names, resolved.hazard_rate),
+        n_paths=int(spec.n_paths),
+        rng=np.random.default_rng(int(spec.seed)),
+    )
+    trigger_probability = rank_trigger_probability(
+        default_times, rank=spec.n_th, horizon=resolved.horizon
+    )
+    payment = ProtectionPayment(
+        notional=resolved.notional,
+        recovery=resolved.recovery,
+        default_probability=trigger_probability,
+        discount_factor=resolved.discount_factor,
+    )
+    return protection_payment_pv(payment)
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("credit_basket_nth_to_default", "monte_carlo"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert not any(f.severity == "error" for f in findings)
+
+    @pytest.mark.parametrize(
+        ("method", "wrong_symbol"),
+        [
+            ("analytical", "GaussianCopula"),
+            ("monte_carlo", "nth_to_default_probability"),
+        ],
+    )
+    def test_rejects_nth_to_default_method_substitution(self, registry, method, wrong_symbol):
+        spec = [r for r in registry.routes if r.id == "credit_basket_nth_to_default"][0]
+        source = f'''\ndef evaluate(self, market_state):\n    return {wrong_symbol}()\n'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("credit_basket_nth_to_default", method),
+            spec,
+        )
+
+        assert any(
+            finding.category == "nth_to_default_unselected_method_primitive"
+            for finding in findings
+        )
 
     def test_flags_credit_basket_tranche_helper_signature_mismatch(self, registry):
         spec = [r for r in registry.routes if r.id == "copula_loss_distribution"][0]

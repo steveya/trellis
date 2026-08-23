@@ -29,6 +29,7 @@ from trellis.models.contingent_cashflows import (
     principal_payment_pv,
     project_prepayment_step,
     protection_payment_pv,
+    rank_trigger_probability,
     sample_first_event_weights,
     trigger_settlement_pv,
 )
@@ -259,3 +260,32 @@ def test_nth_to_default_probability_decreases_with_later_trigger():
     second = nth_to_default_probability(5, 2, 0.20, 0.25)
 
     assert 0.0 <= second <= first <= 1.0
+
+
+def test_rank_trigger_probability_reduces_persistent_event_time_paths():
+    event_times = get_numpy().array(
+        [
+            [0.25, 1.50, 2.00],
+            [0.50, 0.75, 3.00],
+            [1.25, 1.50, 1.75],
+            [0.10, 2.00, 4.00],
+        ]
+    )
+
+    assert rank_trigger_probability(event_times, rank=1, horizon=1.0) == pytest.approx(0.75)
+    assert rank_trigger_probability(event_times, rank=2, horizon=1.0) == pytest.approx(0.25)
+    assert rank_trigger_probability(event_times, rank=3, horizon=1.0) == pytest.approx(0.0)
+
+
+@pytest.mark.parametrize(
+    ("event_times", "rank", "message"),
+    [
+        (get_numpy().array([0.25, 0.50]), 1, "two-dimensional"),
+        (get_numpy().empty((0, 2)), 1, "at least one path"),
+        (get_numpy().ones((2, 2)), 0, "rank must lie"),
+        (get_numpy().ones((2, 2)), 3, "rank must lie"),
+    ],
+)
+def test_rank_trigger_probability_rejects_invalid_path_shapes(event_times, rank, message):
+    with pytest.raises(ValueError, match=message):
+        rank_trigger_probability(event_times, rank=rank, horizon=1.0)

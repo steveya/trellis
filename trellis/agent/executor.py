@@ -5316,30 +5316,97 @@ def _terminal_basket_primitive_body(
     return None
 
 
-def _nth_to_default_helper_body(refs: set[str]) -> str | None:
-    """Return a thin deterministic wrapper for nth-to-default exact bindings."""
-    helper_ref = "trellis.instruments.nth_to_default.price_nth_to_default_basket"
-    if helper_ref not in refs:
-        return None
+def _nth_to_default_composition_body(
+    refs: set[str],
+    *,
+    generation_method: str,
+) -> str | None:
+    """Compose homogeneous rank-trigger evidence and protection cashflows."""
+    shared_refs = {
+        "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+        "trellis.models.contingent_cashflows.ProtectionPayment",
+        "trellis.models.contingent_cashflows.protection_payment_pv",
+    }
+    normalized_method = str(generation_method or "").strip().lower().replace("-", "_")
+    if normalized_method == "monte_carlo":
+        required_refs = shared_refs | {
+            "trellis.core.differentiable.get_numpy",
+            "trellis.models.copulas.gaussian.GaussianCopula",
+            "trellis.models.contingent_cashflows.rank_trigger_probability",
+        }
+        if not required_refs.issubset(refs):
+            return None
+        return textwrap.dedent(
+            """\
+            spec = self._spec
+            n_names = int(spec.n_names)
+            n_th = int(spec.n_th)
+            if n_names < 2:
+                raise ValueError("n_names must be at least two")
+            if n_th <= 0 or n_th > n_names:
+                raise ValueError("n_th must lie in [1, n_names]")
+            n_paths = int(spec.n_paths)
+            seed = int(spec.seed)
+            if n_paths <= 0:
+                raise ValueError("n_paths must be positive")
+            resolved = resolve_credit_basket_inputs(market_state, spec)
+            if resolved.horizon <= 0.0 or resolved.default_probability <= 0.0:
+                trigger_probability = 0.0
+            else:
+                np = get_numpy()
+                hazard_rates = np.full(resolved.n_names, resolved.hazard_rate)
+                copula = GaussianCopula(
+                    correlation=resolved.correlation,
+                    n_names=resolved.n_names,
+                )
+                default_times = copula.sample_default_times(
+                    hazard_rates,
+                    n_paths=n_paths,
+                    rng=np.random.default_rng(seed),
+                )
+                trigger_probability = rank_trigger_probability(
+                    default_times,
+                    rank=n_th,
+                    horizon=resolved.horizon,
+                )
+            payment = ProtectionPayment(
+                notional=resolved.notional,
+                recovery=resolved.recovery,
+                default_probability=trigger_probability,
+                discount_factor=resolved.discount_factor,
+            )
+            return protection_payment_pv(payment)
+            """
+        ).rstrip()
 
+    required_refs = shared_refs | {
+        "trellis.models.contingent_cashflows.nth_to_default_probability",
+    }
+    if not required_refs.issubset(refs):
+        return None
     return textwrap.dedent(
         """\
         spec = self._spec
-        if market_state.credit_curve is None:
-            raise ValueError("market_state.credit_curve is required for nth-to-default pricing")
-        if market_state.discount is None:
-            raise ValueError("market_state.discount is required for nth-to-default pricing")
-        T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
-        return price_nth_to_default_basket(
-            notional=spec.notional,
-            n_names=spec.n_names,
-            n_th=spec.n_th,
-            horizon=T,
-            correlation=spec.correlation,
-            recovery=spec.recovery,
-            credit_curve=market_state.credit_curve,
-            discount_curve=market_state.discount,
+        n_names = int(spec.n_names)
+        n_th = int(spec.n_th)
+        if n_names < 2:
+            raise ValueError("n_names must be at least two")
+        if n_th <= 0 or n_th > n_names:
+            raise ValueError("n_th must lie in [1, n_names]")
+        resolved = resolve_credit_basket_inputs(market_state, spec)
+        trigger_probability = nth_to_default_probability(
+            resolved.n_names,
+            n_th,
+            resolved.default_probability,
+            resolved.correlation,
         )
+        payment = ProtectionPayment(
+            notional=resolved.notional,
+            recovery=resolved.recovery,
+            default_probability=trigger_probability,
+            discount_factor=resolved.discount_factor,
+        )
+        return protection_payment_pv(payment)
         """
     ).rstrip()
 
@@ -6963,7 +7030,10 @@ def _deterministic_exact_binding_evaluate_body(
     if ranked_basket_body is not None:
         return ranked_basket_body
 
-    nth_to_default_body = _nth_to_default_helper_body(refs)
+    nth_to_default_body = _nth_to_default_composition_body(
+        refs,
+        generation_method=generation_method,
+    )
     if nth_to_default_body is not None:
         return nth_to_default_body
 
@@ -8106,6 +8176,29 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
                 "protection_payment_pv",
             )
         )
+    if "resolve_credit_basket_inputs(" in body:
+        imports.append(
+            "from trellis.models.credit_basket_copula import resolve_credit_basket_inputs"
+        )
+    contingent_rank_symbols = [
+        symbol
+        for symbol in (
+            "ProtectionPayment",
+            "nth_to_default_probability",
+            "protection_payment_pv",
+            "rank_trigger_probability",
+        )
+        if f"{symbol}(" in body
+    ]
+    if contingent_rank_symbols and "build_default_event_grid(" not in body:
+        imports.append(
+            "from trellis.models.contingent_cashflows import "
+            + ", ".join(contingent_rank_symbols)
+        )
+    if "GaussianCopula(" in body:
+        imports.append(
+            "from trellis.models.copulas.gaussian import GaussianCopula"
+        )
     if "expected_first_event_weights(" in body:
         imports.append(
             "from trellis.models.contingent_cashflows import expected_first_event_weights"
@@ -8165,10 +8258,6 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             "from trellis.models.monte_carlo.ranked_observation_payoffs import "
             "build_ranked_observation_basket_state_payoff, "
             "terminal_ranked_observation_basket_payoff"
-        )
-    if "price_nth_to_default_basket(" in body:
-        imports.append(
-            "from trellis.instruments.nth_to_default import price_nth_to_default_basket"
         )
     if "price_event_aware_equity_option_pde(" in body:
         imports.append(
@@ -9289,8 +9378,8 @@ def _reference_modules(
             modules.append(("trellis.models.monte_carlo", "Monte Carlo package exports"))
             modules.append(("trellis.models.processes.gbm", "GBM process reference"))
         elif method == "copula":
-            modules.append(("trellis.instruments.nth_to_default", "NthToDefaultPayoff (copula reference)"))
-            modules.append(("trellis.models.credit_basket_copula", "Credit basket copula helper"))
+            modules.append(("trellis.models.credit_basket_copula", "Credit basket market resolution"))
+            modules.append(("trellis.models.contingent_cashflows", "Rank probability and protection-payment primitives"))
             modules.append(("trellis.models.copulas.factor", "Factor copula kernel"))
             modules.append(("trellis.models.copulas.gaussian", "Gaussian copula kernel"))
             modules.append(("trellis.models.copulas.student_t", "Student-t copula kernel"))
@@ -10555,7 +10644,10 @@ def _instrument_disambiguation_lines(
     if instrument == "nth_to_default":
         return (
             "Treat this request as nth_to_default / multi-name credit, not a single-name CDS.",
-            "Copula and default-correlation primitives are valid here; single-name CDS shortcuts are not enough.",
+            "Resolve the homogeneous terminal basket with resolve_credit_basket_inputs, preserve rank bounds, and construct ProtectionPayment plus protection_payment_pv explicitly.",
+            "Analytical/copula targets call nth_to_default_probability; Monte Carlo targets sample one seeded GaussianCopula default-time matrix and reduce it with rank_trigger_probability.",
+            "price_nth_to_default_basket is compatibility/reference evidence only, not generated construction authority.",
+            "Weighted names, heterogeneous credit inputs, running spread legs, or spread sensitivities must block until their semantic contracts are explicit.",
         )
     return ()
 

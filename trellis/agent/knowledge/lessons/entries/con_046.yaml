@@ -1,7 +1,7 @@
 category: convention
 title: Wrong product shape contract
 severity: critical
-status: promoted
+status: archived
 confidence: 1.0
 created: '2026-04-08T19:02:18.908827'
 version: ''
@@ -30,4 +30,6 @@ fix: Define an explicit CDO tranche payoff adapter with the exact pricing kernel
   `market_state` into kernel inputs before calling the pricer.
 validation: Discovered during build (attempt 3)
 supersedes: []
+archive_reason: QUA-1235 retired nth-to-default helper authority and the current
+  tranche route no longer treats the NTD compatibility signature as construction guidance.
 id: con_046

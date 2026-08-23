@@ -78,6 +78,33 @@ single_name_default_event_composition:
     - "This card covers a single reference entity with deterministic discount/survival curves and fixed recovery; do not infer basket, copula, stochastic-rate, quanto, option, or calibration support"
 
 # ---------------------------------------------------------------------------
+# Homogeneous terminal rank-trigger composition
+# ---------------------------------------------------------------------------
+homogeneous_rank_trigger_composition:
+  module: trellis.models.credit_basket_copula
+  methods: [analytical, monte_carlo, copula]
+  navigation:
+    aliases: [nth_to_default, first_to_default, default_order, rank_trigger, credit_basket]
+  modules:
+    market_binding: trellis.models.credit_basket_copula
+    analytical_rank_probability: trellis.models.contingent_cashflows
+    sampled_dependence: trellis.models.copulas.gaussian
+    sampled_rank_reducer: trellis.models.contingent_cashflows
+    cashflow_values: trellis.models.contingent_cashflows
+  key_imports:
+    - "from trellis.models.credit_basket_copula import resolve_credit_basket_inputs"
+    - "from trellis.models.contingent_cashflows import ProtectionPayment, nth_to_default_probability, protection_payment_pv, rank_trigger_probability"
+    - "from trellis.models.copulas.gaussian import GaussianCopula"
+    - "from trellis.core.differentiable import get_numpy"
+  notes:
+    - "Start with resolve_credit_basket_inputs; it binds one homogeneous terminal credit curve into horizon, survival/default mass, flat-equivalent hazard, correlation, recovery, discount factor, and pool size"
+    - "For analytical or copula evidence, call nth_to_default_probability with the resolved marginal default mass and correlation; this is the equicorrelated one-factor terminal rank integral"
+    - "For Monte Carlo evidence, create one seeded GaussianCopula default-time matrix, preserve rows as persistent paths, and call rank_trigger_probability on that matrix; never resample names or ranks independently"
+    - "Construct ProtectionPayment from the resulting trigger probability and discount it with protection_payment_pv so loss-given-default, notional, and discounting remain visible"
+    - "price_nth_to_default_basket remains compatibility and independent reference evidence only, not generated construction authority"
+    - "This bounded card assumes homogeneous names, terminal settlement, deterministic curves, equicorrelation, and fixed recovery; weighted name exposures, heterogeneous curves/recoveries, running spread legs, and spread sensitivities are unsupported pending QUA-1237"
+
+# ---------------------------------------------------------------------------
 # Analytical Gaussian and scalar-root composition
 # ---------------------------------------------------------------------------
 analytical_gaussian_composition:

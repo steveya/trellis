@@ -473,6 +473,33 @@ def nth_to_default_probability(
     return max(0.0, min(1.0, float(result)))
 
 
+def rank_trigger_probability(
+    event_times,
+    *,
+    rank: int,
+    horizon: float,
+) -> float:
+    """Return the sampled probability that a ranked event occurs by ``horizon``.
+
+    Rows are persistent simulation paths and columns are event sources.  The
+    reducer is deliberately event-generic: default-time, barrier-time, and
+    other event simulations can reuse the same rank-order contract without a
+    product pricing wrapper.
+    """
+    paths = np.asarray(event_times)
+    if paths.ndim != 2:
+        raise ValueError("event_times must be a two-dimensional path-by-event array")
+    if int(paths.shape[0]) <= 0:
+        raise ValueError("event_times must contain at least one path")
+    event_count = int(paths.shape[1])
+    normalized_rank = int(rank)
+    if normalized_rank <= 0 or normalized_rank > event_count:
+        raise ValueError("rank must lie in [1, number of event sources]")
+
+    ranked_event_times = np.sort(paths, axis=1)[:, normalized_rank - 1]
+    return float(np.mean(ranked_event_times <= float(horizon)))
+
+
 __all__ = [
     "CouponAccrual",
     "DefaultEventGrid",
@@ -491,6 +518,7 @@ __all__ = [
     "principal_payment_pv",
     "project_prepayment_step",
     "protection_payment_pv",
+    "rank_trigger_probability",
     "sample_first_event_weights",
     "terminal_default_probability",
     "trigger_settlement_pv",

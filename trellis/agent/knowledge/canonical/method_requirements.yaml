@@ -81,6 +81,16 @@ analytical:
     both in the generated requirements set. Compose CouponAccrual/coupon_cashflow_pv
     and ProtectionPayment/protection_payment_pv explicitly so scheduled-leg,
     accrued-on-event, trigger-leg, discounting, and sign semantics remain visible.'
+  nth_to_default:
+  - 'HOMOGENEOUS RANK INTEGRATION: Resolve the terminal basket with
+    resolve_credit_basket_inputs, validate 1 <= n_th <= n_names, pass the resolved
+    marginal default mass and equicorrelation to nth_to_default_probability, then
+    construct ProtectionPayment and protection_payment_pv explicitly. Do not call
+    price_nth_to_default_basket from generated code.'
+  - 'NTH-DEFAULT SUPPORT BOUNDARY: This route covers homogeneous terminal-settlement
+    protection only. Weighted name exposures, heterogeneous credit curves or
+    recoveries, running spread legs, and spread sensitivities require a separate
+    semantic contract and must block honestly.'
   deterministic_cashflow:
   - 'DETERMINISTIC CASHFLOW CONTRACT: When all cashflows are known at pricing time
     and there is no optionality, PV = sum of cashflows * discount_factors. No vol
@@ -132,7 +142,16 @@ monte_carlo:
   primal_dual_mc, and stochastic_mesh. If the control primitive uses continuation
   regression, the basis or estimator choice is explicit; LaguerreBasis is a common
   option, not a mandatory route primitive.'
-- 'CREDIT-SURVIVAL MC: For single-name CDS, sample one default time from the credit_curve hazard rates or survival probabilities on an explicit payment schedule. For nth-to-default, keep multi-name default-order and copula logic explicit instead of reusing the CDS loop. Declare credit_curve and discount_curve requirements and do not route credit-default pricing through Black76 or equity GBM option logic.'
+- 'NTH-DEFAULT MC: Resolve the homogeneous terminal basket with
+  resolve_credit_basket_inputs, bind positive n_paths and an explicit seed, sample
+  one persistent GaussianCopula default-time matrix, and reduce each path through
+  rank_trigger_probability. Construct ProtectionPayment and protection_payment_pv
+  explicitly; do not substitute nth_to_default_probability, resample ranks
+  independently, or call price_nth_to_default_basket.'
+- 'CREDIT-SURVIVAL MC: Single-name CDS uses an explicit payment/event grid and
+  first-event weights. Nth-to-default instead uses multi-name correlated default-time
+  order. Both require credit_curve and discount_curve and neither may route through
+  Black76 or equity GBM option logic.'
 - 'HESTON MC ROUTE: For European Heston vanilla options, prefer trellis.models.monte_carlo.stochastic_vol.price_heston_option_monte_carlo. Use scheme="heston_qe" for qe_heston and scheme="euler" for euler_heston / heston_mc. Bind explicit Heston model_parameters; do not read a Black vol surface unless a calibration problem explicitly maps the surface to Heston parameters.'
 - 'AUTOCALLABLE MC ROUTE: For single-underlier autocallable proof tasks, prefer trellis.models.autocallable.price_autocallable_monte_carlo_result. It owns GBM exact-path simulation, observation-step mapping, first-trigger redemption, coupon accrual, terminal protection, and discounting. Use sampling="sobol" only for QMC comparison targets; pseudo-MC targets must not require Sobol primitives. Do not instantiate GBM with spot=... because spot belongs at simulation time.'
 - 'DOUBLE-BARRIER MC ROUTE: For double-barrier proof tasks, use trellis.models.analytical.support.barriers double-barrier payoff/state primitives or explicit lower/upper BarrierMonitor objects. The generated adapter still owns process simulation, path count, discounting, and comparison-target sampling.'
@@ -149,6 +168,9 @@ qmc:
 copula:
 - 'CALIBRATION: Default probabilities must be consistent with the input credit curve.
   For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).'
+- 'HOMOGENEOUS NTH-DEFAULT: The copula comparison target is analytical one-factor
+  rank integration over the resolved terminal marginal default mass. It is distinct
+  from the Monte Carlo target, which must sample persistent default-time paths.'
 pde_solver:
 - 'GRID: Use at least 200 spatial points and 200+ time steps. For barrier options,
   use non-uniform grid concentrated near the barrier.'

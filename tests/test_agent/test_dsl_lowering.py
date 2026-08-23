@@ -818,7 +818,7 @@ def test_credit_default_swap_missing_schedule_builder_reports_binding_first_erro
     )
 
 
-def test_nth_to_default_lowers_to_helper_backed_credit_basket_route():
+def test_nth_to_default_lowers_to_explicit_rank_trigger_and_payment_primitives():
     from trellis.agent.semantic_contract_compiler import compile_semantic_contract
     from trellis.agent.semantic_contracts import make_nth_to_default_contract
 
@@ -836,9 +836,13 @@ def test_nth_to_default_lowers_to_helper_backed_credit_basket_route():
     assert lowering.route_family == "nth_to_default"
     assert lowering.admissibility_errors == ()
     assert isinstance(lowering.family_ir, NthToDefaultIR)
-    assert isinstance(lowering.normalized_expr, ContractAtom)
-    assert lowering.normalized_expr.primitive_ref == (
-        "trellis.instruments.nth_to_default.price_nth_to_default_basket"
+    assert lowering.family_ir.pricing_mode == "analytical"
+    assert isinstance(lowering.normalized_expr, ThenExpr)
+    assert collect_primitive_refs(lowering.normalized_expr) == (
+        "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+        "trellis.models.contingent_cashflows.nth_to_default_probability",
+        "trellis.models.contingent_cashflows.ProtectionPayment",
+        "trellis.models.contingent_cashflows.protection_payment_pv",
     )
 
 

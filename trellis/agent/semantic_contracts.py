@@ -541,20 +541,51 @@ def _build_semantic_family_registry() -> MappingProxyType:
         _family_definition(
             family_key="nth_to_default",
             semantic_id="nth_to_default",
-            candidate_methods=("copula",),
+            candidate_methods=("analytical", "monte_carlo", "copula"),
             default_preferred_method="copula",
             method_surfaces=(
                 _method_surface_definition(
-                    "copula",
-                    target_modules=("trellis.instruments.nth_to_default",),
-                    # QUA-914: NtD analytical + monte_carlo routes collapsed
-                    # into ``credit_basket_nth_to_default``.  The copula
-                    # method surface binds that single pattern-keyed route.
+                    "analytical",
+                    target_modules=(
+                        "trellis.models.credit_basket_copula",
+                        "trellis.models.contingent_cashflows",
+                    ),
                     primitive_families=("credit_basket_nth_to_default",),
                     adapter_obligations=(
-                        "resolve_basket_credit_curve_and_discount_curve",
-                        "preserve_reference_entities_and_trigger_rank",
-                        "delegate_nth_to_default_pricing_to_checked_helper",
+                        "resolve_homogeneous_basket_credit_inputs",
+                        "integrate_terminal_rank_trigger_probability",
+                        "construct_and_discount_protection_payment",
+                    ),
+                    spec_schema_hints=("nth_to_default",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=(
+                        "trellis.core.differentiable",
+                        "trellis.models.credit_basket_copula",
+                        "trellis.models.copulas.gaussian",
+                        "trellis.models.contingent_cashflows",
+                    ),
+                    primitive_families=("credit_basket_nth_to_default",),
+                    adapter_obligations=(
+                        "resolve_homogeneous_basket_credit_inputs",
+                        "sample_persistent_correlated_default_times",
+                        "reduce_rank_trigger_probability",
+                        "construct_and_discount_protection_payment",
+                    ),
+                    spec_schema_hints=("nth_to_default",),
+                ),
+                _method_surface_definition(
+                    "copula",
+                    target_modules=(
+                        "trellis.models.credit_basket_copula",
+                        "trellis.models.contingent_cashflows",
+                    ),
+                    primitive_families=("credit_basket_nth_to_default",),
+                    adapter_obligations=(
+                        "resolve_homogeneous_basket_credit_inputs",
+                        "integrate_terminal_rank_trigger_probability",
+                        "construct_and_discount_protection_payment",
                     ),
                     spec_schema_hints=("nth_to_default",),
                 ),

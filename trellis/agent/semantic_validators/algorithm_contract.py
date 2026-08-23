@@ -54,6 +54,10 @@ _ROUTE_SIGNATURES = {
         "sample_first_event_weights",
     ),
     "heston_adi_2d": ("price_heston_option_adi_pde_result", "HestonAdiPDEConfig"),
+    "credit_basket_nth_to_default": (
+        "nth_to_default_probability",
+        "GaussianCopula",
+    ),
 }
 
 # Discount patterns
@@ -77,12 +81,14 @@ _HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({
 })
 _DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "model_registry", "topology"})
 _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
+    "credit_basket_nth_to_default",
     "credit_default_swap",
     "equity_quanto",
     "exercise_lattice",
     "rate_tree_backward_induction",
     "short_rate_bond_option",
 })
+_NTH_TO_DEFAULT_FORBIDDEN_SYMBOLS = frozenset({"price_nth_to_default_basket"})
 _TERMINAL_BASKET_FORBIDDEN_SYMBOLS = frozenset(
     {
         "price_basket_option_analytical",
@@ -372,47 +378,6 @@ _EXACT_HELPER_SIGNATURES = {
             "`price_fx_vanilla_monte_carlo(...)` expects `(market_state, spec, seed=...)`. "
             "Pass the live `market_state` and the original spec-like object instead of "
             "resolved process inputs or raw Monte Carlo plumbing."
-        ),
-    },
-    "price_nth_to_default_basket": {
-        "min_positional_args": 0,
-        "keyword_only": True,
-        "required_parameters": (
-            "notional",
-            "n_names",
-            "n_th",
-            "horizon",
-            "correlation",
-            "recovery",
-            "credit_curve",
-            "discount_curve",
-        ),
-        "required_keyword_groups": (
-            frozenset({
-                "notional",
-                "n_names",
-                "n_th",
-                "horizon",
-                "correlation",
-                "recovery",
-                "credit_curve",
-                "discount_curve",
-            }),
-        ),
-        "allowed_keywords": frozenset({
-            "notional",
-            "n_names",
-            "n_th",
-            "horizon",
-            "correlation",
-            "recovery",
-            "credit_curve",
-            "discount_curve",
-        }),
-        "message": (
-            "`price_nth_to_default_basket(...)` is a keyword-only helper expecting "
-            "`notional=..., n_names=..., n_th=..., horizon=..., correlation=..., "
-            "recovery=..., credit_curve=..., discount_curve=...`."
         ),
     },
     "price_credit_basket_tranche": {
@@ -5018,6 +4983,13 @@ class AlgorithmContractValidator:
                 route_spec,
             )
         )
+        findings.extend(
+            self._check_nth_to_default_boundary(
+                source,
+                plan,
+                route_spec,
+            )
+        )
 
         # Checked route helpers own internal engine, payoff, and discounting
         # obligations, but only after the helper call surface itself validates.
@@ -5203,6 +5175,101 @@ class AlgorithmContractValidator:
                         f"'{symbol}'. Compose the shared discount-bond claim resolver "
                         "with the raw Jamshidian kernel or generic calibrated-lattice "
                         "and partial-horizon rollback primitives."
+                    ),
+                )
+            )
+        return findings
+
+    def _check_nth_to_default_boundary(
+        self,
+        source: str,
+        plan: GenerationPlan,
+        route_spec: RouteSpec,
+    ) -> list[SemanticFinding]:
+        """Enforce method-coherent homogeneous rank-trigger composition."""
+        if route_spec.id != "credit_basket_nth_to_default":
+            return []
+
+        findings: list[SemanticFinding] = []
+        for symbol in sorted(_NTH_TO_DEFAULT_FORBIDDEN_SYMBOLS):
+            if not _calls_symbol(source, symbol):
+                continue
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="nth_to_default_forbidden_helper",
+                    message=(
+                        f"Route '{route_spec.id}' cannot call compatibility surface "
+                        f"'{symbol}'. Resolve the homogeneous basket, produce "
+                        "method-coherent rank evidence, and construct the protection "
+                        "payment from public primitives."
+                    ),
+                )
+            )
+
+        method = str(getattr(plan, "method", "") or "").strip().lower()
+        method = method.replace("-", "_").replace(" ", "_")
+        if method == "monte_carlo":
+            wrong_symbols = ("nth_to_default_probability",)
+        else:
+            wrong_symbols = (
+                "GaussianCopula",
+                "sample_default_times",
+                "rank_trigger_probability",
+            )
+        for symbol in wrong_symbols:
+            if not _calls_symbol(source, symbol):
+                continue
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="nth_to_default_unselected_method_primitive",
+                    message=(
+                        f"Method '{method or 'analytical'}' cannot use '{symbol}' on "
+                        "the nth-to-default route. Analytical/copula targets integrate "
+                        "rank probability; Monte Carlo targets sample persistent "
+                        "default-time paths and reduce their order statistic."
+                    ),
+                )
+            )
+
+        if method != "monte_carlo":
+            return findings
+        if not _calls_symbol(source, "sample_default_times"):
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="nth_to_default_default_time_sampling_missing",
+                    message=(
+                        "Monte Carlo nth-to-default composition must call "
+                        "GaussianCopula.sample_default_times(...) before reducing "
+                        "the per-path rank trigger."
+                    ),
+                )
+            )
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:
+            return findings
+        attribute_names = {
+            node.attr
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+        }
+        for control in ("n_paths", "seed"):
+            if control in attribute_names:
+                continue
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category=f"nth_to_default_{control}_binding",
+                    message=(
+                        f"Monte Carlo nth-to-default composition must bind `{control}` "
+                        "from the public spec so sampled evidence is reproducible."
                     ),
                 )
             )
