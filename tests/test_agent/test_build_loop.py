@@ -422,7 +422,14 @@ def test_reference_modules_use_concrete_copula_surfaces():
     assert ("trellis.models.copulas.factor", "Factor copula kernel") in modules
     assert ("trellis.models.copulas.gaussian", "Gaussian copula kernel") in modules
     assert ("trellis.models.copulas.student_t", "Student-t copula kernel") in modules
-    assert ("trellis.models.credit_basket_copula", "Credit basket copula helper") in modules
+    assert (
+        "trellis.models.credit_basket_copula",
+        "Credit basket market resolution",
+    ) in modules
+    assert (
+        "trellis.models.contingent_cashflows",
+        "Rank probability and protection-payment primitives",
+    ) in modules
 
 
 def test_generate_quanto_monte_carlo_skeleton_does_not_preload_product_helper():
