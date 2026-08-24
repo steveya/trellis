@@ -3,7 +3,6 @@
 from dataclasses import dataclass
 from datetime import date
 
-import numpy as raw_np
 import pytest
 
 # --- Trellis ---

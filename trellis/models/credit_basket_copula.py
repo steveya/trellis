@@ -138,7 +138,8 @@ def resolve_credit_basket_inputs(
     )
     n_names = max(int(spec.n_names), 2)
     correlation = resolve_credit_basket_correlation(market_state, spec, horizon=horizon)
-    recovery = float(getattr(spec, "recovery", 0.4) or 0.4)
+    recovery_value = getattr(spec, "recovery", None)
+    recovery = 0.4 if recovery_value is None else float(recovery_value)
 
     return ResolvedCreditBasketInputs(
         notional=float(spec.notional),

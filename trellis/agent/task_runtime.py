@@ -1571,16 +1571,27 @@ def _proof_legacy_expected_honest_block(task: Mapping[str, Any]) -> dict[str, An
     }
 
 
+def _declared_string_values(value: Any) -> tuple[str, ...]:
+    """Normalize one manifest string or a YAML string sequence."""
+    if isinstance(value, str):
+        candidates = (value,)
+    elif isinstance(value, (list, tuple)):
+        candidates = value
+    else:
+        return ()
+    return tuple(
+        text
+        for item in candidates
+        if isinstance(item, str) and (text := item.strip())
+    )
+
+
 def _declared_expected_honest_block(task: Mapping[str, Any]) -> dict[str, Any] | None:
     """Return a manifest-declared pricing block without product-specific dispatch."""
     if str(task.get("expected_outcome") or "").strip() != "honest_block":
         return None
     contract = task.get("honest_block_contract")
-    blocker_ids = tuple(
-        str(value).strip()
-        for value in task.get("expected_blocker_ids", ()) or ()
-        if str(value).strip()
-    )
+    blocker_ids = _declared_string_values(task.get("expected_blocker_ids"))
     if not isinstance(contract, Mapping) or not blocker_ids:
         return None
 
@@ -1590,11 +1601,9 @@ def _declared_expected_honest_block(task: Mapping[str, Any]) -> dict[str, Any] |
     repair_packet = {
         "packet_type": packet_type,
         "task_id": str(task.get("id") or "").strip(),
-        "missing_capabilities": [
-            str(value).strip()
-            for value in contract.get("missing_capabilities", ()) or ()
-            if str(value).strip()
-        ],
+        "missing_capabilities": list(
+            _declared_string_values(contract.get("missing_capabilities"))
+        ),
         "suggested_action": str(contract.get("suggested_action") or "").strip(),
     }
     follow_on_issue = str(contract.get("follow_on_issue") or "").strip()

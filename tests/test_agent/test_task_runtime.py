@@ -2526,6 +2526,31 @@ def test_weighted_nth_to_default_extension_blocks_from_declared_contract_without
     assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
+def test_declared_honest_block_normalizes_scalar_string_fields():
+    from trellis.agent.task_runtime import _declared_expected_honest_block
+
+    blocker = _declared_expected_honest_block(
+        {
+            "id": "SCALAR-BLOCK",
+            "expected_outcome": "honest_block",
+            "expected_blocker_ids": "semantic_product_contract_gap:weighted_names",
+            "honest_block_contract": {
+                "reason": "scalar_manifest_fields",
+                "missing_capabilities": "weighted_name_exposure_semantics",
+            },
+        }
+    )
+
+    assert blocker is not None
+    assert [
+        entry["id"]
+        for entry in blocker["blocker_report"]["blockers"]
+    ] == ["semantic_product_contract_gap:weighted_names"]
+    assert blocker["repair_packet"]["missing_capabilities"] == [
+        "weighted_name_exposure_semantics"
+    ]
+
+
 def test_sparse_lsm_basis_proof_row_uses_deterministic_local_targets(monkeypatch, tmp_path):
     from trellis.agent.task_manifests import load_task_manifest
     from trellis.agent.task_runtime import run_task
