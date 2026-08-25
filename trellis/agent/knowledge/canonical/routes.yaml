@@ -288,14 +288,17 @@ routes:
             symbol: nth_to_default_probability
             role: numerical_evidence
           - module: trellis.models.contingent_cashflows
-            symbol: ProtectionPayment
+            symbol: exchangeable_ranked_event_expected_weight
+            role: rank_weight_aggregator
+          - module: trellis.models.contingent_cashflows
+            symbol: TriggerSettlement
             role: payoff_primitive
           - module: trellis.models.contingent_cashflows
-            symbol: protection_payment_pv
+            symbol: trigger_settlement_pv
             role: trigger_leg
         adapters: []
         notes:
-          - "Resolve homogeneous terminal basket inputs, integrate the equicorrelated rank-trigger probability, and construct the protection payment explicitly."
+          - "Resolve name-aligned terminal basket inputs, integrate the equicorrelated rank-trigger probability, map it to expected ranked exposure, and construct the trigger settlement explicitly."
       - when:
           methods: [monte_carlo]
         primitives:
@@ -309,23 +312,23 @@ routes:
             symbol: GaussianCopula
             role: default_time_sampler
           - module: trellis.models.contingent_cashflows
-            symbol: rank_trigger_probability
-            role: rank_aggregator
+            symbol: ranked_event_expected_weight
+            role: rank_weight_aggregator
           - module: trellis.models.contingent_cashflows
-            symbol: ProtectionPayment
+            symbol: TriggerSettlement
             role: payoff_primitive
           - module: trellis.models.contingent_cashflows
-            symbol: protection_payment_pv
+            symbol: trigger_settlement_pv
             role: trigger_leg
         adapters: []
         notes:
-          - "Sample persistent Gaussian-copula default-time paths, reduce the nth event with rank_trigger_probability, and construct the protection payment explicitly."
+          - "Sample persistent Gaussian-copula default-time paths, reduce the nth event with name-aligned exposure identity, and construct the terminal trigger settlement explicitly."
     admissibility:
       control_styles: [identity]
       event_support: automatic
       phase_sensitivity: default_phase_order_only
       multicurrency_support: single_currency_only
-      supported_outputs: [price, scenario_pnl]
+      supported_outputs: [price, spread_cs01, scenario_pnl]
       supports_sensitivity_outputs: true
       supported_state_tags: [pathwise_only, remaining_pool, schedule_state]
       supports_calibration: false
@@ -337,10 +340,13 @@ routes:
         symbol: nth_to_default_probability
         role: numerical_evidence
       - module: trellis.models.contingent_cashflows
-        symbol: ProtectionPayment
+        symbol: exchangeable_ranked_event_expected_weight
+        role: rank_weight_aggregator
+      - module: trellis.models.contingent_cashflows
+        symbol: TriggerSettlement
         role: payoff_primitive
       - module: trellis.models.contingent_cashflows
-        symbol: protection_payment_pv
+        symbol: trigger_settlement_pv
         role: trigger_leg
     adapters: []
     notes: []

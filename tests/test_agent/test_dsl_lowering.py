@@ -841,8 +841,9 @@ def test_nth_to_default_lowers_to_explicit_rank_trigger_and_payment_primitives()
     assert collect_primitive_refs(lowering.normalized_expr) == (
         "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
         "trellis.models.contingent_cashflows.nth_to_default_probability",
-        "trellis.models.contingent_cashflows.ProtectionPayment",
-        "trellis.models.contingent_cashflows.protection_payment_pv",
+        "trellis.models.contingent_cashflows.exchangeable_ranked_event_expected_weight",
+        "trellis.models.contingent_cashflows.TriggerSettlement",
+        "trellis.models.contingent_cashflows.trigger_settlement_pv",
     )
 
 

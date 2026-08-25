@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import math
 from dataclasses import dataclass, field
 from datetime import date
 from types import MappingProxyType
@@ -552,9 +553,10 @@ def _build_semantic_family_registry() -> MappingProxyType:
                     ),
                     primitive_families=("credit_basket_nth_to_default",),
                     adapter_obligations=(
-                        "resolve_homogeneous_basket_credit_inputs",
+                        "resolve_name_aligned_basket_credit_inputs",
                         "integrate_terminal_rank_trigger_probability",
-                        "construct_and_discount_protection_payment",
+                        "reduce_exchangeable_rank_to_expected_exposure",
+                        "construct_and_discount_terminal_trigger_settlement",
                     ),
                     spec_schema_hints=("nth_to_default",),
                 ),
@@ -568,10 +570,10 @@ def _build_semantic_family_registry() -> MappingProxyType:
                     ),
                     primitive_families=("credit_basket_nth_to_default",),
                     adapter_obligations=(
-                        "resolve_homogeneous_basket_credit_inputs",
+                        "resolve_name_aligned_basket_credit_inputs",
                         "sample_persistent_correlated_default_times",
-                        "reduce_rank_trigger_probability",
-                        "construct_and_discount_protection_payment",
+                        "reduce_ranked_event_to_expected_exposure",
+                        "construct_and_discount_terminal_trigger_settlement",
                     ),
                     spec_schema_hints=("nth_to_default",),
                 ),
@@ -583,9 +585,10 @@ def _build_semantic_family_registry() -> MappingProxyType:
                     ),
                     primitive_families=("credit_basket_nth_to_default",),
                     adapter_obligations=(
-                        "resolve_homogeneous_basket_credit_inputs",
+                        "resolve_name_aligned_basket_credit_inputs",
                         "integrate_terminal_rank_trigger_probability",
-                        "construct_and_discount_protection_payment",
+                        "reduce_exchangeable_rank_to_expected_exposure",
+                        "construct_and_discount_terminal_trigger_settlement",
                     ),
                     spec_schema_hints=("nth_to_default",),
                 ),
@@ -3389,12 +3392,38 @@ def make_nth_to_default_contract(
     description: str,
     observation_schedule: tuple[str, ...] | list[str],
     reference_entities: tuple[str, ...] | list[str],
+    reference_weights: tuple[float, ...] | list[float] | None = None,
     trigger_rank: int = 1,
+    credit_spread: float | None = None,
     preferred_method: str = "copula",
 ) -> SemanticContract:
-    """Construct a generic nth-to-default semantic contract."""
+    """Construct a terminal name-weighted nth-to-default semantic contract."""
     schedule = _normalize_schedule(observation_schedule)
-    reference_names = _tuple(reference_entities)
+    reference_names = tuple(str(name).strip() for name in reference_entities)
+    if any(not name for name in reference_names):
+        raise ValueError("Nth-to-default reference entities must be non-empty.")
+    if len(set(reference_names)) != len(reference_names):
+        raise ValueError("Nth-to-default reference entities must be unique.")
+    normalized_weights: tuple[float, ...] = ()
+    if reference_weights is not None:
+        normalized_weights = tuple(float(weight) for weight in reference_weights)
+        if len(normalized_weights) != len(reference_names):
+            raise ValueError(
+                "Nth-to-default reference weights must have the same length as reference entities."
+            )
+        if any(not math.isfinite(weight) for weight in normalized_weights):
+            raise ValueError("Nth-to-default reference weights must be finite.")
+        if any(weight < 0.0 for weight in normalized_weights):
+            raise ValueError("Nth-to-default reference weights must be non-negative.")
+        if not math.isclose(sum(normalized_weights), 1.0, rel_tol=0.0, abs_tol=1.0e-10):
+            raise ValueError("Nth-to-default reference weights must sum to 1.")
+    normalized_spread = None if credit_spread is None else float(credit_spread)
+    if normalized_spread is not None and (
+        not math.isfinite(normalized_spread) or not 0.0 <= normalized_spread < 1.0
+    ):
+        raise ValueError(
+            "Nth-to-default credit spread must be a decimal annual quote in [0, 1)."
+        )
     normalized_method = normalize_method(preferred_method)
     normalized_trigger_rank = max(int(trigger_rank), 1)
     if not schedule:
@@ -3412,7 +3441,7 @@ def make_nth_to_default_contract(
 
     product = SemanticProductSemantics(
         semantic_id="nth_to_default",
-        semantic_version="c2.1",
+        semantic_version="c2.2",
         instrument_class="nth_to_default",
         instrument_aliases=("nth_to_default", "first_to_default", "basket_cds"),
         payoff_family="nth_to_default",
@@ -3422,13 +3451,15 @@ def make_nth_to_default_contract(
             state_update_dates=schedule,
         ),
         underlier_structure="multi_asset_basket",
-        payoff_rule="nth_default_loss_payment",
-        settlement_rule="settle_at_nth_default_or_maturity",
+        payoff_rule="nth_default_name_weighted_loss_payment",
+        settlement_rule="terminal_if_rank_triggers_by_maturity",
         payoff_traits=(
             "credit_spread_dependence",
             "correlation_dependence",
             "default_contingent",
+            "name_weighted_loss",
             "nth_default_trigger",
+            "terminal_settlement",
         ),
         observables=(
             ObservableSpec(
@@ -3459,8 +3490,8 @@ def make_nth_to_default_contract(
         obligations=(
             ObligationSpec(
                 obligation_id="nth_default_cash_settlement",
-                settle_date_rule="settle_at_nth_default_or_maturity",
-                amount_expression="basket_loss_given_nth_default",
+                settle_date_rule="settle_at_maturity_if_nth_default_occurs_by_maturity",
+                amount_expression="total_notional_times_nth_defaulter_weight_times_loss_given_default",
                 settlement_kind="cash",
                 trigger="nth_default_before_maturity",
                 provenance="semantic_contract",
@@ -3479,6 +3510,14 @@ def make_nth_to_default_contract(
             event_machine_source="derived_from_event_transitions",
             primary_schedule_role="observation_dates",
         ),
+        term_fields=_freeze_mapping(
+            {
+                "basket_weights": normalized_weights,
+                "spread": normalized_spread,
+                "spread_quote_convention": "decimal_annual_representative_single_name",
+                "spread_risk_bump": 1.0e-4,
+            }
+        ),
         exercise_style="none",
         path_dependence="path_dependent",
         schedule_dependence=True,
@@ -3491,20 +3530,20 @@ def make_nth_to_default_contract(
         selection_scope="reference_entities",
         selection_count=normalized_trigger_rank,
         lock_rule="survivor_pool_updates_after_each_default",
-        aggregation_rule="loss_given_nth_default",
-        maturity_settlement_rule="settle_at_nth_default_or_maturity",
+        aggregation_rule="name_aligned_weight_times_loss_given_nth_default",
+        maturity_settlement_rule="terminal_if_rank_triggers_by_maturity",
         constituents=reference_names,
         state_variables=("remaining_reference_pool", "trigger_default_counter"),
         event_transitions=(
             "sample_correlated_default_times",
             "track_default_order",
-            "settle_at_nth_default_or_maturity",
+            "settle_terminal_name_weight_if_rank_triggers",
         ),
         event_machine=_derive_event_machine(
             (
                 "sample_correlated_default_times",
                 "track_default_order",
-                "settle_at_nth_default_or_maturity",
+                "settle_terminal_name_weight_if_rank_triggers",
             ),
             state_dependence="path_dependent",
         ),
@@ -3542,7 +3581,10 @@ def make_nth_to_default_contract(
         ),
         semantic_checks=(
             "nth_default_order_explicit",
+            "name_weight_alignment_explicit",
+            "terminal_settlement_explicit",
             "copula_dependence_assumption_explicit",
+            "spread_quote_and_1bp_risk_contract_explicit",
         ),
         comparison_targets=(normalized_method,),
         reduction_cases=("first_to_default_basket",),
@@ -3922,11 +3964,14 @@ def _rebuild_nth_to_default_contract(
 ) -> SemanticContract:
     """Rebuild an nth-to-default contract for one preferred method."""
     product = contract.product
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
     return make_nth_to_default_contract(
         description=contract.description,
         observation_schedule=tuple(getattr(product, "observation_schedule", ()) or ()),
         reference_entities=tuple(getattr(product, "constituents", ()) or ()),
+        reference_weights=tuple(term_fields.get("basket_weights") or ()) or None,
         trigger_rank=max(int(getattr(product, "selection_count", 1) or 1), 1),
+        credit_spread=term_fields.get("spread"),
         preferred_method=normalized_method,
     )
 

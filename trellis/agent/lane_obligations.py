@@ -585,17 +585,19 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
         if family_ir.pricing_mode == "monte_carlo":
             evidence_step = (
                 f"Sample persistent correlated event-time paths with `{family_ir.default_time_sampler_symbol}` "
-                f"and reduce rank={family_ir.trigger_rank} through `{family_ir.sampled_rank_symbol}`."
+                f"and reduce rank={family_ir.trigger_rank} to its name-aligned exposure through "
+                f"`{family_ir.sampled_rank_symbol}`."
             )
         else:
             evidence_step = (
                 f"Integrate terminal rank={family_ir.trigger_rank} probability with "
-                f"`{family_ir.rank_probability_symbol}` from the resolved marginal default mass."
+                f"`{family_ir.rank_probability_symbol}` and map it to expected exposure with "
+                f"`{family_ir.analytical_rank_weight_symbol}`."
             )
         return (
-            f"Resolve the bounded homogeneous basket through `{family_ir.market_binding_symbol}` and validate the reference-pool rank.",
+            f"Resolve the terminal name-aligned basket through `{family_ir.market_binding_symbol}` and validate the reference-pool rank and exposures.",
             evidence_step,
-            f"Construct `{family_ir.protection_payment_symbol}` explicitly and discount it through `{family_ir.trigger_leg_symbol}`.",
+            f"Construct `{family_ir.trigger_settlement_symbol}` explicitly and discount it through `{family_ir.trigger_leg_symbol}`.",
         )
     if lane_family == "analytical":
         return (

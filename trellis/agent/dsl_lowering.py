@@ -2033,7 +2033,7 @@ def _build_nth_to_default_expr_from_family_ir(
     family_ir: NthToDefaultIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
-    """Build explicit market, rank-evidence, and protection-payment lowering."""
+    """Build explicit market, rank-weight, and terminal-settlement lowering."""
     required = [
         ("market_binding", "basket-credit market resolver", family_ir.market_binding_symbol),
     ]
@@ -2041,58 +2041,68 @@ def _build_nth_to_default_expr_from_family_ir(
         required.extend(
             (
                 ("default_time_sampler", "correlated event-time sampler", family_ir.default_time_sampler_symbol),
-                ("rank_aggregator", "sampled rank reducer", family_ir.sampled_rank_symbol),
+                ("rank_weight_aggregator", "sampled ranked-event exposure reducer", family_ir.sampled_rank_symbol),
             )
         )
         stage_roles = (
             "market_binding",
             "default_time_sampling",
-            "rank_trigger_reduction",
-            "protection_payment",
+            "ranked_event_exposure_reduction",
+            "trigger_settlement",
             "trigger_leg",
         )
         descriptions = (
-            "Resolve homogeneous basket horizon, marginal default mass, flat-equivalent hazard, correlation, recovery, and discounting.",
+            "Resolve terminal basket horizon, name-aligned exposures, marginal default mass, flat-equivalent hazard, correlation, recovery, and discounting.",
             "Sample persistent correlated default-time paths with explicit path-count and seed controls.",
-            f"Reduce each persistent path to rank={family_ir.trigger_rank} and estimate terminal trigger probability.",
-            "Construct the loss-given-default protection payment from the sampled trigger probability.",
-            "Discount the explicit protection payment to obtain present value.",
+            f"Reduce each persistent path to the name-aligned exposure carried by rank={family_ir.trigger_rank} when triggered by maturity.",
+            "Construct the terminal loss-given-default settlement from expected ranked exposure.",
+            "Discount the explicit trigger settlement to obtain present value.",
         )
         ports = (
             _market_signature_from_family_ir(family_ir).inputs,
             ("resolved_credit_basket:state",),
             ("default_time_paths:matrix", "resolved_credit_basket:state"),
-            ("rank_trigger_probability:scalar", "resolved_credit_basket:state"),
-            ("protection_payment:value",),
+            ("ranked_event_expected_weight:scalar", "resolved_credit_basket:state"),
+            ("trigger_settlement:value",),
             ("price:scalar",),
         )
     else:
         required.append(
             ("numerical_evidence", "analytical rank probability", family_ir.rank_probability_symbol)
         )
+        required.append(
+            (
+                "rank_weight_aggregator",
+                "exchangeable ranked-event exposure reducer",
+                family_ir.analytical_rank_weight_symbol,
+            )
+        )
         stage_roles = (
             "market_binding",
             "rank_trigger_integration",
-            "protection_payment",
+            "ranked_event_exposure_reduction",
+            "trigger_settlement",
             "trigger_leg",
         )
         descriptions = (
-            "Resolve homogeneous basket horizon, marginal default mass, correlation, recovery, and discounting.",
+            "Resolve terminal basket horizon, name-aligned exposures, marginal default mass, correlation, recovery, and discounting.",
             f"Integrate terminal probability of at least rank={family_ir.trigger_rank} correlated defaults.",
-            "Construct the loss-given-default protection payment from the analytical trigger probability.",
-            "Discount the explicit protection payment to obtain present value.",
+            "Map exchangeable rank probability to expected name-aligned exposure.",
+            "Construct the terminal loss-given-default settlement from expected ranked exposure.",
+            "Discount the explicit trigger settlement to obtain present value.",
         )
         ports = (
             _market_signature_from_family_ir(family_ir).inputs,
             ("resolved_credit_basket:state",),
             ("rank_trigger_probability:scalar", "resolved_credit_basket:state"),
-            ("protection_payment:value",),
+            ("ranked_event_expected_weight:scalar", "resolved_credit_basket:state"),
+            ("trigger_settlement:value",),
             ("price:scalar",),
         )
     required.extend(
         (
-            ("payoff_primitive", "protection payment", family_ir.protection_payment_symbol),
-            ("trigger_leg", "protection-payment present value", family_ir.trigger_leg_symbol),
+            ("payoff_primitive", "terminal trigger settlement", family_ir.trigger_settlement_symbol),
+            ("trigger_leg", "trigger-settlement present value", family_ir.trigger_leg_symbol),
         )
     )
 

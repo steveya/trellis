@@ -10,7 +10,12 @@ import numpy as raw_np
 
 from trellis.core.date_utils import year_fraction
 from trellis.core.types import DayCountConvention
-from trellis.instruments.nth_to_default import price_nth_to_default_basket
+from trellis.models.contingent_cashflows import (
+    TriggerSettlement,
+    exchangeable_ranked_event_expected_weight,
+    nth_to_default_probability,
+    trigger_settlement_pv,
+)
 from trellis.models.copulas.factor import FactorCopula
 from trellis.models.copulas.gaussian import GaussianCopula
 from trellis.models.copulas.student_t import StudentTCopula
@@ -99,6 +104,9 @@ class ResolvedCreditBasketInputs:
     hazard_rate: float
     correlation: float
     recovery: float
+    reference_names: tuple[str, ...] = ()
+    exposure_weights: tuple[float, ...] = ()
+    credit_spread: float | None = None
 
 
 @dataclass(frozen=True)
@@ -115,31 +123,69 @@ class CreditBasketTrancheResult:
 def resolve_credit_basket_inputs(
     market_state: CreditBasketMarketStateLike,
     spec: CreditBasketNthSpecLike | CreditBasketTrancheSpecLike,
+    *,
+    credit_spread_shift: float = 0.0,
 ) -> ResolvedCreditBasketInputs:
-    """Resolve common market inputs for tranche and nth-to-default helpers."""
+    """Resolve common market and optional weighted-exposure basket inputs.
+
+    A spec-level ``spread`` is a decimal annual credit-spread quote.  It uses
+    the bounded credit-triangle mapping ``hazard = spread / (1 - recovery)``
+    and overrides the representative curve for marginal default mass.  The
+    optional shift is expressed in the same decimal units and supports a
+    visible one-basis-point reprice without mutating market state.
+    """
     settlement = market_state.settlement or market_state.as_of
     if settlement is None:
         raise ValueError("market_state must provide settlement or as_of for basket-credit pricing")
     if market_state.discount is None:
         raise ValueError("basket-credit pricing requires market_state.discount")
-    if market_state.credit_curve is None:
-        raise ValueError("basket-credit pricing requires market_state.credit_curve")
 
     day_count = getattr(spec, "day_count", DayCountConvention.ACT_360)
     horizon = max(float(_credit_basket_horizon(settlement, spec.end_date, day_count)), 0.0)
-    survival_probability = (
-        1.0 if horizon <= 0.0 else float(market_state.credit_curve.survival_probability(horizon))
-    )
-    survival_probability = float(raw_np.clip(survival_probability, 1e-12, 1.0))
-    default_probability = 1.0 - survival_probability
-    hazard_rate = 0.0 if horizon <= 0.0 else float(-raw_np.log(survival_probability) / horizon)
     discount_factor = (
         1.0 if horizon <= 0.0 else float(market_state.discount.discount(horizon))
     )
     n_names = max(int(spec.n_names), 2)
-    correlation = resolve_credit_basket_correlation(market_state, spec, horizon=horizon)
     recovery_value = getattr(spec, "recovery", None)
     recovery = 0.4 if recovery_value is None else float(recovery_value)
+    reference_names, exposure_weights = _resolve_credit_basket_exposures(
+        spec,
+        n_names=n_names,
+    )
+
+    spread_value = getattr(spec, "spread", None)
+    spread_shift = float(credit_spread_shift)
+    if not raw_np.isfinite(spread_shift):
+        raise ValueError("credit_spread_shift must be finite")
+    if spread_value is None:
+        if spread_shift != 0.0:
+            raise ValueError("credit_spread_shift requires a spec-level decimal spread")
+        if market_state.credit_curve is None:
+            raise ValueError("basket-credit pricing requires market_state.credit_curve")
+        survival_probability = (
+            1.0
+            if horizon <= 0.0
+            else float(market_state.credit_curve.survival_probability(horizon))
+        )
+        survival_probability = float(raw_np.clip(survival_probability, 1e-12, 1.0))
+        hazard_rate = (
+            0.0
+            if horizon <= 0.0
+            else float(-raw_np.log(survival_probability) / horizon)
+        )
+        credit_spread = None
+    else:
+        if not 0.0 <= recovery < 1.0:
+            raise ValueError("recovery must lie in [0, 1) for credit-spread mapping")
+        credit_spread = float(spread_value) + spread_shift
+        if not raw_np.isfinite(credit_spread) or not 0.0 <= credit_spread < 1.0:
+            raise ValueError("spread must be a decimal annual quote in [0, 1)")
+        hazard_rate = credit_spread / (1.0 - recovery)
+        survival_probability = (
+            1.0 if horizon <= 0.0 else float(raw_np.exp(-hazard_rate * horizon))
+        )
+    default_probability = 1.0 - survival_probability
+    correlation = resolve_credit_basket_correlation(market_state, spec, horizon=horizon)
 
     return ResolvedCreditBasketInputs(
         notional=float(spec.notional),
@@ -151,7 +197,53 @@ def resolve_credit_basket_inputs(
         hazard_rate=hazard_rate,
         correlation=correlation,
         recovery=recovery,
+        reference_names=reference_names,
+        exposure_weights=exposure_weights,
+        credit_spread=credit_spread,
     )
+
+
+def _resolve_credit_basket_exposures(
+    spec: CreditBasketNthSpecLike | CreditBasketTrancheSpecLike,
+    *,
+    n_names: int,
+) -> tuple[tuple[str, ...], tuple[float, ...]]:
+    """Return an optional strict name-aligned notional-allocation contract."""
+    raw_names = getattr(spec, "basket_names", None)
+    if raw_names is None:
+        raw_names = getattr(spec, "reference_names", None)
+    raw_weights = getattr(spec, "basket_weights", None)
+    if raw_weights is None:
+        raw_weights = getattr(spec, "exposure_weights", None)
+    names_absent = raw_names is None or len(raw_names) == 0
+    weights_absent = raw_weights is None or len(raw_weights) == 0
+    if names_absent and weights_absent:
+        return (
+            tuple(f"name_{index + 1}" for index in range(int(n_names))),
+            tuple(1.0 for _ in range(int(n_names))),
+        )
+    if names_absent or weights_absent:
+        raise ValueError("basket names and weights must be provided together")
+
+    names = tuple(str(name).strip() for name in raw_names)
+    if len(names) != int(n_names):
+        raise ValueError("basket names must match n_names")
+    if any(not name for name in names):
+        raise ValueError("basket names must be non-empty")
+    if len(set(names)) != len(names):
+        raise ValueError("basket names must be unique")
+
+    weights_array = raw_np.asarray(tuple(raw_weights), dtype=float)
+    if weights_array.ndim != 1 or len(weights_array) != len(names):
+        raise ValueError("basket weights must have the same length as basket names")
+    if not bool(raw_np.all(raw_np.isfinite(weights_array))):
+        raise ValueError("basket weights must be finite")
+    if bool(raw_np.any(weights_array < 0.0)):
+        raise ValueError("basket weights must be non-negative")
+    total_weight = float(raw_np.sum(weights_array))
+    if not raw_np.isclose(total_weight, 1.0, rtol=0.0, atol=1.0e-10):
+        raise ValueError("basket weights must sum to 1")
+    return names, tuple(float(weight) for weight in weights_array)
 
 
 def resolve_credit_basket_correlation(
@@ -220,32 +312,31 @@ def price_credit_basket_nth_to_default(
     family = _normalized_copula_family(copula_family)
 
     if family == "gaussian":
-        return float(
-            price_nth_to_default_basket(
-                notional=resolved.notional,
-                n_names=resolved.n_names,
-                n_th=trigger_rank,
-                horizon=resolved.horizon,
-                correlation=resolved.correlation,
-                recovery=resolved.recovery,
-                credit_curve=market_state.credit_curve,
-                discount_curve=market_state.discount,
-            )
+        trigger_probability = nth_to_default_probability(
+            resolved.n_names,
+            trigger_rank,
+            resolved.default_probability,
+            resolved.correlation,
         )
-
-    defaults_by_horizon = _simulate_default_counts(
-        resolved,
-        family=family,
-        degrees_of_freedom=degrees_of_freedom,
-        n_paths=n_paths,
-        seed=seed,
+    else:
+        defaults_by_horizon = _simulate_default_counts(
+            resolved,
+            family=family,
+            degrees_of_freedom=degrees_of_freedom,
+            n_paths=n_paths,
+            seed=seed,
+        )
+        trigger_probability = float(raw_np.mean(defaults_by_horizon >= trigger_rank))
+    expected_weight = exchangeable_ranked_event_expected_weight(
+        trigger_probability,
+        event_weights=resolved.exposure_weights,
     )
-    trigger_probability = float(raw_np.mean(defaults_by_horizon >= trigger_rank))
-    return float(
-        resolved.notional
-        * (1.0 - resolved.recovery)
-        * resolved.discount_factor
-        * trigger_probability
+    return trigger_settlement_pv(
+        TriggerSettlement(
+            amount=resolved.notional * (1.0 - resolved.recovery),
+            discount_factor=resolved.discount_factor,
+            trigger_weight=expected_weight,
+        )
     )
 
 

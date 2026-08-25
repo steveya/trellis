@@ -1557,7 +1557,9 @@ class TestCreditConceptResolution:
         assert "credit_curve_survival_probability" in cds.required_primitives
         assert "gaussian_copula_default_times" in ntd.required_primitives
         assert "nth_to_default_probability" in ntd.required_primitives
-        assert "rank_trigger_probability" in ntd.required_primitives
+        assert "exchangeable_ranked_event_expected_weight" in ntd.required_primitives
+        assert "ranked_event_expected_weight" in ntd.required_primitives
+        assert "trigger_settlement" in ntd.required_primitives
 
     def test_credit_concepts_have_distinct_route_families(self):
         from trellis.agent.semantic_concepts import get_semantic_concept_definition
@@ -1793,6 +1795,50 @@ def test_nth_to_default_contract_validates_and_compiles():
     assert compiled.dsl_lowering is not None
     assert compiled.dsl_lowering.route_id == "credit_basket_nth_to_default"
     assert compiled.dsl_lowering.family_ir.pricing_mode == "analytical"
+
+
+def test_weighted_nth_to_default_contract_preserves_name_aligned_loss_and_spread_terms():
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+
+    contract = make_nth_to_default_contract(
+        description="Second-to-default weighted basket through 2029-11-15",
+        observation_schedule=("2029-11-15",),
+        reference_entities=("A", "B", "C", "D"),
+        reference_weights=(0.4, 0.2, 0.2, 0.2),
+        trigger_rank=2,
+        credit_spread=0.025,
+    )
+
+    assert contract.product.constituents == ("A", "B", "C", "D")
+    assert contract.product.term_fields["basket_weights"] == (0.4, 0.2, 0.2, 0.2)
+    assert contract.product.term_fields["spread"] == 0.025
+    assert contract.product.term_fields["spread_risk_bump"] == 1.0e-4
+    assert "name_weighted_loss" in contract.product.payoff_traits
+    assert contract.product.settlement_rule == "terminal_if_rank_triggers_by_maturity"
+
+
+@pytest.mark.parametrize(
+    ("reference_entities", "reference_weights", "message"),
+    [
+        (("A", "A"), (0.5, 0.5), "unique"),
+        (("A", "B"), (1.0,), "same length"),
+        (("A", "B"), (0.6, 0.3), "sum to 1"),
+    ],
+)
+def test_weighted_nth_to_default_contract_rejects_invalid_name_weight_alignment(
+    reference_entities,
+    reference_weights,
+    message,
+):
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+
+    with pytest.raises(ValueError, match=message):
+        make_nth_to_default_contract(
+            description="Weighted first-to-default basket through 2029-11-15",
+            observation_schedule=("2029-11-15",),
+            reference_entities=reference_entities,
+            reference_weights=reference_weights,
+        )
 
 
 def test_nth_to_default_summary_is_stable_and_route_specific():

@@ -35,6 +35,26 @@ class _ZeroRecoveryNthSpec(_NthSpec):
     recovery = 0.0
 
 
+class _WeightedNthSpec(_NthSpec):
+    n_names = 4
+    n_th = 2
+    basket_names = ("A", "B", "C", "D")
+    basket_weights = (0.4, 0.2, 0.2, 0.2)
+    spread = 0.025
+
+
+class _DuplicateNameWeightedNthSpec(_WeightedNthSpec):
+    basket_names = ("A", "A", "C", "D")
+
+
+class _MismatchedWeightWeightedNthSpec(_WeightedNthSpec):
+    basket_weights = (0.4, 0.3, 0.3)
+
+
+class _UnnormalizedWeightedNthSpec(_WeightedNthSpec):
+    basket_weights = (0.4, 0.2, 0.2, 0.1)
+
+
 class _LossDistributionSpec:
     notional = 100_000_000.0
     n_names = 75
@@ -113,6 +133,42 @@ def test_resolve_credit_basket_inputs_preserves_explicit_zero_recovery():
     )
 
     assert resolved.recovery == 0.0
+
+
+def test_resolve_credit_basket_inputs_preserves_weight_and_decimal_spread_contract():
+    from math import exp
+
+    from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
+
+    resolved = resolve_credit_basket_inputs(_market_state(hazard=0.01), _WeightedNthSpec())
+    bumped = resolve_credit_basket_inputs(
+        _market_state(hazard=0.01),
+        _WeightedNthSpec(),
+        credit_spread_shift=1.0e-4,
+    )
+
+    assert resolved.reference_names == ("A", "B", "C", "D")
+    assert resolved.exposure_weights == pytest.approx((0.4, 0.2, 0.2, 0.2))
+    assert resolved.credit_spread == pytest.approx(0.025)
+    assert resolved.hazard_rate == pytest.approx(0.025 / 0.6)
+    assert resolved.survival_probability == pytest.approx(exp(-(0.025 / 0.6) * 5.0))
+    assert bumped.credit_spread == pytest.approx(0.0251)
+    assert bumped.hazard_rate == pytest.approx(0.0251 / 0.6)
+
+
+@pytest.mark.parametrize(
+    ("spec", "message"),
+    [
+        (_DuplicateNameWeightedNthSpec(), "unique"),
+        (_MismatchedWeightWeightedNthSpec(), "same length"),
+        (_UnnormalizedWeightedNthSpec(), "sum to 1"),
+    ],
+)
+def test_resolve_credit_basket_inputs_rejects_invalid_weight_contract(spec, message):
+    from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
+
+    with pytest.raises(ValueError, match=message):
+        resolve_credit_basket_inputs(_market_state(), spec)
 
 
 def test_credit_loss_distribution_helpers_agree_on_discounted_expected_loss():

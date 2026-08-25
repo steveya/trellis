@@ -23,6 +23,7 @@ from trellis.models.contingent_cashflows import (
     build_default_event_grid,
     conditional_event_probabilities_from_curve,
     coupon_cashflow_pv,
+    exchangeable_ranked_event_expected_weight,
     expected_first_event_weights,
     interval_default_probability_from_survival,
     nth_to_default_probability,
@@ -30,6 +31,7 @@ from trellis.models.contingent_cashflows import (
     project_prepayment_step,
     protection_payment_pv,
     rank_trigger_probability,
+    ranked_event_expected_weight,
     sample_first_event_weights,
     trigger_settlement_pv,
 )
@@ -275,6 +277,65 @@ def test_rank_trigger_probability_reduces_persistent_event_time_paths():
     assert rank_trigger_probability(event_times, rank=1, horizon=1.0) == pytest.approx(0.75)
     assert rank_trigger_probability(event_times, rank=2, horizon=1.0) == pytest.approx(0.25)
     assert rank_trigger_probability(event_times, rank=3, horizon=1.0) == pytest.approx(0.0)
+
+
+def test_ranked_event_expected_weight_preserves_event_identity():
+    event_times = get_numpy().array(
+        [
+            [0.25, 1.50],
+            [0.50, 2.00],
+            [1.25, 0.75],
+        ]
+    )
+    weights = (0.8, 0.2)
+
+    expected_weight = ranked_event_expected_weight(
+        event_times,
+        event_weights=weights,
+        rank=1,
+        horizon=1.0,
+    )
+    swapped_identity = ranked_event_expected_weight(
+        event_times[:, ::-1],
+        event_weights=weights,
+        rank=1,
+        horizon=1.0,
+    )
+
+    assert expected_weight == pytest.approx((0.8 + 0.8 + 0.2) / 3.0)
+    assert swapped_identity == pytest.approx((0.2 + 0.2 + 0.8) / 3.0)
+    assert expected_weight != pytest.approx(swapped_identity)
+
+
+def test_exchangeable_ranked_event_expected_weight_uses_mean_exposure():
+    expected_weight = exchangeable_ranked_event_expected_weight(
+        0.60,
+        event_weights=(0.4, 0.2, 0.2, 0.2),
+    )
+
+    assert expected_weight == pytest.approx(0.60 * 0.25)
+
+
+@pytest.mark.parametrize(
+    ("event_times", "event_weights", "message"),
+    [
+        (get_numpy().ones((2, 2)), (1.0,), "one weight per event source"),
+        (get_numpy().ones((2, 2)), (0.5, -0.5), "non-negative"),
+        (get_numpy().ones((2, 2)), (0.0, 0.0), "positive total"),
+    ],
+)
+def test_ranked_event_expected_weight_rejects_invalid_weights(
+    event_times,
+    event_weights,
+    message,
+):
+    with pytest.raises(ValueError, match=message):
+        ranked_event_expected_weight(
+            event_times,
+            event_weights=event_weights,
+            rank=1,
+            horizon=1.0,
+        )
 
 
 @pytest.mark.parametrize(

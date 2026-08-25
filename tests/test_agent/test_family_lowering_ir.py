@@ -1056,6 +1056,8 @@ def test_nth_to_default_compiles_to_family_ir():
         observation_schedule=("2029-11-15",),
         reference_entities=("ACME", "BRAVO", "CHARLIE", "DELTA", "ECHO"),
         trigger_rank=1,
+        reference_weights=(0.4, 0.2, 0.2, 0.1, 0.1),
+        credit_spread=0.025,
     )
     blueprint = compile_semantic_contract(contract, requested_outputs=["price", "scenario_pnl"])
 
@@ -1069,11 +1071,15 @@ def test_nth_to_default_compiles_to_family_ir():
     assert family_ir.market_binding_symbol == "resolve_credit_basket_inputs"
     assert family_ir.rank_probability_symbol == "nth_to_default_probability"
     assert family_ir.default_time_sampler_symbol == "GaussianCopula"
-    assert family_ir.sampled_rank_symbol == "rank_trigger_probability"
-    assert family_ir.protection_payment_symbol == "ProtectionPayment"
-    assert family_ir.trigger_leg_symbol == "protection_payment_pv"
+    assert family_ir.analytical_rank_weight_symbol == "exchangeable_ranked_event_expected_weight"
+    assert family_ir.sampled_rank_symbol == "ranked_event_expected_weight"
+    assert family_ir.trigger_settlement_symbol == "TriggerSettlement"
+    assert family_ir.trigger_leg_symbol == "trigger_settlement_pv"
     assert family_ir.trigger_rank == 1
     assert family_ir.reference_entities == ("ACME", "BRAVO", "CHARLIE", "DELTA", "ECHO")
+    assert family_ir.reference_weights == (0.4, 0.2, 0.2, 0.1, 0.1)
+    assert family_ir.credit_spread == 0.025
+    assert family_ir.spread_risk_bump == 1.0e-4
     assert family_ir.required_input_ids == blueprint.required_market_data
     assert family_ir.requested_outputs == ("price", "scenario_pnl")
 
@@ -1382,17 +1388,17 @@ def test_nth_to_default_dispatches_from_binding_surface_not_route_id(monkeypatch
             ),
             PrimitiveRef(
                 "trellis.models.contingent_cashflows",
-                "rank_trigger_probability",
-                "rank_aggregator",
+                "ranked_event_expected_weight",
+                "rank_weight_aggregator",
             ),
             PrimitiveRef(
                 "trellis.models.contingent_cashflows",
-                "ProtectionPayment",
+                "TriggerSettlement",
                 "payoff_primitive",
             ),
             PrimitiveRef(
                 "trellis.models.contingent_cashflows",
-                "protection_payment_pv",
+                "trigger_settlement_pv",
                 "trigger_leg",
             ),
             route_id=synthetic_route_id,
@@ -1414,7 +1420,7 @@ def test_nth_to_default_dispatches_from_binding_surface_not_route_id(monkeypatch
     assert family_ir.pricing_mode == "monte_carlo"
     assert family_ir.market_binding_symbol == "resolve_credit_basket_inputs"
     assert family_ir.default_time_sampler_symbol == "GaussianCopula"
-    assert family_ir.sampled_rank_symbol == "rank_trigger_probability"
+    assert family_ir.sampled_rank_symbol == "ranked_event_expected_weight"
 
 
 def test_factor_state_simulation_ir_preserves_projection_and_valuation_contracts():

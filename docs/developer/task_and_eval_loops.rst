@@ -111,14 +111,18 @@ contract records a reason, missing capabilities, repair action, and optional
 follow-on issue. A declaration without concrete blocker ids is not enough to
 skip construction.
 
-The weighted nth-to-default extension task P006 uses this boundary while
-QUA-1237 owns name-exposure, ranked-loss settlement, and spread-risk semantics.
-Its homogeneous relatives T50 and E26 instead carry explicit comparison target
-contracts: analytical/copula targets bind
-``nth_to_default_probability`` and Monte Carlo targets bind
-``GaussianCopula``. This prevents a single helper-backed artifact from being
-reported as both methods and makes the validation bundle part of execution
-evidence.
+The weighted nth-to-default extension task P006 previously used this honest-
+block boundary while QUA-1237 owned the missing contract. It now carries
+explicit comparison target contracts: the analytical/copula target binds
+``nth_to_default_probability`` and exchangeable ranked exposure, while the
+Monte Carlo target binds ``GaussianCopula`` and identity-preserving sampled
+ranked exposure. Both publish native ``price`` and ``spread_cs01`` outputs.
+``cross_validate.output_tolerances_pct`` requests the named sensitivity from
+each artifact, retains it in the per-method task result, and makes disagreement
+part of the comparison verdict. This prevents a single helper-backed artifact
+from being reported as both methods and makes both binding and risk evidence
+part of execution proof. The same explicit target-binding rule remains in
+force for homogeneous relatives T50 and E26.
 
 Comparison target contracts
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~

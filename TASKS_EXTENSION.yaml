@@ -146,24 +146,6 @@ tasks:
 - id: P006
   title: 'Trellis extension: basket credit nth-to-default with custom basket weights'
   status: pending
-  expected_outcome: honest_block
-  expected_blocker_ids:
-  - semantic_product_contract_gap:weighted_name_exposures
-  - semantic_primitive_gap:ranked_loss_settlement
-  - semantic_risk_contract_gap:spread_sensitivities
-  honest_block_contract:
-    reason: weighted_nth_to_default_contract_gap
-    packet_type: semantic_product_contract_gap
-    summary: Weighted name exposures, ranked-loss settlement, and spread-risk semantics
-      are not yet defined for nth-to-default pricing; a homogeneous basket artifact
-      cannot satisfy this task.
-    missing_capabilities:
-    - weighted_name_exposure_semantics
-    - ranked_loss_settlement_primitive
-    - spread_sensitivity_contract
-    follow_on_issue: QUA-1237
-    suggested_action: Implement and validate the weighted nth-to-default semantic contract
-      in QUA-1237 before enabling P006 pricing.
   instrument_type: nth_to_default
   construct:
   - copula
@@ -172,6 +154,39 @@ tasks:
     price plus spread sensitivities.
   market_scenario_id: usd_credit_ig
   validation_policy: invariants_and_cross_method
+  cross_validate:
+    internal:
+    - weighted_rank_analytical
+    - weighted_rank_monte_carlo
+    tolerance_pct: 3.0
+    output_tolerances_pct:
+      spread_cs01: 15.0
+    target_contracts:
+      weighted_rank_analytical:
+        method: copula
+        route_id: credit_basket_nth_to_default
+        route_family: nth_to_default
+        backend_binding_id: trellis.models.contingent_cashflows.nth_to_default_probability
+        variant_parameters: {rank_evidence: one_factor_integration, exposure_contract: name_weighted_terminal, spread_risk: parallel_1bp}
+        validation_bundle_id: copula:nth_to_default
+        payoff_family: nth_to_default
+        exercise_style: none
+        model_family: credit_copula
+        underlying_asset_class: credit
+        observation_style: terminal
+      weighted_rank_monte_carlo:
+        method: monte_carlo
+        route_id: credit_basket_nth_to_default
+        route_family: nth_to_default
+        backend_binding_id: trellis.models.copulas.gaussian.GaussianCopula
+        variant_parameters: {rank_evidence: sampled_default_times, exposure_contract: name_weighted_terminal, spread_risk: common_random_numbers_1bp}
+        spec_overrides: {n_paths: 250000, seed: 42}
+        validation_bundle_id: monte_carlo:nth_to_default
+        payoff_family: nth_to_default
+        exercise_style: none
+        model_family: credit_copula
+        underlying_asset_class: credit
+        observation_style: terminal
   extension_contract:
     product: nth_to_default
     nth: 2

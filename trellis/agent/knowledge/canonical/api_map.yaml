@@ -78,31 +78,34 @@ single_name_default_event_composition:
     - "This card covers a single reference entity with deterministic discount/survival curves and fixed recovery; do not infer basket, copula, stochastic-rate, quanto, option, or calibration support"
 
 # ---------------------------------------------------------------------------
-# Homogeneous terminal rank-trigger composition
+# Name-weighted terminal rank-trigger composition
 # ---------------------------------------------------------------------------
-homogeneous_rank_trigger_composition:
+ranked_event_weight_composition:
   module: trellis.models.credit_basket_copula
   methods: [analytical, monte_carlo, copula]
   navigation:
-    aliases: [nth_to_default, first_to_default, default_order, rank_trigger, credit_basket]
+    aliases: [nth_to_default, first_to_default, default_order, rank_trigger, ranked_event_weight, weighted_credit_basket]
   modules:
     market_binding: trellis.models.credit_basket_copula
     analytical_rank_probability: trellis.models.contingent_cashflows
     sampled_dependence: trellis.models.copulas.gaussian
-    sampled_rank_reducer: trellis.models.contingent_cashflows
+    ranked_event_weight_reducers: trellis.models.contingent_cashflows
     cashflow_values: trellis.models.contingent_cashflows
   key_imports:
     - "from trellis.models.credit_basket_copula import resolve_credit_basket_inputs"
-    - "from trellis.models.contingent_cashflows import ProtectionPayment, nth_to_default_probability, protection_payment_pv, rank_trigger_probability"
+    - "from trellis.models.contingent_cashflows import TriggerSettlement, exchangeable_ranked_event_expected_weight, nth_to_default_probability, ranked_event_expected_weight, trigger_settlement_pv"
     - "from trellis.models.copulas.gaussian import GaussianCopula"
     - "from trellis.core.differentiable import get_numpy"
   notes:
-    - "Start with resolve_credit_basket_inputs; it binds one homogeneous terminal credit curve into horizon, survival/default mass, flat-equivalent hazard, correlation, recovery, discount factor, and pool size"
+    - "Start with resolve_credit_basket_inputs; it preserves ordered reference names and name-aligned exposure weights while binding horizon, marginal default mass, flat-equivalent hazard, correlation, recovery, discount factor, and pool size"
+    - "An explicit spread is a decimal annual representative single-name market quote; resolve_credit_basket_inputs maps it through hazard = spread / (1 - recovery) and uses it instead of the representative curve for marginal mass"
     - "For analytical or copula evidence, call nth_to_default_probability with the resolved marginal default mass and correlation; this is the equicorrelated one-factor terminal rank integral"
-    - "For Monte Carlo evidence, create one seeded GaussianCopula default-time matrix, preserve rows as persistent paths, and call rank_trigger_probability on that matrix; never resample names or ranks independently"
-    - "Construct ProtectionPayment from the resulting trigger probability and discount it with protection_payment_pv so loss-given-default, notional, and discounting remain visible"
+    - "Under homogeneous exchangeability, map analytical trigger probability to expected ranked exposure with exchangeable_ranked_event_expected_weight; weight permutations cannot change that expectation"
+    - "For Monte Carlo evidence, create one seeded GaussianCopula default-time matrix, preserve rows and name columns, and call ranked_event_expected_weight so the triggering name keeps its exposure identity"
+    - "Construct TriggerSettlement with total_notional * (1 - recovery) as amount and expected ranked exposure as trigger_weight, then discount it with trigger_settlement_pv"
+    - "Spread CS01 is PV(spread + 0.0001) - PV(spread); sampled base and bump must reuse the same seed so the comparison uses common random numbers"
     - "price_nth_to_default_basket remains compatibility and independent reference evidence only, not generated construction authority"
-    - "This bounded card assumes homogeneous names, terminal settlement, deterministic curves, equicorrelation, and fixed recovery; weighted name exposures, heterogeneous curves/recoveries, running spread legs, and spread sensitivities are unsupported pending QUA-1237"
+    - "This bounded card supports name weights with homogeneous marginal credit and recovery, terminal settlement, deterministic curves, equicorrelation, and parallel representative-spread CS01; heterogeneous curves/recoveries and running premium legs remain unsupported"
 
 # ---------------------------------------------------------------------------
 # Analytical Gaussian and scalar-root composition

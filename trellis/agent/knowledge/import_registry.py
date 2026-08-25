@@ -579,6 +579,8 @@ def _format_registry(registry: dict[str, tuple[str, ...]]) -> str:
         elif "trellis.curves." in mod:
             groups["Curves"].append(line)
         elif mod in {
+            "trellis.models.contingent_cashflows",
+            "trellis.models.credit_basket_copula",
             "trellis.models.observation_aggregation",
             "trellis.models.observation_returns",
             "trellis.models.payoffs",
@@ -717,7 +719,8 @@ from trellis.models.short_rate_bond import ResolvedShortRateBondInputs, price_ci
 from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForwardOptionMonteCarloResult, price_sabr_forward_option_hagan, price_sabr_forward_option_monte_carlo, price_sabr_forward_option_monte_carlo_result, resolve_sabr_forward_option_inputs
 
 ### Models — Payoff Composition
-from trellis.models.contingent_cashflows import CouponAccrual, DefaultEventGrid, DefaultEventInterval, FirstEventWeights, ProtectionPayment, build_default_event_grid, conditional_event_probabilities_from_curve, coupon_cashflow_pv, expected_first_event_weights, nth_to_default_probability, protection_payment_pv, rank_trigger_probability, sample_first_event_weights
+from trellis.models.contingent_cashflows import CouponAccrual, DefaultEventGrid, DefaultEventInterval, FirstEventWeights, ProtectionPayment, TriggerSettlement, build_default_event_grid, conditional_event_probabilities_from_curve, coupon_cashflow_pv, exchangeable_ranked_event_expected_weight, expected_first_event_weights, nth_to_default_probability, protection_payment_pv, rank_trigger_probability, ranked_event_expected_weight, sample_first_event_weights, trigger_settlement_pv
+from trellis.models.credit_basket_copula import CreditBasketTrancheResult, CreditLossDistributionSpecLike, ResolvedCreditBasketInputs, price_credit_basket_tranche, price_credit_basket_tranche_result, price_credit_portfolio_loss_distribution_monte_carlo, price_credit_portfolio_loss_distribution_recursive, price_credit_portfolio_loss_distribution_transform_proxy, resolve_credit_basket_correlation, resolve_credit_basket_inputs
 
 ### Models — Trees
 from trellis.models.bermudan_swaption_tree import BermudanSwaptionTreeSpec, compile_bermudan_swaption_contract_spec, resolve_bermudan_swaption_tree_inputs

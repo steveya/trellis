@@ -7094,6 +7094,76 @@ def test_deterministic_exact_binding_module_materializes_sampled_nth_to_default_
     assert EVALUATE_SENTINEL not in generated.code
 
 
+@pytest.mark.parametrize(
+    ("method", "evidence_ref", "expected_line", "forbidden_line"),
+    [
+        (
+            "copula",
+            "trellis.models.contingent_cashflows.nth_to_default_probability",
+            "expected_weight = exchangeable_ranked_event_expected_weight(",
+            "default_times = copula.sample_default_times(",
+        ),
+        (
+            "monte_carlo",
+            "trellis.models.copulas.gaussian.GaussianCopula",
+            "expected_weight = ranked_event_expected_weight(",
+            "trigger_probability = nth_to_default_probability(",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_weighted_nth_to_default_risk(
+    method,
+    evidence_ref,
+    expected_line,
+    forbidden_line,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.core.differentiable.get_numpy",
+            "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+            evidence_ref,
+            "trellis.models.contingent_cashflows.exchangeable_ranked_event_expected_weight",
+            "trellis.models.contingent_cashflows.ranked_event_expected_weight",
+            "trellis.models.contingent_cashflows.TriggerSettlement",
+            "trellis.models.contingent_cashflows.trigger_settlement_pv",
+        ),
+        primitive_plan=None,
+        method=method,
+        instrument_type="nth_to_default",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["nth_to_default"],
+        "Weighted nth-to-default exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "basket_names: tuple[str, ...] = ()" in generated.code
+    assert "basket_weights: tuple[float, ...] = ()" in generated.code
+    assert "spread: float | None = None" in generated.code
+    assert expected_line in generated.code
+    assert forbidden_line not in generated.code
+    assert "settlement = TriggerSettlement(" in generated.code
+    assert "return trigger_settlement_pv(settlement)" in generated.code
+    assert "def benchmark_outputs(" in generated.code
+    assert "spread_cs01" in generated.code
+    assert "replace(self._spec, spread=float(spread) + 1.0e-4)" in generated.code
+    assert "price_nth_to_default_basket" not in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_extract_fragment_body_repairs_orphan_indentation():
     from trellis.agent.executor import _extract_fragment_body
 

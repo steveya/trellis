@@ -597,17 +597,18 @@ class TestCreditRoutes:
     _ANALYTICAL_NTD_PRIMITIVES = frozenset({
         ("trellis.models.credit_basket_copula", "resolve_credit_basket_inputs", "market_binding"),
         ("trellis.models.contingent_cashflows", "nth_to_default_probability", "numerical_evidence"),
-        ("trellis.models.contingent_cashflows", "ProtectionPayment", "payoff_primitive"),
-        ("trellis.models.contingent_cashflows", "protection_payment_pv", "trigger_leg"),
+        ("trellis.models.contingent_cashflows", "exchangeable_ranked_event_expected_weight", "rank_weight_aggregator"),
+        ("trellis.models.contingent_cashflows", "TriggerSettlement", "payoff_primitive"),
+        ("trellis.models.contingent_cashflows", "trigger_settlement_pv", "trigger_leg"),
     })
 
     _SAMPLED_NTD_PRIMITIVES = frozenset({
         ("trellis.models.credit_basket_copula", "resolve_credit_basket_inputs", "market_binding"),
         ("trellis.core.differentiable", "get_numpy", "array_backend"),
         ("trellis.models.copulas.gaussian", "GaussianCopula", "default_time_sampler"),
-        ("trellis.models.contingent_cashflows", "rank_trigger_probability", "rank_aggregator"),
-        ("trellis.models.contingent_cashflows", "ProtectionPayment", "payoff_primitive"),
-        ("trellis.models.contingent_cashflows", "protection_payment_pv", "trigger_leg"),
+        ("trellis.models.contingent_cashflows", "ranked_event_expected_weight", "rank_weight_aggregator"),
+        ("trellis.models.contingent_cashflows", "TriggerSettlement", "payoff_primitive"),
+        ("trellis.models.contingent_cashflows", "trigger_settlement_pv", "trigger_leg"),
     })
 
     def test_nth_to_default_collapsed_route_preserves_analytical_primitive_surface(self, registry):

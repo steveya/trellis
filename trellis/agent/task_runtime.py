@@ -2356,6 +2356,20 @@ def run_task(
                     method_results[target_id]["artifact_binding"] = dict(
                         artifact_binding
                     )
+            comparison_outputs = {
+                str(target_id): dict(target_outputs)
+                for target_id, target_outputs in dict(
+                    cross_validation.get("outputs") or {}
+                ).items()
+            }
+            for target_id, target_outputs in comparison_outputs.items():
+                if target_id not in method_results or "price" not in target_outputs:
+                    continue
+                method_results[target_id]["price"] = float(target_outputs["price"])
+                if any(name != "price" for name in target_outputs):
+                    method_results[target_id]["benchmark_outputs"] = dict(
+                        target_outputs
+                    )
             _write_benchmark_sidecars(method_results, cross_validation)
             promotion_candidates: dict[str, str] = {}
             if (
@@ -2426,6 +2440,7 @@ def run_task(
                 "preferred_method": None,
                 "reflection": reflection_payload,
                 "cross_validation": cross_validation,
+                "comparison_outputs": comparison_outputs,
             })
             generation_policy_errors = {
                 target_id: dict(payload.get("generation_policy_error") or {})
@@ -4643,6 +4658,14 @@ def _cross_validate_comparison_task(
     settle = getattr(market_state, "settlement", DEFAULT_SETTLEMENT)
 
     priced: dict[str, float] = {}
+    outputs: dict[str, dict[str, float]] = {}
+    output_errors: dict[str, str] = {}
+    output_tolerances = {
+        str(name): float(tolerance)
+        for name, tolerance in dict(
+            configured_targets.get("output_tolerances_pct") or {}
+        ).items()
+    }
     price_errors: dict[str, str] = {}
     artifact_coherence: dict[str, dict[str, Any]] = {}
     for target in comparison_targets:
@@ -4734,7 +4757,24 @@ def _cross_validate_comparison_task(
             if payoff is None:
                 continue
             try:
-                priced[target.target_id] = float(price_fn(payoff, market_state))
+                target_outputs: dict[str, float] = {}
+                if output_tolerances:
+                    benchmark_outputs_fn = getattr(payoff, "benchmark_outputs", None)
+                    if callable(benchmark_outputs_fn):
+                        try:
+                            native_payload = benchmark_outputs_fn(market_state)
+                            if isinstance(native_payload, Mapping):
+                                target_outputs = {
+                                    str(name): float(value)
+                                    for name, value in dict(native_payload).items()
+                                    if isinstance(value, (int, float))
+                                }
+                        except Exception as exc:
+                            output_errors[target.target_id] = str(exc)
+                if "price" not in target_outputs:
+                    target_outputs["price"] = float(price_fn(payoff, market_state))
+                priced[target.target_id] = float(target_outputs["price"])
+                outputs[target.target_id] = target_outputs
             except Exception as exc:
                 price_errors[target.target_id] = str(exc)
 
@@ -4794,6 +4834,73 @@ def _cross_validate_comparison_task(
             else:
                 failed_targets.append(target_id)
 
+    output_validation: dict[str, dict[str, Any]] = {}
+    for output_name, output_tolerance_pct in output_tolerances.items():
+        values = {
+            target_id: target_outputs[output_name]
+            for target_id, target_outputs in outputs.items()
+            if output_name in target_outputs
+        }
+        missing_targets = [
+            target_id for target_id in priced if target_id not in values
+        ]
+        if reference_target in values:
+            output_reference_target = reference_target
+            output_reference_value = values[reference_target]
+            output_comparable_targets = [
+                target_id
+                for target_id in comparable_targets
+                if target_id in values
+            ]
+        elif len(values) >= 2 and declared_reference_target is None:
+            output_reference_target = "median_internal"
+            output_reference_value = median(values.values())
+            output_comparable_targets = list(values)
+        else:
+            output_reference_target = reference_target or declared_reference_target
+            output_reference_value = None
+            output_comparable_targets = []
+
+        output_deviations: dict[str, float] = {}
+        output_passed_targets: list[str] = []
+        output_failed_targets: list[str] = []
+        if output_reference_value is not None:
+            denominator = max(abs(output_reference_value), 1e-12)
+            tolerance_amount = denominator * output_tolerance_pct / 100.0
+            for target_id in output_comparable_targets:
+                deviation_pct = (
+                    abs(values[target_id] - output_reference_value)
+                    / denominator
+                    * 100.0
+                )
+                output_deviations[target_id] = round(deviation_pct, 4)
+                if abs(values[target_id] - output_reference_value) <= tolerance_amount:
+                    output_passed_targets.append(target_id)
+                else:
+                    output_failed_targets.append(target_id)
+
+        if missing_targets or output_reference_value is None:
+            output_status = "insufficient_results"
+        elif output_failed_targets:
+            output_status = "failed"
+        else:
+            output_status = "passed"
+        output_validation[output_name] = {
+            "status": output_status,
+            "tolerance_pct": output_tolerance_pct,
+            "values": values,
+            "reference_target": output_reference_target,
+            "reference_value": output_reference_value,
+            "deviations_pct": output_deviations,
+            "passed_targets": output_passed_targets,
+            "failed_targets": output_failed_targets,
+            "missing_targets": missing_targets,
+        }
+
+    output_validation_failed = any(
+        report["status"] != "passed" for report in output_validation.values()
+    )
+
     if coherence_failed:
         status = "semantic_artifact_mismatch"
     elif reference_price is None and (
@@ -4804,7 +4911,7 @@ def _cross_validate_comparison_task(
         status = "insufficient_results"
     elif price_errors:
         status = "pricing_error"
-    elif failed_targets:
+    elif failed_targets or output_validation_failed:
         status = "failed"
     else:
         status = "passed"
@@ -4813,6 +4920,9 @@ def _cross_validate_comparison_task(
         "status": status,
         "configured_targets": configured_targets,
         "prices": priced,
+        "outputs": outputs,
+        "output_errors": output_errors,
+        "output_validation": output_validation,
         "price_errors": price_errors,
         "artifact_coherence": artifact_coherence,
         "artifact_coherence_failures": {

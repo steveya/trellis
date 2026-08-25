@@ -813,6 +813,13 @@ def _family_ir_trace_summary(family_ir_payload: dict[str, Any]) -> dict[str, Any
         "protection_payment_symbol": family_ir_payload.get(
             "protection_payment_symbol"
         ),
+        "analytical_rank_weight_symbol": family_ir_payload.get(
+            "analytical_rank_weight_symbol"
+        ),
+        "sampled_rank_symbol": family_ir_payload.get("sampled_rank_symbol"),
+        "trigger_settlement_symbol": family_ir_payload.get(
+            "trigger_settlement_symbol"
+        ),
         "scheduled_leg_symbol": family_ir_payload.get("scheduled_leg_symbol"),
         "trigger_leg_symbol": family_ir_payload.get("trigger_leg_symbol"),
         "market_mapping": family_ir_payload.get("market_mapping"),

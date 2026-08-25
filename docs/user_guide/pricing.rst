@@ -664,19 +664,30 @@ The bounded typed route currently fixes the weekend calendar, following
 business-day adjustment, no-roll schedule, short-last stub, and zero payment
 lag; it rejects untyped convention overrides rather than silently changing PV.
 
-For homogeneous nth-to-default protection, generated construction starts with
-``resolve_credit_basket_inputs(...)``. Analytical and ``copula`` comparison
-targets pass the resolved terminal marginal default mass and equicorrelation to
-``nth_to_default_probability(...)``. Monte Carlo targets instead bind an
-explicit path count and seed, sample one persistent path-by-name default-time
-matrix with ``GaussianCopula``, and reduce the requested order statistic with
-``rank_trigger_probability(...)``. Both lanes construct
-``ProtectionPayment`` and call ``protection_payment_pv(...)`` explicitly.
+For homogeneous-marginal nth-to-default protection, generated construction
+starts with ``resolve_credit_basket_inputs(...)``. Ordered ``basket_names`` and
+aligned non-negative ``basket_weights`` define the terminal exposure paid when
+the requested name rank defaults by maturity. Analytical and ``copula``
+comparison targets combine ``nth_to_default_probability(...)`` with
+``exchangeable_ranked_event_expected_weight(...)``; because the marginal model
+is exchangeable, permuting the weights cannot change that analytical value.
+Monte Carlo targets bind an explicit path count and seed, sample one persistent
+path-by-name default-time matrix with ``GaussianCopula``, and call
+``ranked_event_expected_weight(...)`` so the triggering name keeps its aligned
+weight. Both lanes assemble ``TriggerSettlement`` and call
+``trigger_settlement_pv(...)`` explicitly.
+
+The optional ``spread`` field is a representative decimal annual single-name
+market credit spread (``0.025`` means 250 bp), not a running coupon. Within this
+bounded route it maps to a flat-equivalent hazard as
+``spread / (1 - recovery)``. ``benchmark_outputs(...)`` returns ``price`` and
+``spread_cs01``, where CS01 is the currency PV change for a +1 bp spread bump;
+the sampled lane reuses its seed for common-random-number evidence.
 ``price_nth_to_default_basket(...)`` remains available as compatibility and
 independent reference evidence, but it is not generated construction
-authority. This route does not define weighted name exposures, heterogeneous
-credit inputs or recovery, running spread legs, or spread sensitivities; such
-requests block rather than being approximated as homogeneous protection.
+authority. Heterogeneous name-level credit curves or recoveries, running
+premium legs, stochastic rates/recovery, QMC certification, and general
+portfolio-loss settlement remain unsupported and must fail closed.
 
 For ranked-observation baskets, the generated construction surface is the
 basket resolver, implied-rate conversion, correlated GBM process, generic

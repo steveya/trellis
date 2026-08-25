@@ -500,6 +500,81 @@ def rank_trigger_probability(
     return float(np.mean(ranked_event_times <= float(horizon)))
 
 
+def ranked_event_expected_weight(
+    event_times,
+    *,
+    event_weights,
+    rank: int,
+    horizon: float,
+) -> float:
+    """Return sampled expected weight carried by one ranked event.
+
+    Rows are persistent paths and columns retain event-source identity.  A path
+    contributes the weight aligned to its ``rank``-th event when that event
+    occurs by ``horizon`` and zero otherwise.  This keeps exposure identity
+    separate from product settlement so credit, insurance, reliability, and
+    other ranked-event callers can reuse the same reducer.
+    """
+    paths = np.asarray(event_times, dtype=float)
+    if paths.ndim != 2:
+        raise ValueError("event_times must be a two-dimensional path-by-event array")
+    if int(paths.shape[0]) <= 0:
+        raise ValueError("event_times must contain at least one path")
+    event_count = int(paths.shape[1])
+    normalized_rank = int(rank)
+    if normalized_rank <= 0 or normalized_rank > event_count:
+        raise ValueError("rank must lie in [1, number of event sources]")
+
+    weights = _validated_event_weights(event_weights, event_count=event_count)
+    ranked_indices = np.argsort(paths, axis=1)[:, normalized_rank - 1]
+    row_indices = np.arange(int(paths.shape[0]))
+    ranked_times = paths[row_indices, ranked_indices]
+    ranked_weights = weights[ranked_indices]
+    contributions = np.where(
+        ranked_times <= float(horizon),
+        ranked_weights,
+        0.0,
+    )
+    return float(np.mean(contributions))
+
+
+def exchangeable_ranked_event_expected_weight(
+    trigger_probability: float,
+    *,
+    event_weights,
+) -> float:
+    """Return exact expected ranked-event weight under exchangeability.
+
+    When event sources share one continuous exchangeable law, each source is
+    equally likely to occupy a given rank.  The expected weight of a triggered
+    rank is therefore its trigger probability times the arithmetic mean of the
+    aligned source weights.
+    """
+    probability = float(trigger_probability)
+    if not 0.0 <= probability <= 1.0:
+        raise ValueError("trigger_probability must lie in [0, 1]")
+    weights = _validated_event_weights(event_weights)
+    return float(probability * float(np.mean(weights)))
+
+
+def _validated_event_weights(event_weights, *, event_count: int | None = None):
+    """Return one finite non-negative event-weight vector."""
+    weights = np.asarray(event_weights, dtype=float)
+    if weights.ndim != 1:
+        raise ValueError("event_weights must be one-dimensional")
+    if int(weights.shape[0]) <= 0:
+        raise ValueError("event_weights must contain at least one weight")
+    if event_count is not None and int(weights.shape[0]) != int(event_count):
+        raise ValueError("event_weights must provide one weight per event source")
+    if not bool(np.all(np.isfinite(weights))):
+        raise ValueError("event_weights must be finite")
+    if bool(np.any(weights < 0.0)):
+        raise ValueError("event_weights must be non-negative")
+    if float(np.sum(weights)) <= 0.0:
+        raise ValueError("event_weights must have positive total weight")
+    return weights
+
+
 __all__ = [
     "CouponAccrual",
     "DefaultEventGrid",
@@ -512,6 +587,7 @@ __all__ = [
     "build_default_event_grid",
     "conditional_event_probabilities_from_curve",
     "coupon_cashflow_pv",
+    "exchangeable_ranked_event_expected_weight",
     "expected_first_event_weights",
     "interval_default_probability_from_survival",
     "nth_to_default_probability",
@@ -519,6 +595,7 @@ __all__ = [
     "project_prepayment_step",
     "protection_payment_pv",
     "rank_trigger_probability",
+    "ranked_event_expected_weight",
     "sample_first_event_weights",
     "terminal_default_probability",
     "trigger_settlement_pv",

@@ -204,10 +204,13 @@ bindings:
             symbol: nth_to_default_probability
             role: numerical_evidence
           - module: trellis.models.contingent_cashflows
-            symbol: ProtectionPayment
+            symbol: exchangeable_ranked_event_expected_weight
+            role: rank_weight_aggregator
+          - module: trellis.models.contingent_cashflows
+            symbol: TriggerSettlement
             role: payoff_primitive
           - module: trellis.models.contingent_cashflows
-            symbol: protection_payment_pv
+            symbol: trigger_settlement_pv
             role: trigger_leg
       - when:
           methods: [monte_carlo]
@@ -222,13 +225,13 @@ bindings:
             symbol: GaussianCopula
             role: default_time_sampler
           - module: trellis.models.contingent_cashflows
-            symbol: rank_trigger_probability
-            role: rank_aggregator
+            symbol: ranked_event_expected_weight
+            role: rank_weight_aggregator
           - module: trellis.models.contingent_cashflows
-            symbol: ProtectionPayment
+            symbol: TriggerSettlement
             role: payoff_primitive
           - module: trellis.models.contingent_cashflows
-            symbol: protection_payment_pv
+            symbol: trigger_settlement_pv
             role: trigger_leg
 
   - route_id: correlated_basket_monte_carlo

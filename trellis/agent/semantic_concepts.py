@@ -794,8 +794,9 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
         description=(
             "Bounded nth-to-default protection with one representative credit "
             "curve, fixed recovery, equicorrelation, and terminal settlement. "
-            "Analytical evidence integrates rank probability; Monte Carlo "
-            "evidence samples persistent Gaussian-copula default times."
+            "Analytical evidence integrates rank probability and exchangeable "
+            "expected exposure; Monte Carlo evidence preserves the triggering "
+            "name identity on persistent Gaussian-copula default-time paths."
         ),
         concept_role="product_contract",
         aliases=(
@@ -811,13 +812,15 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
             "default_trigger_n",
             "maturity_date",
             "recovery_rate",
+            "name_aligned_exposure_policy",
         ),
         required_primitives=(
             "resolve_credit_basket_inputs",
             "nth_to_default_probability",
             "gaussian_copula_default_times",
-            "rank_trigger_probability",
-            "protection_payment",
+            "exchangeable_ranked_event_expected_weight",
+            "ranked_event_expected_weight",
+            "trigger_settlement",
         ),
         required_market_inputs=(
             "discount_curve",

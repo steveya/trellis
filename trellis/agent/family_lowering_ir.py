@@ -668,19 +668,23 @@ CreditDefaultSwapIR = EventTriggeredTwoLeggedContractIR
 
 @dataclass(frozen=True)
 class NthToDefaultIR(BaseFamilyLoweringIR):
-    """Typed lowering payload for explicit homogeneous rank-trigger routes."""
+    """Typed lowering payload for explicit name-weighted rank-trigger routes."""
 
     pricing_mode: str = "analytical"
     market_binding_symbol: str = "resolve_credit_basket_inputs"
     rank_probability_symbol: str = "nth_to_default_probability"
+    analytical_rank_weight_symbol: str = "exchangeable_ranked_event_expected_weight"
     default_time_sampler_symbol: str = "GaussianCopula"
-    sampled_rank_symbol: str = "rank_trigger_probability"
-    protection_payment_symbol: str = "ProtectionPayment"
-    trigger_leg_symbol: str = "protection_payment_pv"
-    market_mapping: str = "homogeneous_credit_curve_to_terminal_rank_trigger_payment"
+    sampled_rank_symbol: str = "ranked_event_expected_weight"
+    trigger_settlement_symbol: str = "TriggerSettlement"
+    trigger_leg_symbol: str = "trigger_settlement_pv"
+    market_mapping: str = "name_aligned_credit_exposure_to_terminal_ranked_settlement"
     schedule_role: str = "observation_dates"
     trigger_rank: int = 1
     reference_entities: tuple[str, ...] = ()
+    reference_weights: tuple[float, ...] = ()
+    credit_spread: float | None = None
+    spread_risk_bump: float = 1.0e-4
     observation_dates: tuple[str, ...] = ()
     observable_ids: tuple[str, ...] = ()
     observable_types: tuple[str, ...] = ()
@@ -1297,17 +1301,25 @@ def _binding_supports_nth_to_default(
     del route_id
     common_surface = (
         _binding_has_symbol(binding_spec, "market_binding", "resolve_credit_basket_inputs")
-        and _binding_has_symbol(binding_spec, "payoff_primitive", "ProtectionPayment")
-        and _binding_has_symbol(binding_spec, "trigger_leg", "protection_payment_pv")
+        and _binding_has_symbol(binding_spec, "payoff_primitive", "TriggerSettlement")
+        and _binding_has_symbol(binding_spec, "trigger_leg", "trigger_settlement_pv")
     )
     analytical_surface = _binding_has_symbol(
         binding_spec,
         "numerical_evidence",
         "nth_to_default_probability",
+    ) and _binding_has_symbol(
+        binding_spec,
+        "rank_weight_aggregator",
+        "exchangeable_ranked_event_expected_weight",
     )
     sampled_surface = (
         _binding_has_symbol(binding_spec, "default_time_sampler", "GaussianCopula")
-        and _binding_has_symbol(binding_spec, "rank_aggregator", "rank_trigger_probability")
+        and _binding_has_symbol(
+            binding_spec,
+            "rank_weight_aggregator",
+            "ranked_event_expected_weight",
+        )
     )
     return common_surface and (analytical_surface or sampled_surface)
 
@@ -2792,6 +2804,11 @@ def _build_nth_to_default_ir(
         if _binding_has_symbol(binding_spec, "default_time_sampler", "GaussianCopula")
         else "analytical"
     )
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    explicit_weights = tuple(float(weight) for weight in (term_fields.get("basket_weights") or ()))
+    reference_weights = explicit_weights or tuple(1.0 for _ in reference_entities)
+    credit_spread_value = term_fields.get("spread")
+    credit_spread = None if credit_spread_value is None else float(credit_spread_value)
 
     return NthToDefaultIR(
         route_id=route_id,
@@ -2806,6 +2823,9 @@ def _build_nth_to_default_ir(
         pricing_mode=pricing_mode,
         trigger_rank=trigger_rank,
         reference_entities=reference_entities,
+        reference_weights=reference_weights,
+        credit_spread=credit_spread,
+        spread_risk_bump=float(term_fields.get("spread_risk_bump") or 1.0e-4),
         observation_dates=tuple(product.timeline.observation_dates or product.observation_schedule),
         observable_ids=tuple(item.observable_id for item in product.observables),
         observable_types=tuple(item.observable_type for item in product.observables),

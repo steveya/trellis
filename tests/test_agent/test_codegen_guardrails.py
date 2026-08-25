@@ -1527,9 +1527,9 @@ def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
     assert {
         "resolve_credit_basket_inputs",
         "GaussianCopula",
-        "rank_trigger_probability",
-        "ProtectionPayment",
-        "protection_payment_pv",
+        "ranked_event_expected_weight",
+        "TriggerSettlement",
+        "trigger_settlement_pv",
     }.issubset(primitive_symbols)
     assert "price_nth_to_default_basket" not in card
     assert "single-name CDS" not in card
