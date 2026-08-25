@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-08-24`
+Status mirror last synced: `2026-08-25`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
