@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-08-24`
+Status mirror last synced: `2026-08-25`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
@@ -72,7 +72,7 @@ Status mirror last synced: `2026-08-24`
 | `QUA-1233` | Semantic ZCB option: raw Jamshidian and partial-horizon lattice composition | Done |
 | `QUA-1234` | Semantic CDS: survival-weighted leg and first-event composition | Done |
 | `QUA-1235` | Semantic nth-to-default: rank-trigger primitive composition | Done |
-| `QUA-1237` | Semantic weighted NTD: name-level exposure and rank-loss contract | Backlog |
+| `QUA-1237` | Semantic weighted NTD: name-level exposure and rank-loss contract | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -163,9 +163,10 @@ Status mirror last synced: `2026-08-24`
     times, generic rank-trigger reduction, and explicit protection-payment PV;
     retain product wrappers only as compatibility/reference evidence and make
     weighted P006 fail closed.
-24. Apply QUA-1237 next to define name-level exposure, ranked-loss, and spread
-    semantics before migrating P006 from its certified honest block to a
-    genuinely weighted primitive-composed pricing result.
+24. Apply QUA-1237 to weighted nth-to-default pricing: preserve name-aligned
+    exposure through sampled rank identity and exact exchangeable analytical
+    reduction, compose terminal trigger settlement, bind representative-spread
+    CS01, and migrate P006 from its certified honest block to price/risk proof.
 
 ## Completion Evidence
 
