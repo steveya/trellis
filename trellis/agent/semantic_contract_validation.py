@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import math
 import re
+from dataclasses import dataclass
 from types import MappingProxyType
 
 import trellis.core.capabilities as capability_registry
@@ -2323,10 +2324,21 @@ def _validate_nth_to_default_shape(
             errors.append(
                 "Nth-to-default basket weights must have the same length as reference entities."
             )
-        elif any(float(weight) < 0.0 for weight in weights):
-            errors.append("Nth-to-default basket weights must be non-negative.")
-        elif abs(sum(float(weight) for weight in weights) - 1.0) > 1.0e-10:
-            errors.append("Nth-to-default basket weights must sum to 1.")
+        else:
+            try:
+                normalized_weights = tuple(float(weight) for weight in weights)
+            except (TypeError, ValueError):
+                normalized_weights = ()
+            if not normalized_weights or any(
+                not math.isfinite(weight) for weight in normalized_weights
+            ):
+                errors.append(
+                    "Nth-to-default basket weights must be finite numeric values."
+                )
+            elif any(weight < 0.0 for weight in normalized_weights):
+                errors.append("Nth-to-default basket weights must be non-negative.")
+            elif abs(sum(normalized_weights) - 1.0) > 1.0e-10:
+                errors.append("Nth-to-default basket weights must sum to 1.")
     spread = term_fields.get("spread")
     if spread is not None and not 0.0 <= float(spread) < 1.0:
         errors.append("Nth-to-default spread must be a decimal annual quote in [0, 1).")

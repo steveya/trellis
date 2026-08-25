@@ -47,7 +47,10 @@ class NthToDefaultPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        return {"credit_curve", "discount_curve"}
+        requirements = {"discount_curve"}
+        if self._spec.spread is None:
+            requirements.add("credit_curve")
+        return requirements
 
     def evaluate(self, market_state: MarketState) -> float:
         spec = self._spec

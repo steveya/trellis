@@ -592,11 +592,9 @@ def _hydrate_spec_schema_defaults_from_semantics(
     if not term_fields:
         return spec_schema
 
-    spec_name = str(getattr(spec_schema, "spec_name", "") or "")
-    if spec_name not in {"SwaptionSpec", "BermudanSwaptionSpec"}:
-        return spec_schema
-
     from trellis.agent.planner import FieldDef, SpecSchema
+
+    spec_name = str(getattr(spec_schema, "spec_name", "") or "")
 
     def _enum_default(prefix: str, raw_value: object | None) -> str | None:
         if raw_value in {None, ""}:
@@ -609,23 +607,61 @@ def _hydrate_spec_schema_defaults_from_semantics(
         return f"{prefix}.{text}"
 
     overrides: dict[str, str] = {}
-    day_count_default = (
-        _enum_default("DayCountConvention", term_fields.get("fixed_leg_day_count"))
-        or _enum_default("DayCountConvention", term_fields.get("day_count"))
-    )
-    if day_count_default is not None:
-        overrides["day_count"] = day_count_default
+    if spec_name in {"SwaptionSpec", "BermudanSwaptionSpec"}:
+        day_count_default = (
+            _enum_default("DayCountConvention", term_fields.get("fixed_leg_day_count"))
+            or _enum_default("DayCountConvention", term_fields.get("day_count"))
+        )
+        if day_count_default is not None:
+            overrides["day_count"] = day_count_default
 
-    swap_frequency_default = _enum_default(
-        "Frequency",
-        term_fields.get("payment_frequency") or term_fields.get("swap_frequency"),
-    )
-    if swap_frequency_default is not None:
-        overrides["swap_frequency"] = swap_frequency_default
+        swap_frequency_default = _enum_default(
+            "Frequency",
+            term_fields.get("payment_frequency") or term_fields.get("swap_frequency"),
+        )
+        if swap_frequency_default is not None:
+            overrides["swap_frequency"] = swap_frequency_default
 
-    rate_index = term_fields.get("rate_index")
-    if rate_index not in {None, ""}:
-        overrides["rate_index"] = str(rate_index).strip()
+        rate_index = term_fields.get("rate_index")
+        if rate_index not in {None, ""}:
+            overrides["rate_index"] = str(rate_index).strip()
+    elif spec_name == "NthToDefaultSpec":
+        reference_names = tuple(getattr(product, "constituents", ()) or ())
+        basket_weights = tuple(term_fields.get("basket_weights", ()) or ())
+        trigger_rank = max(int(getattr(product, "selection_count", 1) or 1), 1)
+        observation_schedule = tuple(
+            getattr(product, "observation_schedule", ()) or ()
+        )
+
+        if reference_names:
+            overrides["n_names"] = str(len(reference_names))
+            overrides["basket_names"] = repr(reference_names)
+        overrides["n_th"] = str(trigger_rank)
+        if basket_weights:
+            overrides["basket_weights"] = repr(
+                tuple(float(weight) for weight in basket_weights)
+            )
+        spread = term_fields.get("spread")
+        if spread is not None:
+            overrides["spread"] = repr(float(spread))
+        if observation_schedule:
+            maturity = observation_schedule[-1]
+            try:
+                maturity_date = (
+                    maturity
+                    if isinstance(maturity, date)
+                    else date.fromisoformat(str(maturity))
+                )
+            except ValueError:
+                maturity_date = None
+            if maturity_date is not None:
+                overrides["end_date"] = (
+                    "date("
+                    f"{maturity_date.year}, {maturity_date.month}, {maturity_date.day}"
+                    ")"
+                )
+    else:
+        return spec_schema
 
     if not overrides:
         return spec_schema
@@ -4137,6 +4173,15 @@ def _generate_skeleton(
     fields_block = "\n".join(field_lines)
 
     requirements_str = ", ".join(f'"{r}"' for r in sorted(spec_schema.requirements))
+    if spec_schema.spec_name == "NthToDefaultSpec" and "credit_curve" in set(
+        spec_schema.requirements
+    ):
+        requirements_body = '''        requirements = {"discount_curve"}
+        if self._spec.spread is None:
+            requirements.add("credit_curve")
+        return requirements'''
+    else:
+        requirements_body = f"        return {{{requirements_str}}}"
     import_lines = ["from trellis.core.payoff import PricingValue"]
     import_lines.extend(_skeleton_type_import_lines(spec_schema))
     import_lines.extend(_skeleton_exact_binding_import_lines(generation_plan))
@@ -4175,7 +4220,7 @@ class {spec_schema.class_name}:
 
     @property
     def requirements(self) -> set[str]:
-        return {{{requirements_str}}}
+{requirements_body}
 
     def evaluate(self, market_state: MarketState) -> PricingValue:
 {evaluate_preamble}{EVALUATE_SENTINEL}
@@ -10756,11 +10801,11 @@ def _instrument_disambiguation_lines(
     if instrument == "nth_to_default":
         return (
             "Treat this request as nth_to_default / multi-name credit, not a single-name CDS.",
-            "Resolve the homogeneous terminal basket with resolve_credit_basket_inputs, preserve rank bounds, and construct ProtectionPayment plus protection_payment_pv explicitly.",
+            "Resolve the name-aligned terminal basket with resolve_credit_basket_inputs, preserve rank bounds, and construct TriggerSettlement plus trigger_settlement_pv explicitly.",
             "Analytical/copula targets call nth_to_default_probability then exchangeable_ranked_event_expected_weight; Monte Carlo targets sample one seeded GaussianCopula default-time matrix and reduce it with ranked_event_expected_weight so triggering-name exposure identity is preserved.",
             "Construct TriggerSettlement and trigger_settlement_pv explicitly. Treat spread as a decimal annual representative market quote and compute spread_cs01 as PV(spread + 0.0001) - PV(spread), reusing the same seed for sampled base and bump.",
             "price_nth_to_default_basket is compatibility/reference evidence only, not generated construction authority.",
-            "Weighted names, heterogeneous credit inputs, running spread legs, or spread sensitivities must block until their semantic contracts are explicit.",
+            "Heterogeneous name-level credit inputs or recoveries, running premium legs, stochastic rates or recovery, QMC certification, and general portfolio-loss settlement must block.",
         )
     return ()
 

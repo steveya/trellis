@@ -100,6 +100,77 @@ def test_public_nth_to_default_supports_weighted_spread_price_and_cs01():
     assert outputs["spread_cs01"] > 0.0
 
 
+def test_spread_quoted_nth_to_default_does_not_require_a_credit_curve():
+    from trellis.engine.payoff_pricer import price_payoff
+    from trellis.instruments._agent.nthtodefault import (
+        NthToDefaultPayoff as AgentNthToDefaultPayoff,
+        NthToDefaultSpec as AgentNthToDefaultSpec,
+    )
+
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.04),
+    )
+    public_spec = NthToDefaultSpec(
+        notional=5_000_000.0,
+        n_names=4,
+        n_th=2,
+        end_date=date(2029, 11, 15),
+        basket_names=("A", "B", "C", "D"),
+        basket_weights=(0.4, 0.2, 0.2, 0.2),
+        spread=0.025,
+    )
+    agent_spec = AgentNthToDefaultSpec(
+        notional=5_000_000.0,
+        n_names=4,
+        n_th=2,
+        end_date=date(2029, 11, 15),
+        basket_names=("A", "B", "C", "D"),
+        basket_weights=(0.4, 0.2, 0.2, 0.2),
+        spread=0.025,
+        n_paths=2_000,
+        seed=42,
+    )
+
+    public_payoff = NthToDefaultPayoff(public_spec)
+    agent_payoff = AgentNthToDefaultPayoff(agent_spec)
+
+    assert public_payoff.requirements == {"discount_curve"}
+    assert agent_payoff.requirements == {"discount_curve"}
+    assert float(price_payoff(public_payoff, market_state)) > 0.0
+    assert float(price_payoff(agent_payoff, market_state)) > 0.0
+
+
+def test_curve_quoted_nth_to_default_still_requires_a_credit_curve():
+    from trellis.instruments._agent.nthtodefault import (
+        NthToDefaultPayoff as AgentNthToDefaultPayoff,
+        NthToDefaultSpec as AgentNthToDefaultSpec,
+    )
+
+    public_spec = NthToDefaultSpec(
+        notional=1_000_000.0,
+        n_names=4,
+        n_th=2,
+        end_date=date(2029, 11, 15),
+    )
+    agent_spec = AgentNthToDefaultSpec(
+        notional=1_000_000.0,
+        n_names=4,
+        n_th=2,
+        end_date=date(2029, 11, 15),
+    )
+
+    assert NthToDefaultPayoff(public_spec).requirements == {
+        "credit_curve",
+        "discount_curve",
+    }
+    assert AgentNthToDefaultPayoff(agent_spec).requirements == {
+        "credit_curve",
+        "discount_curve",
+    }
+
+
 def test_price_nth_to_default_basket_matches_reference_payoff():
     market_state = _market_state()
     spec = NthToDefaultSpec(

@@ -4637,6 +4637,76 @@ def _extract_reference_entities(text: str, term_sheet) -> tuple[str, ...]:
     return _extract_constituents(text, term_sheet)
 
 
+def _extract_reference_weights(text: str, term_sheet) -> tuple[float, ...] | None:
+    """Extract optional name-aligned basket weights from structured fields or text."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    raw_weights = None
+    for key in ("reference_weights", "basket_weights", "exposure_weights", "weights"):
+        value = parameters.get(key)
+        if value is not None and value != "":
+            raw_weights = value
+            break
+
+    if raw_weights is None:
+        match = re.search(
+            r"(?:basket\s+)?weights?\s*(?:of|[:=])?\s*"
+            r"((?:[0-9]+(?:\.[0-9]+)?\s*%?\s*[,;/]\s*)+"
+            r"[0-9]+(?:\.[0-9]+)?\s*%?)",
+            text,
+            flags=re.IGNORECASE,
+        )
+        if match is None:
+            return None
+        raw_weights = re.split(r"[,;/]", match.group(1))
+    elif isinstance(raw_weights, str):
+        raw_weights = re.split(r"[,;/]", raw_weights)
+
+    normalized: list[float] = []
+    try:
+        values = tuple(raw_weights)
+    except TypeError as exc:
+        raise ValueError("Nth-to-default reference weights must be a sequence.") from exc
+    for value in values:
+        parsed = _parse_decimal_or_percent(value)
+        if parsed is None:
+            raise ValueError("Nth-to-default reference weights must be numeric.")
+        normalized.append(parsed)
+    return tuple(normalized)
+
+
+def _extract_credit_spread(text: str, term_sheet) -> float | None:
+    """Extract an optional representative decimal annual credit-spread quote."""
+    parameters = getattr(term_sheet, "parameters", {}) or {}
+    for key in ("spread", "credit_spread", "market_credit_spread"):
+        parsed = _parse_decimal_or_percent(parameters.get(key))
+        if parsed is not None:
+            return parsed
+    for key in ("spread_bps", "credit_spread_bps"):
+        value = parameters.get(key)
+        if value is None:
+            continue
+        try:
+            return float(value) / 10_000.0
+        except (TypeError, ValueError):
+            raise ValueError("Nth-to-default credit spread must be numeric.") from None
+
+    match = re.search(
+        r"(?:credit\s+)?spread\s*(?:of|[:=])?\s*"
+        r"([0-9]+(?:\.[0-9]+)?)\s*(bp|bps|basis\s+points?|%)?",
+        text,
+        flags=re.IGNORECASE,
+    )
+    if match is None:
+        return None
+    value = float(match.group(1))
+    unit = str(match.group(2) or "").strip().lower()
+    if unit in {"bp", "bps"} or unit.startswith("basis"):
+        return value / 10_000.0
+    if unit == "%":
+        return value / 100.0
+    return _parse_decimal_or_percent(value)
+
+
 def _parse_name_list(value: str) -> tuple[str, ...]:
     """Parse a comma-separated or slash-separated name list."""
     tokens = re.split(r"[,;/]|(?:\band\b)", value)
@@ -5905,7 +5975,9 @@ def _draft_nth_to_default_contract(
         description=description,
         observation_schedule=observation_schedule,
         reference_entities=reference_entities,
+        reference_weights=_extract_reference_weights(text, term_sheet),
         trigger_rank=_extract_trigger_rank(text, term_sheet),
+        credit_spread=_extract_credit_spread(text, term_sheet),
     )
 
 

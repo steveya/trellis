@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from types import SimpleNamespace
+
 import pytest
 
 
@@ -1525,6 +1527,37 @@ class TestCreditConceptResolution:
         assert contract.product.instrument_class == "nth_to_default"
         assert contract.product.constituents == ("IBM", "GE")
 
+    def test_nth_to_default_draft_preserves_weight_and_spread_terms_in_family_ir(self):
+        from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+        from trellis.agent.semantic_contracts import draft_semantic_contract
+
+        contract = draft_semantic_contract(
+            "Second-to-default weighted basket through 2029-11-15",
+            instrument_type="nth_to_default",
+            term_sheet=SimpleNamespace(
+                raw_description="",
+                parameters={
+                    "maturity_date": "2029-11-15",
+                    "basket_names": ("A", "B", "C", "D"),
+                    "basket_weights": (0.4, 0.2, 0.2, 0.2),
+                    "spread": 0.025,
+                    "nth": 2,
+                },
+            ),
+        )
+
+        assert contract is not None
+        assert contract.product.term_fields["basket_weights"] == (
+            0.4,
+            0.2,
+            0.2,
+            0.2,
+        )
+        assert contract.product.term_fields["spread"] == pytest.approx(0.025)
+        family_ir = compile_semantic_contract(contract).dsl_lowering.family_ir
+        assert family_ir.reference_weights == (0.4, 0.2, 0.2, 0.2)
+        assert family_ir.credit_spread == pytest.approx(0.025)
+
     def test_ambiguous_credit_with_overlapping_cues(self):
         """Request matching cues from both CDS and NTD should be ambiguous or contested."""
         from trellis.agent.semantic_concepts import resolve_semantic_concept
@@ -1839,6 +1872,33 @@ def test_weighted_nth_to_default_contract_rejects_invalid_name_weight_alignment(
             reference_entities=reference_entities,
             reference_weights=reference_weights,
         )
+
+
+@pytest.mark.parametrize("bad_weight", (float("nan"), float("inf"), "not-a-number"))
+def test_nth_to_default_semantic_validation_rejects_non_finite_or_invalid_weights(
+    bad_weight,
+):
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+
+    contract = make_nth_to_default_contract(
+        description="Weighted first-to-default basket through 2029-11-15",
+        observation_schedule=("2029-11-15",),
+        reference_entities=("A", "B"),
+        reference_weights=(0.5, 0.5),
+    )
+    malformed_product = replace(
+        contract.product,
+        term_fields={
+            **dict(contract.product.term_fields),
+            "basket_weights": (bad_weight, 0.5),
+        },
+    )
+
+    report = validate_semantic_contract(replace(contract, product=malformed_product))
+
+    assert report.ok is False
+    assert any("finite numeric values" in error for error in report.errors)
 
 
 def test_nth_to_default_summary_is_stable_and_route_specific():

@@ -55,8 +55,11 @@ class NthToDefaultPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        """Needs a discount curve and a credit curve (for default probabilities)."""
-        return {"discount_curve", "credit_curve"}
+        """Require a credit curve only when no explicit spread quote is supplied."""
+        requirements = {"discount_curve"}
+        if self._spec.spread is None:
+            requirements.add("credit_curve")
+        return requirements
 
     def evaluate(self, market_state: MarketState) -> float:
         """Compute the expected discounted terminal ranked-loss settlement."""
