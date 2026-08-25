@@ -307,7 +307,7 @@ routes:
             role: array_backend
           - module: trellis.models.copulas.gaussian
             symbol: GaussianCopula
-            role: numerical_evidence
+            role: default_time_sampler
           - module: trellis.models.contingent_cashflows
             symbol: rank_trigger_probability
             role: rank_aggregator

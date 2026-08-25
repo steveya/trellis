@@ -604,7 +604,7 @@ class TestCreditRoutes:
     _SAMPLED_NTD_PRIMITIVES = frozenset({
         ("trellis.models.credit_basket_copula", "resolve_credit_basket_inputs", "market_binding"),
         ("trellis.core.differentiable", "get_numpy", "array_backend"),
-        ("trellis.models.copulas.gaussian", "GaussianCopula", "numerical_evidence"),
+        ("trellis.models.copulas.gaussian", "GaussianCopula", "default_time_sampler"),
         ("trellis.models.contingent_cashflows", "rank_trigger_probability", "rank_aggregator"),
         ("trellis.models.contingent_cashflows", "ProtectionPayment", "payoff_primitive"),
         ("trellis.models.contingent_cashflows", "protection_payment_pv", "trigger_leg"),

@@ -2040,7 +2040,7 @@ def _build_nth_to_default_expr_from_family_ir(
     if family_ir.pricing_mode == "monte_carlo":
         required.extend(
             (
-                ("numerical_evidence", "correlated event-time sampler", family_ir.default_time_sampler_symbol),
+                ("default_time_sampler", "correlated event-time sampler", family_ir.default_time_sampler_symbol),
                 ("rank_aggregator", "sampled rank reducer", family_ir.sampled_rank_symbol),
             )
         )

@@ -1306,7 +1306,7 @@ def _binding_supports_nth_to_default(
         "nth_to_default_probability",
     )
     sampled_surface = (
-        _binding_has_symbol(binding_spec, "numerical_evidence", "GaussianCopula")
+        _binding_has_symbol(binding_spec, "default_time_sampler", "GaussianCopula")
         and _binding_has_symbol(binding_spec, "rank_aggregator", "rank_trigger_probability")
     )
     return common_surface and (analytical_surface or sampled_surface)
@@ -2789,7 +2789,7 @@ def _build_nth_to_default_ir(
 
     pricing_mode = (
         "monte_carlo"
-        if _binding_has_symbol(binding_spec, "numerical_evidence", "GaussianCopula")
+        if _binding_has_symbol(binding_spec, "default_time_sampler", "GaussianCopula")
         else "analytical"
     )
 

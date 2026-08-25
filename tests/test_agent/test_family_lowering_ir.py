@@ -1378,7 +1378,7 @@ def test_nth_to_default_dispatches_from_binding_surface_not_route_id(monkeypatch
             PrimitiveRef(
                 "trellis.models.copulas.gaussian",
                 "GaussianCopula",
-                "numerical_evidence",
+                "default_time_sampler",
             ),
             PrimitiveRef(
                 "trellis.models.contingent_cashflows",
