@@ -147,7 +147,12 @@ def resolve_credit_basket_inputs(
     )
     n_names = max(int(spec.n_names), 2)
     recovery_value = getattr(spec, "recovery", None)
-    recovery = 0.4 if recovery_value is None else float(recovery_value)
+    try:
+        recovery = 0.4 if recovery_value is None else float(recovery_value)
+    except (TypeError, ValueError):
+        raise ValueError("recovery must be finite and lie in [0, 1)") from None
+    if not raw_np.isfinite(recovery) or not 0.0 <= recovery < 1.0:
+        raise ValueError("recovery must be finite and lie in [0, 1)")
     reference_names, exposure_weights = _resolve_credit_basket_exposures(
         spec,
         n_names=n_names,
@@ -175,8 +180,6 @@ def resolve_credit_basket_inputs(
         )
         credit_spread = None
     else:
-        if not 0.0 <= recovery < 1.0:
-            raise ValueError("recovery must lie in [0, 1) for credit-spread mapping")
         credit_spread = float(spread_value) + spread_shift
         if not raw_np.isfinite(credit_spread) or not 0.0 <= credit_spread < 1.0:
             raise ValueError("spread must be a decimal annual quote in [0, 1)")

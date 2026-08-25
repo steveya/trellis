@@ -135,6 +135,18 @@ def test_resolve_credit_basket_inputs_preserves_explicit_zero_recovery():
     assert resolved.recovery == 0.0
 
 
+@pytest.mark.parametrize("recovery", (-0.1, 1.0, float("nan"), float("inf")))
+def test_resolve_credit_basket_inputs_rejects_invalid_curve_quoted_recovery(
+    recovery,
+):
+    from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
+
+    spec_type = type("InvalidRecoveryNthSpec", (_NthSpec,), {"recovery": recovery})
+
+    with pytest.raises(ValueError, match=r"recovery.*\[0, 1\)"):
+        resolve_credit_basket_inputs(_market_state(), spec_type())
+
+
 def test_resolve_credit_basket_inputs_preserves_weight_and_decimal_spread_contract():
     from math import exp
 

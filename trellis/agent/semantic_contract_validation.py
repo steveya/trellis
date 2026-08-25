@@ -2340,8 +2340,19 @@ def _validate_nth_to_default_shape(
             elif abs(sum(normalized_weights) - 1.0) > 1.0e-10:
                 errors.append("Nth-to-default basket weights must sum to 1.")
     spread = term_fields.get("spread")
-    if spread is not None and not 0.0 <= float(spread) < 1.0:
-        errors.append("Nth-to-default spread must be a decimal annual quote in [0, 1).")
+    if spread is not None:
+        try:
+            normalized_spread = float(spread)
+        except (TypeError, ValueError):
+            normalized_spread = None
+        if (
+            normalized_spread is None
+            or not math.isfinite(normalized_spread)
+            or not 0.0 <= normalized_spread < 1.0
+        ):
+            errors.append(
+                "Nth-to-default spread must be a finite numeric decimal quote in [0, 1)."
+            )
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."

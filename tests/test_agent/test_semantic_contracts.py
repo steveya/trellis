@@ -1901,6 +1901,33 @@ def test_nth_to_default_semantic_validation_rejects_non_finite_or_invalid_weight
     assert any("finite numeric values" in error for error in report.errors)
 
 
+@pytest.mark.parametrize("bad_spread", (float("nan"), float("inf"), "not-a-number"))
+def test_nth_to_default_semantic_validation_rejects_non_finite_or_invalid_spread(
+    bad_spread,
+):
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_nth_to_default_contract
+
+    contract = make_nth_to_default_contract(
+        description="Weighted first-to-default basket through 2029-11-15",
+        observation_schedule=("2029-11-15",),
+        reference_entities=("A", "B"),
+        reference_weights=(0.5, 0.5),
+    )
+    malformed_product = replace(
+        contract.product,
+        term_fields={
+            **dict(contract.product.term_fields),
+            "spread": bad_spread,
+        },
+    )
+
+    report = validate_semantic_contract(replace(contract, product=malformed_product))
+
+    assert report.ok is False
+    assert any("finite numeric decimal quote" in error for error in report.errors)
+
+
 def test_nth_to_default_summary_is_stable_and_route_specific():
     from trellis.agent.semantic_contracts import make_nth_to_default_contract, semantic_contract_summary
 
