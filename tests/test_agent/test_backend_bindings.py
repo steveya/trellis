@@ -1566,12 +1566,16 @@ def test_nth_to_default_bindings_select_method_coherent_public_primitives():
             "trellis.models.credit_basket_copula.resolve_credit_basket_inputs"
             in resolved.market_binding_refs
         )
-        assert "trellis.models.contingent_cashflows.ProtectionPayment" in resolved.primitive_refs
-        assert "trellis.models.contingent_cashflows.protection_payment_pv" in resolved.primitive_refs
+        assert "trellis.models.contingent_cashflows.TriggerSettlement" in resolved.primitive_refs
+        assert "trellis.models.contingent_cashflows.trigger_settlement_pv" in resolved.primitive_refs
 
     assert (
-        "trellis.models.contingent_cashflows.rank_trigger_probability"
+        "trellis.models.contingent_cashflows.ranked_event_expected_weight"
         in monte_carlo.primitive_refs
+    )
+    assert (
+        "trellis.models.contingent_cashflows.exchangeable_ranked_event_expected_weight"
+        in analytical.primitive_refs
     )
     assert (
         "trellis.models.contingent_cashflows.nth_to_default_probability"

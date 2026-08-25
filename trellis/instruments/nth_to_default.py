@@ -9,19 +9,20 @@ a Gaussian copula (a standard model for multi-name credit products).
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
-from trellis.core.date_utils import year_fraction
 from trellis.core.market_state import MarketState
 
 from trellis.core.types import DayCountConvention
 from trellis.models.contingent_cashflows import (
-    ProtectionPayment,
+    TriggerSettlement,
+    exchangeable_ranked_event_expected_weight,
     nth_to_default_probability,
-    protection_payment_pv,
     terminal_default_probability,
+    trigger_settlement_pv,
 )
+from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
 
 
 @dataclass(frozen=True)
@@ -32,13 +33,16 @@ class NthToDefaultSpec:
     n_names: int
     n_th: int                       # which default triggers (1=first)
     end_date: date
+    basket_names: tuple[str, ...] = ()
+    basket_weights: tuple[float, ...] = ()
     correlation: float = 0.3
     recovery: float = 0.4
+    spread: float | None = None
     day_count: DayCountConvention = DayCountConvention.ACT_360
 
 
 class NthToDefaultPayoff:
-    """Prices an nth-to-default basket by simulating correlated defaults."""
+    """Price terminal name-weighted nth-to-default protection analytically."""
 
     def __init__(self, spec: NthToDefaultSpec):
         """Store the basket-credit contract specification."""
@@ -51,27 +55,42 @@ class NthToDefaultPayoff:
 
     @property
     def requirements(self) -> set[str]:
-        """Needs a discount curve and a credit curve (for default probabilities)."""
-        return {"discount_curve", "credit_curve"}
+        """Require a credit curve only when no explicit spread quote is supplied."""
+        requirements = {"discount_curve"}
+        if self._spec.spread is None:
+            requirements.add("credit_curve")
+        return requirements
 
     def evaluate(self, market_state: MarketState) -> float:
-        """Simulate correlated defaults and compute the expected discounted loss payment."""
+        """Compute the expected discounted terminal ranked-loss settlement."""
         spec = self._spec
-        T = _nth_to_default_horizon(
-            market_state.settlement,
-            spec.end_date,
-            spec.day_count,
+        resolved = resolve_credit_basket_inputs(market_state, spec)
+        trigger_probability = nth_to_default_probability(
+            resolved.n_names,
+            int(spec.n_th),
+            resolved.default_probability,
+            resolved.correlation,
         )
-        return price_nth_to_default_basket(
-            notional=spec.notional,
-            n_names=spec.n_names,
-            n_th=spec.n_th,
-            horizon=T,
-            correlation=spec.correlation,
-            recovery=spec.recovery,
-            credit_curve=market_state.credit_curve,
-            discount_curve=market_state.discount,
+        expected_weight = exchangeable_ranked_event_expected_weight(
+            trigger_probability,
+            event_weights=resolved.exposure_weights,
         )
+        return trigger_settlement_pv(
+            TriggerSettlement(
+                amount=resolved.notional * (1.0 - resolved.recovery),
+                discount_factor=resolved.discount_factor,
+                trigger_weight=expected_weight,
+            )
+        )
+
+    def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:
+        """Return price and parallel one-basis-point spread CS01 when quoted."""
+        price = float(self.evaluate(market_state))
+        if self._spec.spread is None:
+            return {"price": price}
+        bumped = replace(self._spec, spread=float(self._spec.spread) + 1.0e-4)
+        bumped_price = float(type(self)(bumped).evaluate(market_state))
+        return {"price": price, "spread_cs01": bumped_price - price}
 
 
 def price_nth_to_default_basket(
@@ -103,20 +122,16 @@ def price_nth_to_default_basket(
         correlation,
     )
     df = 1.0 if discount_curve is None else float(discount_curve.discount(T))
+    expected_weight = exchangeable_ranked_event_expected_weight(
+        trigger_prob,
+        event_weights=(1.0,) * int(n_names),
+    )
     return float(
-        protection_payment_pv(
-            ProtectionPayment(
-                notional=notional,
-                recovery=recovery,
-                default_probability=trigger_prob,
+        trigger_settlement_pv(
+            TriggerSettlement(
+                amount=float(notional) * (1.0 - float(recovery)),
                 discount_factor=df,
+                trigger_weight=expected_weight,
             )
         )
     )
-
-
-def _nth_to_default_horizon(start: date, end: date, day_count: DayCountConvention) -> float:
-    """Normalize same-anniversary maturities to whole-year tenors for helper parity."""
-    if (start.month, start.day) == (end.month, end.day):
-        return float(end.year - start.year)
-    return year_fraction(start, end, day_count)

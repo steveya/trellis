@@ -82,15 +82,19 @@ analytical:
     and ProtectionPayment/protection_payment_pv explicitly so scheduled-leg,
     accrued-on-event, trigger-leg, discounting, and sign semantics remain visible.'
   nth_to_default:
-  - 'HOMOGENEOUS RANK INTEGRATION: Resolve the terminal basket with
+  - 'NAME-WEIGHTED RANK INTEGRATION: Resolve the terminal basket with
     resolve_credit_basket_inputs, validate 1 <= n_th <= n_names, pass the resolved
     marginal default mass and equicorrelation to nth_to_default_probability, then
-    construct ProtectionPayment and protection_payment_pv explicitly. Do not call
-    price_nth_to_default_basket from generated code.'
-  - 'NTH-DEFAULT SUPPORT BOUNDARY: This route covers homogeneous terminal-settlement
-    protection only. Weighted name exposures, heterogeneous credit curves or
-    recoveries, running spread legs, and spread sensitivities require a separate
-    semantic contract and must block honestly.'
+    map trigger probability to expected ranked exposure with
+    exchangeable_ranked_event_expected_weight. Construct TriggerSettlement and
+    trigger_settlement_pv explicitly; do not call price_nth_to_default_basket.'
+  - 'NTH-DEFAULT SPREAD RISK: Treat spec spread as a decimal annual representative
+    single-name market quote, map it through hazard = spread / (1 - recovery), and
+    report spread_cs01 as PV(spread + 0.0001) - PV(spread). This is not a running
+    coupon or premium leg.'
+  - 'NTH-DEFAULT SUPPORT BOUNDARY: Name weights are supported with homogeneous
+    marginal credit and recovery, terminal settlement, and equicorrelation.
+    Heterogeneous curves/recoveries and running premium legs remain unsupported.'
   deterministic_cashflow:
   - 'DETERMINISTIC CASHFLOW CONTRACT: When all cashflows are known at pricing time
     and there is no optionality, PV = sum of cashflows * discount_factors. No vol
@@ -142,12 +146,13 @@ monte_carlo:
   primal_dual_mc, and stochastic_mesh. If the control primitive uses continuation
   regression, the basis or estimator choice is explicit; LaguerreBasis is a common
   option, not a mandatory route primitive.'
-- 'NTH-DEFAULT MC: Resolve the homogeneous terminal basket with
+- 'NTH-DEFAULT MC: Resolve the name-aligned terminal basket with
   resolve_credit_basket_inputs, bind positive n_paths and an explicit seed, sample
   one persistent GaussianCopula default-time matrix, and reduce each path through
-  rank_trigger_probability. Construct ProtectionPayment and protection_payment_pv
-  explicitly; do not substitute nth_to_default_probability, resample ranks
-  independently, or call price_nth_to_default_basket.'
+  ranked_event_expected_weight. Construct TriggerSettlement and trigger_settlement_pv
+  explicitly; do not substitute nth_to_default_probability, discard triggering-name
+  identity, resample ranks independently, or call price_nth_to_default_basket. Reuse
+  the same seed for base and +1bp spread reprices.'
 - 'CREDIT-SURVIVAL MC: Single-name CDS uses an explicit payment/event grid and
   first-event weights. Nth-to-default instead uses multi-name correlated default-time
   order. Both require credit_curve and discount_curve and neither may route through

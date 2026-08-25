@@ -852,13 +852,20 @@ The first migrated vanilla cases now use that boundary directly:
 - the homogeneous nth-to-default slice uses
   ``resolve_credit_basket_inputs`` as a public market contract. Analytical and
   ``copula`` lanes combine its terminal marginal default mass with
-  ``nth_to_default_probability``; Monte Carlo combines its flat-equivalent
-  hazard with seeded ``GaussianCopula.sample_default_times`` and the generic
-  ``rank_trigger_probability`` path reducer. Both construct
-  ``ProtectionPayment`` and ``protection_payment_pv`` explicitly. The retained
-  product helper is reference evidence only. Tranche-style CDO and general
-  portfolio-loss routes remain separate, and weighted-name/running-spread
-  semantics are outside this bounded contract
+  ``nth_to_default_probability`` and
+  ``exchangeable_ranked_event_expected_weight``. Monte Carlo combines its
+  flat-equivalent hazard with seeded ``GaussianCopula.sample_default_times``
+  and ``ranked_event_expected_weight``, which preserves the triggering name's
+  identity before applying its aligned exposure weight. Both construct
+  ``TriggerSettlement`` and call ``trigger_settlement_pv`` explicitly. An
+  explicit decimal annual credit-spread quote maps to the representative
+  hazard through ``spread / (1 - recovery)``; a +1 bp parallel bump produces
+  currency ``spread_cs01``, with common random numbers in the sampled lane.
+  Homogeneous exchangeability makes the analytical value invariant to a
+  permutation of the name weights, whereas asymmetric sampled fixtures can
+  validate name-to-weight alignment. The retained product helper is reference
+  evidence only. Tranche-style CDO, heterogeneous name curves/recoveries, and
+  running-premium routes remain outside this bounded contract
 - bounded credit-index spread-option comparisons use
   ``trellis.models.credit_index_option``. The Black-on-spread helper and the
   antithetic lognormal MC helper share one ``CreditIndexOptionSpec`` carrying
@@ -1006,9 +1013,16 @@ The nth-to-default route is likewise primitive-first but is not a CDS schedule
 route. ``resolve_credit_basket_inputs`` owns the bounded terminal market
 mapping. Analytical evidence integrates the equicorrelated rank probability;
 sampled evidence preserves one path-by-name default-time matrix and reduces its
-nth order statistic. The common protection-payment value contract makes
-discounting and loss-given-default visible. QMC, name weights, heterogeneous
-curves/recoveries, running premium legs, and spread risk are not admitted.
+nth order statistic together with the triggering name's aligned exposure.
+``exchangeable_ranked_event_expected_weight(...)`` supplies the homogeneous
+analytical reduction, while ``ranked_event_expected_weight(...)`` supplies the
+identity-preserving sampled reduction. The common ``TriggerSettlement`` value
+contract makes total notional, loss-given-default, ranked exposure, and
+discounting visible. The bounded quote contract treats ``spread`` as a
+representative decimal annual single-name credit spread, not a coupon, and
+reports ``spread_cs01 = PV(spread + 1bp) - PV(spread)``. QMC, heterogeneous
+name curves/recoveries, running premium legs, stochastic rates/recovery, and
+general portfolio-loss settlement are not admitted.
 
 The range-accrual route is intentionally narrow: it is a deterministic
 discounted-cashflow adapter that prices coupon periods off explicit range

@@ -1949,7 +1949,17 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
             self.attempts = 1
             self.gap_confidence = 0.75
             self.knowledge_gaps = []
-            self.payoff_cls = type(f"{target.title()}Payoff", (), {"price": price_map[target]})
+            self.payoff_cls = type(
+                f"{target.title()}Payoff",
+                (),
+                {
+                    "price": price_map[target],
+                    "benchmark_outputs": lambda payoff, _market_state: {
+                        "price": payoff.price,
+                        "spread_cs01": payoff.price / 100.0,
+                    },
+                },
+            )
             self.failures = []
             self.reflection = {"lesson_captured": f"{target}_001"}
             self.selected_method = method
@@ -1971,6 +1981,7 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
             "cross_validate": {
                 "internal": ["crr_tree", "bs_pde", "mc_exact", "fft", "cos"],
                 "analytical": "black_scholes",
+                "output_tolerances_pct": {"spread_cs01": 5.0},
             },
             "new_component": None,
         },
@@ -2038,6 +2049,7 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
     assert result["cross_validate"] == {
         "internal": ["crr_tree", "bs_pde", "mc_exact", "fft", "cos"],
         "analytical": "black_scholes",
+        "output_tolerances_pct": {"spread_cs01": 5.0},
     }
     assert set(result["method_results"]) == {
         "crr_tree",
@@ -2053,6 +2065,13 @@ def test_run_task_builds_each_construct_method_for_comparison_task():
     ] == "rate_tree"
     assert result["method_results"]["crr_tree"]["artifact_binding"]["status"] == (
         "bound_unique_artifact"
+    )
+    assert result["method_results"]["crr_tree"]["price"] == pytest.approx(10.10)
+    assert result["method_results"]["crr_tree"]["benchmark_outputs"] == pytest.approx(
+        {"price": 10.10, "spread_cs01": 0.101}
+    )
+    assert result["comparison_outputs"]["mc_exact"]["spread_cs01"] == pytest.approx(
+        0.1005
     )
     assert result["cross_validation"]["reference_target"] == "black_scholes"
     assert result["cross_validation"]["tolerance_pct"] == 5.0
@@ -2466,64 +2485,32 @@ def test_sparse_rate_pde_proof_row_blocks_honestly_without_build(monkeypatch, tm
     assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
-def test_weighted_nth_to_default_extension_blocks_from_declared_contract_without_build(
-    monkeypatch,
-    tmp_path,
-    capsys,
-):
-    from trellis.agent.evals import classify_task_result
+def test_weighted_nth_to_default_extension_declares_pricing_and_cross_method_contracts():
     from trellis.agent.task_manifests import load_task_manifest
-    from trellis.agent.task_runtime import run_task
 
     task = next(
         task
         for task in load_task_manifest("TASKS_EXTENSION.yaml")
         if task["id"] == "P006"
     )
-    calls: list[dict] = []
 
-    def fake_build(**kwargs):
-        calls.append(kwargs)
-        raise AssertionError("a declared honest block must not invoke build")
-
-    monkeypatch.setattr(
-        "trellis.agent.task_run_store.persist_task_run_record",
-        lambda *_args, **_kwargs: {
-            "history_path": str(tmp_path / "history.json"),
-            "latest_path": str(tmp_path / "latest.json"),
-            "latest_index_path": str(tmp_path / "latest-index.json"),
-            "diagnosis_failure_bucket": "blocked",
-            "diagnosis_headline": "Weighted nth-to-default semantics are not defined.",
-            "diagnosis_decision_stage": "blocked",
-            "diagnosis_next_action": "Implement QUA-1237 before pricing P006.",
-        },
-    )
-
-    result = run_task(
-        task,
-        market_state=object(),
-        build_fn=fake_build,
-        task_run_storage_root=tmp_path,
-    )
-
-    assert calls == []
-    assert result["success"] is False
-    assert result["expected_honest_block"] is True
-    assert result["outcome_class"] == "honest_block"
-    assert result["passed_expectation"] is True
-    assert classify_task_result(result) == "blocked"
-    assert result["attempts"] == 0
-    assert result["blocker_details"]["reason"] == "weighted_nth_to_default_contract_gap"
-    assert result["blocker_details"]["repair_packet"]["follow_on_issue"] == "QUA-1237"
-    assert [
-        blocker["id"]
-        for blocker in result["blocker_details"]["blocker_report"]["blockers"]
-    ] == [
-        "semantic_product_contract_gap:weighted_name_exposures",
-        "semantic_primitive_gap:ranked_loss_settlement",
-        "semantic_risk_contract_gap:spread_sensitivities",
+    assert task.get("expected_outcome", "pricing_success") == "pricing_success"
+    assert "honest_block_contract" not in task
+    cross_validate = task["cross_validate"]
+    assert cross_validate["internal"] == [
+        "weighted_rank_analytical",
+        "weighted_rank_monte_carlo",
     ]
-    assert "[HONEST_BLOCK]" in capsys.readouterr().out
+    analytical = cross_validate["target_contracts"]["weighted_rank_analytical"]
+    sampled = cross_validate["target_contracts"]["weighted_rank_monte_carlo"]
+    assert analytical["route_id"] == sampled["route_id"] == "credit_basket_nth_to_default"
+    assert analytical["backend_binding_id"].endswith("nth_to_default_probability")
+    assert sampled["backend_binding_id"].endswith("GaussianCopula")
+    assert analytical["variant_parameters"]["exposure_contract"] == "name_weighted_terminal"
+    assert sampled["variant_parameters"]["spread_risk"] == "common_random_numbers_1bp"
+    assert cross_validate["output_tolerances_pct"] == {
+        "spread_cs01": pytest.approx(15.0)
+    }
 
 
 def test_declared_honest_block_normalizes_scalar_string_fields():
@@ -3132,6 +3119,79 @@ def test_cross_validate_comparison_task_respects_directional_relations():
     }
     assert result["passed_targets"] == ["tree_lower"]
     assert result["failed_targets"] == ["tree_upper"]
+
+
+def test_cross_validate_comparison_task_validates_configured_native_outputs():
+    from trellis.agent.comparison_target_contracts import ComparisonTargetContract
+    from trellis.agent.task_runtime import ComparisonBuildTarget, _cross_validate_comparison_task
+
+    def legacy_contract(target_id, method):
+        return ComparisonTargetContract(
+            target_id,
+            method,
+            resolution_source="legacy_target_inference",
+            explicit=False,
+        )
+
+    class FakeResult:
+        def __init__(self, target, payoff_cls, method):
+            self.success = True
+            self.payoff_cls = payoff_cls
+            self.selected_method = method
+            self.comparison_target_contract = legacy_contract(
+                target,
+                method,
+            ).to_payload()
+
+    def payoff_class(name, price, spread_cs01):
+        return type(
+            name,
+            (),
+            {
+                "benchmark_outputs": lambda self, _market_state: {
+                    "price": price,
+                    "spread_cs01": spread_cs01,
+                }
+            },
+        )
+
+    comparison_targets = [
+        ComparisonBuildTarget(contract=legacy_contract("copula", "analytical")),
+        ComparisonBuildTarget(contract=legacy_contract("sampled", "monte_carlo")),
+    ]
+    live_results = {
+        "copula": FakeResult(
+            "copula",
+            payoff_class("CopulaPayoff", 120_000.0, 3_200.0),
+            "analytical",
+        ),
+        "sampled": FakeResult(
+            "sampled",
+            payoff_class("SampledPayoff", 120_600.0, 3_360.0),
+            "monte_carlo",
+        ),
+    }
+
+    result = _cross_validate_comparison_task(
+        comparison_targets,
+        live_results,
+        market_state=object(),
+        configured_targets={
+            "tolerance_pct": 3.0,
+            "output_tolerances_pct": {"spread_cs01": 10.0},
+        },
+        payoff_factory=lambda payoff_cls, spec_schema, settle: payoff_cls(),
+    )
+
+    assert result["status"] == "passed"
+    assert result["outputs"] == {
+        "copula": {"price": 120_000.0, "spread_cs01": 3_200.0},
+        "sampled": {"price": 120_600.0, "spread_cs01": 3_360.0},
+    }
+    spread_validation = result["output_validation"]["spread_cs01"]
+    assert spread_validation["status"] == "passed"
+    assert spread_validation["tolerance_pct"] == 10.0
+    assert spread_validation["missing_targets"] == []
 
 
 def test_task_comparison_targets_promote_t51_cds_targets_to_analytical_lane():

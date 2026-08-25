@@ -40,23 +40,46 @@
   warning: Do not call product-level CDS schedule or pricing helpers from generated
     code, and do not treat conditional interval probabilities as unconditional
     default mass.
-- name: HOMOGENEOUS_RANK_TRIGGER_COMPOSITION
+- name: RANKED_EVENT_WEIGHT_COMPOSITION
   method: analytical
   source: resolve_credit_basket_inputs(...) plus nth_to_default_probability(...)
-  convention: One homogeneous terminal marginal default probability, one flat-equivalent
-    hazard, one equicorrelation parameter, and probability that at least rank names
-    default by the terminal horizon
-  typical_range: default and trigger probabilities in [0, 1], positive discount
-    factor, 1 <= rank <= pool size, recovery in [0, 1]
-  model_expects: resolved homogeneous basket inputs, analytical one-factor rank
-    integration, and explicit ProtectionPayment present-value assembly
-  conversion: derive marginal default mass from terminal survival once; apply
-    loss-given-default, notional, and discounting once through ProtectionPayment
-    and protection_payment_pv
-  model_range: homogeneous terminal-settlement basket with deterministic curves,
-    fixed recovery, and equicorrelation
-  warning: Do not call price_nth_to_default_basket, introduce name weights, or infer
-    running spread and spread-sensitivity semantics on this bounded contract.
+  convention: Ordered unique names carry non-negative notional fractions summing
+    to one when explicit; one homogeneous marginal default probability and one
+    equicorrelation determine rank probability, and exchangeability maps that
+    probability to mean ranked exposure
+  typical_range: default and trigger probabilities in [0, 1], weights non-negative,
+    explicit weights sum to 1, 1 <= rank <= pool size, recovery in [0, 1)
+  model_expects: resolved name-aligned basket inputs, analytical one-factor rank
+    integration, exchangeable expected-exposure reduction, and explicit terminal
+    TriggerSettlement present-value assembly
+  conversion: an explicit decimal annual spread maps to hazard through spread /
+    (1 - recovery); apply total notional, loss-given-default, expected ranked exposure,
+    and discounting once through TriggerSettlement and trigger_settlement_pv
+  model_range: terminal-settlement basket with homogeneous marginal credit and
+    recovery, deterministic curves, equicorrelation, name weights, and parallel
+    representative-spread CS01
+  warning: Do not call price_nth_to_default_basket, claim weight-permutation effects
+    under exchangeability, infer a running premium leg, or treat spread as a coupon.
+- name: RANKED_EVENT_WEIGHT_COMPOSITION
+  method: copula
+  source: resolve_credit_basket_inputs(...) plus nth_to_default_probability(...)
+  convention: Ordered unique names carry non-negative notional fractions summing
+    to one when explicit; one homogeneous marginal default probability and one
+    equicorrelation determine rank probability, and exchangeability maps that
+    probability to mean ranked exposure
+  typical_range: default and trigger probabilities in [0, 1], weights non-negative,
+    explicit weights sum to 1, 1 <= rank <= pool size, recovery in [0, 1)
+  model_expects: resolved name-aligned basket inputs, analytical one-factor rank
+    integration, exchangeable expected-exposure reduction, and explicit terminal
+    TriggerSettlement present-value assembly
+  conversion: an explicit decimal annual spread maps to hazard through spread /
+    (1 - recovery); apply total notional, loss-given-default, expected ranked exposure,
+    and discounting once through TriggerSettlement and trigger_settlement_pv
+  model_range: terminal-settlement basket with homogeneous marginal credit and
+    recovery, deterministic curves, equicorrelation, name weights, and parallel
+    representative-spread CS01
+  warning: Do not call price_nth_to_default_basket, claim weight-permutation effects
+    under exchangeability, infer a running premium leg, or treat spread as a coupon.
 - name: TERMINAL_BASKET_MARKET_BINDING
   method: analytical
   source: resolve_terminal_basket_inputs(market_state, spec)
@@ -121,23 +144,25 @@
     first-event sampling
   warning: Do not resample independently by interval, call product-level CDS
     helpers, or silently replace the task path count with a smaller constant.
-- name: HOMOGENEOUS_RANK_TRIGGER_COMPOSITION
+- name: RANKED_EVENT_WEIGHT_COMPOSITION
   method: monte_carlo
   source: resolve_credit_basket_inputs(...) plus GaussianCopula.sample_default_times(...)
-    and rank_trigger_probability(...)
-  convention: Rows are persistent paths, columns are homogeneous reference names,
-    and each path contributes one nth order statistic against the terminal horizon
+    and ranked_event_expected_weight(...)
+  convention: Rows are persistent paths, columns retain ordered reference-name
+    identity, and each path contributes the triggering name's aligned exposure
+    when its nth event occurs by the terminal horizon
   typical_range: positive flat-equivalent hazard for positive horizon, positive
-    path count, explicit seed, trigger probability in [0, 1]
+    path count, explicit seed, expected ranked exposure in [0, max name weight]
   model_expects: one seeded correlated default-time matrix, one rank reduction,
-    and explicit ProtectionPayment present-value assembly
+    name-aligned rank-weight reduction, and explicit TriggerSettlement assembly
   conversion: repeat the resolved flat hazard across names, sample once, preserve
-    the path-by-name matrix, then apply loss-given-default, notional, and discounting
-    once through the contingent-cashflow primitives
-  model_range: pseudo-random homogeneous Gaussian-copula terminal evidence
+    the path-by-name matrix, then apply loss-given-default, total notional, expected
+    ranked exposure, and discounting once through the contingent-cashflow primitives
+  model_range: pseudo-random homogeneous Gaussian-copula marginal evidence with
+    name-weighted terminal settlement and common-random-number parallel spread CS01
   warning: Do not use the analytical rank integral as Monte Carlo evidence, resample
-    names or ranks independently, silently change n_paths/seed, or infer weighted-name
-    loss semantics.
+    names or ranks independently, silently change n_paths/seed between base and bump,
+    or discard name identity before exposure aggregation.
 - name: TERMINAL_BASKET_MARKET_BINDING
   method: monte_carlo
   source: resolve_terminal_basket_inputs(market_state, spec)

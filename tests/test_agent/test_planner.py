@@ -52,6 +52,18 @@ class TestSpecSchema:
         assert fields["dividend_yield"].type == "float"
         assert fields["dividend_yield"].default == "0.0"
 
+    def test_nth_to_default_static_spec_preserves_weight_and_spread_risk_contract(self):
+        fields = {
+            field.name: field for field in STATIC_SPECS["nth_to_default"].fields
+        }
+
+        assert fields["basket_names"].type == "tuple[str, ...]"
+        assert fields["basket_names"].default == "()"
+        assert fields["basket_weights"].type == "tuple[float, ...]"
+        assert fields["basket_weights"].default == "()"
+        assert fields["spread"].type == "float | None"
+        assert fields["spread"].default == "None"
+
     def test_schedule_dependent_static_specs_use_typed_date_tuples(self):
         callable_spec = STATIC_SPECS["callable_bond"]
         puttable_spec = STATIC_SPECS["puttable_bond"]

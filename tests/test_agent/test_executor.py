@@ -985,6 +985,58 @@ def test_hydrate_spec_schema_defaults_from_swaption_semantics():
     assert "rate_index: str | None = 'USD-SOFR-3M'" in skeleton
 
 
+def test_hydrate_spec_schema_defaults_from_weighted_nth_to_default_semantics():
+    from types import SimpleNamespace
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _hydrate_spec_schema_defaults_from_semantics,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contracts import draft_semantic_contract
+
+    contract = draft_semantic_contract(
+        "Second-to-default weighted basket through 2029-11-15",
+        instrument_type="nth_to_default",
+        term_sheet=SimpleNamespace(
+            raw_description="",
+            parameters={
+                "maturity_date": "2029-11-15",
+                "basket_names": ("A", "B", "C", "D"),
+                "basket_weights": (0.4, 0.2, 0.2, 0.2),
+                "spread": 0.025,
+                "nth": 2,
+            },
+        ),
+    )
+    assert contract is not None
+    family_ir = compile_semantic_contract(contract).dsl_lowering.family_ir
+    assert family_ir.reference_weights == (0.4, 0.2, 0.2, 0.2)
+    assert family_ir.credit_spread == 0.025
+
+    hydrated = _hydrate_spec_schema_defaults_from_semantics(
+        STATIC_SPECS["nth_to_default"],
+        semantic_contract=contract,
+    )
+    defaults = {field.name: field.default for field in hydrated.fields}
+
+    assert defaults["n_names"] == "4"
+    assert defaults["n_th"] == "2"
+    assert defaults["basket_names"] == "('A', 'B', 'C', 'D')"
+    assert defaults["basket_weights"] == "(0.4, 0.2, 0.2, 0.2)"
+    assert defaults["spread"] == "0.025"
+    assert defaults["end_date"] == "date(2029, 11, 15)"
+
+    skeleton = _generate_skeleton(hydrated, contract.description)
+    assert "basket_names: tuple[str, ...] = ('A', 'B', 'C', 'D')" in skeleton
+    assert "basket_weights: tuple[float, ...] = (0.4, 0.2, 0.2, 0.2)" in skeleton
+    assert "spread: float | None = 0.025" in skeleton
+    assert 'requirements = {"discount_curve"}' in skeleton
+    assert "if self._spec.spread is None:" in skeleton
+    assert 'requirements.add("credit_curve")' in skeleton
+
+
 def test_deterministic_exact_binding_module_materializes_swaption_resolver_and_raw_kernel():
     from trellis.agent.comparison_target_contracts import ComparisonTargetContract
     from trellis.agent.executor import (
@@ -7094,6 +7146,76 @@ def test_deterministic_exact_binding_module_materializes_sampled_nth_to_default_
     assert EVALUATE_SENTINEL not in generated.code
 
 
+@pytest.mark.parametrize(
+    ("method", "evidence_ref", "expected_line", "forbidden_line"),
+    [
+        (
+            "copula",
+            "trellis.models.contingent_cashflows.nth_to_default_probability",
+            "expected_weight = exchangeable_ranked_event_expected_weight(",
+            "default_times = copula.sample_default_times(",
+        ),
+        (
+            "monte_carlo",
+            "trellis.models.copulas.gaussian.GaussianCopula",
+            "expected_weight = ranked_event_expected_weight(",
+            "trigger_probability = nth_to_default_probability(",
+        ),
+    ],
+)
+def test_deterministic_exact_binding_module_materializes_weighted_nth_to_default_risk(
+    method,
+    evidence_ref,
+    expected_line,
+    forbidden_line,
+):
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.core.differentiable.get_numpy",
+            "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+            evidence_ref,
+            "trellis.models.contingent_cashflows.exchangeable_ranked_event_expected_weight",
+            "trellis.models.contingent_cashflows.ranked_event_expected_weight",
+            "trellis.models.contingent_cashflows.TriggerSettlement",
+            "trellis.models.contingent_cashflows.trigger_settlement_pv",
+        ),
+        primitive_plan=None,
+        method=method,
+        instrument_type="nth_to_default",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["nth_to_default"],
+        "Weighted nth-to-default exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "basket_names: tuple[str, ...] = ()" in generated.code
+    assert "basket_weights: tuple[float, ...] = ()" in generated.code
+    assert "spread: float | None = None" in generated.code
+    assert expected_line in generated.code
+    assert forbidden_line not in generated.code
+    assert "settlement = TriggerSettlement(" in generated.code
+    assert "return trigger_settlement_pv(settlement)" in generated.code
+    assert "def benchmark_outputs(" in generated.code
+    assert "spread_cs01" in generated.code
+    assert "replace(self._spec, spread=float(spread) + 1.0e-4)" in generated.code
+    assert "price_nth_to_default_basket" not in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
 def test_extract_fragment_body_repairs_orphan_indentation():
     from trellis.agent.executor import _extract_fragment_body
 
@@ -7112,6 +7234,34 @@ def test_extract_fragment_body_repairs_orphan_indentation():
         "if T <= 0.0:",
         "    return 0.0",
     ]
+
+
+def test_nth_to_default_generation_guidance_is_weighted_contract_coherent():
+    from trellis.agent.executor import (
+        KnowledgeRetrievalRequest,
+        _instrument_disambiguation_lines,
+    )
+
+    guidance = "\n".join(
+        _instrument_disambiguation_lines(
+            KnowledgeRetrievalRequest(
+                audience="code_generator",
+                stage="code_generation",
+                attempt_number=1,
+                knowledge_surface="full",
+                prompt_surface="code_generation",
+                retry_reason=None,
+                instrument_type="nth_to_default",
+                pricing_method="copula",
+            )
+        )
+    )
+
+    assert "TriggerSettlement" in guidance
+    assert "ranked_event_expected_weight" in guidance
+    assert "ProtectionPayment" not in guidance
+    assert "spread sensitivities must block" not in guidance
+    assert "Heterogeneous name-level credit inputs" in guidance
 
 
 def test_extract_evaluate_body_from_module_text_repairs_orphan_indentation():

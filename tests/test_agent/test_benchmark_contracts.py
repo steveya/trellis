@@ -176,6 +176,23 @@ def test_extension_rainbow_overrides_bind_underliers_from_market_scenario():
     assert rainbow["risk_free_rate"] == pytest.approx(0.05)
 
 
+def test_weighted_nth_to_default_overrides_preserve_name_exposure_and_spread():
+    task = _extension_tasks()["P006"]
+
+    description = benchmark_request_description(task, root=ROOT)
+    overrides = benchmark_spec_overrides(task, root=ROOT)
+
+    assert description is not None
+    assert "decimal annual market credit-spread quote" in description
+    assert "not a running coupon" in description
+    assert overrides["basket_names"] == ("A", "B", "C", "D")
+    assert overrides["basket_weights"] == pytest.approx((0.4, 0.2, 0.2, 0.2))
+    assert overrides["spread"] == pytest.approx(0.025)
+    assert overrides["n_names"] == 4
+    assert overrides["n_th"] == 2
+    assert overrides["end_date"] == date(2029, 11, 15)
+
+
 def test_extension_rainbow_overrides_reject_vector_underlier_mismatch():
     tasks = {
         task["id"]: task

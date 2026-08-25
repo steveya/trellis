@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+from types import SimpleNamespace
 
 from trellis.core.market_state import MarketState
 from trellis.curves.credit_curve import CreditCurve
@@ -31,21 +32,38 @@ def test_nth_to_default_uses_shared_credit_kernels(monkeypatch):
 
     calls: dict[str, object] = {}
 
-    def fake_terminal_default_probability(credit_curve, horizon):
-        calls["terminal"] = (credit_curve, horizon)
-        return 0.18
+    def fake_resolve_credit_basket_inputs(market_state, spec):
+        calls["resolve"] = (market_state, spec)
+        return SimpleNamespace(
+            n_names=5,
+            default_probability=0.18,
+            correlation=0.35,
+            exposure_weights=(1.0,) * 5,
+            notional=1_000_000.0,
+            recovery=0.4,
+            discount_factor=0.8,
+        )
 
     def fake_nth_to_default_probability(n_names, n_th, marginal_default_prob, correlation):
         calls["nth"] = (n_names, n_th, marginal_default_prob, correlation)
         return 0.11
 
-    def fake_protection_payment_pv(payment):
-        calls["payment"] = payment
+    def fake_exchangeable_ranked_event_expected_weight(probability, *, event_weights):
+        calls["weight"] = (probability, event_weights)
+        return probability
+
+    def fake_trigger_settlement_pv(settlement):
+        calls["settlement"] = settlement
         return 12_345.0
 
-    monkeypatch.setattr(nth_module, "terminal_default_probability", fake_terminal_default_probability)
+    monkeypatch.setattr(nth_module, "resolve_credit_basket_inputs", fake_resolve_credit_basket_inputs)
     monkeypatch.setattr(nth_module, "nth_to_default_probability", fake_nth_to_default_probability)
-    monkeypatch.setattr(nth_module, "protection_payment_pv", fake_protection_payment_pv)
+    monkeypatch.setattr(
+        nth_module,
+        "exchangeable_ranked_event_expected_weight",
+        fake_exchangeable_ranked_event_expected_weight,
+    )
+    monkeypatch.setattr(nth_module, "trigger_settlement_pv", fake_trigger_settlement_pv)
 
     spec = NthToDefaultSpec(
         notional=1_000_000.0,
@@ -60,6 +78,97 @@ def test_nth_to_default_uses_shared_credit_kernels(monkeypatch):
 
     assert pv == 12_345.0
     assert calls["nth"] == (5, 2, 0.18, 0.35)
+    assert calls["weight"] == (0.11, (1.0,) * 5)
+
+
+def test_public_nth_to_default_supports_weighted_spread_price_and_cs01():
+    spec = NthToDefaultSpec(
+        notional=5_000_000.0,
+        n_names=4,
+        n_th=2,
+        end_date=date(2029, 11, 15),
+        basket_names=("A", "B", "C", "D"),
+        basket_weights=(0.4, 0.2, 0.2, 0.2),
+        spread=0.025,
+        correlation=0.3,
+        recovery=0.4,
+    )
+
+    outputs = NthToDefaultPayoff(spec).benchmark_outputs(_market_state())
+
+    assert outputs["price"] > 0.0
+    assert outputs["spread_cs01"] > 0.0
+
+
+def test_spread_quoted_nth_to_default_does_not_require_a_credit_curve():
+    from trellis.engine.payoff_pricer import price_payoff
+    from trellis.instruments._agent.nthtodefault import (
+        NthToDefaultPayoff as AgentNthToDefaultPayoff,
+        NthToDefaultSpec as AgentNthToDefaultSpec,
+    )
+
+    market_state = MarketState(
+        as_of=SETTLE,
+        settlement=SETTLE,
+        discount=YieldCurve.flat(0.04),
+    )
+    public_spec = NthToDefaultSpec(
+        notional=5_000_000.0,
+        n_names=4,
+        n_th=2,
+        end_date=date(2029, 11, 15),
+        basket_names=("A", "B", "C", "D"),
+        basket_weights=(0.4, 0.2, 0.2, 0.2),
+        spread=0.025,
+    )
+    agent_spec = AgentNthToDefaultSpec(
+        notional=5_000_000.0,
+        n_names=4,
+        n_th=2,
+        end_date=date(2029, 11, 15),
+        basket_names=("A", "B", "C", "D"),
+        basket_weights=(0.4, 0.2, 0.2, 0.2),
+        spread=0.025,
+        n_paths=2_000,
+        seed=42,
+    )
+
+    public_payoff = NthToDefaultPayoff(public_spec)
+    agent_payoff = AgentNthToDefaultPayoff(agent_spec)
+
+    assert public_payoff.requirements == {"discount_curve"}
+    assert agent_payoff.requirements == {"discount_curve"}
+    assert float(price_payoff(public_payoff, market_state)) > 0.0
+    assert float(price_payoff(agent_payoff, market_state)) > 0.0
+
+
+def test_curve_quoted_nth_to_default_still_requires_a_credit_curve():
+    from trellis.instruments._agent.nthtodefault import (
+        NthToDefaultPayoff as AgentNthToDefaultPayoff,
+        NthToDefaultSpec as AgentNthToDefaultSpec,
+    )
+
+    public_spec = NthToDefaultSpec(
+        notional=1_000_000.0,
+        n_names=4,
+        n_th=2,
+        end_date=date(2029, 11, 15),
+    )
+    agent_spec = AgentNthToDefaultSpec(
+        notional=1_000_000.0,
+        n_names=4,
+        n_th=2,
+        end_date=date(2029, 11, 15),
+    )
+
+    assert NthToDefaultPayoff(public_spec).requirements == {
+        "credit_curve",
+        "discount_curve",
+    }
+    assert AgentNthToDefaultPayoff(agent_spec).requirements == {
+        "credit_curve",
+        "discount_curve",
+    }
 
 
 def test_price_nth_to_default_basket_matches_reference_payoff():

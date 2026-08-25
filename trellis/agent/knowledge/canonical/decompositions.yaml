@@ -240,8 +240,9 @@
   required_market_data: [discount_curve, credit_curve]
   modeling_requirements:
     - >-
-      CALIBRATION: Default probabilities must be consistent with the input credit curve.
-      For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).
+      CREDIT QUOTE: Use the representative credit curve for marginal default mass
+      unless an explicit decimal annual spread is supplied; then use the bounded
+      hazard = spread / (1 - recovery) mapping.
   reasoning: "Portfolio credit tranching uses copula for default correlation."
   learned: false
 
@@ -276,17 +277,18 @@
       CALIBRATION: Default probabilities must be consistent with the input credit curve.
       For each name: P(default by T) = 1 - S(T) where S(T) = credit_curve.survival_probability(T).
     - >-
-      ANALYTICAL COMPOSITION: Resolve homogeneous terminal basket inputs, integrate
-      nth_to_default_probability, and construct ProtectionPayment plus
-      protection_payment_pv explicitly.
+      ANALYTICAL COMPOSITION: Resolve name-aligned terminal basket inputs, integrate
+      nth_to_default_probability, reduce it with exchangeable_ranked_event_expected_weight,
+      and construct TriggerSettlement plus trigger_settlement_pv explicitly.
     - >-
       SAMPLED COMPOSITION: Sample one persistent GaussianCopula default-time matrix
-      with explicit n_paths and seed, reduce its nth order statistic through
-      rank_trigger_probability, then reuse the same protection-payment assembly.
+      with explicit n_paths and seed, reduce the nth event and its name identity through
+      ranked_event_expected_weight, then reuse the same trigger-settlement assembly.
     - >-
-      SUPPORT BOUNDARY: Do not map weighted names, heterogeneous curves/recoveries,
-      running spreads, or spread sensitivities onto this homogeneous terminal route.
-  reasoning: "Homogeneous nth-to-default lanes compose terminal rank evidence and contingent cashflows from public primitives."
+      RISK AND SUPPORT BOUNDARY: Report spread_cs01 as PV(spread + 1bp) - PV(spread),
+      reusing the same seed for sampled base and bump. Heterogeneous curves/recoveries
+      and running premium legs remain outside this terminal-settlement route.
+  reasoning: "Nth-to-default lanes compose name-aligned ranked-event exposure and terminal settlement from public primitives."
   learned: false
 
 - instrument: cds

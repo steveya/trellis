@@ -4913,9 +4913,10 @@ def evaluate(self, market_state):
         source = '''
 from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
 from trellis.models.contingent_cashflows import (
-    ProtectionPayment,
+    TriggerSettlement,
+    exchangeable_ranked_event_expected_weight,
     nth_to_default_probability,
-    protection_payment_pv,
+    trigger_settlement_pv,
 )
 
 def evaluate(self, market_state):
@@ -4924,13 +4925,15 @@ def evaluate(self, market_state):
     trigger_probability = nth_to_default_probability(
         resolved.n_names, spec.n_th, resolved.default_probability, resolved.correlation
     )
-    payment = ProtectionPayment(
-        notional=resolved.notional,
-        recovery=resolved.recovery,
-        default_probability=trigger_probability,
-        discount_factor=resolved.discount_factor,
+    expected_weight = exchangeable_ranked_event_expected_weight(
+        trigger_probability, event_weights=resolved.exposure_weights
     )
-    return protection_payment_pv(payment)
+    settlement = TriggerSettlement(
+        amount=resolved.notional * (1.0 - resolved.recovery),
+        discount_factor=resolved.discount_factor,
+        trigger_weight=expected_weight,
+    )
+    return trigger_settlement_pv(settlement)
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("credit_basket_nth_to_default", "analytical"), spec)
@@ -4943,9 +4946,9 @@ from trellis.core.differentiable import get_numpy
 from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
 from trellis.models.copulas.gaussian import GaussianCopula
 from trellis.models.contingent_cashflows import (
-    ProtectionPayment,
-    protection_payment_pv,
-    rank_trigger_probability,
+    TriggerSettlement,
+    ranked_event_expected_weight,
+    trigger_settlement_pv,
 )
 
 def evaluate(self, market_state):
@@ -4958,16 +4961,18 @@ def evaluate(self, market_state):
         n_paths=int(spec.n_paths),
         rng=np.random.default_rng(int(spec.seed)),
     )
-    trigger_probability = rank_trigger_probability(
-        default_times, rank=spec.n_th, horizon=resolved.horizon
+    expected_weight = ranked_event_expected_weight(
+        default_times,
+        event_weights=resolved.exposure_weights,
+        rank=spec.n_th,
+        horizon=resolved.horizon,
     )
-    payment = ProtectionPayment(
-        notional=resolved.notional,
-        recovery=resolved.recovery,
-        default_probability=trigger_probability,
+    settlement = TriggerSettlement(
+        amount=resolved.notional * (1.0 - resolved.recovery),
         discount_factor=resolved.discount_factor,
+        trigger_weight=expected_weight,
     )
-    return protection_payment_pv(payment)
+    return trigger_settlement_pv(settlement)
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("credit_basket_nth_to_default", "monte_carlo"), spec)

@@ -913,6 +913,23 @@ def test_codegen_registry_excludes_nth_to_default_compatibility_wrappers():
     assert "price_nth_to_default_basket" not in exports
 
 
+def test_codegen_registry_exposes_ranked_event_weight_composition_primitives():
+    import_registry.reset_registry_cache()
+    registry = get_import_registry()
+
+    assert "from trellis.models.credit_basket_copula import" in registry
+    assert "resolve_credit_basket_inputs" in registry
+    assert "from trellis.models.contingent_cashflows import" in registry
+    for symbol in (
+        "TriggerSettlement",
+        "exchangeable_ranked_event_expected_weight",
+        "nth_to_default_probability",
+        "ranked_event_expected_weight",
+        "trigger_settlement_pv",
+    ):
+        assert symbol in registry
+
+
 def test_static_registry_fallback_covers_default_event_composition(monkeypatch):
     import_registry.reset_registry_cache()
     monkeypatch.setattr(

@@ -1,6 +1,6 @@
 """XV5: Credit cross-validation against external and independent internal evidence."""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 
 import pytest
@@ -131,3 +131,93 @@ class TestCreditCrossValidation:
 
         assert sampled_probability == pytest.approx(analytical_probability, rel=0.025)
         assert sampled_price == pytest.approx(analytical_price, rel=0.025)
+
+    def test_weighted_rank_price_and_spread_cs01_match_seeded_default_time_mc(self):
+        from trellis.core.differentiable import get_numpy
+        from trellis.models.contingent_cashflows import (
+            TriggerSettlement,
+            exchangeable_ranked_event_expected_weight,
+            nth_to_default_probability,
+            ranked_event_expected_weight,
+            trigger_settlement_pv,
+        )
+        from trellis.models.copulas.gaussian import GaussianCopula
+        from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
+
+        @dataclass(frozen=True)
+        class Spec:
+            notional: float = 5_000_000.0
+            n_names: int = 4
+            n_th: int = 2
+            end_date: date = date(2029, 11, 15)
+            basket_names: tuple[str, ...] = ("A", "B", "C", "D")
+            basket_weights: tuple[float, ...] = (0.4, 0.2, 0.2, 0.2)
+            spread: float = 0.025
+            correlation: float = 0.3
+            recovery: float = 0.4
+            day_count: DayCountConvention = DayCountConvention.ACT_360
+            n_paths: int = 500_000
+            seed: int = 42
+
+        market_state = MarketState(
+            as_of=SETTLE,
+            settlement=SETTLE,
+            discount=YieldCurve.flat(0.04, max_tenor=10.0),
+            credit_curve=CreditCurve.flat(0.03, max_tenor=10.0),
+        )
+
+        def analytical(spec: Spec) -> float:
+            resolved = resolve_credit_basket_inputs(market_state, spec)
+            probability = nth_to_default_probability(
+                resolved.n_names,
+                spec.n_th,
+                resolved.default_probability,
+                resolved.correlation,
+            )
+            expected_weight = exchangeable_ranked_event_expected_weight(
+                probability,
+                event_weights=resolved.exposure_weights,
+            )
+            return trigger_settlement_pv(
+                TriggerSettlement(
+                    amount=resolved.notional * (1.0 - resolved.recovery),
+                    discount_factor=resolved.discount_factor,
+                    trigger_weight=expected_weight,
+                )
+            )
+
+        def sampled(spec: Spec) -> float:
+            resolved = resolve_credit_basket_inputs(market_state, spec)
+            np = get_numpy()
+            default_times = GaussianCopula(
+                correlation=resolved.correlation,
+                n_names=resolved.n_names,
+            ).sample_default_times(
+                np.full(resolved.n_names, resolved.hazard_rate),
+                n_paths=spec.n_paths,
+                rng=np.random.default_rng(spec.seed),
+            )
+            expected_weight = ranked_event_expected_weight(
+                default_times,
+                event_weights=resolved.exposure_weights,
+                rank=spec.n_th,
+                horizon=resolved.horizon,
+            )
+            return trigger_settlement_pv(
+                TriggerSettlement(
+                    amount=resolved.notional * (1.0 - resolved.recovery),
+                    discount_factor=resolved.discount_factor,
+                    trigger_weight=expected_weight,
+                )
+            )
+
+        spec = Spec()
+        bumped = replace(spec, spread=spec.spread + 1.0e-4)
+        analytical_price = analytical(spec)
+        sampled_price = sampled(spec)
+        analytical_cs01 = analytical(bumped) - analytical_price
+        sampled_cs01 = sampled(bumped) - sampled_price
+
+        assert sampled_price == pytest.approx(analytical_price, rel=0.025)
+        assert analytical_cs01 > 0.0
+        assert sampled_cs01 == pytest.approx(analytical_cs01, rel=0.15)

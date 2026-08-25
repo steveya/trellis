@@ -56,6 +56,8 @@ _ROUTE_SIGNATURES = {
     "heston_adi_2d": ("price_heston_option_adi_pde_result", "HestonAdiPDEConfig"),
     "credit_basket_nth_to_default": (
         "nth_to_default_probability",
+        "exchangeable_ranked_event_expected_weight",
+        "ranked_event_expected_weight",
         "GaussianCopula",
     ),
 }
@@ -5186,7 +5188,7 @@ class AlgorithmContractValidator:
         plan: GenerationPlan,
         route_spec: RouteSpec,
     ) -> list[SemanticFinding]:
-        """Enforce method-coherent homogeneous rank-trigger composition."""
+        """Enforce method-coherent name-weighted rank-trigger composition."""
         if route_spec.id != "credit_basket_nth_to_default":
             return []
 
@@ -5201,9 +5203,9 @@ class AlgorithmContractValidator:
                     category="nth_to_default_forbidden_helper",
                     message=(
                         f"Route '{route_spec.id}' cannot call compatibility surface "
-                        f"'{symbol}'. Resolve the homogeneous basket, produce "
-                        "method-coherent rank evidence, and construct the protection "
-                        "payment from public primitives."
+                        f"'{symbol}'. Resolve name-aligned basket exposures, produce "
+                        "method-coherent ranked-event weight evidence, and construct "
+                        "the terminal trigger settlement from public primitives."
                     ),
                 )
             )
@@ -5211,12 +5213,16 @@ class AlgorithmContractValidator:
         method = str(getattr(plan, "method", "") or "").strip().lower()
         method = method.replace("-", "_").replace(" ", "_")
         if method == "monte_carlo":
-            wrong_symbols = ("nth_to_default_probability",)
+            wrong_symbols = (
+                "nth_to_default_probability",
+                "exchangeable_ranked_event_expected_weight",
+            )
         else:
             wrong_symbols = (
                 "GaussianCopula",
                 "sample_default_times",
                 "rank_trigger_probability",
+                "ranked_event_expected_weight",
             )
         for symbol in wrong_symbols:
             if not _calls_symbol(source, symbol):
@@ -5229,8 +5235,9 @@ class AlgorithmContractValidator:
                     message=(
                         f"Method '{method or 'analytical'}' cannot use '{symbol}' on "
                         "the nth-to-default route. Analytical/copula targets integrate "
-                        "rank probability; Monte Carlo targets sample persistent "
-                        "default-time paths and reduce their order statistic."
+                        "rank probability and exchangeable expected exposure; Monte "
+                        "Carlo targets sample persistent default-time paths and retain "
+                        "the triggering name's exposure identity."
                     ),
                 )
             )
@@ -5246,7 +5253,7 @@ class AlgorithmContractValidator:
                     message=(
                         "Monte Carlo nth-to-default composition must call "
                         "GaussianCopula.sample_default_times(...) before reducing "
-                        "the per-path rank trigger."
+                        "the per-path ranked-event exposure."
                     ),
                 )
             )

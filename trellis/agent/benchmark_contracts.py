@@ -677,6 +677,8 @@ def _benchmark_summary_line(contract: Mapping[str, Any]) -> str:
         return "Price a variance swap under the declared variance-replication benchmark surface."
     if product == "rainbow_option":
         return "Price a rainbow basket option under the declared benchmark surface."
+    if product == "nth_to_default":
+        return "Price terminal nth-to-default protection under the declared weighted basket contract."
     return str(contract.get("product") or "Price the declared benchmark contract.")
 
 
@@ -687,6 +689,21 @@ def _benchmark_detail_lines(
 ) -> list[str]:
     product = str(contract.get("product") or "").strip().lower()
     lines: list[str] = []
+    if product == "nth_to_default":
+        names = tuple(str(name) for name in (contract.get("basket_names") or ()))
+        weights = tuple(float(weight) for weight in (contract.get("basket_weights") or ()))
+        lines.extend(
+            [
+                f"Trigger rank: {contract.get('nth') or contract.get('n_th') or 1}.",
+                f"Basket names: {names}.",
+                f"Basket notional fractions: {weights}.",
+                f"Notional: {contract.get('notional')}.",
+                f"Recovery rate: {contract.get('recovery_rate', contract.get('recovery'))}.",
+                f"Spread: {contract.get('spread')} as a decimal annual market credit-spread quote; not a running coupon.",
+                "Spread CS01: currency PV change for a +1 bp quote bump.",
+            ]
+        )
+        return lines
     if product == "fx_vanilla":
         expiry_date = _valuation_date(contract, scenario_contract) + timedelta(
             days=round(float(contract.get("expiry_years") or 0.0) * 365.0)
@@ -1079,13 +1096,24 @@ def _cds_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict
 def _nth_to_default_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:
     basket_names = contract.get("basket_names") or contract.get("names")
     n_names = len(basket_names) if isinstance(basket_names, (list, tuple)) else None
+    basket_weights = contract.get("basket_weights") or contract.get("weights")
+    recovery_value = contract.get("recovery_rate")
+    if recovery_value is None:
+        recovery_value = contract.get("recovery")
     return {
         "notional": _float_or_none(contract.get("notional")),
         "n_names": n_names,
         "n_th": int(contract.get("nth") or contract.get("n_th") or 1),
+        "basket_names": tuple(str(name) for name in basket_names) if basket_names else None,
+        "basket_weights": (
+            tuple(float(weight) for weight in basket_weights)
+            if basket_weights
+            else None
+        ),
         "end_date": _end_date_from_contract(contract, start_date=valuation_date),
         "correlation": _float_or_none(contract.get("correlation")),
-        "recovery": _float_or_none(contract.get("recovery_rate") or contract.get("recovery")),
+        "recovery": _float_or_none(recovery_value),
+        "spread": _float_or_none(contract.get("spread")),
     }
 
 

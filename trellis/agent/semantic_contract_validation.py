@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass
+import math
 import re
+from dataclasses import dataclass
 from types import MappingProxyType
 
 import trellis.core.capabilities as capability_registry
@@ -2286,8 +2287,8 @@ def _validate_nth_to_default_shape(
         expected_instrument_class="nth_to_default",
         expected_payoff_family="nth_to_default",
         expected_underlier_structure="multi_asset_basket",
-        expected_payoff_rule="nth_default_loss_payment",
-        expected_settlement_rule="settle_at_nth_default_or_maturity",
+        expected_payoff_rule="nth_default_name_weighted_loss_payment",
+        expected_settlement_rule="terminal_if_rank_triggers_by_maturity",
         expected_exercise_style="none",
         expected_multi_asset=True,
         require_schedule=True,
@@ -2314,6 +2315,44 @@ def _validate_nth_to_default_shape(
         errors.append("Nth-to-default semantics require trigger_rank >= 1.")
     if product.selection_count > len(product.constituents):
         errors.append("Nth-to-default trigger_rank cannot exceed the reference-entity pool.")
+    if len(set(product.constituents)) != len(product.constituents):
+        errors.append("Nth-to-default reference entities must be unique.")
+    term_fields = dict(getattr(product, "term_fields", {}) or {})
+    weights = tuple(term_fields.get("basket_weights") or ())
+    if weights:
+        if len(weights) != len(product.constituents):
+            errors.append(
+                "Nth-to-default basket weights must have the same length as reference entities."
+            )
+        else:
+            try:
+                normalized_weights = tuple(float(weight) for weight in weights)
+            except (TypeError, ValueError):
+                normalized_weights = ()
+            if not normalized_weights or any(
+                not math.isfinite(weight) for weight in normalized_weights
+            ):
+                errors.append(
+                    "Nth-to-default basket weights must be finite numeric values."
+                )
+            elif any(weight < 0.0 for weight in normalized_weights):
+                errors.append("Nth-to-default basket weights must be non-negative.")
+            elif abs(sum(normalized_weights) - 1.0) > 1.0e-10:
+                errors.append("Nth-to-default basket weights must sum to 1.")
+    spread = term_fields.get("spread")
+    if spread is not None:
+        try:
+            normalized_spread = float(spread)
+        except (TypeError, ValueError):
+            normalized_spread = None
+        if (
+            normalized_spread is None
+            or not math.isfinite(normalized_spread)
+            or not 0.0 <= normalized_spread < 1.0
+        ):
+            errors.append(
+                "Nth-to-default spread must be a finite numeric decimal quote in [0, 1)."
+            )
     if not contract.blueprint.primitive_families:
         warnings.append(
             f"Semantic contract `{contract.semantic_id}` has no explicit primitive-family hint."
