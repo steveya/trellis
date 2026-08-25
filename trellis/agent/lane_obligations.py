@@ -481,9 +481,10 @@ def _control_obligations_for(family_ir) -> tuple[str, ...]:
     if isinstance(family_ir, NthToDefaultIR):
         return _tuple_unique(
             (
+                f"pricing_mode:{family_ir.pricing_mode}",
                 f"trigger_rank:{family_ir.trigger_rank}",
                 f"schedule_role:{family_ir.schedule_role}",
-                f"copula:{family_ir.copula_symbol}",
+                f"rank_evidence:{family_ir.sampled_rank_symbol if family_ir.pricing_mode == 'monte_carlo' else family_ir.rank_probability_symbol}",
             )
         )
     return ()
@@ -581,10 +582,20 @@ def _construction_steps_for(*, lane_family: str, family_ir) -> tuple[str, ...]:
             f"Assemble the explicit `{family_ir.scheduled_leg_symbol}` and `{family_ir.trigger_leg_symbol}` legs with their signed accrual/payment value contracts.",
         )
     if isinstance(family_ir, NthToDefaultIR):
+        if family_ir.pricing_mode == "monte_carlo":
+            evidence_step = (
+                f"Sample persistent correlated event-time paths with `{family_ir.default_time_sampler_symbol}` "
+                f"and reduce rank={family_ir.trigger_rank} through `{family_ir.sampled_rank_symbol}`."
+            )
+        else:
+            evidence_step = (
+                f"Integrate terminal rank={family_ir.trigger_rank} probability with "
+                f"`{family_ir.rank_probability_symbol}` from the resolved marginal default mass."
+            )
         return (
-            f"Keep the reference-entity pool explicit and preserve nth-default rank={family_ir.trigger_rank} across the route.",
-            f"Bind marginal credit inputs and dependence assumptions through `{family_ir.copula_symbol}` before payoff aggregation.",
-            f"Delegate the checked-in basket-credit payoff assembly to `{family_ir.helper_symbol}` unless the request introduces a new kernel.",
+            f"Resolve the bounded homogeneous basket through `{family_ir.market_binding_symbol}` and validate the reference-pool rank.",
+            evidence_step,
+            f"Construct `{family_ir.protection_payment_symbol}` explicitly and discount it through `{family_ir.trigger_leg_symbol}`.",
         )
     if lane_family == "analytical":
         return (

@@ -31,6 +31,10 @@ class _NthSpec:
     recovery = 0.4
 
 
+class _ZeroRecoveryNthSpec(_NthSpec):
+    recovery = 0.0
+
+
 class _LossDistributionSpec:
     notional = 100_000_000.0
     n_names = 75
@@ -98,6 +102,17 @@ def test_price_credit_basket_nth_to_default_preserves_compatibility():
     )
 
     assert helper_price == pytest.approx(reference_price)
+
+
+def test_resolve_credit_basket_inputs_preserves_explicit_zero_recovery():
+    from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
+
+    resolved = resolve_credit_basket_inputs(
+        _market_state(hazard=0.03),
+        _ZeroRecoveryNthSpec(),
+    )
+
+    assert resolved.recovery == 0.0
 
 
 def test_credit_loss_distribution_helpers_agree_on_discounted_expected_loss():

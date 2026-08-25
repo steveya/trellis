@@ -594,38 +594,41 @@ class TestCreditRoutes:
         assert spec.match_payoff_family == ("nth_to_default",)
         assert spec.match_model_family == ("credit_copula",)
 
-    _PRE_COLLAPSE_ANALYTICAL_PRIMITIVES = frozenset({
-        ("trellis.core.date_utils", "year_fraction", "time_measure"),
-        ("trellis.instruments.nth_to_default", "price_nth_to_default_basket", "route_helper"),
+    _ANALYTICAL_NTD_PRIMITIVES = frozenset({
+        ("trellis.models.credit_basket_copula", "resolve_credit_basket_inputs", "market_binding"),
+        ("trellis.models.contingent_cashflows", "nth_to_default_probability", "numerical_evidence"),
+        ("trellis.models.contingent_cashflows", "ProtectionPayment", "payoff_primitive"),
+        ("trellis.models.contingent_cashflows", "protection_payment_pv", "trigger_leg"),
     })
 
-    _PRE_COLLAPSE_MC_PRIMITIVES = frozenset({
-        ("trellis.core.date_utils", "year_fraction", "time_measure"),
+    _SAMPLED_NTD_PRIMITIVES = frozenset({
+        ("trellis.models.credit_basket_copula", "resolve_credit_basket_inputs", "market_binding"),
         ("trellis.core.differentiable", "get_numpy", "array_backend"),
         ("trellis.models.copulas.gaussian", "GaussianCopula", "default_time_sampler"),
-        ("trellis.instruments.nth_to_default", "price_nth_to_default_basket", "route_helper"),
-        ("trellis.models.monte_carlo.engine", "MonteCarloEngine", "path_simulation"),
+        ("trellis.models.contingent_cashflows", "rank_trigger_probability", "rank_aggregator"),
+        ("trellis.models.contingent_cashflows", "ProtectionPayment", "payoff_primitive"),
+        ("trellis.models.contingent_cashflows", "protection_payment_pv", "trigger_leg"),
     })
 
     def test_nth_to_default_collapsed_route_preserves_analytical_primitive_surface(self, registry):
         spec = find_route_by_id("credit_basket_nth_to_default", registry)
         assert spec is not None
         primitives = resolve_route_primitives(spec, self.NTD_IR, method="analytical")
-        assert _prim_set(primitives) == self._PRE_COLLAPSE_ANALYTICAL_PRIMITIVES
+        assert _prim_set(primitives) == self._ANALYTICAL_NTD_PRIMITIVES
 
     def test_nth_to_default_collapsed_route_preserves_mc_primitive_surface(self, registry):
         spec = find_route_by_id("credit_basket_nth_to_default", registry)
         assert spec is not None
         primitives = resolve_route_primitives(spec, self.NTD_IR, method="monte_carlo")
-        assert _prim_set(primitives) == self._PRE_COLLAPSE_MC_PRIMITIVES
+        assert _prim_set(primitives) == self._SAMPLED_NTD_PRIMITIVES
 
-    def test_nth_to_default_collapsed_route_qmc_copula_methods_share_mc_surface(self, registry):
+    def test_nth_to_default_copula_uses_analytical_surface_and_qmc_is_not_admitted(self, registry):
         spec = find_route_by_id("credit_basket_nth_to_default", registry)
         assert spec is not None
-        mc = _prim_set(resolve_route_primitives(spec, self.NTD_IR, method="monte_carlo"))
-        qmc = _prim_set(resolve_route_primitives(spec, self.NTD_IR, method="qmc"))
         copula = _prim_set(resolve_route_primitives(spec, self.NTD_IR, method="copula"))
-        assert mc == qmc == copula == self._PRE_COLLAPSE_MC_PRIMITIVES
+        assert copula == self._ANALYTICAL_NTD_PRIMITIVES
+        assert spec.match_methods == ("analytical", "monte_carlo", "copula")
+        assert "qmc" not in spec.match_methods
 
     def test_nth_to_default_collapsed_route_admissibility_envelope_is_union(self, registry):
         spec = find_route_by_id("credit_basket_nth_to_default", registry)
@@ -3634,7 +3637,7 @@ class TestEngineFamilyCoverage:
     EXPECTED = {
         "equity_quanto": "analytical",
         "credit_default_swap": "analytical",
-        "credit_basket_nth_to_default": "analytical",
+        "credit_basket_nth_to_default": "copula",
         "correlated_basket_monte_carlo": "monte_carlo",
         "exercise_monte_carlo": "exercise",
         "monte_carlo_paths": "monte_carlo",

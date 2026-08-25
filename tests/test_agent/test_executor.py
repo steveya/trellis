@@ -7006,7 +7006,7 @@ def test_deterministic_exact_binding_module_materializes_ranked_basket_primitive
     assert EVALUATE_SENTINEL not in generated.code
 
 
-def test_deterministic_exact_binding_module_materializes_nth_to_default_wrapper():
+def test_deterministic_exact_binding_module_materializes_analytical_nth_to_default_composition():
     from trellis.agent.executor import (
         EVALUATE_SENTINEL,
         _generate_skeleton,
@@ -7015,9 +7015,14 @@ def test_deterministic_exact_binding_module_materializes_nth_to_default_wrapper(
     from trellis.agent.planner import STATIC_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=("trellis.instruments.nth_to_default.price_nth_to_default_basket",),
+        lane_exact_binding_refs=(
+            "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+            "trellis.models.contingent_cashflows.nth_to_default_probability",
+            "trellis.models.contingent_cashflows.ProtectionPayment",
+            "trellis.models.contingent_cashflows.protection_payment_pv",
+        ),
         primitive_plan=None,
-        method="copula",
+        method="analytical",
         instrument_type="nth_to_default",
     )
 
@@ -7032,10 +7037,60 @@ def test_deterministic_exact_binding_module_materializes_nth_to_default_wrapper(
     )
 
     assert generated is not None
-    assert "T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)" in generated.code
-    assert "return price_nth_to_default_basket(" in generated.code
-    assert "credit_curve=market_state.credit_curve" in generated.code
-    assert "discount_curve=market_state.discount" in generated.code
+    assert "resolved = resolve_credit_basket_inputs(market_state, spec)" in generated.code
+    assert "trigger_probability = nth_to_default_probability(" in generated.code
+    assert "payment = ProtectionPayment(" in generated.code
+    assert "return protection_payment_pv(payment)" in generated.code
+    assert "price_nth_to_default_basket" not in generated.code
+    assert "GaussianCopula" not in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_deterministic_exact_binding_module_materializes_sampled_nth_to_default_composition():
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+            "trellis.core.differentiable.get_numpy",
+            "trellis.models.copulas.gaussian.GaussianCopula",
+            "trellis.models.contingent_cashflows.rank_trigger_probability",
+            "trellis.models.contingent_cashflows.ProtectionPayment",
+            "trellis.models.contingent_cashflows.protection_payment_pv",
+        ),
+        primitive_plan=None,
+        method="monte_carlo",
+        instrument_type="nth_to_default",
+    )
+
+    skeleton = _generate_skeleton(
+        STATIC_SPECS["nth_to_default"],
+        "Nth-to-default sampled exact binding",
+        generation_plan=generation_plan,
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        skeleton,
+        generation_plan,
+    )
+
+    assert generated is not None
+    assert "n_paths: int = 250_000" in generated.code
+    assert "seed: int = 42" in generated.code
+    assert "resolved = resolve_credit_basket_inputs(market_state, spec)" in generated.code
+    assert "copula = GaussianCopula(" in generated.code
+    assert "default_times = copula.sample_default_times(" in generated.code
+    assert "trigger_probability = rank_trigger_probability(" in generated.code
+    assert "n_paths = int(spec.n_paths)" in generated.code
+    assert "seed = int(spec.seed)" in generated.code
+    assert "payment = ProtectionPayment(" in generated.code
+    assert "return protection_payment_pv(payment)" in generated.code
+    assert "price_nth_to_default_basket" not in generated.code
+    assert "nth_to_default_probability" not in generated.code
     assert EVALUATE_SENTINEL not in generated.code
 
 

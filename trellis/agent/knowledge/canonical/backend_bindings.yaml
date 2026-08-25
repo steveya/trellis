@@ -191,38 +191,45 @@ bindings:
             role: trigger_leg
 
   - route_id: credit_basket_nth_to_default
-    engine_family: analytical
+    engine_family: copula
     route_family: nth_to_default
     conditional_primitives:
       - when:
-          methods: [analytical]
+          methods: [analytical, copula]
         primitives:
-          - module: trellis.core.date_utils
-            symbol: year_fraction
-            role: time_measure
-          - module: trellis.instruments.nth_to_default
-            symbol: price_nth_to_default_basket
-            role: route_helper
+          - module: trellis.models.credit_basket_copula
+            symbol: resolve_credit_basket_inputs
+            role: market_binding
+          - module: trellis.models.contingent_cashflows
+            symbol: nth_to_default_probability
+            role: numerical_evidence
+          - module: trellis.models.contingent_cashflows
+            symbol: ProtectionPayment
+            role: payoff_primitive
+          - module: trellis.models.contingent_cashflows
+            symbol: protection_payment_pv
+            role: trigger_leg
       - when:
-          methods: [monte_carlo, qmc, copula]
+          methods: [monte_carlo]
         primitives:
-          - module: trellis.core.date_utils
-            symbol: year_fraction
-            role: time_measure
+          - module: trellis.models.credit_basket_copula
+            symbol: resolve_credit_basket_inputs
+            role: market_binding
           - module: trellis.core.differentiable
             symbol: get_numpy
             role: array_backend
           - module: trellis.models.copulas.gaussian
             symbol: GaussianCopula
             role: default_time_sampler
-          - module: trellis.instruments.nth_to_default
-            symbol: price_nth_to_default_basket
-            role: route_helper
-          - module: trellis.models.monte_carlo.engine
-            symbol: MonteCarloEngine
-            role: path_simulation
-            required: false
-            excluded: true
+          - module: trellis.models.contingent_cashflows
+            symbol: rank_trigger_probability
+            role: rank_aggregator
+          - module: trellis.models.contingent_cashflows
+            symbol: ProtectionPayment
+            role: payoff_primitive
+          - module: trellis.models.contingent_cashflows
+            symbol: protection_payment_pv
+            role: trigger_leg
 
   - route_id: correlated_basket_monte_carlo
     engine_family: monte_carlo

@@ -454,6 +454,8 @@ STATIC_SPECS: dict[str, SpecSchema] = {
             FieldDef("correlation", "float", "Default correlation", "0.3"),
             FieldDef("recovery", "float", "Recovery rate", "0.4"),
             FieldDef("day_count", "DayCountConvention", "Day count convention", "DayCountConvention.ACT_360"),
+            FieldDef("n_paths", "int", "Monte Carlo path count", "250_000"),
+            FieldDef("seed", "int", "Monte Carlo random seed", "42"),
         ],
     ),
     "bermudan_swaption": SpecSchema(

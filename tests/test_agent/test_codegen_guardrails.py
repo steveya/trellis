@@ -1524,8 +1524,14 @@ def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
     assert plan.primitive_plan.route == "credit_basket_nth_to_default"
     assert plan.primitive_plan.route_family == "nth_to_default"
     primitive_symbols = {primitive.symbol for primitive in plan.primitive_plan.primitives}
-    assert "GaussianCopula" in primitive_symbols
-    assert "price_nth_to_default_basket" in card
+    assert {
+        "resolve_credit_basket_inputs",
+        "GaussianCopula",
+        "rank_trigger_probability",
+        "ProtectionPayment",
+        "protection_payment_pv",
+    }.issubset(primitive_symbols)
+    assert "price_nth_to_default_basket" not in card
     assert "single-name CDS" not in card
     assert "Required adapters:" not in card
 

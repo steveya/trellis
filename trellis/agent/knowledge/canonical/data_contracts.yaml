@@ -40,6 +40,23 @@
   warning: Do not call product-level CDS schedule or pricing helpers from generated
     code, and do not treat conditional interval probabilities as unconditional
     default mass.
+- name: HOMOGENEOUS_RANK_TRIGGER_COMPOSITION
+  method: analytical
+  source: resolve_credit_basket_inputs(...) plus nth_to_default_probability(...)
+  convention: One homogeneous terminal marginal default probability, one flat-equivalent
+    hazard, one equicorrelation parameter, and probability that at least rank names
+    default by the terminal horizon
+  typical_range: default and trigger probabilities in [0, 1], positive discount
+    factor, 1 <= rank <= pool size, recovery in [0, 1]
+  model_expects: resolved homogeneous basket inputs, analytical one-factor rank
+    integration, and explicit ProtectionPayment present-value assembly
+  conversion: derive marginal default mass from terminal survival once; apply
+    loss-given-default, notional, and discounting once through ProtectionPayment
+    and protection_payment_pv
+  model_range: homogeneous terminal-settlement basket with deterministic curves,
+    fixed recovery, and equicorrelation
+  warning: Do not call price_nth_to_default_basket, introduce name weights, or infer
+    running spread and spread-sensitivity semantics on this bounded contract.
 - name: TERMINAL_BASKET_MARKET_BINDING
   method: analytical
   source: resolve_terminal_basket_inputs(market_state, spec)
@@ -104,6 +121,23 @@
     first-event sampling
   warning: Do not resample independently by interval, call product-level CDS
     helpers, or silently replace the task path count with a smaller constant.
+- name: HOMOGENEOUS_RANK_TRIGGER_COMPOSITION
+  method: monte_carlo
+  source: resolve_credit_basket_inputs(...) plus GaussianCopula.sample_default_times(...)
+    and rank_trigger_probability(...)
+  convention: Rows are persistent paths, columns are homogeneous reference names,
+    and each path contributes one nth order statistic against the terminal horizon
+  typical_range: positive flat-equivalent hazard for positive horizon, positive
+    path count, explicit seed, trigger probability in [0, 1]
+  model_expects: one seeded correlated default-time matrix, one rank reduction,
+    and explicit ProtectionPayment present-value assembly
+  conversion: repeat the resolved flat hazard across names, sample once, preserve
+    the path-by-name matrix, then apply loss-given-default, notional, and discounting
+    once through the contingent-cashflow primitives
+  model_range: pseudo-random homogeneous Gaussian-copula terminal evidence
+  warning: Do not use the analytical rank integral as Monte Carlo evidence, resample
+    names or ranks independently, silently change n_paths/seed, or infer weighted-name
+    loss semantics.
 - name: TERMINAL_BASKET_MARKET_BINDING
   method: monte_carlo
   source: resolve_terminal_basket_inputs(market_state, spec)

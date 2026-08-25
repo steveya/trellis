@@ -1186,6 +1186,22 @@ def test_rejects_helper_only_equity_pde_route_without_required_composition():
     assert not report.ok
 
 
+def test_default_time_sampling_records_monte_carlo_engine_evidence():
+    from trellis.agent.semantic_validation import extract_semantic_signals
+
+    source = '''
+from trellis.models.copulas.gaussian import GaussianCopula
+
+def evaluate(hazard_rates, rng):
+    copula = GaussianCopula(correlation=0.3, n_names=5)
+    return copula.sample_default_times(hazard_rates, n_paths=1000, rng=rng)
+'''
+
+    signals = extract_semantic_signals(source)
+
+    assert set(signals.engine_families) == {"copula", "monte_carlo"}
+
+
 def test_rejects_helper_only_equity_monte_carlo_without_terminal_claim_primitives():
     from trellis.agent.semantic_validation import validate_semantics
 

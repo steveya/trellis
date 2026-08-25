@@ -2033,49 +2033,101 @@ def _build_nth_to_default_expr_from_family_ir(
     family_ir: NthToDefaultIR,
     bindings: tuple[DslTargetBinding, ...],
 ) -> tuple[ContractExpr | None, tuple[str, ...]]:
-    """Build a typed nth-to-default helper lowering."""
-    route_helper = next(
-        (
-            binding
-            for binding in bindings
-            if binding.role == "route_helper" and binding.symbol == family_ir.helper_symbol
-        ),
-        None,
-    )
-    if route_helper is None:
-        return None, (
-            _missing_primitive_message(route_id, binding_id, "helper", family_ir.helper_symbol),
+    """Build explicit market, rank-evidence, and protection-payment lowering."""
+    required = [
+        ("market_binding", "basket-credit market resolver", family_ir.market_binding_symbol),
+    ]
+    if family_ir.pricing_mode == "monte_carlo":
+        required.extend(
+            (
+                ("default_time_sampler", "correlated event-time sampler", family_ir.default_time_sampler_symbol),
+                ("rank_aggregator", "sampled rank reducer", family_ir.sampled_rank_symbol),
+            )
         )
+        stage_roles = (
+            "market_binding",
+            "default_time_sampling",
+            "rank_trigger_reduction",
+            "protection_payment",
+            "trigger_leg",
+        )
+        descriptions = (
+            "Resolve homogeneous basket horizon, marginal default mass, flat-equivalent hazard, correlation, recovery, and discounting.",
+            "Sample persistent correlated default-time paths with explicit path-count and seed controls.",
+            f"Reduce each persistent path to rank={family_ir.trigger_rank} and estimate terminal trigger probability.",
+            "Construct the loss-given-default protection payment from the sampled trigger probability.",
+            "Discount the explicit protection payment to obtain present value.",
+        )
+        ports = (
+            _market_signature_from_family_ir(family_ir).inputs,
+            ("resolved_credit_basket:state",),
+            ("default_time_paths:matrix", "resolved_credit_basket:state"),
+            ("rank_trigger_probability:scalar", "resolved_credit_basket:state"),
+            ("protection_payment:value",),
+            ("price:scalar",),
+        )
+    else:
+        required.append(
+            ("numerical_evidence", "analytical rank probability", family_ir.rank_probability_symbol)
+        )
+        stage_roles = (
+            "market_binding",
+            "rank_trigger_integration",
+            "protection_payment",
+            "trigger_leg",
+        )
+        descriptions = (
+            "Resolve homogeneous basket horizon, marginal default mass, correlation, recovery, and discounting.",
+            f"Integrate terminal probability of at least rank={family_ir.trigger_rank} correlated defaults.",
+            "Construct the loss-given-default protection payment from the analytical trigger probability.",
+            "Discount the explicit protection payment to obtain present value.",
+        )
+        ports = (
+            _market_signature_from_family_ir(family_ir).inputs,
+            ("resolved_credit_basket:state",),
+            ("rank_trigger_probability:scalar", "resolved_credit_basket:state"),
+            ("protection_payment:value",),
+            ("price:scalar",),
+        )
+    required.extend(
+        (
+            ("payoff_primitive", "protection payment", family_ir.protection_payment_symbol),
+            ("trigger_leg", "protection-payment present value", family_ir.trigger_leg_symbol),
+        )
+    )
 
-    copula_binding = next(
-        (
-            binding
-            for binding in bindings
-            if binding.role == "default_time_sampler" and binding.symbol == family_ir.copula_symbol
-        ),
-        None,
-    )
-    if copula_binding is None:
-        return None, (
-            _missing_primitive_message(route_id, binding_id, "copula", family_ir.copula_symbol),
+    resolved: list[DslTargetBinding] = []
+    for role, label, symbol in required:
+        binding = next(
+            (
+                candidate
+                for candidate in bindings
+                if candidate.role == role and candidate.symbol == symbol
+            ),
+            None,
         )
+        if binding is None:
+            return None, (_missing_primitive_message(route_id, binding_id, label, symbol),)
+        resolved.append(binding)
 
     market_signature = _market_signature_from_family_ir(family_ir)
-    helper_atom = ContractAtom(
-        atom_id=_binding_atom_id(route_id, binding_id, "route_helper"),
-        primitive_ref=route_helper.primitive_ref,
-        description=(
-            f"Typed nth-to-default helper backed by the checked-in "
-            f"{family_ir.copula_symbol} dependence route."
-        ),
-        signature=ContractSignature(
-            inputs=market_signature.inputs,
-            outputs=("price:scalar",),
-            timeline_roles=market_signature.timeline_roles,
-            market_data_requirements=market_signature.market_data_requirements,
-        ),
+    atoms = tuple(
+        ContractAtom(
+            atom_id=_binding_atom_id(route_id, binding_id, stage_role),
+            primitive_ref=binding.primitive_ref,
+            description=description,
+            signature=ContractSignature(
+                inputs=ports[index],
+                outputs=ports[index + 1],
+                timeline_roles=market_signature.timeline_roles,
+                market_data_requirements=market_signature.market_data_requirements,
+            ),
+        )
+        for index, (stage_role, binding, description) in enumerate(
+            zip(stage_roles, resolved, descriptions, strict=True)
+        )
     )
-    return helper_atom, ()
+    return ThenExpr(terms=atoms), ()
 
 
 def _build_control_expr(

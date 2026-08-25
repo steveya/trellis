@@ -1,7 +1,7 @@
 category: numerical
 title: Use required copula primitives
 severity: critical
-status: validated
+status: archived
 confidence: 0.6
 created: '2026-04-08T17:19:34.279843'
 version: ''
@@ -27,4 +27,6 @@ fix: Rebuild the payoff as an adapter that calls trellis.models.copulas.gaussian
   but do not replace the required default-basket pricing route.
 validation: Discovered during build (attempt 3)
 supersedes: []
+archive_reason: QUA-1235 replaced helper-first NTD guidance with explicit homogeneous
+  market resolution, rank evidence, and protection-payment composition.
 id: num_046

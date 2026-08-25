@@ -1065,8 +1065,13 @@ def test_nth_to_default_compiles_to_family_ir():
     assert family_ir.route_family == "nth_to_default"
     assert family_ir.product_instrument == "nth_to_default"
     assert family_ir.payoff_family == "nth_to_default"
-    assert family_ir.helper_symbol == "price_nth_to_default_basket"
-    assert family_ir.copula_symbol == "GaussianCopula"
+    assert family_ir.pricing_mode == "analytical"
+    assert family_ir.market_binding_symbol == "resolve_credit_basket_inputs"
+    assert family_ir.rank_probability_symbol == "nth_to_default_probability"
+    assert family_ir.default_time_sampler_symbol == "GaussianCopula"
+    assert family_ir.sampled_rank_symbol == "rank_trigger_probability"
+    assert family_ir.protection_payment_symbol == "ProtectionPayment"
+    assert family_ir.trigger_leg_symbol == "protection_payment_pv"
     assert family_ir.trigger_rank == 1
     assert family_ir.reference_entities == ("ACME", "BRAVO", "CHARLIE", "DELTA", "ECHO")
     assert family_ir.required_input_ids == blueprint.required_market_data
@@ -1366,29 +1371,29 @@ def test_nth_to_default_dispatches_from_binding_surface_not_route_id(monkeypatch
         monkeypatch,
         _resolved_binding_spec(
             PrimitiveRef(
-                "trellis.models.schedule",
-                "generate_schedule",
-                "schedule_builder",
+                "trellis.models.credit_basket_copula",
+                "resolve_credit_basket_inputs",
+                "market_binding",
             ),
             PrimitiveRef(
-                "trellis.models.time",
-                "year_fraction",
-                "time_measure",
-            ),
-            PrimitiveRef(
-                "trellis.models.copula",
+                "trellis.models.copulas.gaussian",
                 "GaussianCopula",
                 "default_time_sampler",
             ),
             PrimitiveRef(
-                "trellis.models.nth_to_default",
-                "price_nth_to_default_basket",
-                "route_helper",
+                "trellis.models.contingent_cashflows",
+                "rank_trigger_probability",
+                "rank_aggregator",
             ),
             PrimitiveRef(
-                "trellis.models.monte_carlo.engine",
-                "MonteCarloEngine",
-                "path_simulation",
+                "trellis.models.contingent_cashflows",
+                "ProtectionPayment",
+                "payoff_primitive",
+            ),
+            PrimitiveRef(
+                "trellis.models.contingent_cashflows",
+                "protection_payment_pv",
+                "trigger_leg",
             ),
             route_id=synthetic_route_id,
             route_family="nth_to_default",
@@ -1406,8 +1411,10 @@ def test_nth_to_default_dispatches_from_binding_surface_not_route_id(monkeypatch
     assert isinstance(family_ir, NthToDefaultIR)
     assert family_ir.route_id == synthetic_route_id
     assert family_ir.route_family == "nth_to_default"
-    assert family_ir.helper_symbol == "price_nth_to_default_basket"
-    assert family_ir.copula_symbol == "GaussianCopula"
+    assert family_ir.pricing_mode == "monte_carlo"
+    assert family_ir.market_binding_symbol == "resolve_credit_basket_inputs"
+    assert family_ir.default_time_sampler_symbol == "GaussianCopula"
+    assert family_ir.sampled_rank_symbol == "rank_trigger_probability"
 
 
 def test_factor_state_simulation_ir_preserves_projection_and_valuation_contracts():

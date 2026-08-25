@@ -1571,6 +1571,67 @@ def _proof_legacy_expected_honest_block(task: Mapping[str, Any]) -> dict[str, An
     }
 
 
+def _declared_string_values(value: Any) -> tuple[str, ...]:
+    """Normalize one manifest string or a YAML string sequence."""
+    if isinstance(value, str):
+        candidates = (value,)
+    elif isinstance(value, (list, tuple)):
+        candidates = value
+    else:
+        return ()
+    return tuple(
+        text
+        for item in candidates
+        if isinstance(item, str) and (text := item.strip())
+    )
+
+
+def _declared_expected_honest_block(task: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Return a manifest-declared pricing block without product-specific dispatch."""
+    if str(task.get("expected_outcome") or "").strip() != "honest_block":
+        return None
+    contract = task.get("honest_block_contract")
+    blocker_ids = _declared_string_values(task.get("expected_blocker_ids"))
+    if not isinstance(contract, Mapping) or not blocker_ids:
+        return None
+
+    reason = str(contract.get("reason") or "declared_expected_honest_block").strip()
+    summary = str(contract.get("summary") or reason).strip()
+    packet_type = str(contract.get("packet_type") or "semantic_contract_gap").strip()
+    repair_packet = {
+        "packet_type": packet_type,
+        "task_id": str(task.get("id") or "").strip(),
+        "missing_capabilities": list(
+            _declared_string_values(contract.get("missing_capabilities"))
+        ),
+        "suggested_action": str(contract.get("suggested_action") or "").strip(),
+    }
+    follow_on_issue = str(contract.get("follow_on_issue") or "").strip()
+    if follow_on_issue:
+        repair_packet["follow_on_issue"] = follow_on_issue
+
+    return {
+        "reason": reason,
+        "summary": summary,
+        "blocker_report": {
+            "summary": summary,
+            "blockers": [
+                {
+                    "id": blocker_id,
+                    "category": blocker_id.partition(":")[0],
+                }
+                for blocker_id in blocker_ids
+            ],
+        },
+        "repair_packet": repair_packet,
+    }
+
+
+def _expected_honest_block_for_task(task: Mapping[str, Any]) -> dict[str, Any] | None:
+    """Resolve explicit manifest blocks before legacy sparse-row compatibility."""
+    return _declared_expected_honest_block(task) or _proof_legacy_expected_honest_block(task)
+
+
 def _proof_legacy_comparison_build_result(
     task: Mapping[str, Any],
     target: ComparisonBuildTarget,
@@ -2117,7 +2178,7 @@ def run_task(
         result_data["llm_cassette"] = llm_cassette_payload
 
     try:
-        expected_honest_block = _proof_legacy_expected_honest_block(task)
+        expected_honest_block = _expected_honest_block_for_task(task)
         if expected_honest_block is not None:
             raise ExpectedTaskHonestBlock(expected_honest_block)
         _validate_task_contract(task, instrument_type, construct_methods)

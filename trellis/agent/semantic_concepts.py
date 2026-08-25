@@ -789,12 +789,13 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
     ),
     _concept(
         semantic_id="nth_to_default",
-        semantic_version="c1.0",
-        scope="basket credit derivative: triggers on the nth default among N reference entities",
+        semantic_version="c2.2",
+        scope="homogeneous terminal basket protection triggered by the nth default among N reference entities",
         description=(
-            "Nth-to-default basket credit derivative. Requires default "
-            "correlation modeling via copula (Gaussian or Student-t) and "
-            "Monte Carlo simulation of correlated default times."
+            "Bounded nth-to-default protection with one representative credit "
+            "curve, fixed recovery, equicorrelation, and terminal settlement. "
+            "Analytical evidence integrates rank probability; Monte Carlo "
+            "evidence samples persistent Gaussian-copula default times."
         ),
         concept_role="product_contract",
         aliases=(
@@ -808,11 +809,15 @@ SEMANTIC_CONCEPT_REGISTRY: tuple[SemanticConceptDefinition, ...] = (
         required_contract_fields=(
             "reference_entities",
             "default_trigger_n",
-            "recovery_rates",
+            "maturity_date",
+            "recovery_rate",
         ),
         required_primitives=(
-            "gaussian_copula",
-            "factor_copula",
+            "resolve_credit_basket_inputs",
+            "nth_to_default_probability",
+            "gaussian_copula_default_times",
+            "rank_trigger_probability",
+            "protection_payment",
         ),
         required_market_inputs=(
             "discount_curve",

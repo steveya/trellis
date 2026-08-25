@@ -2466,6 +2466,91 @@ def test_sparse_rate_pde_proof_row_blocks_honestly_without_build(monkeypatch, tm
     assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
+def test_weighted_nth_to_default_extension_blocks_from_declared_contract_without_build(
+    monkeypatch,
+    tmp_path,
+    capsys,
+):
+    from trellis.agent.evals import classify_task_result
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml")
+        if task["id"] == "P006"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("a declared honest block must not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "blocked",
+            "diagnosis_headline": "Weighted nth-to-default semantics are not defined.",
+            "diagnosis_decision_stage": "blocked",
+            "diagnosis_next_action": "Implement QUA-1237 before pricing P006.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["expected_honest_block"] is True
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert classify_task_result(result) == "blocked"
+    assert result["attempts"] == 0
+    assert result["blocker_details"]["reason"] == "weighted_nth_to_default_contract_gap"
+    assert result["blocker_details"]["repair_packet"]["follow_on_issue"] == "QUA-1237"
+    assert [
+        blocker["id"]
+        for blocker in result["blocker_details"]["blocker_report"]["blockers"]
+    ] == [
+        "semantic_product_contract_gap:weighted_name_exposures",
+        "semantic_primitive_gap:ranked_loss_settlement",
+        "semantic_risk_contract_gap:spread_sensitivities",
+    ]
+    assert "[HONEST_BLOCK]" in capsys.readouterr().out
+
+
+def test_declared_honest_block_normalizes_scalar_string_fields():
+    from trellis.agent.task_runtime import _declared_expected_honest_block
+
+    blocker = _declared_expected_honest_block(
+        {
+            "id": "SCALAR-BLOCK",
+            "expected_outcome": "honest_block",
+            "expected_blocker_ids": "semantic_product_contract_gap:weighted_names",
+            "honest_block_contract": {
+                "reason": "scalar_manifest_fields",
+                "missing_capabilities": "weighted_name_exposure_semantics",
+            },
+        }
+    )
+
+    assert blocker is not None
+    assert [
+        entry["id"]
+        for entry in blocker["blocker_report"]["blockers"]
+    ] == ["semantic_product_contract_gap:weighted_names"]
+    assert blocker["repair_packet"]["missing_capabilities"] == [
+        "weighted_name_exposure_semantics"
+    ]
+
+
 def test_sparse_lsm_basis_proof_row_uses_deterministic_local_targets(monkeypatch, tmp_path):
     from trellis.agent.task_manifests import load_task_manifest
     from trellis.agent.task_runtime import run_task

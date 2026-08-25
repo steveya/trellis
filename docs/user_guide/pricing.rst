@@ -664,6 +664,20 @@ The bounded typed route currently fixes the weekend calendar, following
 business-day adjustment, no-roll schedule, short-last stub, and zero payment
 lag; it rejects untyped convention overrides rather than silently changing PV.
 
+For homogeneous nth-to-default protection, generated construction starts with
+``resolve_credit_basket_inputs(...)``. Analytical and ``copula`` comparison
+targets pass the resolved terminal marginal default mass and equicorrelation to
+``nth_to_default_probability(...)``. Monte Carlo targets instead bind an
+explicit path count and seed, sample one persistent path-by-name default-time
+matrix with ``GaussianCopula``, and reduce the requested order statistic with
+``rank_trigger_probability(...)``. Both lanes construct
+``ProtectionPayment`` and call ``protection_payment_pv(...)`` explicitly.
+``price_nth_to_default_basket(...)`` remains available as compatibility and
+independent reference evidence, but it is not generated construction
+authority. This route does not define weighted name exposures, heterogeneous
+credit inputs or recovery, running spread legs, or spread sensitivities; such
+requests block rather than being approximated as homogeneous protection.
+
 For ranked-observation baskets, the generated construction surface is the
 basket resolver, implied-rate conversion, correlated GBM process, generic
 Monte Carlo engine, and ranked-observation state/terminal payoff primitives.
@@ -1814,8 +1828,8 @@ For migrated semantic families, the platform trace also includes the selected
 DSL route, the typed family IR payload, exact primitive/helper targets, and any
 structured lowering errors. That makes it possible to see why a request
 selected, for example, a CDS expected-first-event composition or an
-nth-to-default copula helper instead of a generic analytical or generic copula
-path.
+nth-to-default analytical rank integration or sampled default-time composition
+instead of a generic analytical or generic copula path.
 
 The same trace now includes the compiled validation contract summary, including
 deterministic check ids and normalized comparison relations such as

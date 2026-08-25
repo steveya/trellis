@@ -100,6 +100,29 @@ still fail closed.
 Typed Comparison Target Lifecycle
 ---------------------------------
 
+Manifest-declared pricing blocks
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Ordinary pricing manifests may declare ``expected_outcome: honest_block``
+together with ``expected_blocker_ids`` and an ``honest_block_contract``. The
+runtime turns that data into a certified blocker packet before market
+construction or builder invocation; it does not add a product-id branch. The
+contract records a reason, missing capabilities, repair action, and optional
+follow-on issue. A declaration without concrete blocker ids is not enough to
+skip construction.
+
+The weighted nth-to-default extension task P006 uses this boundary while
+QUA-1237 owns name-exposure, ranked-loss settlement, and spread-risk semantics.
+Its homogeneous relatives T50 and E26 instead carry explicit comparison target
+contracts: analytical/copula targets bind
+``nth_to_default_probability`` and Monte Carlo targets bind
+``GaussianCopula``. This prevents a single helper-backed artifact from being
+reported as both methods and makes the validation bundle part of execution
+evidence.
+
+Comparison target contracts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
 A comparison target name such as ``qe_heston``, ``antithetic_mc``, or
 ``spread_fft_2d`` is a label, not proof of what executed. Comparison tasks can
 therefore declare ``cross_validate.target_contracts``. Each entry resolves to

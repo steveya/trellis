@@ -288,7 +288,7 @@ families may mark the route alias as internal-only, which means:
 Runtime Contract
 ----------------
 
-The compiled contract now also has a shared helper-facing runtime substrate:
+The compiled contract now also has a shared composition-facing runtime substrate:
 
 - ``ContractState``
 - ``ResolvedInputs``
@@ -297,7 +297,7 @@ The compiled contract now also has a shared helper-facing runtime substrate:
 This keeps automatic event state separate from contract memory and gives helper
 routes one stable place to read resolved market inputs and runtime metadata.
 The first checked consumers include ranked-observation basket Monte Carlo,
-single-name CDS routes, and nth-to-default basket-credit lowering, but the
+single-name CDS routes, and homogeneous nth-to-default rank-trigger lowering, but the
 surface is intentionally generic. Ranked-observation basket construction no
 longer delegates to its product pricer: it combines resolved basket semantics,
 an implied zero rate, correlated GBM, the generic Monte Carlo engine, and the
@@ -497,12 +497,16 @@ The typed semantic boundary is proven end-to-end for:
 - ``credit_default_swap`` on single-name CDS across analytical and Monte Carlo
   bindings, routed through the structural
   ``event_triggered_two_legged_contract`` family
-- ``nth_to_default_monte_carlo`` on nth-to-default basket credit
+- ``credit_basket_nth_to_default`` on homogeneous nth-to-default protection
+  across analytical rank-integration and sampled default-time bindings
 
 These routes preserve checked pricing math while progressively removing
 product-helper authority. The ranked-observation basket route is
 primitive-composed: its retained product pricer is compatibility/reference
 surface only, and the route explicitly excludes it from fresh generated code.
+The nth-to-default route follows the same authority rule: market resolution,
+rank evidence, and protection-payment value are separate typed atoms, while the
+retained product helper is independent reference evidence only.
 
 Admissibility And Authority Rules
 ---------------------------------

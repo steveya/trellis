@@ -1530,7 +1530,7 @@ def test_resolve_backend_binding_spec_uses_rate_cap_floor_exact_helpers():
     )
 
 
-def test_nth_to_default_bindings_have_no_schedule_builder_surface():
+def test_nth_to_default_bindings_select_method_coherent_public_primitives():
     catalog = load_backend_binding_catalog()
     product_ir = ProductIR(
         instrument="nth_to_default",
@@ -1542,16 +1542,41 @@ def test_nth_to_default_bindings_have_no_schedule_builder_surface():
 
     binding = find_backend_binding_by_route_id("credit_basket_nth_to_default", catalog)
     assert binding is not None
-    for method in ("analytical", "monte_carlo"):
-        resolved = resolve_backend_binding_spec(
-            binding,
-            product_ir=product_ir,
-            method=method,
-        )
+    analytical = resolve_backend_binding_spec(
+        binding,
+        product_ir=product_ir,
+        method="analytical",
+    )
+    monte_carlo = resolve_backend_binding_spec(
+        binding,
+        product_ir=product_ir,
+        method="monte_carlo",
+    )
 
-        assert resolved.binding_id == "trellis.instruments.nth_to_default.price_nth_to_default_basket"
-        assert resolved.helper_refs == ("trellis.instruments.nth_to_default.price_nth_to_default_basket",)
+    assert analytical.binding_id == (
+        "trellis.models.contingent_cashflows.nth_to_default_probability"
+    )
+    assert monte_carlo.binding_id == (
+        "trellis.models.copulas.gaussian.GaussianCopula"
+    )
+    for resolved in (analytical, monte_carlo):
+        assert resolved.helper_refs == ()
         assert resolved.schedule_builder_refs == ()
+        assert (
+            "trellis.models.credit_basket_copula.resolve_credit_basket_inputs"
+            in resolved.market_binding_refs
+        )
+        assert "trellis.models.contingent_cashflows.ProtectionPayment" in resolved.primitive_refs
+        assert "trellis.models.contingent_cashflows.protection_payment_pv" in resolved.primitive_refs
+
+    assert (
+        "trellis.models.contingent_cashflows.rank_trigger_probability"
+        in monte_carlo.primitive_refs
+    )
+    assert (
+        "trellis.models.contingent_cashflows.nth_to_default_probability"
+        not in monte_carlo.primitive_refs
+    )
 
 
 def test_resolve_backend_binding_spec_uses_credit_loss_distribution_exact_helpers():

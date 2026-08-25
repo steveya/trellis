@@ -205,6 +205,8 @@ class _SemanticVisitor(ast.NodeVisitor):
             method = _literal_keyword(node, "method")
             if isinstance(method, str):
                 self.monte_carlo_methods.append(method)
+        if call_name.endswith("sample_default_times"):
+            self.engine_families.add("monte_carlo")
 
         exercise_control = canonicalize_early_exercise_policy(call_name)
         if exercise_control is not None:

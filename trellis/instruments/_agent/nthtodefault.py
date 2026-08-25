@@ -1,68 +1,26 @@
-"""Agent-generated payoff: Build a pricer for: CDO tranche: Gaussian vs Student-t copula
-
-Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
-portfolio.  Attachment point: 3%.  Detachment point: 7%.
-Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
-Recovery rate: 40% flat across all names.
-Use the IG credit curve from the market snapshot (as_of 2024-11-15)
-as the representative single-name hazard curve for all 100 names.
-Flat pairwise default correlation: 0.3.
-Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
-large-pool or recursive).
-Method 2: Student-t copula (degrees of freedom = 5) for comparison
-to see heavier-tail effects on the mezzanine tranche.
-Report tranche fair spread (bp) and expected loss for each copula.
-
-Construct methods: copula
-Comparison targets: gaussian_copula (copula), student_t_copula (copula)
-Cross-validation harness:
-  internal targets: gaussian_copula, student_t_copula
-  external targets: quantlib
-
-Implementation target: student_t_copula
-Preferred method family: copula
-
-Implementation target: student_t_copula."""
+"""Generated adapter for homogeneous nth-to-default sampled pricing."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
 
+from trellis.core.differentiable import get_numpy
 from trellis.core.market_state import MarketState
 from trellis.core.types import DayCountConvention
-from trellis.core.date_utils import generate_schedule
-from trellis.instruments.nth_to_default import price_nth_to_default_basket
-
+from trellis.models.contingent_cashflows import (
+    ProtectionPayment,
+    protection_payment_pv,
+    rank_trigger_probability,
+)
+from trellis.models.copulas.gaussian import GaussianCopula
+from trellis.models.credit_basket_copula import resolve_credit_basket_inputs
 
 
 @dataclass(frozen=True)
 class NthToDefaultSpec:
-    """Specification for Build a pricer for: CDO tranche: Gaussian vs Student-t copula
+    """Homogeneous basket terms and reproducible sampled-evidence controls."""
 
-Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
-portfolio.  Attachment point: 3%.  Detachment point: 7%.
-Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
-Recovery rate: 40% flat across all names.
-Use the IG credit curve from the market snapshot (as_of 2024-11-15)
-as the representative single-name hazard curve for all 100 names.
-Flat pairwise default correlation: 0.3.
-Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
-large-pool or recursive).
-Method 2: Student-t copula (degrees of freedom = 5) for comparison
-to see heavier-tail effects on the mezzanine tranche.
-Report tranche fair spread (bp) and expected loss for each copula.
-
-Construct methods: copula
-Comparison targets: gaussian_copula (copula), student_t_copula (copula)
-Cross-validation harness:
-  internal targets: gaussian_copula, student_t_copula
-  external targets: quantlib
-
-Implementation target: student_t_copula
-Preferred method family: copula
-
-Implementation target: student_t_copula."""
     notional: float
     n_names: int
     n_th: int
@@ -70,34 +28,12 @@ Implementation target: student_t_copula."""
     correlation: float = 0.3
     recovery: float = 0.4
     day_count: DayCountConvention = DayCountConvention.ACT_360
+    n_paths: int = 250_000
+    seed: int = 42
 
 
 class NthToDefaultPayoff:
-    """Build a pricer for: CDO tranche: Gaussian vs Student-t copula
-
-Price a synthetic CDO mezzanine tranche on a 100-name investment-grade
-portfolio.  Attachment point: 3%.  Detachment point: 7%.
-Maturity: 5Y.  Notional per name: $1,000,000 (portfolio notional $100M).
-Recovery rate: 40% flat across all names.
-Use the IG credit curve from the market snapshot (as_of 2024-11-15)
-as the representative single-name hazard curve for all 100 names.
-Flat pairwise default correlation: 0.3.
-Method 1: Gaussian copula (one-factor, semi-analytical via Vasicek
-large-pool or recursive).
-Method 2: Student-t copula (degrees of freedom = 5) for comparison
-to see heavier-tail effects on the mezzanine tranche.
-Report tranche fair spread (bp) and expected loss for each copula.
-
-Construct methods: copula
-Comparison targets: gaussian_copula (copula), student_t_copula (copula)
-Cross-validation harness:
-  internal targets: gaussian_copula, student_t_copula
-  external targets: quantlib
-
-Implementation target: student_t_copula
-Preferred method family: copula
-
-Implementation target: student_t_copula."""
+    """Compose sampled rank evidence with an explicit protection payment."""
 
     def __init__(self, spec: NthToDefaultSpec):
         self._spec = spec
@@ -111,27 +47,43 @@ Implementation target: student_t_copula."""
         return {"credit_curve", "discount_curve"}
 
     def evaluate(self, market_state: MarketState) -> float:
-        from trellis.core.differentiable import get_numpy
-        from trellis.core.date_utils import year_fraction
-        from trellis.models.copulas.gaussian import GaussianCopula
         spec = self._spec
-        T = year_fraction(market_state.settlement, spec.end_date, spec.day_count)
-        T = float(T)
-        survival = float(market_state.credit_curve.survival_probability(T))
-        marginal_prob = 1.0 - survival
-        copula = GaussianCopula(correlation=spec.correlation)
-        n_defaults = int(spec.n_th)
-        _ = get_numpy()
-        total_loss = price_nth_to_default_basket(
-            n_names=spec.n_names,
-            n_th=n_defaults,
-            notional=spec.notional,
-            maturity=T,
-            default_prob=marginal_prob,
-            recovery=spec.recovery,
-            correlation=spec.correlation,
+        n_names = int(spec.n_names)
+        n_th = int(spec.n_th)
+        if n_names < 2:
+            raise ValueError("n_names must be at least two")
+        if n_th <= 0 or n_th > n_names:
+            raise ValueError("n_th must lie in [1, n_names]")
+        n_paths = int(spec.n_paths)
+        seed = int(spec.seed)
+        if n_paths <= 0:
+            raise ValueError("n_paths must be positive")
+
+        resolved = resolve_credit_basket_inputs(market_state, spec)
+        if resolved.horizon <= 0.0 or resolved.default_probability <= 0.0:
+            trigger_probability = 0.0
+        else:
+            np = get_numpy()
+            hazard_rates = np.full(resolved.n_names, resolved.hazard_rate)
+            copula = GaussianCopula(
+                correlation=resolved.correlation,
+                n_names=resolved.n_names,
+            )
+            default_times = copula.sample_default_times(
+                hazard_rates,
+                n_paths=n_paths,
+                rng=np.random.default_rng(seed),
+            )
+            trigger_probability = rank_trigger_probability(
+                default_times,
+                rank=n_th,
+                horizon=resolved.horizon,
+            )
+
+        payment = ProtectionPayment(
+            notional=resolved.notional,
+            recovery=resolved.recovery,
+            default_probability=trigger_probability,
+            discount_factor=resolved.discount_factor,
         )
-        try:
-            return float(total_loss)
-        except TypeError:
-            return float(total_loss.item())
+        return protection_payment_pv(payment)

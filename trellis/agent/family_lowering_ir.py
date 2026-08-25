@@ -668,10 +668,16 @@ CreditDefaultSwapIR = EventTriggeredTwoLeggedContractIR
 
 @dataclass(frozen=True)
 class NthToDefaultIR(BaseFamilyLoweringIR):
-    """Typed lowering payload for nth-to-default helper-backed copula routes."""
+    """Typed lowering payload for explicit homogeneous rank-trigger routes."""
 
-    helper_symbol: str = "price_nth_to_default_basket"
-    copula_symbol: str = "GaussianCopula"
+    pricing_mode: str = "analytical"
+    market_binding_symbol: str = "resolve_credit_basket_inputs"
+    rank_probability_symbol: str = "nth_to_default_probability"
+    default_time_sampler_symbol: str = "GaussianCopula"
+    sampled_rank_symbol: str = "rank_trigger_probability"
+    protection_payment_symbol: str = "ProtectionPayment"
+    trigger_leg_symbol: str = "protection_payment_pv"
+    market_mapping: str = "homogeneous_credit_curve_to_terminal_rank_trigger_payment"
     schedule_role: str = "observation_dates"
     trigger_rank: int = 1
     reference_entities: tuple[str, ...] = ()
@@ -1289,11 +1295,21 @@ def _binding_supports_nth_to_default(
     missing-binding fallback is dead code and has been retired.
     """
     del route_id
-    if _binding_has_symbol(binding_spec, "default_time_sampler", "GaussianCopula"):
-        return True
-    if _binding_has_symbol(binding_spec, "route_helper", "price_nth_to_default_basket"):
-        return True
-    return False
+    common_surface = (
+        _binding_has_symbol(binding_spec, "market_binding", "resolve_credit_basket_inputs")
+        and _binding_has_symbol(binding_spec, "payoff_primitive", "ProtectionPayment")
+        and _binding_has_symbol(binding_spec, "trigger_leg", "protection_payment_pv")
+    )
+    analytical_surface = _binding_has_symbol(
+        binding_spec,
+        "numerical_evidence",
+        "nth_to_default_probability",
+    )
+    sampled_surface = (
+        _binding_has_symbol(binding_spec, "default_time_sampler", "GaussianCopula")
+        and _binding_has_symbol(binding_spec, "rank_aggregator", "rank_trigger_probability")
+    )
+    return common_surface and (analytical_surface or sampled_surface)
 
 
 def _resolve_exercise_lattice_profile(contract, product_ir) -> ExerciseLatticeProfile | None:
@@ -1413,6 +1429,7 @@ def build_family_lowering_ir(
         return _build_nth_to_default_ir(
             contract,
             product_ir=product_ir,
+            binding_spec=binding_spec,
             **common_kwargs,
         )
 
@@ -2716,6 +2733,7 @@ def _build_nth_to_default_ir(
     contract,
     *,
     product_ir,
+    binding_spec: ResolvedBackendBindingSpec | None = None,
     route_id: str,
     route_family: str,
     product_instrument: str,
@@ -2726,7 +2744,7 @@ def _build_nth_to_default_ir(
     requested_outputs: tuple[str, ...],
     reporting_currency: str,
 ) -> NthToDefaultIR | None:
-    """Build the typed nth-to-default family IR for helper-backed copula routes."""
+    """Build the typed nth-to-default family IR for primitive copula routes."""
     if not _is_nth_to_default_contract(contract, product_ir):
         return None
 
@@ -2769,6 +2787,12 @@ def _build_nth_to_default_ir(
             "Nth-to-default semantics require typed event-machine transitions for default-order tracking."
         )
 
+    pricing_mode = (
+        "monte_carlo"
+        if _binding_has_symbol(binding_spec, "default_time_sampler", "GaussianCopula")
+        else "analytical"
+    )
+
     return NthToDefaultIR(
         route_id=route_id,
         route_family=route_family,
@@ -2779,6 +2803,7 @@ def _build_nth_to_default_ir(
         timeline_roles=timeline_roles,
         requested_outputs=requested_outputs,
         reporting_currency=reporting_currency,
+        pricing_mode=pricing_mode,
         trigger_rank=trigger_rank,
         reference_entities=reference_entities,
         observation_dates=tuple(product.timeline.observation_dates or product.observation_schedule),

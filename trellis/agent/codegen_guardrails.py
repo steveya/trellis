@@ -165,6 +165,8 @@ FAMILY_SUPPORT_MODULES = {
         "trellis.models.monte_carlo.quanto",
     ),
     "nth_to_default": (
+        "trellis.models.credit_basket_copula",
+        "trellis.models.contingent_cashflows",
         "trellis.models.copulas",
         "trellis.models.copulas.gaussian",
         "trellis.models.copulas.student_t",
