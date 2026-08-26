@@ -530,6 +530,22 @@ class Adapter:
     return root
 
 
+def _fixture_root_with_dynamic_global_lookup(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+
+def evaluate():
+    return globals()["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1045,6 +1061,29 @@ def test_audit_restores_outer_lookup_after_deleted_class_binding(tmp_path):
         (item.line, item.module, item.symbol, item.matches_required_authority)
         for item in report.adapter_calls
     ] == [(11, "trellis.models.example", "price_example", True)]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_fails_closed_for_dynamic_global_namespace_lookup(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_dynamic_global_lookup(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            5,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        )
+    ]
     assert report.has_adapter_authority is True
 
 

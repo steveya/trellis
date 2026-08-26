@@ -816,7 +816,10 @@ so a later ordinary local replacement is no longer attributed to an earlier
 import. Wildcard imports from an authority namespace fail closed because their
 names cannot be matched safely, and unresolved dynamic access such as
 ``helpers.__dict__[name]`` or ``helpers.__getattribute__(name)`` retains the
-authority-module reference. An early class-body reference likewise continues
+authority-module reference. Calling ``globals()`` in an adapter module that
+imports required authority also fails closed because the returned mapping can
+hide the selected helper behind a string key. An early class-body reference
+likewise continues
 to use an enclosing import until a later class-local replacement is active,
 and resumes that lookup if the class-local name is deleted. An annotation
 without a value does not replace the active imported runtime binding.
