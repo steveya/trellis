@@ -65,6 +65,27 @@ def test_helper_authority_cli_can_fail_on_indirect_adapter_authority(
     assert "adapter_indirect_authority_uses=2" in output
 
 
+def test_helper_authority_cli_can_fail_on_wildcard_authority_import(
+    capsys,
+    tmp_path,
+):
+    from tests.test_agent.test_helper_authority_audit import (
+        _fixture_root_with_wildcard_authority_import,
+    )
+    from trellis.agent import helper_authority_audit
+
+    root = _fixture_root_with_wildcard_authority_import(tmp_path)
+    exit_code = helper_authority_audit.main(
+        ["--root", str(root), "--fail-on-adapter-authority"]
+    )
+
+    assert exit_code == 1
+    output = capsys.readouterr().out
+    assert "adapter_authority_calls=0" in output
+    assert "adapter_indirect_authority_uses=1" in output
+    assert "wildcard_import" in output
+
+
 def test_helper_authority_script_runs_against_the_worktree(tmp_path):
     from tests.test_agent.test_helper_authority_audit import _fixture_root
 

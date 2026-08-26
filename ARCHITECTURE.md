@@ -219,9 +219,11 @@ The service-host path is:
   exact backend bindings. Aliasing an authority helper, passing it as a
   callback, reaching it through a chained attribute, or hiding it behind an
   imported module value is still delegation. Relative imports are normalized
-  to that module-qualified identity, and imports are resolved in their lexical
-  scope so a nested same-name binding cannot rewrite an outer reference; an
-  unrelated module with the same function basename is not. Remaining
+  to that module-qualified identity, wildcard imports from an authority
+  namespace fail closed, and imports are resolved in lexical and source order
+  so a nested same-name binding cannot rewrite an outer reference and the last
+  unconditional same-scope import wins. An unrelated module with the same
+  function basename is not authority. Remaining
   catalog-level `route_helper` entries do not grant checked adapters permission
   to delegate.
 - Use `trellis/agent/knowledge/canonical/api_map.yaml` to orient to a module

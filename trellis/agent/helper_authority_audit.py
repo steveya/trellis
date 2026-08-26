@@ -81,12 +81,22 @@ class AdapterIndirectAuthorityUse:
 
 
 @dataclass(frozen=True)
+class _ImportBinding:
+    """One source-ordered import binding in a lexical scope."""
+
+    position: tuple[int, int, int]
+    module: str
+    symbol: str
+    conditional: bool
+
+
+@dataclass(frozen=True)
 class _ImportScope:
     """Imported bindings and lexical-name ownership for one Python scope."""
 
     parent: _ImportScope | None
     kind: str
-    imports: Mapping[str, tuple[tuple[str, str], ...]]
+    imports: Mapping[str, tuple[_ImportBinding, ...]]
     local_names: frozenset[str]
     global_names: frozenset[str]
     nonlocal_names: frozenset[str]
@@ -536,6 +546,30 @@ def _scan_indirect_authority_uses(
             tree,
             package=_ADAPTER_PACKAGE,
         )
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.ImportFrom):
+                continue
+            if not any(alias.name == "*" for alias in node.names):
+                continue
+            module = _normalize_import_from_module(
+                node,
+                package=_ADAPTER_PACKAGE,
+            )
+            if module is None or not _is_authority_namespace(
+                module,
+                authority_targets,
+            ):
+                continue
+            uses.append(
+                AdapterIndirectAuthorityUse(
+                    path=path.relative_to(repo_root).as_posix(),
+                    line=int(node.lineno),
+                    local_name="*",
+                    module=module,
+                    symbol="*",
+                    use_kind="wildcard_import",
+                )
+            )
         direct_call_targets = {
             id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)
         }
@@ -600,10 +634,12 @@ class _ScopeBindingCollector(ast.NodeVisitor):
 
     def __init__(self, *, package: str) -> None:
         self.package = package
-        self.imports: dict[str, set[tuple[str, str]]] = defaultdict(set)
+        self.imports: dict[str, list[_ImportBinding]] = defaultdict(list)
         self.local_names: set[str] = set()
         self.global_names: set[str] = set()
         self.nonlocal_names: set[str] = set()
+        self._conditional_depth = 0
+        self._binding_sequence = 0
 
     def visit_Import(self, node: ast.Import) -> None:
         for alias in node.names:
@@ -613,7 +649,12 @@ class _ScopeBindingCollector(ast.NodeVisitor):
             else:
                 local_name = alias.name.split(".", 1)[0]
                 module = local_name
-            self.imports[local_name].add((module, ""))
+            self._record_import(
+                local_name=local_name,
+                module=module,
+                symbol="",
+                node=alias,
+            )
             self.local_names.add(local_name)
 
     def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
@@ -627,8 +668,67 @@ class _ScopeBindingCollector(ast.NodeVisitor):
             if alias.name == "*":
                 continue
             local_name = alias.asname or alias.name
-            self.imports[local_name].add((from_module, alias.name))
+            self._record_import(
+                local_name=local_name,
+                module=from_module,
+                symbol=alias.name,
+                node=alias,
+            )
             self.local_names.add(local_name)
+
+    def visit_If(self, node: ast.If) -> None:
+        self._visit_conditional(node)
+
+    def visit_For(self, node: ast.For) -> None:
+        self._visit_conditional(node)
+
+    def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
+        self._visit_conditional(node)
+
+    def visit_While(self, node: ast.While) -> None:
+        self._visit_conditional(node)
+
+    def visit_Try(self, node: ast.Try) -> None:
+        self._visit_conditional(node)
+
+    def visit_TryStar(self, node: ast.TryStar) -> None:
+        self._visit_conditional(node)
+
+    def visit_With(self, node: ast.With) -> None:
+        self._visit_conditional(node)
+
+    def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
+        self._visit_conditional(node)
+
+    def visit_Match(self, node: ast.Match) -> None:
+        self._visit_conditional(node)
+
+    def _visit_conditional(self, node: ast.AST) -> None:
+        self._conditional_depth += 1
+        self.generic_visit(node)
+        self._conditional_depth -= 1
+
+    def _record_import(
+        self,
+        *,
+        local_name: str,
+        module: str,
+        symbol: str,
+        node: ast.AST,
+    ) -> None:
+        self._binding_sequence += 1
+        self.imports[local_name].append(
+            _ImportBinding(
+                position=(
+                    int(getattr(node, "lineno", 0)),
+                    int(getattr(node, "col_offset", 0)),
+                    self._binding_sequence,
+                ),
+                module=module,
+                symbol=symbol,
+                conditional=self._conditional_depth > 0,
+            )
+        )
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.local_names.add(node.name)
@@ -693,7 +793,7 @@ def _make_import_scope(
     collector.local_names.difference_update(collector.global_names)
     collector.local_names.difference_update(collector.nonlocal_names)
     imports = {
-        local_name: tuple(sorted(bindings))
+        local_name: tuple(sorted(bindings, key=lambda item: item.position))
         for local_name, bindings in collector.imports.items()
     }
     return _ImportScope(
@@ -911,8 +1011,12 @@ def _resolve_imported_references(
 ) -> tuple[tuple[str, str, str], ...]:
     if isinstance(reference, ast.Name):
         return tuple(
-            (reference.id, module, symbol)
-            for module, symbol in _lookup_import_bindings(scope, reference.id)
+            (reference.id, binding.module, binding.symbol)
+            for binding in _lookup_import_bindings(
+                scope,
+                reference.id,
+                reference=reference,
+            )
         )
 
     dotted = _dotted_name(reference)
@@ -922,10 +1026,13 @@ def _resolve_imported_references(
     local_root = parts[0]
     remainder = parts[1:]
     resolved: set[tuple[str, str, str]] = set()
-    for imported_module, imported_symbol in _lookup_import_bindings(
+    for binding in _lookup_import_bindings(
         scope,
         local_root,
+        reference=reference,
     ):
+        imported_module = binding.module
+        imported_symbol = binding.symbol
         base = imported_module
         if imported_symbol:
             base = f"{base}.{imported_symbol}"
@@ -939,22 +1046,65 @@ def _resolve_imported_references(
 def _lookup_import_bindings(
     scope: _ImportScope,
     local_name: str,
-) -> tuple[tuple[str, str], ...]:
+    *,
+    reference: ast.expr,
+) -> tuple[_ImportBinding, ...]:
+    reference_position = (
+        int(getattr(reference, "lineno", 0)),
+        int(getattr(reference, "col_offset", 0)),
+        2**31 - 1,
+    )
     current: _ImportScope | None = scope
     while current is not None:
         if local_name in current.global_names:
+            if current.kind != "module":
+                reference_position = (
+                    2**31 - 1,
+                    2**31 - 1,
+                    2**31 - 1,
+                )
             current = _module_scope(current)
         bindings = current.imports.get(local_name)
         if bindings:
-            return bindings
+            active_bindings = _active_import_bindings(
+                bindings,
+                reference_position=reference_position,
+            )
+            if active_bindings:
+                return active_bindings
         if local_name in current.local_names:
             return ()
         parent = current.parent
         if current.kind in {"function", "lambda", "comprehension"}:
             while parent is not None and parent.kind == "class":
                 parent = parent.parent
+            reference_position = (2**31 - 1, 2**31 - 1, 2**31 - 1)
         current = parent
     return ()
+
+
+def _active_import_bindings(
+    bindings: tuple[_ImportBinding, ...],
+    *,
+    reference_position: tuple[int, int, int],
+) -> tuple[_ImportBinding, ...]:
+    """Return imports that can be active at one source position."""
+    eligible = tuple(
+        binding for binding in bindings if binding.position <= reference_position
+    )
+    if not eligible:
+        return ()
+    unconditional = tuple(
+        binding for binding in eligible if not binding.conditional
+    )
+    if not unconditional:
+        return eligible
+    latest_unconditional = unconditional[-1]
+    return (latest_unconditional,) + tuple(
+        binding
+        for binding in eligible
+        if binding.conditional and binding.position > latest_unconditional.position
+    )
 
 
 def _module_scope(scope: _ImportScope) -> _ImportScope:
