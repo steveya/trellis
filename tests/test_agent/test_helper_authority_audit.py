@@ -226,6 +226,42 @@ def evaluate():
     return root
 
 
+def _fixture_root_with_relative_import_authority(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from ...models.example import price_example
+from ...models.example import barrier_option_price
+
+
+delegated_barrier = barrier_option_price
+
+
+def evaluate():
+    return price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_authority_call_attribute(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+import trellis.models.example as helpers
+
+
+def evaluate():
+    return helpers.price_example.__call__()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -424,6 +460,51 @@ def test_audit_does_not_match_same_named_symbol_from_other_module(tmp_path):
     assert report.adapter_calls[0].matches_required_authority is False
     assert report.adapter_indirect_authority_uses == ()
     assert report.has_adapter_authority is False
+
+
+def test_audit_normalizes_relative_authority_imports(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_relative_import_authority(tmp_path)
+    )
+
+    assert [
+        (item.module, item.symbol, item.matches_required_authority)
+        for item in report.adapter_calls
+    ] == [("trellis.models.example", "price_example", True)]
+    assert [
+        (item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            "trellis.models.example",
+            "barrier_option_price",
+            "indirect_reference",
+        )
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_rejects_authority_reached_through_call_attribute(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_authority_call_attribute(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            "trellis.models.example",
+            "price_example",
+            "indirect_reference",
+        )
+    ]
+    assert report.has_adapter_authority is True
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):

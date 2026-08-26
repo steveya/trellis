@@ -1142,9 +1142,10 @@ The report keeps four evidence surfaces separate:
 - imported ``price_*`` calls executed by checked-in ``_agent`` adapters, with
   calls to currently authoritative symbols marked separately.
 
-The adapter scan uses Python AST import resolution, including local aliases and
-module aliases. A locally defined function or an unused import is not counted
-as delegation. Authority is the declared module-and-symbol pair; an additional
+The adapter scan uses Python AST import resolution, including local aliases,
+module aliases, and relative imports resolved against the checked-adapter
+package. A locally defined function or an unused import is not counted as
+delegation. Authority is the declared module-and-symbol pair; an additional
 public re-export path must be declared explicitly if it is intended to carry
 the same authority rather than being inferred from a matching basename.
 
@@ -1186,10 +1187,12 @@ The ordinary PR gate now preserves the zero baseline:
 ``--fail-on-adapter-authority`` returns nonzero when any top-level checked
 ``_agent`` adapter executes an imported symbol that is required by a promoted
 route or exact binding, or uses that symbol as a first-class value. Assignment
-aliases, callbacks, container references, and imported authority modules used
-as dynamic values therefore cannot bypass the delegation gate. Authority
-matching is module-qualified, so an unrelated module that happens to export
-the same function basename does not fail the gate. It is deliberately
+aliases, callbacks, container references, chained attributes such as
+``helper.__call__``, and imported authority modules used as dynamic values
+therefore cannot bypass the delegation gate. Relative imports normalize to the
+same absolute identity. Authority matching is module-qualified, so an
+unrelated module that happens to export the same function basename does not
+fail the gate. It is deliberately
 independent of ``--fail-on-drift``: exact bindings may carry intentional
 conditional specialization even while no checked adapter delegates to it.
 

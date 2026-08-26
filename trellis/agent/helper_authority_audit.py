@@ -18,6 +18,7 @@ _BINDINGS_PATH = Path(
     "trellis/agent/knowledge/canonical/backend_bindings.yaml"
 )
 _ADAPTER_ROOT = Path("trellis/instruments/_agent")
+_ADAPTER_PACKAGE = ".".join(_ADAPTER_ROOT.parts)
 
 
 @dataclass(frozen=True, order=True)
@@ -474,7 +475,10 @@ def _scan_adapter_calls(
     calls: list[AdapterDelegationCall] = []
     for path in sorted(adapter_root.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        imported_names, imported_modules = _import_index(tree)
+        imported_names, imported_modules = _import_index(
+            tree,
+            package=_ADAPTER_PACKAGE,
+        )
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
@@ -516,7 +520,10 @@ def _scan_indirect_authority_uses(
     uses: list[AdapterIndirectAuthorityUse] = []
     for path in sorted(adapter_root.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        imported_names, imported_modules = _import_index(tree)
+        imported_names, imported_modules = _import_index(
+            tree,
+            package=_ADAPTER_PACKAGE,
+        )
         direct_call_targets = {
             id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)
         }
@@ -527,13 +534,12 @@ def _scan_indirect_authority_uses(
             for child in ast.walk(node.value)
             if isinstance(child, (ast.Name, ast.Attribute))
         }
-        ignored_reference_nodes = direct_call_targets | nested_attribute_nodes
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Name, ast.Attribute)):
                 continue
             if (
                 not isinstance(node.ctx, ast.Load)
-                or id(node) in ignored_reference_nodes
+                or id(node) in direct_call_targets
             ):
                 continue
             resolved = _resolve_imported_reference(
@@ -551,12 +557,16 @@ def _scan_indirect_authority_uses(
                     f"{module}.{symbol}",
                     authority_targets,
                 ):
+                    if id(node) in nested_attribute_nodes:
+                        continue
                     module = f"{module}.{symbol}"
                     symbol = "*"
                     use_kind = "indirect_module_reference"
                 else:
                     continue
             elif _is_authority_namespace(module, authority_targets):
+                if id(node) in nested_attribute_nodes:
+                    continue
                 symbol = "*"
                 use_kind = "indirect_module_reference"
             else:
@@ -576,14 +586,19 @@ def _scan_indirect_authority_uses(
 
 def _import_index(
     tree: ast.AST,
+    *,
+    package: str,
 ) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
     imported_names: dict[str, tuple[str, str]] = {}
     imported_modules: dict[str, str] = {}
     for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom) and node.module:
+        if isinstance(node, ast.ImportFrom):
+            from_module = _normalize_import_from_module(node, package=package)
+            if not from_module:
+                continue
             for alias in node.names:
                 imported_names[alias.asname or alias.name] = (
-                    node.module,
+                    from_module,
                     alias.name,
                 )
         elif isinstance(node, ast.Import):
@@ -594,6 +609,24 @@ def _import_index(
                     local_root = alias.name.split(".", 1)[0]
                     imported_modules[local_root] = local_root
     return imported_names, imported_modules
+
+
+def _normalize_import_from_module(
+    node: ast.ImportFrom,
+    *,
+    package: str,
+) -> str | None:
+    """Return an absolute module path for one ``from`` import."""
+    if node.level == 0:
+        return node.module
+    package_parts = package.split(".")
+    parent_count = node.level - 1
+    if parent_count >= len(package_parts):
+        return None
+    resolved_parts = package_parts[: len(package_parts) - parent_count]
+    if node.module:
+        resolved_parts.extend(node.module.split("."))
+    return ".".join(resolved_parts)
 
 
 def _resolve_imported_reference(

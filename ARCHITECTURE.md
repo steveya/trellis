@@ -217,8 +217,10 @@ The service-host path is:
   audit compares direct imported calls and indirect first-class references
   against module-qualified required authority from both promoted routes and
   exact backend bindings. Aliasing an authority helper, passing it as a
-  callback, or hiding it behind an imported module value is still delegation;
-  an unrelated module with the same function basename is not. Remaining
+  callback, reaching it through a chained attribute, or hiding it behind an
+  imported module value is still delegation. Relative imports are normalized
+  to that module-qualified identity; an unrelated module with the same
+  function basename is not. Remaining
   catalog-level `route_helper` entries do not grant checked adapters permission
   to delegate.
 - Use `trellis/agent/knowledge/canonical/api_map.yaml` to orient to a module
