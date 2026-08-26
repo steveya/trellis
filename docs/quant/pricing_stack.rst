@@ -1123,6 +1123,11 @@ Their lowering records primitive targets separately from true ``route_helper``
 bindings so generic resolvers and kernels are not mislabeled as helper authority
 in prompts or traces.
 
+The checked-adapter authority audit treats a required helper used as an alias,
+callback, or other first-class value as delegation too. Generated construction
+cannot evade the route contract merely by moving the eventual helper call
+behind Python indirection.
+
 Generated composition authority closeout
 -----------------------------------------
 

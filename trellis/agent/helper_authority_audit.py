@@ -63,6 +63,22 @@ class AdapterDelegationCall:
         return asdict(self)
 
 
+@dataclass(frozen=True, order=True)
+class AdapterIndirectAuthorityUse:
+    """One non-call reference to imported authority in a checked adapter."""
+
+    path: str
+    line: int
+    local_name: str
+    module: str
+    symbol: str
+    use_kind: str
+
+    def to_dict(self) -> dict[str, object]:
+        """Return a JSON-safe representation."""
+        return asdict(self)
+
+
 @dataclass(frozen=True)
 class HelperAuthorityReport:
     """Machine-readable helper-authority inventory for one repository state."""
@@ -74,11 +90,19 @@ class HelperAuthorityReport:
     route_only_authority: tuple[HelperAuthorityReference, ...]
     binding_only_authority: tuple[HelperAuthorityReference, ...]
     adapter_calls: tuple[AdapterDelegationCall, ...]
+    adapter_indirect_authority_uses: tuple[AdapterIndirectAuthorityUse, ...]
 
     @property
     def has_route_binding_drift(self) -> bool:
         """Return whether canonical routes and exact bindings disagree."""
         return bool(self.route_only_authority or self.binding_only_authority)
+
+    @property
+    def has_adapter_authority(self) -> bool:
+        """Return whether checked adapters call or reference required authority."""
+        return any(
+            item.matches_required_authority for item in self.adapter_calls
+        ) or bool(self.adapter_indirect_authority_uses)
 
     @property
     def summary(self) -> dict[str, int]:
@@ -91,6 +115,9 @@ class HelperAuthorityReport:
             item for item in self.adapter_calls if item.matches_required_authority
         )
         authority_call_paths = {item.path for item in authority_calls}
+        indirect_authority_paths = {
+            item.path for item in self.adapter_indirect_authority_uses
+        }
         return {
             "promoted_route_count": self.promoted_route_count,
             "route_authority_route_count": len(route_ids),
@@ -103,6 +130,12 @@ class HelperAuthorityReport:
             "adapter_price_call_count": len(price_calls),
             "adapter_authority_call_file_count": len(authority_call_paths),
             "adapter_authority_call_count": len(authority_calls),
+            "adapter_indirect_authority_use_file_count": len(
+                indirect_authority_paths
+            ),
+            "adapter_indirect_authority_use_count": len(
+                self.adapter_indirect_authority_uses
+            ),
         }
 
     def to_dict(self) -> dict[str, object]:
@@ -124,6 +157,10 @@ class HelperAuthorityReport:
             },
             "adapter_calls": [
                 item.to_dict() for item in self.adapter_calls
+            ],
+            "adapter_indirect_authority_uses": [
+                item.to_dict()
+                for item in self.adapter_indirect_authority_uses
             ],
         }
 
@@ -164,14 +201,19 @@ def build_helper_authority_report(root: str | Path) -> HelperAuthorityReport:
         repo_root,
         authority_symbols=authority_symbols,
     )
+    adapter_indirect_authority_uses = _scan_indirect_authority_uses(
+        repo_root,
+        authority_symbols=authority_symbols,
+    )
     return HelperAuthorityReport(
-        schema_version=1,
+        schema_version=2,
         promoted_route_count=len(promoted_routes),
         route_authority=route_authority,
         binding_authority=binding_authority,
         route_only_authority=route_only,
         binding_only_authority=binding_only,
         adapter_calls=adapter_calls,
+        adapter_indirect_authority_uses=adapter_indirect_authority_uses,
     )
 
 
@@ -192,6 +234,10 @@ def render_helper_authority_report(report: HelperAuthorityReport) -> str:
         f"adapter_price_calls={summary['adapter_price_call_count']}",
         f"adapter_authority_call_files={summary['adapter_authority_call_file_count']}",
         f"adapter_authority_calls={summary['adapter_authority_call_count']}",
+        "adapter_indirect_authority_use_files="
+        f"{summary['adapter_indirect_authority_use_file_count']}",
+        "adapter_indirect_authority_uses="
+        f"{summary['adapter_indirect_authority_use_count']}",
     ]
     _append_authority_section(lines, "Route authority", report.route_authority)
     _append_authority_section(lines, "Binding authority", report.binding_authority)
@@ -214,6 +260,16 @@ def render_helper_authority_report(report: HelperAuthorityReport) -> str:
             marker = "authority" if item.matches_required_authority else "price-call"
             lines.append(
                 f"- [{marker}] {item.path}:{item.line} "
+                f"{item.module}.{item.symbol} as {item.local_name}"
+            )
+    lines.append("")
+    lines.append("Adapter indirect authority references")
+    if not report.adapter_indirect_authority_uses:
+        lines.append("- none")
+    else:
+        for item in report.adapter_indirect_authority_uses:
+            lines.append(
+                f"- [{item.use_kind}] {item.path}:{item.line} "
                 f"{item.module}.{item.symbol} as {item.local_name}"
             )
     return "\n".join(lines) + "\n"
@@ -241,8 +297,9 @@ def build_parser() -> argparse.ArgumentParser:
         "--fail-on-adapter-authority",
         action="store_true",
         help=(
-            "Return exit code 1 when a checked adapter calls a symbol that is "
-            "required authority on a promoted route or exact binding."
+            "Return exit code 1 when a checked adapter calls or indirectly "
+            "references a symbol that is required authority on a promoted "
+            "route or exact binding."
         ),
     )
     return parser
@@ -256,9 +313,8 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
     else:
         print(render_helper_authority_report(report), end="")
-    has_adapter_authority = bool(report.summary["adapter_authority_call_count"])
     if (args.fail_on_drift and report.has_route_binding_drift) or (
-        args.fail_on_adapter_authority and has_adapter_authority
+        args.fail_on_adapter_authority and report.has_adapter_authority
     ):
         return 1
     return 0
@@ -421,7 +477,7 @@ def _scan_adapter_calls(
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-            resolved = _resolve_imported_call(
+            resolved = _resolve_imported_reference(
                 node.func,
                 imported_names=imported_names,
                 imported_modules=imported_modules,
@@ -447,6 +503,50 @@ def _scan_adapter_calls(
     return tuple(sorted(calls))
 
 
+def _scan_indirect_authority_uses(
+    repo_root: Path,
+    *,
+    authority_symbols: set[str],
+) -> tuple[AdapterIndirectAuthorityUse, ...]:
+    """Find authority symbols used as values rather than direct call targets."""
+    adapter_root = repo_root / _ADAPTER_ROOT
+    if not adapter_root.is_dir():
+        return ()
+    uses: list[AdapterIndirectAuthorityUse] = []
+    for path in sorted(adapter_root.glob("*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        imported_names, imported_modules = _import_index(tree)
+        direct_call_targets = {
+            id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)
+        }
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.Name, ast.Attribute)):
+                continue
+            if not isinstance(node.ctx, ast.Load) or id(node) in direct_call_targets:
+                continue
+            resolved = _resolve_imported_reference(
+                node,
+                imported_names=imported_names,
+                imported_modules=imported_modules,
+            )
+            if resolved is None:
+                continue
+            local_name, module, symbol = resolved
+            if symbol not in authority_symbols:
+                continue
+            uses.append(
+                AdapterIndirectAuthorityUse(
+                    path=path.relative_to(repo_root).as_posix(),
+                    line=int(node.lineno),
+                    local_name=local_name,
+                    module=module,
+                    symbol=symbol,
+                    use_kind="indirect_reference",
+                )
+            )
+    return tuple(sorted(uses))
+
+
 def _import_index(
     tree: ast.AST,
 ) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
@@ -466,20 +566,20 @@ def _import_index(
     return imported_names, imported_modules
 
 
-def _resolve_imported_call(
-    function: ast.expr,
+def _resolve_imported_reference(
+    reference: ast.expr,
     *,
     imported_names: Mapping[str, tuple[str, str]],
     imported_modules: Mapping[str, str],
 ) -> tuple[str, str, str] | None:
-    if isinstance(function, ast.Name):
-        imported = imported_names.get(function.id)
+    if isinstance(reference, ast.Name):
+        imported = imported_names.get(reference.id)
         if imported is None:
             return None
         module, symbol = imported
-        return function.id, module, symbol
+        return reference.id, module, symbol
 
-    dotted = _dotted_name(function)
+    dotted = _dotted_name(reference)
     if dotted is None or "." not in dotted:
         return None
     matching_imports = [

@@ -1162,6 +1162,7 @@ T49 Gaussian/Student-t tranche migration. The 2026-08-26 merged closeout
 snapshot is:
 
 - ``0`` checked-adapter calls matching required route or binding authority;
+- ``0`` indirect checked-adapter references to required authority;
 - ``8`` imported ``price_*`` calls across ``8`` checked-adapter files;
 - ``36`` required canonical route references and ``40`` exact-binding
   references; and
@@ -1183,8 +1184,10 @@ The ordinary PR gate now preserves the zero baseline:
 
 ``--fail-on-adapter-authority`` returns nonzero when any top-level checked
 ``_agent`` adapter executes an imported symbol that is required by a promoted
-route or exact binding. It is deliberately independent of ``--fail-on-drift``:
-exact bindings may carry intentional conditional specialization even while no
+route or exact binding, or uses that symbol as a first-class value. Assignment
+aliases, callbacks, and container references therefore cannot bypass the
+delegation gate. It is deliberately independent of ``--fail-on-drift``: exact
+bindings may carry intentional conditional specialization even while no
 checked adapter delegates to it.
 
 The eight residual imported pricing calls require semantic interpretation; a

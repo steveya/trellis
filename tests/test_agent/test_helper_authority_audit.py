@@ -136,6 +136,30 @@ def evaluate():
     return tmp_path
 
 
+def _fixture_root_with_indirect_authority(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+from trellis.models.example import barrier_option_price
+
+
+def accept_callback(callback):
+    return callback
+
+
+delegated_price = price_example
+
+
+def evaluate():
+    return accept_callback(barrier_option_price)
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -199,7 +223,7 @@ def test_helper_authority_report_has_stable_machine_readable_shape(tmp_path):
 
     payload = build_helper_authority_report(_fixture_root(tmp_path)).to_dict()
 
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["summary"] == {
         "promoted_route_count": 1,
         "route_authority_route_count": 1,
@@ -212,8 +236,36 @@ def test_helper_authority_report_has_stable_machine_readable_shape(tmp_path):
         "adapter_price_call_count": 3,
         "adapter_authority_call_file_count": 1,
         "adapter_authority_call_count": 3,
+        "adapter_indirect_authority_use_file_count": 0,
+        "adapter_indirect_authority_use_count": 0,
     }
+    assert payload["adapter_indirect_authority_uses"] == []
     assert json.loads(json.dumps(payload)) == payload
+
+
+def test_audit_rejects_assignment_aliases_and_callback_authority(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_indirect_authority(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (9, "price_example", "price_example", "indirect_reference"),
+        (
+            13,
+            "barrier_option_price",
+            "barrier_option_price",
+            "indirect_reference",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+    assert report.summary["adapter_indirect_authority_use_file_count"] == 1
+    assert report.summary["adapter_indirect_authority_use_count"] == 2
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):
@@ -231,6 +283,7 @@ def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_
     assert "binding_authority_references=3" in rendered
     assert "route_only_references=1" in rendered
     assert "binding_only_references=1" in rendered
+    assert "adapter_indirect_authority_uses=0" in rendered
     assert "price_example_monte_carlo" in rendered
     assert "price_binding_only" in rendered
     assert "barrier_option_price" in rendered
@@ -247,6 +300,10 @@ def test_current_repository_helper_authority_report_is_internally_consistent():
     assert all(item.required for item in report.route_authority)
     assert all(item.required for item in report.binding_authority)
     assert all((root / item.path).is_file() for item in report.adapter_calls)
+    assert all(
+        (root / item.path).is_file()
+        for item in report.adapter_indirect_authority_uses
+    )
     assert report.to_dict()["summary"]["route_authority_reference_count"] == len(
         report.route_authority
     )
@@ -262,8 +319,12 @@ def test_current_repository_has_zero_admitted_adapter_authority():
     ]
 
     assert authority_calls == []
+    assert report.adapter_indirect_authority_uses == ()
+    assert report.has_adapter_authority is False
     assert report.summary["adapter_authority_call_file_count"] == 0
     assert report.summary["adapter_authority_call_count"] == 0
+    assert report.summary["adapter_indirect_authority_use_file_count"] == 0
+    assert report.summary["adapter_indirect_authority_use_count"] == 0
 
 
 def test_current_repository_retires_arithmetic_asian_helper_authority():
