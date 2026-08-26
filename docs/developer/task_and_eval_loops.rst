@@ -1157,11 +1157,15 @@ that contains required authority fail closed because the imported names cannot
 be resolved safely. Unresolved dynamic attribute/subscript access such as
 ``helpers.__dict__[name]`` or ``helpers.__getattribute__(name)`` retains the
 imported authority-module root instead of disappearing inside the chain.
-Calling ``globals()`` in an adapter module that imports required authority also
-fails closed: the returned mapping exposes those imports to opaque string-keyed
-lookup even when no imported-name AST node remains at the eventual call site.
-Zero-argument ``locals()`` and ``vars()`` calls apply the same rule to required
-authority imported in their executing lexical scope.
+Direct or aliased zero-argument calls to ``globals()`` in an adapter module
+with active required-authority imports also fail closed: the returned mapping
+exposes those imports to opaque string-keyed lookup even when no imported-name
+AST node remains at the eventual call site. Chained ``globals.__call__()`` is
+equivalent. ``locals()`` and ``vars()`` calls apply the same rule to active
+required authority in their executing lexical scope. Source-ordered replacement
+of an import before the namespace call removes that binding from the exposed
+authority set. Imports assigned through a ``global`` declaration are inspected
+as module-namespace bindings and are not misclassified as function locals.
 Class bodies follow Python's source-ordered name fallback: a reference before a
 later class-local binding still resolves through the enclosing scope, while an
 active unconditional class binding shadows the outer name; deleting that class-local
@@ -1218,9 +1222,11 @@ aliases, callbacks, container references, chained attributes such as
 therefore cannot bypass the delegation gate. Wildcard imports from authority
 namespaces fail closed, as do unresolved dynamic attribute/subscript chains
 that retain an authority-module root, including ``__getattribute__`` lookup.
-Adapter-global namespace access through ``globals()`` likewise fails closed
-when the module imports required authority. Zero-argument ``locals()`` and
-``vars()`` fail closed for authority imports in their current lexical scope.
+Adapter-global namespace access through a direct, aliased, or chained
+``globals()`` call likewise fails closed when the module has active required
+authority. Zero-argument ``locals()`` and ``vars()`` calls fail closed for
+active authority imports in their current lexical scope; a source-ordered
+replacement before the call is not reported as exposed authority.
 Relative imports normalize to the same absolute identity, while same-name
 imports remain confined to their lexical scope and later ordinary bindings
 supersede imports in source order, while annotation-only statements preserve

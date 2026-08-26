@@ -91,6 +91,7 @@ class _BindingEvent:
     conditional: bool
     is_import: bool
     is_delete: bool
+    value: ast.expr | None = None
 
 
 @dataclass(frozen=True)
@@ -551,26 +552,46 @@ def _scan_indirect_authority_uses(
             package=_ADAPTER_PACKAGE,
         )
         for node in ast.walk(tree):
-            namespace_kind = _dynamic_namespace_call_kind(node)
-            if namespace_kind is None:
+            if not isinstance(node, ast.Call):
                 continue
-            namespace_scope = scope_by_node[id(node)]
-            if namespace_kind == "global":
-                namespace_scope = _module_scope(namespace_scope)
-            for local_name, module, symbol in _scope_authority_imports(
-                namespace_scope,
-                authority_targets=authority_targets,
-            ):
-                uses.append(
-                    AdapterIndirectAuthorityUse(
-                        path=path.relative_to(repo_root).as_posix(),
-                        line=int(node.lineno),
-                        local_name=local_name,
-                        module=module,
-                        symbol=symbol,
-                        use_kind=f"dynamic_{namespace_kind}_namespace",
+            execution_scope = scope_by_node[id(node)]
+            namespace_kinds = _dynamic_namespace_call_kinds(
+                node,
+                scope=execution_scope,
+            )
+            if not namespace_kinds:
+                continue
+            for namespace_kind in namespace_kinds:
+                if namespace_kind == "global":
+                    exposed_imports = _global_namespace_authority_imports(
+                        execution_scope,
+                        reference=node,
+                        authority_targets=authority_targets,
                     )
-                )
+                else:
+                    visible_names = None
+                    if execution_scope.kind != "module":
+                        visible_names = frozenset(
+                            execution_scope.bindings
+                        ).difference(execution_scope.global_names)
+                    exposed_imports = _scope_authority_imports(
+                        execution_scope,
+                        reference=node,
+                        possible_since=None,
+                        visible_names=visible_names,
+                        authority_targets=authority_targets,
+                    )
+                for local_name, module, symbol in exposed_imports:
+                    uses.append(
+                        AdapterIndirectAuthorityUse(
+                            path=path.relative_to(repo_root).as_posix(),
+                            line=int(node.lineno),
+                            local_name=local_name,
+                            module=module,
+                            symbol=symbol,
+                            use_kind=f"dynamic_{namespace_kind}_namespace",
+                        )
+                    )
         for node in ast.walk(tree):
             if not isinstance(node, ast.ImportFrom):
                 continue
@@ -803,6 +824,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         node: ast.AST,
         at_end: bool = True,
         is_delete: bool = False,
+        value: ast.expr | None = None,
     ) -> None:
         self._binding_sequence += 1
         line_attribute = "end_lineno" if at_end else "lineno"
@@ -825,6 +847,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
                 conditional=self._conditional_depth > 0,
                 is_import=False,
                 is_delete=is_delete,
+                value=value,
             )
         )
 
@@ -871,7 +894,11 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         for target in node.targets:
             for local_name in sorted(_stored_names(target)):
                 self.local_names.add(local_name)
-                self._record_shadow(local_name=local_name, node=node)
+                self._record_shadow(
+                    local_name=local_name,
+                    node=node,
+                    value=node.value if isinstance(target, ast.Name) else None,
+                )
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
         self.visit(node.annotation)
@@ -880,7 +907,15 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         for local_name in sorted(_stored_names(node.target)):
             self.local_names.add(local_name)
             if node.value is not None:
-                self._record_shadow(local_name=local_name, node=node)
+                self._record_shadow(
+                    local_name=local_name,
+                    node=node,
+                    value=(
+                        node.value
+                        if isinstance(node.target, ast.Name)
+                        else None
+                    ),
+                )
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self.visit(node.value)
@@ -892,7 +927,13 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         self.visit(node.value)
         for local_name in sorted(_stored_names(node.target)):
             self.local_names.add(local_name)
-            self._record_shadow(local_name=local_name, node=node)
+            self._record_shadow(
+                local_name=local_name,
+                node=node,
+                value=(
+                    node.value if isinstance(node.target, ast.Name) else None
+                ),
+            )
 
     def visit_Delete(self, node: ast.Delete) -> None:
         for target in node.targets:
@@ -1355,12 +1396,28 @@ def _module_scope(scope: _ImportScope) -> _ImportScope:
 def _scope_authority_imports(
     scope: _ImportScope,
     *,
+    reference: ast.AST,
+    possible_since: tuple[int, int, int] | None,
+    visible_names: frozenset[str] | None,
     authority_targets: set[tuple[str, str]],
 ) -> tuple[tuple[str, str, str], ...]:
-    """Return authority imports exposed through one dynamic namespace."""
+    """Return active authority imports exposed by a dynamic namespace."""
     imported: set[tuple[str, str, str]] = set()
+    reference_position = _source_position(reference)
     for local_name, binding_events in scope.bindings.items():
-        for event in binding_events:
+        if visible_names is not None and local_name not in visible_names:
+            continue
+        if possible_since is None:
+            active_events = _active_binding_events(
+                binding_events,
+                reference_position=reference_position,
+            )
+        else:
+            active_events = _possible_deferred_binding_events(
+                binding_events,
+                possible_since=possible_since,
+            )
+        for event in active_events:
             if not event.is_import:
                 continue
             if (event.module, event.symbol) in authority_targets:
@@ -1374,20 +1431,223 @@ def _scope_authority_imports(
     return tuple(sorted(imported))
 
 
-def _dynamic_namespace_call_kind(node: ast.AST) -> str | None:
-    """Return the namespace exposed by a zero-argument introspection call."""
-    if (
-        not isinstance(node, ast.Call)
-        or not isinstance(node.func, ast.Name)
-        or node.args
-        or node.keywords
-    ):
-        return None
-    if node.func.id == "globals":
+def _global_namespace_authority_imports(
+    execution_scope: _ImportScope,
+    *,
+    reference: ast.AST,
+    authority_targets: set[tuple[str, str]],
+) -> tuple[tuple[str, str, str], ...]:
+    """Return authority imports that can populate ``globals()``."""
+    imported: set[tuple[str, str, str]] = set()
+    possible_since: tuple[int, int, int] | None = None
+    module_scope = _module_scope(execution_scope)
+    current: _ImportScope | None = execution_scope
+    while current is not None:
+        visible_names = (
+            None if current is module_scope else current.global_names
+        )
+        if visible_names is None or visible_names:
+            imported.update(
+                _scope_authority_imports(
+                    current,
+                    reference=reference,
+                    possible_since=possible_since,
+                    visible_names=visible_names,
+                    authority_targets=authority_targets,
+                )
+            )
+        if current is module_scope:
+            break
+        if current.kind in {"function", "lambda", "generator"}:
+            possible_since = current.definition_position
+        current = current.parent
+    return tuple(sorted(imported))
+
+
+def _dynamic_namespace_call_kinds(
+    node: ast.AST,
+    *,
+    scope: _ImportScope,
+) -> tuple[str, ...]:
+    """Return namespaces exposed by a zero-argument introspection call."""
+    if not isinstance(node, ast.Call) or node.args or node.keywords:
+        return ()
+    return _resolve_dynamic_namespace_callable(
+        node.func,
+        scope=scope,
+        seen=frozenset(),
+    )
+
+
+def _resolve_dynamic_namespace_callable(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+) -> tuple[str, ...]:
+    """Resolve a builtin namespace callable through simple aliases."""
+    if isinstance(reference, ast.Attribute) and reference.attr == "__call__":
+        return _resolve_dynamic_namespace_callable(
+            reference.value,
+            scope=scope,
+            seen=seen,
+        )
+
+    imported_kinds = {
+        kind
+        for _, module, symbol in _resolve_imported_references(
+            reference,
+            scope=scope,
+        )
+        if (kind := _imported_dynamic_namespace_kind(module, symbol))
+        is not None
+    }
+    if not isinstance(reference, ast.Name):
+        return tuple(sorted(imported_kinds))
+
+    imported_kinds.update(
+        _resolve_dynamic_namespace_name(
+            reference.id,
+            scope=scope,
+            reference=reference,
+            seen=seen,
+        )
+    )
+    return tuple(sorted(imported_kinds))
+
+
+def _resolve_dynamic_namespace_name(
+    local_name: str,
+    *,
+    scope: _ImportScope,
+    reference: ast.expr,
+    seen: frozenset[tuple[int, str, int]],
+) -> tuple[str, ...]:
+    """Resolve one callable name using Python's lexical binding rules."""
+    reference_position = _source_position(reference)
+    possible_since: tuple[int, int, int] | None = None
+    kinds: set[str] = set()
+    current: _ImportScope | None = scope
+    while current is not None:
+        seen_key = (id(current), local_name, id(reference))
+        if seen_key in seen:
+            return tuple(sorted(kinds))
+        next_seen = seen | {seen_key}
+        is_global = local_name in current.global_names
+        is_nonlocal = local_name in current.nonlocal_names
+        binding_events = current.bindings.get(local_name, ())
+        active_events: tuple[_BindingEvent, ...] = ()
+        if binding_events:
+            if possible_since is None:
+                active_events = _active_binding_events(
+                    binding_events,
+                    reference_position=reference_position,
+                )
+            else:
+                active_events = _possible_dynamic_binding_events(
+                    binding_events,
+                    possible_since=possible_since,
+                )
+            for event in active_events:
+                if event.is_delete:
+                    continue
+                if event.is_import:
+                    kind = _imported_dynamic_namespace_kind(
+                        event.module,
+                        event.symbol,
+                    )
+                    if kind is not None:
+                        kinds.add(kind)
+                elif event.value is not None:
+                    kinds.update(
+                        _resolve_dynamic_namespace_callable(
+                            event.value,
+                            scope=current,
+                            seen=next_seen,
+                        )
+                    )
+
+        if is_global or is_nonlocal:
+            if possible_since is None:
+                active_at_redirect = active_events
+            else:
+                active_at_redirect = _active_binding_events(
+                    binding_events,
+                    reference_position=possible_since,
+                )
+            if any(
+                not event.conditional for event in active_at_redirect
+            ):
+                return tuple(sorted(kinds))
+            parent = _module_scope(current) if is_global else current.parent
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+            possible_since = current.definition_position
+            current = parent
+            continue
+
+        if local_name in current.local_names:
+            source_ordered_fallback = current.kind in {"class", "module"}
+            if not source_ordered_fallback or _class_binding_blocks_parent(
+                active_events
+            ):
+                return tuple(sorted(kinds))
+        parent = current.parent
+        if current.kind in {
+            "function",
+            "lambda",
+            "comprehension",
+            "generator",
+        }:
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+        if current.kind in {"function", "lambda", "generator"}:
+            possible_since = current.definition_position
+        current = parent
+
+    builtin_kind = _builtin_dynamic_namespace_kind(local_name)
+    if builtin_kind is not None:
+        kinds.add(builtin_kind)
+    return tuple(sorted(kinds))
+
+
+def _possible_dynamic_binding_events(
+    binding_events: tuple[_BindingEvent, ...],
+    *,
+    possible_since: tuple[int, int, int],
+) -> tuple[_BindingEvent, ...]:
+    """Return all name bindings possible across deferred execution times."""
+    return _active_binding_events(
+        binding_events,
+        reference_position=possible_since,
+    ) + tuple(
+        event for event in binding_events if event.position > possible_since
+    )
+
+
+def _builtin_dynamic_namespace_kind(local_name: str) -> str | None:
+    if local_name == "globals":
         return "global"
-    if node.func.id in {"locals", "vars"}:
+    if local_name in {"locals", "vars"}:
         return "local"
     return None
+
+
+def _imported_dynamic_namespace_kind(
+    module: str,
+    symbol: str,
+) -> str | None:
+    if module != "builtins":
+        return None
+    return _builtin_dynamic_namespace_kind(symbol)
+
+
+def _source_position(node: ast.AST) -> tuple[int, int, int]:
+    return (
+        int(getattr(node, "lineno", 0)),
+        int(getattr(node, "col_offset", 0)),
+        _MAX_SOURCE_COMPONENT,
+    )
 
 
 def _is_authority_namespace(

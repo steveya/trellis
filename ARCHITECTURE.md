@@ -222,11 +222,13 @@ The service-host path is:
   to that module-qualified identity, wildcard imports from an authority
   namespace fail closed, and unresolved dynamic attribute or subscript chains
   (including `__dict__` and `__getattribute__` lookup) retain their imported
-  authority-module root. Calling `globals()` in an adapter module with required
-  authority imports also fails closed, as do zero-argument `locals()` or
-  `vars()` calls in a lexical scope with authority imports, because string-keyed
-  namespace lookup hides the selected binding. Bindings are resolved in lexical
-  and source order so a
+  authority-module root. Direct or aliased zero-argument calls to `globals()`
+  in an adapter module with active required-authority imports also fail closed,
+  as do `locals()` or `vars()` calls in a lexical scope with active authority
+  imports, because string-keyed namespace lookup hides the selected binding.
+  Superseded imports are not treated as exposed by that namespace. Bindings are
+  resolved in lexical and source order; an import assigned through a `global`
+  declaration belongs to the module namespace rather than `locals()`. A
   nested same-name binding cannot rewrite an outer reference; later ordinary
   assignments or definitions supersede an import just as a later unconditional
   import does; an annotation without a value does not create a runtime

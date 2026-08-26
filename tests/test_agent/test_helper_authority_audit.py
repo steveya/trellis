@@ -563,6 +563,79 @@ def evaluate():
     return root
 
 
+def _fixture_root_with_aliased_dynamic_namespace_lookup(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+
+lookup = globals
+via_alias = lookup()["price_example"]()
+via_dunder = globals.__call__()["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_shadowed_dynamic_namespace_imports(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+import builtins
+from trellis.models.example import price_example
+
+
+def local_price():
+    return 0.0
+
+
+def local_namespace():
+    return {}
+
+
+namespace_lookup = globals
+namespace_lookup = local_namespace
+shadowed_alias_namespace = namespace_lookup()
+globals = local_namespace
+shadowed_builtin_namespace = globals()
+price_example = local_price
+module_namespace = builtins.globals()
+
+
+def evaluate():
+    from trellis.models.example import price_example as helper
+
+    helper = local_price
+    function_namespace = locals()
+    return module_namespace, function_namespace
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_global_dynamic_namespace_import(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+def evaluate():
+    global price_example
+    from trellis.models.example import price_example
+
+    local_namespace = locals()
+    delegated = globals()["price_example"]()
+    return local_namespace, delegated
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1130,6 +1203,71 @@ def test_audit_fails_closed_for_dynamic_local_namespace_lookup(tmp_path):
             "price_example",
             "dynamic_local_namespace",
         ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_fails_closed_for_aliased_dynamic_namespace_lookup(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_aliased_dynamic_namespace_lookup(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            5,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        ),
+        (
+            6,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_filters_dynamic_namespaces_to_active_imports(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_shadowed_dynamic_namespace_imports(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert report.adapter_indirect_authority_uses == ()
+    assert report.has_adapter_authority is False
+
+
+def test_audit_places_global_imports_only_in_the_global_namespace(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_global_dynamic_namespace_import(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            6,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        )
     ]
     assert report.has_adapter_authority is True
 
