@@ -810,8 +810,9 @@ callback, including when its imported module is first hidden behind another
 name or dynamic lookup. Such indirect references still count as helper
 authority, including a chained call such as ``helper.__call__()``; renaming a
 function does not turn delegation into generated composition. Relative imports
-are normalized before matching. Matching uses both module and function name,
-so an unrelated function with the same basename remains distinct.
+are normalized before matching, and nested imports do not rewrite outer
+bindings. Matching uses both module and function name, so an unrelated function
+with the same basename remains distinct.
 
 The gate is intentionally narrower than a ban on every function beginning
 with ``price_``. Calls such as ``price_on_lattice(...)`` or

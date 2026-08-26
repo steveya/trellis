@@ -1144,10 +1144,13 @@ The report keeps four evidence surfaces separate:
 
 The adapter scan uses Python AST import resolution, including local aliases,
 module aliases, and relative imports resolved against the checked-adapter
-package. A locally defined function or an unused import is not counted as
-delegation. Authority is the declared module-and-symbol pair; an additional
-public re-export path must be declared explicitly if it is intended to carry
-the same authority rather than being inferred from a matching basename.
+package. Bindings are resolved per lexical scope: an import inside a nested
+function cannot overwrite the module binding seen by an outer reference, and
+a parameter or ordinary local binding shadows an outer import. A locally
+defined function or an unused import is not counted as delegation. Authority
+is the declared module-and-symbol pair; an additional public re-export path
+must be declared explicitly if it is intended to carry the same authority
+rather than being inferred from a matching basename.
 
 Use ``--fail-on-drift`` when route and backend-binding parity is an explicit
 gate. The ordinary command remains read-only and returns the complete report
@@ -1190,9 +1193,10 @@ route or exact binding, or uses that symbol as a first-class value. Assignment
 aliases, callbacks, container references, chained attributes such as
 ``helper.__call__``, and imported authority modules used as dynamic values
 therefore cannot bypass the delegation gate. Relative imports normalize to the
-same absolute identity. Authority matching is module-qualified, so an
-unrelated module that happens to export the same function basename does not
-fail the gate. It is deliberately
+same absolute identity, while same-name imports remain confined to their
+lexical scope. Authority matching is module-qualified, so an unrelated module
+that happens to export the same function basename does not fail the gate. It
+is deliberately
 independent of ``--fail-on-drift``: exact bindings may carry intentional
 conditional specialization even while no checked adapter delegates to it.
 

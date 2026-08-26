@@ -81,6 +81,18 @@ class AdapterIndirectAuthorityUse:
 
 
 @dataclass(frozen=True)
+class _ImportScope:
+    """Imported bindings and lexical-name ownership for one Python scope."""
+
+    parent: _ImportScope | None
+    kind: str
+    imports: Mapping[str, tuple[tuple[str, str], ...]]
+    local_names: frozenset[str]
+    global_names: frozenset[str]
+    nonlocal_names: frozenset[str]
+
+
+@dataclass(frozen=True)
 class HelperAuthorityReport:
     """Machine-readable helper-authority inventory for one repository state."""
 
@@ -475,36 +487,36 @@ def _scan_adapter_calls(
     calls: list[AdapterDelegationCall] = []
     for path in sorted(adapter_root.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        imported_names, imported_modules = _import_index(
+        scope_by_node = _index_import_scopes(
             tree,
             package=_ADAPTER_PACKAGE,
         )
         for node in ast.walk(tree):
             if not isinstance(node, ast.Call):
                 continue
-            resolved = _resolve_imported_reference(
+            resolved_references = _resolve_imported_references(
                 node.func,
-                imported_names=imported_names,
-                imported_modules=imported_modules,
+                scope=scope_by_node[id(node.func)],
             )
-            if resolved is None:
-                continue
-            local_name, module, symbol = resolved
-            is_price_call = symbol.startswith("price_")
-            matches_required_authority = (module, symbol) in authority_targets
-            if not is_price_call and not matches_required_authority:
-                continue
-            calls.append(
-                AdapterDelegationCall(
-                    path=path.relative_to(repo_root).as_posix(),
-                    line=int(node.lineno),
-                    local_name=local_name,
-                    module=module,
-                    symbol=symbol,
-                    is_price_call=is_price_call,
-                    matches_required_authority=matches_required_authority,
+            for local_name, module, symbol in resolved_references:
+                is_price_call = symbol.startswith("price_")
+                matches_required_authority = (
+                    module,
+                    symbol,
+                ) in authority_targets
+                if not is_price_call and not matches_required_authority:
+                    continue
+                calls.append(
+                    AdapterDelegationCall(
+                        path=path.relative_to(repo_root).as_posix(),
+                        line=int(node.lineno),
+                        local_name=local_name,
+                        module=module,
+                        symbol=symbol,
+                        is_price_call=is_price_call,
+                        matches_required_authority=matches_required_authority,
+                    )
                 )
-            )
     return tuple(sorted(calls))
 
 
@@ -520,7 +532,7 @@ def _scan_indirect_authority_uses(
     uses: list[AdapterIndirectAuthorityUse] = []
     for path in sorted(adapter_root.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
-        imported_names, imported_modules = _import_index(
+        scope_by_node = _index_import_scopes(
             tree,
             package=_ADAPTER_PACKAGE,
         )
@@ -542,73 +554,336 @@ def _scan_indirect_authority_uses(
                 or id(node) in direct_call_targets
             ):
                 continue
-            resolved = _resolve_imported_reference(
+            resolved_references = _resolve_imported_references(
                 node,
-                imported_names=imported_names,
-                imported_modules=imported_modules,
+                scope=scope_by_node[id(node)],
             )
-            if resolved is None:
-                continue
-            local_name, module, symbol = resolved
-            if symbol:
-                if (module, symbol) in authority_targets:
-                    use_kind = "indirect_reference"
-                elif _is_authority_namespace(
-                    f"{module}.{symbol}",
-                    authority_targets,
-                ):
+            for local_name, resolved_module, resolved_symbol in resolved_references:
+                module = resolved_module
+                symbol = resolved_symbol
+                if symbol:
+                    if (module, symbol) in authority_targets:
+                        use_kind = "indirect_reference"
+                    elif _is_authority_namespace(
+                        f"{module}.{symbol}",
+                        authority_targets,
+                    ):
+                        if id(node) in nested_attribute_nodes:
+                            continue
+                        module = f"{module}.{symbol}"
+                        symbol = "*"
+                        use_kind = "indirect_module_reference"
+                    else:
+                        continue
+                elif _is_authority_namespace(module, authority_targets):
                     if id(node) in nested_attribute_nodes:
                         continue
-                    module = f"{module}.{symbol}"
                     symbol = "*"
                     use_kind = "indirect_module_reference"
                 else:
                     continue
-            elif _is_authority_namespace(module, authority_targets):
-                if id(node) in nested_attribute_nodes:
-                    continue
-                symbol = "*"
-                use_kind = "indirect_module_reference"
-            else:
-                continue
-            uses.append(
-                AdapterIndirectAuthorityUse(
-                    path=path.relative_to(repo_root).as_posix(),
-                    line=int(node.lineno),
-                    local_name=local_name,
-                    module=module,
-                    symbol=symbol,
-                    use_kind=use_kind,
+                uses.append(
+                    AdapterIndirectAuthorityUse(
+                        path=path.relative_to(repo_root).as_posix(),
+                        line=int(node.lineno),
+                        local_name=local_name,
+                        module=module,
+                        symbol=symbol,
+                        use_kind=use_kind,
+                    )
                 )
-            )
     return tuple(sorted(uses))
 
 
-def _import_index(
+class _ScopeBindingCollector(ast.NodeVisitor):
+    """Collect bindings in one scope without entering child scopes."""
+
+    def __init__(self, *, package: str) -> None:
+        self.package = package
+        self.imports: dict[str, set[tuple[str, str]]] = defaultdict(set)
+        self.local_names: set[str] = set()
+        self.global_names: set[str] = set()
+        self.nonlocal_names: set[str] = set()
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            if alias.asname:
+                local_name = alias.asname
+                module = alias.name
+            else:
+                local_name = alias.name.split(".", 1)[0]
+                module = local_name
+            self.imports[local_name].add((module, ""))
+            self.local_names.add(local_name)
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        from_module = _normalize_import_from_module(
+            node,
+            package=self.package,
+        )
+        if not from_module:
+            return
+        for alias in node.names:
+            if alias.name == "*":
+                continue
+            local_name = alias.asname or alias.name
+            self.imports[local_name].add((from_module, alias.name))
+            self.local_names.add(local_name)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self.local_names.add(node.name)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self.local_names.add(node.name)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.local_names.add(node.name)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        return
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        return
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        return
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        return
+
+    def visit_Global(self, node: ast.Global) -> None:
+        self.global_names.update(node.names)
+
+    def visit_Nonlocal(self, node: ast.Nonlocal) -> None:
+        self.nonlocal_names.update(node.names)
+
+    def visit_Name(self, node: ast.Name) -> None:
+        if isinstance(node.ctx, (ast.Store, ast.Del)):
+            self.local_names.add(node.id)
+
+    def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
+        if node.name:
+            self.local_names.add(node.name)
+        self.generic_visit(node)
+
+
+def _make_import_scope(
+    node: ast.AST,
+    *,
+    parent: _ImportScope | None,
+    kind: str,
+    package: str,
+) -> _ImportScope:
+    collector = _ScopeBindingCollector(package=package)
+    if isinstance(node, (ast.Module, ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+        for statement in node.body:
+            collector.visit(statement)
+    elif isinstance(node, ast.Lambda):
+        collector.visit(node.body)
+
+    if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+        collector.local_names.update(_argument_names(node.args))
+    if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
+        for generator in node.generators:
+            collector.local_names.update(_stored_names(generator.target))
+
+    collector.local_names.difference_update(collector.global_names)
+    collector.local_names.difference_update(collector.nonlocal_names)
+    imports = {
+        local_name: tuple(sorted(bindings))
+        for local_name, bindings in collector.imports.items()
+    }
+    return _ImportScope(
+        parent=parent,
+        kind=kind,
+        imports=imports,
+        local_names=frozenset(collector.local_names),
+        global_names=frozenset(collector.global_names),
+        nonlocal_names=frozenset(collector.nonlocal_names),
+    )
+
+
+def _argument_names(arguments: ast.arguments) -> set[str]:
+    names = {
+        argument.arg
+        for argument in (
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+        )
+    }
+    if arguments.vararg is not None:
+        names.add(arguments.vararg.arg)
+    if arguments.kwarg is not None:
+        names.add(arguments.kwarg.arg)
+    return names
+
+
+def _stored_names(node: ast.AST) -> set[str]:
+    return {
+        child.id
+        for child in ast.walk(node)
+        if isinstance(child, ast.Name)
+        and isinstance(child.ctx, (ast.Store, ast.Del))
+    }
+
+
+class _ImportScopeIndexer(ast.NodeVisitor):
+    """Associate each AST node with the lexical import scope it executes in."""
+
+    def __init__(self, tree: ast.Module, *, package: str) -> None:
+        self.package = package
+        self.current = _make_import_scope(
+            tree,
+            parent=None,
+            kind="module",
+            package=package,
+        )
+        self.scope_by_node: dict[int, _ImportScope] = {}
+
+    def index(self, tree: ast.Module) -> dict[int, _ImportScope]:
+        self.visit(tree)
+        return self.scope_by_node
+
+    def generic_visit(self, node: ast.AST) -> None:
+        self.scope_by_node[id(node)] = self.current
+        super().generic_visit(node)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function(node)
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function(node)
+
+    def _visit_function(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+    ) -> None:
+        self.scope_by_node[id(node)] = self.current
+        self._visit_argument_expressions(node.args)
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        if node.returns is not None:
+            self.visit(node.returns)
+        child = _make_import_scope(
+            node,
+            parent=self.current,
+            kind="function",
+            package=self.package,
+        )
+        self._visit_body_in_scope(node.body, child)
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        self.scope_by_node[id(node)] = self.current
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword)
+        child = _make_import_scope(
+            node,
+            parent=self.current,
+            kind="class",
+            package=self.package,
+        )
+        self._visit_body_in_scope(node.body, child)
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        self.scope_by_node[id(node)] = self.current
+        self._visit_argument_expressions(node.args)
+        child = _make_import_scope(
+            node,
+            parent=self.current,
+            kind="lambda",
+            package=self.package,
+        )
+        previous = self.current
+        self.current = child
+        self.visit(node.body)
+        self.current = previous
+
+    def visit_ListComp(self, node: ast.ListComp) -> None:
+        self._visit_comprehension(node, (node.elt,))
+
+    def visit_SetComp(self, node: ast.SetComp) -> None:
+        self._visit_comprehension(node, (node.elt,))
+
+    def visit_DictComp(self, node: ast.DictComp) -> None:
+        self._visit_comprehension(node, (node.key, node.value))
+
+    def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
+        self._visit_comprehension(node, (node.elt,))
+
+    def _visit_comprehension(
+        self,
+        node: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+        result_nodes: tuple[ast.AST, ...],
+    ) -> None:
+        self.scope_by_node[id(node)] = self.current
+        first, *remaining = node.generators
+        self.visit(first.iter)
+        child = _make_import_scope(
+            node,
+            parent=self.current,
+            kind="comprehension",
+            package=self.package,
+        )
+        previous = self.current
+        self.current = child
+        self.visit(first.target)
+        for condition in first.ifs:
+            self.visit(condition)
+        for generator in remaining:
+            self.visit(generator.iter)
+            self.visit(generator.target)
+            for condition in generator.ifs:
+                self.visit(condition)
+        for result_node in result_nodes:
+            self.visit(result_node)
+        self.current = previous
+
+    def _visit_argument_expressions(self, arguments: ast.arguments) -> None:
+        for argument in (
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+        ):
+            if argument.annotation is not None:
+                self.visit(argument.annotation)
+        if arguments.vararg and arguments.vararg.annotation is not None:
+            self.visit(arguments.vararg.annotation)
+        if arguments.kwarg and arguments.kwarg.annotation is not None:
+            self.visit(arguments.kwarg.annotation)
+        for default in arguments.defaults:
+            self.visit(default)
+        for default in arguments.kw_defaults:
+            if default is not None:
+                self.visit(default)
+
+    def _visit_body_in_scope(
+        self,
+        body: list[ast.stmt],
+        scope: _ImportScope,
+    ) -> None:
+        previous = self.current
+        self.current = scope
+        for statement in body:
+            self.visit(statement)
+        self.current = previous
+
+
+def _index_import_scopes(
     tree: ast.AST,
     *,
     package: str,
-) -> tuple[dict[str, tuple[str, str]], dict[str, str]]:
-    imported_names: dict[str, tuple[str, str]] = {}
-    imported_modules: dict[str, str] = {}
-    for node in ast.walk(tree):
-        if isinstance(node, ast.ImportFrom):
-            from_module = _normalize_import_from_module(node, package=package)
-            if not from_module:
-                continue
-            for alias in node.names:
-                imported_names[alias.asname or alias.name] = (
-                    from_module,
-                    alias.name,
-                )
-        elif isinstance(node, ast.Import):
-            for alias in node.names:
-                if alias.asname:
-                    imported_modules[alias.asname] = alias.name
-                else:
-                    local_root = alias.name.split(".", 1)[0]
-                    imported_modules[local_root] = local_root
-    return imported_names, imported_modules
+) -> dict[int, _ImportScope]:
+    if not isinstance(tree, ast.Module):
+        raise TypeError("Import scope indexing requires a module AST")
+    return _ImportScopeIndexer(tree, package=package).index(tree)
 
 
 def _normalize_import_from_module(
@@ -629,49 +904,64 @@ def _normalize_import_from_module(
     return ".".join(resolved_parts)
 
 
-def _resolve_imported_reference(
+def _resolve_imported_references(
     reference: ast.expr,
     *,
-    imported_names: Mapping[str, tuple[str, str]],
-    imported_modules: Mapping[str, str],
-) -> tuple[str, str, str] | None:
+    scope: _ImportScope,
+) -> tuple[tuple[str, str, str], ...]:
     if isinstance(reference, ast.Name):
-        imported = imported_names.get(reference.id)
-        if imported is not None:
-            module, symbol = imported
-            return reference.id, module, symbol
-        imported_module = imported_modules.get(reference.id)
-        if imported_module is not None:
-            return reference.id, imported_module, ""
-        return None
+        return tuple(
+            (reference.id, module, symbol)
+            for module, symbol in _lookup_import_bindings(scope, reference.id)
+        )
 
     dotted = _dotted_name(reference)
     if dotted is None or "." not in dotted:
-        return None
-    local_root = dotted.split(".", 1)[0]
-    imported_name = imported_names.get(local_root)
-    if imported_name is not None:
-        from_module, imported_symbol = imported_name
-        imported_module = f"{from_module}.{imported_symbol}"
-    else:
-        matching_imports = [
-            local_name
-            for local_name in imported_modules
-            if dotted.startswith(f"{local_name}.")
-        ]
-        if not matching_imports:
-            return None
-        local_root = max(matching_imports, key=len)
-        imported_module = imported_modules[local_root]
-    remainder = dotted[len(local_root) + 1 :]
-    parts = remainder.rsplit(".", 1)
-    if len(parts) == 1:
-        module = imported_module
-        symbol = parts[0]
-    else:
-        module = f"{imported_module}.{parts[0]}"
-        symbol = parts[1]
-    return dotted, module, symbol
+        return ()
+    parts = dotted.split(".")
+    local_root = parts[0]
+    remainder = parts[1:]
+    resolved: set[tuple[str, str, str]] = set()
+    for imported_module, imported_symbol in _lookup_import_bindings(
+        scope,
+        local_root,
+    ):
+        base = imported_module
+        if imported_symbol:
+            base = f"{base}.{imported_symbol}"
+        module = base
+        if len(remainder) > 1:
+            module = f"{base}.{'.'.join(remainder[:-1])}"
+        resolved.add((dotted, module, remainder[-1]))
+    return tuple(sorted(resolved))
+
+
+def _lookup_import_bindings(
+    scope: _ImportScope,
+    local_name: str,
+) -> tuple[tuple[str, str], ...]:
+    current: _ImportScope | None = scope
+    while current is not None:
+        if local_name in current.global_names:
+            current = _module_scope(current)
+        bindings = current.imports.get(local_name)
+        if bindings:
+            return bindings
+        if local_name in current.local_names:
+            return ()
+        parent = current.parent
+        if current.kind in {"function", "lambda", "comprehension"}:
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+        current = parent
+    return ()
+
+
+def _module_scope(scope: _ImportScope) -> _ImportScope:
+    current = scope
+    while current.parent is not None:
+        current = current.parent
+    return current
 
 
 def _is_authority_namespace(
