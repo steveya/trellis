@@ -74,7 +74,7 @@ Status mirror last synced: `2026-08-26`
 | `QUA-1235` | Semantic nth-to-default: rank-trigger primitive composition | Done |
 | `QUA-1237` | Semantic weighted NTD: name-level exposure and rank-loss contract | Done |
 | `QUA-1238` | Copula composition: equicorrelation and bounded loss-layer primitives | Done |
-| `QUA-1239` | Semantic CDO tranche: raw Gaussian and Student-t composition | Backlog |
+| `QUA-1239` | Semantic CDO tranche: raw Gaussian and Student-t composition | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
