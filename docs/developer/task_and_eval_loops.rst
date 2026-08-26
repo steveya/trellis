@@ -1158,7 +1158,8 @@ be resolved safely. Unresolved dynamic attribute/subscript access such as
 ``helpers.__dict__[name]`` or ``helpers.__getattribute__(name)`` retains the
 imported authority-module root instead of disappearing inside the chain.
 Direct or aliased zero-argument calls to ``globals()`` in an adapter module
-with active required-authority imports also fail closed: the returned mapping
+with active required-authority imports also fail closed, including when the
+alias enters a callable through a parameter default: the returned mapping
 exposes those imports to opaque string-keyed lookup even when no imported-name
 AST node remains at the eventual call site. Chained ``globals.__call__()`` is
 equivalent. ``locals()`` and ``vars()`` calls apply the same rule to active

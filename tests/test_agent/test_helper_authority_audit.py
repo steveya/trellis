@@ -636,6 +636,45 @@ def evaluate():
     return root
 
 
+def _fixture_root_with_defaulted_dynamic_namespace_parameter(
+    tmp_path: Path,
+) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+
+def evaluate(lookup=globals):
+    return lookup()["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_rebound_dynamic_namespace_parameter(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+
+def local_namespace():
+    return {}
+
+
+def evaluate(lookup=globals):
+    lookup = local_namespace
+    return lookup()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1270,6 +1309,41 @@ def test_audit_places_global_imports_only_in_the_global_namespace(tmp_path):
         )
     ]
     assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_defaulted_dynamic_namespace_parameters(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_defaulted_dynamic_namespace_parameter(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            5,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        )
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_honors_rebinding_after_dynamic_namespace_parameter_defaults(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_rebound_dynamic_namespace_parameter(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert report.adapter_indirect_authority_uses == ()
+    assert report.has_adapter_authority is False
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):

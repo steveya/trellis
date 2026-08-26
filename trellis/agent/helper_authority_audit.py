@@ -92,6 +92,7 @@ class _BindingEvent:
     is_import: bool
     is_delete: bool
     value: ast.expr | None = None
+    value_from_parent: bool = False
 
 
 @dataclass(frozen=True)
@@ -825,6 +826,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         at_end: bool = True,
         is_delete: bool = False,
         value: ast.expr | None = None,
+        value_from_parent: bool = False,
     ) -> None:
         self._binding_sequence += 1
         line_attribute = "end_lineno" if at_end else "lineno"
@@ -848,6 +850,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
                 is_import=False,
                 is_delete=is_delete,
                 value=value,
+                value_from_parent=value_from_parent,
             )
         )
 
@@ -968,6 +971,13 @@ def _make_import_scope(
 
     if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
         collector.local_names.update(_argument_names(node.args))
+        for local_name, default in _argument_default_values(node.args):
+            collector._record_shadow(
+                local_name=local_name,
+                node=default,
+                value=default,
+                value_from_parent=True,
+            )
     if isinstance(node, (ast.ListComp, ast.SetComp, ast.DictComp, ast.GeneratorExp)):
         for generator in node.generators:
             collector.local_names.update(_stored_names(generator.target))
@@ -1013,6 +1023,34 @@ def _argument_names(arguments: ast.arguments) -> set[str]:
     if arguments.kwarg is not None:
         names.add(arguments.kwarg.arg)
     return names
+
+
+def _argument_default_values(
+    arguments: ast.arguments,
+) -> tuple[tuple[str, ast.expr], ...]:
+    """Return parameters whose entry binding comes from a default value."""
+    positional = (*arguments.posonlyargs, *arguments.args)
+    defaults: list[tuple[str, ast.expr]] = []
+    if arguments.defaults:
+        defaulted_positional = positional[-len(arguments.defaults) :]
+        defaults.extend(
+            (argument.arg, default)
+            for argument, default in zip(
+                defaulted_positional,
+                arguments.defaults,
+                strict=True,
+            )
+        )
+    defaults.extend(
+        (argument.arg, default)
+        for argument, default in zip(
+            arguments.kwonlyargs,
+            arguments.kw_defaults,
+            strict=True,
+        )
+        if default is not None
+    )
+    return tuple(defaults)
 
 
 def _stored_names(node: ast.AST) -> set[str]:
@@ -1559,10 +1597,13 @@ def _resolve_dynamic_namespace_name(
                     if kind is not None:
                         kinds.add(kind)
                 elif event.value is not None:
+                    value_scope = current
+                    if event.value_from_parent and current.parent is not None:
+                        value_scope = current.parent
                     kinds.update(
                         _resolve_dynamic_namespace_callable(
                             event.value,
-                            scope=current,
+                            scope=value_scope,
                             seen=next_seen,
                         )
                     )

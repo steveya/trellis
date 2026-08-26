@@ -1138,7 +1138,8 @@ namespace fail closed. An unresolved dynamic attribute/subscript chain retains
 its imported authority-module root, including ``__dict__``, ``__getattr__``,
 and ``__getattribute__`` lookup. Direct, aliased, and chained zero-argument
 ``globals()`` calls in an adapter module with active required-authority imports
-fail closed because subsequent string lookup can hide the selected binding.
+fail closed because subsequent string lookup can hide the selected binding;
+the same applies when the callable alias arrives through a parameter default.
 ``locals()`` and ``vars()`` apply the same rule to active authority imports in
 the current lexical scope. The source-ordered binding timeline excludes an
 import that has already been replaced before the namespace is exposed, and a
