@@ -22,7 +22,7 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-08-25`
+Status mirror last synced: `2026-08-26`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
@@ -73,6 +73,8 @@ Status mirror last synced: `2026-08-25`
 | `QUA-1234` | Semantic CDS: survival-weighted leg and first-event composition | Done |
 | `QUA-1235` | Semantic nth-to-default: rank-trigger primitive composition | Done |
 | `QUA-1237` | Semantic weighted NTD: name-level exposure and rank-loss contract | Done |
+| `QUA-1238` | Copula composition: equicorrelation and bounded loss-layer primitives | In Progress |
+| `QUA-1239` | Semantic CDO tranche: raw Gaussian and Student-t composition | Backlog (blocked by QUA-1238) |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -167,6 +169,14 @@ Status mirror last synced: `2026-08-25`
     exposure through sampled rank identity and exact exchangeable analytical
     reduction, compose terminal trigger settlement, bind representative-spread
     CS01, and migrate P006 from its certified honest block to price/risk proof.
+25. Apply QUA-1238 to expose validated non-negative equicorrelation,
+    homogeneous default-count-to-pool-loss, and bounded layer-loss primitives;
+    refactor the compatibility tranche wrapper onto the shared algebra without
+    changing generated-route authority in the same slice.
+26. After QUA-1238 lands, apply QUA-1239 to bind T49's Gaussian and Student-t
+    targets explicitly, compose each from method-true copula evidence and the
+    shared loss-layer primitives, and remove the final admitted adapter helper
+    authority call while retaining the product wrapper as reference evidence.
 
 ## Completion Evidence
 

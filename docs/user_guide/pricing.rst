@@ -1876,6 +1876,53 @@ wins; the materialized surface is the bounded fallback for exact
 maturity/attachment/detachment nodes produced by the homogeneous calibration
 workflow.
 
+For lower-level homogeneous loss analysis, use the public composition
+primitives directly. They accept default-count evidence and do not bind a CDO
+product or hide market/cashflow conventions:
+
+.. code-block:: python
+
+   import numpy as np
+
+   from trellis.models.copulas.correlation import equicorrelation_matrix
+   from trellis.models.copulas.factor import FactorCopula
+   from trellis.models.loss_layers import (
+       bounded_layer_loss_fraction,
+       homogeneous_pool_loss_fraction,
+   )
+
+   pool_size = 100
+   counts, probabilities = FactorCopula(
+       n_names=pool_size,
+       correlation=0.30,
+   ).loss_distribution(marginal_prob=0.05)
+
+   # The same matrix constructor can be supplied to GaussianCopula or
+   # StudentTCopula when sampled default-time evidence is required.
+   correlation_matrix = equicorrelation_matrix(pool_size, 0.30)
+
+   pool_loss = homogeneous_pool_loss_fraction(
+       counts,
+       pool_size=pool_size,
+       recovery=0.40,
+   )
+   layer_loss = bounded_layer_loss_fraction(
+       pool_loss,
+       attachment=0.03,
+       detachment=0.07,
+   )
+   expected_layer_loss = float(np.sum(layer_loss * probabilities))
+
+``expected_layer_loss`` is a fraction of total pool notional, capped at the
+layer width; it is not normalized by that width. For a sampled Student-t lane,
+sum ``sample_default_times(...) <= horizon`` across names to obtain one count
+per path, pass those counts through the same two loss functions, and average
+the resulting layer losses. Notional scaling, discounting, premium-leg
+conventions, and fair-spread construction remain caller responsibilities.
+The product-level tranche helper remains available as compatibility/reference
+evidence; this primitive API does not claim heterogeneous credit or production
+base-correlation support.
+
 Credit-index spread options have a bounded helper surface for task/eval
 comparisons:
 

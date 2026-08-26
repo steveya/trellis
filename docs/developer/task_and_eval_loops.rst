@@ -1094,6 +1094,17 @@ dependence-family selection on a checked helper path while semantic validation
 treats the helper as the public assembly contract rather than forcing direct
 calls to the lower-level loss-distribution primitives.
 
+The lower-level gap is now explicit rather than private. The public
+``equicorrelation_matrix``, ``homogeneous_pool_loss_fraction``, and
+``bounded_layer_loss_fraction`` functions accept either analytical Gaussian
+default-count mass or seeded Student-t sampled counts and perform only generic
+dependence/loss-layer algebra. They intentionally do not resolve a tranche
+contract or own price, premium-leg, or fair-spread semantics. Until the T49
+comparison targets, deterministic materializer, checked adapter, route
+authority, and algorithm validator migrate together, the helper-backed canary
+remains the admitted route. A green replay during this interval must therefore
+be reported as helper-backed evidence, not as proof of raw model composition.
+
 For the supported single-exercise European swaption tree slice, the comparison
 harness now binds an explicit generic lattice composition. The generated
 artifact constructs a one-exercise contract, applies the curve basis, resolves

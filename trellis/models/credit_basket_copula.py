@@ -16,9 +16,14 @@ from trellis.models.contingent_cashflows import (
     nth_to_default_probability,
     trigger_settlement_pv,
 )
+from trellis.models.copulas.correlation import equicorrelation_matrix
 from trellis.models.copulas.factor import FactorCopula
 from trellis.models.copulas.gaussian import GaussianCopula
 from trellis.models.copulas.student_t import StudentTCopula
+from trellis.models.loss_layers import (
+    bounded_layer_loss_fraction,
+    homogeneous_pool_loss_fraction,
+)
 
 
 class DiscountCurveLike(Protocol):
@@ -357,16 +362,21 @@ def price_credit_basket_tranche_result(
     family = _normalized_copula_family(copula_family)
     attachment = float(spec.attachment)
     detachment = float(spec.detachment)
-    if not 0.0 <= attachment < detachment <= 1.0:
-        raise ValueError("Tranche attachment/detachment must satisfy 0 <= A < D <= 1")
-
     if family == "gaussian":
         loss_counts, probabilities = FactorCopula(
             n_names=resolved.n_names,
             correlation=resolved.correlation,
         ).loss_distribution(resolved.default_probability)
-        portfolio_loss = _portfolio_loss_fraction(loss_counts, resolved)
-        tranche_loss = raw_np.clip(portfolio_loss - attachment, 0.0, detachment - attachment)
+        portfolio_loss = homogeneous_pool_loss_fraction(
+            loss_counts,
+            pool_size=resolved.n_names,
+            recovery=resolved.recovery,
+        )
+        tranche_loss = bounded_layer_loss_fraction(
+            portfolio_loss,
+            attachment=attachment,
+            detachment=detachment,
+        )
         expected_loss_fraction = float(raw_np.sum(tranche_loss * probabilities))
     else:
         defaults_by_horizon = _simulate_default_counts(
@@ -376,8 +386,16 @@ def price_credit_basket_tranche_result(
             n_paths=n_paths,
             seed=seed,
         )
-        portfolio_loss = _portfolio_loss_fraction(defaults_by_horizon, resolved)
-        tranche_loss = raw_np.clip(portfolio_loss - attachment, 0.0, detachment - attachment)
+        portfolio_loss = homogeneous_pool_loss_fraction(
+            defaults_by_horizon,
+            pool_size=resolved.n_names,
+            recovery=resolved.recovery,
+        )
+        tranche_loss = bounded_layer_loss_fraction(
+            portfolio_loss,
+            attachment=attachment,
+            detachment=detachment,
+        )
         expected_loss_fraction = float(raw_np.mean(tranche_loss))
 
     price = float(resolved.notional * resolved.discount_factor * expected_loss_fraction)
@@ -473,7 +491,14 @@ def price_credit_portfolio_loss_distribution_transform_proxy(
         raise ValueError("Transform proxy produced an invalid loss-distribution mass.")
     reconstructed = reconstructed / total_probability
     expected_loss_fraction = float(
-        raw_np.sum(_portfolio_loss_fraction(loss_counts, resolved) * reconstructed)
+        raw_np.sum(
+            homogeneous_pool_loss_fraction(
+                loss_counts,
+                pool_size=resolved.n_names,
+                recovery=resolved.recovery,
+            )
+            * reconstructed
+        )
     )
     return _discounted_expected_portfolio_loss(resolved, expected_loss_fraction)
 
@@ -497,7 +522,13 @@ def price_credit_portfolio_loss_distribution_monte_carlo(
         seed=seed,
     )
     expected_loss_fraction = float(
-        raw_np.mean(_portfolio_loss_fraction(defaults_by_horizon, resolved))
+        raw_np.mean(
+            homogeneous_pool_loss_fraction(
+                defaults_by_horizon,
+                pool_size=resolved.n_names,
+                recovery=resolved.recovery,
+            )
+        )
     )
     return _discounted_expected_portfolio_loss(resolved, expected_loss_fraction)
 
@@ -549,12 +580,6 @@ def _validate_correlation(value: object) -> float:
     return correlation
 
 
-def _equicorrelation_matrix(n_names: int, correlation: float) -> raw_np.ndarray:
-    corr = raw_np.full((n_names, n_names), float(correlation), dtype=float)
-    raw_np.fill_diagonal(corr, 1.0)
-    return corr
-
-
 def _simulate_default_counts(
     resolved: ResolvedCreditBasketInputs,
     *,
@@ -565,7 +590,7 @@ def _simulate_default_counts(
 ) -> raw_np.ndarray:
     hazard_rates = raw_np.full(resolved.n_names, resolved.hazard_rate, dtype=float)
     rng = raw_np.random.default_rng(seed)
-    corr = _equicorrelation_matrix(resolved.n_names, resolved.correlation)
+    corr = equicorrelation_matrix(resolved.n_names, resolved.correlation)
     if family == "student_t":
         copula = StudentTCopula(correlation_matrix=corr, df=float(degrees_of_freedom))
     else:
@@ -587,7 +612,16 @@ def _expected_portfolio_loss_fraction(
             n_names=resolved.n_names,
             correlation=resolved.correlation,
         ).loss_distribution(resolved.default_probability)
-        return float(raw_np.sum(_portfolio_loss_fraction(loss_counts, resolved) * probabilities))
+        return float(
+            raw_np.sum(
+                homogeneous_pool_loss_fraction(
+                    loss_counts,
+                    pool_size=resolved.n_names,
+                    recovery=resolved.recovery,
+                )
+                * probabilities
+            )
+        )
 
     defaults_by_horizon = _simulate_default_counts(
         resolved,
@@ -596,15 +630,15 @@ def _expected_portfolio_loss_fraction(
         n_paths=n_paths,
         seed=seed,
     )
-    return float(raw_np.mean(_portfolio_loss_fraction(defaults_by_horizon, resolved)))
-
-
-def _portfolio_loss_fraction(
-    default_counts,
-    resolved: ResolvedCreditBasketInputs,
-):
-    defaults = raw_np.asarray(default_counts, dtype=float)
-    return defaults * (1.0 - resolved.recovery) / float(resolved.n_names)
+    return float(
+        raw_np.mean(
+            homogeneous_pool_loss_fraction(
+                defaults_by_horizon,
+                pool_size=resolved.n_names,
+                recovery=resolved.recovery,
+            )
+        )
+    )
 
 
 def _discounted_annuity(discount_curve: DiscountCurveLike, horizon: float) -> float:

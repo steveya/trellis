@@ -84,9 +84,25 @@ expected tranche loss:
 
 .. math::
 
-   \text{ETL} = \sum_{k=0}^{n} \mathbb{P}[k\text{ defaults}] \cdot \min\!\left(\max\!\left(\frac{k}{n} - a, 0\right), d - a\right)
+   \text{ETL} = \sum_{k=0}^{n} \mathbb{P}[k\text{ defaults}] \cdot \min\!\left(\max\!\left(\frac{(1-R)k}{n} - a, 0\right), d - a\right)
 
-The tranche PV = notional × ETL × discount factor.
+Here :math:`R` is the common recovery fraction. The tranche PV for the bounded
+terminal-loss convention is notional × ETL × discount factor.
+
+Trellis exposes this algebra as three product-neutral public primitives:
+
+- ``equicorrelation_matrix(n, rho)`` constructs the non-negative homogeneous
+  correlation matrix with unit diagonal;
+- ``homogeneous_pool_loss_fraction(k, pool_size=n, recovery=R)`` evaluates
+  :math:`(1-R)k/n` for scalar or array default counts; and
+- ``bounded_layer_loss_fraction(L, attachment=a, detachment=d)`` evaluates
+  :math:`\min(\max(L-a,0),d-a)`.
+
+The Gaussian quadrature probabilities from ``FactorCopula.loss_distribution``
+and default counts from seeded ``StudentTCopula`` paths can therefore share the
+same loss projection. These functions do not perform market resolution,
+discounting, notional scaling, premium-leg valuation, or fair-spread
+construction.
 
 Base Correlation
 ~~~~~~~~~~~~~~~~
@@ -125,6 +141,12 @@ Implementation
 
 .. autoclass:: trellis.models.copulas.factor.FactorCopula
    :members:
+
+.. autofunction:: trellis.models.copulas.correlation.equicorrelation_matrix
+
+.. autofunction:: trellis.models.loss_layers.homogeneous_pool_loss_fraction
+
+.. autofunction:: trellis.models.loss_layers.bounded_layer_loss_fraction
 
 Numerical Example
 -----------------

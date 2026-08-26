@@ -5,6 +5,8 @@ from __future__ import annotations
 import numpy as raw_np
 from scipy.stats import norm
 
+from trellis.models.copulas.correlation import equicorrelation_matrix
+
 
 class GaussianCopula:
     """Gaussian copula for generating correlated default times.
@@ -32,7 +34,7 @@ class GaussianCopula:
                 self._chol = None
                 self.n = None
                 return
-            correlation_matrix = _equicorrelation_matrix(n_names, correlation)
+            correlation_matrix = equicorrelation_matrix(n_names, correlation)
         self._scalar_correlation = None
         self._corr = raw_np.asarray(correlation_matrix, dtype=float)
         self._chol = raw_np.linalg.cholesky(self._corr)
@@ -76,7 +78,7 @@ class GaussianCopula:
         hazard_rates = raw_np.asarray(hazard_rates, dtype=float)
         if self._chol is None:
             n_names = int(hazard_rates.shape[0])
-            corr = _equicorrelation_matrix(n_names, self._scalar_correlation)
+            corr = equicorrelation_matrix(n_names, self._scalar_correlation)
             self._corr = corr
             self._chol = raw_np.linalg.cholesky(corr)
             self.n = n_names
@@ -90,13 +92,3 @@ def _validate_scalar_correlation(correlation: float | None) -> float:
     if not raw_np.isfinite(value) or value < 0.0 or value >= 1.0:
         raise ValueError("correlation must satisfy 0 <= correlation < 1")
     return value
-
-
-def _equicorrelation_matrix(n_names: int, correlation: float | None) -> raw_np.ndarray:
-    count = int(n_names)
-    if count <= 0:
-        raise ValueError("n_names must be positive")
-    value = _validate_scalar_correlation(correlation)
-    corr = raw_np.full((count, count), value, dtype=float)
-    raw_np.fill_diagonal(corr, 1.0)
-    return corr
