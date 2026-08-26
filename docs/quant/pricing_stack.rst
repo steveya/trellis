@@ -866,6 +866,20 @@ The first migrated vanilla cases now use that boundary directly:
   validate name-to-weight alignment. The retained product helper is reference
   evidence only. Tranche-style CDO, heterogeneous name curves/recoveries, and
   running-premium routes remain outside this bounded contract
+- homogeneous portfolio-loss composition now also has a small public algebra.
+  ``equicorrelation_matrix`` constructs the validated non-negative dependence
+  matrix used by Gaussian and Student-t evidence;
+  ``homogeneous_pool_loss_fraction`` maps analytical or sampled default counts
+  to total-pool loss after recovery; and ``bounded_layer_loss_fraction``
+  projects that pool loss onto explicit attachment/detachment bounds.  The
+  Gaussian lane can weight the projection with
+  ``FactorCopula.loss_distribution`` probabilities, while a Student-t lane can
+  average it over seeded ``StudentTCopula.sample_default_times`` paths. These
+  functions deliberately omit market resolution, notional, discounting,
+  premium-leg conventions, and fair-spread assembly. They are reusable
+  numerical primitives, not a renamed tranche pricer. The checked T49 route
+  remains helper-bound until its explicit target-contract migration lands, so
+  this API addition alone is not evidence that the generated route is raw
 - bounded credit-index spread-option comparisons use
   ``trellis.models.credit_index_option``. The Black-on-spread helper and the
   antithetic lognormal MC helper share one ``CreditIndexOptionSpec`` carrying

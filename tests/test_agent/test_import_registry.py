@@ -930,6 +930,39 @@ def test_codegen_registry_exposes_ranked_event_weight_composition_primitives():
         assert symbol in registry
 
 
+def test_codegen_registry_exposes_homogeneous_loss_layer_composition_primitives():
+    import_registry.reset_registry_cache()
+    snapshot = import_registry.get_registry_snapshot()
+
+    assert snapshot["trellis.models.copulas.correlation"] == (
+        "equicorrelation_matrix",
+    )
+    assert set(snapshot["trellis.models.loss_layers"]) == {
+        "bounded_layer_loss_fraction",
+        "homogeneous_pool_loss_fraction",
+    }
+
+
+def test_static_registry_fallback_covers_homogeneous_loss_layer_composition(monkeypatch):
+    import_registry.reset_registry_cache()
+    monkeypatch.setattr(
+        import_registry,
+        "_build_registry_data_from_introspection",
+        lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    snapshot = import_registry.get_registry_snapshot()
+
+    assert snapshot["trellis.models.copulas.correlation"] == (
+        "equicorrelation_matrix",
+    )
+    assert set(snapshot["trellis.models.loss_layers"]) == {
+        "bounded_layer_loss_fraction",
+        "homogeneous_pool_loss_fraction",
+    }
+    import_registry.reset_registry_cache()
+
+
 def test_static_registry_fallback_covers_default_event_composition(monkeypatch):
     import_registry.reset_registry_cache()
     monkeypatch.setattr(

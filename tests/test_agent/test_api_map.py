@@ -60,6 +60,10 @@ def test_api_map_contains_expected_core_entries():
         == "trellis.models.contingent_cashflows"
     )
     assert (
+        api_map["homogeneous_loss_layer_composition"]["module"]
+        == "trellis.models.loss_layers"
+    )
+    assert (
         api_map["rate_monte_carlo_composition"]["module"]
         == "trellis.models.monte_carlo.simulation_substrate"
     )
@@ -107,6 +111,7 @@ def test_api_map_key_imports_are_registry_valid():
         "observation_return_composition",
         "digital_option_composition",
         "single_name_default_event_composition",
+        "homogeneous_loss_layer_composition",
         "quanto_option_composition",
         "terminal_basket_option_composition",
         "rate_monte_carlo_composition",
@@ -318,6 +323,16 @@ def test_api_map_semantic_selection_reaches_composition_cards():
         ),
         (
             ApiMapQuery(
+                instrument_type="cdo_tranche",
+                payoff_family="credit_basket",
+                method="copula",
+                model_family="credit_copula",
+                features=("homogeneous_pool_loss", "bounded_loss_layer"),
+            ),
+            "homogeneous_loss_layer_composition",
+        ),
+        (
+            ApiMapQuery(
                 description="Price a cliquet with capped interval returns.",
             ),
             "observation_return_composition",
@@ -354,6 +369,27 @@ def test_api_map_semantic_selection_reaches_composition_cards():
     for query, expected_family in cases:
         selection = select_api_map_sections(query)
         assert expected_family in selection.selected_families
+
+
+def test_api_map_exposes_homogeneous_loss_layer_primitives_without_product_helper():
+    query = ApiMapQuery(
+        description=(
+            "Construct homogeneous portfolio loss and bounded attachment-detachment "
+            "layer loss from Gaussian or Student-t copula evidence."
+        ),
+        method="copula",
+        model_family="credit_copula",
+    )
+
+    selection = select_api_map_sections(query)
+    text = format_api_map_for_prompt(compact=True, query=query)
+    section = get_api_map()["homogeneous_loss_layer_composition"]
+
+    assert "homogeneous_loss_layer_composition" in selection.selected_families
+    assert "equicorrelation_matrix" in text
+    assert "homogeneous_pool_loss_fraction" in text
+    assert "bounded_layer_loss_fraction" in text
+    assert "price_credit_basket_tranche" not in section["key_imports"]
 
 
 def test_api_map_routes_cds_queries_to_single_name_default_event_composition():

@@ -128,6 +128,9 @@ Copulas
    :members:
 .. autoclass:: trellis.models.copulas.FactorCopula
    :members:
+.. autofunction:: trellis.models.copulas.equicorrelation_matrix
+.. autofunction:: trellis.models.loss_layers.homogeneous_pool_loss_fraction
+.. autofunction:: trellis.models.loss_layers.bounded_layer_loss_fraction
 
 Calibration
 -----------
