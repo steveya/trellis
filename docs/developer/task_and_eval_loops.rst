@@ -1147,12 +1147,17 @@ module aliases, and relative imports resolved against the checked-adapter
 package. Bindings are resolved per lexical scope: an import inside a nested
 function cannot overwrite the module binding seen by an outer reference, and
 a parameter or ordinary local binding shadows an outer import. Within one
-scope, source order selects the last unconditional import while conditional
-imports remain conservative candidates. Wildcard imports from a namespace
+scope, source order selects the last unconditional binding, whether it is an
+import, assignment, deletion, or function/class definition; assignment
+right-hand sides are evaluated against the preceding binding. Conditional
+bindings remain conservative candidates. Wildcard imports from a namespace
 that contains required authority fail closed because the imported names cannot
-be resolved safely. A nested function, lambda, or generator expression may
-execute after its enclosing scope advances, so the scan retains every
-enclosing import that can be active from that deferred scope's creation onward.
+be resolved safely. Unresolved dynamic attribute/subscript access such as
+``helpers.__dict__[name]`` retains the imported authority-module root instead
+of disappearing inside the chain. A nested function, lambda, or generator
+expression may execute after its enclosing scope advances, so the scan retains
+every enclosing import that can be active from that deferred scope's creation
+onward.
 Immediate list, set, and dictionary comprehensions use their creation position.
 A locally defined function or an unused import is not counted as delegation.
 Authority is the declared module-and-symbol pair; an additional public
@@ -1200,10 +1205,12 @@ route or exact binding, or uses that symbol as a first-class value. Assignment
 aliases, callbacks, container references, chained attributes such as
 ``helper.__call__``, and imported authority modules used as dynamic values
 therefore cannot bypass the delegation gate. Wildcard imports from authority
-namespaces fail closed. Relative imports normalize to the same absolute
-identity, while same-name imports remain confined to their lexical scope and
-same-scope import rebinding follows source order. Deferred nested scopes retain
-the enclosing bindings that may be active at any later invocation. Authority
+namespaces fail closed, as do unresolved dynamic attribute/subscript chains
+that retain an authority-module root. Relative imports normalize to the same
+absolute identity, while same-name imports remain confined to their lexical
+scope and later ordinary bindings supersede imports in source order. Deferred
+nested scopes retain the enclosing bindings that may be active at any later
+invocation. Authority
 matching is module-qualified, so an unrelated module that happens to export
 the same function basename does not fail the gate. It is deliberately
 independent of ``--fail-on-drift``: exact bindings may carry intentional

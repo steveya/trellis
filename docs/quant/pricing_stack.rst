@@ -1129,9 +1129,12 @@ cannot evade the route contract merely by moving the eventual helper call
 behind Python indirection, a chained call attribute, or a dynamically accessed
 imported module. Relative imports are resolved to their absolute package path.
 Import bindings remain lexical, so a nested same-name import cannot reclassify
-an outer helper reference. Same-scope import rebinding follows source order,
-while conditional candidates remain conservative, and wildcard imports from
-an authority namespace fail closed. Deferred nested scopes retain enclosing
+an outer helper reference. Same-scope bindings follow source order: later
+ordinary assignments or definitions supersede earlier imports, while an
+assignment right-hand side still sees the preceding binding. Conditional
+candidates remain conservative, and wildcard imports from an authority
+namespace fail closed. An unresolved dynamic attribute/subscript chain retains
+its imported authority-module root. Deferred nested scopes retain enclosing
 imports that can be active from scope creation through later invocation.
 Authority identity is the exact module-and-symbol pair; equal basenames in
 unrelated modules do not share authority.

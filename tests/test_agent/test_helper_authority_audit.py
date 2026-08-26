@@ -404,6 +404,50 @@ from trellis.models.other import price_example
     return root
 
 
+def _fixture_root_with_dynamic_authority_module_chain(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+import trellis.models.example as helpers
+
+
+def evaluate():
+    return helpers.__dict__["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_ordinary_rebindings(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+from trellis.models.example import barrier_option_price
+
+
+def local_price():
+    return 0.0
+
+
+price_example = local_price
+
+
+def barrier_option_price():
+    return 0.0
+
+
+def evaluate():
+    return price_example() + barrier_option_price()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -817,6 +861,41 @@ def test_audit_uses_creation_position_for_immediate_comprehensions(tmp_path):
             True,
         )
     ]
+
+
+def test_audit_retains_authority_module_root_in_dynamic_attribute_chain(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_dynamic_authority_module_chain(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            5,
+            "helpers",
+            "trellis.models.example",
+            "*",
+            "indirect_module_reference",
+        )
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_honors_ordinary_rebindings_after_imports(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_ordinary_rebindings(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert report.adapter_indirect_authority_uses == ()
+    assert report.has_adapter_authority is False
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):

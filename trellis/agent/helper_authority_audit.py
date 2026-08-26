@@ -82,13 +82,14 @@ class AdapterIndirectAuthorityUse:
 
 
 @dataclass(frozen=True)
-class _ImportBinding:
-    """One source-ordered import binding in a lexical scope."""
+class _BindingEvent:
+    """One source-ordered name binding in a lexical scope."""
 
     position: tuple[int, int, int]
     module: str
     symbol: str
     conditional: bool
+    is_import: bool
 
 
 @dataclass(frozen=True)
@@ -98,7 +99,7 @@ class _ImportScope:
     parent: _ImportScope | None
     kind: str
     definition_position: tuple[int, int, int]
-    imports: Mapping[str, tuple[_ImportBinding, ...]]
+    bindings: Mapping[str, tuple[_BindingEvent, ...]]
     local_names: frozenset[str]
     global_names: frozenset[str]
     nonlocal_names: frozenset[str]
@@ -575,13 +576,52 @@ def _scan_indirect_authority_uses(
         direct_call_targets = {
             id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)
         }
-        nested_attribute_nodes = {
-            id(child)
-            for node in ast.walk(tree)
-            if isinstance(node, ast.Attribute)
-            for child in ast.walk(node.value)
-            if isinstance(child, (ast.Name, ast.Attribute))
-        }
+        covered_nested_nodes: set[int] = set()
+        for candidate in ast.walk(tree):
+            if not isinstance(candidate, ast.Attribute):
+                continue
+            resolved_candidates = _resolve_imported_references(
+                candidate,
+                scope=scope_by_node[id(candidate)],
+            )
+            if not any(
+                _resolved_reference_reaches_authority(
+                    module,
+                    symbol,
+                    authority_targets,
+                )
+                for _, module, symbol in resolved_candidates
+            ):
+                continue
+            covered_nested_nodes.update(
+                id(child)
+                for child in ast.walk(candidate.value)
+                if isinstance(child, (ast.Name, ast.Attribute))
+            )
+        for candidate in ast.walk(tree):
+            if (
+                not isinstance(candidate, ast.Attribute)
+                or _attribute_chain_contains_dynamic_access(candidate)
+            ):
+                continue
+            if not _resolve_imported_references(
+                candidate,
+                scope=scope_by_node[id(candidate)],
+            ):
+                continue
+            for child in ast.walk(candidate.value):
+                if not isinstance(child, (ast.Name, ast.Attribute)):
+                    continue
+                child_references = _resolve_imported_references(
+                    child,
+                    scope=scope_by_node[id(child)],
+                )
+                if any(
+                    (module, symbol) in authority_targets
+                    for _, module, symbol in child_references
+                ):
+                    continue
+                covered_nested_nodes.add(id(child))
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Name, ast.Attribute)):
                 continue
@@ -604,7 +644,7 @@ def _scan_indirect_authority_uses(
                         f"{module}.{symbol}",
                         authority_targets,
                     ):
-                        if id(node) in nested_attribute_nodes:
+                        if id(node) in covered_nested_nodes:
                             continue
                         module = f"{module}.{symbol}"
                         symbol = "*"
@@ -612,7 +652,7 @@ def _scan_indirect_authority_uses(
                     else:
                         continue
                 elif _is_authority_namespace(module, authority_targets):
-                    if id(node) in nested_attribute_nodes:
+                    if id(node) in covered_nested_nodes:
                         continue
                     symbol = "*"
                     use_kind = "indirect_module_reference"
@@ -636,7 +676,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
 
     def __init__(self, *, package: str) -> None:
         self.package = package
-        self.imports: dict[str, list[_ImportBinding]] = defaultdict(list)
+        self.bindings: dict[str, list[_BindingEvent]] = defaultdict(list)
         self.local_names: set[str] = set()
         self.global_names: set[str] = set()
         self.nonlocal_names: set[str] = set()
@@ -719,8 +759,8 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         node: ast.AST,
     ) -> None:
         self._binding_sequence += 1
-        self.imports[local_name].append(
-            _ImportBinding(
+        self.bindings[local_name].append(
+            _BindingEvent(
                 position=(
                     int(getattr(node, "lineno", 0)),
                     int(getattr(node, "col_offset", 0)),
@@ -729,17 +769,51 @@ class _ScopeBindingCollector(ast.NodeVisitor):
                 module=module,
                 symbol=symbol,
                 conditional=self._conditional_depth > 0,
+                is_import=True,
+            )
+        )
+
+    def _record_shadow(
+        self,
+        *,
+        local_name: str,
+        node: ast.AST,
+        at_end: bool = True,
+    ) -> None:
+        self._binding_sequence += 1
+        line_attribute = "end_lineno" if at_end else "lineno"
+        column_attribute = "end_col_offset" if at_end else "col_offset"
+        self.bindings[local_name].append(
+            _BindingEvent(
+                position=(
+                    int(getattr(node, line_attribute, getattr(node, "lineno", 0))),
+                    int(
+                        getattr(
+                            node,
+                            column_attribute,
+                            getattr(node, "col_offset", 0),
+                        )
+                    ),
+                    self._binding_sequence,
+                ),
+                module="",
+                symbol="",
+                conditional=self._conditional_depth > 0,
+                is_import=False,
             )
         )
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self.local_names.add(node.name)
+        self._record_shadow(local_name=node.name, node=node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self.local_names.add(node.name)
+        self._record_shadow(local_name=node.name, node=node)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
         self.local_names.add(node.name)
+        self._record_shadow(local_name=node.name, node=node)
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         return
@@ -765,10 +839,45 @@ class _ScopeBindingCollector(ast.NodeVisitor):
     def visit_Name(self, node: ast.Name) -> None:
         if isinstance(node.ctx, (ast.Store, ast.Del)):
             self.local_names.add(node.id)
+            self._record_shadow(local_name=node.id, node=node)
+
+    def visit_Assign(self, node: ast.Assign) -> None:
+        self.visit(node.value)
+        for target in node.targets:
+            for local_name in sorted(_stored_names(target)):
+                self.local_names.add(local_name)
+                self._record_shadow(local_name=local_name, node=node)
+
+    def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
+        self.visit(node.annotation)
+        if node.value is not None:
+            self.visit(node.value)
+        for local_name in sorted(_stored_names(node.target)):
+            self.local_names.add(local_name)
+            self._record_shadow(local_name=local_name, node=node)
+
+    def visit_AugAssign(self, node: ast.AugAssign) -> None:
+        self.visit(node.value)
+        for local_name in sorted(_stored_names(node.target)):
+            self.local_names.add(local_name)
+            self._record_shadow(local_name=local_name, node=node)
+
+    def visit_NamedExpr(self, node: ast.NamedExpr) -> None:
+        self.visit(node.value)
+        for local_name in sorted(_stored_names(node.target)):
+            self.local_names.add(local_name)
+            self._record_shadow(local_name=local_name, node=node)
+
+    def visit_Delete(self, node: ast.Delete) -> None:
+        for target in node.targets:
+            for local_name in sorted(_stored_names(target)):
+                self.local_names.add(local_name)
+                self._record_shadow(local_name=local_name, node=node)
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.name:
             self.local_names.add(node.name)
+            self._record_shadow(local_name=node.name, node=node, at_end=False)
         self.generic_visit(node)
 
 
@@ -794,19 +903,25 @@ def _make_import_scope(
 
     collector.local_names.difference_update(collector.global_names)
     collector.local_names.difference_update(collector.nonlocal_names)
-    imports = {
+    bindings = {
         local_name: tuple(sorted(bindings, key=lambda item: item.position))
-        for local_name, bindings in collector.imports.items()
+        for local_name, bindings in collector.bindings.items()
     }
     return _ImportScope(
         parent=parent,
         kind=kind,
         definition_position=(
-            int(getattr(node, "lineno", 0)),
-            int(getattr(node, "col_offset", 0)),
+            int(getattr(node, "end_lineno", getattr(node, "lineno", 0))),
+            int(
+                getattr(
+                    node,
+                    "end_col_offset",
+                    getattr(node, "col_offset", 0),
+                )
+            ),
             _MAX_SOURCE_COMPONENT,
         ),
-        imports=imports,
+        bindings=bindings,
         local_names=frozenset(collector.local_names),
         global_names=frozenset(collector.global_names),
         nonlocal_names=frozenset(collector.nonlocal_names),
@@ -1059,35 +1174,56 @@ def _lookup_import_bindings(
     local_name: str,
     *,
     reference: ast.expr,
-) -> tuple[_ImportBinding, ...]:
+) -> tuple[_BindingEvent, ...]:
     reference_position = (
         int(getattr(reference, "lineno", 0)),
         int(getattr(reference, "col_offset", 0)),
         _MAX_SOURCE_COMPONENT,
     )
     possible_since: tuple[int, int, int] | None = None
+    candidates: list[_BindingEvent] = []
     current: _ImportScope | None = scope
     while current is not None:
-        if local_name in current.global_names:
-            if current.kind != "module":
-                possible_since = current.definition_position
-            current = _module_scope(current)
-        bindings = current.imports.get(local_name)
-        if bindings:
+        is_global = local_name in current.global_names
+        is_nonlocal = local_name in current.nonlocal_names
+        binding_events = current.bindings.get(local_name, ())
+        active_events: tuple[_BindingEvent, ...] = ()
+        if binding_events:
             if possible_since is None:
-                active_bindings = _active_import_bindings(
-                    bindings,
+                active_events = _active_binding_events(
+                    binding_events,
                     reference_position=reference_position,
                 )
             else:
-                active_bindings = _possible_deferred_import_bindings(
-                    bindings,
+                active_events = _possible_deferred_binding_events(
+                    binding_events,
                     possible_since=possible_since,
                 )
-            if active_bindings:
-                return active_bindings
+            candidates.extend(event for event in active_events if event.is_import)
+
+        if is_global or is_nonlocal:
+            if possible_since is None:
+                active_at_redirect = active_events
+            else:
+                active_at_redirect = _active_binding_events(
+                    binding_events,
+                    reference_position=possible_since,
+                )
+            if any(not event.conditional for event in active_at_redirect):
+                return _unique_import_events(candidates)
+            parent = (
+                _module_scope(current)
+                if is_global
+                else current.parent
+            )
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+            possible_since = current.definition_position
+            current = parent
+            continue
+
         if local_name in current.local_names:
-            return ()
+            return _unique_import_events(candidates)
         parent = current.parent
         if current.kind in {
             "function",
@@ -1100,48 +1236,65 @@ def _lookup_import_bindings(
         if current.kind in {"function", "lambda", "generator"}:
             possible_since = current.definition_position
         current = parent
-    return ()
+    return _unique_import_events(candidates)
 
 
-def _active_import_bindings(
-    bindings: tuple[_ImportBinding, ...],
+def _active_binding_events(
+    binding_events: tuple[_BindingEvent, ...],
     *,
     reference_position: tuple[int, int, int],
-) -> tuple[_ImportBinding, ...]:
-    """Return imports that can be active at one source position."""
+) -> tuple[_BindingEvent, ...]:
+    """Return name bindings that can be active at one source position."""
     eligible = tuple(
-        binding for binding in bindings if binding.position <= reference_position
+        event
+        for event in binding_events
+        if event.position <= reference_position
     )
     if not eligible:
         return ()
     unconditional = tuple(
-        binding for binding in eligible if not binding.conditional
+        event for event in eligible if not event.conditional
     )
     if not unconditional:
         return eligible
     latest_unconditional = unconditional[-1]
     return (latest_unconditional,) + tuple(
-        binding
-        for binding in eligible
-        if binding.conditional and binding.position > latest_unconditional.position
+        event
+        for event in eligible
+        if event.conditional and event.position > latest_unconditional.position
     )
 
 
-def _possible_deferred_import_bindings(
-    bindings: tuple[_ImportBinding, ...],
+def _possible_deferred_binding_events(
+    binding_events: tuple[_BindingEvent, ...],
     *,
     possible_since: tuple[int, int, int],
-) -> tuple[_ImportBinding, ...]:
-    """Return enclosing imports possible across deferred execution times."""
-    candidates = _active_import_bindings(
-        bindings,
+) -> tuple[_BindingEvent, ...]:
+    """Return enclosing bindings possible across deferred execution times."""
+    candidates = _active_binding_events(
+        binding_events,
         reference_position=possible_since,
     ) + tuple(
-        binding for binding in bindings if binding.position > possible_since
+        event
+        for event in binding_events
+        if event.position > possible_since
     )
-    unique: dict[tuple[str, str], _ImportBinding] = {}
-    for binding in candidates:
-        unique.setdefault((binding.module, binding.symbol), binding)
+    unique: dict[tuple[bool, str, str], _BindingEvent] = {}
+    for event in candidates:
+        unique.setdefault(
+            (event.is_import, event.module, event.symbol),
+            event,
+        )
+    return tuple(unique.values())
+
+
+def _unique_import_events(
+    binding_events: Iterable[_BindingEvent],
+) -> tuple[_BindingEvent, ...]:
+    unique: dict[tuple[str, str], _BindingEvent] = {}
+    for event in binding_events:
+        if event.is_import:
+            unique.setdefault((event.module, event.symbol), event)
     return tuple(unique.values())
 
 
@@ -1160,6 +1313,29 @@ def _is_authority_namespace(
         target_module == module or target_module.startswith(f"{module}.")
         for target_module, _ in authority_targets
     )
+
+
+def _resolved_reference_reaches_authority(
+    module: str,
+    symbol: str,
+    authority_targets: set[tuple[str, str]],
+) -> bool:
+    if symbol:
+        return (module, symbol) in authority_targets or _is_authority_namespace(
+            f"{module}.{symbol}",
+            authority_targets,
+        )
+    return _is_authority_namespace(module, authority_targets)
+
+
+def _attribute_chain_contains_dynamic_access(node: ast.Attribute) -> bool:
+    """Return whether a dotted chain exposes a dynamically indexed namespace."""
+    current: ast.AST = node
+    while isinstance(current, ast.Attribute):
+        if current.attr == "__dict__":
+            return True
+        current = current.value
+    return False
 
 
 def _dotted_name(node: ast.AST) -> str | None:

@@ -811,8 +811,11 @@ name or dynamic lookup. Such indirect references still count as helper
 authority, including a chained call such as ``helper.__call__()``; renaming a
 function does not turn delegation into generated composition. Relative imports
 are normalized before matching, and nested imports do not rewrite outer
-bindings. Same-scope imports follow source order, and wildcard imports from an
-authority namespace fail closed because their names cannot be matched safely.
+bindings. Same-scope imports, assignments, and definitions follow source order,
+so a later ordinary local replacement is no longer attributed to an earlier
+import. Wildcard imports from an authority namespace fail closed because their
+names cannot be matched safely, and unresolved dynamic access such as
+``helpers.__dict__[name]`` retains the authority-module reference.
 Nested functions also retain enclosing imports that could be active when they
 are called, including an earlier binding before a later rebind. Matching uses
 both module and function name, so an unrelated function with the same basename
