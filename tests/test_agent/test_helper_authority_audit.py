@@ -420,6 +420,43 @@ def evaluate():
     return root
 
 
+def _fixture_root_with_dynamic_authority_getattribute(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+import trellis.models.example as helpers
+
+
+def evaluate():
+    return helpers.__getattribute__("price_example")()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_late_class_rebinding(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+
+def local_price():
+    return 0.0
+
+
+class Adapter:
+    delegated = price_example()
+    price_example = local_price
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_ordinary_rebindings(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -883,6 +920,43 @@ def test_audit_retains_authority_module_root_in_dynamic_attribute_chain(tmp_path
             "indirect_module_reference",
         )
     ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_retains_authority_module_root_for_dynamic_getattribute(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_dynamic_authority_getattribute(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            5,
+            "helpers",
+            "trellis.models.example",
+            "*",
+            "indirect_module_reference",
+        )
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_early_class_reference_before_late_rebinding(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_late_class_rebinding(tmp_path)
+    )
+
+    assert [
+        (item.line, item.module, item.symbol, item.matches_required_authority)
+        for item in report.adapter_calls
+    ] == [(9, "trellis.models.example", "price_example", True)]
     assert report.has_adapter_authority is True
 
 

@@ -1222,7 +1222,13 @@ def _lookup_import_bindings(
             current = parent
             continue
 
-        if local_name in current.local_names:
+        if (
+            local_name in current.local_names
+            and (
+                current.kind != "class"
+                or any(not event.conditional for event in active_events)
+            )
+        ):
             return _unique_import_events(candidates)
         parent = current.parent
         if current.kind in {
@@ -1332,7 +1338,7 @@ def _attribute_chain_contains_dynamic_access(node: ast.Attribute) -> bool:
     """Return whether a dotted chain exposes a dynamically indexed namespace."""
     current: ast.AST = node
     while isinstance(current, ast.Attribute):
-        if current.attr == "__dict__":
+        if current.attr in {"__dict__", "__getattr__", "__getattribute__"}:
             return True
         current = current.value
     return False

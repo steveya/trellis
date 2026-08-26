@@ -221,10 +221,12 @@ The service-host path is:
   imported module value is still delegation. Relative imports are normalized
   to that module-qualified identity, wildcard imports from an authority
   namespace fail closed, and unresolved dynamic attribute or subscript chains
-  retain their imported authority-module root. Bindings are resolved in lexical
-  and source order so a nested same-name binding cannot rewrite an outer
-  reference; later ordinary assignments or definitions supersede an import just
-  as a later unconditional import does. Deferred nested functions retain every
+  (including `__dict__` and `__getattribute__` lookup) retain their imported
+  authority-module root. Bindings are resolved in lexical and source order so a
+  nested same-name binding cannot rewrite an outer reference; later ordinary
+  assignments or definitions supersede an import just as a later unconditional
+  import does. A class body falls through to an outer binding until its own
+  source-ordered binding is active. Deferred nested functions retain every
   enclosing import that can be active from their creation onward. An unrelated
   module with the same function basename is not authority. Remaining
   catalog-level `route_helper` entries do not grant checked adapters permission

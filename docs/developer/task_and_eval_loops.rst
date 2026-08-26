@@ -1153,11 +1153,14 @@ right-hand sides are evaluated against the preceding binding. Conditional
 bindings remain conservative candidates. Wildcard imports from a namespace
 that contains required authority fail closed because the imported names cannot
 be resolved safely. Unresolved dynamic attribute/subscript access such as
-``helpers.__dict__[name]`` retains the imported authority-module root instead
-of disappearing inside the chain. A nested function, lambda, or generator
-expression may execute after its enclosing scope advances, so the scan retains
-every enclosing import that can be active from that deferred scope's creation
-onward.
+``helpers.__dict__[name]`` or ``helpers.__getattribute__(name)`` retains the
+imported authority-module root instead of disappearing inside the chain. Class
+bodies follow Python's source-ordered name fallback: a reference before a later
+class-local binding still resolves through the enclosing scope, while an active
+unconditional class binding shadows the outer name. A nested function, lambda,
+or generator expression may execute after its enclosing scope advances, so the
+scan retains every enclosing import that can be active from that deferred
+scope's creation onward.
 Immediate list, set, and dictionary comprehensions use their creation position.
 A locally defined function or an unused import is not counted as delegation.
 Authority is the declared module-and-symbol pair; an additional public
@@ -1206,13 +1209,14 @@ aliases, callbacks, container references, chained attributes such as
 ``helper.__call__``, and imported authority modules used as dynamic values
 therefore cannot bypass the delegation gate. Wildcard imports from authority
 namespaces fail closed, as do unresolved dynamic attribute/subscript chains
-that retain an authority-module root. Relative imports normalize to the same
-absolute identity, while same-name imports remain confined to their lexical
-scope and later ordinary bindings supersede imports in source order. Deferred
-nested scopes retain the enclosing bindings that may be active at any later
-invocation. Authority
-matching is module-qualified, so an unrelated module that happens to export
-the same function basename does not fail the gate. It is deliberately
+that retain an authority-module root, including ``__getattribute__`` lookup.
+Relative imports normalize to the same absolute identity, while same-name
+imports remain confined to their lexical scope and later ordinary bindings
+supersede imports in source order. Early class-body references fall through to
+enclosing bindings until the class-local binding is active. Deferred nested
+scopes retain the enclosing bindings that may be active at any later
+invocation. Authority matching is module-qualified, so an unrelated module
+that happens to export the same function basename does not fail the gate. It is deliberately
 independent of ``--fail-on-drift``: exact bindings may carry intentional
 conditional specialization even while no checked adapter delegates to it.
 

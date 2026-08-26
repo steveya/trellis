@@ -1134,7 +1134,10 @@ ordinary assignments or definitions supersede earlier imports, while an
 assignment right-hand side still sees the preceding binding. Conditional
 candidates remain conservative, and wildcard imports from an authority
 namespace fail closed. An unresolved dynamic attribute/subscript chain retains
-its imported authority-module root. Deferred nested scopes retain enclosing
+its imported authority-module root, including ``__dict__``, ``__getattr__``,
+and ``__getattribute__`` lookup. Class-body lookup falls through to an enclosing
+binding until a source-ordered class binding is active, matching Python's
+runtime name resolution. Deferred nested scopes retain enclosing
 imports that can be active from scope creation through later invocation.
 Authority identity is the exact module-and-symbol pair; equal basenames in
 unrelated modules do not share authority.
