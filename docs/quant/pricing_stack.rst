@@ -1138,8 +1138,10 @@ namespace fail closed. An unresolved dynamic attribute/subscript chain retains
 its imported authority-module root, including ``__dict__``, ``__getattr__``,
 and ``__getattribute__`` lookup. Calling ``globals()`` in an adapter module with
 required-authority imports fails closed because subsequent string lookup can
-hide the selected binding. Class-body lookup falls through to an enclosing
-binding until a source-ordered class binding is active, matching Python's
+hide the selected binding. Zero-argument ``locals()`` and ``vars()`` apply the
+same fail-closed rule to authority imports in the current lexical scope.
+Class-body lookup falls through to an enclosing binding until a source-ordered
+class binding is active, matching Python's
 runtime name resolution, and deletion of that class binding restores the outer
 fallback. Deferred nested scopes retain enclosing
 imports that can be active from scope creation through later invocation.

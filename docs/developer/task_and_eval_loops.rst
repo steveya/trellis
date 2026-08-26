@@ -1160,9 +1160,11 @@ imported authority-module root instead of disappearing inside the chain.
 Calling ``globals()`` in an adapter module that imports required authority also
 fails closed: the returned mapping exposes those imports to opaque string-keyed
 lookup even when no imported-name AST node remains at the eventual call site.
+Zero-argument ``locals()`` and ``vars()`` calls apply the same rule to required
+authority imported in their executing lexical scope.
 Class bodies follow Python's source-ordered name fallback: a reference before a
-later class-local binding still resolves through the enclosing scope, while an active
-unconditional class binding shadows the outer name; deleting that class-local
+later class-local binding still resolves through the enclosing scope, while an
+active unconditional class binding shadows the outer name; deleting that class-local
 binding restores the enclosing lookup. A nested function, lambda,
 or generator expression may execute after its enclosing scope advances, so the
 scan retains every enclosing import that can be active from that deferred
@@ -1217,7 +1219,8 @@ therefore cannot bypass the delegation gate. Wildcard imports from authority
 namespaces fail closed, as do unresolved dynamic attribute/subscript chains
 that retain an authority-module root, including ``__getattribute__`` lookup.
 Adapter-global namespace access through ``globals()`` likewise fails closed
-when the module imports required authority.
+when the module imports required authority. Zero-argument ``locals()`` and
+``vars()`` fail closed for authority imports in their current lexical scope.
 Relative imports normalize to the same absolute identity, while same-name
 imports remain confined to their lexical scope and later ordinary bindings
 supersede imports in source order, while annotation-only statements preserve

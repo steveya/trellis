@@ -546,6 +546,23 @@ def evaluate():
     return root
 
 
+def _fixture_root_with_dynamic_local_lookup(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+def evaluate():
+    from trellis.models.example import price_example
+
+    via_locals = locals()["price_example"]()
+    via_vars = vars()["price_example"]()
+    return via_locals + via_vars
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1083,6 +1100,36 @@ def test_audit_fails_closed_for_dynamic_global_namespace_lookup(tmp_path):
             "price_example",
             "dynamic_global_namespace",
         )
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_fails_closed_for_dynamic_local_namespace_lookup(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_dynamic_local_lookup(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            4,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_local_namespace",
+        ),
+        (
+            5,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_local_namespace",
+        ),
     ]
     assert report.has_adapter_authority is True
 

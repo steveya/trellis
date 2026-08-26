@@ -550,14 +550,17 @@ def _scan_indirect_authority_uses(
             tree,
             package=_ADAPTER_PACKAGE,
         )
-        module_authority_imports = _module_authority_imports(
-            scope_by_node[id(tree)],
-            authority_targets=authority_targets,
-        )
         for node in ast.walk(tree):
-            if not _is_dynamic_global_namespace_call(node):
+            namespace_kind = _dynamic_namespace_call_kind(node)
+            if namespace_kind is None:
                 continue
-            for local_name, module, symbol in module_authority_imports:
+            namespace_scope = scope_by_node[id(node)]
+            if namespace_kind == "global":
+                namespace_scope = _module_scope(namespace_scope)
+            for local_name, module, symbol in _scope_authority_imports(
+                namespace_scope,
+                authority_targets=authority_targets,
+            ):
                 uses.append(
                     AdapterIndirectAuthorityUse(
                         path=path.relative_to(repo_root).as_posix(),
@@ -565,7 +568,7 @@ def _scan_indirect_authority_uses(
                         local_name=local_name,
                         module=module,
                         symbol=symbol,
-                        use_kind="dynamic_global_namespace",
+                        use_kind=f"dynamic_{namespace_kind}_namespace",
                     )
                 )
         for node in ast.walk(tree):
@@ -1349,14 +1352,14 @@ def _module_scope(scope: _ImportScope) -> _ImportScope:
     return current
 
 
-def _module_authority_imports(
+def _scope_authority_imports(
     scope: _ImportScope,
     *,
     authority_targets: set[tuple[str, str]],
 ) -> tuple[tuple[str, str, str], ...]:
-    """Return authority-bearing imports exposed through an adapter's globals."""
+    """Return authority imports exposed through one dynamic namespace."""
     imported: set[tuple[str, str, str]] = set()
-    for local_name, binding_events in _module_scope(scope).bindings.items():
+    for local_name, binding_events in scope.bindings.items():
         for event in binding_events:
             if not event.is_import:
                 continue
@@ -1371,15 +1374,20 @@ def _module_authority_imports(
     return tuple(sorted(imported))
 
 
-def _is_dynamic_global_namespace_call(node: ast.AST) -> bool:
-    """Return whether a node exposes the adapter module namespace dynamically."""
-    return (
-        isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Name)
-        and node.func.id == "globals"
-        and not node.args
-        and not node.keywords
-    )
+def _dynamic_namespace_call_kind(node: ast.AST) -> str | None:
+    """Return the namespace exposed by a zero-argument introspection call."""
+    if (
+        not isinstance(node, ast.Call)
+        or not isinstance(node.func, ast.Name)
+        or node.args
+        or node.keywords
+    ):
+        return None
+    if node.func.id == "globals":
+        return "global"
+    if node.func.id in {"locals", "vars"}:
+        return "local"
+    return None
 
 
 def _is_authority_namespace(

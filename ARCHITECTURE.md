@@ -223,8 +223,10 @@ The service-host path is:
   namespace fail closed, and unresolved dynamic attribute or subscript chains
   (including `__dict__` and `__getattribute__` lookup) retain their imported
   authority-module root. Calling `globals()` in an adapter module with required
-  authority imports also fails closed because string-keyed global lookup hides
-  the selected binding. Bindings are resolved in lexical and source order so a
+  authority imports also fails closed, as do zero-argument `locals()` or
+  `vars()` calls in a lexical scope with authority imports, because string-keyed
+  namespace lookup hides the selected binding. Bindings are resolved in lexical
+  and source order so a
   nested same-name binding cannot rewrite an outer reference; later ordinary
   assignments or definitions supersede an import just as a later unconditional
   import does; an annotation without a value does not create a runtime
