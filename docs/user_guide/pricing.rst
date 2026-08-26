@@ -819,8 +819,9 @@ names cannot be matched safely, and unresolved dynamic access such as
 authority-module reference. A direct, aliased, or chained zero-argument
 ``globals()`` call in an adapter module with active required authority also
 fails closed because the returned mapping can hide the selected helper behind
-a string key, including when its callable alias is supplied by a parameter
-default. ``locals()`` and ``vars()`` follow the same rule for active
+a string key, including when its callable alias is supplied by aligned
+tuple/list unpacking or a parameter default. ``locals()`` and ``vars()``
+follow the same rule for active
 authority imports in their current scope. An import replaced before the
 namespace call is no longer classified as exposed authority.
 An early class-body reference likewise continues to use an enclosing import

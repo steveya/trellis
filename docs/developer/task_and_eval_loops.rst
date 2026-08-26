@@ -1159,10 +1159,11 @@ be resolved safely. Unresolved dynamic attribute/subscript access such as
 imported authority-module root instead of disappearing inside the chain.
 Direct or aliased zero-argument calls to ``globals()`` in an adapter module
 with active required-authority imports also fail closed, including when the
-alias enters a callable through a parameter default: the returned mapping
-exposes those imports to opaque string-keyed lookup even when no imported-name
-AST node remains at the eventual call site. Chained ``globals.__call__()`` is
-equivalent. ``locals()`` and ``vars()`` calls apply the same rule to active
+alias is carried by aligned tuple/list unpacking or enters a callable through
+a parameter default: the returned mapping exposes those imports to opaque
+string-keyed lookup even when no imported-name AST node remains at the eventual
+call site. Chained ``globals.__call__()`` is equivalent. ``locals()`` and
+``vars()`` calls apply the same rule to active
 required authority in their executing lexical scope. Source-ordered replacement
 of an import before the namespace call removes that binding from the exposed
 authority set. Imports assigned through a ``global`` declaration are inspected

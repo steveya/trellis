@@ -895,12 +895,12 @@ class _ScopeBindingCollector(ast.NodeVisitor):
     def visit_Assign(self, node: ast.Assign) -> None:
         self.visit(node.value)
         for target in node.targets:
-            for local_name in sorted(_stored_names(target)):
+            for local_name, value in _assignment_name_values(target, node.value):
                 self.local_names.add(local_name)
                 self._record_shadow(
                     local_name=local_name,
                     node=node,
-                    value=node.value if isinstance(target, ast.Name) else None,
+                    value=value,
                 )
 
     def visit_AnnAssign(self, node: ast.AnnAssign) -> None:
@@ -1051,6 +1051,36 @@ def _argument_default_values(
         if default is not None
     )
     return tuple(defaults)
+
+
+def _assignment_name_values(
+    target: ast.expr,
+    value: ast.expr,
+) -> tuple[tuple[str, ast.expr | None], ...]:
+    """Pair statically aligned assignment targets with their values."""
+    if isinstance(target, ast.Name):
+        return ((target.id, value),)
+    if isinstance(target, (ast.Tuple, ast.List)) and isinstance(
+        value,
+        (ast.Tuple, ast.List),
+    ):
+        if len(target.elts) == len(value.elts):
+            return tuple(
+                binding
+                for child_target, child_value in zip(
+                    target.elts,
+                    value.elts,
+                    strict=True,
+                )
+                for binding in _assignment_name_values(
+                    child_target,
+                    child_value,
+                )
+            )
+    return tuple(
+        (local_name, None)
+        for local_name in sorted(_stored_names(target))
+    )
 
 
 def _stored_names(node: ast.AST) -> set[str]:

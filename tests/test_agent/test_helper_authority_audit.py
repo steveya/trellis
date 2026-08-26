@@ -580,6 +580,22 @@ via_dunder = globals.__call__()["price_example"]()
     return root
 
 
+def _fixture_root_with_unpacked_dynamic_namespace_lookup(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+
+(lookup,) = (globals,)
+delegated = lookup()["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_shadowed_dynamic_namespace_imports(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -1272,6 +1288,29 @@ def test_audit_fails_closed_for_aliased_dynamic_namespace_lookup(tmp_path):
             "price_example",
             "dynamic_global_namespace",
         ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_unpacked_dynamic_namespace_aliases(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_unpacked_dynamic_namespace_lookup(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            5,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        )
     ]
     assert report.has_adapter_authority is True
 
