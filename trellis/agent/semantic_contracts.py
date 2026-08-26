@@ -597,17 +597,39 @@ def _build_semantic_family_registry() -> MappingProxyType:
         _family_definition(
             family_key="credit_basket_tranche",
             semantic_id="credit_basket_tranche",
-            candidate_methods=("copula",),
+            candidate_methods=("copula", "monte_carlo"),
             default_preferred_method="copula",
             method_surfaces=(
                 _method_surface_definition(
                     "copula",
-                    target_modules=("trellis.models.credit_basket_copula",),
+                    target_modules=(
+                        "trellis.models.credit_basket_copula",
+                        "trellis.models.copulas.factor",
+                        "trellis.models.loss_layers",
+                    ),
                     primitive_families=("copula_loss_distribution",),
                     adapter_obligations=(
                         "resolve_basket_credit_curve_and_discount_curve",
                         "preserve_tranche_attachment_and_detachment",
-                        "delegate_credit_basket_tranche_pricing_to_checked_helper",
+                        "integrate_gaussian_default_count_distribution",
+                        "project_homogeneous_pool_loss_through_bounded_layer",
+                    ),
+                    spec_schema_hints=("cdo",),
+                ),
+                _method_surface_definition(
+                    "monte_carlo",
+                    target_modules=(
+                        "trellis.models.credit_basket_copula",
+                        "trellis.models.copulas.correlation",
+                        "trellis.models.copulas.student_t",
+                        "trellis.models.loss_layers",
+                    ),
+                    primitive_families=("copula_loss_distribution",),
+                    adapter_obligations=(
+                        "resolve_basket_credit_curve_and_discount_curve",
+                        "preserve_tranche_attachment_and_detachment",
+                        "sample_seeded_student_t_default_times",
+                        "project_homogeneous_pool_loss_through_bounded_layer",
                     ),
                     spec_schema_hints=("cdo",),
                 ),

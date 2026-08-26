@@ -204,6 +204,7 @@ class RouteSpec:
     reuse_module_paths: tuple[str, ...] = ()
     successful_builds: int = 0
     match_model_family: tuple[str, ...] | None = None
+    match_payoff_family_by_method: dict[str, tuple[str, ...]] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -626,6 +627,15 @@ def _optional_str_tuple(val) -> tuple[str, ...] | None:
     return _str_tuple(val)
 
 
+def _parse_payoff_family_by_method(raw) -> dict[str, tuple[str, ...]]:
+    if not isinstance(raw, dict):
+        return {}
+    return {
+        normalize_method(str(method)): _str_tuple(payoff_families)
+        for method, payoff_families in raw.items()
+    }
+
+
 def _parse_route(raw: dict) -> RouteSpec:
     match = raw.get("match", {})
     route_id = raw["id"]
@@ -644,6 +654,9 @@ def _parse_route(raw: dict) -> RouteSpec:
         match_payoff_family=_optional_str_tuple(match.get("payoff_family")),
         match_payoff_traits=_optional_str_tuple(match.get("payoff_traits")),
         match_model_family=_optional_str_tuple(match.get("model_family")),
+        match_payoff_family_by_method=_parse_payoff_family_by_method(
+            match.get("payoff_family_by_method")
+        ),
         match_required_market_data=_optional_str_tuple(match.get("required_market_data")),
         exclude_required_market_data=_optional_str_tuple(match.get("exclude_required_market_data")),
         primitives=tuple(_parse_primitive(p) for p in raw.get("primitives", ())),
@@ -816,6 +829,10 @@ def match_candidate_routes(
 
         # Method match
         if route.match_methods and method not in route.match_methods:
+            continue
+
+        method_payoff_families = route.match_payoff_family_by_method.get(method)
+        if method_payoff_families is not None and payoff_family not in method_payoff_families:
             continue
 
         capability = evaluate_route_capability_match(route, product_ir, method=method)

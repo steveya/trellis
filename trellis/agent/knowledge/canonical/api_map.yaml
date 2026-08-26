@@ -116,22 +116,26 @@ homogeneous_loss_layer_composition:
   navigation:
     aliases: [cdo_tranche, credit_basket, credit_copula, copula_loss_distribution, homogeneous_pool_loss, bounded_loss_layer, attachment_detachment, tranche_loss]
   modules:
+    market_binding: trellis.models.credit_basket_copula
     correlation_matrix: trellis.models.copulas.correlation
     analytical_default_counts: trellis.models.copulas.factor
     sampled_default_times: trellis.models.copulas.student_t
     loss_projection: trellis.models.loss_layers
   key_imports:
+    - "from trellis.models.credit_basket_copula import resolve_credit_basket_inputs"
     - "from trellis.models.copulas.correlation import equicorrelation_matrix"
     - "from trellis.models.copulas.factor import FactorCopula"
     - "from trellis.models.copulas.student_t import StudentTCopula"
     - "from trellis.models.loss_layers import bounded_layer_loss_fraction, homogeneous_pool_loss_fraction"
   notes:
+    - "T49 is explicitly target-bound: gaussian_copula uses FactorCopula.loss_distribution, while student_t_copula uses seeded StudentTCopula.sample_default_times; do not substitute one evidence family for the other"
+    - "Resolve notional, horizon, representative default probability or flat-equivalent hazard, discount factor, correlation, and common recovery once with resolve_credit_basket_inputs before composing either target"
     - "Use equicorrelation_matrix to construct the validated non-negative homogeneous correlation matrix shared by Gaussian and Student-t copula evidence"
     - "For analytical Gaussian evidence, FactorCopula.loss_distribution returns default counts and their probabilities; preserve that probability mass when taking expected layer loss"
     - "For sampled Student-t evidence, StudentTCopula.sample_default_times returns one path-by-name matrix; compare it with the contractual horizon and sum across names to obtain per-path default counts"
     - "Pass analytical or sampled counts to homogeneous_pool_loss_fraction with the exact pool size and recovery; it returns loss as a fraction of total pool notional"
     - "Pass total-pool loss to bounded_layer_loss_fraction with explicit attachment and detachment; its output is capped at the layer width and is not normalized by that width"
-    - "Discounting, notional scaling, premium-leg conventions, and fair-spread assembly remain explicit caller responsibilities; these primitives do not price a CDO or any other product"
+    - "Discounted terminal-loss price is notional * discount_factor * expected_layer_loss; a diagnostic fair-spread proxy may use an explicitly constructed quarterly discounted annuity, but no primitive here owns a production premium leg"
     - "price_credit_basket_tranche remains compatibility and independent reference evidence only and is intentionally absent from this construction card"
     - "The bounded contract is homogeneous: heterogeneous name curves, recoveries, notionals, and calibrated base-correlation interpolation require separate validated primitives"
 

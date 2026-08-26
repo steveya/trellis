@@ -134,6 +134,49 @@ def test_declared_basket_comparison_targets_preserve_method_and_sampling_identit
     assert t126["fft_spread_2d"].method == "fft_pricing"
 
 
+def test_t49_declares_independent_gaussian_and_student_t_composition_contracts():
+    contracts = _contracts_for("T49")
+
+    assert set(contracts) == {"gaussian_copula", "student_t_copula"}
+
+    gaussian = contracts["gaussian_copula"]
+    assert gaussian.explicit is True
+    assert gaussian.resolution_source == "task.cross_validate.target_contracts"
+    assert gaussian.method == "copula"
+    assert gaussian.route_id == "copula_loss_distribution"
+    assert gaussian.route_family == "copula"
+    assert gaussian.backend_binding_id == (
+        "trellis.models.copulas.factor.FactorCopula"
+    )
+    assert gaussian.validation_bundle_id == "copula:cdo"
+    assert gaussian.payoff_family == "credit_basket_tranche"
+    assert gaussian.model_family == "credit_copula"
+    assert gaussian.variant_parameters == {
+        "copula_family": "gaussian",
+        "loss_evidence": "factor_loss_distribution",
+    }
+
+    student_t = contracts["student_t_copula"]
+    assert student_t.explicit is True
+    assert student_t.resolution_source == "task.cross_validate.target_contracts"
+    assert student_t.method == "monte_carlo"
+    assert student_t.route_id == "copula_loss_distribution"
+    assert student_t.route_family == "copula"
+    assert student_t.backend_binding_id == (
+        "trellis.models.copulas.student_t.StudentTCopula"
+    )
+    assert student_t.validation_bundle_id == "monte_carlo:cdo"
+    assert student_t.payoff_family == "credit_basket_tranche"
+    assert student_t.model_family == "credit_copula"
+    assert student_t.variant_parameters == {
+        "copula_family": "student_t",
+        "degrees_of_freedom": 5.0,
+        "loss_evidence": "sampled_default_times",
+        "n_paths": 40000,
+        "seed": 42,
+    }
+
+
 def test_callable_fixed_income_targets_have_explicit_executable_contracts():
     tasks = _proof_tasks()
 

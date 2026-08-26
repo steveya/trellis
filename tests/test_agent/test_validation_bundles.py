@@ -93,6 +93,26 @@ def test_select_validation_bundle_skips_generic_vol_checks_for_explicit_swaption
     assert "check_vol_monotonicity" not in bundle.checks
 
 
+def test_select_validation_bundle_skips_equity_vol_checks_for_cdo_copula_monte_carlo():
+    from trellis.agent.validation_bundles import select_validation_bundle
+
+    bundle = select_validation_bundle(
+        instrument_type="cdo",
+        method="monte_carlo",
+        product_ir=SimpleNamespace(
+            instrument="cdo",
+            model_family="credit_copula",
+            payoff_traits=("credit_basket", "tranche"),
+        ),
+    )
+
+    assert bundle.bundle_id == "monte_carlo:cdo"
+    assert "check_non_negativity" in bundle.checks
+    assert "check_price_sanity" in bundle.checks
+    assert "check_vol_sensitivity" not in bundle.checks
+    assert "check_vol_monotonicity" not in bundle.checks
+
+
 @pytest.mark.parametrize("method", ["pde_solver", "rate_tree"])
 def test_select_validation_bundle_skips_black_vol_checks_for_cev_model(method):
     from trellis.agent.validation_bundles import select_validation_bundle

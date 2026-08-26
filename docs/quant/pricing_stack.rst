@@ -878,8 +878,12 @@ The first migrated vanilla cases now use that boundary directly:
   functions deliberately omit market resolution, notional, discounting,
   premium-leg conventions, and fair-spread assembly. They are reusable
   numerical primitives, not a renamed tranche pricer. The checked T49 route
-  remains helper-bound until its explicit target-contract migration lands, so
-  this API addition alone is not evidence that the generated route is raw
+  now binds the Gaussian target to ``FactorCopula.loss_distribution`` and the
+  Student-t target to seeded ``StudentTCopula.sample_default_times``. Both
+  generated artifacts resolve the same basket inputs, use the same public
+  pool/layer projection, and perform explicit notional/discount scaling. The
+  retained product helper is compatibility and independent-reference evidence,
+  not generated construction authority
 - bounded credit-index spread-option comparisons use
   ``trellis.models.credit_index_option``. The Black-on-spread helper and the
   antithetic lognormal MC helper share one ``CreditIndexOptionSpec`` carrying
@@ -1007,7 +1011,8 @@ The end-to-end typed boundary is currently proven for:
 - ``credit_basket_nth_to_default`` on homogeneous nth-to-default protection,
   with distinct analytical rank-integration and sampled default-time bindings
 - ``copula_loss_distribution`` on tranche-style basket-credit comparison tasks
-  through the semantic-facing basket-credit helper surface
+  through distinct raw Gaussian distribution and seeded Student-t default-time
+  bindings with shared homogeneous-pool and bounded-layer projection
 
 The single-name CDS route card is intentionally primitive-first. It preserves
 backend binding, admissibility, validation ownership, and canary provenance,

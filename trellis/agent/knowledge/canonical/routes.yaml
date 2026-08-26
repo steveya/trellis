@@ -505,7 +505,7 @@ routes:
       penalize_when_market_data: {local_vol_surface: -3.0}
     match:
       methods: [monte_carlo]
-      exclude_instruments: [quanto_option, cds, nth_to_default]
+      exclude_instruments: [quanto_option, cds, nth_to_default, cdo]
     admissibility:
       control_styles: [identity]
       event_support: automatic
@@ -2879,7 +2879,68 @@ routes:
     status: promoted
     confidence: 1.0
     match:
-      methods: [copula]
+      methods: [copula, monte_carlo]
+      required_market_data: [credit_curve]
+      payoff_family_by_method:
+        monte_carlo: [credit_basket, credit_basket_tranche]
+    conditional_primitives:
+      - when:
+          payoff_family: credit_loss_distribution
+        primitives:
+          - module: trellis.models.copulas.factor
+            symbol: FactorCopula
+            role: loss_distribution
+          - module: trellis.models.credit_basket_copula
+            symbol: price_credit_portfolio_loss_distribution_recursive
+            role: route_helper
+          - module: trellis.models.copulas.student_t
+            symbol: StudentTCopula
+            role: loss_distribution
+      - when:
+          methods: [copula]
+        primitives:
+          - module: trellis.models.credit_basket_copula
+            symbol: resolve_credit_basket_inputs
+            role: market_binding
+          - module: trellis.core.differentiable
+            symbol: get_numpy
+            role: array_backend
+          - module: trellis.models.copulas.factor
+            symbol: FactorCopula
+            role: numerical_evidence
+          - module: trellis.models.loss_layers
+            symbol: homogeneous_pool_loss_fraction
+            role: portfolio_loss
+          - module: trellis.models.loss_layers
+            symbol: bounded_layer_loss_fraction
+            role: tranche_loss
+        adapters: []
+        notes:
+          - "Resolve the homogeneous basket, integrate the one-factor Gaussian default-count distribution, and project the resulting pool loss through the public bounded layer algebra."
+      - when:
+          methods: [monte_carlo]
+        primitives:
+          - module: trellis.models.credit_basket_copula
+            symbol: resolve_credit_basket_inputs
+            role: market_binding
+          - module: trellis.core.differentiable
+            symbol: get_numpy
+            role: array_backend
+          - module: trellis.models.copulas.correlation
+            symbol: equicorrelation_matrix
+            role: correlation_builder
+          - module: trellis.models.copulas.student_t
+            symbol: StudentTCopula
+            role: default_time_sampler
+          - module: trellis.models.loss_layers
+            symbol: homogeneous_pool_loss_fraction
+            role: portfolio_loss
+          - module: trellis.models.loss_layers
+            symbol: bounded_layer_loss_fraction
+            role: tranche_loss
+        adapters: []
+        notes:
+          - "Build an equicorrelation matrix, sample seeded Student-t default times, count horizon defaults, and project the sampled pool loss through the same public bounded layer algebra."
     admissibility:
       control_styles: [identity]
       event_support: automatic
@@ -2889,20 +2950,12 @@ routes:
       supports_sensitivity_outputs: true
       supported_state_tags: [pathwise_only, schedule_state, remaining_pool]
       supports_calibration: false
-    primitives:
-      - module: trellis.models.copulas.factor
-        symbol: FactorCopula
-        role: loss_distribution
-      - module: trellis.models.credit_basket_copula
-        symbol: price_credit_basket_tranche
-        role: route_helper
-      - module: trellis.models.copulas.student_t
-        symbol: StudentTCopula
-        role: loss_distribution
+    primitives: []
     adapters: []
     notes: []
     market_data_access:
       required:
+        discount_curve: [market_state.discount]
         credit_curve: [market_state.credit_curve]
 
   # -----------------------------------------------------------------------

@@ -62,6 +62,10 @@ _OPTION_LIKE_INSTRUMENTS = {
 # Credit instruments price from survival probabilities / hazard rates, not vol.
 # Vol sensitivity checks are not meaningful and will always produce false failures.
 _CREDIT_INSTRUMENTS = {
+    "cdo",
+    "cdo_tranche",
+    "credit_basket",
+    "credit_basket_tranche",
     "credit_default_swap",
     "credit_loss_distribution",
     "nth_to_default",

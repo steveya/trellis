@@ -135,6 +135,7 @@ class TestT49PlannerSpec:
                     for name in field_names), (
             f"CDO should have tranche fields, got: {field_names}"
         )
+        assert {"degrees_of_freedom", "n_paths", "seed"}.issubset(field_names)
 
 
 # ---------------------------------------------------------------------------
