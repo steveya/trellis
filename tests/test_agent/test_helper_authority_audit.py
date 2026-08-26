@@ -160,6 +160,33 @@ def evaluate():
     return root
 
 
+def _fixture_root_with_from_imported_module_authority(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models import example
+
+
+def accept_callback(callback):
+    return callback
+
+
+delegated_price = example.price_example
+
+
+def callback_evaluate():
+    return accept_callback(example.barrier_option_price)
+
+
+def direct_evaluate():
+    return example.price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -266,6 +293,44 @@ def test_audit_rejects_assignment_aliases_and_callback_authority(tmp_path):
     assert report.has_adapter_authority is True
     assert report.summary["adapter_indirect_authority_use_file_count"] == 1
     assert report.summary["adapter_indirect_authority_use_count"] == 2
+
+
+def test_audit_resolves_authority_through_from_imported_modules(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_from_imported_module_authority(tmp_path)
+    )
+
+    assert [
+        (item.line, item.local_name, item.module, item.symbol)
+        for item in report.adapter_calls
+    ] == [
+        (
+            16,
+            "example.price_example",
+            "trellis.models.example",
+            "price_example",
+        )
+    ]
+    assert [
+        (item.line, item.local_name, item.module, item.symbol)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            8,
+            "example.price_example",
+            "trellis.models.example",
+            "price_example",
+        ),
+        (
+            12,
+            "example.barrier_option_price",
+            "trellis.models.example",
+            "barrier_option_price",
+        ),
+    ]
+    assert report.has_adapter_authority is True
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):

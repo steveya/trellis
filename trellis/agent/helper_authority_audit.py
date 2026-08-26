@@ -582,16 +582,22 @@ def _resolve_imported_reference(
     dotted = _dotted_name(reference)
     if dotted is None or "." not in dotted:
         return None
-    matching_imports = [
-        local_name
-        for local_name in imported_modules
-        if dotted.startswith(f"{local_name}.")
-    ]
-    if not matching_imports:
-        return None
-    local_root = max(matching_imports, key=len)
+    local_root = dotted.split(".", 1)[0]
+    imported_name = imported_names.get(local_root)
+    if imported_name is not None:
+        from_module, imported_symbol = imported_name
+        imported_module = f"{from_module}.{imported_symbol}"
+    else:
+        matching_imports = [
+            local_name
+            for local_name in imported_modules
+            if dotted.startswith(f"{local_name}.")
+        ]
+        if not matching_imports:
+            return None
+        local_root = max(matching_imports, key=len)
+        imported_module = imported_modules[local_root]
     remainder = dotted[len(local_root) + 1 :]
-    imported_module = imported_modules[local_root]
     parts = remainder.rsplit(".", 1)
     if len(parts) == 1:
         module = imported_module
