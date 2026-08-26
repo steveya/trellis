@@ -19,6 +19,7 @@ _BINDINGS_PATH = Path(
 )
 _ADAPTER_ROOT = Path("trellis/instruments/_agent")
 _ADAPTER_PACKAGE = ".".join(_ADAPTER_ROOT.parts)
+_MAX_SOURCE_COMPONENT = 2**31 - 1
 
 
 @dataclass(frozen=True, order=True)
@@ -96,6 +97,7 @@ class _ImportScope:
 
     parent: _ImportScope | None
     kind: str
+    definition_position: tuple[int, int, int]
     imports: Mapping[str, tuple[_ImportBinding, ...]]
     local_names: frozenset[str]
     global_names: frozenset[str]
@@ -799,6 +801,11 @@ def _make_import_scope(
     return _ImportScope(
         parent=parent,
         kind=kind,
+        definition_position=(
+            int(getattr(node, "lineno", 0)),
+            int(getattr(node, "col_offset", 0)),
+            _MAX_SOURCE_COMPONENT,
+        ),
         imports=imports,
         local_names=frozenset(collector.local_names),
         global_names=frozenset(collector.global_names),
@@ -929,7 +936,11 @@ class _ImportScopeIndexer(ast.NodeVisitor):
         child = _make_import_scope(
             node,
             parent=self.current,
-            kind="comprehension",
+            kind=(
+                "generator"
+                if isinstance(node, ast.GeneratorExp)
+                else "comprehension"
+            ),
             package=self.package,
         )
         previous = self.current
@@ -1052,33 +1063,42 @@ def _lookup_import_bindings(
     reference_position = (
         int(getattr(reference, "lineno", 0)),
         int(getattr(reference, "col_offset", 0)),
-        2**31 - 1,
+        _MAX_SOURCE_COMPONENT,
     )
+    possible_since: tuple[int, int, int] | None = None
     current: _ImportScope | None = scope
     while current is not None:
         if local_name in current.global_names:
             if current.kind != "module":
-                reference_position = (
-                    2**31 - 1,
-                    2**31 - 1,
-                    2**31 - 1,
-                )
+                possible_since = current.definition_position
             current = _module_scope(current)
         bindings = current.imports.get(local_name)
         if bindings:
-            active_bindings = _active_import_bindings(
-                bindings,
-                reference_position=reference_position,
-            )
+            if possible_since is None:
+                active_bindings = _active_import_bindings(
+                    bindings,
+                    reference_position=reference_position,
+                )
+            else:
+                active_bindings = _possible_deferred_import_bindings(
+                    bindings,
+                    possible_since=possible_since,
+                )
             if active_bindings:
                 return active_bindings
         if local_name in current.local_names:
             return ()
         parent = current.parent
-        if current.kind in {"function", "lambda", "comprehension"}:
+        if current.kind in {
+            "function",
+            "lambda",
+            "comprehension",
+            "generator",
+        }:
             while parent is not None and parent.kind == "class":
                 parent = parent.parent
-            reference_position = (2**31 - 1, 2**31 - 1, 2**31 - 1)
+        if current.kind in {"function", "lambda", "generator"}:
+            possible_since = current.definition_position
         current = parent
     return ()
 
@@ -1105,6 +1125,24 @@ def _active_import_bindings(
         for binding in eligible
         if binding.conditional and binding.position > latest_unconditional.position
     )
+
+
+def _possible_deferred_import_bindings(
+    bindings: tuple[_ImportBinding, ...],
+    *,
+    possible_since: tuple[int, int, int],
+) -> tuple[_ImportBinding, ...]:
+    """Return enclosing imports possible across deferred execution times."""
+    candidates = _active_import_bindings(
+        bindings,
+        reference_position=possible_since,
+    ) + tuple(
+        binding for binding in bindings if binding.position > possible_since
+    )
+    unique: dict[tuple[str, str], _ImportBinding] = {}
+    for binding in candidates:
+        unique.setdefault((binding.module, binding.symbol), binding)
+    return tuple(unique.values())
 
 
 def _module_scope(scope: _ImportScope) -> _ImportScope:

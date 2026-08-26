@@ -222,8 +222,9 @@ The service-host path is:
   to that module-qualified identity, wildcard imports from an authority
   namespace fail closed, and imports are resolved in lexical and source order
   so a nested same-name binding cannot rewrite an outer reference and the last
-  unconditional same-scope import wins. An unrelated module with the same
-  function basename is not authority. Remaining
+  unconditional same-scope import wins. Deferred nested functions retain every
+  enclosing import that can be active from their creation onward. An unrelated
+  module with the same function basename is not authority. Remaining
   catalog-level `route_helper` entries do not grant checked adapters permission
   to delegate.
 - Use `trellis/agent/knowledge/canonical/api_map.yaml` to orient to a module

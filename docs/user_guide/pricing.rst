@@ -813,8 +813,10 @@ function does not turn delegation into generated composition. Relative imports
 are normalized before matching, and nested imports do not rewrite outer
 bindings. Same-scope imports follow source order, and wildcard imports from an
 authority namespace fail closed because their names cannot be matched safely.
-Matching uses both module and function name, so an unrelated function with the
-same basename remains distinct.
+Nested functions also retain enclosing imports that could be active when they
+are called, including an earlier binding before a later rebind. Matching uses
+both module and function name, so an unrelated function with the same basename
+remains distinct.
 
 The gate is intentionally narrower than a ban on every function beginning
 with ``price_``. Calls such as ``price_on_lattice(...)`` or

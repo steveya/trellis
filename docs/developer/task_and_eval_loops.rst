@@ -1150,11 +1150,14 @@ a parameter or ordinary local binding shadows an outer import. Within one
 scope, source order selects the last unconditional import while conditional
 imports remain conservative candidates. Wildcard imports from a namespace
 that contains required authority fail closed because the imported names cannot
-be resolved safely. A locally defined function or an unused import is not
-counted as delegation. Authority is the declared module-and-symbol pair; an
-additional public re-export path must be declared explicitly if it is intended
-to carry the same authority rather than being inferred from a matching
-basename.
+be resolved safely. A nested function, lambda, or generator expression may
+execute after its enclosing scope advances, so the scan retains every
+enclosing import that can be active from that deferred scope's creation onward.
+Immediate list, set, and dictionary comprehensions use their creation position.
+A locally defined function or an unused import is not counted as delegation.
+Authority is the declared module-and-symbol pair; an additional public
+re-export path must be declared explicitly if it is intended to carry the same
+authority rather than being inferred from a matching basename.
 
 Use ``--fail-on-drift`` when route and backend-binding parity is an explicit
 gate. The ordinary command remains read-only and returns the complete report
@@ -1199,9 +1202,10 @@ aliases, callbacks, container references, chained attributes such as
 therefore cannot bypass the delegation gate. Wildcard imports from authority
 namespaces fail closed. Relative imports normalize to the same absolute
 identity, while same-name imports remain confined to their lexical scope and
-same-scope import rebinding follows source order. Authority matching is
-module-qualified, so an unrelated module that happens to export the same
-function basename does not fail the gate. It is deliberately
+same-scope import rebinding follows source order. Deferred nested scopes retain
+the enclosing bindings that may be active at any later invocation. Authority
+matching is module-qualified, so an unrelated module that happens to export
+the same function basename does not fail the gate. It is deliberately
 independent of ``--fail-on-drift``: exact bindings may carry intentional
 conditional specialization even while no checked adapter delegates to it.
 
