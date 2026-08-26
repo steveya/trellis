@@ -1536,7 +1536,7 @@ def test_nth_to_default_monte_carlo_route_uses_copula_assembly():
     assert "Required adapters:" not in card
 
 
-def test_copula_loss_distribution_route_stays_helper_backed():
+def test_copula_loss_distribution_route_requires_raw_loss_layer_composition():
     from trellis.agent.knowledge.decompose import decompose_to_ir
 
     pricing_plan = PricingPlan(
@@ -1560,9 +1560,11 @@ def test_copula_loss_distribution_route_stays_helper_backed():
 
     assert plan.primitive_plan is not None
     assert plan.primitive_plan.route == "copula_loss_distribution"
-    assert "price_credit_basket_tranche" in card
+    assert "FactorCopula" in card
+    assert "homogeneous_pool_loss_fraction" in card
+    assert "bounded_layer_loss_fraction" in card
+    assert "price_credit_basket_tranche" not in card
     assert "Required adapters:" not in card
-    assert "Prefer the semantic-facing basket-credit helper" not in card
 
 
 def test_sanitize_generated_source_strips_single_outer_fence():

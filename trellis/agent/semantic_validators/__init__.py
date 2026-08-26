@@ -49,8 +49,10 @@ _ALWAYS_BLOCKING_CATEGORIES = {
 
 def _is_always_blocking_category(category: str) -> bool:
     """Return whether a finding represents a proven contract violation."""
-    return category.startswith("credit_default_swap_") or (
-        category in _ALWAYS_BLOCKING_CATEGORIES
+    return (
+        category.startswith("credit_default_swap_")
+        or category.startswith("credit_basket_tranche_")
+        or category in _ALWAYS_BLOCKING_CATEGORIES
     )
 
 

@@ -1969,6 +1969,15 @@ def test_cdo_tranche_contract_validates_and_compiles():
     assert compiled.product_ir.payoff_family == "credit_basket_tranche"
     assert compiled.pricing_plan.method == "copula"
     assert "trellis.models.credit_basket_copula" in compiled.target_modules
+    assert "trellis.models.copulas.factor" in compiled.target_modules
+    assert "trellis.models.loss_layers" in compiled.target_modules
     assert compiled.primitive_routes == ("copula_loss_distribution",)
     assert compiled.dsl_lowering is not None
     assert compiled.dsl_lowering.route_id == "copula_loss_distribution"
+
+    sampled = compile_semantic_contract(contract, preferred_method="monte_carlo")
+    assert sampled.pricing_plan.method == "monte_carlo"
+    assert "trellis.models.copulas.student_t" in sampled.target_modules
+    assert "trellis.models.copulas.correlation" in sampled.target_modules
+    assert "trellis.models.loss_layers" in sampled.target_modules
+    assert sampled.primitive_routes == ("copula_loss_distribution",)

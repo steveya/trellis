@@ -47,8 +47,6 @@ _CODEGEN_MODULE_EXPORT_ALLOWLIST: dict[str, frozenset[str]] = {
             "CreditBasketTrancheResult",
             "CreditLossDistributionSpecLike",
             "ResolvedCreditBasketInputs",
-            "price_credit_basket_tranche",
-            "price_credit_basket_tranche_result",
             "price_credit_portfolio_loss_distribution_monte_carlo",
             "price_credit_portfolio_loss_distribution_recursive",
             "price_credit_portfolio_loss_distribution_transform_proxy",
@@ -721,7 +719,7 @@ from trellis.models.sabr_option import ResolvedSabrForwardOptionInputs, SabrForw
 
 ### Models — Payoff Composition
 from trellis.models.contingent_cashflows import CouponAccrual, DefaultEventGrid, DefaultEventInterval, FirstEventWeights, ProtectionPayment, TriggerSettlement, build_default_event_grid, conditional_event_probabilities_from_curve, coupon_cashflow_pv, exchangeable_ranked_event_expected_weight, expected_first_event_weights, nth_to_default_probability, protection_payment_pv, rank_trigger_probability, ranked_event_expected_weight, sample_first_event_weights, trigger_settlement_pv
-from trellis.models.credit_basket_copula import CreditBasketTrancheResult, CreditLossDistributionSpecLike, ResolvedCreditBasketInputs, price_credit_basket_tranche, price_credit_basket_tranche_result, price_credit_portfolio_loss_distribution_monte_carlo, price_credit_portfolio_loss_distribution_recursive, price_credit_portfolio_loss_distribution_transform_proxy, resolve_credit_basket_correlation, resolve_credit_basket_inputs
+from trellis.models.credit_basket_copula import CreditBasketTrancheResult, CreditLossDistributionSpecLike, ResolvedCreditBasketInputs, price_credit_portfolio_loss_distribution_monte_carlo, price_credit_portfolio_loss_distribution_recursive, price_credit_portfolio_loss_distribution_transform_proxy, resolve_credit_basket_correlation, resolve_credit_basket_inputs
 from trellis.models.loss_layers import bounded_layer_loss_fraction, homogeneous_pool_loss_fraction
 
 ### Models — Trees
@@ -799,7 +797,7 @@ from trellis.models.copulas.correlation import equicorrelation_matrix
 from trellis.models.copulas.gaussian import GaussianCopula
 from trellis.models.copulas.factor import FactorCopula
 from trellis.models.copulas.student_t import StudentTCopula
-from trellis.models.credit_basket_copula import CreditBasketTrancheResult, CreditLossDistributionSpecLike, ResolvedCreditBasketInputs, price_credit_basket_tranche, price_credit_basket_tranche_result, price_credit_portfolio_loss_distribution_monte_carlo, price_credit_portfolio_loss_distribution_recursive, price_credit_portfolio_loss_distribution_transform_proxy, resolve_credit_basket_correlation, resolve_credit_basket_inputs
+from trellis.models.credit_basket_copula import CreditBasketTrancheResult, CreditLossDistributionSpecLike, ResolvedCreditBasketInputs, price_credit_portfolio_loss_distribution_monte_carlo, price_credit_portfolio_loss_distribution_recursive, price_credit_portfolio_loss_distribution_transform_proxy, resolve_credit_basket_correlation, resolve_credit_basket_inputs
 
 ### Models — Calibration
 from trellis.models.calibration.implied_vol import implied_vol, implied_vol_jaeckel

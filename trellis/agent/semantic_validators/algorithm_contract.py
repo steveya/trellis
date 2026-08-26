@@ -49,6 +49,7 @@ _ENGINE_SIGNATURES = {
 }
 
 _ROUTE_SIGNATURES = {
+    "copula_loss_distribution": ("FactorCopula", "StudentTCopula"),
     "credit_default_swap": (
         "expected_first_event_weights",
         "sample_first_event_weights",
@@ -83,6 +84,7 @@ _HELPER_OWNED_ROUTE_SYMBOLS = _CHECKED_ROUTE_HELPER_SYMBOLS | frozenset({
 })
 _DECLARATIVE_PRIMITIVE_ROLES = frozenset({"mesh", "model_registry", "topology"})
 _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
+    "copula_loss_distribution",
     "credit_basket_nth_to_default",
     "credit_default_swap",
     "equity_quanto",
@@ -91,6 +93,12 @@ _EXPLICIT_COMPOSITION_ROUTE_IDS = frozenset({
     "short_rate_bond_option",
 })
 _NTH_TO_DEFAULT_FORBIDDEN_SYMBOLS = frozenset({"price_nth_to_default_basket"})
+_CREDIT_BASKET_TRANCHE_FORBIDDEN_SYMBOLS = frozenset(
+    {
+        "price_credit_basket_tranche",
+        "price_credit_basket_tranche_result",
+    }
+)
 _TERMINAL_BASKET_FORBIDDEN_SYMBOLS = frozenset(
     {
         "price_basket_option_analytical",
@@ -4992,6 +5000,13 @@ class AlgorithmContractValidator:
                 route_spec,
             )
         )
+        findings.extend(
+            self._check_credit_basket_tranche_boundary(
+                source,
+                plan,
+                route_spec,
+            )
+        )
 
         # Checked route helpers own internal engine, payoff, and discounting
         # obligations, but only after the helper call surface itself validates.
@@ -5726,6 +5741,111 @@ class AlgorithmContractValidator:
                         ),
                     )
                 )
+        return findings
+
+    def _check_credit_basket_tranche_boundary(
+        self,
+        source: str,
+        plan: GenerationPlan,
+        route_spec: RouteSpec,
+    ) -> list[SemanticFinding]:
+        """Enforce method-coherent raw tranche-loss composition."""
+        if route_spec.id != "copula_loss_distribution":
+            return []
+        payoff_family = str(getattr(plan, "semantic_payoff_family", "") or "").strip()
+        if payoff_family and payoff_family != "credit_basket_tranche":
+            return []
+
+        findings: list[SemanticFinding] = []
+        for symbol in sorted(_CREDIT_BASKET_TRANCHE_FORBIDDEN_SYMBOLS):
+            if not _calls_symbol(source, symbol):
+                continue
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_basket_tranche_forbidden_helper",
+                    message=(
+                        f"Route '{route_spec.id}' cannot call compatibility surface "
+                        f"'{symbol}'. Produce method-specific copula evidence and "
+                        "project it through the public homogeneous-pool and bounded "
+                        "loss-layer primitives."
+                    ),
+                )
+            )
+
+        method = str(getattr(plan, "method", "") or "").strip().lower()
+        method = method.replace("-", "_").replace(" ", "_")
+        wrong_symbols = (
+            ("FactorCopula", "loss_distribution")
+            if method == "monte_carlo"
+            else ("StudentTCopula", "sample_default_times")
+        )
+        for symbol in wrong_symbols:
+            if not _calls_symbol(source, symbol):
+                continue
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_basket_tranche_unselected_method_primitive",
+                    message=(
+                        f"Method '{method or 'copula'}' cannot use '{symbol}' on the "
+                        "CDO-tranche route. Copula targets integrate FactorCopula "
+                        "default-count evidence; Monte Carlo targets sample seeded "
+                        "StudentTCopula default times."
+                    ),
+                )
+            )
+
+        if method == "monte_carlo":
+            if not _calls_symbol(source, "sample_default_times"):
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category="credit_basket_tranche_default_time_sampling_missing",
+                        message=(
+                            "Student-t tranche Monte Carlo must call "
+                            "StudentTCopula.sample_default_times(...) before counting "
+                            "horizon defaults."
+                        ),
+                    )
+                )
+            try:
+                tree = ast.parse(source)
+            except SyntaxError:
+                return findings
+            attribute_names = {
+                node.attr for node in ast.walk(tree) if isinstance(node, ast.Attribute)
+            }
+            for control in ("degrees_of_freedom", "n_paths", "seed"):
+                if control in attribute_names:
+                    continue
+                findings.append(
+                    SemanticFinding(
+                        validator="algorithm_contract",
+                        severity="error",
+                        category=f"credit_basket_tranche_{control}_binding",
+                        message=(
+                            f"Student-t tranche Monte Carlo must bind `{control}` "
+                            "from the public spec for reproducible sampled evidence."
+                        ),
+                    )
+                )
+        elif not _calls_symbol(source, "loss_distribution"):
+            findings.append(
+                SemanticFinding(
+                    validator="algorithm_contract",
+                    severity="error",
+                    category="credit_basket_tranche_loss_distribution_missing",
+                    message=(
+                        "Gaussian tranche composition must call "
+                        "FactorCopula.loss_distribution(...) before projecting "
+                        "homogeneous pool losses."
+                    ),
+                )
+            )
         return findings
 
     def _check_exact_helper_surface(

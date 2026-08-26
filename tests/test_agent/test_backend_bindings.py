@@ -1616,6 +1616,52 @@ def test_resolve_backend_binding_spec_uses_credit_loss_distribution_exact_helper
     )
 
 
+def test_resolve_backend_binding_spec_uses_raw_cdo_tranche_composition_by_method():
+    catalog = load_backend_binding_catalog()
+    binding = find_backend_binding_by_route_id("copula_loss_distribution", catalog)
+    product_ir = ProductIR(
+        instrument="cdo",
+        payoff_family="credit_basket_tranche",
+        exercise_style="none",
+        state_dependence="terminal_markov",
+        model_family="credit_copula",
+    )
+
+    assert binding is not None
+    gaussian = resolve_backend_binding_spec(
+        binding,
+        product_ir=product_ir,
+        method="copula",
+    )
+    student_t = resolve_backend_binding_spec(
+        binding,
+        product_ir=product_ir,
+        method="monte_carlo",
+    )
+
+    shared = {
+        "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+        "trellis.core.differentiable.get_numpy",
+        "trellis.models.loss_layers.homogeneous_pool_loss_fraction",
+        "trellis.models.loss_layers.bounded_layer_loss_fraction",
+    }
+    assert set(gaussian.primitive_refs) == shared | {
+        "trellis.models.copulas.factor.FactorCopula",
+    }
+    assert set(student_t.primitive_refs) == shared | {
+        "trellis.models.copulas.correlation.equicorrelation_matrix",
+        "trellis.models.copulas.student_t.StudentTCopula",
+    }
+    assert gaussian.helper_refs == ()
+    assert student_t.helper_refs == ()
+    assert gaussian.exact_target_refs == (
+        "trellis.models.copulas.factor.FactorCopula",
+    )
+    assert student_t.exact_target_refs == (
+        "trellis.models.copulas.student_t.StudentTCopula",
+    )
+
+
 def test_exercise_monte_carlo_binding_resolves_american_equity_lsm_primitives():
     catalog = load_backend_binding_catalog()
     binding = find_backend_binding_by_route_id("exercise_monte_carlo", catalog)

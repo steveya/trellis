@@ -102,7 +102,11 @@ The Gaussian quadrature probabilities from ``FactorCopula.loss_distribution``
 and default counts from seeded ``StudentTCopula`` paths can therefore share the
 same loss projection. These functions do not perform market resolution,
 discounting, notional scaling, premium-leg valuation, or fair-spread
-construction.
+construction. The bounded T49 proof route performs that assembly explicitly:
+the Gaussian target integrates analytical count mass, the Student-t target
+samples default times with declared degrees of freedom, path count, and seed,
+and both apply the same terminal-loss discounting. Its fair-spread output is a
+quarterly-annuity diagnostic rather than a production running-premium model.
 
 Base Correlation
 ~~~~~~~~~~~~~~~~

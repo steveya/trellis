@@ -1845,17 +1845,49 @@ bindings:
           - module: trellis.models.copulas.student_t
             symbol: StudentTCopula
             role: loss_distribution
-      - when: default
+      - when:
+          payoff_family: [credit_basket, credit_basket_tranche]
+          methods: [copula]
         primitives:
+          - module: trellis.models.credit_basket_copula
+            symbol: resolve_credit_basket_inputs
+            role: market_binding
+          - module: trellis.core.differentiable
+            symbol: get_numpy
+            role: array_backend
           - module: trellis.models.copulas.factor
             symbol: FactorCopula
-            role: loss_distribution
+            role: numerical_evidence
+          - module: trellis.models.loss_layers
+            symbol: homogeneous_pool_loss_fraction
+            role: portfolio_loss
+          - module: trellis.models.loss_layers
+            symbol: bounded_layer_loss_fraction
+            role: tranche_loss
+      - when:
+          payoff_family: [credit_basket, credit_basket_tranche]
+          methods: [monte_carlo]
+        primitives:
           - module: trellis.models.credit_basket_copula
-            symbol: price_credit_basket_tranche
-            role: route_helper
+            symbol: resolve_credit_basket_inputs
+            role: market_binding
+          - module: trellis.core.differentiable
+            symbol: get_numpy
+            role: array_backend
+          - module: trellis.models.copulas.correlation
+            symbol: equicorrelation_matrix
+            role: correlation_builder
           - module: trellis.models.copulas.student_t
             symbol: StudentTCopula
-            role: loss_distribution
+            role: default_time_sampler
+          - module: trellis.models.loss_layers
+            symbol: homogeneous_pool_loss_fraction
+            role: portfolio_loss
+          - module: trellis.models.loss_layers
+            symbol: bounded_layer_loss_fraction
+            role: tranche_loss
+      - when: default
+        primitives: []
 
   - route_id: waterfall_cashflows
     engine_family: waterfall

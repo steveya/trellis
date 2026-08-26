@@ -4681,14 +4681,6 @@ def _heston_transform_helper_kwargs(comparison_target: str | None) -> str:
     return ""
 
 
-def _credit_basket_tranche_helper_kwargs(comparison_target: str | None) -> str:
-    """Return deterministic helper kwargs for tranche-copula comparison targets."""
-    target = str(comparison_target or "").strip().lower()
-    if target == "student_t_copula":
-        return ', copula_family="student_t", degrees_of_freedom=5.0, n_paths=40000, seed=42'
-    return ', copula_family="gaussian"'
-
-
 def _american_equity_tree_primitive_body(
     comparison_target: str,
     *,
@@ -5543,6 +5535,110 @@ def _nth_to_default_composition_body(
     ).rstrip()
 
 
+def _credit_basket_tranche_composition_body(
+    refs: set[str],
+    *,
+    generation_method: str,
+) -> str | None:
+    """Compose homogeneous tranche loss from method-specific copula evidence."""
+    shared_refs = {
+        "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+        "trellis.core.differentiable.get_numpy",
+        "trellis.models.loss_layers.homogeneous_pool_loss_fraction",
+        "trellis.models.loss_layers.bounded_layer_loss_fraction",
+    }
+    normalized_method = str(generation_method or "").strip().lower().replace("-", "_")
+    if normalized_method == "monte_carlo":
+        required_refs = shared_refs | {
+            "trellis.models.copulas.correlation.equicorrelation_matrix",
+            "trellis.models.copulas.student_t.StudentTCopula",
+        }
+        if not required_refs.issubset(refs):
+            return None
+        return textwrap.dedent(
+            """\
+            spec = self._spec
+            resolved = resolve_credit_basket_inputs(market_state, spec)
+            np = get_numpy()
+            n_paths = int(spec.n_paths)
+            seed = spec.seed
+            degrees_of_freedom = float(spec.degrees_of_freedom)
+            if n_paths <= 0:
+                raise ValueError("n_paths must be positive")
+            if resolved.horizon <= 0.0 or resolved.default_probability <= 0.0:
+                expected_loss_fraction = 0.0
+            else:
+                correlation = equicorrelation_matrix(
+                    resolved.n_names,
+                    resolved.correlation,
+                )
+                copula = StudentTCopula(
+                    correlation_matrix=correlation,
+                    df=degrees_of_freedom,
+                )
+                hazard_rates = np.full(resolved.n_names, resolved.hazard_rate)
+                default_times = copula.sample_default_times(
+                    hazard_rates,
+                    n_paths=n_paths,
+                    rng=np.random.default_rng(seed),
+                )
+                default_counts = np.sum(
+                    default_times <= resolved.horizon,
+                    axis=1,
+                )
+                pool_loss = homogeneous_pool_loss_fraction(
+                    default_counts,
+                    pool_size=resolved.n_names,
+                    recovery=resolved.recovery,
+                )
+                layer_loss = bounded_layer_loss_fraction(
+                    pool_loss,
+                    attachment=float(spec.attachment),
+                    detachment=float(spec.detachment),
+                )
+                expected_loss_fraction = float(np.mean(layer_loss))
+            return float(
+                resolved.notional
+                * resolved.discount_factor
+                * expected_loss_fraction
+            )
+            """
+        ).rstrip()
+
+    required_refs = shared_refs | {
+        "trellis.models.copulas.factor.FactorCopula",
+    }
+    if not required_refs.issubset(refs):
+        return None
+    return textwrap.dedent(
+        """\
+        spec = self._spec
+        resolved = resolve_credit_basket_inputs(market_state, spec)
+        np = get_numpy()
+        loss_counts, probabilities = FactorCopula(
+            n_names=resolved.n_names,
+            correlation=resolved.correlation,
+        ).loss_distribution(resolved.default_probability)
+        pool_loss = homogeneous_pool_loss_fraction(
+            loss_counts,
+            pool_size=resolved.n_names,
+            recovery=resolved.recovery,
+        )
+        layer_loss = bounded_layer_loss_fraction(
+            pool_loss,
+            attachment=float(spec.attachment),
+            detachment=float(spec.detachment),
+        )
+        expected_loss_fraction = float(np.sum(layer_loss * probabilities))
+        return float(
+            resolved.notional
+            * resolved.discount_factor
+            * expected_loss_fraction
+        )
+        """
+    ).rstrip()
+
+
 def _declared_primitive_refs(generation_plan) -> set[str]:
     """Return every concrete primitive declared by the selected route."""
     primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
@@ -6372,7 +6468,6 @@ def _deterministic_exact_binding_evaluate_body(
     heston_mc_kwargs = _heston_monte_carlo_helper_kwargs(comparison_target)
     vanilla_equity_transform_kwargs = _vanilla_equity_transform_helper_kwargs(comparison_target)
     heston_transform_kwargs = _heston_transform_helper_kwargs(comparison_target)
-    credit_basket_tranche_kwargs = _credit_basket_tranche_helper_kwargs(comparison_target)
     runtime_contract = metadata.get("runtime_contract")
     if not isinstance(runtime_contract, Mapping):
         runtime_contract = {}
@@ -7169,6 +7264,14 @@ def _deterministic_exact_binding_evaluate_body(
     if nth_to_default_body is not None:
         return nth_to_default_body
 
+    if instrument_type == "cdo":
+        tranche_body = _credit_basket_tranche_composition_body(
+            refs,
+            generation_method=generation_method,
+        )
+        if tranche_body is not None:
+            return tranche_body
+
     if (
         comparison_target == "analytical"
         and instrument_type in {"cap", "floor", "period_rate_option_strip"}
@@ -7723,10 +7826,6 @@ def _deterministic_exact_binding_evaluate_body(
             'market_state, spec, n_steps=getattr(spec, "tree_steps", 360), '
             "allow_benchmark_defaults=True)"
         ),
-        "trellis.models.credit_basket_copula.price_credit_basket_tranche": (
-            "return price_credit_basket_tranche("
-            f"market_state, spec{credit_basket_tranche_kwargs})"
-        ),
         "trellis.models.credit_basket_copula.price_credit_portfolio_loss_distribution_recursive": (
             "return price_credit_portfolio_loss_distribution_recursive("
             'market_state, spec, copula_family="gaussian")'
@@ -7863,6 +7962,52 @@ def _deterministic_exact_binding_benchmark_outputs_block(
                 return {
                     "price": price,
                     "spread_cs01": bumped_price - price,
+                }
+            """
+        )
+    if instrument_type == "cdo" and (
+        "trellis.models.copulas.factor.FactorCopula" in refs
+        or "trellis.models.copulas.student_t.StudentTCopula" in refs
+    ):
+        return textwrap.dedent(
+            """\
+            def benchmark_outputs(self, market_state: MarketState) -> dict[str, float]:
+                spec = self._spec
+                resolved = resolve_credit_basket_inputs(market_state, spec)
+                price = float(self.evaluate(market_state))
+                denominator = resolved.notional * resolved.discount_factor
+                expected_loss_fraction = (
+                    price / denominator if denominator > 0.0 else 0.0
+                )
+                np = get_numpy()
+                payment_count = max(int(np.ceil(resolved.horizon * 4.0)), 1)
+                payment_times = (
+                    np.linspace(
+                        resolved.horizon / payment_count,
+                        resolved.horizon,
+                        payment_count,
+                    )
+                    if resolved.horizon > 0.0
+                    else np.asarray(())
+                )
+                annuity = float(
+                    np.sum(np.asarray([
+                        float(market_state.discount.discount(float(payment_time)))
+                        for payment_time in payment_times
+                    ])) / 4.0
+                )
+                tranche_width = float(spec.detachment) - float(spec.attachment)
+                fair_spread_bp = (
+                    price
+                    / (resolved.notional * tranche_width * annuity)
+                    * 10000.0
+                    if tranche_width > 0.0 and annuity > 0.0
+                    else 0.0
+                )
+                return {
+                    "price": price,
+                    "expected_loss_fraction": float(expected_loss_fraction),
+                    "fair_spread_bp": float(fair_spread_bp),
                 }
             """
         )
@@ -8353,6 +8498,31 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
     if "GaussianCopula(" in body:
         imports.append(
             "from trellis.models.copulas.gaussian import GaussianCopula"
+        )
+    if "FactorCopula(" in body:
+        imports.append(
+            "from trellis.models.copulas.factor import FactorCopula"
+        )
+    if "StudentTCopula(" in body:
+        imports.append(
+            "from trellis.models.copulas.student_t import StudentTCopula"
+        )
+    if "equicorrelation_matrix(" in body:
+        imports.append(
+            "from trellis.models.copulas.correlation import equicorrelation_matrix"
+        )
+    loss_layer_symbols = [
+        symbol
+        for symbol in (
+            "bounded_layer_loss_fraction",
+            "homogeneous_pool_loss_fraction",
+        )
+        if f"{symbol}(" in body
+    ]
+    if loss_layer_symbols:
+        imports.append(
+            "from trellis.models.loss_layers import "
+            + ", ".join(loss_layer_symbols)
         )
     if "expected_first_event_weights(" in body:
         imports.append(

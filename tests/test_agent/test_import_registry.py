@@ -894,7 +894,7 @@ def test_static_registry_fallback_covers_route_minimization_modules(monkeypatch)
     assert "trellis.models.quoted_observable" in snapshot
     assert "price_curve_quote_spread_analytical" in snapshot["trellis.models.quoted_observable"]
     assert "trellis.models.credit_basket_copula" in snapshot
-    assert "price_credit_basket_tranche" in snapshot["trellis.models.credit_basket_copula"]
+    assert "price_credit_basket_tranche" not in snapshot["trellis.models.credit_basket_copula"]
     assert "trellis.models.transforms.single_state_diffusion" in snapshot
     assert "resolve_single_state_diffusion_inputs" in snapshot["trellis.models.transforms.single_state_diffusion"]
     assert "trellis.models.transforms.heston" in snapshot
@@ -903,12 +903,13 @@ def test_static_registry_fallback_covers_route_minimization_modules(monkeypatch)
     import_registry.reset_registry_cache()
 
 
-def test_codegen_registry_excludes_nth_to_default_compatibility_wrappers():
+def test_codegen_registry_excludes_basket_credit_compatibility_wrappers():
     module = "trellis.models.credit_basket_copula"
     exports = set(list_module_exports(module))
 
     assert "resolve_credit_basket_inputs" in exports
-    assert "price_credit_basket_tranche" in exports
+    assert "price_credit_basket_tranche" not in exports
+    assert "price_credit_basket_tranche_result" not in exports
     assert "price_credit_basket_nth_to_default" not in exports
     assert "price_nth_to_default_basket" not in exports
 

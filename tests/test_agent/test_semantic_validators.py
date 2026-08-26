@@ -5000,7 +5000,7 @@ def evaluate(self, market_state):
             for finding in findings
         )
 
-    def test_flags_credit_basket_tranche_helper_signature_mismatch(self, registry):
+    def test_rejects_credit_basket_tranche_compatibility_helper(self, registry):
         spec = [r for r in registry.routes if r.id == "copula_loss_distribution"][0]
         source = '''
 from trellis.models.credit_basket_copula import price_credit_basket_tranche
@@ -5013,26 +5013,57 @@ def evaluate(self, market_state):
 '''
         validator = AlgorithmContractValidator()
         findings = validator.validate(source, _make_plan("copula_loss_distribution", "copula"), spec)
-        assert any(f.category == "route_helper_signature_mismatch" for f in findings)
+        assert any(
+            f.category == "credit_basket_tranche_forbidden_helper"
+            for f in findings
+        )
 
-    def test_accepts_credit_basket_tranche_helper_surface(self, registry):
+    def test_credit_loss_distribution_helper_is_outside_tranche_boundary(self, registry):
         spec = [r for r in registry.routes if r.id == "copula_loss_distribution"][0]
         source = '''
-from trellis.models.credit_basket_copula import price_credit_basket_tranche
+from trellis.models.credit_basket_copula import price_credit_portfolio_loss_distribution_recursive
 
 def evaluate(self, market_state):
-    return price_credit_basket_tranche(
-        market_state,
-        self._spec,
-        copula_family="gaussian",
-        degrees_of_freedom=5.0,
-        n_paths=40000,
-        seed=42,
-    )
+    return price_credit_portfolio_loss_distribution_recursive(market_state, self._spec)
 '''
-        validator = AlgorithmContractValidator()
-        findings = validator.validate(source, _make_plan("copula_loss_distribution", "copula"), spec)
-        assert not any(f.category == "route_helper_signature_mismatch" for f in findings)
+        plan = replace(
+            _make_plan("copula_loss_distribution", "copula"),
+            semantic_payoff_family="credit_loss_distribution",
+        )
+
+        findings = AlgorithmContractValidator().validate(source, plan, spec)
+
+        assert not any(
+            finding.category.startswith("credit_basket_tranche_")
+            for finding in findings
+        )
+
+    @pytest.mark.parametrize(
+        ("method", "wrong_symbol"),
+        [
+            ("copula", "StudentTCopula"),
+            ("monte_carlo", "FactorCopula"),
+        ],
+    )
+    def test_rejects_credit_basket_tranche_method_substitution(
+        self,
+        registry,
+        method,
+        wrong_symbol,
+    ):
+        spec = [r for r in registry.routes if r.id == "copula_loss_distribution"][0]
+        source = f'''\ndef evaluate(self, market_state):\n    return {wrong_symbol}()\n'''
+
+        findings = AlgorithmContractValidator().validate(
+            source,
+            _make_plan("copula_loss_distribution", method),
+            spec,
+        )
+
+        assert any(
+            finding.category == "credit_basket_tranche_unselected_method_primitive"
+            for finding in findings
+        )
 
     def test_helper_backed_pde_route_does_not_satisfy_engine_contract(self, registry):
         spec = [r for r in registry.routes if r.id == "vanilla_equity_theta_pde"][0]

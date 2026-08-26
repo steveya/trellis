@@ -891,6 +891,36 @@ tasks:
     internal:
     - gaussian_copula
     - student_t_copula
+    target_contracts:
+      gaussian_copula:
+        method: copula
+        route_id: copula_loss_distribution
+        route_family: copula
+        backend_binding_id: trellis.models.copulas.factor.FactorCopula
+        validation_bundle_id: copula:cdo
+        payoff_family: credit_basket_tranche
+        exercise_style: none
+        model_family: credit_copula
+        observation_style: terminal
+        variant_parameters:
+          copula_family: gaussian
+          loss_evidence: factor_loss_distribution
+      student_t_copula:
+        method: monte_carlo
+        route_id: copula_loss_distribution
+        route_family: copula
+        backend_binding_id: trellis.models.copulas.student_t.StudentTCopula
+        validation_bundle_id: monte_carlo:cdo
+        payoff_family: credit_basket_tranche
+        exercise_style: none
+        model_family: credit_copula
+        observation_style: terminal
+        variant_parameters:
+          copula_family: student_t
+          degrees_of_freedom: 5.0
+          loss_evidence: sampled_default_times
+          n_paths: 40000
+          seed: 42
     external:
     - quantlib
   status: pending

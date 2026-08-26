@@ -6217,14 +6217,26 @@ def test_deterministic_exact_binding_module_materializes_short_rate_bond_helper_
 
 
 @pytest.mark.parametrize(
-    ("comparison_target", "expected_fragment"),
+    ("comparison_target", "method", "exact_ref", "expected_fragment"),
     [
-        ("gaussian_copula", 'copula_family="gaussian"'),
-        ("student_t_copula", 'copula_family="student_t", degrees_of_freedom=5.0, n_paths=40000, seed=42'),
+        (
+            "gaussian_copula",
+            "copula",
+            "trellis.models.copulas.factor.FactorCopula",
+            "FactorCopula(",
+        ),
+        (
+            "student_t_copula",
+            "monte_carlo",
+            "trellis.models.copulas.student_t.StudentTCopula",
+            "sample_default_times(",
+        ),
     ],
 )
-def test_deterministic_exact_binding_module_materializes_credit_basket_tranche_helper_wrapper(
+def test_deterministic_exact_binding_module_materializes_raw_credit_basket_tranche_composition(
     comparison_target,
+    method,
+    exact_ref,
     expected_fragment,
 ):
     from trellis.agent.executor import (
@@ -6235,9 +6247,16 @@ def test_deterministic_exact_binding_module_materializes_credit_basket_tranche_h
     from trellis.agent.planner import STATIC_SPECS
 
     generation_plan = SimpleNamespace(
-        lane_exact_binding_refs=("trellis.models.credit_basket_copula.price_credit_basket_tranche",),
+        lane_exact_binding_refs=(
+            exact_ref,
+            "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+            "trellis.core.differentiable.get_numpy",
+            "trellis.models.loss_layers.homogeneous_pool_loss_fraction",
+            "trellis.models.loss_layers.bounded_layer_loss_fraction",
+            "trellis.models.copulas.correlation.equicorrelation_matrix",
+        ),
         primitive_plan=None,
-        method="copula",
+        method=method,
         instrument_type="cdo",
     )
 
@@ -6253,9 +6272,111 @@ def test_deterministic_exact_binding_module_materializes_credit_basket_tranche_h
     )
 
     assert generated is not None
-    assert "price_credit_basket_tranche(market_state, spec" in generated.code
     assert expected_fragment in generated.code
+    assert "homogeneous_pool_loss_fraction(" in generated.code
+    assert "bounded_layer_loss_fraction(" in generated.code
+    assert "price_credit_basket_tranche" not in generated.code
+    assert "expected_loss_fraction" in generated.code
+    assert "fair_spread_bp" in generated.code
     assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("comparison_target", "method", "exact_ref", "copula_family"),
+    [
+        (
+            "gaussian_copula",
+            "copula",
+            "trellis.models.copulas.factor.FactorCopula",
+            "gaussian",
+        ),
+        (
+            "student_t_copula",
+            "monte_carlo",
+            "trellis.models.copulas.student_t.StudentTCopula",
+            "student_t",
+        ),
+    ],
+)
+def test_deterministic_raw_credit_basket_tranche_matches_reference_result(
+    comparison_target,
+    method,
+    exact_ref,
+    copula_family,
+):
+    from datetime import date as _date
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.curves.credit_curve import CreditCurve
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.models.credit_basket_copula import (
+        price_credit_basket_tranche_result,
+    )
+
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=(
+            exact_ref,
+            "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+            "trellis.core.differentiable.get_numpy",
+            "trellis.models.loss_layers.homogeneous_pool_loss_fraction",
+            "trellis.models.loss_layers.bounded_layer_loss_fraction",
+            "trellis.models.copulas.correlation.equicorrelation_matrix",
+        ),
+        primitive_plan=None,
+        method=method,
+        instrument_type="cdo",
+    )
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            STATIC_SPECS["cdo"],
+            f"T49 {comparison_target}",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        comparison_target=comparison_target,
+    )
+    assert generated is not None
+    assert "price_credit_basket_tranche" not in generated.code
+
+    namespace: dict = {}
+    exec(compile(generated.code, f"<t49_{comparison_target}>", "exec"), namespace)  # noqa: S102 -- generated-artifact test
+    spec = namespace["CDOTrancheSpec"](
+        notional=100_000_000.0,
+        n_names=100,
+        attachment=0.03,
+        detachment=0.07,
+        end_date=_date(2029, 11, 15),
+        n_paths=20_000,
+        seed=42,
+    )
+    payoff = namespace["CDOTranchePayoff"](spec)
+    market = MarketState(
+        as_of=_date(2024, 11, 15),
+        settlement=_date(2024, 11, 15),
+        discount=YieldCurve.flat(0.04, max_tenor=10.0),
+        credit_curve=CreditCurve.flat(0.02, max_tenor=10.0),
+    )
+    reference = price_credit_basket_tranche_result(
+        market,
+        spec,
+        copula_family=copula_family,
+        degrees_of_freedom=5.0,
+        n_paths=20_000,
+        seed=42,
+    )
+
+    outputs = payoff.benchmark_outputs(market)
+    assert set(outputs) == {"price", "expected_loss_fraction", "fair_spread_bp"}
+    assert outputs["price"] == pytest.approx(reference.price)
+    assert outputs["expected_loss_fraction"] == pytest.approx(
+        reference.expected_loss_fraction
+    )
+    assert outputs["fair_spread_bp"] == pytest.approx(reference.fair_spread_bp)
 
 
 @pytest.mark.parametrize(
@@ -7524,7 +7645,13 @@ def test_build_payoff_fresh_build_still_uses_deterministic_exact_binding(monkeyp
         ),
         blocker_report=None,
         new_primitive_workflow=None,
-        lane_exact_binding_refs=("trellis.models.credit_basket_copula.price_credit_basket_tranche",),
+        lane_exact_binding_refs=(
+            "trellis.models.copulas.factor.FactorCopula",
+            "trellis.models.credit_basket_copula.resolve_credit_basket_inputs",
+            "trellis.core.differentiable.get_numpy",
+            "trellis.models.loss_layers.homogeneous_pool_loss_fraction",
+            "trellis.models.loss_layers.bounded_layer_loss_fraction",
+        ),
     )
 
     monkeypatch.setattr("trellis.agent.executor._record_platform_event", lambda *args, **kwargs: None)

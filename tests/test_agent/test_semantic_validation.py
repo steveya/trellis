@@ -1480,7 +1480,7 @@ def test_rejects_product_helper_backed_cds_route():
     assert not report.ok
 
 
-def test_accepts_helper_backed_cdo_tranche_route_without_internal_copula_calls():
+def test_rejects_helper_backed_cdo_tranche_route_without_raw_composition():
     from trellis.agent.semantic_validation import validate_semantics
 
     pricing_plan = PricingPlan(
@@ -1508,8 +1508,8 @@ def test_accepts_helper_backed_cdo_tranche_route_without_internal_copula_calls()
     )
 
     issue_codes = {issue.code for issue in report.issues}
-    assert "assembly.required_primitive_missing" not in issue_codes
-    assert report.ok
+    assert "assembly.required_primitive_missing" in issue_codes
+    assert not report.ok
 
 
 def test_accepts_european_swaption_event_aware_monte_carlo_composition():

@@ -578,6 +578,44 @@ class TestCreditRoutes:
         new = _new_routes(registry, "monte_carlo", self.NTD_IR, pricing_plan=plan)
         assert new == ("credit_basket_nth_to_default",)
 
+    def test_cdo_tranche_monte_carlo_uses_copula_loss_route(self, registry):
+        product_ir = ProductIR(
+            instrument="cdo",
+            payoff_family="credit_basket_tranche",
+            model_family="credit_copula",
+            route_families=("copula",),
+        )
+        plan = _make_plan(
+            "monte_carlo",
+            market_data={"discount_curve", "credit_curve"},
+        )
+
+        assert _new_routes(
+            registry,
+            "monte_carlo",
+            product_ir,
+            pricing_plan=plan,
+        ) == ("copula_loss_distribution",)
+
+    def test_credit_loss_distribution_monte_carlo_keeps_dedicated_mc_route(self, registry):
+        product_ir = ProductIR(
+            instrument="credit_loss_distribution",
+            payoff_family="credit_loss_distribution",
+            model_family="credit_copula",
+            route_families=("copula", "monte_carlo"),
+        )
+        plan = _make_plan(
+            "monte_carlo",
+            market_data={"discount_curve", "credit_curve"},
+        )
+
+        assert _new_routes(
+            registry,
+            "monte_carlo",
+            product_ir,
+            pricing_plan=plan,
+        ) == ("monte_carlo_paths",)
+
     def test_nth_to_default_minimal_ir_still_matches_for_gap_audits(self, registry):
         ir = ProductIR(instrument="nth_to_default", payoff_family="nth_to_default")
         plan = _make_plan("monte_carlo", market_data={"discount_curve", "credit_curve"})
@@ -2828,8 +2866,21 @@ class TestFallbackRoutes:
 
         assert new == ("vanilla_equity_theta_pde", "pde_theta_1d")
 
-    def test_copula_candidate(self, registry):
-        new = _new_routes(registry, "copula", None)
+    def test_copula_candidate_remains_visible_to_gap_audits(self, registry):
+        product_ir = ProductIR(
+            instrument="cdo",
+            payoff_family="credit_basket",
+            model_family="credit_copula",
+        )
+        new = tuple(
+            route.id
+            for route in match_candidate_routes(
+                registry,
+                "copula",
+                product_ir,
+                skip_market_data_filters=True,
+            )
+        )
         assert new == ("copula_loss_distribution",)
 
     def test_waterfall_candidate(self, registry):
@@ -3597,13 +3648,35 @@ class TestFallbackRoutes:
 
     def test_copula_primitives(self, registry):
         spec = [r for r in registry.routes if r.id == "copula_loss_distribution"][0]
-        new_prims = resolve_route_primitives(spec, None)
-        expected_prims = {
-            ("trellis.models.copulas.factor", "FactorCopula", "loss_distribution"),
-            ("trellis.models.copulas.student_t", "StudentTCopula", "loss_distribution"),
-            ("trellis.models.credit_basket_copula", "price_credit_basket_tranche", "route_helper"),
+        product_ir = ProductIR(
+            instrument="cdo",
+            payoff_family="credit_basket_tranche",
+            model_family="credit_copula",
+        )
+        gaussian_prims = resolve_route_primitives(
+            spec,
+            product_ir,
+            method="copula",
+        )
+        student_t_prims = resolve_route_primitives(
+            spec,
+            product_ir,
+            method="monte_carlo",
+        )
+        shared_prims = {
+            ("trellis.models.credit_basket_copula", "resolve_credit_basket_inputs", "market_binding"),
+            ("trellis.core.differentiable", "get_numpy", "array_backend"),
+            ("trellis.models.loss_layers", "homogeneous_pool_loss_fraction", "portfolio_loss"),
+            ("trellis.models.loss_layers", "bounded_layer_loss_fraction", "tranche_loss"),
         }
-        assert _prim_set(new_prims) == expected_prims
+        assert _prim_set(gaussian_prims) == shared_prims | {
+            ("trellis.models.copulas.factor", "FactorCopula", "numerical_evidence"),
+        }
+        assert _prim_set(student_t_prims) == shared_prims | {
+            ("trellis.models.copulas.correlation", "equicorrelation_matrix", "correlation_builder"),
+            ("trellis.models.copulas.student_t", "StudentTCopula", "default_time_sampler"),
+        }
+        assert spec.match_methods == ("copula", "monte_carlo")
 
     def test_credit_and_copula_routes_are_thin_backend_bindings(self, registry):
         for route_id in (

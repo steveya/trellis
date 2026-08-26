@@ -1083,27 +1083,25 @@ model source synthesis or promoted as model-authored source. Learning reports
 separately label first-pass model synthesis, deterministic origin, and unknown
 origin instead of inferring synthesis from freshness or success.
 
-The same rule now applies to tranche-style basket-credit and typed
-loss-distribution comparison routes.
-Curated copula canaries bind through the semantic-facing
-``trellis.models.credit_basket_copula`` helper surface instead of asking the
-builder to reconstruct tranche-loss projection from raw copula primitives. In
-practice that means the build loop can keep tranche attachment/detachment or
-portfolio-loss horizon, representative credit-curve binding, and
-dependence-family selection on a checked helper path while semantic validation
-treats the helper as the public assembly contract rather than forcing direct
-calls to the lower-level loss-distribution primitives.
+The same rule applies to tranche-style basket-credit and typed
+loss-distribution comparison routes. T49 now declares two explicit target
+contracts. ``gaussian_copula`` selects the ``copula`` method and requires
+``FactorCopula.loss_distribution`` evidence. ``student_t_copula`` selects the
+``monte_carlo`` method and requires ``StudentTCopula.sample_default_times``
+with spec-bound degrees of freedom, path count, and seed. A generated artifact
+that calls the compatibility tranche helper, swaps those evidence families, or
+omits the shared pool/layer projection fails semantic validation.
 
-The lower-level gap is now explicit rather than private. The public
-``equicorrelation_matrix``, ``homogeneous_pool_loss_fraction``, and
-``bounded_layer_loss_fraction`` functions accept either analytical Gaussian
-default-count mass or seeded Student-t sampled counts and perform only generic
-dependence/loss-layer algebra. They intentionally do not resolve a tranche
-contract or own price, premium-leg, or fair-spread semantics. Until the T49
-comparison targets, deterministic materializer, checked adapter, route
-authority, and algorithm validator migrate together, the helper-backed canary
-remains the admitted route. A green replay during this interval must therefore
-be reported as helper-backed evidence, not as proof of raw model composition.
+The public ``equicorrelation_matrix``, ``homogeneous_pool_loss_fraction``, and
+``bounded_layer_loss_fraction`` functions provide the common numerical
+composition. Both targets first use ``resolve_credit_basket_inputs``; Gaussian
+weights projected layer losses by analytical default-count probabilities,
+while Student-t counts horizon defaults per path and averages the same
+projection. The deterministic materializer owns only the explicit adapter
+assembly: terminal-loss discounting and named expected-loss/fair-spread
+diagnostics. It does not claim a production premium leg. Fresh offline T49
+replay is valid raw-composition evidence only when artifact coherence confirms
+the distinct target binding and zero model calls.
 
 For the supported single-exercise European swaption tree slice, the comparison
 harness now binds an explicit generic lattice composition. The generated

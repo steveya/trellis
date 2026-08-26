@@ -1917,11 +1917,15 @@ product or hide market/cashflow conventions:
 layer width; it is not normalized by that width. For a sampled Student-t lane,
 sum ``sample_default_times(...) <= horizon`` across names to obtain one count
 per path, pass those counts through the same two loss functions, and average
-the resulting layer losses. Notional scaling, discounting, premium-leg
-conventions, and fair-spread construction remain caller responsibilities.
-The product-level tranche helper remains available as compatibility/reference
-evidence; this primitive API does not claim heterogeneous credit or production
-base-correlation support.
+the resulting layer losses. The T49 comparison route performs exactly those
+two independent assemblies: analytical default-count probabilities for its
+Gaussian target and spec-seeded default-time paths for its Student-t target.
+Both multiply expected layer loss by resolved notional and discount factor.
+Its reported fair spread is a bounded quarterly-annuity diagnostic, not a full
+synthetic-CDO premium-leg valuation. The product-level tranche helper remains
+available as compatibility/reference evidence but is excluded from generated
+construction imports; this primitive API does not claim heterogeneous credit
+or production base-correlation support.
 
 Credit-index spread options have a bounded helper surface for task/eval
 comparisons:
