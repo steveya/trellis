@@ -215,10 +215,12 @@ The service-host path is:
   of valid imports.
 - Keep the checked-adapter helper-authority gate at zero. The deterministic
   audit compares direct imported calls and indirect first-class references
-  against required authority from both promoted routes and exact backend
-  bindings. Aliasing an authority helper or passing it as a callback is still
-  delegation; remaining catalog-level `route_helper` entries do not grant
-  checked adapters permission to delegate.
+  against module-qualified required authority from both promoted routes and
+  exact backend bindings. Aliasing an authority helper, passing it as a
+  callback, or hiding it behind an imported module value is still delegation;
+  an unrelated module with the same function basename is not. Remaining
+  catalog-level `route_helper` entries do not grant checked adapters permission
+  to delegate.
 - Use `trellis/agent/knowledge/canonical/api_map.yaml` to orient to a module
   family before drilling into specific symbols.
 - Treat `trellis/agent/knowledge/` as a separately owned subsystem. Do not edit

@@ -1126,7 +1126,9 @@ in prompts or traces.
 The checked-adapter authority audit treats a required helper used as an alias,
 callback, or other first-class value as delegation too. Generated construction
 cannot evade the route contract merely by moving the eventual helper call
-behind Python indirection.
+behind Python indirection or a dynamically accessed imported module. Authority
+identity is the exact module-and-symbol pair; equal basenames in unrelated
+modules do not share authority.
 
 Generated composition authority closeout
 -----------------------------------------

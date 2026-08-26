@@ -1144,8 +1144,9 @@ The report keeps four evidence surfaces separate:
 
 The adapter scan uses Python AST import resolution, including local aliases and
 module aliases. A locally defined function or an unused import is not counted
-as delegation. Re-exported symbols still match helper authority by canonical
-symbol identity, so changing an import path cannot hide continued delegation.
+as delegation. Authority is the declared module-and-symbol pair; an additional
+public re-export path must be declared explicitly if it is intended to carry
+the same authority rather than being inferred from a matching basename.
 
 Use ``--fail-on-drift`` when route and backend-binding parity is an explicit
 gate. The ordinary command remains read-only and returns the complete report
@@ -1185,10 +1186,12 @@ The ordinary PR gate now preserves the zero baseline:
 ``--fail-on-adapter-authority`` returns nonzero when any top-level checked
 ``_agent`` adapter executes an imported symbol that is required by a promoted
 route or exact binding, or uses that symbol as a first-class value. Assignment
-aliases, callbacks, and container references therefore cannot bypass the
-delegation gate. It is deliberately independent of ``--fail-on-drift``: exact
-bindings may carry intentional conditional specialization even while no
-checked adapter delegates to it.
+aliases, callbacks, container references, and imported authority modules used
+as dynamic values therefore cannot bypass the delegation gate. Authority
+matching is module-qualified, so an unrelated module that happens to export
+the same function basename does not fail the gate. It is deliberately
+independent of ``--fail-on-drift``: exact bindings may carry intentional
+conditional specialization even while no checked adapter delegates to it.
 
 The eight residual imported pricing calls require semantic interpretation; a
 non-match is not automatically approval:

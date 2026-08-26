@@ -194,16 +194,17 @@ def build_helper_authority_report(root: str | Path) -> HelperAuthorityReport:
         route_authority,
         binding_authority,
     )
-    authority_symbols = {
-        item.symbol for item in route_authority + binding_authority
+    authority_targets = {
+        (item.module, item.symbol)
+        for item in route_authority + binding_authority
     }
     adapter_calls = _scan_adapter_calls(
         repo_root,
-        authority_symbols=authority_symbols,
+        authority_targets=authority_targets,
     )
     adapter_indirect_authority_uses = _scan_indirect_authority_uses(
         repo_root,
-        authority_symbols=authority_symbols,
+        authority_targets=authority_targets,
     )
     return HelperAuthorityReport(
         schema_version=2,
@@ -465,7 +466,7 @@ def _authority_sort_key(
 def _scan_adapter_calls(
     repo_root: Path,
     *,
-    authority_symbols: set[str],
+    authority_targets: set[tuple[str, str]],
 ) -> tuple[AdapterDelegationCall, ...]:
     adapter_root = repo_root / _ADAPTER_ROOT
     if not adapter_root.is_dir():
@@ -486,7 +487,7 @@ def _scan_adapter_calls(
                 continue
             local_name, module, symbol = resolved
             is_price_call = symbol.startswith("price_")
-            matches_required_authority = symbol in authority_symbols
+            matches_required_authority = (module, symbol) in authority_targets
             if not is_price_call and not matches_required_authority:
                 continue
             calls.append(
@@ -506,7 +507,7 @@ def _scan_adapter_calls(
 def _scan_indirect_authority_uses(
     repo_root: Path,
     *,
-    authority_symbols: set[str],
+    authority_targets: set[tuple[str, str]],
 ) -> tuple[AdapterIndirectAuthorityUse, ...]:
     """Find authority symbols used as values rather than direct call targets."""
     adapter_root = repo_root / _ADAPTER_ROOT
@@ -519,10 +520,21 @@ def _scan_indirect_authority_uses(
         direct_call_targets = {
             id(node.func) for node in ast.walk(tree) if isinstance(node, ast.Call)
         }
+        nested_attribute_nodes = {
+            id(child)
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Attribute)
+            for child in ast.walk(node.value)
+            if isinstance(child, (ast.Name, ast.Attribute))
+        }
+        ignored_reference_nodes = direct_call_targets | nested_attribute_nodes
         for node in ast.walk(tree):
             if not isinstance(node, (ast.Name, ast.Attribute)):
                 continue
-            if not isinstance(node.ctx, ast.Load) or id(node) in direct_call_targets:
+            if (
+                not isinstance(node.ctx, ast.Load)
+                or id(node) in ignored_reference_nodes
+            ):
                 continue
             resolved = _resolve_imported_reference(
                 node,
@@ -532,7 +544,22 @@ def _scan_indirect_authority_uses(
             if resolved is None:
                 continue
             local_name, module, symbol = resolved
-            if symbol not in authority_symbols:
+            if symbol:
+                if (module, symbol) in authority_targets:
+                    use_kind = "indirect_reference"
+                elif _is_authority_namespace(
+                    f"{module}.{symbol}",
+                    authority_targets,
+                ):
+                    module = f"{module}.{symbol}"
+                    symbol = "*"
+                    use_kind = "indirect_module_reference"
+                else:
+                    continue
+            elif _is_authority_namespace(module, authority_targets):
+                symbol = "*"
+                use_kind = "indirect_module_reference"
+            else:
                 continue
             uses.append(
                 AdapterIndirectAuthorityUse(
@@ -541,7 +568,7 @@ def _scan_indirect_authority_uses(
                     local_name=local_name,
                     module=module,
                     symbol=symbol,
-                    use_kind="indirect_reference",
+                    use_kind=use_kind,
                 )
             )
     return tuple(sorted(uses))
@@ -561,8 +588,11 @@ def _import_index(
                 )
         elif isinstance(node, ast.Import):
             for alias in node.names:
-                local_name = alias.asname or alias.name
-                imported_modules[local_name] = alias.name
+                if alias.asname:
+                    imported_modules[alias.asname] = alias.name
+                else:
+                    local_root = alias.name.split(".", 1)[0]
+                    imported_modules[local_root] = local_root
     return imported_names, imported_modules
 
 
@@ -574,10 +604,13 @@ def _resolve_imported_reference(
 ) -> tuple[str, str, str] | None:
     if isinstance(reference, ast.Name):
         imported = imported_names.get(reference.id)
-        if imported is None:
-            return None
-        module, symbol = imported
-        return reference.id, module, symbol
+        if imported is not None:
+            module, symbol = imported
+            return reference.id, module, symbol
+        imported_module = imported_modules.get(reference.id)
+        if imported_module is not None:
+            return reference.id, imported_module, ""
+        return None
 
     dotted = _dotted_name(reference)
     if dotted is None or "." not in dotted:
@@ -606,6 +639,16 @@ def _resolve_imported_reference(
         module = f"{imported_module}.{parts[0]}"
         symbol = parts[1]
     return dotted, module, symbol
+
+
+def _is_authority_namespace(
+    module: str,
+    authority_targets: set[tuple[str, str]],
+) -> bool:
+    return any(
+        target_module == module or target_module.startswith(f"{module}.")
+        for target_module, _ in authority_targets
+    )
 
 
 def _dotted_name(node: ast.AST) -> str | None:

@@ -806,8 +806,11 @@ artifacts use public resolvers, numerical primitives, raw kernels, and generic
 estimators so their product and method choices stay inspectable.
 
 The same rule applies when a helper is assigned to another name or passed as a
-callback. Such indirect references still count as helper authority; renaming a
-function does not turn delegation into generated composition.
+callback, including when its imported module is first hidden behind another
+name or dynamic lookup. Such indirect references still count as helper
+authority; renaming a function does not turn delegation into generated
+composition. Matching uses both module and function name, so an unrelated
+function with the same basename remains distinct.
 
 The gate is intentionally narrower than a ban on every function beginning
 with ``price_``. Calls such as ``price_on_lattice(...)`` or

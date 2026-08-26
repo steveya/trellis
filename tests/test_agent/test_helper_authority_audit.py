@@ -187,6 +187,45 @@ def direct_evaluate():
     return root
 
 
+def _fixture_root_with_imported_module_alias_authority(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+import trellis.models.example as helpers
+
+
+delegated_module = helpers
+
+
+def dynamic_evaluate():
+    return getattr(helpers, "price_example")()
+
+
+def delegated_evaluate():
+    return delegated_module.price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_same_named_non_authority(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.other import price_example
+
+
+def evaluate():
+    return price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -331,6 +370,60 @@ def test_audit_resolves_authority_through_from_imported_modules(tmp_path):
         ),
     ]
     assert report.has_adapter_authority is True
+    assert report.summary["adapter_indirect_authority_use_file_count"] == 1
+    assert report.summary["adapter_indirect_authority_use_count"] == 2
+
+
+def test_audit_rejects_imported_authority_modules_used_as_values(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_imported_module_alias_authority(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (
+            item.line,
+            item.local_name,
+            item.module,
+            item.symbol,
+            item.use_kind,
+        )
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            4,
+            "helpers",
+            "trellis.models.example",
+            "*",
+            "indirect_module_reference",
+        ),
+        (
+            8,
+            "helpers",
+            "trellis.models.example",
+            "*",
+            "indirect_module_reference",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_does_not_match_same_named_symbol_from_other_module(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_same_named_non_authority(tmp_path)
+    )
+
+    assert len(report.adapter_calls) == 1
+    assert report.adapter_calls[0].module == "trellis.models.other"
+    assert report.adapter_calls[0].symbol == "price_example"
+    assert report.adapter_calls[0].is_price_call is True
+    assert report.adapter_calls[0].matches_required_authority is False
+    assert report.adapter_indirect_authority_uses == ()
+    assert report.has_adapter_authority is False
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):
