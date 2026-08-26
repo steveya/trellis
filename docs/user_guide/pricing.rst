@@ -817,7 +817,9 @@ import. Wildcard imports from an authority namespace fail closed because their
 names cannot be matched safely, and unresolved dynamic access such as
 ``helpers.__dict__[name]`` or ``helpers.__getattribute__(name)`` retains the
 authority-module reference. An early class-body reference likewise continues
-to use an enclosing import until a later class-local replacement is active.
+to use an enclosing import until a later class-local replacement is active,
+and resumes that lookup if the class-local name is deleted. An annotation
+without a value does not replace the active imported runtime binding.
 Nested functions also retain enclosing imports that could be active when they
 are called, including an earlier binding before a later rebind. Matching uses
 both module and function name, so an unrelated function with the same basename

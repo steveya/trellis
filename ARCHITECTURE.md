@@ -225,8 +225,10 @@ The service-host path is:
   authority-module root. Bindings are resolved in lexical and source order so a
   nested same-name binding cannot rewrite an outer reference; later ordinary
   assignments or definitions supersede an import just as a later unconditional
-  import does. A class body falls through to an outer binding until its own
-  source-ordered binding is active. Deferred nested functions retain every
+  import does; an annotation without a value does not create a runtime
+  replacement. A class body falls through to an outer binding until its own
+  source-ordered binding is active, and resumes that fallback after deleting
+  the class-local name. Deferred nested functions retain every
   enclosing import that can be active from their creation onward. An unrelated
   module with the same function basename is not authority. Remaining
   catalog-level `route_helper` entries do not grant checked adapters permission

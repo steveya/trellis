@@ -485,6 +485,51 @@ def evaluate():
     return root
 
 
+def _fixture_root_with_annotation_only_references(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+price_example: object
+
+
+class Adapter:
+    price_example: object
+    delegated = price_example()
+
+
+def evaluate():
+    return price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_deleted_class_binding(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example as helper
+
+
+def local_price():
+    return 0.0
+
+
+class Adapter:
+    helper = local_price
+    del helper
+    delegated = helper()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -970,6 +1015,37 @@ def test_audit_honors_ordinary_rebindings_after_imports(tmp_path):
     assert report.adapter_calls == ()
     assert report.adapter_indirect_authority_uses == ()
     assert report.has_adapter_authority is False
+
+
+def test_audit_preserves_imports_across_annotation_only_statements(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_annotation_only_references(tmp_path)
+    )
+
+    assert [
+        (item.line, item.module, item.symbol, item.matches_required_authority)
+        for item in report.adapter_calls
+    ] == [
+        (8, "trellis.models.example", "price_example", True),
+        (12, "trellis.models.example", "price_example", True),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_restores_outer_lookup_after_deleted_class_binding(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_deleted_class_binding(tmp_path)
+    )
+
+    assert [
+        (item.line, item.module, item.symbol, item.matches_required_authority)
+        for item in report.adapter_calls
+    ] == [(11, "trellis.models.example", "price_example", True)]
+    assert report.has_adapter_authority is True
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):

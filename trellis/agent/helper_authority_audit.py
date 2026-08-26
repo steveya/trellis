@@ -90,6 +90,7 @@ class _BindingEvent:
     symbol: str
     conditional: bool
     is_import: bool
+    is_delete: bool
 
 
 @dataclass(frozen=True)
@@ -770,6 +771,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
                 symbol=symbol,
                 conditional=self._conditional_depth > 0,
                 is_import=True,
+                is_delete=False,
             )
         )
 
@@ -779,6 +781,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         local_name: str,
         node: ast.AST,
         at_end: bool = True,
+        is_delete: bool = False,
     ) -> None:
         self._binding_sequence += 1
         line_attribute = "end_lineno" if at_end else "lineno"
@@ -800,6 +803,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
                 symbol="",
                 conditional=self._conditional_depth > 0,
                 is_import=False,
+                is_delete=is_delete,
             )
         )
 
@@ -854,7 +858,8 @@ class _ScopeBindingCollector(ast.NodeVisitor):
             self.visit(node.value)
         for local_name in sorted(_stored_names(node.target)):
             self.local_names.add(local_name)
-            self._record_shadow(local_name=local_name, node=node)
+            if node.value is not None:
+                self._record_shadow(local_name=local_name, node=node)
 
     def visit_AugAssign(self, node: ast.AugAssign) -> None:
         self.visit(node.value)
@@ -872,7 +877,11 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         for target in node.targets:
             for local_name in sorted(_stored_names(target)):
                 self.local_names.add(local_name)
-                self._record_shadow(local_name=local_name, node=node)
+                self._record_shadow(
+                    local_name=local_name,
+                    node=node,
+                    is_delete=True,
+                )
 
     def visit_ExceptHandler(self, node: ast.ExceptHandler) -> None:
         if node.name:
@@ -1222,14 +1231,11 @@ def _lookup_import_bindings(
             current = parent
             continue
 
-        if (
-            local_name in current.local_names
-            and (
-                current.kind != "class"
-                or any(not event.conditional for event in active_events)
-            )
-        ):
-            return _unique_import_events(candidates)
+        if local_name in current.local_names:
+            if current.kind != "class" or _class_binding_blocks_parent(
+                active_events
+            ):
+                return _unique_import_events(candidates)
         parent = current.parent
         if current.kind in {
             "function",
@@ -1285,13 +1291,27 @@ def _possible_deferred_binding_events(
         for event in binding_events
         if event.position > possible_since
     )
-    unique: dict[tuple[bool, str, str], _BindingEvent] = {}
+    unique: dict[tuple[bool, bool, str, str], _BindingEvent] = {}
     for event in candidates:
         unique.setdefault(
-            (event.is_import, event.module, event.symbol),
+            (event.is_import, event.is_delete, event.module, event.symbol),
             event,
         )
     return tuple(unique.values())
+
+
+def _class_binding_blocks_parent(
+    active_events: tuple[_BindingEvent, ...],
+) -> bool:
+    """Return whether a class-local name is guaranteed to remain bound."""
+    unconditional = tuple(
+        event for event in active_events if not event.conditional
+    )
+    if not unconditional or unconditional[-1].is_delete:
+        return False
+    return not any(
+        event.conditional and event.is_delete for event in active_events
+    )
 
 
 def _unique_import_events(

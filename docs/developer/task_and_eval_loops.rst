@@ -1149,7 +1149,9 @@ function cannot overwrite the module binding seen by an outer reference, and
 a parameter or ordinary local binding shadows an outer import. Within one
 scope, source order selects the last unconditional binding, whether it is an
 import, assignment, deletion, or function/class definition; assignment
-right-hand sides are evaluated against the preceding binding. Conditional
+right-hand sides are evaluated against the preceding binding. An annotation
+without a value establishes function-local ownership when applicable but does
+not replace a live module or class binding. Conditional
 bindings remain conservative candidates. Wildcard imports from a namespace
 that contains required authority fail closed because the imported names cannot
 be resolved safely. Unresolved dynamic attribute/subscript access such as
@@ -1157,7 +1159,8 @@ be resolved safely. Unresolved dynamic attribute/subscript access such as
 imported authority-module root instead of disappearing inside the chain. Class
 bodies follow Python's source-ordered name fallback: a reference before a later
 class-local binding still resolves through the enclosing scope, while an active
-unconditional class binding shadows the outer name. A nested function, lambda,
+unconditional class binding shadows the outer name; deleting that class-local
+binding restores the enclosing lookup. A nested function, lambda,
 or generator expression may execute after its enclosing scope advances, so the
 scan retains every enclosing import that can be active from that deferred
 scope's creation onward.
@@ -1212,8 +1215,10 @@ namespaces fail closed, as do unresolved dynamic attribute/subscript chains
 that retain an authority-module root, including ``__getattribute__`` lookup.
 Relative imports normalize to the same absolute identity, while same-name
 imports remain confined to their lexical scope and later ordinary bindings
-supersede imports in source order. Early class-body references fall through to
-enclosing bindings until the class-local binding is active. Deferred nested
+supersede imports in source order, while annotation-only statements preserve
+the active runtime binding. Early class-body references fall through to
+enclosing bindings until the class-local binding is active and again after
+that binding is deleted. Deferred nested
 scopes retain the enclosing bindings that may be active at any later
 invocation. Authority matching is module-qualified, so an unrelated module
 that happens to export the same function basename does not fail the gate. It is deliberately
