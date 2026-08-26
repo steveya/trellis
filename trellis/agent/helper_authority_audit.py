@@ -237,6 +237,14 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Return exit code 1 when route and binding authority differ.",
     )
+    parser.add_argument(
+        "--fail-on-adapter-authority",
+        action="store_true",
+        help=(
+            "Return exit code 1 when a checked adapter calls a symbol that is "
+            "required authority on a promoted route or exact binding."
+        ),
+    )
     return parser
 
 
@@ -248,7 +256,10 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps(report.to_dict(), indent=2, sort_keys=True))
     else:
         print(render_helper_authority_report(report), end="")
-    if args.fail_on_drift and report.has_route_binding_drift:
+    has_adapter_authority = bool(report.summary["adapter_authority_call_count"])
+    if (args.fail_on_drift and report.has_route_binding_drift) or (
+        args.fail_on_adapter_authority and has_adapter_authority
+    ):
         return 1
     return 0
 

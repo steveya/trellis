@@ -1123,6 +1123,45 @@ Their lowering records primitive targets separately from true ``route_helper``
 bindings so generic resolvers and kernels are not mislabeled as helper authority
 in prompts or traces.
 
+Generated composition authority closeout
+-----------------------------------------
+
+For the completed QUA-1166 checked-adapter cohort, generated construction
+authority is the ordered composition of semantic terms, market resolvers,
+reusable numerical primitives, raw kernels, and validation contracts. A
+product-, method-, route-, or task-shaped wrapper may remain callable for
+compatibility or independent comparison, but it cannot replace that ordered
+composition in an admitted generated-construction adapter. An explicit
+compatibility shim is non-authoritative and must immediately re-enter the
+checked semantic/execution runtime rather than own pricing logic.
+
+The repository gate enforces the narrow static part of this contract: no
+checked adapter may execute a symbol that canonical route or exact-binding
+knowledge currently marks as required ``route_helper`` authority. The merged
+baseline is zero such calls. Generic terminal-claim estimators,
+``price_on_lattice(...)``, and resolved-input raw kernels remain valid because
+the derivative-specific market binding, schedule, payoff, control, notional,
+and settlement choices stay outside them and visible in the adapter.
+
+Static zero authority is necessary but not sufficient. Mathematical and
+method validation still require, for example:
+
+- a Monte Carlo target to consume sampled paths or events rather than a PDE
+  scalar;
+- a lattice target to expose model, topology, mesh, calibration, contract, and
+  rollback evidence;
+- a copula comparison to bind distinct declared dependence evidence before
+  applying shared loss projection; and
+- a retained wrapper to remain reference evidence rather than the generated
+  artifact identity.
+
+The closeout does not reclassify every catalog-level ``route_helper``. The
+remaining route and exact-binding references cover helper-backed routes and
+bounded method runtimes outside the migrated adapter cohort. Their presence
+does not weaken the zero checked-adapter gate, and the zero gate does not expand
+Trellis support beyond the bounded task contracts and limitations documented
+for each migrated family.
+
 The admitted European analytical digital lane is also primitive-only. Its
 compact hot start is ``digital_option_composition`` in
 ``canonical/api_map.yaml``. Canonical decomposition and route evidence state

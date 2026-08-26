@@ -1154,6 +1154,78 @@ constants: migrations should reduce real product/method authority while
 preserving legitimate reusable kernels and making any route/binding movement
 explicit.
 
+Zero-adapter-authority closeout
+-------------------------------
+
+The QUA-1166 migration cohort reached its first durable zero baseline after the
+T49 Gaussian/Student-t tranche migration. The 2026-08-26 merged closeout
+snapshot is:
+
+- ``0`` checked-adapter calls matching required route or binding authority;
+- ``8`` imported ``price_*`` calls across ``8`` checked-adapter files;
+- ``36`` required canonical route references and ``40`` exact-binding
+  references; and
+- ``0`` route-only and ``4`` binding-only references.
+
+The zero applies to *executed checked-adapter delegation*, not to every symbol
+whose current catalog role is ``route_helper``. The 36/40 references remain a
+mixed inventory of reusable engines, bounded method runtimes, and helper-backed
+routes outside the completed adapter cohort. They are future audit input, not a
+claim that universal helper retirement is complete.
+
+The ordinary PR gate now preserves the zero baseline:
+
+.. code-block:: console
+
+   python scripts/audit_helper_authority.py --fail-on-adapter-authority
+   make gate-helper-authority
+   make gate-pr
+
+``--fail-on-adapter-authority`` returns nonzero when any top-level checked
+``_agent`` adapter executes an imported symbol that is required by a promoted
+route or exact binding. It is deliberately independent of ``--fail-on-drift``:
+exact bindings may carry intentional conditional specialization even while no
+checked adapter delegates to it.
+
+The eight residual imported pricing calls require semantic interpretation; a
+non-match is not automatically approval:
+
+.. list-table:: Residual checked-adapter pricing calls at closeout
+   :header-rows: 1
+   :widths: 30 28 42
+
+   * - Adapter cohort
+     - Imported call
+     - Closeout disposition
+   * - European and Bermudan swaption comparators
+     - ``price_swaption_black76_raw`` (two calls)
+     - Raw resolved-input pricing kernel. Schedule selection and product
+       semantics remain visible in the adapter.
+   * - American equity tree and callable/puttable fixed income
+     - ``price_on_lattice`` (three calls)
+     - Generic lattice rollback kernel after explicit model, mesh, market,
+       event, contract, and control composition.
+   * - European single-state Monte Carlo
+     - ``price_single_state_terminal_claim_monte_carlo_result``
+     - Generic estimator accepting an explicit terminal payoff callback and
+       resolved diffusion inputs.
+   * - P001 Bermudan rainbow compatibility artifact
+     - ``price_bermudan_best_of_basket_from_compat_spec``
+     - Intentional compatibility shell that recompiles the legacy spec into
+       route-free execution IR and dispatches to checked generic visitors.
+       Fresh construction proving bypasses the shell.
+   * - E23 local-vol legacy proof artifact
+     - ``price_vanilla_equity_option_pde``
+     - ``proof_only_hold`` residue, not admitted Monte Carlo evidence and not
+       part of the migrated cohort. Reactivation must replace it with
+       method-true local-vol composition or certify an honest block.
+
+This gate cannot by itself prove method coherence. Target contracts, artifact
+identity, source-policy checks, algorithm validators, and numerical comparison
+still have to reject a PDE artifact presented as Monte Carlo, a compatibility
+reference presented as fresh synthesis, or a raw kernel used without its
+required market and settlement composition.
+
 Semantic composition gaps versus helper gaps
 ---------------------------------------------
 

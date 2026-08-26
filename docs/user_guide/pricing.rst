@@ -795,6 +795,38 @@ maximize European values across the schedule. The retained product-level
 lower-bound wrapper is comparison/reference evidence rather than construction
 authority.
 
+What the zero helper-authority gate means
+-----------------------------------------
+
+Trellis now keeps the completed checked-adapter migration cohort at zero calls
+to symbols that promoted routes or exact backend bindings mark as required
+helper authority. This is a compatibility-preserving change: public pricing
+wrappers remain callable by existing application code, while generated task
+artifacts use public resolvers, numerical primitives, raw kernels, and generic
+estimators so their product and method choices stay inspectable.
+
+The gate is intentionally narrower than a ban on every function beginning
+with ``price_``. Calls such as ``price_on_lattice(...)`` or
+``price_single_state_terminal_claim_monte_carlo_result(...)`` are reusable
+numerical runtimes; the adapter still supplies the contract-specific market,
+payoff, event, control, and settlement composition. The P001 Bermudan rainbow
+file is an explicit compatibility shell over route-free execution IR rather
+than fresh generated construction authority.
+
+Conversely, a pricing call is not valid merely because the static audit does
+not classify it as authority. The held legacy E23 local-vol artifact still
+delegates to a vanilla PDE function and cannot count as local-vol Monte Carlo
+evidence. E23 remains ``proof_only_hold``; a future reactivation must generate
+method-true local-vol composition or return an honest semantic capability
+block.
+
+When reviewing a task result, use the comparison-target contract, backend
+binding identity, ``primitive_refs`` / ``helper_refs``, artifact origin, source
+digest, and method-specific validation bundle together. A zero helper count
+does not allow a PDE result to satisfy a Monte Carlo target, a reference wrapper
+to masquerade as fresh synthesis, or a bounded proof to become a claim of
+general product support.
+
 The trace boundary also exposes a family-first ``construction_identity``
 summary. For operators, that is now the primary readout:
 

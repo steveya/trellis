@@ -178,9 +178,12 @@ The agent-assisted path is:
 2. Normalize the request in `trellis.agent.platform_requests`.
 3. Compile semantic contracts, valuation context, required data, and candidate
    backend bindings.
-4. Reuse an existing checked helper/kernel binding when possible; otherwise
-   plan/build/review a payoff adapter that lands under
-   `trellis/instruments/_agent/`.
+4. Resolve the exact backend binding, then prefer public market resolvers,
+   reusable numerical primitives, and raw kernels. For the completed checked-
+   adapter migration cohort, product-, method-, route-, and task-shaped
+   helpers are compatibility/reference evidence rather than generated
+   construction authority; otherwise plan/build/review a payoff adapter that
+   lands under `trellis/instruments/_agent/`.
 5. Execute pricing through the same deterministic runtime after the binding is
    admitted.
 
@@ -210,6 +213,10 @@ The service-host path is:
   should orchestrate, validate, and govern, not reimplement numerical kernels.
 - Treat `trellis/agent/knowledge/import_registry.py` as the authoritative source
   of valid imports.
+- Keep the checked-adapter helper-authority gate at zero. The deterministic
+  audit compares executed imported calls against required authority from both
+  promoted routes and exact backend bindings; remaining catalog-level
+  `route_helper` entries do not grant checked adapters permission to delegate.
 - Use `trellis/agent/knowledge/canonical/api_map.yaml` to orient to a module
   family before drilling into specific symbols.
 - Treat `trellis/agent/knowledge/` as a separately owned subsystem. Do not edit

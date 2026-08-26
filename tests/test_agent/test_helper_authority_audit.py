@@ -252,6 +252,20 @@ def test_current_repository_helper_authority_report_is_internally_consistent():
     )
 
 
+def test_current_repository_has_zero_admitted_adapter_authority():
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    root = Path(__file__).resolve().parents[2]
+    report = build_helper_authority_report(root)
+    authority_calls = [
+        item for item in report.adapter_calls if item.matches_required_authority
+    ]
+
+    assert authority_calls == []
+    assert report.summary["adapter_authority_call_file_count"] == 0
+    assert report.summary["adapter_authority_call_count"] == 0
+
+
 def test_current_repository_retires_arithmetic_asian_helper_authority():
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -301,7 +315,6 @@ def test_current_repository_retires_single_name_cds_helper_authority():
     summary = report.to_dict()["summary"]
     assert summary["route_authority_reference_count"] <= 39
     assert summary["binding_authority_reference_count"] <= 43
-    assert summary["adapter_authority_call_count"] <= 2
     assert summary["route_only_reference_count"] <= 2
     assert summary["binding_only_reference_count"] <= 6
 

@@ -6,10 +6,13 @@ PR_GATE_IGNORES ?= --ignore=tests/test_contracts --ignore=tests/test_crossval --
 PR_GATE_SHARD_COUNT ?= 4
 PR_GATE_SHARD_INDEX ?= 1
 
-.PHONY: gate-hygiene gate-pr-shard gate-tier2-contracts gate-pr gate-canary gate-release
+.PHONY: gate-hygiene gate-helper-authority gate-pr-shard gate-tier2-contracts gate-pr gate-canary gate-release
 
 gate-hygiene:
 	$(PYTHON) scripts/test_hygiene.py --fail-on-ancient-unticketed-xfail
+
+gate-helper-authority:
+	$(PYTHON) scripts/audit_helper_authority.py --fail-on-adapter-authority
 
 gate-tier2-contracts:
 	$(PYTEST) tests/test_contracts/ -q -m "tier2 and not freshness"
@@ -21,6 +24,7 @@ gate-pr-shard:
 
 gate-pr:
 	$(MAKE) gate-hygiene
+	$(MAKE) gate-helper-authority
 	$(PYTEST) tests/ -x -q -m "$(PR_CORE_MARKERS)" $(PR_GATE_IGNORES)
 	$(MAKE) gate-tier2-contracts
 

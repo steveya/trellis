@@ -75,6 +75,7 @@ Status mirror last synced: `2026-08-26`
 | `QUA-1237` | Semantic weighted NTD: name-level exposure and rank-loss contract | Done |
 | `QUA-1238` | Copula composition: equicorrelation and bounded loss-layer primitives | Done |
 | `QUA-1239` | Semantic CDO tranche: raw Gaussian and Student-t composition | Done |
+| `QUA-1240` | Semantic helper authority: durable zero-adapter closeout | In Progress |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
 ## Current Sequence
@@ -177,6 +178,11 @@ Status mirror last synced: `2026-08-26`
     targets explicitly, compose each from method-true copula evidence and the
     shared loss-layer primitives, and remove the final admitted adapter helper
     authority call while retaining the product wrapper as reference evidence.
+27. Apply QUA-1240 as the umbrella closeout: make zero admitted checked-adapter
+    authority a fast PR regression gate, review every residual imported pricing
+    call, document the retained compatibility and legacy-hold boundaries, and
+    record the 36-route / 40-binding inventory without claiming universal
+    catalog helper retirement.
 
 ## Completion Evidence
 

@@ -32,6 +32,19 @@ def test_helper_authority_cli_can_fail_on_route_binding_drift(capsys, tmp_path):
     assert "route_only_references=1" in capsys.readouterr().out
 
 
+def test_helper_authority_cli_can_fail_on_adapter_authority(capsys, tmp_path):
+    from tests.test_agent.test_helper_authority_audit import _fixture_root
+    from trellis.agent import helper_authority_audit
+
+    root = _fixture_root(tmp_path)
+    exit_code = helper_authority_audit.main(
+        ["--root", str(root), "--fail-on-adapter-authority"]
+    )
+
+    assert exit_code == 1
+    assert "adapter_authority_calls=3" in capsys.readouterr().out
+
+
 def test_helper_authority_script_runs_against_the_worktree(tmp_path):
     from tests.test_agent.test_helper_authority_audit import _fixture_root
 
