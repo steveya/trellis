@@ -1152,6 +1152,10 @@ Comprehension assignment expressions are attributed to their containing scope,
 and always-evaluated control-flow headers are recorded before conditional
 branches. Starred namespace-call expansions are conservatively treated as
 possibly empty.
+Redirected ``global`` and ``nonlocal`` imports remain conditional candidates in
+their owning scope. Dynamic ``eval`` or ``exec`` calls likewise fail closed when
+their effective namespace can expose active route authority, including when the
+builtin is reached through an alias.
 Class-body lookup falls through to an enclosing binding until a source-ordered
 class binding is active, matching Python's
 runtime name resolution, and deletion of that class binding restores the outer

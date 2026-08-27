@@ -240,8 +240,11 @@ The service-host path is:
   comprehension filters or results bind in the containing scope and remain
   conditional candidates. Always-evaluated control-flow headers are recorded
   before conditional branches, and starred namespace-call expansions are
-  treated as potentially empty. A class body falls through to an outer binding
-  until its own
+  treated as potentially empty. Imports redirected through ``global`` or
+  ``nonlocal`` conservatively inform the owning scope, while ``eval`` or
+  ``exec`` reached through a builtin alias fails closed when its effective
+  namespace can contain active authority. A class body falls through to an
+  outer binding until its own
   source-ordered binding is active, and resumes that fallback after deleting
   the class-local name. Deferred nested functions retain every
   enclosing import that can be active from their creation onward. An unrelated

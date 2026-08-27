@@ -8,7 +8,7 @@ from collections import Counter, defaultdict
 from dataclasses import asdict, dataclass
 import json
 from pathlib import Path
-from typing import Iterable, Mapping
+from typing import Callable, Iterable, Mapping
 
 import yaml
 
@@ -556,6 +556,28 @@ def _scan_indirect_authority_uses(
             if not isinstance(node, ast.Call):
                 continue
             execution_scope = scope_by_node[id(node)]
+            dynamic_code_kinds = _dynamic_code_call_kinds(
+                node,
+                scope=execution_scope,
+            )
+            if dynamic_code_kinds:
+                exposed_imports = _effective_scope_authority_imports(
+                    execution_scope,
+                    reference=node,
+                    authority_targets=authority_targets,
+                )
+                for dynamic_code_kind in dynamic_code_kinds:
+                    for local_name, module, symbol in exposed_imports:
+                        uses.append(
+                            AdapterIndirectAuthorityUse(
+                                path=path.relative_to(repo_root).as_posix(),
+                                line=int(node.lineno),
+                                local_name=local_name,
+                                module=module,
+                                symbol=symbol,
+                                use_kind=f"dynamic_code_{dynamic_code_kind}",
+                            )
+                        )
             namespace_kinds = _dynamic_namespace_call_kinds(
                 node,
                 scope=execution_scope,
@@ -1076,6 +1098,67 @@ def _make_import_scope(
     )
 
 
+def _propagate_redirected_imports(scope: _ImportScope) -> None:
+    """Conservatively expose global/nonlocal imports in their owning scope."""
+    for local_name in sorted(scope.global_names):
+        _propagate_redirected_imports_for_name(
+            scope,
+            owner=_module_scope(scope),
+            local_name=local_name,
+        )
+    for local_name in sorted(scope.nonlocal_names):
+        owner = _nonlocal_binding_owner(scope, local_name)
+        if owner is not None:
+            _propagate_redirected_imports_for_name(
+                scope,
+                owner=owner,
+                local_name=local_name,
+            )
+
+
+def _propagate_redirected_imports_for_name(
+    scope: _ImportScope,
+    *,
+    owner: _ImportScope,
+    local_name: str,
+) -> None:
+    bindings = owner.bindings
+    if not isinstance(bindings, dict):
+        raise TypeError("Import-scope bindings must remain mutable while indexing")
+    existing = bindings.get(local_name, ())
+    propagated = tuple(
+        _BindingEvent(
+            position=event.position,
+            module=event.module,
+            symbol=event.symbol,
+            conditional=True,
+            is_import=True,
+            is_delete=False,
+        )
+        for event in scope.bindings.get(local_name, ())
+        if event.is_import
+    )
+    if not propagated:
+        return
+    bindings[local_name] = tuple(
+        sorted((*existing, *propagated), key=lambda item: item.position)
+    )
+
+
+def _nonlocal_binding_owner(
+    scope: _ImportScope,
+    local_name: str,
+) -> _ImportScope | None:
+    current = scope.parent
+    while current is not None and current.kind != "module":
+        if current.kind != "class" and (
+            local_name in current.local_names or local_name in current.bindings
+        ):
+            return current
+        current = current.parent
+    return None
+
+
 def _argument_names(arguments: ast.arguments) -> set[str]:
     names = {
         argument.arg
@@ -1202,6 +1285,7 @@ class _ImportScopeIndexer(ast.NodeVisitor):
             kind="function",
             package=self.package,
         )
+        _propagate_redirected_imports(child)
         self._visit_body_in_scope(node.body, child)
 
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
@@ -1218,6 +1302,7 @@ class _ImportScopeIndexer(ast.NodeVisitor):
             kind="class",
             package=self.package,
         )
+        _propagate_redirected_imports(child)
         self._visit_body_in_scope(node.body, child)
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
@@ -1599,6 +1684,37 @@ def _global_namespace_authority_imports(
     return tuple(sorted(imported))
 
 
+def _effective_scope_authority_imports(
+    execution_scope: _ImportScope,
+    *,
+    reference: ast.AST,
+    authority_targets: set[tuple[str, str]],
+) -> tuple[tuple[str, str, str], ...]:
+    """Return authority imports visible to eval/exec's lexical namespaces."""
+    imported = set(
+        _global_namespace_authority_imports(
+            execution_scope,
+            reference=reference,
+            authority_targets=authority_targets,
+        )
+    )
+    visible_names = None
+    if execution_scope.kind != "module":
+        visible_names = frozenset(execution_scope.bindings).difference(
+            execution_scope.global_names
+        )
+    imported.update(
+        _scope_authority_imports(
+            execution_scope,
+            reference=reference,
+            possible_since=None,
+            visible_names=visible_names,
+            authority_targets=authority_targets,
+        )
+    )
+    return tuple(sorted(imported))
+
+
 def _dynamic_namespace_call_kinds(
     node: ast.AST,
     *,
@@ -1625,17 +1741,56 @@ def _resolve_dynamic_namespace_callable(
     seen: frozenset[tuple[int, str, int]],
 ) -> tuple[str, ...]:
     """Resolve a builtin namespace callable through simple aliases."""
+    return _resolve_builtin_callable(
+        reference,
+        scope=scope,
+        seen=seen,
+        builtin_kind_resolver=_builtin_dynamic_namespace_kind,
+        imported_kind_resolver=_imported_dynamic_namespace_kind,
+    )
+
+
+def _dynamic_code_call_kinds(
+    node: ast.AST,
+    *,
+    scope: _ImportScope,
+) -> tuple[str, ...]:
+    """Return dynamic-code builtins reached by one call target."""
+    if not isinstance(node, ast.Call):
+        return ()
+    return _resolve_builtin_callable(
+        node.func,
+        scope=scope,
+        seen=frozenset(),
+        builtin_kind_resolver=_builtin_dynamic_code_kind,
+        imported_kind_resolver=_imported_dynamic_code_kind,
+    )
+
+
+def _resolve_builtin_callable(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+    builtin_kind_resolver: Callable[[str], str | None],
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    """Resolve selected builtins through imports, aliases, and branches."""
     if isinstance(reference, ast.Attribute) and reference.attr == "__call__":
-        return _resolve_dynamic_namespace_callable(
+        return _resolve_builtin_callable(
             reference.value,
             scope=scope,
             seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
         )
     if isinstance(reference, ast.NamedExpr):
-        return _resolve_dynamic_namespace_callable(
+        return _resolve_builtin_callable(
             reference.value,
             scope=scope,
             seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
         )
     if isinstance(reference, ast.IfExp):
         candidates = (reference.body, reference.orelse)
@@ -1647,10 +1802,12 @@ def _resolve_dynamic_namespace_callable(
         kinds = {
             kind
             for candidate in candidates
-            for kind in _resolve_dynamic_namespace_callable(
+            for kind in _resolve_builtin_callable(
                 candidate,
                 scope=scope,
                 seen=seen,
+                builtin_kind_resolver=builtin_kind_resolver,
+                imported_kind_resolver=imported_kind_resolver,
             )
         }
         return tuple(sorted(kinds))
@@ -1661,29 +1818,33 @@ def _resolve_dynamic_namespace_callable(
             reference,
             scope=scope,
         )
-        if (kind := _imported_dynamic_namespace_kind(module, symbol))
+        if (kind := imported_kind_resolver(module, symbol))
         is not None
     }
     if not isinstance(reference, ast.Name):
         return tuple(sorted(imported_kinds))
 
     imported_kinds.update(
-        _resolve_dynamic_namespace_name(
+        _resolve_builtin_name(
             reference.id,
             scope=scope,
             reference=reference,
             seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
         )
     )
     return tuple(sorted(imported_kinds))
 
 
-def _resolve_dynamic_namespace_name(
+def _resolve_builtin_name(
     local_name: str,
     *,
     scope: _ImportScope,
     reference: ast.expr,
     seen: frozenset[tuple[int, str, int]],
+    builtin_kind_resolver: Callable[[str], str | None],
+    imported_kind_resolver: Callable[[str, str], str | None],
 ) -> tuple[str, ...]:
     """Resolve one callable name using Python's lexical binding rules."""
     reference_position = _source_position(reference)
@@ -1714,7 +1875,7 @@ def _resolve_dynamic_namespace_name(
                 if event.is_delete:
                     continue
                 if event.is_import:
-                    kind = _imported_dynamic_namespace_kind(
+                    kind = imported_kind_resolver(
                         event.module,
                         event.symbol,
                     )
@@ -1725,10 +1886,12 @@ def _resolve_dynamic_namespace_name(
                     if event.value_from_parent and current.parent is not None:
                         value_scope = current.parent
                     kinds.update(
-                        _resolve_dynamic_namespace_callable(
+                        _resolve_builtin_callable(
                             event.value,
                             scope=value_scope,
                             seen=next_seen,
+                            builtin_kind_resolver=builtin_kind_resolver,
+                            imported_kind_resolver=imported_kind_resolver,
                         )
                     )
 
@@ -1770,7 +1933,7 @@ def _resolve_dynamic_namespace_name(
             possible_since = current.definition_position
         current = parent
 
-    builtin_kind = _builtin_dynamic_namespace_kind(local_name)
+    builtin_kind = builtin_kind_resolver(local_name)
     if builtin_kind is not None:
         kinds.add(builtin_kind)
     return tuple(sorted(kinds))
@@ -1805,6 +1968,21 @@ def _imported_dynamic_namespace_kind(
     if module != "builtins":
         return None
     return _builtin_dynamic_namespace_kind(symbol)
+
+
+def _builtin_dynamic_code_kind(local_name: str) -> str | None:
+    if local_name in {"eval", "exec"}:
+        return local_name
+    return None
+
+
+def _imported_dynamic_code_kind(
+    module: str,
+    symbol: str,
+) -> str | None:
+    if module != "builtins":
+        return None
+    return _builtin_dynamic_code_kind(symbol)
 
 
 def _source_position(node: ast.AST) -> tuple[int, int, int]:

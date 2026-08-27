@@ -1177,6 +1177,11 @@ containing scope, while always-evaluated control-flow headers are processed
 before their conditional branches. Starred positional or keyword expansions on
 a namespace callable are treated as potentially empty and therefore as possible
 zero-argument introspection calls.
+Imports redirected by ``global`` or ``nonlocal`` declarations are projected as
+conditional candidates into the owning scope so a call outside the importing
+function cannot escape the audit. Calls that resolve to builtin ``eval`` or
+``exec`` through direct names, imports, or aliases fail closed when their
+effective lexical namespaces contain active authority imports.
 Class bodies follow Python's source-ordered name fallback: a reference before a
 later class-local binding still resolves through the enclosing scope, while an
 active unconditional class binding shadows the outer name; deleting that class-local

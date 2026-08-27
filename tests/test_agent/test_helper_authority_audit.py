@@ -799,6 +799,63 @@ match_value = match_price()
     return root
 
 
+def _fixture_root_with_redirected_authority_imports(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+def initialize_global():
+    global global_price
+    from trellis.models.example import price_example as global_price
+
+
+initialize_global()
+global_value = global_price()
+
+
+def outer():
+    def local_price():
+        return 0.0
+
+    nonlocal_price = local_price
+
+    def initialize_nonlocal():
+        nonlocal nonlocal_price
+        from trellis.models.example import price_example as nonlocal_price
+
+    initialize_nonlocal()
+    return nonlocal_price()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_dynamic_code_authority_use(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+evaluated = eval("price_example()")
+executed = exec("price_example()")
+runner = eval
+aliased = runner("price_example()")
+
+
+def safe_eval(source):
+    return None
+
+
+eval = safe_eval
+safe = eval("price_example()")
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1602,6 +1659,70 @@ def test_audit_treats_control_flow_headers_as_unconditional_rebindings(tmp_path)
     assert report.adapter_calls == ()
     assert report.adapter_indirect_authority_uses == ()
     assert report.has_adapter_authority is False
+
+
+def test_audit_propagates_global_and_nonlocal_authority_imports(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_redirected_authority_imports(tmp_path)
+    )
+
+    assert [
+        (item.line, item.local_name, item.module, item.symbol)
+        for item in report.adapter_calls
+    ] == [
+        (
+            7,
+            "global_price",
+            "trellis.models.example",
+            "price_example",
+        ),
+        (
+            21,
+            "nonlocal_price",
+            "trellis.models.example",
+            "price_example",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_fails_closed_on_dynamic_code_with_active_authority(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_dynamic_code_authority_use(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            3,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_code_eval",
+        ),
+        (
+            4,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_code_exec",
+        ),
+        (
+            6,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_code_eval",
+        ),
+    ]
+    assert report.has_adapter_authority is True
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):

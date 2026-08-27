@@ -831,6 +831,10 @@ Assignment expressions inside comprehensions bind in the containing scope, and
 always-evaluated control-flow headers are processed before conditional branches.
 Starred namespace-call expansions are treated as potentially empty, so they
 cannot bypass the authority check.
+Imports redirected through ``global`` or ``nonlocal`` remain visible to the
+check in their owning scope. Dynamic ``eval`` or ``exec`` calls also fail closed
+when their effective namespace contains active authority, even when the builtin
+is reached through an alias.
 An early class-body reference likewise continues to use an enclosing import
 until a later class-local replacement is active,
 and resumes that lookup if the class-local name is deleted. An annotation
