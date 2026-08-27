@@ -91,6 +91,7 @@ class _BindingEvent:
     conditional: bool
     is_import: bool
     is_delete: bool
+    is_redirected_import: bool = False
     value: ast.expr | None = None
     value_from_parent: bool = False
 
@@ -548,6 +549,7 @@ def _scan_indirect_authority_uses(
     uses: list[AdapterIndirectAuthorityUse] = []
     for path in sorted(adapter_root.glob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        current_module = f"{_ADAPTER_PACKAGE}.{path.stem}"
         scope_by_node = _index_import_scopes(
             tree,
             package=_ADAPTER_PACKAGE,
@@ -626,6 +628,7 @@ def _scan_indirect_authority_uses(
             namespace_kinds = _dynamic_namespace_call_kinds(
                 node,
                 scope=execution_scope,
+                current_module=current_module,
             )
             if not namespace_kinds:
                 continue
@@ -972,19 +975,55 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         )
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        self._visit_function_definition_expressions(node)
         self.local_names.add(node.name)
         self._record_shadow(local_name=node.name, node=node)
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        self._visit_function_definition_expressions(node)
         self.local_names.add(node.name)
         self._record_shadow(local_name=node.name, node=node)
 
+    def _visit_function_definition_expressions(
+        self,
+        node: ast.FunctionDef | ast.AsyncFunctionDef,
+    ) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        self._visit_argument_expressions(node.args)
+        if node.returns is not None:
+            self.visit(node.returns)
+
     def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        for decorator in node.decorator_list:
+            self.visit(decorator)
+        for base in node.bases:
+            self.visit(base)
+        for keyword in node.keywords:
+            self.visit(keyword)
         self.local_names.add(node.name)
         self._record_shadow(local_name=node.name, node=node)
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
-        return
+        self._visit_argument_expressions(node.args)
+
+    def _visit_argument_expressions(self, arguments: ast.arguments) -> None:
+        for argument in (
+            *arguments.posonlyargs,
+            *arguments.args,
+            *arguments.kwonlyargs,
+        ):
+            if argument.annotation is not None:
+                self.visit(argument.annotation)
+        if arguments.vararg and arguments.vararg.annotation is not None:
+            self.visit(arguments.vararg.annotation)
+        if arguments.kwarg and arguments.kwarg.annotation is not None:
+            self.visit(arguments.kwarg.annotation)
+        for default in arguments.defaults:
+            self.visit(default)
+        for default in arguments.kw_defaults:
+            if default is not None:
+                self.visit(default)
 
     def visit_ListComp(self, node: ast.ListComp) -> None:
         self._visit_comprehension_bindings(node, (node.elt,))
@@ -1173,12 +1212,13 @@ def _propagate_redirected_imports_for_name(
     existing = bindings.get(local_name, ())
     propagated = tuple(
         _BindingEvent(
-            position=event.position,
+            position=scope.definition_position,
             module=event.module,
             symbol=event.symbol,
             conditional=True,
             is_import=True,
             is_delete=False,
+            is_redirected_import=True,
         )
         for event in scope.bindings.get(local_name, ())
         if event.is_import
@@ -1600,7 +1640,11 @@ def _active_binding_events(
     return (latest_unconditional,) + tuple(
         event
         for event in eligible
-        if event.conditional and event.position > latest_unconditional.position
+        if event.conditional
+        and (
+            event.position > latest_unconditional.position
+            or event.is_redirected_import
+        )
     )
 
 
@@ -1618,10 +1662,16 @@ def _possible_deferred_binding_events(
         for event in binding_events
         if event.position > possible_since
     )
-    unique: dict[tuple[bool, bool, str, str], _BindingEvent] = {}
+    unique: dict[tuple[bool, bool, bool, str, str], _BindingEvent] = {}
     for event in candidates:
         unique.setdefault(
-            (event.is_import, event.is_delete, event.module, event.symbol),
+            (
+                event.is_import,
+                event.is_delete,
+                event.is_redirected_import,
+                event.module,
+                event.symbol,
+            ),
             event,
         )
     return tuple(unique.values())
@@ -1764,10 +1814,24 @@ def _dynamic_namespace_call_kinds(
     node: ast.AST,
     *,
     scope: _ImportScope,
+    current_module: str,
 ) -> tuple[str, ...]:
-    """Return namespaces exposed by a zero-argument introspection call."""
+    """Return namespaces exposed by a supported introspection call."""
     if not isinstance(node, ast.Call):
         return ()
+    if (
+        len(node.args) == 1
+        and not isinstance(node.args[0], ast.Starred)
+        and not node.keywords
+        and _resolve_vars_callable(node.func, scope=scope)
+        and _is_current_module_reference(
+            node.args[0],
+            scope=scope,
+            current_module=current_module,
+            seen=frozenset(),
+        )
+    ):
+        return ("global",)
     if any(not isinstance(argument, ast.Starred) for argument in node.args):
         return ()
     if any(keyword.arg is not None for keyword in node.keywords):
@@ -1777,6 +1841,181 @@ def _dynamic_namespace_call_kinds(
         scope=scope,
         seen=frozenset(),
     )
+
+
+def _resolve_vars_callable(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+) -> tuple[str, ...]:
+    """Resolve builtin ``vars`` through imports and simple aliases."""
+    return _resolve_builtin_callable(
+        reference,
+        scope=scope,
+        seen=frozenset(),
+        builtin_kind_resolver=_builtin_vars_kind,
+        imported_kind_resolver=_imported_vars_kind,
+    )
+
+
+def _is_current_module_reference(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+    current_module: str,
+    seen: frozenset[tuple[int, str, int]],
+) -> bool:
+    """Return whether an expression resolves to the executing adapter module."""
+    if isinstance(reference, ast.NamedExpr):
+        return _is_current_module_reference(
+            reference.value,
+            scope=scope,
+            current_module=current_module,
+            seen=seen,
+        )
+
+    for _, module, symbol in _resolve_imported_references(
+        reference,
+        scope=scope,
+    ):
+        imported_name = module if not symbol else f"{module}.{symbol}"
+        if imported_name == current_module:
+            return True
+
+    if isinstance(reference, ast.Subscript):
+        return _is_sys_modules_reference(reference.value, scope=scope) and (
+            _is_current_module_key(reference.slice, current_module=current_module)
+        )
+    if (
+        isinstance(reference, ast.Call)
+        and isinstance(reference.func, ast.Attribute)
+        and reference.func.attr == "get"
+        and len(reference.args) == 1
+        and not reference.keywords
+    ):
+        return _is_sys_modules_reference(
+            reference.func.value,
+            scope=scope,
+        ) and _is_current_module_key(
+            reference.args[0],
+            current_module=current_module,
+        )
+    if not isinstance(reference, ast.Name):
+        return False
+    return _current_module_alias_name(
+        reference.id,
+        scope=scope,
+        reference=reference,
+        current_module=current_module,
+        seen=seen,
+    )
+
+
+def _is_sys_modules_reference(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+) -> bool:
+    return any(
+        module == "sys" and symbol == "modules"
+        for _, module, symbol in _resolve_imported_references(
+            reference,
+            scope=scope,
+        )
+    )
+
+
+def _is_current_module_key(reference: ast.expr, *, current_module: str) -> bool:
+    return (
+        isinstance(reference, ast.Name) and reference.id == "__name__"
+    ) or (
+        isinstance(reference, ast.Constant)
+        and reference.value == current_module
+    )
+
+
+def _current_module_alias_name(
+    local_name: str,
+    *,
+    scope: _ImportScope,
+    reference: ast.expr,
+    current_module: str,
+    seen: frozenset[tuple[int, str, int]],
+) -> bool:
+    """Resolve a value alias using the same lexical rules as callable aliases."""
+    reference_position = _source_position(reference)
+    possible_since: tuple[int, int, int] | None = None
+    current: _ImportScope | None = scope
+    while current is not None:
+        seen_key = (id(current), local_name, id(reference))
+        if seen_key in seen:
+            return False
+        next_seen = seen | {seen_key}
+        is_global = local_name in current.global_names
+        is_nonlocal = local_name in current.nonlocal_names
+        binding_events = current.bindings.get(local_name, ())
+        active_events: tuple[_BindingEvent, ...] = ()
+        if binding_events:
+            if possible_since is None:
+                active_events = _active_binding_events(
+                    binding_events,
+                    reference_position=reference_position,
+                )
+            else:
+                active_events = _possible_dynamic_binding_events(
+                    binding_events,
+                    possible_since=possible_since,
+                )
+            for event in active_events:
+                if event.is_delete or event.value is None:
+                    continue
+                value_scope = current
+                if event.value_from_parent and current.parent is not None:
+                    value_scope = current.parent
+                if _is_current_module_reference(
+                    event.value,
+                    scope=value_scope,
+                    current_module=current_module,
+                    seen=next_seen,
+                ):
+                    return True
+
+        if is_global or is_nonlocal:
+            if possible_since is None:
+                active_at_redirect = active_events
+            else:
+                active_at_redirect = _active_binding_events(
+                    binding_events,
+                    reference_position=possible_since,
+                )
+            if any(not event.conditional for event in active_at_redirect):
+                return False
+            parent = _module_scope(current) if is_global else current.parent
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+            possible_since = current.definition_position
+            current = parent
+            continue
+
+        if local_name in current.local_names:
+            source_ordered_fallback = current.kind in {"class", "module"}
+            if not source_ordered_fallback or _class_binding_blocks_parent(
+                active_events
+            ):
+                return False
+        parent = current.parent
+        if current.kind in {
+            "function",
+            "lambda",
+            "comprehension",
+            "generator",
+        }:
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+        if current.kind in {"function", "lambda", "generator"}:
+            possible_since = current.definition_position
+        current = parent
+    return False
 
 
 def _first_class_namespace_argument_kinds(
@@ -2114,6 +2353,18 @@ def _imported_dynamic_namespace_kind(
     if module != "builtins":
         return None
     return _builtin_dynamic_namespace_kind(symbol)
+
+
+def _builtin_vars_kind(local_name: str) -> str | None:
+    if local_name == "vars":
+        return local_name
+    return None
+
+
+def _imported_vars_kind(module: str, symbol: str) -> str | None:
+    if module == "builtins" and symbol == "vars":
+        return symbol
+    return None
 
 
 def _builtin_dynamic_code_kind(local_name: str) -> str | None:

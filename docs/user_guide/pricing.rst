@@ -832,13 +832,16 @@ always-evaluated control-flow headers are processed before conditional branches.
 Starred namespace-call expansions are treated as potentially empty, so they
 cannot bypass the authority check.
 Imports redirected through ``global`` or ``nonlocal`` remain visible to the
-check in their owning scope. Dynamic ``eval`` or ``exec`` calls also fail closed
-when their effective namespace contains active authority, even when the builtin
-is reached through an alias.
+check in their owning scope across later rebindings. Rebindings in defaults,
+decorators, bases, annotations, and lambda defaults are applied when their
+definition executes. Dynamic ``eval`` or ``exec`` calls also fail closed when
+their effective namespace contains active authority, even when the builtin is
+reached through an alias.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
 ``globals``, ``locals``, or ``vars`` as a first-class argument also preserves
-the namespace's authority exposure at the call site.
+the namespace's authority exposure at the call site. Calling ``vars()`` on the
+current adapter module exposes the same authority as ``globals()``.
 An early class-body reference likewise continues to use an enclosing import
 until a later class-local replacement is active,
 and resumes that lookup if the class-local name is deleted. An annotation

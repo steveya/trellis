@@ -831,6 +831,38 @@ def outer():
     return root
 
 
+def _fixture_root_with_rebound_redirected_authority_imports(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+def local_price():
+    return 0.0
+
+def initialize_global():
+    global global_price
+    from trellis.models.example import price_example as global_price
+
+global_price = local_price
+initialize_global()
+global_value = global_price()
+
+def outer():
+    nonlocal_price = local_price
+
+    def initialize_nonlocal():
+        nonlocal nonlocal_price
+        from trellis.models.example import price_example as nonlocal_price
+
+    nonlocal_price = local_price
+    initialize_nonlocal()
+    return nonlocal_price()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_dynamic_code_authority_use(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -886,6 +918,55 @@ run(globals)
 alias = globals
 run(alias)
 run(globals())
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_current_module_vars_lookup(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+import sys as runtime
+
+direct_namespace = vars(runtime.modules[__name__])
+direct_value = direct_namespace["price_example"]()
+current_module = runtime.modules[__name__]
+aliased_namespace = vars(current_module)
+aliased_value = aliased_namespace["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_definition_expression_rebindings(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+from trellis.models.example import price_example as decorated_price
+from trellis.models.example import price_example as lambda_price
+
+def local_price():
+    return 0.0
+
+def configured(value=(price_example := local_price)):
+    return value
+
+default_value = price_example()
+
+@(decorated_price := (lambda function: function))
+def decorated():
+    return 0.0
+
+decorated_value = decorated_price(decorated)
+runner = lambda value=(lambda_price := local_price): value
+lambda_value = lambda_price()
 """.lstrip(),
         encoding="utf-8",
     )
@@ -1724,6 +1805,33 @@ def test_audit_propagates_global_and_nonlocal_authority_imports(tmp_path):
     assert report.has_adapter_authority is True
 
 
+def test_audit_preserves_redirected_imports_after_owner_rebindings(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_rebound_redirected_authority_imports(tmp_path)
+    )
+
+    assert [
+        (item.line, item.local_name, item.module, item.symbol)
+        for item in report.adapter_calls
+    ] == [
+        (
+            10,
+            "global_price",
+            "trellis.models.example",
+            "price_example",
+        ),
+        (
+            21,
+            "nonlocal_price",
+            "trellis.models.example",
+            "price_example",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
 def test_audit_fails_closed_on_dynamic_code_with_active_authority(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1833,6 +1941,48 @@ def test_audit_fails_closed_on_first_class_namespace_arguments(tmp_path):
         ),
     ]
     assert report.has_adapter_authority is True
+
+
+def test_audit_fails_closed_for_vars_of_current_module(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_current_module_vars_lookup(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            4,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        ),
+        (
+            7,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_collects_definition_expression_rebindings(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_definition_expression_rebindings(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert report.adapter_indirect_authority_uses == ()
+    assert report.has_adapter_authority is False
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):

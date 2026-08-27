@@ -1179,14 +1179,19 @@ a namespace callable are treated as potentially empty and therefore as possible
 zero-argument introspection calls.
 Imports redirected by ``global`` or ``nonlocal`` declarations are projected as
 conditional candidates into the owning scope so a call outside the importing
-function cannot escape the audit. Calls that resolve to builtin ``eval`` or
-``exec`` through direct names, imports, or aliases fail closed when their
-effective lexical namespaces contain active authority imports.
+function cannot escape the audit, including after later owner-scope rebindings.
+Definition-time decorators, defaults, annotations, class bases, and lambda
+defaults contribute their enclosing-scope rebindings before the new definition
+is bound. Calls that resolve to builtin ``eval`` or ``exec`` through direct
+names, imports, or aliases fail closed when their effective lexical namespaces
+contain active authority imports.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins
 passed as first-class positional, keyword, or unpacked container arguments keep
-their global/local authority exposure at the call site.
+their global/local authority exposure at the call site. ``vars()`` of the
+current adapter module, including a statically resolvable module-object alias,
+is treated as global namespace exposure.
 Class bodies follow Python's source-ordered name fallback: a reference before a
 later class-local binding still resolves through the enclosing scope, while an
 active unconditional class binding shadows the outer name; deleting that class-local
