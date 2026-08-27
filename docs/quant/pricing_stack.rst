@@ -1156,6 +1156,10 @@ Redirected ``global`` and ``nonlocal`` imports remain conditional candidates in
 their owning scope. Dynamic ``eval`` or ``exec`` calls likewise fail closed when
 their effective namespace can expose active route authority, including when the
 builtin is reached through an alias.
+Dynamic builtin/importlib module loaders are rejected for authority-reaching or
+unresolved module names. Passing a namespace builtin or alias through an
+ordinary call argument likewise retains the active authority visible in that
+namespace.
 Class-body lookup falls through to an enclosing binding until a source-ordered
 class binding is active, matching Python's
 runtime name resolution, and deletion of that class binding restores the outer

@@ -556,6 +556,27 @@ def _scan_indirect_authority_uses(
             if not isinstance(node, ast.Call):
                 continue
             execution_scope = scope_by_node[id(node)]
+            dynamic_import_kinds = _dynamic_import_call_kinds(
+                node,
+                scope=execution_scope,
+            )
+            if dynamic_import_kinds:
+                module_name = _dynamic_import_module_name(node)
+                if _dynamic_import_can_reach_authority(
+                    module_name,
+                    authority_targets=authority_targets,
+                ):
+                    for dynamic_import_kind in dynamic_import_kinds:
+                        uses.append(
+                            AdapterIndirectAuthorityUse(
+                                path=path.relative_to(repo_root).as_posix(),
+                                line=int(node.lineno),
+                                local_name=dynamic_import_kind,
+                                module=module_name or "*",
+                                symbol="*",
+                                use_kind="dynamic_import",
+                            )
+                        )
             dynamic_code_kinds = _dynamic_code_call_kinds(
                 node,
                 scope=execution_scope,
@@ -576,6 +597,30 @@ def _scan_indirect_authority_uses(
                                 module=module,
                                 symbol=symbol,
                                 use_kind=f"dynamic_code_{dynamic_code_kind}",
+                            )
+                        )
+            first_class_namespace_kinds = _first_class_namespace_argument_kinds(
+                node,
+                scope=execution_scope,
+            )
+            if first_class_namespace_kinds:
+                exposed_imports = _effective_scope_authority_imports(
+                    execution_scope,
+                    reference=node,
+                    authority_targets=authority_targets,
+                )
+                for namespace_kind in first_class_namespace_kinds:
+                    for local_name, module, symbol in exposed_imports:
+                        uses.append(
+                            AdapterIndirectAuthorityUse(
+                                path=path.relative_to(repo_root).as_posix(),
+                                line=int(node.lineno),
+                                local_name=local_name,
+                                module=module,
+                                symbol=symbol,
+                                use_kind=(
+                                    f"first_class_{namespace_kind}_namespace"
+                                ),
                             )
                         )
             namespace_kinds = _dynamic_namespace_call_kinds(
@@ -1734,6 +1779,107 @@ def _dynamic_namespace_call_kinds(
     )
 
 
+def _first_class_namespace_argument_kinds(
+    node: ast.Call,
+    *,
+    scope: _ImportScope,
+) -> tuple[str, ...]:
+    """Return namespace builtins passed as first-class call arguments."""
+    arguments = (
+        *(argument.value if isinstance(argument, ast.Starred) else argument
+          for argument in node.args),
+        *(keyword.value for keyword in node.keywords),
+    )
+    kinds = {
+        kind
+        for argument in arguments
+        for kind in _namespace_argument_value_kinds(argument, scope=scope)
+    }
+    return tuple(sorted(kinds))
+
+
+def _namespace_argument_value_kinds(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+) -> tuple[str, ...]:
+    if isinstance(reference, (ast.Tuple, ast.List, ast.Set)):
+        candidates = tuple(reference.elts)
+    elif isinstance(reference, ast.Dict):
+        candidates = tuple(
+            candidate
+            for candidate in (*reference.keys, *reference.values)
+            if candidate is not None
+        )
+    else:
+        candidates = ()
+    if candidates:
+        return tuple(
+            sorted(
+                {
+                    kind
+                    for candidate in candidates
+                    for kind in _namespace_argument_value_kinds(
+                        candidate,
+                        scope=scope,
+                    )
+                }
+            )
+        )
+    return _resolve_dynamic_namespace_callable(
+        reference,
+        scope=scope,
+        seen=frozenset(),
+    )
+
+
+def _dynamic_import_call_kinds(
+    node: ast.Call,
+    *,
+    scope: _ImportScope,
+) -> tuple[str, ...]:
+    """Return dynamic module loaders reached by one call target."""
+    return _resolve_builtin_callable(
+        node.func,
+        scope=scope,
+        seen=frozenset(),
+        builtin_kind_resolver=_builtin_dynamic_import_kind,
+        imported_kind_resolver=_imported_dynamic_import_kind,
+    )
+
+
+def _dynamic_import_module_name(node: ast.Call) -> str | None:
+    candidate: ast.expr | None = None
+    if node.args and not isinstance(node.args[0], ast.Starred):
+        candidate = node.args[0]
+    else:
+        candidate = next(
+            (
+                keyword.value
+                for keyword in node.keywords
+                if keyword.arg == "name"
+            ),
+            None,
+        )
+    if isinstance(candidate, ast.Constant) and isinstance(candidate.value, str):
+        return candidate.value
+    return None
+
+
+def _dynamic_import_can_reach_authority(
+    module_name: str | None,
+    *,
+    authority_targets: set[tuple[str, str]],
+) -> bool:
+    if module_name is None or module_name.startswith("."):
+        return True
+    return _is_authority_namespace(module_name, authority_targets) or any(
+        module_name == target_module
+        or module_name.startswith(f"{target_module}.")
+        for target_module, _ in authority_targets
+    )
+
+
 def _resolve_dynamic_namespace_callable(
     reference: ast.expr,
     *,
@@ -1983,6 +2129,23 @@ def _imported_dynamic_code_kind(
     if module != "builtins":
         return None
     return _builtin_dynamic_code_kind(symbol)
+
+
+def _builtin_dynamic_import_kind(local_name: str) -> str | None:
+    if local_name == "__import__":
+        return local_name
+    return None
+
+
+def _imported_dynamic_import_kind(
+    module: str,
+    symbol: str,
+) -> str | None:
+    if module == "builtins" and symbol == "__import__":
+        return symbol
+    if module == "importlib" and symbol == "import_module":
+        return symbol
+    return None
 
 
 def _source_position(node: ast.AST) -> tuple[int, int, int]:

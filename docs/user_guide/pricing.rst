@@ -835,6 +835,10 @@ Imports redirected through ``global`` or ``nonlocal`` remain visible to the
 check in their owning scope. Dynamic ``eval`` or ``exec`` calls also fail closed
 when their effective namespace contains active authority, even when the builtin
 is reached through an alias.
+Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
+authority namespace through a literal or unresolved module name. Passing
+``globals``, ``locals``, or ``vars`` as a first-class argument also preserves
+the namespace's authority exposure at the call site.
 An early class-body reference likewise continues to use an enclosing import
 until a later class-local replacement is active,
 and resumes that lookup if the class-local name is deleted. An annotation

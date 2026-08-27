@@ -1182,6 +1182,11 @@ conditional candidates into the owning scope so a call outside the importing
 function cannot escape the audit. Calls that resolve to builtin ``eval`` or
 ``exec`` through direct names, imports, or aliases fail closed when their
 effective lexical namespaces contain active authority imports.
+Dynamic loaders reached through builtin ``__import__`` or
+``importlib.import_module`` aliases fail closed when a literal module reaches
+authority or the module name cannot be resolved statically. Namespace builtins
+passed as first-class positional, keyword, or unpacked container arguments keep
+their global/local authority exposure at the call site.
 Class bodies follow Python's source-ordered name fallback: a reference before a
 later class-local binding still resolves through the enclosing scope, while an
 active unconditional class binding shadows the outer name; deleting that class-local

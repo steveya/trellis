@@ -856,6 +856,42 @@ safe = eval("price_example()")
     return root
 
 
+def _fixture_root_with_dynamic_authority_imports(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+loaded = __import__("trellis.models.example", fromlist=["price_example"])
+builtin_value = loaded.price_example()
+
+import importlib
+module_value = importlib.import_module("trellis.models.example").price_example()
+loader = importlib.import_module
+alias_value = loader("trellis.models.example").price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_first_class_namespace_arguments(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+def run(lookup):
+    return lookup()["price_example"]()
+run(globals)
+alias = globals
+run(alias)
+run(globals())
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1720,6 +1756,80 @@ def test_audit_fails_closed_on_dynamic_code_with_active_authority(tmp_path):
             "trellis.models.example",
             "price_example",
             "dynamic_code_eval",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_fails_closed_on_dynamic_authority_imports(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_dynamic_authority_imports(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            1,
+            "__import__",
+            "trellis.models.example",
+            "*",
+            "dynamic_import",
+        ),
+        (
+            5,
+            "import_module",
+            "trellis.models.example",
+            "*",
+            "dynamic_import",
+        ),
+        (
+            7,
+            "import_module",
+            "trellis.models.example",
+            "*",
+            "dynamic_import",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_fails_closed_on_first_class_namespace_arguments(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_first_class_namespace_arguments(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            4,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "first_class_global_namespace",
+        ),
+        (
+            6,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "first_class_global_namespace",
+        ),
+        (
+            7,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
         ),
     ]
     assert report.has_adapter_authority is True

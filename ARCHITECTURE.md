@@ -243,7 +243,10 @@ The service-host path is:
   treated as potentially empty. Imports redirected through ``global`` or
   ``nonlocal`` conservatively inform the owning scope, while ``eval`` or
   ``exec`` reached through a builtin alias fails closed when its effective
-  namespace can contain active authority. A class body falls through to an
+  namespace can contain active authority. Dynamic ``__import__`` and
+  ``importlib.import_module`` loaders fail closed for authority-reaching or
+  unresolved module names, and passing a namespace builtin as a first-class
+  argument preserves its authority exposure. A class body falls through to an
   outer binding until its own
   source-ordered binding is active, and resumes that fallback after deleting
   the class-local name. Deferred nested functions retain every
