@@ -1148,6 +1148,10 @@ import that has already been replaced before the namespace is exposed, and a
 Named expressions behind Boolean short-circuiting or conditional-expression
 branches remain conditional bindings, while namespace-callable aliases flowing
 out of those expressions retain every possible namespace provenance.
+Comprehension assignment expressions are attributed to their containing scope,
+and always-evaluated control-flow headers are recorded before conditional
+branches. Starred namespace-call expansions are conservatively treated as
+possibly empty.
 Class-body lookup falls through to an enclosing binding until a source-ordered
 class binding is active, matching Python's
 runtime name resolution, and deletion of that class binding restores the outer

@@ -763,16 +763,26 @@ class _ScopeBindingCollector(ast.NodeVisitor):
             self.local_names.add(local_name)
 
     def visit_If(self, node: ast.If) -> None:
-        self._visit_conditional(node)
+        self.visit(node.test)
+        self._visit_statements_conditionally(node.body)
+        self._visit_statements_conditionally(node.orelse)
 
     def visit_For(self, node: ast.For) -> None:
-        self._visit_conditional(node)
+        self._visit_for(node)
 
     def visit_AsyncFor(self, node: ast.AsyncFor) -> None:
-        self._visit_conditional(node)
+        self._visit_for(node)
+
+    def _visit_for(self, node: ast.For | ast.AsyncFor) -> None:
+        self.visit(node.iter)
+        self._visit_conditionally(node.target)
+        self._visit_statements_conditionally(node.body)
+        self._visit_statements_conditionally(node.orelse)
 
     def visit_While(self, node: ast.While) -> None:
-        self._visit_conditional(node)
+        self.visit(node.test)
+        self._visit_statements_conditionally(node.body)
+        self._visit_statements_conditionally(node.orelse)
 
     def visit_Try(self, node: ast.Try) -> None:
         self._visit_conditional(node)
@@ -781,13 +791,26 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         self._visit_conditional(node)
 
     def visit_With(self, node: ast.With) -> None:
-        self._visit_conditional(node)
+        self._visit_with(node)
 
     def visit_AsyncWith(self, node: ast.AsyncWith) -> None:
-        self._visit_conditional(node)
+        self._visit_with(node)
+
+    def _visit_with(self, node: ast.With | ast.AsyncWith) -> None:
+        first, *remaining = node.items
+        self.visit(first.context_expr)
+        if first.optional_vars is not None:
+            self._visit_conditionally(first.optional_vars)
+        for item in remaining:
+            self._visit_conditionally(item.context_expr)
+            if item.optional_vars is not None:
+                self._visit_conditionally(item.optional_vars)
+        self._visit_statements_conditionally(node.body)
 
     def visit_Match(self, node: ast.Match) -> None:
-        self._visit_conditional(node)
+        self.visit(node.subject)
+        for case in node.cases:
+            self._visit_conditionally(case)
 
     def visit_BoolOp(self, node: ast.BoolOp) -> None:
         first, *remaining = node.values
@@ -816,6 +839,10 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         self._conditional_depth += 1
         self.visit(node)
         self._conditional_depth -= 1
+
+    def _visit_statements_conditionally(self, statements: list[ast.stmt]) -> None:
+        for statement in statements:
+            self._visit_conditionally(statement)
 
     def _record_import(
         self,
@@ -893,16 +920,33 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         return
 
     def visit_ListComp(self, node: ast.ListComp) -> None:
-        return
+        self._visit_comprehension_bindings(node, (node.elt,))
 
     def visit_SetComp(self, node: ast.SetComp) -> None:
-        return
+        self._visit_comprehension_bindings(node, (node.elt,))
 
     def visit_DictComp(self, node: ast.DictComp) -> None:
-        return
+        self._visit_comprehension_bindings(node, (node.key, node.value))
 
     def visit_GeneratorExp(self, node: ast.GeneratorExp) -> None:
-        return
+        self._visit_comprehension_bindings(node, (node.elt,))
+
+    def _visit_comprehension_bindings(
+        self,
+        node: ast.ListComp | ast.SetComp | ast.DictComp | ast.GeneratorExp,
+        result_nodes: tuple[ast.AST, ...],
+    ) -> None:
+        """Collect walrus bindings that escape a comprehension's child scope."""
+        first, *remaining = node.generators
+        self.visit(first.iter)
+        for condition in first.ifs:
+            self._visit_conditionally(condition)
+        for generator in remaining:
+            self._visit_conditionally(generator.iter)
+            for condition in generator.ifs:
+                self._visit_conditionally(condition)
+        for result_node in result_nodes:
+            self._visit_conditionally(result_node)
 
     def visit_Global(self, node: ast.Global) -> None:
         self.global_names.update(node.names)
@@ -1561,7 +1605,11 @@ def _dynamic_namespace_call_kinds(
     scope: _ImportScope,
 ) -> tuple[str, ...]:
     """Return namespaces exposed by a zero-argument introspection call."""
-    if not isinstance(node, ast.Call) or node.args or node.keywords:
+    if not isinstance(node, ast.Call):
+        return ()
+    if any(not isinstance(argument, ast.Starred) for argument in node.args):
+        return ()
+    if any(keyword.arg is not None for keyword in node.keywords):
         return ()
     return _resolve_dynamic_namespace_callable(
         node.func,

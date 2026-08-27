@@ -732,6 +732,73 @@ delegated = lookup()["price_example"]()
     return root
 
 
+def _fixture_root_with_comprehension_dynamic_namespace_alias(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+[lookup := globals for _ in (0,)]
+delegated = lookup()["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_starred_dynamic_namespace_calls(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+delegated_positional = globals(*())["price_example"]()
+delegated_keyword = globals(**{})["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_unconditional_control_flow_rebindings(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example as if_price
+from trellis.models.example import price_example as while_price
+from trellis.models.example import price_example as for_price
+from trellis.models.example import price_example as match_price
+
+
+def local_price():
+    return 0.0
+
+
+if (if_price := local_price):
+    pass
+if_value = if_price()
+
+while (while_price := local_price):
+    pass
+while_value = while_price()
+
+for _ in (for_price := ()):
+    pass
+for_value = for_price()
+
+match (match_price := local_price):
+    case _:
+        pass
+match_value = match_price()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1470,6 +1537,71 @@ def test_audit_resolves_conditional_dynamic_namespace_aliases(tmp_path):
         )
     ]
     assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_comprehension_dynamic_namespace_aliases(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_comprehension_dynamic_namespace_alias(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            4,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        )
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_treats_starred_namespace_calls_as_potentially_empty(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_starred_dynamic_namespace_calls(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            3,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        ),
+        (
+            4,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_treats_control_flow_headers_as_unconditional_rebindings(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_unconditional_control_flow_rebindings(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert report.adapter_indirect_authority_uses == ()
+    assert report.has_adapter_authority is False
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):

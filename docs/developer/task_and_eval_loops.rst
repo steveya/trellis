@@ -1172,6 +1172,11 @@ Named expressions in short-circuited Boolean operands or conditional-expression
 branches remain conditional binding candidates rather than guaranteed
 replacements. Namespace-callable aliases returned by conditional or Boolean
 expressions are resolved conservatively across every possible result.
+Named expressions in comprehension filters or results are attributed to the
+containing scope, while always-evaluated control-flow headers are processed
+before their conditional branches. Starred positional or keyword expansions on
+a namespace callable are treated as potentially empty and therefore as possible
+zero-argument introspection calls.
 Class bodies follow Python's source-ordered name fallback: a reference before a
 later class-local binding still resolves through the enclosing scope, while an
 active unconditional class binding shadows the outer name; deleting that class-local

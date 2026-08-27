@@ -236,8 +236,12 @@ The service-host path is:
   import does; an annotation without a value does not create a runtime
   replacement. Short-circuited or branch-local named expressions remain
   conditional binding candidates, and namespace-callable provenance follows
-  conditional and Boolean expression results. A class body falls through to an
-  outer binding until its own
+  conditional and Boolean expression results. Named expressions inside
+  comprehension filters or results bind in the containing scope and remain
+  conditional candidates. Always-evaluated control-flow headers are recorded
+  before conditional branches, and starred namespace-call expansions are
+  treated as potentially empty. A class body falls through to an outer binding
+  until its own
   source-ordered binding is active, and resumes that fallback after deleting
   the class-local name. Deferred nested functions retain every
   enclosing import that can be active from their creation onward. An unrelated

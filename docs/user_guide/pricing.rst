@@ -827,6 +827,10 @@ namespace call is no longer classified as exposed authority.
 Short-circuited or branch-local named expressions remain conditional rather
 than guaranteed replacements, and namespace-callable aliases returned by
 conditional or Boolean expressions retain every possible namespace result.
+Assignment expressions inside comprehensions bind in the containing scope, and
+always-evaluated control-flow headers are processed before conditional branches.
+Starred namespace-call expansions are treated as potentially empty, so they
+cannot bypass the authority check.
 An early class-body reference likewise continues to use an enclosing import
 until a later class-local replacement is active,
 and resumes that lookup if the class-local name is deleted. An annotation
