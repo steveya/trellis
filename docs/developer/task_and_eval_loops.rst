@@ -1176,15 +1176,17 @@ Named expressions in comprehension filters or results are attributed to the
 containing scope, while always-evaluated control-flow headers are processed
 before their conditional branches. Starred positional or keyword expansions on
 a namespace callable are treated as potentially empty and therefore as possible
-zero-argument introspection calls.
+zero-argument introspection calls. Fixed prefix and suffix targets around a
+starred tuple/list assignment retain their aligned namespace values.
 Imports redirected by ``global`` or ``nonlocal`` declarations are projected as
 conditional candidates into the owning scope so a call outside the importing
 function cannot escape the audit, including after later owner-scope rebindings.
 Definition-time decorators, defaults, annotations, class bases, and lambda
 defaults contribute their enclosing-scope rebindings before the new definition
 is bound. Calls that resolve to builtin ``eval`` or ``exec`` through direct
-names, imports, or aliases fail closed when their effective lexical namespaces
-contain active authority imports.
+names, imports, or aliases always fail closed: their effective lexical
+namespaces may contain active authority, and their dynamic source can import
+authority independently.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins

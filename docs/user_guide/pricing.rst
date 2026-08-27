@@ -830,13 +830,14 @@ conditional or Boolean expressions retain every possible namespace result.
 Assignment expressions inside comprehensions bind in the containing scope, and
 always-evaluated control-flow headers are processed before conditional branches.
 Starred namespace-call expansions are treated as potentially empty, so they
-cannot bypass the authority check.
+cannot bypass the authority check. Fixed prefix and suffix values in starred
+tuple/list assignment remain associated with their namespace aliases.
 Imports redirected through ``global`` or ``nonlocal`` remain visible to the
 check in their owning scope across later rebindings. Rebindings in defaults,
 decorators, bases, annotations, and lambda defaults are applied when their
-definition executes. Dynamic ``eval`` or ``exec`` calls also fail closed when
-their effective namespace contains active authority, even when the builtin is
-reached through an alias.
+definition executes. Dynamic ``eval`` or ``exec`` calls always fail closed,
+even when the builtin is reached through an alias, because either their scope
+or the dynamic source itself can expose authority.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
 ``globals``, ``locals``, or ``vars`` as a first-class argument also preserves

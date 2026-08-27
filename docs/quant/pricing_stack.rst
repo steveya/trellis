@@ -1151,13 +1151,14 @@ out of those expressions retain every possible namespace provenance.
 Comprehension assignment expressions are attributed to their containing scope,
 and always-evaluated control-flow headers are recorded before conditional
 branches. Starred namespace-call expansions are conservatively treated as
-possibly empty.
+possibly empty, while statically aligned prefix and suffix targets around a
+starred assignment retain their namespace provenance.
 Redirected ``global`` and ``nonlocal`` imports remain conditional candidates in
 their owning scope across later source-ordered rebindings. Rebindings evaluated
 while defining functions, classes, or lambdas update that owning scope before
-the definition is bound. Dynamic ``eval`` or ``exec`` calls likewise fail closed
-when their effective namespace can expose active route authority, including when
-the builtin is reached through an alias.
+the definition is bound. Dynamic ``eval`` or ``exec`` calls always fail closed,
+including when the builtin is reached through an alias, because their effective
+namespace or dynamic source can expose route authority.
 Dynamic builtin/importlib module loaders are rejected for authority-reaching or
 unresolved module names. Passing a namespace builtin or alias through an
 ordinary call argument likewise retains the active authority visible in that

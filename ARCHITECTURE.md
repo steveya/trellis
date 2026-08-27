@@ -240,12 +240,15 @@ The service-host path is:
   comprehension filters or results bind in the containing scope and remain
   conditional candidates. Always-evaluated control-flow headers are recorded
   before conditional branches, and starred namespace-call expansions are
-  treated as potentially empty. Imports redirected through ``global`` or
+  treated as potentially empty. Fixed prefix and suffix targets around a
+  starred tuple/list assignment retain their statically aligned values. Imports
+  redirected through ``global`` or
   ``nonlocal`` conservatively inform the owning scope even after a later
   source-ordered owner rebinding. Definition-time defaults, decorators, bases,
   and annotations update that owner scope before its new definition is bound.
-  ``eval`` or ``exec`` reached through a builtin alias fails closed when its
-  effective namespace can contain active authority. Dynamic ``__import__`` and
+  ``eval`` or ``exec`` reached through a builtin alias always fails closed:
+  effective namespaces can expose active authority, and dynamic source can
+  import it independently. Dynamic ``__import__`` and
   ``importlib.import_module`` loaders fail closed for authority-reaching or
   unresolved module names, and passing a namespace builtin as a first-class
   argument preserves its authority exposure. ``vars()`` applied to the current

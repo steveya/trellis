@@ -596,6 +596,24 @@ delegated = lookup()["price_example"]()
     return root
 
 
+def _fixture_root_with_starred_unpacked_namespace_lookup(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+
+prefix_lookup, *_ = (globals,)
+prefix_value = prefix_lookup()["price_example"]()
+*_, suffix_lookup = (globals,)
+suffix_value = suffix_lookup()["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_shadowed_dynamic_namespace_imports(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -882,6 +900,19 @@ def safe_eval(source):
 
 eval = safe_eval
 safe = eval("price_example()")
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_dynamic_code_authority_import(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+evaluated = eval("__import__('trellis.models.example')")
+executed = exec("from trellis.models.example import price_example")
 """.lstrip(),
         encoding="utf-8",
     )
@@ -1597,6 +1628,36 @@ def test_audit_resolves_unpacked_dynamic_namespace_aliases(tmp_path):
     assert report.has_adapter_authority is True
 
 
+def test_audit_resolves_starred_unpacked_dynamic_namespace_aliases(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_starred_unpacked_namespace_lookup(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            5,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        ),
+        (
+            7,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
 def test_audit_filters_dynamic_namespaces_to_active_imports(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1865,6 +1926,24 @@ def test_audit_fails_closed_on_dynamic_code_with_active_authority(tmp_path):
             "price_example",
             "dynamic_code_eval",
         ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_fails_closed_on_authority_imported_by_dynamic_code(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_dynamic_code_authority_import(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (1, "eval", "*", "*", "dynamic_code_eval"),
+        (2, "exec", "*", "*", "dynamic_code_exec"),
     ]
     assert report.has_adapter_authority is True
 

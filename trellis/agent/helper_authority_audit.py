@@ -590,6 +590,17 @@ def _scan_indirect_authority_uses(
                     authority_targets=authority_targets,
                 )
                 for dynamic_code_kind in dynamic_code_kinds:
+                    if not exposed_imports:
+                        uses.append(
+                            AdapterIndirectAuthorityUse(
+                                path=path.relative_to(repo_root).as_posix(),
+                                line=int(node.lineno),
+                                local_name=dynamic_code_kind,
+                                module="*",
+                                symbol="*",
+                                use_kind=f"dynamic_code_{dynamic_code_kind}",
+                            )
+                        )
                     for local_name, module, symbol in exposed_imports:
                         uses.append(
                             AdapterIndirectAuthorityUse(
@@ -1299,6 +1310,50 @@ def _assignment_name_values(
         value,
         (ast.Tuple, ast.List),
     ):
+        starred = tuple(
+            (index, element)
+            for index, element in enumerate(target.elts)
+            if isinstance(element, ast.Starred)
+        )
+        if len(starred) == 1:
+            starred_index, starred_target = starred[0]
+            suffix_count = len(target.elts) - starred_index - 1
+            fixed_count = len(target.elts) - 1
+            if len(value.elts) >= fixed_count:
+                prefix = tuple(
+                    binding
+                    for child_target, child_value in zip(
+                        target.elts[:starred_index],
+                        value.elts[:starred_index],
+                        strict=True,
+                    )
+                    for binding in _assignment_name_values(
+                        child_target,
+                        child_value,
+                    )
+                )
+                suffix_values = (
+                    value.elts[-suffix_count:] if suffix_count else ()
+                )
+                suffix = tuple(
+                    binding
+                    for child_target, child_value in zip(
+                        target.elts[starred_index + 1 :],
+                        suffix_values,
+                        strict=True,
+                    )
+                    for binding in _assignment_name_values(
+                        child_target,
+                        child_value,
+                    )
+                )
+                starred_bindings = tuple(
+                    (local_name, None)
+                    for local_name in sorted(
+                        _stored_names(starred_target.value)
+                    )
+                )
+                return (*prefix, *starred_bindings, *suffix)
         if len(target.elts) == len(value.elts):
             return tuple(
                 binding
