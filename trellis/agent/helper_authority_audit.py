@@ -789,9 +789,32 @@ class _ScopeBindingCollector(ast.NodeVisitor):
     def visit_Match(self, node: ast.Match) -> None:
         self._visit_conditional(node)
 
+    def visit_BoolOp(self, node: ast.BoolOp) -> None:
+        first, *remaining = node.values
+        self.visit(first)
+        for value in remaining:
+            self._visit_conditionally(value)
+
+    def visit_IfExp(self, node: ast.IfExp) -> None:
+        self.visit(node.test)
+        self._visit_conditionally(node.body)
+        self._visit_conditionally(node.orelse)
+
+    def visit_Compare(self, node: ast.Compare) -> None:
+        self.visit(node.left)
+        first, *remaining = node.comparators
+        self.visit(first)
+        for comparator in remaining:
+            self._visit_conditionally(comparator)
+
     def _visit_conditional(self, node: ast.AST) -> None:
         self._conditional_depth += 1
         self.generic_visit(node)
+        self._conditional_depth -= 1
+
+    def _visit_conditionally(self, node: ast.AST) -> None:
+        self._conditional_depth += 1
+        self.visit(node)
         self._conditional_depth -= 1
 
     def _record_import(
@@ -1560,6 +1583,29 @@ def _resolve_dynamic_namespace_callable(
             scope=scope,
             seen=seen,
         )
+    if isinstance(reference, ast.NamedExpr):
+        return _resolve_dynamic_namespace_callable(
+            reference.value,
+            scope=scope,
+            seen=seen,
+        )
+    if isinstance(reference, ast.IfExp):
+        candidates = (reference.body, reference.orelse)
+    elif isinstance(reference, ast.BoolOp):
+        candidates = tuple(reference.values)
+    else:
+        candidates = ()
+    if candidates:
+        kinds = {
+            kind
+            for candidate in candidates
+            for kind in _resolve_dynamic_namespace_callable(
+                candidate,
+                scope=scope,
+                seen=seen,
+            )
+        }
+        return tuple(sorted(kinds))
 
     imported_kinds = {
         kind

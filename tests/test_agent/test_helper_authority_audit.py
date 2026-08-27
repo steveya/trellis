@@ -691,6 +691,47 @@ def evaluate(lookup=globals):
     return root
 
 
+def _fixture_root_with_short_circuited_named_expression(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+
+def local_price():
+    return 0.0
+
+
+False and (price_example := local_price)
+delegated = price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_conditional_dynamic_namespace_alias(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+
+def safe_lookup():
+    return {}
+
+
+enabled = True
+lookup = globals if enabled else safe_lookup
+delegated = lookup()["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def test_audit_preserves_required_route_and_binding_authority_drift(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -1383,6 +1424,52 @@ def test_audit_honors_rebinding_after_dynamic_namespace_parameter_defaults(tmp_p
     assert report.adapter_calls == ()
     assert report.adapter_indirect_authority_uses == ()
     assert report.has_adapter_authority is False
+
+
+def test_audit_keeps_imports_shadowed_only_by_short_circuited_named_expressions(
+    tmp_path,
+):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_short_circuited_named_expression(tmp_path)
+    )
+
+    assert [
+        (item.line, item.module, item.symbol, item.matches_required_authority)
+        for item in report.adapter_calls
+    ] == [
+        (
+            9,
+            "trellis.models.example",
+            "price_example",
+            True,
+        )
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_conditional_dynamic_namespace_aliases(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_conditional_dynamic_namespace_alias(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            10,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        )
+    ]
+    assert report.has_adapter_authority is True
 
 
 def test_helper_authority_human_report_surfaces_drift_and_adapter_authority(tmp_path):

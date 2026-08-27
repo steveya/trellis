@@ -824,6 +824,9 @@ tuple/list unpacking or a parameter default. ``locals()`` and ``vars()``
 follow the same rule for active
 authority imports in their current scope. An import replaced before the
 namespace call is no longer classified as exposed authority.
+Short-circuited or branch-local named expressions remain conditional rather
+than guaranteed replacements, and namespace-callable aliases returned by
+conditional or Boolean expressions retain every possible namespace result.
 An early class-body reference likewise continues to use an enclosing import
 until a later class-local replacement is active,
 and resumes that lookup if the class-local name is deleted. An annotation

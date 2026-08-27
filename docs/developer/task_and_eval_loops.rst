@@ -1168,6 +1168,10 @@ required authority in their executing lexical scope. Source-ordered replacement
 of an import before the namespace call removes that binding from the exposed
 authority set. Imports assigned through a ``global`` declaration are inspected
 as module-namespace bindings and are not misclassified as function locals.
+Named expressions in short-circuited Boolean operands or conditional-expression
+branches remain conditional binding candidates rather than guaranteed
+replacements. Namespace-callable aliases returned by conditional or Boolean
+expressions are resolved conservatively across every possible result.
 Class bodies follow Python's source-ordered name fallback: a reference before a
 later class-local binding still resolves through the enclosing scope, while an
 active unconditional class binding shadows the outer name; deleting that class-local

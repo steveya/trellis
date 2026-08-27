@@ -234,7 +234,10 @@ The service-host path is:
   nested same-name binding cannot rewrite an outer reference; later ordinary
   assignments or definitions supersede an import just as a later unconditional
   import does; an annotation without a value does not create a runtime
-  replacement. A class body falls through to an outer binding until its own
+  replacement. Short-circuited or branch-local named expressions remain
+  conditional binding candidates, and namespace-callable provenance follows
+  conditional and Boolean expression results. A class body falls through to an
+  outer binding until its own
   source-ordered binding is active, and resumes that fallback after deleting
   the class-local name. Deferred nested functions retain every
   enclosing import that can be active from their creation onward. An unrelated

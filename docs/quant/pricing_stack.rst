@@ -1145,6 +1145,9 @@ unpacking or a parameter default.
 the current lexical scope. The source-ordered binding timeline excludes an
 import that has already been replaced before the namespace is exposed, and a
 ``global`` import is attributed to the module namespace rather than locals.
+Named expressions behind Boolean short-circuiting or conditional-expression
+branches remain conditional bindings, while namespace-callable aliases flowing
+out of those expressions retain every possible namespace provenance.
 Class-body lookup falls through to an enclosing binding until a source-ordered
 class binding is active, matching Python's
 runtime name resolution, and deletion of that class binding restores the outer
