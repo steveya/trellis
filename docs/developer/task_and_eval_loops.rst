@@ -1191,18 +1191,20 @@ names, imports, or aliases always fail closed: their effective lexical
 namespaces may contain active authority, and their dynamic source can import
 authority independently. The common builtin resolver preserves provenance
 through statically resolvable tuple/list/dict selection, container aliases, and
-literal ``getattr(module, name)`` or ``module.__dict__[name]`` selection from
-supported builtin-bearing modules. An unresolved module-dictionary key retains
-every supported dangerous builtin that the module can expose.
+literal ``getattr(module, name)``, ``module.__dict__[name]``, or
+``vars(module)[name]`` selection from supported builtin-bearing modules. An
+unresolved module-mapping key retains every supported dangerous builtin that
+the module can expose.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins
 passed as first-class positional, keyword, or unpacked container arguments fail
 closed even when the caller exposes no authority: the receiving callable can
 use that namespace accessor to expose an authority import in its own scope.
-``vars()`` of the
-current adapter module, including a statically resolvable module-object alias,
-is treated as global namespace exposure.
+Dynamic import loaders, dynamic-code builtins, and reflection accessors passed
+first-class fail closed for the same callee-scope reason.
+``vars()`` of the current adapter module, including a statically resolvable
+module-object alias, is treated as global namespace exposure.
 Class bodies follow Python's source-ordered name fallback: a reference before a
 later class-local binding still resolves through the enclosing scope, while an
 active unconditional class binding shadows the outer name; deleting that class-local

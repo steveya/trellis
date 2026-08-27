@@ -252,13 +252,16 @@ The service-host path is:
   effective namespaces can expose active authority, and dynamic source can
   import it independently. Builtin provenance also survives statically
   resolvable tuple/list/dict selection and container aliases, plus literal
-  ``getattr(module, name)`` or ``module.__dict__[name]`` selection from
-  supported builtin-bearing modules; unresolved module-dictionary keys retain
-  every supported dangerous builtin that the module can expose.
+  ``getattr(module, name)``, ``module.__dict__[name]``, or
+  ``vars(module)[name]`` selection from supported builtin-bearing modules;
+  unresolved module-mapping keys retain every supported dangerous builtin that
+  the module can expose.
   Dynamic ``__import__`` and ``importlib.import_module`` loaders fail closed for
   authority-reaching or unresolved module names. Passing a namespace builtin as
   a first-class argument also fails closed even without caller-visible authority,
-  because the callee can expose authority imported in its own scope. ``vars()`` applied to the current
+  because the callee can expose authority imported in its own scope. Dynamic
+  import, dynamic-code, and reflection builtins passed first-class fail closed
+  for the same reason. ``vars()`` applied to the current
   adapter module or a resolvable alias exposes the same global authority as
   ``globals()``. A class body falls through to an
   outer binding until its own

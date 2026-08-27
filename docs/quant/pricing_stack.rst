@@ -1161,13 +1161,16 @@ the definition is bound. Dynamic ``eval`` or ``exec`` calls always fail closed,
 including when the builtin is reached through an alias, because their effective
 namespace or dynamic source can expose route authority. Statically resolvable
 selection from tuple/list/dict containers and literal
-``getattr(module, name)`` or ``module.__dict__[name]`` selection from supported
-builtin-bearing modules retain builtin provenance. Unresolved module-dictionary
-keys conservatively retain every supported dangerous builtin exposed there.
+``getattr(module, name)``, ``module.__dict__[name]``, or
+``vars(module)[name]`` selection from supported builtin-bearing modules retain
+builtin provenance. Unresolved module-mapping keys conservatively retain every
+supported dangerous builtin exposed there.
 Dynamic builtin/importlib module loaders are rejected for authority-reaching or
 unresolved module names. Passing a namespace builtin or alias through an
 ordinary call argument fails closed even without caller-visible authority,
 because the callee can expose an authority import from its own scope.
+Dynamic module loaders, dynamic-code builtins, and reflection accessors passed
+first-class fail closed under the same callee-scope rule.
 ``vars()`` of the current adapter module is treated like
 ``globals()``.
 Class-body lookup falls through to an enclosing binding until a source-ordered

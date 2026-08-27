@@ -579,6 +579,23 @@ def _scan_indirect_authority_uses(
                                 use_kind="dynamic_import",
                             )
                         )
+            first_class_dynamic_import_kinds = (
+                _first_class_dynamic_import_argument_kinds(
+                    node,
+                    scope=execution_scope,
+                )
+            )
+            for dynamic_import_kind in first_class_dynamic_import_kinds:
+                uses.append(
+                    AdapterIndirectAuthorityUse(
+                        path=path.relative_to(repo_root).as_posix(),
+                        line=int(node.lineno),
+                        local_name=dynamic_import_kind,
+                        module="*",
+                        symbol="*",
+                        use_kind="first_class_dynamic_import",
+                    )
+                )
             dynamic_code_kinds = _dynamic_code_call_kinds(
                 node,
                 scope=execution_scope,
@@ -612,6 +629,40 @@ def _scan_indirect_authority_uses(
                                 use_kind=f"dynamic_code_{dynamic_code_kind}",
                             )
                         )
+            first_class_dynamic_code_kinds = (
+                _first_class_dynamic_code_argument_kinds(
+                    node,
+                    scope=execution_scope,
+                )
+            )
+            for dynamic_code_kind in first_class_dynamic_code_kinds:
+                uses.append(
+                    AdapterIndirectAuthorityUse(
+                        path=path.relative_to(repo_root).as_posix(),
+                        line=int(node.lineno),
+                        local_name=dynamic_code_kind,
+                        module="*",
+                        symbol="*",
+                        use_kind=f"first_class_dynamic_code_{dynamic_code_kind}",
+                    )
+                )
+            first_class_reflection_kinds = (
+                _first_class_reflection_argument_kinds(
+                    node,
+                    scope=execution_scope,
+                )
+            )
+            for reflection_kind in first_class_reflection_kinds:
+                uses.append(
+                    AdapterIndirectAuthorityUse(
+                        path=path.relative_to(repo_root).as_posix(),
+                        line=int(node.lineno),
+                        local_name=reflection_kind,
+                        module="*",
+                        symbol="*",
+                        use_kind=f"first_class_reflection_{reflection_kind}",
+                    )
+                )
             first_class_namespace_kinds = _first_class_namespace_argument_kinds(
                 node,
                 scope=execution_scope,
@@ -2119,6 +2170,64 @@ def _first_class_namespace_argument_kinds(
     scope: _ImportScope,
 ) -> tuple[str, ...]:
     """Return namespace builtins passed as first-class call arguments."""
+    return _first_class_builtin_argument_kinds(
+        node,
+        scope=scope,
+        builtin_kind_resolver=_builtin_dynamic_namespace_kind,
+        imported_kind_resolver=_imported_dynamic_namespace_kind,
+    )
+
+
+def _first_class_dynamic_import_argument_kinds(
+    node: ast.Call,
+    *,
+    scope: _ImportScope,
+) -> tuple[str, ...]:
+    """Return dynamic module loaders passed as first-class arguments."""
+    return _first_class_builtin_argument_kinds(
+        node,
+        scope=scope,
+        builtin_kind_resolver=_builtin_dynamic_import_kind,
+        imported_kind_resolver=_imported_dynamic_import_kind,
+    )
+
+
+def _first_class_dynamic_code_argument_kinds(
+    node: ast.Call,
+    *,
+    scope: _ImportScope,
+) -> tuple[str, ...]:
+    """Return dynamic-code builtins passed as first-class arguments."""
+    return _first_class_builtin_argument_kinds(
+        node,
+        scope=scope,
+        builtin_kind_resolver=_builtin_dynamic_code_kind,
+        imported_kind_resolver=_imported_dynamic_code_kind,
+    )
+
+
+def _first_class_reflection_argument_kinds(
+    node: ast.Call,
+    *,
+    scope: _ImportScope,
+) -> tuple[str, ...]:
+    """Return reflection builtins passed as first-class arguments."""
+    return _first_class_builtin_argument_kinds(
+        node,
+        scope=scope,
+        builtin_kind_resolver=_builtin_getattr_kind,
+        imported_kind_resolver=_imported_getattr_kind,
+    )
+
+
+def _first_class_builtin_argument_kinds(
+    node: ast.Call,
+    *,
+    scope: _ImportScope,
+    builtin_kind_resolver: Callable[[str], str | None],
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    """Resolve one dangerous builtin family inside call arguments."""
     arguments = (
         *(argument.value if isinstance(argument, ast.Starred) else argument
           for argument in node.args),
@@ -2127,15 +2236,22 @@ def _first_class_namespace_argument_kinds(
     kinds = {
         kind
         for argument in arguments
-        for kind in _namespace_argument_value_kinds(argument, scope=scope)
+        for kind in _argument_builtin_value_kinds(
+            argument,
+            scope=scope,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
     }
     return tuple(sorted(kinds))
 
 
-def _namespace_argument_value_kinds(
+def _argument_builtin_value_kinds(
     reference: ast.expr,
     *,
     scope: _ImportScope,
+    builtin_kind_resolver: Callable[[str], str | None],
+    imported_kind_resolver: Callable[[str, str], str | None],
 ) -> tuple[str, ...]:
     if isinstance(reference, (ast.Tuple, ast.List, ast.Set)):
         candidates = tuple(reference.elts)
@@ -2153,17 +2269,21 @@ def _namespace_argument_value_kinds(
                 {
                     kind
                     for candidate in candidates
-                    for kind in _namespace_argument_value_kinds(
+                    for kind in _argument_builtin_value_kinds(
                         candidate,
                         scope=scope,
+                        builtin_kind_resolver=builtin_kind_resolver,
+                        imported_kind_resolver=imported_kind_resolver,
                     )
                 }
             )
         )
-    return _resolve_dynamic_namespace_callable(
+    return _resolve_builtin_callable(
         reference,
         scope=scope,
         seen=frozenset(),
+        builtin_kind_resolver=builtin_kind_resolver,
+        imported_kind_resolver=imported_kind_resolver,
     )
 
 
@@ -2301,9 +2421,10 @@ def _resolve_builtin_callable(
         if reflected_kinds:
             return reflected_kinds
     if isinstance(reference, ast.Subscript):
-        reflected_kinds = _module_dict_builtin_kinds(
+        reflected_kinds = _module_mapping_builtin_kinds(
             reference,
             scope=scope,
+            seen=seen,
             imported_kind_resolver=imported_kind_resolver,
         )
         if reflected_kinds:
@@ -2392,17 +2513,32 @@ def _literal_getattr_builtin_kinds(
     return tuple(sorted(kinds))
 
 
-def _module_dict_builtin_kinds(
+def _module_mapping_builtin_kinds(
     reference: ast.Subscript,
     *,
     scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
     imported_kind_resolver: Callable[[str, str], str | None],
 ) -> tuple[str, ...]:
-    """Resolve builtins selected through an imported module's ``__dict__``."""
+    """Resolve builtins selected through an imported module mapping."""
     container = reference.value
-    if not (
-        isinstance(container, ast.Attribute) and container.attr == "__dict__"
+    module_reference: ast.expr | None = None
+    if isinstance(container, ast.Attribute) and container.attr == "__dict__":
+        module_reference = container.value
+    elif (
+        isinstance(container, ast.Call)
+        and len(container.args) == 1
+        and not isinstance(container.args[0], ast.Starred)
+        and _resolve_builtin_callable(
+            container.func,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=_builtin_vars_kind,
+            imported_kind_resolver=_imported_vars_kind,
+        )
     ):
+        module_reference = container.args[0]
+    if module_reference is None:
         return ()
     known_symbol = True
     try:
@@ -2428,7 +2564,7 @@ def _module_dict_builtin_kinds(
     kinds = {
         kind
         for _, module, symbol in _resolve_imported_references(
-            container.value,
+            module_reference,
             scope=scope,
         )
         for possible_symbol in possible_symbols

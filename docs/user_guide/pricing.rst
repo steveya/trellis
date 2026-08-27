@@ -841,15 +841,18 @@ definition executes. Dynamic ``eval`` or ``exec`` calls always fail closed,
 even when the builtin is reached through an alias, because either their scope
 or the dynamic source itself can expose authority. Selecting a namespace,
 dynamic-code, or import builtin from a statically resolvable tuple/list/dict
-container does not remove that provenance. Literal ``getattr(module, name)``
-or ``module.__dict__[name]`` selection from supported builtin-bearing modules
-likewise retains it; an unresolved dictionary key conservatively retains every
-supported dangerous builtin that the module can expose.
+container does not remove that provenance. Literal ``getattr(module, name)``,
+``module.__dict__[name]``, or ``vars(module)[name]`` selection from supported
+builtin-bearing modules likewise retains it; an unresolved mapping key
+conservatively retains every supported dangerous builtin that the module can
+expose.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
 ``globals``, ``locals``, or ``vars`` as a first-class argument fails closed even
 when the caller has no visible authority import, because the callee can apply
-the accessor to its own authority-bearing scope. Calling ``vars()`` on the
+the accessor to its own authority-bearing scope. Dynamic import loaders,
+dynamic-code builtins, and reflection accessors passed
+first-class fail closed for the same reason. Calling ``vars()`` on the
 current adapter module exposes the same authority as ``globals()``.
 An early class-body reference likewise continues to use an enclosing import
 until a later class-local replacement is active,
