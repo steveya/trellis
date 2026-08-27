@@ -841,8 +841,9 @@ definition executes. Dynamic ``eval`` or ``exec`` calls always fail closed,
 even when the builtin is reached through an alias, because either their scope
 or the dynamic source itself can expose authority. Selecting a namespace,
 dynamic-code, or import builtin from a statically resolvable tuple/list/dict
-container does not remove that provenance. Literal ``getattr(module, name)``,
-``module.__dict__[name]``, or ``vars(module)[name]`` selection from supported
+container does not remove that provenance. Literal or unresolved
+``getattr(module, name)`` attribute selection, ``module.__dict__[name]``, or
+``vars(module)[name]`` selection from supported
 builtin-bearing modules likewise retains it. The implicit
 ``__builtins__[name]`` mapping and its source-ordered aliases also retain
 provenance unless a local replacement shadows ``__builtins__``; an unresolved

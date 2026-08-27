@@ -1160,8 +1160,8 @@ while defining functions, classes, or lambdas update that owning scope before
 the definition is bound. Dynamic ``eval`` or ``exec`` calls always fail closed,
 including when the builtin is reached through an alias, because their effective
 namespace or dynamic source can expose route authority. Statically resolvable
-selection from tuple/list/dict containers and literal
-``getattr(module, name)``, ``module.__dict__[name]``, or
+selection from tuple/list/dict containers and literal or unresolved
+``getattr(module, name)`` attribute selection, ``module.__dict__[name]``, or
 ``vars(module)[name]`` selection from supported builtin-bearing modules retain
 builtin provenance. The implicit ``__builtins__[name]`` mapping and its
 source-ordered aliases retain the same provenance unless a local replacement

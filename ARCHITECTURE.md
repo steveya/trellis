@@ -251,8 +251,9 @@ The service-host path is:
   ``eval`` or ``exec`` reached through a builtin alias always fails closed:
   effective namespaces can expose active authority, and dynamic source can
   import it independently. Builtin provenance also survives statically
-  resolvable tuple/list/dict selection and container aliases, plus literal
-  ``getattr(module, name)``, ``module.__dict__[name]``, or
+  resolvable tuple/list/dict selection and container aliases, plus
+  ``getattr(module, name)`` selection (including unresolved attribute names),
+  ``module.__dict__[name]``, or
   ``vars(module)[name]`` selection from supported builtin-bearing modules and
   the implicit ``__builtins__[name]`` mapping through source-ordered aliases;
   a local replacement of ``__builtins__`` still shadows that implicit mapping;

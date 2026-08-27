@@ -1191,7 +1191,8 @@ names, imports, or aliases always fail closed: their effective lexical
 namespaces may contain active authority, and their dynamic source can import
 authority independently. The common builtin resolver preserves provenance
 through statically resolvable tuple/list/dict selection, container aliases, and
-literal ``getattr(module, name)``, ``module.__dict__[name]``, or
+literal or unresolved ``getattr(module, name)`` attribute selection,
+``module.__dict__[name]``, or
 ``vars(module)[name]`` selection from supported builtin-bearing modules, plus
 the implicit ``__builtins__[name]`` mapping through source-ordered aliases. A
 local replacement of ``__builtins__`` shadows that implicit mapping. An

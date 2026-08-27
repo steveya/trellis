@@ -20,6 +20,16 @@ _BINDINGS_PATH = Path(
 _ADAPTER_ROOT = Path("trellis/instruments/_agent")
 _ADAPTER_PACKAGE = ".".join(_ADAPTER_ROOT.parts)
 _MAX_SOURCE_COMPONENT = 2**31 - 1
+_DANGEROUS_REFLECTED_SYMBOLS = (
+    "__import__",
+    "eval",
+    "exec",
+    "getattr",
+    "globals",
+    "import_module",
+    "locals",
+    "vars",
+)
 
 
 @dataclass(frozen=True, order=True)
@@ -2780,11 +2790,8 @@ def _literal_getattr_builtin_kinds(
     )
     if not getattr_kinds:
         return ()
-    attribute = reference.args[1]
-    if not (
-        isinstance(attribute, ast.Constant)
-        and isinstance(attribute.value, str)
-    ):
+    possible_symbols = _possible_reflected_symbols(reference.args[1])
+    if not possible_symbols:
         return ()
     kinds = {
         kind
@@ -2792,10 +2799,11 @@ def _literal_getattr_builtin_kinds(
             reference.args[0],
             scope=scope,
         )
+        for possible_symbol in possible_symbols
         if (
             kind := imported_kind_resolver(
                 module if not symbol else f"{module}.{symbol}",
-                attribute.value,
+                possible_symbol,
             )
         )
         is not None
@@ -2856,27 +2864,9 @@ def _module_mapping_builtin_kinds(
             module_targets.add(("builtins", ""))
     if not module_targets:
         return ()
-    known_symbol = True
-    try:
-        selected_symbol = ast.literal_eval(reference.slice)
-    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
-        known_symbol = False
-        selected_symbol = None
-    if known_symbol:
-        if not isinstance(selected_symbol, str):
-            return ()
-        possible_symbols = (selected_symbol,)
-    else:
-        possible_symbols = (
-            "__import__",
-            "eval",
-            "exec",
-            "getattr",
-            "globals",
-            "import_module",
-            "locals",
-            "vars",
-        )
+    possible_symbols = _possible_reflected_symbols(reference.slice)
+    if not possible_symbols:
+        return ()
     kinds = {
         kind
         for module, symbol in module_targets
@@ -2890,6 +2880,17 @@ def _module_mapping_builtin_kinds(
         is not None
     }
     return tuple(sorted(kinds))
+
+
+def _possible_reflected_symbols(selector: ast.expr) -> tuple[str, ...]:
+    """Return an exact reflected name or every dangerous unresolved name."""
+    try:
+        selected_symbol = ast.literal_eval(selector)
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        return _DANGEROUS_REFLECTED_SYMBOLS
+    if not isinstance(selected_symbol, str):
+        return ()
+    return (selected_symbol,)
 
 
 def _subscript_callable_candidates(
