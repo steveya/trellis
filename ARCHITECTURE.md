@@ -253,7 +253,9 @@ The service-host path is:
   import it independently. Builtin provenance also survives statically
   resolvable tuple/list/dict selection and container aliases, plus literal
   ``getattr(module, name)``, ``module.__dict__[name]``, or
-  ``vars(module)[name]`` selection from supported builtin-bearing modules;
+  ``vars(module)[name]`` selection from supported builtin-bearing modules and
+  the implicit ``__builtins__[name]`` mapping through source-ordered aliases;
+  a local replacement of ``__builtins__`` still shadows that implicit mapping;
   unresolved module-mapping keys retain every supported dangerous builtin that
   the module can expose. Statically visible lambda and local-function return
   expressions preserve dangerous-builtin provenance when their result is later

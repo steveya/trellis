@@ -2812,6 +2812,16 @@ def _module_mapping_builtin_kinds(
 ) -> tuple[str, ...]:
     """Resolve builtins selected through an imported module mapping."""
     container = reference.value
+    module_targets: set[tuple[str, str]] = set()
+    if _resolve_builtin_callable(
+        container,
+        scope=scope,
+        seen=seen,
+        builtin_kind_resolver=_builtin_builtins_mapping_kind,
+        imported_kind_resolver=_imported_builtins_mapping_kind,
+    ):
+        module_targets.add(("builtins", ""))
+
     module_reference: ast.expr | None = None
     if isinstance(container, ast.Attribute) and container.attr == "__dict__":
         module_reference = container.value
@@ -2828,7 +2838,23 @@ def _module_mapping_builtin_kinds(
         )
     ):
         module_reference = container.args[0]
-    if module_reference is None:
+    if module_reference is not None:
+        module_targets.update(
+            (module, symbol)
+            for _, module, symbol in _resolve_imported_references(
+                module_reference,
+                scope=scope,
+            )
+        )
+        if _resolve_builtin_callable(
+            module_reference,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=_builtin_builtins_mapping_kind,
+            imported_kind_resolver=_imported_builtins_mapping_kind,
+        ):
+            module_targets.add(("builtins", ""))
+    if not module_targets:
         return ()
     known_symbol = True
     try:
@@ -2853,10 +2879,7 @@ def _module_mapping_builtin_kinds(
         )
     kinds = {
         kind
-        for _, module, symbol in _resolve_imported_references(
-            module_reference,
-            scope=scope,
-        )
+        for module, symbol in module_targets
         for possible_symbol in possible_symbols
         if (
             kind := imported_kind_resolver(
@@ -3184,6 +3207,21 @@ def _builtin_dynamic_namespace_kind(local_name: str) -> str | None:
         return "global"
     if local_name in {"locals", "vars"}:
         return "local"
+    return None
+
+
+def _builtin_builtins_mapping_kind(local_name: str) -> str | None:
+    if local_name == "__builtins__":
+        return "builtins"
+    return None
+
+
+def _imported_builtins_mapping_kind(
+    module: str,
+    symbol: str,
+) -> str | None:
+    if module == "builtins" and symbol == "__dict__":
+        return "builtins"
     return None
 
 

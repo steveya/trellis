@@ -1192,7 +1192,9 @@ namespaces may contain active authority, and their dynamic source can import
 authority independently. The common builtin resolver preserves provenance
 through statically resolvable tuple/list/dict selection, container aliases, and
 literal ``getattr(module, name)``, ``module.__dict__[name]``, or
-``vars(module)[name]`` selection from supported builtin-bearing modules. An
+``vars(module)[name]`` selection from supported builtin-bearing modules, plus
+the implicit ``__builtins__[name]`` mapping through source-ordered aliases. A
+local replacement of ``__builtins__`` shadows that implicit mapping. An
 unresolved module-mapping key retains every supported dangerous builtin that
 the module can expose. Dangerous builtins returned by a statically visible
 lambda or local function keep that provenance when the returned callable is
