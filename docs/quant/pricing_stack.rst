@@ -1158,7 +1158,8 @@ their owning scope across later source-ordered rebindings. Rebindings evaluated
 while defining functions, classes, or lambdas update that owning scope before
 the definition is bound. Dynamic ``eval`` or ``exec`` calls always fail closed,
 including when the builtin is reached through an alias, because their effective
-namespace or dynamic source can expose route authority.
+namespace or dynamic source can expose route authority. Statically resolvable
+selection from tuple/list/dict containers retains builtin provenance.
 Dynamic builtin/importlib module loaders are rejected for authority-reaching or
 unresolved module names. Passing a namespace builtin or alias through an
 ordinary call argument likewise retains the active authority visible in that

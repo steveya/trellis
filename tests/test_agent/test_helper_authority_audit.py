@@ -937,6 +937,25 @@ alias_value = loader("trellis.models.example").price_example()
     return root
 
 
+def _fixture_root_with_container_selected_builtins(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+import importlib
+
+builtin_loaded = (__import__,)[0]("trellis.models.example")
+loaders = (importlib.import_module,)
+module_loaded = loaders[0]("trellis.models.example")
+namespace_value = (globals,)[0]()["price_example"]()
+dynamic_value = (eval,)[0]("price_example()")
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_first_class_namespace_arguments(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -1980,6 +1999,50 @@ def test_audit_fails_closed_on_dynamic_authority_imports(tmp_path):
             "trellis.models.example",
             "*",
             "dynamic_import",
+        ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_builtins_selected_through_containers(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_container_selected_builtins(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            4,
+            "__import__",
+            "trellis.models.example",
+            "*",
+            "dynamic_import",
+        ),
+        (
+            6,
+            "import_module",
+            "trellis.models.example",
+            "*",
+            "dynamic_import",
+        ),
+        (
+            7,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        ),
+        (
+            8,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_code_eval",
         ),
     ]
     assert report.has_adapter_authority is True

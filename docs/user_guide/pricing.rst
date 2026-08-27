@@ -837,7 +837,9 @@ check in their owning scope across later rebindings. Rebindings in defaults,
 decorators, bases, annotations, and lambda defaults are applied when their
 definition executes. Dynamic ``eval`` or ``exec`` calls always fail closed,
 even when the builtin is reached through an alias, because either their scope
-or the dynamic source itself can expose authority.
+or the dynamic source itself can expose authority. Selecting a namespace,
+dynamic-code, or import builtin from a statically resolvable tuple/list/dict
+container does not remove that provenance.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
 ``globals``, ``locals``, or ``vars`` as a first-class argument also preserves

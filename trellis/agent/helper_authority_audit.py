@@ -2251,6 +2251,23 @@ def _resolve_builtin_callable(
             )
         }
         return tuple(sorted(kinds))
+    if isinstance(reference, ast.Subscript):
+        kinds = {
+            kind
+            for candidate, candidate_scope in _subscript_callable_candidates(
+                reference,
+                scope=scope,
+                seen=seen,
+            )
+            for kind in _resolve_builtin_callable(
+                candidate,
+                scope=candidate_scope,
+                seen=seen,
+                builtin_kind_resolver=builtin_kind_resolver,
+                imported_kind_resolver=imported_kind_resolver,
+            )
+        }
+        return tuple(sorted(kinds))
 
     imported_kinds = {
         kind
@@ -2275,6 +2292,200 @@ def _resolve_builtin_callable(
         )
     )
     return tuple(sorted(imported_kinds))
+
+
+def _subscript_callable_candidates(
+    reference: ast.Subscript,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+) -> tuple[tuple[ast.expr, _ImportScope], ...]:
+    """Return callable candidates selected from resolvable containers."""
+    candidates: list[tuple[ast.expr, _ImportScope]] = []
+    for container, container_scope in _resolve_container_references(
+        reference.value,
+        scope=scope,
+        seen=seen,
+    ):
+        candidates.extend(
+            (candidate, container_scope)
+            for candidate in _container_subscript_values(
+                container,
+                index=reference.slice,
+            )
+        )
+    unique = {
+        (id(candidate), id(candidate_scope)): (candidate, candidate_scope)
+        for candidate, candidate_scope in candidates
+    }
+    return tuple(unique.values())
+
+
+def _resolve_container_references(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+) -> tuple[tuple[ast.expr, _ImportScope], ...]:
+    if isinstance(reference, (ast.Tuple, ast.List, ast.Dict)):
+        return ((reference, scope),)
+    if isinstance(reference, ast.NamedExpr):
+        return _resolve_container_references(
+            reference.value,
+            scope=scope,
+            seen=seen,
+        )
+    if isinstance(reference, ast.IfExp):
+        candidates = (reference.body, reference.orelse)
+    elif isinstance(reference, ast.BoolOp):
+        candidates = tuple(reference.values)
+    else:
+        candidates = ()
+    if candidates:
+        return tuple(
+            candidate
+            for branch in candidates
+            for candidate in _resolve_container_references(
+                branch,
+                scope=scope,
+                seen=seen,
+            )
+        )
+    if not isinstance(reference, ast.Name):
+        return ()
+    return _resolve_container_alias_name(
+        reference.id,
+        scope=scope,
+        reference=reference,
+        seen=seen,
+    )
+
+
+def _resolve_container_alias_name(
+    local_name: str,
+    *,
+    scope: _ImportScope,
+    reference: ast.expr,
+    seen: frozenset[tuple[int, str, int]],
+) -> tuple[tuple[ast.expr, _ImportScope], ...]:
+    """Resolve container aliases through the source-ordered lexical model."""
+    reference_position = _source_position(reference)
+    possible_since: tuple[int, int, int] | None = None
+    resolved: list[tuple[ast.expr, _ImportScope]] = []
+    current: _ImportScope | None = scope
+    while current is not None:
+        seen_key = (id(current), local_name, id(reference))
+        if seen_key in seen:
+            return tuple(resolved)
+        next_seen = seen | {seen_key}
+        is_global = local_name in current.global_names
+        is_nonlocal = local_name in current.nonlocal_names
+        binding_events = current.bindings.get(local_name, ())
+        active_events: tuple[_BindingEvent, ...] = ()
+        if binding_events:
+            if possible_since is None:
+                active_events = _active_binding_events(
+                    binding_events,
+                    reference_position=reference_position,
+                )
+            else:
+                active_events = _possible_dynamic_binding_events(
+                    binding_events,
+                    possible_since=possible_since,
+                )
+            for event in active_events:
+                if event.is_delete or event.value is None:
+                    continue
+                value_scope = current
+                if event.value_from_parent and current.parent is not None:
+                    value_scope = current.parent
+                resolved.extend(
+                    _resolve_container_references(
+                        event.value,
+                        scope=value_scope,
+                        seen=next_seen,
+                    )
+                )
+
+        if is_global or is_nonlocal:
+            if possible_since is None:
+                active_at_redirect = active_events
+            else:
+                active_at_redirect = _active_binding_events(
+                    binding_events,
+                    reference_position=possible_since,
+                )
+            if any(not event.conditional for event in active_at_redirect):
+                return tuple(resolved)
+            parent = _module_scope(current) if is_global else current.parent
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+            possible_since = current.definition_position
+            current = parent
+            continue
+
+        if local_name in current.local_names:
+            source_ordered_fallback = current.kind in {"class", "module"}
+            if not source_ordered_fallback or _class_binding_blocks_parent(
+                active_events
+            ):
+                return tuple(resolved)
+        parent = current.parent
+        if current.kind in {
+            "function",
+            "lambda",
+            "comprehension",
+            "generator",
+        }:
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+        if current.kind in {"function", "lambda", "generator"}:
+            possible_since = current.definition_position
+        current = parent
+    return tuple(resolved)
+
+
+def _container_subscript_values(
+    container: ast.expr,
+    *,
+    index: ast.expr,
+) -> tuple[ast.expr, ...]:
+    known_index = True
+    try:
+        selected_index = ast.literal_eval(index)
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        known_index = False
+        selected_index = None
+
+    if isinstance(container, (ast.Tuple, ast.List)):
+        values = tuple(
+            element.value if isinstance(element, ast.Starred) else element
+            for element in container.elts
+        )
+        if known_index and isinstance(selected_index, int):
+            try:
+                return (values[selected_index],)
+            except IndexError:
+                return ()
+        return values
+
+    if not isinstance(container, ast.Dict):
+        return ()
+    if not known_index:
+        return tuple(container.values)
+    selected: list[ast.expr] = []
+    for key, value in zip(container.keys, container.values, strict=True):
+        if key is None:
+            selected.append(value)
+            continue
+        try:
+            candidate_key = ast.literal_eval(key)
+        except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+            selected.append(value)
+            continue
+        if candidate_key == selected_index:
+            selected.append(value)
+    return tuple(selected)
 
 
 def _resolve_builtin_name(

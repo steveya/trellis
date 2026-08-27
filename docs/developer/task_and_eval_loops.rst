@@ -1186,7 +1186,8 @@ defaults contribute their enclosing-scope rebindings before the new definition
 is bound. Calls that resolve to builtin ``eval`` or ``exec`` through direct
 names, imports, or aliases always fail closed: their effective lexical
 namespaces may contain active authority, and their dynamic source can import
-authority independently.
+authority independently. The common builtin resolver preserves provenance
+through statically resolvable tuple/list/dict selection and container aliases.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins
