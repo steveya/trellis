@@ -238,10 +238,12 @@ The service-host path is:
   conditional binding candidates, and namespace-callable provenance follows
   conditional and Boolean expression results. Named expressions inside
   comprehension filters or results bind in the containing scope and remain
-  conditional candidates. Always-evaluated control-flow headers are recorded
-  before conditional branches, and starred namespace-call expansions are
-  treated as potentially empty. Fixed prefix and suffix targets around a
-  starred tuple/list assignment retain their statically aligned values. Imports
+  conditional candidates; generator-expression filters and results are also
+  deferred, so those candidates survive later enclosing-scope rebindings.
+  Always-evaluated control-flow headers are recorded before conditional
+  branches, and starred namespace-call expansions are treated as potentially
+  empty. Fixed prefix and suffix targets around a starred tuple/list assignment
+  retain their statically aligned values. Imports
   redirected through ``global`` or
   ``nonlocal`` conservatively inform the owning scope even after a later
   source-ordered owner rebinding. Definition-time defaults, decorators, bases,
@@ -249,10 +251,12 @@ The service-host path is:
   ``eval`` or ``exec`` reached through a builtin alias always fails closed:
   effective namespaces can expose active authority, and dynamic source can
   import it independently. Builtin provenance also survives statically
-  resolvable tuple/list/dict selection and container aliases. Dynamic ``__import__`` and
-  ``importlib.import_module`` loaders fail closed for authority-reaching or
-  unresolved module names, and passing a namespace builtin as a first-class
-  argument preserves its authority exposure. ``vars()`` applied to the current
+  resolvable tuple/list/dict selection and container aliases, plus literal
+  ``getattr(module, name)`` selection from supported builtin-bearing modules.
+  Dynamic ``__import__`` and ``importlib.import_module`` loaders fail closed for
+  authority-reaching or unresolved module names. Passing a namespace builtin as
+  a first-class argument also fails closed even without caller-visible authority,
+  because the callee can expose authority imported in its own scope. ``vars()`` applied to the current
   adapter module or a resolvable alias exposes the same global authority as
   ``globals()``. A class body falls through to an
   outer binding until its own

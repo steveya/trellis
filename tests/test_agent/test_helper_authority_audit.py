@@ -765,6 +765,26 @@ delegated = lookup()["price_example"]()
     return root
 
 
+def _fixture_root_with_deferred_generator_namespace_alias(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+def safe_lookup():
+    return {}
+
+stream = (lookup := globals for _ in (0,))
+lookup = safe_lookup
+next(stream)
+delegated = lookup()["price_example"]()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_starred_dynamic_namespace_calls(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -956,6 +976,22 @@ dynamic_value = (eval,)[0]("price_example()")
     return root
 
 
+def _fixture_root_with_getattr_dynamic_loader(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+import importlib
+
+loader = getattr(importlib, "import_module")
+loaded = loader("trellis.models.example")
+value = loaded.price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_first_class_namespace_arguments(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -968,6 +1004,22 @@ run(globals)
 alias = globals
 run(alias)
 run(globals())
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_callee_local_namespace_authority(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+def run(lookup):
+    from trellis.models.example import price_example
+    return lookup()["price_example"]()
+
+run(locals)
 """.lstrip(),
         encoding="utf-8",
     )
@@ -1816,6 +1868,29 @@ def test_audit_resolves_comprehension_dynamic_namespace_aliases(tmp_path):
     assert report.has_adapter_authority is True
 
 
+def test_audit_preserves_deferred_generator_namespace_aliases(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_deferred_generator_namespace_alias(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            9,
+            "price_example",
+            "trellis.models.example",
+            "price_example",
+            "dynamic_global_namespace",
+        )
+    ]
+    assert report.has_adapter_authority is True
+
+
 def test_audit_treats_starred_namespace_calls_as_potentially_empty(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -2048,6 +2123,29 @@ def test_audit_resolves_builtins_selected_through_containers(tmp_path):
     assert report.has_adapter_authority is True
 
 
+def test_audit_resolves_dynamic_loaders_reached_through_getattr(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_getattr_dynamic_loader(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (
+            4,
+            "import_module",
+            "trellis.models.example",
+            "*",
+            "dynamic_import",
+        )
+    ]
+    assert report.has_adapter_authority is True
+
+
 def test_audit_fails_closed_on_first_class_namespace_arguments(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -2081,6 +2179,23 @@ def test_audit_fails_closed_on_first_class_namespace_arguments(tmp_path):
             "price_example",
             "dynamic_global_namespace",
         ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_fails_closed_on_first_class_namespace_transfer(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_callee_local_namespace_authority(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (5, "local", "*", "*", "first_class_local_namespace")
     ]
     assert report.has_adapter_authority is True
 

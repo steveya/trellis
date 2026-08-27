@@ -91,7 +91,7 @@ class _BindingEvent:
     conditional: bool
     is_import: bool
     is_delete: bool
-    is_redirected_import: bool = False
+    persists_after_rebinding: bool = False
     value: ast.expr | None = None
     value_from_parent: bool = False
 
@@ -623,6 +623,19 @@ def _scan_indirect_authority_uses(
                     authority_targets=authority_targets,
                 )
                 for namespace_kind in first_class_namespace_kinds:
+                    if not exposed_imports:
+                        uses.append(
+                            AdapterIndirectAuthorityUse(
+                                path=path.relative_to(repo_root).as_posix(),
+                                line=int(node.lineno),
+                                local_name=namespace_kind,
+                                module="*",
+                                symbol="*",
+                                use_kind=(
+                                    f"first_class_{namespace_kind}_namespace"
+                                ),
+                            )
+                        )
                     for local_name, module, symbol in exposed_imports:
                         uses.append(
                             AdapterIndirectAuthorityUse(
@@ -806,6 +819,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         self.global_names: set[str] = set()
         self.nonlocal_names: set[str] = set()
         self._conditional_depth = 0
+        self._deferred_binding_depth = 0
         self._binding_sequence = 0
 
     def visit_Import(self, node: ast.Import) -> None:
@@ -980,6 +994,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
                 conditional=self._conditional_depth > 0,
                 is_import=False,
                 is_delete=is_delete,
+                persists_after_rebinding=self._deferred_binding_depth > 0,
                 value=value,
                 value_from_parent=value_from_parent,
             )
@@ -1056,14 +1071,39 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         """Collect walrus bindings that escape a comprehension's child scope."""
         first, *remaining = node.generators
         self.visit(first.iter)
+        deferred = isinstance(node, ast.GeneratorExp)
         for condition in first.ifs:
-            self._visit_conditionally(condition)
+            self._visit_comprehension_expression(
+                condition,
+                deferred=deferred,
+            )
         for generator in remaining:
-            self._visit_conditionally(generator.iter)
+            self._visit_comprehension_expression(
+                generator.iter,
+                deferred=deferred,
+            )
             for condition in generator.ifs:
-                self._visit_conditionally(condition)
+                self._visit_comprehension_expression(
+                    condition,
+                    deferred=deferred,
+                )
         for result_node in result_nodes:
-            self._visit_conditionally(result_node)
+            self._visit_comprehension_expression(
+                result_node,
+                deferred=deferred,
+            )
+
+    def _visit_comprehension_expression(
+        self,
+        node: ast.AST,
+        *,
+        deferred: bool,
+    ) -> None:
+        if deferred:
+            self._deferred_binding_depth += 1
+        self._visit_conditionally(node)
+        if deferred:
+            self._deferred_binding_depth -= 1
 
     def visit_Global(self, node: ast.Global) -> None:
         self.global_names.update(node.names)
@@ -1229,7 +1269,7 @@ def _propagate_redirected_imports_for_name(
             conditional=True,
             is_import=True,
             is_delete=False,
-            is_redirected_import=True,
+            persists_after_rebinding=True,
         )
         for event in scope.bindings.get(local_name, ())
         if event.is_import
@@ -1698,7 +1738,7 @@ def _active_binding_events(
         if event.conditional
         and (
             event.position > latest_unconditional.position
-            or event.is_redirected_import
+            or event.persists_after_rebinding
         )
     )
 
@@ -1723,7 +1763,7 @@ def _possible_deferred_binding_events(
             (
                 event.is_import,
                 event.is_delete,
-                event.is_redirected_import,
+                event.persists_after_rebinding,
                 event.module,
                 event.symbol,
             ),
@@ -2251,6 +2291,15 @@ def _resolve_builtin_callable(
             )
         }
         return tuple(sorted(kinds))
+    if isinstance(reference, ast.Call):
+        reflected_kinds = _literal_getattr_builtin_kinds(
+            reference,
+            scope=scope,
+            seen=seen,
+            imported_kind_resolver=imported_kind_resolver,
+        )
+        if reflected_kinds:
+            return reflected_kinds
     if isinstance(reference, ast.Subscript):
         kinds = {
             kind
@@ -2292,6 +2341,48 @@ def _resolve_builtin_callable(
         )
     )
     return tuple(sorted(imported_kinds))
+
+
+def _literal_getattr_builtin_kinds(
+    reference: ast.Call,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    """Resolve literal ``getattr(module, name)`` builtin references."""
+    if len(reference.args) < 2:
+        return ()
+    getattr_kinds = _resolve_builtin_callable(
+        reference.func,
+        scope=scope,
+        seen=seen,
+        builtin_kind_resolver=_builtin_getattr_kind,
+        imported_kind_resolver=_imported_getattr_kind,
+    )
+    if not getattr_kinds:
+        return ()
+    attribute = reference.args[1]
+    if not (
+        isinstance(attribute, ast.Constant)
+        and isinstance(attribute.value, str)
+    ):
+        return ()
+    kinds = {
+        kind
+        for _, module, symbol in _resolve_imported_references(
+            reference.args[0],
+            scope=scope,
+        )
+        if (
+            kind := imported_kind_resolver(
+                module if not symbol else f"{module}.{symbol}",
+                attribute.value,
+            )
+        )
+        is not None
+    }
+    return tuple(sorted(kinds))
 
 
 def _subscript_callable_candidates(
@@ -2619,6 +2710,18 @@ def _imported_dynamic_namespace_kind(
     if module != "builtins":
         return None
     return _builtin_dynamic_namespace_kind(symbol)
+
+
+def _builtin_getattr_kind(local_name: str) -> str | None:
+    if local_name == "getattr":
+        return local_name
+    return None
+
+
+def _imported_getattr_kind(module: str, symbol: str) -> str | None:
+    if module == "builtins" and symbol == "getattr":
+        return symbol
+    return None
 
 
 def _builtin_vars_kind(local_name: str) -> str | None:

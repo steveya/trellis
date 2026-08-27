@@ -1173,11 +1173,14 @@ branches remain conditional binding candidates rather than guaranteed
 replacements. Namespace-callable aliases returned by conditional or Boolean
 expressions are resolved conservatively across every possible result.
 Named expressions in comprehension filters or results are attributed to the
-containing scope, while always-evaluated control-flow headers are processed
-before their conditional branches. Starred positional or keyword expansions on
-a namespace callable are treated as potentially empty and therefore as possible
-zero-argument introspection calls. Fixed prefix and suffix targets around a
-starred tuple/list assignment retain their aligned namespace values.
+containing scope. A generator expression defers its filters and result, so a
+namespace walrus binding in those positions remains a possible candidate even
+after a later enclosing-scope rebinding. Always-evaluated control-flow headers
+are processed before their conditional branches. Starred positional or keyword
+expansions on a namespace callable are treated as potentially empty and
+therefore as possible zero-argument introspection calls. Fixed prefix and suffix
+targets around a starred tuple/list assignment retain their aligned namespace
+values.
 Imports redirected by ``global`` or ``nonlocal`` declarations are projected as
 conditional candidates into the owning scope so a call outside the importing
 function cannot escape the audit, including after later owner-scope rebindings.
@@ -1187,12 +1190,16 @@ is bound. Calls that resolve to builtin ``eval`` or ``exec`` through direct
 names, imports, or aliases always fail closed: their effective lexical
 namespaces may contain active authority, and their dynamic source can import
 authority independently. The common builtin resolver preserves provenance
-through statically resolvable tuple/list/dict selection and container aliases.
+through statically resolvable tuple/list/dict selection, container aliases, and
+literal ``getattr(module, name)`` selection from supported builtin-bearing
+modules.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins
-passed as first-class positional, keyword, or unpacked container arguments keep
-their global/local authority exposure at the call site. ``vars()`` of the
+passed as first-class positional, keyword, or unpacked container arguments fail
+closed even when the caller exposes no authority: the receiving callable can
+use that namespace accessor to expose an authority import in its own scope.
+``vars()`` of the
 current adapter module, including a statically resolvable module-object alias,
 is treated as global namespace exposure.
 Class bodies follow Python's source-ordered name fallback: a reference before a

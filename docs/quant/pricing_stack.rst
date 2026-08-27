@@ -1149,21 +1149,25 @@ Named expressions behind Boolean short-circuiting or conditional-expression
 branches remain conditional bindings, while namespace-callable aliases flowing
 out of those expressions retain every possible namespace provenance.
 Comprehension assignment expressions are attributed to their containing scope,
-and always-evaluated control-flow headers are recorded before conditional
-branches. Starred namespace-call expansions are conservatively treated as
-possibly empty, while statically aligned prefix and suffix targets around a
-starred assignment retain their namespace provenance.
+and generator-expression filters and results remain deferred candidates across
+later enclosing-scope rebindings. Always-evaluated control-flow headers are
+recorded before conditional branches. Starred namespace-call expansions are
+conservatively treated as possibly empty, while statically aligned prefix and
+suffix targets around a starred assignment retain their namespace provenance.
 Redirected ``global`` and ``nonlocal`` imports remain conditional candidates in
 their owning scope across later source-ordered rebindings. Rebindings evaluated
 while defining functions, classes, or lambdas update that owning scope before
 the definition is bound. Dynamic ``eval`` or ``exec`` calls always fail closed,
 including when the builtin is reached through an alias, because their effective
 namespace or dynamic source can expose route authority. Statically resolvable
-selection from tuple/list/dict containers retains builtin provenance.
+selection from tuple/list/dict containers and literal
+``getattr(module, name)`` selection from supported builtin-bearing modules
+retain builtin provenance.
 Dynamic builtin/importlib module loaders are rejected for authority-reaching or
 unresolved module names. Passing a namespace builtin or alias through an
-ordinary call argument likewise retains the active authority visible in that
-namespace, and ``vars()`` of the current adapter module is treated like
+ordinary call argument fails closed even without caller-visible authority,
+because the callee can expose an authority import from its own scope.
+``vars()`` of the current adapter module is treated like
 ``globals()``.
 Class-body lookup falls through to an enclosing binding until a source-ordered
 class binding is active, matching Python's

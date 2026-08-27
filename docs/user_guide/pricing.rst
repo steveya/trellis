@@ -828,10 +828,12 @@ Short-circuited or branch-local named expressions remain conditional rather
 than guaranteed replacements, and namespace-callable aliases returned by
 conditional or Boolean expressions retain every possible namespace result.
 Assignment expressions inside comprehensions bind in the containing scope, and
-always-evaluated control-flow headers are processed before conditional branches.
-Starred namespace-call expansions are treated as potentially empty, so they
-cannot bypass the authority check. Fixed prefix and suffix values in starred
-tuple/list assignment remain associated with their namespace aliases.
+generator-expression filters and results remain possible after a later
+enclosing-scope rebinding because they execute lazily. Always-evaluated
+control-flow headers are processed before conditional branches. Starred
+namespace-call expansions are treated as potentially empty, so they cannot
+bypass the authority check. Fixed prefix and suffix values in starred tuple/list
+assignment remain associated with their namespace aliases.
 Imports redirected through ``global`` or ``nonlocal`` remain visible to the
 check in their owning scope across later rebindings. Rebindings in defaults,
 decorators, bases, annotations, and lambda defaults are applied when their
@@ -839,11 +841,13 @@ definition executes. Dynamic ``eval`` or ``exec`` calls always fail closed,
 even when the builtin is reached through an alias, because either their scope
 or the dynamic source itself can expose authority. Selecting a namespace,
 dynamic-code, or import builtin from a statically resolvable tuple/list/dict
-container does not remove that provenance.
+container does not remove that provenance. Literal ``getattr(module, name)``
+selection from supported builtin-bearing modules likewise retains it.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
-``globals``, ``locals``, or ``vars`` as a first-class argument also preserves
-the namespace's authority exposure at the call site. Calling ``vars()`` on the
+``globals``, ``locals``, or ``vars`` as a first-class argument fails closed even
+when the caller has no visible authority import, because the callee can apply
+the accessor to its own authority-bearing scope. Calling ``vars()`` on the
 current adapter module exposes the same authority as ``globals()``.
 An early class-body reference likewise continues to use an enclosing import
 until a later class-local replacement is active,
