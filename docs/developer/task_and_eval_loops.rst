@@ -1191,8 +1191,9 @@ names, imports, or aliases always fail closed: their effective lexical
 namespaces may contain active authority, and their dynamic source can import
 authority independently. The common builtin resolver preserves provenance
 through statically resolvable tuple/list/dict selection, container aliases, and
-literal ``getattr(module, name)`` selection from supported builtin-bearing
-modules.
+literal ``getattr(module, name)`` or ``module.__dict__[name]`` selection from
+supported builtin-bearing modules. An unresolved module-dictionary key retains
+every supported dangerous builtin that the module can expose.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins

@@ -2301,6 +2301,13 @@ def _resolve_builtin_callable(
         if reflected_kinds:
             return reflected_kinds
     if isinstance(reference, ast.Subscript):
+        reflected_kinds = _module_dict_builtin_kinds(
+            reference,
+            scope=scope,
+            imported_kind_resolver=imported_kind_resolver,
+        )
+        if reflected_kinds:
+            return reflected_kinds
         kinds = {
             kind
             for candidate, candidate_scope in _subscript_callable_candidates(
@@ -2378,6 +2385,57 @@ def _literal_getattr_builtin_kinds(
             kind := imported_kind_resolver(
                 module if not symbol else f"{module}.{symbol}",
                 attribute.value,
+            )
+        )
+        is not None
+    }
+    return tuple(sorted(kinds))
+
+
+def _module_dict_builtin_kinds(
+    reference: ast.Subscript,
+    *,
+    scope: _ImportScope,
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    """Resolve builtins selected through an imported module's ``__dict__``."""
+    container = reference.value
+    if not (
+        isinstance(container, ast.Attribute) and container.attr == "__dict__"
+    ):
+        return ()
+    known_symbol = True
+    try:
+        selected_symbol = ast.literal_eval(reference.slice)
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        known_symbol = False
+        selected_symbol = None
+    if known_symbol:
+        if not isinstance(selected_symbol, str):
+            return ()
+        possible_symbols = (selected_symbol,)
+    else:
+        possible_symbols = (
+            "__import__",
+            "eval",
+            "exec",
+            "getattr",
+            "globals",
+            "import_module",
+            "locals",
+            "vars",
+        )
+    kinds = {
+        kind
+        for _, module, symbol in _resolve_imported_references(
+            container.value,
+            scope=scope,
+        )
+        for possible_symbol in possible_symbols
+        if (
+            kind := imported_kind_resolver(
+                module if not symbol else f"{module}.{symbol}",
+                possible_symbol,
             )
         )
         is not None

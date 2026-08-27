@@ -842,7 +842,9 @@ even when the builtin is reached through an alias, because either their scope
 or the dynamic source itself can expose authority. Selecting a namespace,
 dynamic-code, or import builtin from a statically resolvable tuple/list/dict
 container does not remove that provenance. Literal ``getattr(module, name)``
-selection from supported builtin-bearing modules likewise retains it.
+or ``module.__dict__[name]`` selection from supported builtin-bearing modules
+likewise retains it; an unresolved dictionary key conservatively retains every
+supported dangerous builtin that the module can expose.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
 ``globals``, ``locals``, or ``vars`` as a first-class argument fails closed even
