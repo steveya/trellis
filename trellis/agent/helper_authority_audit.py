@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 import ast
 from collections import Counter, defaultdict
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field, replace
 import json
 from pathlib import Path
 from typing import Callable, Iterable, Mapping
@@ -94,6 +94,13 @@ class _BindingEvent:
     persists_after_rebinding: bool = False
     value: ast.expr | None = None
     value_from_parent: bool = False
+    callable_returns: tuple[ast.expr, ...] = ()
+    callable_node_id: int | None = field(default=None, compare=False)
+    callable_scope: _ImportScope | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -860,6 +867,36 @@ def _scan_indirect_authority_uses(
     return tuple(sorted(uses))
 
 
+class _FunctionReturnCollector(ast.NodeVisitor):
+    """Collect return expressions without entering nested callable scopes."""
+
+    def __init__(self) -> None:
+        self.values: list[ast.expr] = []
+
+    def visit_Return(self, node: ast.Return) -> None:
+        if node.value is not None:
+            self.values.append(node.value)
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+
+def _function_return_values(node: ast.FunctionDef) -> tuple[ast.expr, ...]:
+    collector = _FunctionReturnCollector()
+    for statement in node.body:
+        collector.visit(statement)
+    return tuple(collector.values)
+
+
 class _ScopeBindingCollector(ast.NodeVisitor):
     """Collect bindings in one scope without entering child scopes."""
 
@@ -1023,6 +1060,8 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         is_delete: bool = False,
         value: ast.expr | None = None,
         value_from_parent: bool = False,
+        callable_returns: tuple[ast.expr, ...] = (),
+        callable_node_id: int | None = None,
     ) -> None:
         self._binding_sequence += 1
         line_attribute = "end_lineno" if at_end else "lineno"
@@ -1048,13 +1087,20 @@ class _ScopeBindingCollector(ast.NodeVisitor):
                 persists_after_rebinding=self._deferred_binding_depth > 0,
                 value=value,
                 value_from_parent=value_from_parent,
+                callable_returns=callable_returns,
+                callable_node_id=callable_node_id,
             )
         )
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._visit_function_definition_expressions(node)
         self.local_names.add(node.name)
-        self._record_shadow(local_name=node.name, node=node)
+        self._record_shadow(
+            local_name=node.name,
+            node=node,
+            callable_returns=_function_return_values(node),
+            callable_node_id=id(node),
+        )
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._visit_function_definition_expressions(node)
@@ -1516,6 +1562,8 @@ class _ImportScopeIndexer(ast.NodeVisitor):
             kind="function",
             package=self.package,
         )
+        if isinstance(node, ast.FunctionDef):
+            _attach_callable_scope(self.current, node=node, child=child)
         _propagate_redirected_imports(child)
         self._visit_body_in_scope(node.body, child)
 
@@ -1632,6 +1680,25 @@ def _index_import_scopes(
     if not isinstance(tree, ast.Module):
         raise TypeError("Import scope indexing requires a module AST")
     return _ImportScopeIndexer(tree, package=package).index(tree)
+
+
+def _attach_callable_scope(
+    parent: _ImportScope,
+    *,
+    node: ast.FunctionDef,
+    child: _ImportScope,
+) -> None:
+    """Attach a function's execution scope to its source binding event."""
+    bindings = parent.bindings
+    if not isinstance(bindings, dict):
+        raise TypeError("Import-scope bindings must remain mutable while indexing")
+    events = bindings.get(node.name, ())
+    bindings[node.name] = tuple(
+        replace(event, callable_scope=child)
+        if event.callable_node_id == id(node)
+        else event
+        for event in events
+    )
 
 
 def _normalize_import_from_module(
@@ -2412,6 +2479,15 @@ def _resolve_builtin_callable(
         }
         return tuple(sorted(kinds))
     if isinstance(reference, ast.Call):
+        returned_kinds = _call_result_builtin_kinds(
+            reference,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
+        if returned_kinds:
+            return returned_kinds
         reflected_kinds = _literal_getattr_builtin_kinds(
             reference,
             scope=scope,
@@ -2469,6 +2545,220 @@ def _resolve_builtin_callable(
         )
     )
     return tuple(sorted(imported_kinds))
+
+
+def _call_result_builtin_kinds(
+    reference: ast.Call,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+    builtin_kind_resolver: Callable[[str], str | None],
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    """Resolve dangerous builtins returned by a statically visible callable."""
+    return _callable_return_builtin_kinds(
+        reference.func,
+        scope=scope,
+        seen=seen,
+        builtin_kind_resolver=builtin_kind_resolver,
+        imported_kind_resolver=imported_kind_resolver,
+    )
+
+
+def _callable_return_builtin_kinds(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+    builtin_kind_resolver: Callable[[str], str | None],
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    if isinstance(reference, ast.Attribute) and reference.attr == "__call__":
+        return _callable_return_builtin_kinds(
+            reference.value,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
+    if isinstance(reference, ast.Lambda):
+        return _resolve_builtin_callable(
+            reference.body,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
+    if isinstance(reference, ast.NamedExpr):
+        return _callable_return_builtin_kinds(
+            reference.value,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
+    if isinstance(reference, ast.IfExp):
+        candidates = (reference.body, reference.orelse)
+    elif isinstance(reference, ast.BoolOp):
+        candidates = tuple(reference.values)
+    else:
+        candidates = ()
+    if candidates:
+        return tuple(
+            sorted(
+                {
+                    kind
+                    for candidate in candidates
+                    for kind in _callable_return_builtin_kinds(
+                        candidate,
+                        scope=scope,
+                        seen=seen,
+                        builtin_kind_resolver=builtin_kind_resolver,
+                        imported_kind_resolver=imported_kind_resolver,
+                    )
+                }
+            )
+        )
+    if isinstance(reference, ast.Subscript):
+        return tuple(
+            sorted(
+                {
+                    kind
+                    for candidate, candidate_scope in (
+                        _subscript_callable_candidates(
+                            reference,
+                            scope=scope,
+                            seen=seen,
+                        )
+                    )
+                    for kind in _callable_return_builtin_kinds(
+                        candidate,
+                        scope=candidate_scope,
+                        seen=seen,
+                        builtin_kind_resolver=builtin_kind_resolver,
+                        imported_kind_resolver=imported_kind_resolver,
+                    )
+                }
+            )
+        )
+    if isinstance(reference, ast.Call):
+        return _call_result_builtin_kinds(
+            reference,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
+    if not isinstance(reference, ast.Name):
+        return ()
+    return _resolve_callable_name_return_kinds(
+        reference.id,
+        scope=scope,
+        reference=reference,
+        seen=seen,
+        builtin_kind_resolver=builtin_kind_resolver,
+        imported_kind_resolver=imported_kind_resolver,
+    )
+
+
+def _resolve_callable_name_return_kinds(
+    local_name: str,
+    *,
+    scope: _ImportScope,
+    reference: ast.expr,
+    seen: frozenset[tuple[int, str, int]],
+    builtin_kind_resolver: Callable[[str], str | None],
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    """Resolve return expressions from a source-ordered callable binding."""
+    reference_position = _source_position(reference)
+    possible_since: tuple[int, int, int] | None = None
+    kinds: set[str] = set()
+    current: _ImportScope | None = scope
+    while current is not None:
+        seen_key = (id(current), local_name, id(reference))
+        if seen_key in seen:
+            return tuple(sorted(kinds))
+        next_seen = seen | {seen_key}
+        is_global = local_name in current.global_names
+        is_nonlocal = local_name in current.nonlocal_names
+        binding_events = current.bindings.get(local_name, ())
+        active_events: tuple[_BindingEvent, ...] = ()
+        if binding_events:
+            if possible_since is None:
+                active_events = _active_binding_events(
+                    binding_events,
+                    reference_position=reference_position,
+                )
+            else:
+                active_events = _possible_dynamic_binding_events(
+                    binding_events,
+                    possible_since=possible_since,
+                )
+            for event in active_events:
+                if event.is_delete or event.is_import:
+                    continue
+                value_scope = current
+                if event.value_from_parent and current.parent is not None:
+                    value_scope = current.parent
+                return_scope = event.callable_scope or value_scope
+                for returned_value in event.callable_returns:
+                    kinds.update(
+                        _resolve_builtin_callable(
+                            returned_value,
+                            scope=return_scope,
+                            seen=next_seen,
+                            builtin_kind_resolver=builtin_kind_resolver,
+                            imported_kind_resolver=imported_kind_resolver,
+                        )
+                    )
+                if event.value is not None:
+                    kinds.update(
+                        _callable_return_builtin_kinds(
+                            event.value,
+                            scope=value_scope,
+                            seen=next_seen,
+                            builtin_kind_resolver=builtin_kind_resolver,
+                            imported_kind_resolver=imported_kind_resolver,
+                        )
+                    )
+
+        if is_global or is_nonlocal:
+            if possible_since is None:
+                active_at_redirect = active_events
+            else:
+                active_at_redirect = _active_binding_events(
+                    binding_events,
+                    reference_position=possible_since,
+                )
+            if any(not event.conditional for event in active_at_redirect):
+                return tuple(sorted(kinds))
+            parent = _module_scope(current) if is_global else current.parent
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+            possible_since = current.definition_position
+            current = parent
+            continue
+
+        if local_name in current.local_names:
+            source_ordered_fallback = current.kind in {"class", "module"}
+            if not source_ordered_fallback or _class_binding_blocks_parent(
+                active_events
+            ):
+                return tuple(sorted(kinds))
+        parent = current.parent
+        if current.kind in {
+            "function",
+            "lambda",
+            "comprehension",
+            "generator",
+        }:
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+        if current.kind in {"function", "lambda", "generator"}:
+            possible_since = current.definition_position
+        current = parent
+    return tuple(sorted(kinds))
 
 
 def _literal_getattr_builtin_kinds(

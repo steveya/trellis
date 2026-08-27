@@ -255,7 +255,9 @@ The service-host path is:
   ``getattr(module, name)``, ``module.__dict__[name]``, or
   ``vars(module)[name]`` selection from supported builtin-bearing modules;
   unresolved module-mapping keys retain every supported dangerous builtin that
-  the module can expose.
+  the module can expose. Statically visible lambda and local-function return
+  expressions preserve dangerous-builtin provenance when their result is later
+  invoked.
   Dynamic ``__import__`` and ``importlib.import_module`` loaders fail closed for
   authority-reaching or unresolved module names. Passing a namespace builtin as
   a first-class argument also fails closed even without caller-visible authority,

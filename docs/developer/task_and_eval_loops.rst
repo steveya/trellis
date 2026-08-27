@@ -1194,7 +1194,9 @@ through statically resolvable tuple/list/dict selection, container aliases, and
 literal ``getattr(module, name)``, ``module.__dict__[name]``, or
 ``vars(module)[name]`` selection from supported builtin-bearing modules. An
 unresolved module-mapping key retains every supported dangerous builtin that
-the module can expose.
+the module can expose. Dangerous builtins returned by a statically visible
+lambda or local function keep that provenance when the returned callable is
+invoked later.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins

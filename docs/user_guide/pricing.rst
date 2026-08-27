@@ -845,7 +845,8 @@ container does not remove that provenance. Literal ``getattr(module, name)``,
 ``module.__dict__[name]``, or ``vars(module)[name]`` selection from supported
 builtin-bearing modules likewise retains it; an unresolved mapping key
 conservatively retains every supported dangerous builtin that the module can
-expose.
+expose. A dangerous builtin returned by a statically visible lambda or local
+function remains classified when the returned value is called later.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
 ``globals``, ``locals``, or ``vars`` as a first-class argument fails closed even

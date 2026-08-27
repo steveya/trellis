@@ -1050,6 +1050,39 @@ reflected_value = reflected.price_example()
     return root
 
 
+def _fixture_root_with_callable_returned_loaders(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from importlib import import_module
+
+direct_loader = (lambda: __import__)()
+direct_loaded = direct_loader("trellis.models.example", fromlist=["price_example"])
+factory = lambda: import_module
+named_loader = factory()
+named_loaded = named_loader("trellis.models.example")
+def choose_loader():
+    return import_module
+function_loader = choose_loader()
+function_loaded = function_loader("trellis.models.example")
+def choose_local_loader():
+    from importlib import import_module as local_loader
+    return local_loader
+local_loader = choose_local_loader()
+local_loaded = local_loader("trellis.models.example")
+values = (
+    direct_loaded.price_example(),
+    named_loaded.price_example(),
+    function_loaded.price_example(),
+    local_loaded.price_example(),
+)
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_first_class_namespace_arguments(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -2279,6 +2312,26 @@ def test_audit_fails_closed_on_first_class_dangerous_builtins(tmp_path):
         (3, "import_module", "*", "*", "first_class_dynamic_import"),
         (6, "eval", "*", "*", "first_class_dynamic_code_eval"),
         (10, "getattr", "*", "*", "first_class_reflection_getattr"),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_dangerous_builtins_returned_by_callables(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_callable_returned_loaders(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (4, "__import__", "trellis.models.example", "*", "dynamic_import"),
+        (7, "import_module", "trellis.models.example", "*", "dynamic_import"),
+        (11, "import_module", "trellis.models.example", "*", "dynamic_import"),
+        (16, "import_module", "trellis.models.example", "*", "dynamic_import"),
     ]
     assert report.has_adapter_authority is True
 

@@ -1164,7 +1164,9 @@ selection from tuple/list/dict containers and literal
 ``getattr(module, name)``, ``module.__dict__[name]``, or
 ``vars(module)[name]`` selection from supported builtin-bearing modules retain
 builtin provenance. Unresolved module-mapping keys conservatively retain every
-supported dangerous builtin exposed there.
+supported dangerous builtin exposed there. Statically visible lambda and local
+function return expressions carry dangerous-builtin provenance into a later
+call of the returned value.
 Dynamic builtin/importlib module loaders are rejected for authority-reaching or
 unresolved module names. Passing a namespace builtin or alias through an
 ordinary call argument fails closed even without caller-visible authority,
