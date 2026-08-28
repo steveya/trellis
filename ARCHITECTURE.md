@@ -272,8 +272,9 @@ The service-host path is:
   ``anext``, and for named literal containers passed across a call boundary.
   The implicit builtins mapping remains visible through
   ``globals()["__builtins__"]`` as well as direct ``__builtins__`` access, and
-  ``object.__getattribute__`` participates in the same reflection checks as
-  builtin ``getattr``.
+  ``object.__getattribute__`` and ``__getattribute__`` bound to a supported
+  imported module participate in the same reflection checks as builtin
+  ``getattr``.
   Dynamic ``__import__`` and ``importlib.import_module`` loaders fail closed for
   authority-reaching or unresolved module names. Passing a namespace builtin as
   a first-class argument also fails closed even without caller-visible authority,

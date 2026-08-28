@@ -1211,8 +1211,9 @@ including across ``await``. Plain ``yield`` values and statically visible
 same provenance. Named literal containers passed as call arguments are
 traversed rather than hiding their dangerous members, and the implicit builtins
 mapping remains visible through ``globals()["__builtins__"]``.
-``object.__getattribute__`` is treated as equivalent reflective access to
-builtin ``getattr`` when it selects a dangerous member.
+``object.__getattribute__`` and ``__getattribute__`` bound to a supported
+imported module are treated as equivalent reflective access to builtin
+``getattr`` when they select a dangerous member.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins

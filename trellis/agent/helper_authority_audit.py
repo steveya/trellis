@@ -2615,12 +2615,18 @@ def _resolve_builtin_callable(
     if (
         isinstance(reference, ast.Attribute)
         and reference.attr == "__getattribute__"
-        and _resolve_builtin_callable(
-            reference.value,
-            scope=scope,
-            seen=seen,
-            builtin_kind_resolver=_builtin_object_kind,
-            imported_kind_resolver=_imported_object_kind,
+        and (
+            _resolve_builtin_callable(
+                reference.value,
+                scope=scope,
+                seen=seen,
+                builtin_kind_resolver=_builtin_object_kind,
+                imported_kind_resolver=_imported_object_kind,
+            )
+            or _resolve_imported_references(
+                reference.value,
+                scope=scope,
+            )
         )
     ):
         reflection_kind = builtin_kind_resolver("getattr")
@@ -3161,9 +3167,7 @@ def _literal_getattr_builtin_kinds(
     seen: frozenset[tuple[int, str, int]],
     imported_kind_resolver: Callable[[str, str], str | None],
 ) -> tuple[str, ...]:
-    """Resolve literal ``getattr(module, name)`` builtin references."""
-    if len(reference.args) < 2:
-        return ()
+    """Resolve builtin and bound ``__getattribute__`` reflection."""
     getattr_kinds = _resolve_builtin_callable(
         reference.func,
         scope=scope,
@@ -3173,13 +3177,64 @@ def _literal_getattr_builtin_kinds(
     )
     if not getattr_kinds:
         return ()
-    possible_symbols = _possible_reflected_symbols(reference.args[1])
+
+    module_reference: ast.expr | None = None
+    selector: ast.expr | None = None
+    if (
+        isinstance(reference.func, ast.Attribute)
+        and reference.func.attr == "__getattribute__"
+        and len(reference.args) >= 2
+        and _resolve_builtin_callable(
+            reference.func.value,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=_builtin_object_kind,
+            imported_kind_resolver=_imported_object_kind,
+        )
+    ):
+        module_reference = reference.args[0]
+        selector = reference.args[1]
+    elif (
+        isinstance(reference.func, ast.Attribute)
+        and reference.func.attr == "__getattribute__"
+        and reference.args
+        and _resolve_imported_references(
+            reference.func.value,
+            scope=scope,
+        )
+    ):
+        module_reference = reference.func.value
+        selector = reference.args[0]
+    elif len(reference.args) >= 2:
+        module_reference = reference.args[0]
+        selector = reference.args[1]
+    elif len(reference.args) == 1:
+        possible_symbols = _possible_reflected_symbols(reference.args[0])
+        return tuple(
+            sorted(
+                {
+                    kind
+                    for module in ("builtins", "importlib")
+                    for possible_symbol in possible_symbols
+                    if (
+                        kind := imported_kind_resolver(
+                            module,
+                            possible_symbol,
+                        )
+                    )
+                    is not None
+                }
+            )
+        )
+    if module_reference is None or selector is None:
+        return ()
+    possible_symbols = _possible_reflected_symbols(selector)
     if not possible_symbols:
         return ()
     kinds = {
         kind
         for _, module, symbol in _resolve_imported_references(
-            reference.args[0],
+            module_reference,
             scope=scope,
         )
         for possible_symbol in possible_symbols

@@ -1300,10 +1300,32 @@ def _fixture_root_with_object_getattribute_loader(tmp_path: Path) -> Path:
     adapter.write_text(
         """
 import importlib
+from builtins import object as base_object
 
 loader = object.__getattribute__(importlib, "import_module")
 loaded = loader("trellis.models.example")
-value = loaded.price_example()
+aliased_loader = base_object.__getattribute__(importlib, "import_module")
+aliased_loaded = aliased_loader("trellis.models.example")
+values = (loaded.price_example(), aliased_loaded.price_example())
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_module_getattribute_loaders(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+import importlib
+
+direct_loader = importlib.__getattribute__("import_module")
+direct_loaded = direct_loader("trellis.models.example")
+getter = importlib.__getattribute__
+aliased_loader = getter("import_module")
+aliased_loaded = aliased_loader("trellis.models.example")
+values = (direct_loaded.price_example(), aliased_loaded.price_example())
 """.lstrip(),
         encoding="utf-8",
     )
@@ -2789,7 +2811,26 @@ def test_audit_recognizes_object_getattribute_as_reflection(tmp_path):
         (item.line, item.local_name, item.module, item.symbol, item.use_kind)
         for item in report.adapter_indirect_authority_uses
     ] == [
-        (4, "import_module", "trellis.models.example", "*", "dynamic_import")
+        (5, "import_module", "trellis.models.example", "*", "dynamic_import"),
+        (7, "import_module", "trellis.models.example", "*", "dynamic_import"),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_recognizes_module_bound_getattribute_as_reflection(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_module_getattribute_loaders(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (4, "import_module", "trellis.models.example", "*", "dynamic_import"),
+        (7, "import_module", "trellis.models.example", "*", "dynamic_import"),
     ]
     assert report.has_adapter_authority is True
 
