@@ -1103,6 +1103,24 @@ dynamic_value = dynamic_loaded.price_example()
     return root
 
 
+def _fixture_root_with_module_mapping_get_loaders(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+import importlib
+
+vars_loader = vars(importlib).get("import_module")
+vars_loaded = vars_loader("trellis.models.example")
+dict_loader = importlib.__dict__.get("import_module")
+dict_loaded = dict_loader("trellis.models.example")
+values = (vars_loaded.price_example(), dict_loaded.price_example())
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_implicit_builtins_mapping(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -2620,6 +2638,24 @@ def test_audit_resolves_dynamic_loaders_reached_through_vars_module(tmp_path):
             "*",
             "dynamic_import",
         ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_dynamic_loaders_selected_with_mapping_get(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_module_mapping_get_loaders(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (4, "import_module", "trellis.models.example", "*", "dynamic_import"),
+        (6, "import_module", "trellis.models.example", "*", "dynamic_import"),
     ]
     assert report.has_adapter_authority is True
 

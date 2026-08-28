@@ -860,7 +860,9 @@ later, including across ``await``. The classification also follows plain
 ``yield`` values and statically visible ``yield from`` containers consumed
 through ``next`` or ``anext``, plus dangerous members of named literal
 containers passed to another callable. The implicit builtins mapping cannot be
-hidden behind ``globals()["__builtins__"]``. Both
+hidden behind ``globals()["__builtins__"]``. Dangerous members selected from
+``vars(module)`` or ``module.__dict__`` remain classified through either a
+subscript or ``.get()``. Both
 ``object.__getattribute__`` and ``__getattribute__`` bound to a supported
 imported module are checked like builtin ``getattr``.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an

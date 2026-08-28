@@ -2685,6 +2685,14 @@ def _resolve_builtin_callable(
         )
         if reflected_kinds:
             return reflected_kinds
+        mapping_kinds = _module_mapping_get_builtin_kinds(
+            reference,
+            scope=scope,
+            seen=seen,
+            imported_kind_resolver=imported_kind_resolver,
+        )
+        if mapping_kinds:
+            return mapping_kinds
     if isinstance(reference, ast.Subscript):
         reflected_kinds = _module_mapping_builtin_kinds(
             reference,
@@ -3257,8 +3265,48 @@ def _module_mapping_builtin_kinds(
     imported_kind_resolver: Callable[[str, str], str | None],
 ) -> tuple[str, ...]:
     """Resolve builtins selected through an imported module mapping."""
-    container = reference.value
-    possible_symbols = _possible_reflected_symbols(reference.slice)
+    return _module_mapping_selected_builtin_kinds(
+        container=reference.value,
+        selector=reference.slice,
+        scope=scope,
+        seen=seen,
+        imported_kind_resolver=imported_kind_resolver,
+    )
+
+
+def _module_mapping_get_builtin_kinds(
+    reference: ast.Call,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    """Resolve builtins selected through ``module_mapping.get(name)``."""
+    if (
+        not isinstance(reference.func, ast.Attribute)
+        or reference.func.attr != "get"
+        or not reference.args
+    ):
+        return ()
+    return _module_mapping_selected_builtin_kinds(
+        container=reference.func.value,
+        selector=reference.args[0],
+        scope=scope,
+        seen=seen,
+        imported_kind_resolver=imported_kind_resolver,
+    )
+
+
+def _module_mapping_selected_builtin_kinds(
+    *,
+    container: ast.expr,
+    selector: ast.expr,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    """Resolve one selected member from a supported module mapping."""
+    possible_symbols = _possible_reflected_symbols(selector)
     if not possible_symbols:
         return ()
     kinds: set[str] = set()
