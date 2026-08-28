@@ -1202,9 +1202,9 @@ the module can expose. Literal module recovery through
 authority resolution even after the original import name is rebound. Bindings
 inside ``assert`` remain conditional because ``python -O`` removes the entire
 statement; bindings in ``finally`` are unconditional for code reached after the
-try statement. Dangerous builtins returned by a statically visible
-lambda or local function keep that provenance when the returned callable is
-invoked later.
+try statement. Dangerous builtins returned by a statically visible lambda or
+synchronous or async local function keep that provenance when the returned
+callable is invoked later, including across ``await``.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins

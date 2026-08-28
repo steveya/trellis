@@ -263,8 +263,9 @@ The service-host path is:
   same imported-reference checks. Bindings inside ``assert`` remain conditional
   because optimized Python removes the statement, while ``finally`` bindings
   are unconditional for code reached after the try statement. Statically
-  visible lambda and local-function return expressions preserve
-  dangerous-builtin provenance when their result is later invoked.
+  visible lambda and synchronous or async local-function return expressions
+  preserve dangerous-builtin provenance when their result is later invoked,
+  including across ``await``.
   Dynamic ``__import__`` and ``importlib.import_module`` loaders fail closed for
   authority-reaching or unresolved module names. Passing a namespace builtin as
   a first-class argument also fails closed even without caller-visible authority,

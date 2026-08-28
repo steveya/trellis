@@ -900,7 +900,9 @@ class _FunctionReturnCollector(ast.NodeVisitor):
         return
 
 
-def _function_return_values(node: ast.FunctionDef) -> tuple[ast.expr, ...]:
+def _function_return_values(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> tuple[ast.expr, ...]:
     collector = _FunctionReturnCollector()
     for statement in node.body:
         collector.visit(statement)
@@ -1123,7 +1125,12 @@ class _ScopeBindingCollector(ast.NodeVisitor):
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._visit_function_definition_expressions(node)
         self.local_names.add(node.name)
-        self._record_shadow(local_name=node.name, node=node)
+        self._record_shadow(
+            local_name=node.name,
+            node=node,
+            callable_returns=_function_return_values(node),
+            callable_node_id=id(node),
+        )
 
     def _visit_function_definition_expressions(
         self,
@@ -1580,8 +1587,7 @@ class _ImportScopeIndexer(ast.NodeVisitor):
             kind="function",
             package=self.package,
         )
-        if isinstance(node, ast.FunctionDef):
-            _attach_callable_scope(self.current, node=node, child=child)
+        _attach_callable_scope(self.current, node=node, child=child)
         _propagate_redirected_imports(child)
         self._visit_body_in_scope(node.body, child)
 
@@ -1703,7 +1709,7 @@ def _index_import_scopes(
 def _attach_callable_scope(
     parent: _ImportScope,
     *,
-    node: ast.FunctionDef,
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
     child: _ImportScope,
 ) -> None:
     """Attach a function's execution scope to its source binding event."""
@@ -2506,6 +2512,14 @@ def _resolve_builtin_callable(
     imported_kind_resolver: Callable[[str, str], str | None],
 ) -> tuple[str, ...]:
     """Resolve selected builtins through imports, aliases, and branches."""
+    if isinstance(reference, ast.Await):
+        return _resolve_builtin_callable(
+            reference.value,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
     if isinstance(reference, ast.Attribute) and reference.attr == "__call__":
         return _resolve_builtin_callable(
             reference.value,
@@ -2636,6 +2650,14 @@ def _callable_return_builtin_kinds(
     builtin_kind_resolver: Callable[[str], str | None],
     imported_kind_resolver: Callable[[str, str], str | None],
 ) -> tuple[str, ...]:
+    if isinstance(reference, ast.Await):
+        return _callable_return_builtin_kinds(
+            reference.value,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
     if isinstance(reference, ast.Attribute) and reference.attr == "__call__":
         return _callable_return_builtin_kinds(
             reference.value,

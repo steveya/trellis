@@ -1175,6 +1175,24 @@ values = (
     return root
 
 
+def _fixture_root_with_async_callable_returned_loader(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+async def get_loader():
+    return __import__
+
+async def evaluate():
+    loader = await get_loader()
+    loaded = loader("trellis.models.example", fromlist=["price_example"])
+    return loaded.price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_first_class_namespace_arguments(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -2522,6 +2540,23 @@ def test_audit_resolves_dangerous_builtins_returned_by_callables(tmp_path):
         (7, "import_module", "trellis.models.example", "*", "dynamic_import"),
         (11, "import_module", "trellis.models.example", "*", "dynamic_import"),
         (16, "import_module", "trellis.models.example", "*", "dynamic_import"),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_dangerous_builtins_returned_by_async_callables(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_async_callable_returned_loader(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (6, "__import__", "trellis.models.example", "*", "dynamic_import")
     ]
     assert report.has_adapter_authority is True
 

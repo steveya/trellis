@@ -1171,8 +1171,9 @@ recovered through ``sys.modules[module]`` or ``sys.modules.get(module)`` retain
 their ordinary imported-reference authority. ``assert`` bindings remain
 conditional because optimized Python removes the assertion, while ``finally``
 bindings are unconditional for code reached after the try statement.
-Statically visible lambda and local function return expressions carry
-dangerous-builtin provenance into a later call of the returned value.
+Statically visible lambda and synchronous or async local function return
+expressions carry dangerous-builtin provenance into a later call of the
+returned value, including across ``await``.
 Dynamic builtin/importlib module loaders are rejected for authority-reaching or
 unresolved module names. Passing a namespace builtin or alias through an
 ordinary call argument fails closed even without caller-visible authority,
