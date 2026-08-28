@@ -1166,9 +1166,13 @@ selection from tuple/list/dict containers and literal or unresolved
 builtin provenance. The implicit ``__builtins__[name]`` mapping and its
 source-ordered aliases retain the same provenance unless a local replacement
 shadows ``__builtins__``. Unresolved module-mapping keys conservatively retain
-every supported dangerous builtin exposed there. Statically visible lambda and
-local function return expressions carry dangerous-builtin provenance into a
-later call of the returned value.
+every supported dangerous builtin exposed there. Literal authority modules
+recovered through ``sys.modules[module]`` or ``sys.modules.get(module)`` retain
+their ordinary imported-reference authority. ``assert`` bindings remain
+conditional because optimized Python removes the assertion, while ``finally``
+bindings are unconditional for code reached after the try statement.
+Statically visible lambda and local function return expressions carry
+dangerous-builtin provenance into a later call of the returned value.
 Dynamic builtin/importlib module loaders are rejected for authority-reaching or
 unresolved module names. Passing a namespace builtin or alias through an
 ordinary call argument fails closed even without caller-visible authority,

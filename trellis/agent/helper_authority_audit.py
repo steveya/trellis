@@ -977,11 +977,24 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         self._visit_statements_conditionally(node.body)
         self._visit_statements_conditionally(node.orelse)
 
+    def visit_Assert(self, node: ast.Assert) -> None:
+        self._visit_conditionally(node.test)
+        if node.msg is not None:
+            self._visit_conditionally(node.msg)
+
     def visit_Try(self, node: ast.Try) -> None:
-        self._visit_conditional(node)
+        self._visit_try(node)
 
     def visit_TryStar(self, node: ast.TryStar) -> None:
-        self._visit_conditional(node)
+        self._visit_try(node)
+
+    def _visit_try(self, node: ast.Try | ast.TryStar) -> None:
+        self._visit_statements_conditionally(node.body)
+        for handler in node.handlers:
+            self._visit_conditionally(handler)
+        self._visit_statements_conditionally(node.orelse)
+        for statement in node.finalbody:
+            self.visit(statement)
 
     def visit_With(self, node: ast.With) -> None:
         self._visit_with(node)
@@ -1022,11 +1035,6 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         self.visit(first)
         for comparator in remaining:
             self._visit_conditionally(comparator)
-
-    def _visit_conditional(self, node: ast.AST) -> None:
-        self._conditional_depth += 1
-        self.generic_visit(node)
-        self._conditional_depth -= 1
 
     def _visit_conditionally(self, node: ast.AST) -> None:
         self._conditional_depth += 1
@@ -1734,6 +1742,17 @@ def _resolve_imported_references(
     *,
     scope: _ImportScope,
 ) -> tuple[tuple[str, str, str], ...]:
+    sys_module = _literal_sys_modules_module_name(reference, scope=scope)
+    if sys_module is not None:
+        return ((sys_module, sys_module, ""),)
+    if isinstance(reference, ast.Attribute):
+        sys_module = _literal_sys_modules_module_name(
+            reference.value,
+            scope=scope,
+        )
+        if sys_module is not None:
+            return ((reference.attr, sys_module, reference.attr),)
+
     if isinstance(reference, ast.Name):
         return tuple(
             (reference.id, binding.module, binding.symbol)
@@ -2146,6 +2165,40 @@ def _is_sys_modules_reference(
             scope=scope,
         )
     )
+
+
+def _literal_sys_modules_module_name(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+) -> str | None:
+    """Return a literal module name selected from ``sys.modules``."""
+    selector: ast.expr | None = None
+    if isinstance(reference, ast.Subscript) and _is_sys_modules_reference(
+        reference.value,
+        scope=scope,
+    ):
+        selector = reference.slice
+    elif (
+        isinstance(reference, ast.Call)
+        and isinstance(reference.func, ast.Attribute)
+        and reference.func.attr == "get"
+        and len(reference.args) in {1, 2}
+        and all(
+            not isinstance(argument, ast.Starred)
+            for argument in reference.args
+        )
+        and not reference.keywords
+        and _is_sys_modules_reference(reference.func.value, scope=scope)
+    ):
+        selector = reference.args[0]
+    if selector is None:
+        return None
+    try:
+        module_name = ast.literal_eval(selector)
+    except (ValueError, TypeError, SyntaxError, MemoryError, RecursionError):
+        return None
+    return module_name if isinstance(module_name, str) else None
 
 
 def _is_current_module_key(reference: ast.expr, *, current_module: str) -> bool:

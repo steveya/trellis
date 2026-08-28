@@ -848,8 +848,13 @@ builtin-bearing modules likewise retains it. The implicit
 ``__builtins__[name]`` mapping and its source-ordered aliases also retain
 provenance unless a local replacement shadows ``__builtins__``; an unresolved
 mapping key conservatively retains every supported dangerous builtin that the
-module can expose. A dangerous builtin returned by a statically visible lambda
-or local function remains classified when the returned value is called later.
+module can expose. Literal modules recovered through ``sys.modules[module]`` or
+``sys.modules.get(module)`` retain their imported pricing authority. Bindings
+inside ``assert`` remain conditional because optimized Python can remove the
+assertion, while ``finally`` bindings are treated as guaranteed before code
+after the try statement. A dangerous builtin returned by a statically visible
+lambda or local function remains classified when the returned value is called
+later.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
 ``globals``, ``locals``, or ``vars`` as a first-class argument fails closed even

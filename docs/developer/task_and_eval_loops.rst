@@ -1197,7 +1197,12 @@ literal or unresolved ``getattr(module, name)`` attribute selection,
 the implicit ``__builtins__[name]`` mapping through source-ordered aliases. A
 local replacement of ``__builtins__`` shadows that implicit mapping. An
 unresolved module-mapping key retains every supported dangerous builtin that
-the module can expose. Dangerous builtins returned by a statically visible
+the module can expose. Literal module recovery through
+``sys.modules[module]`` or ``sys.modules.get(module)`` participates in ordinary
+authority resolution even after the original import name is rebound. Bindings
+inside ``assert`` remain conditional because ``python -O`` removes the entire
+statement; bindings in ``finally`` are unconditional for code reached after the
+try statement. Dangerous builtins returned by a statically visible
 lambda or local function keep that provenance when the returned callable is
 invoked later.
 Dynamic loaders reached through builtin ``__import__`` or

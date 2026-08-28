@@ -485,6 +485,45 @@ def evaluate():
     return root
 
 
+def _fixture_root_with_assert_rebinding(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+def local_price():
+    return 0.0
+
+assert (price_example := local_price)
+value = price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_finally_rebinding(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from trellis.models.example import price_example
+
+def local_price():
+    return 0.0
+
+try:
+    pass
+finally:
+    price_example = local_price
+value = price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_annotation_only_references(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -1189,6 +1228,23 @@ aliased_value = aliased_namespace["price_example"]()
     return root
 
 
+def _fixture_root_with_sys_modules_authority_lookup(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+import sys
+import trellis.models.example as helpers
+
+helpers = None
+direct_value = sys.modules["trellis.models.example"].price_example()
+get_value = sys.modules.get("trellis.models.example").price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_definition_expression_rebindings(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -1699,6 +1755,32 @@ def test_audit_honors_ordinary_rebindings_after_imports(tmp_path):
 
     report = build_helper_authority_report(
         _fixture_root_with_ordinary_rebindings(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert report.adapter_indirect_authority_uses == ()
+    assert report.has_adapter_authority is False
+
+
+def test_audit_treats_assert_walrus_rebindings_as_conditional(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_assert_rebinding(tmp_path)
+    )
+
+    assert [
+        (item.line, item.module, item.symbol, item.matches_required_authority)
+        for item in report.adapter_calls
+    ] == [(7, "trellis.models.example", "price_example", True)]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_treats_finally_rebindings_as_unconditional(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_finally_rebinding(tmp_path)
     )
 
     assert report.adapter_calls == ()
@@ -2524,6 +2606,23 @@ def test_audit_fails_closed_for_vars_of_current_module(tmp_path):
             "price_example",
             "dynamic_global_namespace",
         ),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_authority_modules_recovered_from_sys_modules(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_sys_modules_authority_lookup(tmp_path)
+    )
+
+    assert [
+        (item.line, item.module, item.symbol, item.matches_required_authority)
+        for item in report.adapter_calls
+    ] == [
+        (5, "trellis.models.example", "price_example", True),
+        (6, "trellis.models.example", "price_example", True),
     ]
     assert report.has_adapter_authority is True
 
