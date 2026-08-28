@@ -1212,7 +1212,8 @@ same provenance. Named literal containers passed as call arguments are
 traversed rather than hiding their dangerous members, and the implicit builtins
 mapping remains visible through ``globals()["__builtins__"]``.
 Selecting a dangerous member from ``vars(module)`` or ``module.__dict__`` via
-either a subscript or ``.get()`` preserves the same provenance.
+a subscript or a keyed value-returning method such as ``get``, ``pop``,
+``setdefault``, or ``__getitem__`` preserves the same provenance.
 ``object.__getattribute__`` and ``__getattribute__`` bound to a supported
 imported module are treated as equivalent reflective access to builtin
 ``getattr`` when they select a dangerous member.

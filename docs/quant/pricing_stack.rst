@@ -1180,8 +1180,9 @@ through ``next`` or ``anext``, and named literal containers passed to another
 callable retain that provenance. Accessing the implicit builtins mapping through
 ``globals()["__builtins__"]`` is equivalent to direct ``__builtins__`` access
 for this analysis. Module mappings exposed by ``vars(module)`` or
-``module.__dict__`` preserve builtin provenance through both subscripts and
-``.get()`` selection. ``object.__getattribute__`` and ``__getattribute__`` bound
+``module.__dict__`` preserve builtin provenance through subscripts and keyed
+value-returning methods such as ``get``, ``pop``, ``setdefault``, and
+``__getitem__``. ``object.__getattribute__`` and ``__getattribute__`` bound
 to a supported imported module receive the same reflective member checks as
 builtin ``getattr``.
 Dynamic builtin/importlib module loaders are rejected for authority-reaching or

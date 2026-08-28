@@ -1114,7 +1114,13 @@ vars_loader = vars(importlib).get("import_module")
 vars_loaded = vars_loader("trellis.models.example")
 dict_loader = importlib.__dict__.get("import_module")
 dict_loaded = dict_loader("trellis.models.example")
-values = (vars_loaded.price_example(), dict_loaded.price_example())
+pop_loader = vars(importlib).pop("import_module")
+pop_loaded = pop_loader("trellis.models.example")
+values = (
+    vars_loaded.price_example(),
+    dict_loaded.price_example(),
+    pop_loaded.price_example(),
+)
 """.lstrip(),
         encoding="utf-8",
     )
@@ -2656,6 +2662,7 @@ def test_audit_resolves_dynamic_loaders_selected_with_mapping_get(tmp_path):
     ] == [
         (4, "import_module", "trellis.models.example", "*", "dynamic_import"),
         (6, "import_module", "trellis.models.example", "*", "dynamic_import"),
+        (8, "import_module", "trellis.models.example", "*", "dynamic_import"),
     ]
     assert report.has_adapter_authority is True
 

@@ -2685,7 +2685,7 @@ def _resolve_builtin_callable(
         )
         if reflected_kinds:
             return reflected_kinds
-        mapping_kinds = _module_mapping_get_builtin_kinds(
+        mapping_kinds = _module_mapping_method_builtin_kinds(
             reference,
             scope=scope,
             seen=seen,
@@ -3274,17 +3274,18 @@ def _module_mapping_builtin_kinds(
     )
 
 
-def _module_mapping_get_builtin_kinds(
+def _module_mapping_method_builtin_kinds(
     reference: ast.Call,
     *,
     scope: _ImportScope,
     seen: frozenset[tuple[int, str, int]],
     imported_kind_resolver: Callable[[str, str], str | None],
 ) -> tuple[str, ...]:
-    """Resolve builtins selected through ``module_mapping.get(name)``."""
+    """Resolve builtins selected through a keyed module-mapping method."""
     if (
         not isinstance(reference.func, ast.Attribute)
-        or reference.func.attr != "get"
+        or reference.func.attr
+        not in {"get", "pop", "setdefault", "__getitem__"}
         or not reference.args
     ):
         return ()

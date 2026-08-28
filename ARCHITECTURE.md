@@ -272,8 +272,9 @@ The service-host path is:
   ``anext``, and for named literal containers passed across a call boundary.
   The implicit builtins mapping remains visible through
   ``globals()["__builtins__"]`` as well as direct ``__builtins__`` access, and
-  module mappings selected through either subscripts or ``.get()`` retain the
-  same builtin provenance. Both
+  module mappings selected through subscripts or keyed value-returning methods
+  such as ``get``, ``pop``, ``setdefault``, and ``__getitem__`` retain the same
+  builtin provenance. Both
   ``object.__getattribute__`` and ``__getattribute__`` bound to a supported
   imported module participate in the same reflection checks as builtin
   ``getattr``.
