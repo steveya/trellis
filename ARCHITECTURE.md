@@ -262,10 +262,12 @@ The service-host path is:
   ``sys.modules[module]`` or ``sys.modules.get(module)`` participates in the
   same imported-reference checks. Bindings inside ``assert`` remain conditional
   because optimized Python removes the statement, while ``finally`` bindings
-  are unconditional for code reached after the try statement. Statically
-  visible lambda and synchronous or async local-function return expressions
-  preserve dangerous-builtin provenance when their result is later invoked,
-  including across ``await``.
+  are unconditional for code reached after the try statement. The first
+  context-manager target is likewise unconditional on fall-through, while
+  later manager targets remain conservative. Statically visible lambda,
+  function, async-function, and class-method return expressions preserve
+  dangerous-builtin provenance when their result is later invoked, including
+  across ``await``.
   Dynamic ``__import__`` and ``importlib.import_module`` loaders fail closed for
   authority-reaching or unresolved module names. Passing a namespace builtin as
   a first-class argument also fails closed even without caller-visible authority,

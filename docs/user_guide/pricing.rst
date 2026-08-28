@@ -852,9 +852,11 @@ module can expose. Literal modules recovered through ``sys.modules[module]`` or
 ``sys.modules.get(module)`` retain their imported pricing authority. Bindings
 inside ``assert`` remain conditional because optimized Python can remove the
 assertion, while ``finally`` bindings are treated as guaranteed before code
-after the try statement. A dangerous builtin returned by a statically visible
-lambda or synchronous or async local function remains classified when the
-returned value is called later, including across ``await``.
+after the try statement. The first context-manager target is likewise treated
+as guaranteed on fall-through, while later manager targets stay conservative.
+A dangerous builtin returned by a statically visible lambda, function, async
+function, or class method remains classified when the returned value is called
+later, including across ``await``.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
 ``globals``, ``locals``, or ``vars`` as a first-class argument fails closed even

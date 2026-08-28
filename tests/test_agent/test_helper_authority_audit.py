@@ -524,6 +524,26 @@ value = price_example()
     return root
 
 
+def _fixture_root_with_first_context_manager_rebinding(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+from contextlib import nullcontext
+from trellis.models.example import price_example
+
+def local_price():
+    return 0.0
+
+with nullcontext(local_price) as price_example:
+    pass
+value = price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_annotation_only_references(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -1193,6 +1213,25 @@ async def evaluate():
     return root
 
 
+def _fixture_root_with_method_returned_loader(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+class Factory:
+    @staticmethod
+    def loader():
+        return __import__
+
+load = Factory.loader()
+loaded = load("trellis.models.example", fromlist=["price_example"])
+value = loaded.price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_first_class_namespace_arguments(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -1799,6 +1838,18 @@ def test_audit_treats_finally_rebindings_as_unconditional(tmp_path):
 
     report = build_helper_authority_report(
         _fixture_root_with_finally_rebinding(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert report.adapter_indirect_authority_uses == ()
+    assert report.has_adapter_authority is False
+
+
+def test_audit_treats_first_context_manager_target_as_unconditional(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_first_context_manager_rebinding(tmp_path)
     )
 
     assert report.adapter_calls == ()
@@ -2557,6 +2608,23 @@ def test_audit_resolves_dangerous_builtins_returned_by_async_callables(tmp_path)
         for item in report.adapter_indirect_authority_uses
     ] == [
         (6, "__import__", "trellis.models.example", "*", "dynamic_import")
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_dangerous_builtins_returned_by_methods(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_method_returned_loader(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (7, "__import__", "trellis.models.example", "*", "dynamic_import")
     ]
     assert report.has_adapter_authority is True
 

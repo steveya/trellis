@@ -111,6 +111,12 @@ class _BindingEvent:
         compare=False,
         repr=False,
     )
+    class_node_id: int | None = field(default=None, compare=False)
+    class_scope: _ImportScope | None = field(
+        default=None,
+        compare=False,
+        repr=False,
+    )
 
 
 @dataclass(frozen=True)
@@ -1008,7 +1014,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         first, *remaining = node.items
         self.visit(first.context_expr)
         if first.optional_vars is not None:
-            self._visit_conditionally(first.optional_vars)
+            self.visit(first.optional_vars)
         for item in remaining:
             self._visit_conditionally(item.context_expr)
             if item.optional_vars is not None:
@@ -1082,6 +1088,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         value_from_parent: bool = False,
         callable_returns: tuple[ast.expr, ...] = (),
         callable_node_id: int | None = None,
+        class_node_id: int | None = None,
     ) -> None:
         self._binding_sequence += 1
         line_attribute = "end_lineno" if at_end else "lineno"
@@ -1109,6 +1116,7 @@ class _ScopeBindingCollector(ast.NodeVisitor):
                 value_from_parent=value_from_parent,
                 callable_returns=callable_returns,
                 callable_node_id=callable_node_id,
+                class_node_id=class_node_id,
             )
         )
 
@@ -1150,7 +1158,11 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         for keyword in node.keywords:
             self.visit(keyword)
         self.local_names.add(node.name)
-        self._record_shadow(local_name=node.name, node=node)
+        self._record_shadow(
+            local_name=node.name,
+            node=node,
+            class_node_id=id(node),
+        )
 
     def visit_Lambda(self, node: ast.Lambda) -> None:
         self._visit_argument_expressions(node.args)
@@ -1605,6 +1617,7 @@ class _ImportScopeIndexer(ast.NodeVisitor):
             kind="class",
             package=self.package,
         )
+        _attach_class_scope(self.current, node=node, child=child)
         _propagate_redirected_imports(child)
         self._visit_body_in_scope(node.body, child)
 
@@ -1720,6 +1733,25 @@ def _attach_callable_scope(
     bindings[node.name] = tuple(
         replace(event, callable_scope=child)
         if event.callable_node_id == id(node)
+        else event
+        for event in events
+    )
+
+
+def _attach_class_scope(
+    parent: _ImportScope,
+    *,
+    node: ast.ClassDef,
+    child: _ImportScope,
+) -> None:
+    """Attach a class body scope to its source binding event."""
+    bindings = parent.bindings
+    if not isinstance(bindings, dict):
+        raise TypeError("Import-scope bindings must remain mutable while indexing")
+    events = bindings.get(node.name, ())
+    bindings[node.name] = tuple(
+        replace(event, class_scope=child)
+        if event.class_node_id == id(node)
         else event
         for event in events
     )
@@ -2658,6 +2690,16 @@ def _callable_return_builtin_kinds(
             builtin_kind_resolver=builtin_kind_resolver,
             imported_kind_resolver=imported_kind_resolver,
         )
+    if isinstance(reference, ast.Attribute) and reference.attr != "__call__":
+        method_kinds = _method_return_builtin_kinds(
+            reference,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
+        if method_kinds:
+            return method_kinds
     if isinstance(reference, ast.Attribute) and reference.attr == "__call__":
         return _callable_return_builtin_kinds(
             reference.value,
@@ -2744,6 +2786,165 @@ def _callable_return_builtin_kinds(
         builtin_kind_resolver=builtin_kind_resolver,
         imported_kind_resolver=imported_kind_resolver,
     )
+
+
+def _method_return_builtin_kinds(
+    reference: ast.Attribute,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+    builtin_kind_resolver: Callable[[str], str | None],
+    imported_kind_resolver: Callable[[str, str], str | None],
+) -> tuple[str, ...]:
+    """Resolve return provenance for a statically visible class method."""
+    return tuple(
+        sorted(
+            {
+                kind
+                for class_scope in _resolve_class_scopes(
+                    reference.value,
+                    scope=scope,
+                    seen=seen,
+                )
+                for kind in _resolve_callable_name_return_kinds(
+                    reference.attr,
+                    scope=class_scope,
+                    reference=reference,
+                    seen=seen,
+                    builtin_kind_resolver=builtin_kind_resolver,
+                    imported_kind_resolver=imported_kind_resolver,
+                )
+            }
+        )
+    )
+
+
+def _resolve_class_scopes(
+    reference: ast.expr,
+    *,
+    scope: _ImportScope,
+    seen: frozenset[tuple[int, str, int]],
+) -> tuple[_ImportScope, ...]:
+    if isinstance(reference, ast.NamedExpr):
+        return _resolve_class_scopes(reference.value, scope=scope, seen=seen)
+    if isinstance(reference, ast.IfExp):
+        candidates = (reference.body, reference.orelse)
+    elif isinstance(reference, ast.BoolOp):
+        candidates = tuple(reference.values)
+    else:
+        candidates = ()
+    if candidates:
+        return _unique_scopes(
+            child_scope
+            for candidate in candidates
+            for child_scope in _resolve_class_scopes(
+                candidate,
+                scope=scope,
+                seen=seen,
+            )
+        )
+    if not isinstance(reference, ast.Name):
+        return ()
+    return _resolve_class_name_scopes(
+        reference.id,
+        scope=scope,
+        reference=reference,
+        seen=seen,
+    )
+
+
+def _resolve_class_name_scopes(
+    local_name: str,
+    *,
+    scope: _ImportScope,
+    reference: ast.expr,
+    seen: frozenset[tuple[int, str, int]],
+) -> tuple[_ImportScope, ...]:
+    """Resolve statically visible class definitions through simple aliases."""
+    reference_position = _source_position(reference)
+    possible_since: tuple[int, int, int] | None = None
+    class_scopes: list[_ImportScope] = []
+    current: _ImportScope | None = scope
+    while current is not None:
+        seen_key = (id(current), local_name, id(reference))
+        if seen_key in seen:
+            return _unique_scopes(class_scopes)
+        next_seen = seen | {seen_key}
+        is_global = local_name in current.global_names
+        is_nonlocal = local_name in current.nonlocal_names
+        binding_events = current.bindings.get(local_name, ())
+        active_events: tuple[_BindingEvent, ...] = ()
+        if binding_events:
+            if possible_since is None:
+                active_events = _active_binding_events(
+                    binding_events,
+                    reference_position=reference_position,
+                )
+            else:
+                active_events = _possible_dynamic_binding_events(
+                    binding_events,
+                    possible_since=possible_since,
+                )
+            for event in active_events:
+                if event.is_delete or event.is_import:
+                    continue
+                if event.class_scope is not None:
+                    class_scopes.append(event.class_scope)
+                elif event.value is not None:
+                    value_scope = current
+                    if event.value_from_parent and current.parent is not None:
+                        value_scope = current.parent
+                    class_scopes.extend(
+                        _resolve_class_scopes(
+                            event.value,
+                            scope=value_scope,
+                            seen=next_seen,
+                        )
+                    )
+
+        if is_global or is_nonlocal:
+            if possible_since is None:
+                active_at_redirect = active_events
+            else:
+                active_at_redirect = _active_binding_events(
+                    binding_events,
+                    reference_position=possible_since,
+                )
+            if any(not event.conditional for event in active_at_redirect):
+                return _unique_scopes(class_scopes)
+            parent = _module_scope(current) if is_global else current.parent
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+            possible_since = current.definition_position
+            current = parent
+            continue
+
+        if local_name in current.local_names:
+            source_ordered_fallback = current.kind in {"class", "module"}
+            if not source_ordered_fallback or _class_binding_blocks_parent(
+                active_events
+            ):
+                return _unique_scopes(class_scopes)
+        parent = current.parent
+        if current.kind in {
+            "function",
+            "lambda",
+            "comprehension",
+            "generator",
+        }:
+            while parent is not None and parent.kind == "class":
+                parent = parent.parent
+        if current.kind in {"function", "lambda", "generator"}:
+            possible_since = current.definition_position
+        current = parent
+    return _unique_scopes(class_scopes)
+
+
+def _unique_scopes(scopes: Iterable[_ImportScope]) -> tuple[_ImportScope, ...]:
+    unique: dict[int, _ImportScope] = {}
+    for scope in scopes:
+        unique.setdefault(id(scope), scope)
+    return tuple(unique.values())
 
 
 def _resolve_callable_name_return_kinds(
