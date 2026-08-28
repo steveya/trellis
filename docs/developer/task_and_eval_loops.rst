@@ -1142,10 +1142,103 @@ The report keeps four evidence surfaces separate:
 - imported ``price_*`` calls executed by checked-in ``_agent`` adapters, with
   calls to currently authoritative symbols marked separately.
 
-The adapter scan uses Python AST import resolution, including local aliases and
-module aliases. A locally defined function or an unused import is not counted
-as delegation. Re-exported symbols still match helper authority by canonical
-symbol identity, so changing an import path cannot hide continued delegation.
+The adapter scan uses Python AST import resolution, including local aliases,
+module aliases, and relative imports resolved against the checked-adapter
+package. Bindings are resolved per lexical scope: an import inside a nested
+function cannot overwrite the module binding seen by an outer reference, and
+a parameter or ordinary local binding shadows an outer import. Within one
+scope, source order selects the last unconditional binding, whether it is an
+import, assignment, deletion, or function/class definition; assignment
+right-hand sides are evaluated against the preceding binding. An annotation
+without a value establishes function-local ownership when applicable but does
+not replace a live module or class binding. Conditional
+bindings remain conservative candidates. Wildcard imports from a namespace
+that contains required authority fail closed because the imported names cannot
+be resolved safely. Unresolved dynamic attribute/subscript access such as
+``helpers.__dict__[name]`` or ``helpers.__getattribute__(name)`` retains the
+imported authority-module root instead of disappearing inside the chain.
+Direct or aliased zero-argument calls to ``globals()`` in an adapter module
+with active required-authority imports also fail closed, including when the
+alias is carried by aligned tuple/list unpacking or enters a callable through
+a parameter default: the returned mapping exposes those imports to opaque
+string-keyed lookup even when no imported-name AST node remains at the eventual
+call site. Chained ``globals.__call__()`` is equivalent. ``locals()`` and
+``vars()`` calls apply the same rule to active
+required authority in their executing lexical scope. Source-ordered replacement
+of an import before the namespace call removes that binding from the exposed
+authority set. Imports assigned through a ``global`` declaration are inspected
+as module-namespace bindings and are not misclassified as function locals.
+Named expressions in short-circuited Boolean operands or conditional-expression
+branches remain conditional binding candidates rather than guaranteed
+replacements. Namespace-callable aliases returned by conditional or Boolean
+expressions are resolved conservatively across every possible result.
+Named expressions in comprehension filters or results are attributed to the
+containing scope. A generator expression defers its filters and result, so a
+namespace walrus binding in those positions remains a possible candidate even
+after a later enclosing-scope rebinding. Always-evaluated control-flow headers
+are processed before their conditional branches. Starred positional or keyword
+expansions on a namespace callable are treated as potentially empty and
+therefore as possible zero-argument introspection calls. Fixed prefix and suffix
+targets around a starred tuple/list assignment retain their aligned namespace
+values.
+Imports redirected by ``global`` or ``nonlocal`` declarations are projected as
+conditional candidates into the owning scope so a call outside the importing
+function cannot escape the audit, including after later owner-scope rebindings.
+Definition-time decorators, defaults, annotations, class bases, and lambda
+defaults contribute their enclosing-scope rebindings before the new definition
+is bound. Calls that resolve to builtin ``eval`` or ``exec`` through direct
+names, imports, or aliases always fail closed: their effective lexical
+namespaces may contain active authority, and their dynamic source can import
+authority independently. The common builtin resolver preserves provenance
+through statically resolvable tuple/list/dict selection, container aliases, and
+literal or unresolved ``getattr(module, name)`` attribute selection,
+``module.__dict__[name]``, or
+``vars(module)[name]`` selection from supported builtin-bearing modules, plus
+the implicit ``__builtins__[name]`` mapping through source-ordered aliases. A
+local replacement of ``__builtins__`` shadows that implicit mapping. An
+unresolved module-mapping key retains every supported dangerous builtin that
+the module can expose. Literal module recovery through
+``sys.modules[module]`` or ``sys.modules.get(module)`` participates in ordinary
+authority resolution even after the original import name is rebound. Bindings
+inside ``assert`` remain conditional because ``python -O`` removes the entire
+statement; bindings in ``finally`` are unconditional for code reached after the
+try statement. The first context-manager target is also unconditional on
+fall-through, while later manager targets remain conservative. Dangerous
+builtins returned by a statically visible lambda, function, async function, or
+class method keep that provenance when the returned callable is invoked later,
+including across ``await``. Plain ``yield`` values and statically visible
+``yield from`` containers consumed through ``next`` or ``anext`` retain the
+same provenance. Named literal containers passed as call arguments are
+traversed rather than hiding their dangerous members, and the implicit builtins
+mapping remains visible through ``globals()["__builtins__"]``.
+Selecting a dangerous member from ``vars(module)`` or ``module.__dict__`` via
+a subscript or a keyed value-returning method such as ``get``, ``pop``,
+``setdefault``, or ``__getitem__`` preserves the same provenance.
+``object.__getattribute__`` and ``__getattribute__`` bound to a supported
+imported module are treated as equivalent reflective access to builtin
+``getattr`` when they select a dangerous member.
+Dynamic loaders reached through builtin ``__import__`` or
+``importlib.import_module`` aliases fail closed when a literal module reaches
+authority or the module name cannot be resolved statically. Namespace builtins
+passed as first-class positional, keyword, or unpacked container arguments fail
+closed even when the caller exposes no authority: the receiving callable can
+use that namespace accessor to expose an authority import in its own scope.
+Dynamic import loaders, dynamic-code builtins, and reflection accessors passed
+first-class fail closed for the same callee-scope reason.
+``vars()`` of the current adapter module, including a statically resolvable
+module-object alias, is treated as global namespace exposure.
+Class bodies follow Python's source-ordered name fallback: a reference before a
+later class-local binding still resolves through the enclosing scope, while an
+active unconditional class binding shadows the outer name; deleting that class-local
+binding restores the enclosing lookup. A nested function, lambda,
+or generator expression may execute after its enclosing scope advances, so the
+scan retains every enclosing import that can be active from that deferred
+scope's creation onward.
+Immediate list, set, and dictionary comprehensions use their creation position.
+A locally defined function or an unused import is not counted as delegation.
+Authority is the declared module-and-symbol pair; an additional public
+re-export path must be declared explicitly if it is intended to carry the same
+authority rather than being inferred from a matching basename.
 
 Use ``--fail-on-drift`` when route and backend-binding parity is an explicit
 gate. The ordinary command remains read-only and returns the complete report
@@ -1153,6 +1246,98 @@ even when drift exists. Counts are repository-state observations, not desired
 constants: migrations should reduce real product/method authority while
 preserving legitimate reusable kernels and making any route/binding movement
 explicit.
+
+Zero-adapter-authority closeout
+-------------------------------
+
+The QUA-1166 migration cohort reached its first durable zero baseline after the
+T49 Gaussian/Student-t tranche migration. The 2026-08-26 merged closeout
+snapshot is:
+
+- ``0`` checked-adapter calls matching required route or binding authority;
+- ``0`` indirect checked-adapter references to required authority;
+- ``8`` imported ``price_*`` calls across ``8`` checked-adapter files;
+- ``36`` required canonical route references and ``40`` exact-binding
+  references; and
+- ``0`` route-only and ``4`` binding-only references.
+
+The zero applies to *executed checked-adapter delegation*, not to every symbol
+whose current catalog role is ``route_helper``. The 36/40 references remain a
+mixed inventory of reusable engines, bounded method runtimes, and helper-backed
+routes outside the completed adapter cohort. They are future audit input, not a
+claim that universal helper retirement is complete.
+
+The ordinary PR gate now preserves the zero baseline:
+
+.. code-block:: console
+
+   python scripts/audit_helper_authority.py --fail-on-adapter-authority
+   make gate-helper-authority
+   make gate-pr
+
+``--fail-on-adapter-authority`` returns nonzero when any top-level checked
+``_agent`` adapter executes an imported symbol that is required by a promoted
+route or exact binding, or uses that symbol as a first-class value. Assignment
+aliases, callbacks, container references, chained attributes such as
+``helper.__call__``, and imported authority modules used as dynamic values
+therefore cannot bypass the delegation gate. Wildcard imports from authority
+namespaces fail closed, as do unresolved dynamic attribute/subscript chains
+that retain an authority-module root, including ``__getattribute__`` lookup.
+Adapter-global namespace access through a direct, aliased, or chained
+``globals()`` call likewise fails closed when the module has active required
+authority. Zero-argument ``locals()`` and ``vars()`` calls fail closed for
+active authority imports in their current lexical scope; a source-ordered
+replacement before the call is not reported as exposed authority.
+Relative imports normalize to the same absolute identity, while same-name
+imports remain confined to their lexical scope and later ordinary bindings
+supersede imports in source order, while annotation-only statements preserve
+the active runtime binding. Early class-body references fall through to
+enclosing bindings until the class-local binding is active and again after
+that binding is deleted. Deferred nested
+scopes retain the enclosing bindings that may be active at any later
+invocation. Authority matching is module-qualified, so an unrelated module
+that happens to export the same function basename does not fail the gate. It is deliberately
+independent of ``--fail-on-drift``: exact bindings may carry intentional
+conditional specialization even while no checked adapter delegates to it.
+
+The eight residual imported pricing calls require semantic interpretation; a
+non-match is not automatically approval:
+
+.. list-table:: Residual checked-adapter pricing calls at closeout
+   :header-rows: 1
+   :widths: 30 28 42
+
+   * - Adapter cohort
+     - Imported call
+     - Closeout disposition
+   * - European and Bermudan swaption comparators
+     - ``price_swaption_black76_raw`` (two calls)
+     - Raw resolved-input pricing kernel. Schedule selection and product
+       semantics remain visible in the adapter.
+   * - American equity tree and callable/puttable fixed income
+     - ``price_on_lattice`` (three calls)
+     - Generic lattice rollback kernel after explicit model, mesh, market,
+       event, contract, and control composition.
+   * - European single-state Monte Carlo
+     - ``price_single_state_terminal_claim_monte_carlo_result``
+     - Generic estimator accepting an explicit terminal payoff callback and
+       resolved diffusion inputs.
+   * - P001 Bermudan rainbow compatibility artifact
+     - ``price_bermudan_best_of_basket_from_compat_spec``
+     - Intentional compatibility shell that recompiles the legacy spec into
+       route-free execution IR and dispatches to checked generic visitors.
+       Fresh construction proving bypasses the shell.
+   * - E23 local-vol legacy proof artifact
+     - ``price_vanilla_equity_option_pde``
+     - ``proof_only_hold`` residue, not admitted Monte Carlo evidence and not
+       part of the migrated cohort. Reactivation must replace it with
+       method-true local-vol composition or certify an honest block.
+
+This gate cannot by itself prove method coherence. Target contracts, artifact
+identity, source-policy checks, algorithm validators, and numerical comparison
+still have to reject a PDE artifact presented as Monte Carlo, a compatibility
+reference presented as fresh synthesis, or a raw kernel used without its
+required market and settlement composition.
 
 Semantic composition gaps versus helper gaps
 ---------------------------------------------

@@ -795,6 +795,116 @@ maximize European values across the schedule. The retained product-level
 lower-bound wrapper is comparison/reference evidence rather than construction
 authority.
 
+What the zero helper-authority gate means
+-----------------------------------------
+
+Trellis now keeps the completed checked-adapter migration cohort at zero calls
+to symbols that promoted routes or exact backend bindings mark as required
+helper authority. This is a compatibility-preserving change: public pricing
+wrappers remain callable by existing application code, while generated task
+artifacts use public resolvers, numerical primitives, raw kernels, and generic
+estimators so their product and method choices stay inspectable.
+
+The same rule applies when a helper is assigned to another name or passed as a
+callback, including when its imported module is first hidden behind another
+name or dynamic lookup. Such indirect references still count as helper
+authority, including a chained call such as ``helper.__call__()``; renaming a
+function does not turn delegation into generated composition. Relative imports
+are normalized before matching, and nested imports do not rewrite outer
+bindings. Same-scope imports, assignments, and definitions follow source order,
+so a later ordinary local replacement is no longer attributed to an earlier
+import. Wildcard imports from an authority namespace fail closed because their
+names cannot be matched safely, and unresolved dynamic access such as
+``helpers.__dict__[name]`` or ``helpers.__getattribute__(name)`` retains the
+authority-module reference. A direct, aliased, or chained zero-argument
+``globals()`` call in an adapter module with active required authority also
+fails closed because the returned mapping can hide the selected helper behind
+a string key, including when its callable alias is supplied by aligned
+tuple/list unpacking or a parameter default. ``locals()`` and ``vars()``
+follow the same rule for active
+authority imports in their current scope. An import replaced before the
+namespace call is no longer classified as exposed authority.
+Short-circuited or branch-local named expressions remain conditional rather
+than guaranteed replacements, and namespace-callable aliases returned by
+conditional or Boolean expressions retain every possible namespace result.
+Assignment expressions inside comprehensions bind in the containing scope, and
+generator-expression filters and results remain possible after a later
+enclosing-scope rebinding because they execute lazily. Always-evaluated
+control-flow headers are processed before conditional branches. Starred
+namespace-call expansions are treated as potentially empty, so they cannot
+bypass the authority check. Fixed prefix and suffix values in starred tuple/list
+assignment remain associated with their namespace aliases.
+Imports redirected through ``global`` or ``nonlocal`` remain visible to the
+check in their owning scope across later rebindings. Rebindings in defaults,
+decorators, bases, annotations, and lambda defaults are applied when their
+definition executes. Dynamic ``eval`` or ``exec`` calls always fail closed,
+even when the builtin is reached through an alias, because either their scope
+or the dynamic source itself can expose authority. Selecting a namespace,
+dynamic-code, or import builtin from a statically resolvable tuple/list/dict
+container does not remove that provenance. Literal or unresolved
+``getattr(module, name)`` attribute selection, ``module.__dict__[name]``, or
+``vars(module)[name]`` selection from supported
+builtin-bearing modules likewise retains it. The implicit
+``__builtins__[name]`` mapping and its source-ordered aliases also retain
+provenance unless a local replacement shadows ``__builtins__``; an unresolved
+mapping key conservatively retains every supported dangerous builtin that the
+module can expose. Literal modules recovered through ``sys.modules[module]`` or
+``sys.modules.get(module)`` retain their imported pricing authority. Bindings
+inside ``assert`` remain conditional because optimized Python can remove the
+assertion, while ``finally`` bindings are treated as guaranteed before code
+after the try statement. The first context-manager target is likewise treated
+as guaranteed on fall-through, while later manager targets stay conservative.
+A dangerous builtin returned by a statically visible lambda, function, async
+function, or class method remains classified when the returned value is called
+later, including across ``await``. The classification also follows plain
+``yield`` values and statically visible ``yield from`` containers consumed
+through ``next`` or ``anext``, plus dangerous members of named literal
+containers passed to another callable. The implicit builtins mapping cannot be
+hidden behind ``globals()["__builtins__"]``. Dangerous members selected from
+``vars(module)`` or ``module.__dict__`` remain classified through a subscript
+or keyed value-returning methods such as ``get``, ``pop``, ``setdefault``, and
+``__getitem__``. Both
+``object.__getattribute__`` and ``__getattribute__`` bound to a supported
+imported module are checked like builtin ``getattr``.
+Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
+authority namespace through a literal or unresolved module name. Passing
+``globals``, ``locals``, or ``vars`` as a first-class argument fails closed even
+when the caller has no visible authority import, because the callee can apply
+the accessor to its own authority-bearing scope. Dynamic import loaders,
+dynamic-code builtins, and reflection accessors passed
+first-class fail closed for the same reason. Calling ``vars()`` on the
+current adapter module exposes the same authority as ``globals()``.
+An early class-body reference likewise continues to use an enclosing import
+until a later class-local replacement is active,
+and resumes that lookup if the class-local name is deleted. An annotation
+without a value does not replace the active imported runtime binding.
+Nested functions also retain enclosing imports that could be active when they
+are called, including an earlier binding before a later rebind. Matching uses
+both module and function name, so an unrelated function with the same basename
+remains distinct.
+
+The gate is intentionally narrower than a ban on every function beginning
+with ``price_``. Calls such as ``price_on_lattice(...)`` or
+``price_single_state_terminal_claim_monte_carlo_result(...)`` are reusable
+numerical runtimes; the adapter still supplies the contract-specific market,
+payoff, event, control, and settlement composition. The P001 Bermudan rainbow
+file is an explicit compatibility shell over route-free execution IR rather
+than fresh generated construction authority.
+
+Conversely, a pricing call is not valid merely because the static audit does
+not classify it as authority. The held legacy E23 local-vol artifact still
+delegates to a vanilla PDE function and cannot count as local-vol Monte Carlo
+evidence. E23 remains ``proof_only_hold``; a future reactivation must generate
+method-true local-vol composition or return an honest semantic capability
+block.
+
+When reviewing a task result, use the comparison-target contract, backend
+binding identity, ``primitive_refs`` / ``helper_refs``, artifact origin, source
+digest, and method-specific validation bundle together. A zero helper count
+does not allow a PDE result to satisfy a Monte Carlo target, a reference wrapper
+to masquerade as fresh synthesis, or a bounded proof to become a claim of
+general product support.
+
 The trace boundary also exposes a family-first ``construction_identity``
 summary. For operators, that is now the primary readout:
 

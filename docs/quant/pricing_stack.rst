@@ -1123,6 +1123,123 @@ Their lowering records primitive targets separately from true ``route_helper``
 bindings so generic resolvers and kernels are not mislabeled as helper authority
 in prompts or traces.
 
+The checked-adapter authority audit treats a required helper used as an alias,
+callback, or other first-class value as delegation too. Generated construction
+cannot evade the route contract merely by moving the eventual helper call
+behind Python indirection, a chained call attribute, or a dynamically accessed
+imported module. Relative imports are resolved to their absolute package path.
+Import bindings remain lexical, so a nested same-name import cannot reclassify
+an outer helper reference. Same-scope bindings follow source order: later
+ordinary assignments or definitions supersede earlier imports, while an
+assignment right-hand side still sees the preceding binding. Conditional
+candidates remain conservative; annotation-only statements do not replace a
+runtime binding. Wildcard imports from an authority
+namespace fail closed. An unresolved dynamic attribute/subscript chain retains
+its imported authority-module root, including ``__dict__``, ``__getattr__``,
+and ``__getattribute__`` lookup. Direct, aliased, and chained zero-argument
+``globals()`` calls in an adapter module with active required-authority imports
+fail closed because subsequent string lookup can hide the selected binding;
+the same applies when the callable alias arrives through aligned tuple/list
+unpacking or a parameter default.
+``locals()`` and ``vars()`` apply the same rule to active authority imports in
+the current lexical scope. The source-ordered binding timeline excludes an
+import that has already been replaced before the namespace is exposed, and a
+``global`` import is attributed to the module namespace rather than locals.
+Named expressions behind Boolean short-circuiting or conditional-expression
+branches remain conditional bindings, while namespace-callable aliases flowing
+out of those expressions retain every possible namespace provenance.
+Comprehension assignment expressions are attributed to their containing scope,
+and generator-expression filters and results remain deferred candidates across
+later enclosing-scope rebindings. Always-evaluated control-flow headers are
+recorded before conditional branches. Starred namespace-call expansions are
+conservatively treated as possibly empty, while statically aligned prefix and
+suffix targets around a starred assignment retain their namespace provenance.
+Redirected ``global`` and ``nonlocal`` imports remain conditional candidates in
+their owning scope across later source-ordered rebindings. Rebindings evaluated
+while defining functions, classes, or lambdas update that owning scope before
+the definition is bound. Dynamic ``eval`` or ``exec`` calls always fail closed,
+including when the builtin is reached through an alias, because their effective
+namespace or dynamic source can expose route authority. Statically resolvable
+selection from tuple/list/dict containers and literal or unresolved
+``getattr(module, name)`` attribute selection, ``module.__dict__[name]``, or
+``vars(module)[name]`` selection from supported builtin-bearing modules retain
+builtin provenance. The implicit ``__builtins__[name]`` mapping and its
+source-ordered aliases retain the same provenance unless a local replacement
+shadows ``__builtins__``. Unresolved module-mapping keys conservatively retain
+every supported dangerous builtin exposed there. Literal authority modules
+recovered through ``sys.modules[module]`` or ``sys.modules.get(module)`` retain
+their ordinary imported-reference authority. ``assert`` bindings remain
+conditional because optimized Python removes the assertion, while ``finally``
+bindings are unconditional for code reached after the try statement. The first
+context-manager target is also unconditional on fall-through, while later
+manager targets remain conservative. Statically visible lambda, function,
+async-function, and class-method return expressions carry dangerous-builtin
+provenance into a later call of the returned value, including across ``await``.
+Plain ``yield`` values, statically visible ``yield from`` containers recovered
+through ``next`` or ``anext``, and named literal containers passed to another
+callable retain that provenance. Accessing the implicit builtins mapping through
+``globals()["__builtins__"]`` is equivalent to direct ``__builtins__`` access
+for this analysis. Module mappings exposed by ``vars(module)`` or
+``module.__dict__`` preserve builtin provenance through subscripts and keyed
+value-returning methods such as ``get``, ``pop``, ``setdefault``, and
+``__getitem__``. ``object.__getattribute__`` and ``__getattribute__`` bound
+to a supported imported module receive the same reflective member checks as
+builtin ``getattr``.
+Dynamic builtin/importlib module loaders are rejected for authority-reaching or
+unresolved module names. Passing a namespace builtin or alias through an
+ordinary call argument fails closed even without caller-visible authority,
+because the callee can expose an authority import from its own scope.
+Dynamic module loaders, dynamic-code builtins, and reflection accessors passed
+first-class fail closed under the same callee-scope rule.
+``vars()`` of the current adapter module is treated like
+``globals()``.
+Class-body lookup falls through to an enclosing binding until a source-ordered
+class binding is active, matching Python's
+runtime name resolution, and deletion of that class binding restores the outer
+fallback. Deferred nested scopes retain enclosing
+imports that can be active from scope creation through later invocation.
+Authority identity is the exact module-and-symbol pair; equal basenames in
+unrelated modules do not share authority.
+
+Generated composition authority closeout
+-----------------------------------------
+
+For the completed QUA-1166 checked-adapter cohort, generated construction
+authority is the ordered composition of semantic terms, market resolvers,
+reusable numerical primitives, raw kernels, and validation contracts. A
+product-, method-, route-, or task-shaped wrapper may remain callable for
+compatibility or independent comparison, but it cannot replace that ordered
+composition in an admitted generated-construction adapter. An explicit
+compatibility shim is non-authoritative and must immediately re-enter the
+checked semantic/execution runtime rather than own pricing logic.
+
+The repository gate enforces the narrow static part of this contract: no
+checked adapter may execute a symbol that canonical route or exact-binding
+knowledge currently marks as required ``route_helper`` authority. The merged
+baseline is zero such calls. Generic terminal-claim estimators,
+``price_on_lattice(...)``, and resolved-input raw kernels remain valid because
+the derivative-specific market binding, schedule, payoff, control, notional,
+and settlement choices stay outside them and visible in the adapter.
+
+Static zero authority is necessary but not sufficient. Mathematical and
+method validation still require, for example:
+
+- a Monte Carlo target to consume sampled paths or events rather than a PDE
+  scalar;
+- a lattice target to expose model, topology, mesh, calibration, contract, and
+  rollback evidence;
+- a copula comparison to bind distinct declared dependence evidence before
+  applying shared loss projection; and
+- a retained wrapper to remain reference evidence rather than the generated
+  artifact identity.
+
+The closeout does not reclassify every catalog-level ``route_helper``. The
+remaining route and exact-binding references cover helper-backed routes and
+bounded method runtimes outside the migrated adapter cohort. Their presence
+does not weaken the zero checked-adapter gate, and the zero gate does not expand
+Trellis support beyond the bounded task contracts and limitations documented
+for each migrated family.
+
 The admitted European analytical digital lane is also primitive-only. Its
 compact hot start is ``digital_option_composition`` in
 ``canonical/api_map.yaml``. Canonical decomposition and route evidence state

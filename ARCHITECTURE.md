@@ -178,9 +178,12 @@ The agent-assisted path is:
 2. Normalize the request in `trellis.agent.platform_requests`.
 3. Compile semantic contracts, valuation context, required data, and candidate
    backend bindings.
-4. Reuse an existing checked helper/kernel binding when possible; otherwise
-   plan/build/review a payoff adapter that lands under
-   `trellis/instruments/_agent/`.
+4. Resolve the exact backend binding, then prefer public market resolvers,
+   reusable numerical primitives, and raw kernels. For the completed checked-
+   adapter migration cohort, product-, method-, route-, and task-shaped
+   helpers are compatibility/reference evidence rather than generated
+   construction authority; otherwise plan/build/review a payoff adapter that
+   lands under `trellis/instruments/_agent/`.
 5. Execute pricing through the same deterministic runtime after the binding is
    admitted.
 
@@ -210,6 +213,86 @@ The service-host path is:
   should orchestrate, validate, and govern, not reimplement numerical kernels.
 - Treat `trellis/agent/knowledge/import_registry.py` as the authoritative source
   of valid imports.
+- Keep the checked-adapter helper-authority gate at zero. The deterministic
+  audit compares direct imported calls and indirect first-class references
+  against module-qualified required authority from both promoted routes and
+  exact backend bindings. Aliasing an authority helper, passing it as a
+  callback, reaching it through a chained attribute, or hiding it behind an
+  imported module value is still delegation. Relative imports are normalized
+  to that module-qualified identity, wildcard imports from an authority
+  namespace fail closed, and unresolved dynamic attribute or subscript chains
+  (including `__dict__` and `__getattribute__` lookup) retain their imported
+  authority-module root. Direct or aliased zero-argument calls to `globals()`,
+  including aliases carried by aligned tuple/list unpacking or into a callable
+  as a parameter default, in an adapter module with active required-authority
+  imports also fail closed,
+  as do `locals()` or `vars()` calls in a lexical scope with active authority
+  imports, because string-keyed namespace lookup hides the selected binding.
+  Superseded imports are not treated as exposed by that namespace. Bindings are
+  resolved in lexical and source order; an import assigned through a `global`
+  declaration belongs to the module namespace rather than `locals()`. A
+  nested same-name binding cannot rewrite an outer reference; later ordinary
+  assignments or definitions supersede an import just as a later unconditional
+  import does; an annotation without a value does not create a runtime
+  replacement. Short-circuited or branch-local named expressions remain
+  conditional binding candidates, and namespace-callable provenance follows
+  conditional and Boolean expression results. Named expressions inside
+  comprehension filters or results bind in the containing scope and remain
+  conditional candidates; generator-expression filters and results are also
+  deferred, so those candidates survive later enclosing-scope rebindings.
+  Always-evaluated control-flow headers are recorded before conditional
+  branches, and starred namespace-call expansions are treated as potentially
+  empty. Fixed prefix and suffix targets around a starred tuple/list assignment
+  retain their statically aligned values. Imports
+  redirected through ``global`` or
+  ``nonlocal`` conservatively inform the owning scope even after a later
+  source-ordered owner rebinding. Definition-time defaults, decorators, bases,
+  and annotations update that owner scope before its new definition is bound.
+  ``eval`` or ``exec`` reached through a builtin alias always fails closed:
+  effective namespaces can expose active authority, and dynamic source can
+  import it independently. Builtin provenance also survives statically
+  resolvable tuple/list/dict selection and container aliases, plus
+  ``getattr(module, name)`` selection (including unresolved attribute names),
+  ``module.__dict__[name]``, or
+  ``vars(module)[name]`` selection from supported builtin-bearing modules and
+  the implicit ``__builtins__[name]`` mapping through source-ordered aliases;
+  a local replacement of ``__builtins__`` still shadows that implicit mapping;
+  unresolved module-mapping keys retain every supported dangerous builtin that
+  the module can expose. Literal authority-module recovery through
+  ``sys.modules[module]`` or ``sys.modules.get(module)`` participates in the
+  same imported-reference checks. Bindings inside ``assert`` remain conditional
+  because optimized Python removes the statement, while ``finally`` bindings
+  are unconditional for code reached after the try statement. The first
+  context-manager target is likewise unconditional on fall-through, while
+  later manager targets remain conservative. Statically visible lambda,
+  function, async-function, and class-method return expressions preserve
+  dangerous-builtin provenance when their result is later invoked, including
+  across ``await``. The same provenance is retained for plain ``yield`` values
+  and statically visible ``yield from`` containers consumed through ``next`` or
+  ``anext``, and for named literal containers passed across a call boundary.
+  The implicit builtins mapping remains visible through
+  ``globals()["__builtins__"]`` as well as direct ``__builtins__`` access, and
+  module mappings selected through subscripts or keyed value-returning methods
+  such as ``get``, ``pop``, ``setdefault``, and ``__getitem__`` retain the same
+  builtin provenance. Both
+  ``object.__getattribute__`` and ``__getattribute__`` bound to a supported
+  imported module participate in the same reflection checks as builtin
+  ``getattr``.
+  Dynamic ``__import__`` and ``importlib.import_module`` loaders fail closed for
+  authority-reaching or unresolved module names. Passing a namespace builtin as
+  a first-class argument also fails closed even without caller-visible authority,
+  because the callee can expose authority imported in its own scope. Dynamic
+  import, dynamic-code, and reflection builtins passed first-class fail closed
+  for the same reason. ``vars()`` applied to the current
+  adapter module or a resolvable alias exposes the same global authority as
+  ``globals()``. A class body falls through to an
+  outer binding until its own
+  source-ordered binding is active, and resumes that fallback after deleting
+  the class-local name. Deferred nested functions retain every
+  enclosing import that can be active from their creation onward. An unrelated
+  module with the same function basename is not authority. Remaining
+  catalog-level `route_helper` entries do not grant checked adapters permission
+  to delegate.
 - Use `trellis/agent/knowledge/canonical/api_map.yaml` to orient to a module
   family before drilling into specific symbols.
 - Treat `trellis/agent/knowledge/` as a separately owned subsystem. Do not edit
