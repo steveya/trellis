@@ -267,10 +267,13 @@ The service-host path is:
   later manager targets remain conservative. Statically visible lambda,
   function, async-function, and class-method return expressions preserve
   dangerous-builtin provenance when their result is later invoked, including
-  across ``await``. The same provenance is retained for yielded values consumed
-  through ``next`` or ``anext`` and for named literal containers passed across
-  a call boundary. The implicit builtins mapping remains visible through
-  ``globals()["__builtins__"]`` as well as direct ``__builtins__`` access.
+  across ``await``. The same provenance is retained for plain ``yield`` values
+  and statically visible ``yield from`` containers consumed through ``next`` or
+  ``anext``, and for named literal containers passed across a call boundary.
+  The implicit builtins mapping remains visible through
+  ``globals()["__builtins__"]`` as well as direct ``__builtins__`` access, and
+  ``object.__getattribute__`` participates in the same reflection checks as
+  builtin ``getattr``.
   Dynamic ``__import__`` and ``importlib.import_module`` loaders fail closed for
   authority-reaching or unresolved module names. Passing a namespace builtin as
   a first-class argument also fails closed even without caller-visible authority,

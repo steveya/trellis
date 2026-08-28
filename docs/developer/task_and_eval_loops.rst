@@ -1206,11 +1206,13 @@ try statement. The first context-manager target is also unconditional on
 fall-through, while later manager targets remain conservative. Dangerous
 builtins returned by a statically visible lambda, function, async function, or
 class method keep that provenance when the returned callable is invoked later,
-including across ``await``. Yielded values consumed through ``next`` or
-``anext`` retain the same provenance. Named literal containers passed as call
-arguments are traversed rather than hiding their dangerous members, and the
-implicit builtins mapping remains visible through
-``globals()["__builtins__"]``.
+including across ``await``. Plain ``yield`` values and statically visible
+``yield from`` containers consumed through ``next`` or ``anext`` retain the
+same provenance. Named literal containers passed as call arguments are
+traversed rather than hiding their dangerous members, and the implicit builtins
+mapping remains visible through ``globals()["__builtins__"]``.
+``object.__getattribute__`` is treated as equivalent reflective access to
+builtin ``getattr`` when it selects a dangerous member.
 Dynamic loaders reached through builtin ``__import__`` or
 ``importlib.import_module`` aliases fail closed when a literal module reaches
 authority or the module name cannot be resolved statically. Namespace builtins

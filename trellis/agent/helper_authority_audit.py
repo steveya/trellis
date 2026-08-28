@@ -105,6 +105,8 @@ class _BindingEvent:
     value: ast.expr | None = None
     value_from_parent: bool = False
     callable_returns: tuple[ast.expr, ...] = ()
+    callable_yields: tuple[ast.expr, ...] = ()
+    callable_yield_froms: tuple[ast.expr, ...] = ()
     callable_node_id: int | None = field(default=None, compare=False)
     callable_scope: _ImportScope | None = field(
         default=None,
@@ -883,22 +885,24 @@ def _scan_indirect_authority_uses(
     return tuple(sorted(uses))
 
 
-class _FunctionReturnCollector(ast.NodeVisitor):
+class _FunctionOutputCollector(ast.NodeVisitor):
     """Collect callable output expressions without entering nested scopes."""
 
     def __init__(self) -> None:
-        self.values: list[ast.expr] = []
+        self.returns: list[ast.expr] = []
+        self.yields: list[ast.expr] = []
+        self.yield_froms: list[ast.expr] = []
 
     def visit_Return(self, node: ast.Return) -> None:
         if node.value is not None:
-            self.values.append(node.value)
+            self.returns.append(node.value)
 
     def visit_Yield(self, node: ast.Yield) -> None:
         if node.value is not None:
-            self.values.append(node.value)
+            self.yields.append(node.value)
 
     def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
-        self.values.append(node.value)
+        self.yield_froms.append(node.value)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         return
@@ -913,13 +917,17 @@ class _FunctionReturnCollector(ast.NodeVisitor):
         return
 
 
-def _function_return_values(
+def _function_output_values(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> tuple[ast.expr, ...]:
-    collector = _FunctionReturnCollector()
+) -> tuple[tuple[ast.expr, ...], tuple[ast.expr, ...], tuple[ast.expr, ...]]:
+    collector = _FunctionOutputCollector()
     for statement in node.body:
         collector.visit(statement)
-    return tuple(collector.values)
+    return (
+        tuple(collector.returns),
+        tuple(collector.yields),
+        tuple(collector.yield_froms),
+    )
 
 
 class _ScopeBindingCollector(ast.NodeVisitor):
@@ -1094,6 +1102,8 @@ class _ScopeBindingCollector(ast.NodeVisitor):
         value: ast.expr | None = None,
         value_from_parent: bool = False,
         callable_returns: tuple[ast.expr, ...] = (),
+        callable_yields: tuple[ast.expr, ...] = (),
+        callable_yield_froms: tuple[ast.expr, ...] = (),
         callable_node_id: int | None = None,
         class_node_id: int | None = None,
     ) -> None:
@@ -1122,6 +1132,8 @@ class _ScopeBindingCollector(ast.NodeVisitor):
                 value=value,
                 value_from_parent=value_from_parent,
                 callable_returns=callable_returns,
+                callable_yields=callable_yields,
+                callable_yield_froms=callable_yield_froms,
                 callable_node_id=callable_node_id,
                 class_node_id=class_node_id,
             )
@@ -1130,20 +1142,30 @@ class _ScopeBindingCollector(ast.NodeVisitor):
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         self._visit_function_definition_expressions(node)
         self.local_names.add(node.name)
+        callable_returns, callable_yields, callable_yield_froms = (
+            _function_output_values(node)
+        )
         self._record_shadow(
             local_name=node.name,
             node=node,
-            callable_returns=_function_return_values(node),
+            callable_returns=callable_returns,
+            callable_yields=callable_yields,
+            callable_yield_froms=callable_yield_froms,
             callable_node_id=id(node),
         )
 
     def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
         self._visit_function_definition_expressions(node)
         self.local_names.add(node.name)
+        callable_returns, callable_yields, callable_yield_froms = (
+            _function_output_values(node)
+        )
         self._record_shadow(
             local_name=node.name,
             node=node,
-            callable_returns=_function_return_values(node),
+            callable_returns=callable_returns,
+            callable_yields=callable_yields,
+            callable_yield_froms=callable_yield_froms,
             callable_node_id=id(node),
         )
 
@@ -2590,6 +2612,20 @@ def _resolve_builtin_callable(
             builtin_kind_resolver=builtin_kind_resolver,
             imported_kind_resolver=imported_kind_resolver,
         )
+    if (
+        isinstance(reference, ast.Attribute)
+        and reference.attr == "__getattribute__"
+        and _resolve_builtin_callable(
+            reference.value,
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=_builtin_object_kind,
+            imported_kind_resolver=_imported_object_kind,
+        )
+    ):
+        reflection_kind = builtin_kind_resolver("getattr")
+        if reflection_kind is not None:
+            return (reflection_kind,)
     if isinstance(reference, ast.Attribute) and reference.attr == "__call__":
         return _resolve_builtin_callable(
             reference.value,
@@ -3046,6 +3082,25 @@ def _resolve_callable_name_return_kinds(
                             returned_value,
                             scope=return_scope,
                             seen=next_seen,
+                            builtin_kind_resolver=builtin_kind_resolver,
+                            imported_kind_resolver=imported_kind_resolver,
+                        )
+                    )
+                for yielded_value in event.callable_yields:
+                    kinds.update(
+                        _resolve_builtin_callable(
+                            yielded_value,
+                            scope=return_scope,
+                            seen=next_seen,
+                            builtin_kind_resolver=builtin_kind_resolver,
+                            imported_kind_resolver=imported_kind_resolver,
+                        )
+                    )
+                for yielded_from in event.callable_yield_froms:
+                    kinds.update(
+                        _argument_builtin_value_kinds(
+                            yielded_from,
+                            scope=return_scope,
                             builtin_kind_resolver=builtin_kind_resolver,
                             imported_kind_resolver=imported_kind_resolver,
                         )
@@ -3585,6 +3640,18 @@ def _builtin_getattr_kind(local_name: str) -> str | None:
 
 def _imported_getattr_kind(module: str, symbol: str) -> str | None:
     if module == "builtins" and symbol == "getattr":
+        return symbol
+    return None
+
+
+def _builtin_object_kind(local_name: str) -> str | None:
+    if local_name == "object":
+        return local_name
+    return None
+
+
+def _imported_object_kind(module: str, symbol: str) -> str | None:
+    if module == "builtins" and symbol == "object":
         return symbol
     return None
 
