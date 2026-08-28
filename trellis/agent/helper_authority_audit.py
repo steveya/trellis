@@ -884,7 +884,7 @@ def _scan_indirect_authority_uses(
 
 
 class _FunctionReturnCollector(ast.NodeVisitor):
-    """Collect return expressions without entering nested callable scopes."""
+    """Collect callable output expressions without entering nested scopes."""
 
     def __init__(self) -> None:
         self.values: list[ast.expr] = []
@@ -892,6 +892,13 @@ class _FunctionReturnCollector(ast.NodeVisitor):
     def visit_Return(self, node: ast.Return) -> None:
         if node.value is not None:
             self.values.append(node.value)
+
+    def visit_Yield(self, node: ast.Yield) -> None:
+        if node.value is not None:
+            self.values.append(node.value)
+
+    def visit_YieldFrom(self, node: ast.YieldFrom) -> None:
+        self.values.append(node.value)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
         return
@@ -2420,17 +2427,13 @@ def _argument_builtin_value_kinds(
     scope: _ImportScope,
     builtin_kind_resolver: Callable[[str], str | None],
     imported_kind_resolver: Callable[[str, str], str | None],
+    seen_references: frozenset[tuple[int, int]] = frozenset(),
 ) -> tuple[str, ...]:
-    if isinstance(reference, (ast.Tuple, ast.List, ast.Set)):
-        candidates = tuple(reference.elts)
-    elif isinstance(reference, ast.Dict):
-        candidates = tuple(
-            candidate
-            for candidate in (*reference.keys, *reference.values)
-            if candidate is not None
-        )
-    else:
-        candidates = ()
+    seen_key = (id(scope), id(reference))
+    if seen_key in seen_references:
+        return ()
+    next_seen = seen_references | {seen_key}
+    candidates = _container_argument_values(reference)
     if candidates:
         return tuple(
             sorted(
@@ -2442,10 +2445,29 @@ def _argument_builtin_value_kinds(
                         scope=scope,
                         builtin_kind_resolver=builtin_kind_resolver,
                         imported_kind_resolver=imported_kind_resolver,
+                        seen_references=next_seen,
                     )
                 }
             )
         )
+    container_kinds = {
+        kind
+        for container, container_scope in _resolve_container_references(
+            reference,
+            scope=scope,
+            seen=frozenset(),
+        )
+        for candidate in _container_argument_values(container)
+        for kind in _argument_builtin_value_kinds(
+            candidate,
+            scope=container_scope,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+            seen_references=next_seen,
+        )
+    }
+    if container_kinds:
+        return tuple(sorted(container_kinds))
     return _resolve_builtin_callable(
         reference,
         scope=scope,
@@ -2453,6 +2475,22 @@ def _argument_builtin_value_kinds(
         builtin_kind_resolver=builtin_kind_resolver,
         imported_kind_resolver=imported_kind_resolver,
     )
+
+
+def _container_argument_values(reference: ast.expr) -> tuple[ast.expr, ...]:
+    """Return values that can escape when a container is passed to a call."""
+    if isinstance(reference, (ast.Tuple, ast.List, ast.Set)):
+        return tuple(
+            element.value if isinstance(element, ast.Starred) else element
+            for element in reference.elts
+        )
+    if isinstance(reference, ast.Dict):
+        return tuple(
+            candidate
+            for candidate in (*reference.keys, *reference.values)
+            if candidate is not None
+        )
+    return ()
 
 
 def _dynamic_import_call_kinds(
@@ -2665,6 +2703,20 @@ def _call_result_builtin_kinds(
     imported_kind_resolver: Callable[[str, str], str | None],
 ) -> tuple[str, ...]:
     """Resolve dangerous builtins returned by a statically visible callable."""
+    if reference.args and _resolve_builtin_callable(
+        reference.func,
+        scope=scope,
+        seen=seen,
+        builtin_kind_resolver=_builtin_iterator_next_kind,
+        imported_kind_resolver=_imported_iterator_next_kind,
+    ):
+        return _resolve_builtin_callable(
+            reference.args[0],
+            scope=scope,
+            seen=seen,
+            builtin_kind_resolver=builtin_kind_resolver,
+            imported_kind_resolver=imported_kind_resolver,
+        )
     return _callable_return_builtin_kinds(
         reference.func,
         scope=scope,
@@ -3096,6 +3148,25 @@ def _module_mapping_builtin_kinds(
 ) -> tuple[str, ...]:
     """Resolve builtins selected through an imported module mapping."""
     container = reference.value
+    possible_symbols = _possible_reflected_symbols(reference.slice)
+    if not possible_symbols:
+        return ()
+    kinds: set[str] = set()
+    if (
+        "__builtins__" in possible_symbols
+        and isinstance(container, ast.Call)
+        and not container.args
+        and not container.keywords
+        and "global"
+        in _resolve_dynamic_namespace_callable(
+            container.func,
+            scope=scope,
+            seen=seen,
+        )
+    ):
+        mapping_kind = imported_kind_resolver("builtins", "__dict__")
+        if mapping_kind is not None:
+            kinds.add(mapping_kind)
     module_targets: set[tuple[str, str]] = set()
     if _resolve_builtin_callable(
         container,
@@ -3138,12 +3209,7 @@ def _module_mapping_builtin_kinds(
             imported_kind_resolver=_imported_builtins_mapping_kind,
         ):
             module_targets.add(("builtins", ""))
-    if not module_targets:
-        return ()
-    possible_symbols = _possible_reflected_symbols(reference.slice)
-    if not possible_symbols:
-        return ()
-    kinds = {
+    kinds.update(
         kind
         for module, symbol in module_targets
         for possible_symbol in possible_symbols
@@ -3154,7 +3220,7 @@ def _module_mapping_builtin_kinds(
             )
         )
         is not None
-    }
+    )
     return tuple(sorted(kinds))
 
 
@@ -3202,7 +3268,7 @@ def _resolve_container_references(
     scope: _ImportScope,
     seen: frozenset[tuple[int, str, int]],
 ) -> tuple[tuple[ast.expr, _ImportScope], ...]:
-    if isinstance(reference, (ast.Tuple, ast.List, ast.Dict)):
+    if isinstance(reference, (ast.Tuple, ast.List, ast.Set, ast.Dict)):
         return ((reference, scope),)
     if isinstance(reference, ast.NamedExpr):
         return _resolve_container_references(
@@ -3565,6 +3631,18 @@ def _imported_dynamic_import_kind(
     if module == "importlib" and symbol == "import_module":
         return symbol
     return None
+
+
+def _builtin_iterator_next_kind(local_name: str) -> str | None:
+    if local_name in {"next", "anext"}:
+        return local_name
+    return None
+
+
+def _imported_iterator_next_kind(module: str, symbol: str) -> str | None:
+    if module != "builtins":
+        return None
+    return _builtin_iterator_next_kind(symbol)
 
 
 def _source_position(node: ast.AST) -> tuple[int, int, int]:

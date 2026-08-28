@@ -856,7 +856,10 @@ after the try statement. The first context-manager target is likewise treated
 as guaranteed on fall-through, while later manager targets stay conservative.
 A dangerous builtin returned by a statically visible lambda, function, async
 function, or class method remains classified when the returned value is called
-later, including across ``await``.
+later, including across ``await``. The classification also follows yielded
+values consumed through ``next`` or ``anext`` and dangerous members of named
+literal containers passed to another callable. The implicit builtins mapping
+cannot be hidden behind ``globals()["__builtins__"]``.
 Dynamic ``__import__`` or ``importlib.import_module`` calls cannot load an
 authority namespace through a literal or unresolved module name. Passing
 ``globals``, ``locals``, or ``vars`` as a first-class argument fails closed even

@@ -1124,6 +1124,21 @@ dynamic_value = dynamic_loaded.price_example()
     return root
 
 
+def _fixture_root_with_global_builtins_mapping(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+loaded = globals()["__builtins__"]["__import__"](
+    "trellis.models.example", fromlist=["price_example"]
+)
+value = loaded.price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_shadowed_builtins_mapping(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -1162,6 +1177,21 @@ reflected_value = reflected.price_example()
     return root
 
 
+def _fixture_root_with_aliased_dangerous_builtin_container(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+def run(loaders):
+    return loaders[0]("trellis.models.example", fromlist=["price_example"])
+loaders = (__import__,)
+value = run(loaders).price_example()
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
 def _fixture_root_with_callable_returned_loaders(tmp_path: Path) -> Path:
     root = _fixture_root(tmp_path)
     adapter = root / "trellis/instruments/_agent/example.py"
@@ -1189,6 +1219,22 @@ values = (
     function_loaded.price_example(),
     local_loaded.price_example(),
 )
+""".lstrip(),
+        encoding="utf-8",
+    )
+    return root
+
+
+def _fixture_root_with_generator_yielded_loader(tmp_path: Path) -> Path:
+    root = _fixture_root(tmp_path)
+    adapter = root / "trellis/instruments/_agent/example.py"
+    adapter.write_text(
+        """
+def loaders():
+    yield __import__
+load = next(loaders())
+loaded = load("trellis.models.example", fromlist=["price_example"])
+value = loaded.price_example()
 """.lstrip(),
         encoding="utf-8",
     )
@@ -2544,6 +2590,23 @@ def test_audit_resolves_dynamic_loaders_from_implicit_builtins_mapping(tmp_path)
     assert report.has_adapter_authority is True
 
 
+def test_audit_resolves_builtins_reached_through_global_namespace_mapping(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_global_builtins_mapping(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (1, "__import__", "trellis.models.example", "*", "dynamic_import")
+    ]
+    assert report.has_adapter_authority is True
+
+
 def test_audit_respects_shadowed_implicit_builtins_mapping(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -2575,6 +2638,23 @@ def test_audit_fails_closed_on_first_class_dangerous_builtins(tmp_path):
     assert report.has_adapter_authority is True
 
 
+def test_audit_follows_dangerous_builtins_through_aliased_containers(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_aliased_dangerous_builtin_container(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (4, "__import__", "*", "*", "first_class_dynamic_import")
+    ]
+    assert report.has_adapter_authority is True
+
+
 def test_audit_resolves_dangerous_builtins_returned_by_callables(tmp_path):
     from trellis.agent.helper_authority_audit import build_helper_authority_report
 
@@ -2591,6 +2671,24 @@ def test_audit_resolves_dangerous_builtins_returned_by_callables(tmp_path):
         (7, "import_module", "trellis.models.example", "*", "dynamic_import"),
         (11, "import_module", "trellis.models.example", "*", "dynamic_import"),
         (16, "import_module", "trellis.models.example", "*", "dynamic_import"),
+    ]
+    assert report.has_adapter_authority is True
+
+
+def test_audit_resolves_dangerous_builtins_yielded_by_generators(tmp_path):
+    from trellis.agent.helper_authority_audit import build_helper_authority_report
+
+    report = build_helper_authority_report(
+        _fixture_root_with_generator_yielded_loader(tmp_path)
+    )
+
+    assert report.adapter_calls == ()
+    assert [
+        (item.line, item.local_name, item.module, item.symbol, item.use_kind)
+        for item in report.adapter_indirect_authority_uses
+    ] == [
+        (3, "__import__", "*", "*", "first_class_dynamic_import"),
+        (4, "__import__", "trellis.models.example", "*", "dynamic_import"),
     ]
     assert report.has_adapter_authority is True
 

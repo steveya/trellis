@@ -1175,6 +1175,10 @@ context-manager target is also unconditional on fall-through, while later
 manager targets remain conservative. Statically visible lambda, function,
 async-function, and class-method return expressions carry dangerous-builtin
 provenance into a later call of the returned value, including across ``await``.
+Yielded values recovered through ``next`` or ``anext`` and named literal
+containers passed to another callable retain that provenance. Accessing the
+implicit builtins mapping through ``globals()["__builtins__"]`` is equivalent
+to direct ``__builtins__`` access for this analysis.
 Dynamic builtin/importlib module loaders are rejected for authority-reaching or
 unresolved module names. Passing a namespace builtin or alias through an
 ordinary call argument fails closed even without caller-visible authority,
