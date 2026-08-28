@@ -2,11 +2,16 @@
 
 ## Purpose
 
-This plan mirrors the active `QUA-1166` Linear program. The objective is to
-keep previously green pricing tasks green while removing product-, method-, and
-task-shaped helpers as construction authority. Fresh agents should assemble
-pricing functions from semantic contracts, exact market bindings, reusable
-numerical primitives, and bounded validation evidence.
+This completed plan records the `QUA-1166` Linear program. The program kept
+previously green pricing tasks green while removing product-, method-, and
+task-shaped helpers as checked-adapter construction authority. Fresh agents now
+assemble migrated pricing functions from semantic contracts, exact market
+bindings, reusable numerical primitives, and bounded validation evidence.
+
+Linear and the repository mirror were closed on `2026-08-28`. The durable
+terminal contract is zero direct or indirect checked-adapter use of currently
+required route/binding authority; public compatibility and reference wrappers
+remain available outside that authority boundary.
 
 ## Guardrails
 
@@ -22,11 +27,11 @@ numerical primitives, and bounded validation evidence.
 
 ## Linear Ticket Mirror
 
-Status mirror last synced: `2026-08-26`
+Status mirror last synced: `2026-08-28`
 
 | Ticket | Outcome | Status |
 | --- | --- | --- |
-| `QUA-1166` | Semantic task synthesis: retire helper authority | In Progress |
+| `QUA-1166` | Semantic task synthesis: retire helper authority | Done |
 | `QUA-1167` | American LSM: primitive-composed task lane | Done |
 | `QUA-1168` | Equity tree: primitive-composed early exercise lane | Done |
 | `QUA-1169` | Vanilla Monte Carlo: primitive-composed terminal claim lane | Done |
@@ -75,10 +80,13 @@ Status mirror last synced: `2026-08-26`
 | `QUA-1237` | Semantic weighted NTD: name-level exposure and rank-loss contract | Done |
 | `QUA-1238` | Copula composition: equicorrelation and bounded loss-layer primitives | Done |
 | `QUA-1239` | Semantic CDO tranche: raw Gaussian and Student-t composition | Done |
-| `QUA-1240` | Semantic helper authority: durable zero-adapter closeout | In Progress |
+| `QUA-1240` | Semantic helper authority: durable zero-adapter closeout | Done |
 | `QUA-1102` | Semantic target binding: typed comparison target contracts (related prerequisite) | Done |
 
-## Current Sequence
+## Completed Delivery Sequence
+
+The following sequence is retained as the historical implementation order. All
+listed slices are merged and their Linear tickets are Done.
 
 1. Use the completed QUA-1102 target contract and artifact-coherence gate so
    every helper-retirement comparison proves that each declared method and
@@ -184,7 +192,7 @@ Status mirror last synced: `2026-08-26`
     record the 36-route / 40-binding inventory without claiming universal
     catalog helper retirement.
 
-## Completion Evidence
+## Completion Contract
 
 Each migrated lane must provide:
 
@@ -196,3 +204,42 @@ Each migrated lane must provide:
 - updates to each relevant official quant, developer, and/or user guide, with
   an explicit closeout rationale when a documentation surface is unaffected
 - a merged milestone PR and synchronized Linear/plan status
+
+## Final Completion Evidence
+
+- All `49` direct `QUA-1166` child tickets are Done, with no remaining hard
+  blocker or incomplete delivery slice.
+- The closeout audit on merged `main` reports `0` direct adapter-authority calls
+  across `0` files and `0` indirect authority uses across `0` files.
+- Eight checked-adapter `price_*` calls remain, all classified and documented as
+  reusable raw, generic, or compatibility surfaces rather than required route
+  or exact-binding authority.
+- The retained catalog inventory contains `36` canonical route references and
+  `40` exact-binding references, with `0` route-only and `4` binding-only
+  references. These counts are visible future inventory, not evidence of active
+  checked-adapter delegation or a claim of universal wrapper retirement.
+- `make gate-helper-authority` is part of ordinary `make gate-pr` validation and
+  fails closed when direct or indirect checked-adapter authority reappears.
+- The final focused helper-authority and CLI suite passed with `90` tests. The
+  final local PR proof passed with `5,500` tests and `5` deselections; tier-2
+  contracts passed with `32` tests, `15` skips, and `7` deselections. Ruff,
+  mypy, and diff checks also passed.
+- Exact-head hosted checks passed for repository checks, type checking, all four
+  PR shards, tier-2 contracts, and build-and-test. The release gate was
+  intentionally skipped under `QUA-1236`'s risk-based cadence because the
+  closeout did not alter release-risk surfaces.
+- The final cleanup and documentation pass updated `ARCHITECTURE.md`, the
+  developer task/evaluation guide, the quant pricing-stack guide, and the user
+  pricing guide. `LIMITATIONS.md` was reviewed and remained unchanged because
+  pricing mathematics and the supported-product contract did not move.
+- Final closeout PR [#875](https://github.com/steveya/trellis/pull/875) was
+  squash-merged as `0268b191347037b558e024449ccd44031ad322eb` with exact-head
+  review complete, hosted checks green, and no unresolved review threads.
+
+## Residual Boundary
+
+This program retires helper authority from checked generated adapters. It does
+not delete useful public compatibility/reference wrappers or claim that every
+catalog `route_helper` reference is retired. Any future active authority
+regression or incorrect inventory classification should be handled in a
+separate route-specific semantic migration or taxonomy ticket.
