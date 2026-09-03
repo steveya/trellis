@@ -233,7 +233,7 @@ def assert_valid_task_manifests(
 def assert_executable_task_selection(
     tasks: Sequence[Mapping[str, Any]],
 ) -> None:
-    """Reject incomplete or explicitly non-priceable legacy rows before execution."""
+    """Admit validated pricing/block rows and reject incomplete legacy selections."""
     issues: list[TaskManifestIssue] = []
     for index, task in enumerate(tasks):
         if _text(task.get("task_definition_manifest")) != LEGACY_TASKS_MANIFEST:
@@ -242,7 +242,10 @@ def assert_executable_task_selection(
         task_issues = _validate_common(LEGACY_TASKS_MANIFEST, task, path)
         task_issues.extend(_validate_legacy_task(LEGACY_TASKS_MANIFEST, task, path))
         disposition = _text(task.get("task_disposition"))
-        if disposition in _NON_PRICING_LEGACY_DISPOSITIONS:
+        if (
+            disposition in _NON_PRICING_LEGACY_DISPOSITIONS
+            and disposition != "expected_honest_block"
+        ):
             task_issues.append(
                 _issue(
                     LEGACY_TASKS_MANIFEST,
@@ -1074,6 +1077,10 @@ def _validate_legacy_task(
         )
         disposition = "executable_pricing"
 
+    if disposition == "expected_honest_block":
+        issues.extend(_validate_legacy_expected_honest_block(manifest_name, task, path))
+        return issues
+
     if disposition in _NON_PRICING_LEGACY_DISPOSITIONS:
         if not _text(task.get("disposition_reason")):
             issues.append(
@@ -1140,6 +1147,82 @@ def _validate_legacy_task(
                 path=path,
             )
         )
+    return issues
+
+
+def _validate_legacy_expected_honest_block(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    path: str,
+) -> list[TaskManifestIssue]:
+    """Validate one legacy row that is executable only as an honest block."""
+    issues: list[TaskManifestIssue] = []
+    task_id = _text(task.get("id"))
+    contract = task.get("honest_block_contract")
+    required_contract_fields = (
+        "reason",
+        "summary",
+        "packet_type",
+        "missing_capabilities",
+        "suggested_action",
+    )
+    valid_contract = isinstance(contract, Mapping) and all(
+        (
+            _nonempty_string_sequence(contract.get(field))
+            if field == "missing_capabilities"
+            else bool(_text(contract.get(field)))
+        )
+        for field in required_contract_fields
+    )
+    if (
+        not _text(task.get("disposition_reason"))
+        or _text(task.get("expected_outcome")) != "honest_block"
+        or not _nonempty_string_sequence(task.get("expected_blocker_ids"))
+        or not valid_contract
+    ):
+        issues.append(
+            _issue(
+                manifest_name,
+                "legacy.invalid_honest_block",
+                "expected_honest_block requires an authored reason, blockers, and complete repair contract",
+                task_id=task_id,
+                path=path,
+            )
+        )
+
+    if task_id == "T09":
+        blocker_ids = set(
+            str(item).strip()
+            for item in (task.get("expected_blocker_ids") or ())
+            if isinstance(item, str) and item.strip()
+        )
+        capabilities = set(
+            str(item).strip()
+            for item in (
+                contract.get("missing_capabilities", ())
+                if isinstance(contract, Mapping)
+                else ()
+            )
+            if isinstance(item, str) and item.strip()
+        )
+        if (
+            "semantic_product_contract_gap:variable_coupon_schedule" not in blocker_ids
+            or "variable_coupon_schedule" not in capabilities
+            or not isinstance(contract, Mapping)
+            or _text(contract.get("reason"))
+            != "callable_bond_variable_coupon_schedule_missing"
+            or _text(contract.get("packet_type")) != "semantic_product_contract_gap"
+            or _text(contract.get("follow_on_issue")) != "QUA-1251"
+        ):
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "legacy.t09_invalid_honest_block",
+                    "T09 must name the variable-coupon schedule gap and QUA-1251 follow-on",
+                    task_id=task_id,
+                    path=path,
+                )
+            )
     return issues
 
 

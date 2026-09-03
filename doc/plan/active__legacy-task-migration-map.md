@@ -16,6 +16,12 @@ parameter set, and `T05` is narrowed to one honest puttable-lattice target plus
 its straight-bond lower-bound validation because the former callable
 "symmetry" label was not an independent implementation.
 
+`QUA-1248` certifies `T09` as an honest block. The retained request names a
+step-up callable bond but does not supply the dated coupon rates or their
+effective dates, while the checked callable-bond routes accept only one scalar
+fixed coupon. `QUA-1251` owns the missing variable-coupon primitive and an
+authored T09 schedule.
+
 | Task | Bucket | Target | Title |
 | --- | --- | --- | --- |
 | `T01` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | ZCB option: Ho-Lee vs HW tree vs Jamshidian analytical |
@@ -26,7 +32,7 @@ its straight-bond lower-bound validation because the former callable
 | `T06` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | CIR++ rate tree: positive rates via shifted CIR |
 | `T07` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Two-factor Hull-White tree (2D lattice) |
 | `T08` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Convertible bond: equity + credit on tree |
-| `T09` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Step-up callable bond (varying coupon schedule) |
+| `T09` | `certified_honest_block` | `TASKS_PROOF_LEGACY.yaml` | Step-up callable bond (varying coupon schedule) |
 | `T10` | `market_or_research_hold` | `TASKS_PROOF_LEGACY.yaml` | Tree convergence study: price oscillation and Richardson extrapolation |
 | `T11` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Lattice Greeks via pathwise differentiation on tree |
 | `T12` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Range accrual note on rate tree |
