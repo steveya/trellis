@@ -85,6 +85,9 @@ tasks:
     product: fx_barrier_option
     option_type: call
     barrier_type: down_and_in
+    monitoring: discrete
+    observations_per_year: 252
+    rebate: 0.0
     strike: 1.1
     barrier: 1.02
     spot: 1.1
@@ -94,6 +97,9 @@ tasks:
     volatility: 0.14
     notional: 1000000.0
     currency_pair: EURUSD
+    n_paths: 120000
+    n_steps: 252
+    seed: 42
 - id: P004
   title: 'Trellis extension: callable cap/floor collar with schedule tweaks'
   status: pending

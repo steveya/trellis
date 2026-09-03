@@ -42,6 +42,8 @@ class _Spec:
     foreign_discount_key: str = "EUR-DISC"
     option_type: str = "call"
     barrier_type: str = "down_and_in"
+    monitoring: str = "discrete"
+    observations_per_year: int = 252
     n_paths: int = 90_000
     n_steps: int = 252
     seed: int = 7
@@ -69,6 +71,11 @@ def test_resolve_fx_barrier_inputs_honors_explicit_observation_frequency():
     assert resolved.observations_per_year == 52
 
 
+def test_fx_barrier_rejects_unsupported_monitoring_mode():
+    with pytest.raises(ValueError, match="monitoring must be 'discrete'"):
+        FXBarrierOptionSpec.from_spec(_Spec(monitoring="continuous"))
+
+
 def test_fx_barrier_mc_agrees_with_analytical_for_down_and_in_call():
     market_state = _market_state()
     spec = _Spec()
@@ -78,6 +85,48 @@ def test_fx_barrier_mc_agrees_with_analytical_for_down_and_in_call():
 
     assert mc.validation_bundle == "fx_barrier:monte_carlo_gbm"
     assert mc.price == pytest.approx(analytical, rel=0.03, abs=1_000.0)
+
+
+def test_fx_barrier_mc_applies_declared_observation_frequency(monkeypatch):
+    import numpy as np
+
+    from trellis.models.monte_carlo.engine import MonteCarloEngine
+
+    paths = np.full((1, 13), 1.10)
+    paths[0, 1] = 1.00
+    paths[0, -1] = 1.20
+
+    def fake_price(self, initial_state, maturity, payoff_fn, **kwargs):
+        payoff = np.asarray(payoff_fn(paths), dtype=float)
+        return {
+            "price": float(np.mean(payoff)),
+            "std_error": 0.0,
+            "n_paths": len(paths),
+        }
+
+    monkeypatch.setattr(MonteCarloEngine, "price", fake_price)
+    spec = FXBarrierOptionSpec.from_spec(
+        _Spec(),
+        observations_per_year=4,
+        n_paths=1,
+        n_steps=12,
+    )
+
+    result = price_fx_barrier_option_monte_carlo_result(_market_state(), spec)
+
+    assert result.price == pytest.approx(0.0)
+
+
+def test_fx_barrier_mc_rejects_observations_that_collapse_on_grid():
+    spec = FXBarrierOptionSpec.from_spec(
+        _Spec(),
+        observations_per_year=365,
+        n_paths=1,
+        n_steps=252,
+    )
+
+    with pytest.raises(ValueError, match="distinct simulation steps"):
+        price_fx_barrier_option_monte_carlo_result(_market_state(), spec)
 
 
 def test_fx_barrier_in_out_parity_matches_fx_vanilla():

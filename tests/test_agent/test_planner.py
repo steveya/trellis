@@ -3,7 +3,15 @@
 import pytest
 
 from trellis.agent.planner import (
-    BuildPlan, BuildStep, FieldDef, SpecSchema, STATIC_SPECS, _infer_method_hint, _plan_static, plan_build,
+    SPECIALIZED_SPECS,
+    STATIC_SPECS,
+    BuildPlan,
+    BuildStep,
+    FieldDef,
+    SpecSchema,
+    _infer_method_hint,
+    _plan_static,
+    plan_build,
 )
 
 
@@ -51,6 +59,23 @@ class TestSpecSchema:
 
         assert fields["dividend_yield"].type == "float"
         assert fields["dividend_yield"].default == "0.0"
+
+    @pytest.mark.parametrize(
+        "schema_id",
+        ["fx_barrier_option_analytical", "fx_barrier_option_monte_carlo"],
+    )
+    def test_fx_barrier_specs_preserve_authored_monitoring_contract(
+        self, schema_id
+    ):
+        fields = {field.name: field for field in SPECIALIZED_SPECS[schema_id].fields}
+
+        assert fields["monitoring"].default is None
+        assert fields["observations_per_year"].default == "None"
+        if schema_id.endswith("monte_carlo"):
+            assert fields["seed"].default == "42"
+            assert "derived fixed-grid monitoring" in fields[
+                "observations_per_year"
+            ].description
 
     def test_nth_to_default_static_spec_preserves_weight_and_spread_risk_contract(self):
         fields = {

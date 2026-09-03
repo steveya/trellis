@@ -609,6 +609,18 @@ def test_run_task_uses_an_explicit_simulation_seed_when_one_is_provided():
     assert identity["simulation_stream_id"].startswith("T996:")
 
 
+def test_runtime_seed_uses_authored_extension_contract_before_deriving_one():
+    from trellis.agent.task_runtime import _explicit_simulation_seed
+
+    seed, source = _explicit_simulation_seed(
+        {"extension_contract": {"seed": 42}},
+        {},
+    )
+
+    assert seed == 42
+    assert source == "task.extension_contract.seed"
+
+
 def test_run_task_drafts_semantic_contract_metadata_for_ranked_observation_basket():
     from trellis.agent.task_runtime import run_task
 

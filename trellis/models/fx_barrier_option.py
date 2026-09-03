@@ -19,7 +19,7 @@ from trellis.models.processes.gbm import GBM
 
 @dataclass(frozen=True)
 class FXBarrierOptionSpec:
-    """Runtime contract for a zero-rebate single-barrier FX option."""
+    """Runtime contract for a discretely monitored single-barrier FX option."""
 
     notional: float = 1.0
     strike: float = 1.0
@@ -30,6 +30,7 @@ class FXBarrierOptionSpec:
     foreign_discount_key: str = "EUR-DISC"
     option_type: str = "call"
     barrier_type: str = "down_and_in"
+    monitoring: str = "discrete"
     rebate: float = 0.0
     observations_per_year: int | None = None
     day_count: DayCountConvention = DayCountConvention.ACT_365
@@ -45,6 +46,10 @@ class FXBarrierOptionSpec:
         if barrier_type not in valid_barriers:
             raise ValueError(f"Unsupported barrier_type {barrier_type!r}")
         object.__setattr__(self, "barrier_type", barrier_type)
+        monitoring = str(self.monitoring or "").strip().lower()
+        if monitoring != "discrete":
+            raise ValueError("monitoring must be 'discrete' for FX barrier pricing")
+        object.__setattr__(self, "monitoring", monitoring)
         if float(self.strike) <= 0.0:
             raise ValueError("strike must be positive")
         if float(self.barrier) <= 0.0:
@@ -79,6 +84,7 @@ class FXBarrierOptionSpec:
                 ("barrier_type", "barrier_style", "knock_type"),
                 "down_and_in",
             ),
+            "monitoring": _coalesce_attr(spec, ("monitoring",), "discrete"),
             "rebate": _coalesce_attr(spec, ("rebate",), 0.0),
             "observations_per_year": getattr(spec, "observations_per_year", None),
             "day_count": getattr(spec, "day_count", DayCountConvention.ACT_365),
@@ -224,13 +230,16 @@ def price_fx_barrier_option_monte_carlo_result(
         method="exact",
     )
 
+    observation_steps = _barrier_observation_steps(resolved)
+
     def payoff_fn(paths):
         path_array = raw_np.asarray(paths, dtype=float)
         terminal = path_array[:, -1]
+        observed = path_array[:, observation_steps] if observation_steps else path_array
         if resolved.barrier_type.startswith("down"):
-            touched = raw_np.min(path_array, axis=1) <= resolved.barrier
+            touched = raw_np.min(observed, axis=1) <= resolved.barrier
         else:
-            touched = raw_np.max(path_array, axis=1) >= resolved.barrier
+            touched = raw_np.max(observed, axis=1) >= resolved.barrier
         active = touched if resolved.barrier_type.endswith("_in") else ~touched
         intrinsic = terminal_intrinsic(
             resolved.option_type,
@@ -284,6 +293,38 @@ def _resolve_observations_per_year(
     if maturity <= 0.0:
         return None
     return max(int(round(float(spec.n_steps) / maturity)), 1)
+
+
+def _barrier_observation_steps(resolved: ResolvedFXBarrierInputs) -> tuple[int, ...]:
+    observations_per_year = resolved.observations_per_year
+    if observations_per_year is None or resolved.maturity <= 0.0:
+        return ()
+    observation_count = max(
+        int(round(resolved.maturity * observations_per_year)),
+        1,
+    )
+    if observation_count > resolved.n_steps:
+        raise ValueError(
+            "discrete barrier observations must map to distinct simulation steps; "
+            "increase n_steps or reduce observations_per_year"
+        )
+    return (
+        0,
+        *tuple(
+            sorted(
+                {
+                    max(
+                        1,
+                        min(
+                            resolved.n_steps,
+                            int(round(index * resolved.n_steps / observation_count)),
+                        ),
+                    )
+                    for index in range(1, observation_count + 1)
+                }
+            )
+        ),
+    )
 
 
 def _resolve_foreign_discount_key(market_state: MarketState, requested: str) -> str:

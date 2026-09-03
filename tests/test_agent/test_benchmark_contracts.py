@@ -119,6 +119,24 @@ def test_benchmark_request_description_surfaces_cap_model_specific_terms():
     assert "SABR parameters: alpha=0.025, beta=0.5, nu=0.35, rho=-0.2." in sabr_description
 
 
+def test_p003_surfaces_discrete_monitoring_and_authored_numerical_controls():
+    task = _extension_tasks()["P003"]
+
+    description = benchmark_request_description(task, root=ROOT)
+    overrides = benchmark_spec_overrides(task, root=ROOT)
+
+    assert description is not None
+    assert "Monitoring: discrete (252 observations/year)." in description
+    assert "Rebate: 0.0." in description
+    assert "Monte Carlo controls: n_paths=120000, n_steps=252, seed=42." in description
+    assert overrides["monitoring"] == "discrete"
+    assert overrides["observations_per_year"] == 252
+    assert overrides["rebate"] == pytest.approx(0.0)
+    assert overrides["n_paths"] == 120_000
+    assert overrides["n_steps"] == 252
+    assert overrides["seed"] == 42
+
+
 def test_p004_overrides_preserve_authored_callable_collar_schedule_and_control():
     task = _extension_tasks()["P004"]
     contract = task["extension_contract"]
