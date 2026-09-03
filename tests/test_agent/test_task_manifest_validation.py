@@ -512,6 +512,34 @@ def test_incomplete_selected_legacy_task_stops_before_market_or_build(monkeypatc
     assert calls == []
 
 
+def test_task_loader_overwrites_manifest_provenance_claims(tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+
+    _write_yaml(
+        tmp_path,
+        "TASKS_PROOF_LEGACY.yaml",
+        {
+            "version": 7,
+            "tasks": [
+                {
+                    "id": "T900",
+                    "title": "Spoofed provenance",
+                    "status": "pending",
+                    "task_corpus": "extension",
+                    "task_definition_version": 999,
+                    "task_definition_manifest": "TASKS_EXTENSION.yaml",
+                }
+            ],
+        },
+    )
+
+    task = load_task_manifest("TASKS_PROOF_LEGACY.yaml", root=tmp_path)[0]
+
+    assert task["task_corpus"] == "proof_legacy"
+    assert task["task_definition_version"] == 7
+    assert task["task_definition_manifest"] == "TASKS_PROOF_LEGACY.yaml"
+
+
 def test_assert_valid_task_manifests_raises_with_actionable_issue_keys(tmp_path):
     from trellis.agent.task_manifest_validation import (
         TaskManifestValidationError,

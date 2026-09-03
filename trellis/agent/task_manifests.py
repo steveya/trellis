@@ -172,9 +172,9 @@ def load_task_manifest(
         if not isinstance(task, Mapping):
             continue
         payload = dict(task)
-        payload.setdefault("task_corpus", corpus_name)
-        payload.setdefault("task_definition_version", version)
-        payload.setdefault("task_definition_manifest", manifest_name)
+        payload["task_corpus"] = corpus_name
+        payload["task_definition_version"] = version
+        payload["task_definition_manifest"] = manifest_name
         payload.setdefault("market", _materialize_market_from_scenario(payload, scenarios))
         normalized.append(payload)
     return normalized
