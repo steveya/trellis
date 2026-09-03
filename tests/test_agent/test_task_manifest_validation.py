@@ -797,6 +797,9 @@ def test_authored_legacy_lookback_comparison_is_admitted_for_runtime(task_id):
         lambda task: task["benchmark_contract"].__setitem__("monitoring_style", "discrete"),
         lambda task: task["benchmark_contract"].__setitem__("n_steps", 95),
         lambda task: task["benchmark_contract"].__setitem__("dividend_rate", 0.25),
+        lambda task: task["cross_validate"].__setitem__(
+            "analytical", "conze_viswanathan_analytical"
+        ),
         lambda task: task.update(
             {
                 "expected_outcome": "honest_block",

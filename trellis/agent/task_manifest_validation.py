@@ -1258,6 +1258,15 @@ def _validate_legacy_lookback_comparison_contract(
             construct_methods == ("monte_carlo", "analytical"),
             set(contract) == set(expected_contract),
             all(contract.get(key) == value for key, value in expected_contract.items()),
+            set(cross_validate)
+            == {
+                "internal",
+                "reference_target",
+                "relations",
+                "tolerance_pct",
+                "target_contracts",
+                "external",
+            },
             tuple(internal_targets or ())
             == ("mc_lookback", "conze_viswanathan_analytical"),
             _text(cross_validate.get("reference_target"))
