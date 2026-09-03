@@ -7,7 +7,7 @@ import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -1235,6 +1235,8 @@ def _meaningful_value(value: Any) -> bool:
 
 
 def _iso_date(value: Any) -> date | None:
+    if isinstance(value, datetime):
+        return None
     if isinstance(value, date):
         return value
     if not isinstance(value, str) or not value.strip():

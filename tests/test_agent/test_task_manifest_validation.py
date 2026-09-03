@@ -294,7 +294,10 @@ def test_p004_cannot_bypass_callable_collar_validation_by_changing_identity(
     } <= _codes(report)
 
 
-@pytest.mark.parametrize("bad_schedule", ["fixing_order", "payment_before_period_end"])
+@pytest.mark.parametrize(
+    "bad_schedule",
+    ["fixing_order", "payment_before_period_end", "yaml_timestamp"],
+)
 def test_p004_callable_collar_rejects_invalid_period_chronology(tmp_path, bad_schedule):
     from trellis.agent.task_manifest_validation import audit_task_manifests
 
@@ -305,8 +308,12 @@ def test_p004_callable_collar_rejects_invalid_period_chronology(tmp_path, bad_sc
         p004["extension_contract"]["fixing_dates"][1] = p004["extension_contract"][
             "fixing_dates"
         ][0]
-    else:
+    elif bad_schedule == "payment_before_period_end":
         p004["extension_contract"]["payment_dates"][0] = "2025-01-14"
+    else:
+        p004["extension_contract"]["fixing_dates"][0] = yaml.safe_load(
+            "2024-11-15T00:00:00"
+        )
     _write_yaml(
         tmp_path,
         "MARKET_SCENARIOS.yaml",
