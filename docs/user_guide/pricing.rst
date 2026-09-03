@@ -126,6 +126,13 @@ ignoring them. The ``P004`` pricing request therefore returns an expected
 ``dynamic_composition`` block naming the missing callable-collar control and
 continuation capabilities; it does not return the static-leg proxy value.
 
+The ``P003`` FX knock-in comparison is also deliberately bounded. It prices a
+zero-rebate contract on a uniform daily discrete grid with 252 observations
+and Monte Carlo steps, 120,000 paths, and seed 42. Both the analytical
+discrete-monitoring adjustment and Monte Carlo barrier monitor consume that
+authored frequency. A continuous-monitoring request is not supported by this
+FX comparison route and is rejected rather than approximated silently.
+
 ``source_reference`` is an audit label, not a location that Trellis fetches.
 The caller must supply the XML bytes inline; the importer performs no network
 or external-entity resolution. A blocked compile returns a ``blocker_report``

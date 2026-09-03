@@ -42,6 +42,8 @@ class _Spec:
     foreign_discount_key: str = "EUR-DISC"
     option_type: str = "call"
     barrier_type: str = "down_and_in"
+    monitoring: str = "discrete"
+    observations_per_year: int = 252
     n_paths: int = 90_000
     n_steps: int = 252
     seed: int = 7
@@ -67,6 +69,11 @@ def test_resolve_fx_barrier_inputs_honors_explicit_observation_frequency():
     resolved = resolve_fx_barrier_inputs(_market_state(), spec)
 
     assert resolved.observations_per_year == 52
+
+
+def test_fx_barrier_rejects_unsupported_monitoring_mode():
+    with pytest.raises(ValueError, match="monitoring must be 'discrete'"):
+        FXBarrierOptionSpec.from_spec(_Spec(monitoring="continuous"))
 
 
 def test_fx_barrier_mc_agrees_with_analytical_for_down_and_in_call():

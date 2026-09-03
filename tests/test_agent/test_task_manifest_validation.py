@@ -218,6 +218,81 @@ def test_contract_envelopes_require_typed_meaningful_content(tmp_path):
     } <= _codes(report)
 
 
+@pytest.mark.parametrize(
+    "missing_field",
+    ["monitoring", "observations_per_year", "rebate", "n_paths", "n_steps", "seed"],
+)
+def test_p003_requires_explicit_monitoring_and_numerical_controls(
+    tmp_path, missing_field
+):
+    from trellis.agent.task_manifest_validation import audit_task_manifests
+
+    root = Path(__file__).resolve().parents[2]
+    payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
+    p003 = next(task for task in payload["tasks"] if task["id"] == "P003")
+    p003["extension_contract"].pop(missing_field, None)
+    _write_yaml(
+        tmp_path,
+        "MARKET_SCENARIOS.yaml",
+        {
+            "version": 1,
+            "scenarios": {"fx_barrier_smile": {"description": "test FX market"}},
+        },
+    )
+    _write_yaml(
+        tmp_path,
+        "TASKS_EXTENSION.yaml",
+        {"version": payload["version"], "tasks": [p003]},
+    )
+
+    report = audit_task_manifests(
+        root=tmp_path,
+        manifest_names=("TASKS_EXTENSION.yaml",),
+    )
+
+    assert "extension.fx_barrier_missing_field" in _codes(report)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "expected_code"),
+    [
+        ("monitoring", "continuous", "extension.fx_barrier_invalid_monitoring"),
+        ("observations_per_year", 12, "extension.fx_barrier_invalid_controls"),
+        ("rebate", 1.0, "extension.fx_barrier_invalid_controls"),
+        ("n_paths", 50_000, "extension.fx_barrier_invalid_controls"),
+        ("n_steps", 365, "extension.fx_barrier_invalid_controls"),
+        ("seed", -1, "extension.fx_barrier_invalid_controls"),
+    ],
+)
+def test_p003_rejects_contract_drift(tmp_path, field, value, expected_code):
+    from trellis.agent.task_manifest_validation import audit_task_manifests
+
+    root = Path(__file__).resolve().parents[2]
+    payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
+    p003 = next(task for task in payload["tasks"] if task["id"] == "P003")
+    p003["extension_contract"][field] = value
+    _write_yaml(
+        tmp_path,
+        "MARKET_SCENARIOS.yaml",
+        {
+            "version": 1,
+            "scenarios": {"fx_barrier_smile": {"description": "test FX market"}},
+        },
+    )
+    _write_yaml(
+        tmp_path,
+        "TASKS_EXTENSION.yaml",
+        {"version": payload["version"], "tasks": [p003]},
+    )
+
+    report = audit_task_manifests(
+        root=tmp_path,
+        manifest_names=("TASKS_EXTENSION.yaml",),
+    )
+
+    assert expected_code in _codes(report)
+
+
 def test_callable_collar_contract_requires_exact_schedule_and_honest_block(tmp_path):
     from trellis.agent.task_manifest_validation import audit_task_manifests
 

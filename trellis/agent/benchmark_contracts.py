@@ -740,6 +740,27 @@ def _benchmark_detail_lines(
                 f"Notional: {contract.get('notional')}.",
             ]
         )
+        monitoring = str(contract.get("monitoring") or "").strip().lower()
+        if monitoring == "discrete" and contract.get("observations_per_year") not in {
+            None,
+            "",
+        }:
+            lines.append(
+                "Monitoring: discrete "
+                f"({int(contract['observations_per_year'])} observations/year)."
+            )
+        if contract.get("rebate") not in {None, ""}:
+            lines.append(f"Rebate: {contract['rebate']}.")
+        if all(
+            contract.get(key) not in {None, ""}
+            for key in ("n_paths", "n_steps", "seed")
+        ):
+            lines.append(
+                "Monte Carlo controls: "
+                f"n_paths={int(contract['n_paths'])}, "
+                f"n_steps={int(contract['n_steps'])}, "
+                f"seed={int(contract['seed'])}."
+            )
         if scenario_contract is not None and scenario_contract.foreign_curve_name:
             lines.append(f"Foreign discount key: {scenario_contract.foreign_curve_name}.")
         return lines
@@ -1065,7 +1086,7 @@ def _swaption_overrides(
 
 
 def _barrier_option_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:
-    return {
+    overrides = {
         "notional": _float_or_none(contract.get("notional")) or 1.0,
         "spot": _float_or_none(contract.get("spot")),
         "strike": _float_or_none(contract.get("strike")),
@@ -1074,8 +1095,13 @@ def _barrier_option_overrides(contract: Mapping[str, Any], *, valuation_date: da
         "barrier_type": str(contract.get("barrier_type") or "").strip().lower() or None,
         "option_type": str(contract.get("option_type") or "call").strip().lower(),
         "rebate": _float_or_none(contract.get("rebate")) or 0.0,
+        "monitoring": str(contract.get("monitoring") or "").strip().lower() or None,
         "observations_per_year": int(contract["observations_per_year"]) if contract.get("observations_per_year") not in {None, ""} else None,
     }
+    for key in ("n_paths", "n_steps", "seed"):
+        if contract.get(key) not in {None, ""}:
+            overrides[key] = int(contract[key])
+    return overrides
 
 
 def _digital_option_overrides(contract: Mapping[str, Any], *, valuation_date: date) -> dict[str, Any]:

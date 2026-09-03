@@ -19,7 +19,7 @@ from trellis.models.processes.gbm import GBM
 
 @dataclass(frozen=True)
 class FXBarrierOptionSpec:
-    """Runtime contract for a zero-rebate single-barrier FX option."""
+    """Runtime contract for a discretely monitored single-barrier FX option."""
 
     notional: float = 1.0
     strike: float = 1.0
@@ -30,6 +30,7 @@ class FXBarrierOptionSpec:
     foreign_discount_key: str = "EUR-DISC"
     option_type: str = "call"
     barrier_type: str = "down_and_in"
+    monitoring: str = "discrete"
     rebate: float = 0.0
     observations_per_year: int | None = None
     day_count: DayCountConvention = DayCountConvention.ACT_365
@@ -45,6 +46,10 @@ class FXBarrierOptionSpec:
         if barrier_type not in valid_barriers:
             raise ValueError(f"Unsupported barrier_type {barrier_type!r}")
         object.__setattr__(self, "barrier_type", barrier_type)
+        monitoring = str(self.monitoring or "").strip().lower()
+        if monitoring != "discrete":
+            raise ValueError("monitoring must be 'discrete' for FX barrier pricing")
+        object.__setattr__(self, "monitoring", monitoring)
         if float(self.strike) <= 0.0:
             raise ValueError("strike must be positive")
         if float(self.barrier) <= 0.0:
@@ -79,6 +84,7 @@ class FXBarrierOptionSpec:
                 ("barrier_type", "barrier_style", "knock_type"),
                 "down_and_in",
             ),
+            "monitoring": _coalesce_attr(spec, ("monitoring",), "discrete"),
             "rebate": _coalesce_attr(spec, ("rebate",), 0.0),
             "observations_per_year": getattr(spec, "observations_per_year", None),
             "day_count": getattr(spec, "day_count", DayCountConvention.ACT_365),

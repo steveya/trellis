@@ -24,16 +24,17 @@ exact capability blocker before Trellis can synthesize economic inputs.
 | Order | Linear | Status | Outcome |
 | ---: | --- | --- | --- |
 | 1 | `QUA-1242` | Done | Fail-closed corpus validation and checked legacy-debt baseline |
-| 2 | `QUA-1243` | In Progress | P004 preserves callable-collar semantics or blocks honestly |
+| 2 | `QUA-1243` | Done | P004 preserves callable-collar semantics or blocks honestly |
 | 3 | `QUA-1248` | Blocked | T09 cannot price through the flat-coupon bootstrap |
 | 4 | `QUA-1249` | Blocked | T30/T96 get authored market and acceptance contracts |
 | 5 | `QUA-1250` | Blocked | T03/T83/T85 receive current dispositions |
-| 6 | `QUA-1244` | Blocked | P003 monitoring and numerical controls are authored |
-| 7 | `QUA-1245` | Blocked | P005 conventions/model inputs are authored |
-| 8 | `QUA-1246` | Blocked | P006 bounded terminal-protection semantics are authored |
-| 9 | `QUA-1247` | Blocked | Seven legacy title-derived bootstraps become named contracts |
-| 10 | `QUA-1251` | Blocked | Reusable variable-coupon callable-bond primitive |
-| 11 | `QUA-1252` | Blocked | Remove the implicit 5% comparison tolerance |
+| 6 | `QUA-1244` | In Progress | P003 monitoring and numerical controls are authored |
+| 7 | `QUA-1253` | Backlog | Reusable convention-aware dual-curve Bermudan swap tails |
+| 8 | `QUA-1245` | Blocked | P005 conventions/model inputs are authored |
+| 9 | `QUA-1246` | Blocked | P006 bounded terminal-protection semantics are authored |
+| 10 | `QUA-1247` | Blocked | Seven legacy title-derived bootstraps become named contracts |
+| 11 | `QUA-1251` | Blocked | Reusable variable-coupon callable-bond primitive |
+| 12 | `QUA-1252` | Blocked | Remove the implicit 5% comparison tolerance |
 
 `QUA-1154` is hard-blocked by `QUA-1243`; its current P004 green result is not
 economic-equivalence evidence. `QUA-1146` must be audited before more work: the

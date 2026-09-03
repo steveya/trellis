@@ -8159,7 +8159,12 @@ def _materialize_deterministic_exact_binding_module(
         generation_plan,
         comparison_target=comparison_target,
     )
-    import_lines = list(_deterministic_exact_binding_import_lines(body))
+    import_lines = list(
+        _deterministic_exact_binding_import_lines(
+            body,
+            generation_plan=generation_plan,
+        )
+    )
     if benchmark_outputs_block is not None:
         import_lines.extend(
             _deterministic_exact_binding_benchmark_outputs_import_lines(
@@ -8277,7 +8282,11 @@ def _set_generated_requirements(source: str, requirements: Sequence[str]) -> str
     return re.sub(pattern, rf"\1{rendered}\3", source, count=1)
 
 
-def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
+def _deterministic_exact_binding_import_lines(
+    body: str,
+    *,
+    generation_plan=None,
+) -> tuple[str, ...]:
     """Return extra imports required by deterministic exact-binding bodies.
 
     Exact-bound bodies can reference shared support functions that are not part
@@ -8681,7 +8690,6 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             "implied_zero_rate(",
             "normalized_option_type(",
             "quanto_adjusted_forward(",
-            "terminal_intrinsic(",
         )
     ):
         support_symbols = [
@@ -8691,7 +8699,6 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
                 "implied_zero_rate",
                 "normalized_option_type",
                 "quanto_adjusted_forward",
-                "terminal_intrinsic",
             )
             if f"{symbol}(" in body
         ]
@@ -8699,6 +8706,26 @@ def _deterministic_exact_binding_import_lines(body: str) -> tuple[str, ...]:
             "from trellis.models.analytical.support import "
             + ", ".join(support_symbols)
         )
+    if "terminal_intrinsic(" in body:
+        primitive_plan = _generation_plan_field(generation_plan, "primitive_plan")
+        terminal_module = next(
+            (
+                str(getattr(primitive, "module", "") or "").strip()
+                for primitive in getattr(primitive_plan, "primitives", ()) or ()
+                if getattr(primitive, "symbol", "") == "terminal_intrinsic"
+                and str(getattr(primitive, "module", "") or "").strip()
+            ),
+            "trellis.models.analytical.support",
+        )
+        terminal_import_prefix = f"from {terminal_module} import "
+        for index, import_line in enumerate(imports):
+            if import_line.startswith(terminal_import_prefix):
+                imports[index] = import_line + ", terminal_intrinsic"
+                break
+        else:
+            imports.append(
+                f"from {terminal_module} import terminal_intrinsic"
+            )
     if "black76_call(" in body or "black76_put(" in body:
         imports.append("from trellis.models.black import black76_call, black76_put")
     if "get_numpy(" in body:

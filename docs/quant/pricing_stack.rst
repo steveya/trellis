@@ -681,7 +681,11 @@ The first migrated vanilla cases now use that boundary directly:
   wrappers remain compatibility/reference surfaces, not route authority.
   When an observation frequency is not supplied, resolution derives it from
   the Monte Carlo grid so analytical and MC monitoring contracts remain
-  aligned for task-level comparison.
+  aligned for task-level comparison. The bounded runtime accepts only
+  ``monitoring="discrete"``; a requested continuous mode fails closed instead
+  of being silently treated as fixed-step monitoring. The ``P003`` evidence
+  row authors 252 observations and steps, 120,000 paths, seed 42, and zero
+  rebate so its cross-method result is reproducible and economically explicit.
 - equity variance-swap comparison targets now have two primitive-composed task
   lanes. The Monte Carlo lane assembles a scalar market resolver, squared-log-
   return reducer, GBM, and generic engine. The analytical lane assembles exact

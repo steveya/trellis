@@ -495,6 +495,14 @@ def _validate_extension_task(
                 path=f"{path}.validation_policy",
             )
         )
+    if task_id == "P003":
+        issues.extend(
+            _validate_p003_fx_barrier_contract(
+                manifest_name,
+                contract if isinstance(contract, Mapping) else {},
+                path,
+            )
+        )
     if task_id == "P004":
         issues.extend(
             _validate_p004_callable_collar_contract(
@@ -502,6 +510,82 @@ def _validate_extension_task(
                 task,
                 contract if isinstance(contract, Mapping) else {},
                 path,
+            )
+        )
+    return issues
+
+
+def _validate_p003_fx_barrier_contract(
+    manifest_name: str,
+    contract: Mapping[str, Any],
+    path: str,
+) -> list[TaskManifestIssue]:
+    task_id = "P003"
+    contract_path = f"{path}.extension_contract"
+    issues: list[TaskManifestIssue] = []
+    required_fields = (
+        "monitoring",
+        "observations_per_year",
+        "rebate",
+        "n_paths",
+        "n_steps",
+        "seed",
+    )
+    for field in required_fields:
+        if not _meaningful_value(contract.get(field)):
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.fx_barrier_missing_field",
+                    f"P003 FX barrier requires authored {field}",
+                    task_id=task_id,
+                    path=f"{contract_path}.{field}",
+                )
+            )
+
+    if _text(contract.get("product")).lower() != "fx_barrier_option":
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.fx_barrier_invalid_contract",
+                "P003 must remain an FX barrier option contract",
+                task_id=task_id,
+                path=f"{contract_path}.product",
+            )
+        )
+    if _text(contract.get("monitoring")).lower() != "discrete":
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.fx_barrier_invalid_monitoring",
+                "P003 must declare discrete monitoring",
+                task_id=task_id,
+                path=f"{contract_path}.monitoring",
+            )
+        )
+
+    expected_integer_controls = {
+        "observations_per_year": 252,
+        "n_paths": 120_000,
+        "n_steps": 252,
+        "seed": 42,
+    }
+    invalid_integer_control = any(
+        not isinstance(contract.get(field), int)
+        or isinstance(contract.get(field), bool)
+        or contract.get(field) != expected
+        for field, expected in expected_integer_controls.items()
+    )
+    rebate = contract.get("rebate")
+    invalid_rebate = not _finite_non_negative_number(rebate) or float(rebate) != 0.0
+    if invalid_integer_control or invalid_rebate:
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.fx_barrier_invalid_controls",
+                "P003 requires zero rebate, 252 observations/steps, 120000 paths, and seed 42",
+                task_id=task_id,
+                path=contract_path,
             )
         )
     return issues

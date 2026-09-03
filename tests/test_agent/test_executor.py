@@ -2313,6 +2313,12 @@ def test_deterministic_fx_barrier_targets_use_primitive_composition(
                 role="payoff_primitive",
                 required=True,
             ),
+            SimpleNamespace(
+                module="trellis.models.analytical",
+                symbol="terminal_intrinsic",
+                role="terminal_payoff",
+                required=True,
+            ),
         )
     generation_plan = SimpleNamespace(
         lane_exact_binding_refs=(exact_ref,),
@@ -2343,7 +2349,35 @@ def test_deterministic_fx_barrier_targets_use_primitive_composition(
         assert generated.code.count(
             "from trellis.models.monte_carlo.path_state import"
         ) == 1
+        assert (
+            "from trellis.models.analytical import terminal_intrinsic"
+            in generated.code
+        )
+        assert (
+            "from trellis.models.analytical.support import terminal_intrinsic"
+            not in generated.code
+        )
     assert EVALUATE_SENTINEL not in generated.code
+
+
+def test_terminal_intrinsic_import_follows_the_selected_primitive_module():
+    from trellis.agent.executor import _deterministic_exact_binding_import_lines
+
+    plan = SimpleNamespace(
+        primitive_plan=SimpleNamespace(
+            primitives=(
+                SimpleNamespace(
+                    module="trellis.models.analytical.support",
+                    symbol="terminal_intrinsic",
+                ),
+            ),
+        ),
+    )
+
+    assert _deterministic_exact_binding_import_lines(
+        "return terminal_intrinsic('call', spot=spot, strike=strike)",
+        generation_plan=plan,
+    ) == ("from trellis.models.analytical.support import terminal_intrinsic",)
 
 
 def test_generated_fx_barrier_analytical_and_mc_agree():
@@ -2403,13 +2437,15 @@ def test_generated_fx_barrier_analytical_and_mc_agree():
         foreign_discount_key="EUR-DISC",
         option_type="call",
         barrier_type="down_and_in",
+        monitoring="discrete",
     )
     analytical = analytical_ns[analytical_schema.class_name](
         analytical_ns[analytical_schema.spec_name](**terms)
     )
     mc = mc_ns[mc_schema.class_name](
-        mc_ns[mc_schema.spec_name](**terms, n_paths=20_000, n_steps=252)
+        mc_ns[mc_schema.spec_name](**terms, n_paths=20_000, n_steps=252, seed=7)
     )
+    assert mc.spec.seed == 7
     market = MarketState(
         as_of=_date(2024, 11, 15),
         settlement=_date(2024, 11, 15),

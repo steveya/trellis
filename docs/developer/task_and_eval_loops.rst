@@ -794,7 +794,13 @@ callers as compatibility/reference APIs, and cookbook promotion remains owned
 by quant/model-validator evidence rather than the route lowering. Legacy
 ``T109`` declares the nondegenerate FX barrier terms and market scenario in its
 task manifest, so generic task-contract materialization supplies both targets
-without a task-id-specific runtime patch. ``T15``
+without a task-id-specific runtime patch. The modern ``P003`` contract is
+stricter: it explicitly fixes zero rebate, daily discrete monitoring at 252
+observations per year, 252 Monte Carlo steps, 120,000 paths, and seed 42.
+Manifest validation rejects missing or changed controls, the generated schema
+preserves them, and runtime simulation identity records the authored seed.
+Trellis must not reinterpret this row as a continuous-monitoring request.
+``T15``
 uses a bounded CEV European call contract for the CEVOperator PDE versus CEV
 tree comparison and binds ``cev_pde`` / ``cev_tree`` to deterministic local
 proof adapters. The PDE adapter must consume CEV parameters through

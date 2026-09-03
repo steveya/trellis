@@ -1787,9 +1787,19 @@ def _runtime_snapshot_reference(market_context: dict[str, Any]) -> dict[str, Any
 def _explicit_simulation_seed(task: dict, market_context: dict[str, Any]) -> tuple[int | None, str]:
     """Return an explicit simulation seed if the task or market metadata provided one."""
     metadata = dict(market_context.get("metadata") or {})
+    benchmark_contract = task.get("benchmark_contract")
+    benchmark_contract = (
+        benchmark_contract if isinstance(benchmark_contract, Mapping) else {}
+    )
+    extension_contract = task.get("extension_contract")
+    extension_contract = (
+        extension_contract if isinstance(extension_contract, Mapping) else {}
+    )
     seed_candidates = (
         ("task.simulation_seed", task.get("simulation_seed")),
         ("task.seed", task.get("seed")),
+        ("task.benchmark_contract.seed", benchmark_contract.get("seed")),
+        ("task.extension_contract.seed", extension_contract.get("seed")),
         ("market.metadata.simulation_seed", metadata.get("simulation_seed")),
         ("market.metadata.seed", metadata.get("seed")),
     )
