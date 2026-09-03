@@ -1236,6 +1236,8 @@ def _validate_legacy_lookback_comparison_contract(
             set(targets) == set(expected_targets),
             all(
                 isinstance(targets.get(target_id), Mapping)
+                and set(targets[target_id])
+                == {*expected, "variant_parameters"}
                 and all(
                     targets[target_id].get(key) == value
                     for key, value in expected.items()

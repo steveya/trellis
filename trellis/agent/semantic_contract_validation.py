@@ -1959,6 +1959,20 @@ def _validate_lookback_option_shape(
         state_dependence="path_dependent",
         schedule_dependence=False,
     )
+    option_type = str(getattr(contract.product, "option_type", "") or "").strip().lower()
+    if option_type not in _ALLOWED_OPTION_TYPES:
+        errors.append(
+            "Lookback option semantics require option_type `call` or `put`, "
+            f"got `{contract.product.option_type}`."
+        )
+    underlying = getattr(contract.product, "underlying", None)
+    identifiers = tuple(getattr(underlying, "identifiers", ()) or ())
+    constituents = tuple(getattr(contract.product, "constituents", ()) or ())
+    if len(identifiers) != 1 or len(constituents) != 1:
+        errors.append(
+            "Lookback option semantics require exactly one underlier identifier "
+            "and exactly one matching constituent."
+        )
     term_fields = dict(getattr(contract.product, "term_fields", {}) or {})
     if term_fields.get("lookback_type") != "fixed_strike":
         errors.append("Lookback option semantics require lookback_type `fixed_strike`.")

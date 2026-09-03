@@ -801,6 +801,9 @@ def test_authored_legacy_lookback_comparison_is_admitted_for_runtime(task_id):
         lambda task: task["cross_validate"]["target_contracts"].pop(
             "conze_viswanathan_analytical"
         ),
+        lambda task: task["cross_validate"]["target_contracts"][
+            "mc_lookback"
+        ].__setitem__("spec_overrides", {"n_paths": 2}),
     ),
 )
 def test_legacy_lookback_comparison_rejects_semantic_contract_drift(mutation):
