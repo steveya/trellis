@@ -164,7 +164,9 @@ def audit_task_manifests(
                 blocking.extend(_validate_framework_task(manifest_name, task, path))
             elif manifest_name == LEGACY_TASKS_MANIFEST:
                 legacy_tasks.append(task)
-                legacy.extend(_validate_legacy_task(manifest_name, task, path))
+                legacy.extend(
+                    _validate_legacy_task(manifest_name, task, path, root=root)
+                )
 
     for task_id, locations in located_ids.items():
         if len(locations) < 2:
@@ -232,6 +234,8 @@ def assert_valid_task_manifests(
 
 def assert_executable_task_selection(
     tasks: Sequence[Mapping[str, Any]],
+    *,
+    root: Path | None = None,
 ) -> None:
     """Admit validated pricing/block rows and reject incomplete legacy selections."""
     issues: list[TaskManifestIssue] = []
@@ -240,7 +244,14 @@ def assert_executable_task_selection(
             continue
         path = f"selected_tasks[{index}]"
         task_issues = _validate_common(LEGACY_TASKS_MANIFEST, task, path)
-        task_issues.extend(_validate_legacy_task(LEGACY_TASKS_MANIFEST, task, path))
+        task_issues.extend(
+            _validate_legacy_task(
+                LEGACY_TASKS_MANIFEST,
+                task,
+                path,
+                root=root,
+            )
+        )
         disposition = _text(task.get("task_disposition"))
         if (
             disposition in _NON_PRICING_LEGACY_DISPOSITIONS
@@ -1061,6 +1072,8 @@ def _validate_legacy_task(
     manifest_name: str,
     task: Mapping[str, Any],
     path: str,
+    *,
+    root: Path | None = None,
 ) -> list[TaskManifestIssue]:
     issues: list[TaskManifestIssue] = []
     task_id = _text(task.get("id"))
@@ -1153,6 +1166,7 @@ def _validate_legacy_task(
                 manifest_name,
                 task,
                 path,
+                root=root,
             )
         )
     return issues
@@ -1162,6 +1176,8 @@ def _validate_legacy_lookback_comparison_contract(
     manifest_name: str,
     task: Mapping[str, Any],
     path: str,
+    *,
+    root: Path | None = None,
 ) -> list[TaskManifestIssue]:
     """Keep the two executable legacy lookback proofs on one bounded contract."""
     contract = task.get("benchmark_contract")
@@ -1175,7 +1191,12 @@ def _validate_legacy_lookback_comparison_contract(
     if isinstance(market, Mapping):
         from trellis.agent.market_scenarios import load_market_scenario_contracts
 
-        canonical = load_market_scenario_contracts().get("equity_barrier_smile")
+        scenario_contracts = (
+            load_market_scenario_contracts()
+            if root is None
+            else load_market_scenario_contracts(root=root)
+        )
+        canonical = scenario_contracts.get("equity_barrier_smile")
         if canonical is not None:
             expected_market = {
                 "source": canonical.source,

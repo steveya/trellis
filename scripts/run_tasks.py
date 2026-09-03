@@ -151,7 +151,7 @@ def run_block(
     offline_local_agents: bool = False,
 ):
     """Run a block of tasks and save results incrementally."""
-    assert_executable_task_selection(tasks)
+    assert_executable_task_selection(tasks, root=ROOT)
     output_path = Path(output_file)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     market_state = build_market_state()

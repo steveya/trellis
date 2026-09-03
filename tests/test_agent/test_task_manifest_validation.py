@@ -791,6 +791,35 @@ def test_authored_legacy_lookback_comparison_is_admitted_for_runtime(task_id):
     assert_executable_task_selection([_legacy_lookback_task(task_id)])
 
 
+def test_legacy_lookback_validation_uses_the_callers_repository_root(tmp_path):
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+    from trellis.agent.task_manifests import load_task_manifest
+
+    repository_root = Path(__file__).resolve().parents[2]
+    scenarios = yaml.safe_load(
+        (repository_root / "MARKET_SCENARIOS.yaml").read_text(encoding="utf-8")
+    )
+    scenarios["scenarios"]["equity_barrier_smile"]["description"] = (
+        "Custom-root lookback proof scenario."
+    )
+    legacy = yaml.safe_load(
+        (repository_root / "TASKS_PROOF_LEGACY.yaml").read_text(encoding="utf-8")
+    )
+    task = next(item for item in legacy["tasks"] if item["id"] == "T30")
+    _write_yaml(tmp_path, "MARKET_SCENARIOS.yaml", scenarios)
+    _write_yaml(tmp_path, "TASKS_PROOF_LEGACY.yaml", [task])
+
+    materialized = load_task_manifest("TASKS_PROOF_LEGACY.yaml", root=tmp_path)
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection(materialized)
+    assert "legacy.lookback_invalid_contract" in _codes(exc_info.value.report)
+    assert_executable_task_selection(materialized, root=tmp_path)
+
+
 @pytest.mark.parametrize(
     ("mutation"),
     (
