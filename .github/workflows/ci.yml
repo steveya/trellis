@@ -55,6 +55,9 @@ jobs:
       - name: Run hygiene gate
         run: make gate-hygiene PYTHON=python
 
+      - name: Validate task manifests
+        run: make gate-task-manifests PYTHON=python
+
   pr-gate-shard:
     if: github.event_name == 'pull_request'
     name: pr-gate-shard-${{ matrix.shard }}

@@ -1,0 +1,11 @@
+version: 1
+manifest: TASKS_PROOF_LEGACY.yaml
+issue_count: 632
+issue_digest: 7c04c79ed36060351263a465bd3d46571c21738bb51b342ba3487a2464c8dbd7
+task_fingerprint: 5cba4d426c1cefd5f717ce69a940959c79d85aad3c8403799159b15014312cf6
+policy: exact_issue_identity_and_task_content
+note: >-
+  This baseline freezes known contract incompleteness in the retained legacy
+  proof corpus. It is not evidence that the listed tasks are priceable. Any
+  repair, regression, or new task changes the issue digest or task fingerprint
+  and requires an intentional review and baseline update.

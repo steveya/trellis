@@ -6,7 +6,10 @@ PR_GATE_IGNORES ?= --ignore=tests/test_contracts --ignore=tests/test_crossval --
 PR_GATE_SHARD_COUNT ?= 4
 PR_GATE_SHARD_INDEX ?= 1
 
-.PHONY: gate-hygiene gate-helper-authority gate-pr-shard gate-tier2-contracts gate-pr gate-canary gate-release
+.PHONY: gate-task-manifests gate-hygiene gate-helper-authority gate-pr-shard gate-tier2-contracts gate-pr gate-canary gate-release
+
+gate-task-manifests:
+	$(PYTHON) scripts/validate_task_manifests.py
 
 gate-hygiene:
 	$(PYTHON) scripts/test_hygiene.py --fail-on-ancient-unticketed-xfail
@@ -23,6 +26,7 @@ gate-pr-shard:
 		| xargs -0 $(PYTEST) -x -q -m "$(PR_CORE_MARKERS)"
 
 gate-pr:
+	$(MAKE) gate-task-manifests
 	$(MAKE) gate-hygiene
 	$(MAKE) gate-helper-authority
 	$(PYTEST) tests/ -x -q -m "$(PR_CORE_MARKERS)" $(PR_GATE_IGNORES)

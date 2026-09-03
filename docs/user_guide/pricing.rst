@@ -1178,6 +1178,19 @@ bounded benchmark defaults only for sparse legacy proof manifests. User code
 should provide explicit Vasicek/CIR parameters or a short-rate comparison
 regime rather than relying on those internal defaults.
 
+Repository task runs now validate their structural manifest envelopes before
+constructing even the default mock market. Modern benchmark, extension, FpML,
+and negative rows fail immediately when required contract mappings,
+references, or acceptance envelopes are absent. Product-specific semantic
+validators still define whether the fields inside those mappings are
+sufficient. The retained legacy proof inventory is governed by a checked debt
+baseline that covers both exact issue identities and normalized task content
+while it is migrated; passing that baseline only means the reviewed inventory
+did not change. The ordinary task runner rejects an incomplete selected legacy
+row before constructing its default market. A baseline match does not make
+title-only proof rows suitable as pricing requests, and callers should not
+treat their internal benchmark defaults as general product behavior.
+
 The execution layer now also exposes that callable structure directly for the
 bounded proving slice. ``trellis.execution.compile_dynamic_execution_ir(...)``
 can lower an admitted callable-bond ``DynamicContractIR`` into a route-free
