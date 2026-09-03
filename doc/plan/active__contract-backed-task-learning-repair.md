@@ -474,7 +474,15 @@ executor slice reports `58 passed`; the offline `P002/P006` replay reports
 and zero token usage. Remaining `QUA-1154` targets are `P004`, `P007`, `T14`,
 `T15`, and `T16`.
 
-The second implementation slice closes `P004` without LLM calls. The executor
+> [!NOTE]
+> The following `P004` result is historical false-green evidence. QUA-1243
+> supersedes it: the run priced static cap/floor legs after dropping callable
+> control and irregular-schedule semantics, so it is not economic-equivalence
+> evidence and cannot close QUA-1154. Current P004 execution must return the
+> named callable-collar control/continuation honest block.
+
+The second implementation slice originally reported `P004` closed without
+LLM calls. The executor
 now reads exact backend/helper refs from both object-shaped and mapping-shaped
 generation plans, including nested `route_binding_authority` payloads emitted by
 the compiler. The planner now has a deterministic
@@ -494,10 +502,11 @@ Validation:
   --output task_results_qua1154_p004_static_spec_20260703.json
 ```
 
-The planner/executor regression slice reports `64 passed`; the offline `P004`
-replay reports `1/1` passed expectations, first-attempt success, zero actionable
-failures, and zero token usage. Remaining `QUA-1154` targets are `P007`, `T14`,
-`T15`, and `T16`.
+The planner/executor regression slice reports `64 passed`; the historical
+offline `P004` replay recorded `1/1` passed expectations, first-attempt success,
+zero actionable failures, and zero token usage. That P004 result is the static-
+leg false green disqualified above; it did not close P004. The remaining valid
+`QUA-1154` targets at that point were `P007`, `T14`, `T15`, and `T16`.
 
 The third implementation slice closes `P007` without LLM calls. The static
 `cliquet_option` spec now carries local/global cap and floor fields, reset-time
@@ -636,8 +645,9 @@ The focused regression pass reports `17 passed`; the offline `T16` replay
 reports `1/1` passed expectations, first-attempt success, zero actionable
 failures, and zero token usage. `T16` prices were `pde_barrier=23418.55`,
 `mc_barrier=23700.11`, and `rubinstein=23463.24`, with both comparison lanes
-within tolerance. All named `QUA-1154` pack-2 targets are now green and ready
-for a final pack replay.
+within tolerance. Excluding the disqualified P004 static-leg result, the other
+named `QUA-1154` pack-2 targets were green and ready for a final pack replay;
+P004 remained unresolved until QUA-1243 replaced it with an honest block.
 
 Final `QUA-1154` pack replay:
 
@@ -650,10 +660,12 @@ Final `QUA-1154` pack replay:
   --output task_results_qua1154_final_pack_20260703.json
 ```
 
-The final replay reports `7/7` passed expectations in `200s`, all
+The final replay historically reported `7/7` passed expectations in `200s`, all
 first-attempt successes, zero actionable failures, zero lessons/cookbooks
-captured, and zero token usage. The successful tasks are `P002`, `P004`,
-`P006`, `P007`, `T14`, `T15`, and `T16`.
+captured, and zero token usage. QUA-1243 supersedes the reported P004 success:
+P004 was a static-leg false green and is now expected to block honestly. The
+remaining historical successes are `P002`, `P006`, `P007`, `T14`, `T15`, and
+`T16`.
 
 Full pending-pack replay including previously green and expected-block targets:
 
@@ -671,10 +683,13 @@ Full pending-pack replay including previously green and expected-block targets:
   --skip-platform-traces
 ```
 
-The full replay reports `10/10` passed expectations in `248s`, with `9`
-pricing successes, `1` honest block (`T18`), `0` actionable failures, all
-pricing tasks succeeding on the first attempt, and zero token usage. Bounded
-remediation reports `0` total failures.
+The full replay historically reported `10/10` passed expectations in `248s`,
+with `9` harness-classified pricing successes, `1` honest block (`T18`), `0`
+actionable failures, all pricing tasks recorded as first-attempt successes, and
+zero token usage. One of those nine pricing successes was the disqualified
+P004 static-leg false green, so the economically valid historical outcome was
+eight pricing successes plus the T18 honest block, with P004 unresolved.
+Bounded remediation nevertheless reported `0` total harness failures.
 
 ### 2026-07-03 T19-T32 proof-route exact bindings
 

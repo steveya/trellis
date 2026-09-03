@@ -218,6 +218,153 @@ def test_contract_envelopes_require_typed_meaningful_content(tmp_path):
     } <= _codes(report)
 
 
+def test_callable_collar_contract_requires_exact_schedule_and_honest_block(tmp_path):
+    from trellis.agent.task_manifest_validation import audit_task_manifests
+
+    root = Path(__file__).resolve().parents[2]
+    payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
+    p004 = next(task for task in payload["tasks"] if task["id"] == "P004")
+    p004["extension_contract"].pop("fixing_dates", None)
+    p004.pop("expected_outcome", None)
+    p004.pop("expected_blocker_ids", None)
+    p004.pop("honest_block_contract", None)
+    _write_yaml(
+        tmp_path,
+        "MARKET_SCENARIOS.yaml",
+        {
+            "version": 1,
+            "scenarios": {"usd_rates_smile": {"description": "test rates market"}},
+        },
+    )
+    _write_yaml(
+        tmp_path,
+        "TASKS_EXTENSION.yaml",
+        {"version": payload["version"], "tasks": [p004]},
+    )
+
+    report = audit_task_manifests(
+        root=tmp_path,
+        manifest_names=("TASKS_EXTENSION.yaml",),
+    )
+
+    assert {
+        "extension.callable_collar_missing_field",
+        "extension.callable_collar_missing_honest_block",
+    } <= _codes(report)
+
+
+@pytest.mark.parametrize(
+    ("field", "replacement"),
+    [("product", "rate_cap_floor"), ("style", "european")],
+)
+def test_p004_cannot_bypass_callable_collar_validation_by_changing_identity(
+    tmp_path, field, replacement
+):
+    from trellis.agent.task_manifest_validation import audit_task_manifests
+
+    root = Path(__file__).resolve().parents[2]
+    payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
+    p004 = next(task for task in payload["tasks"] if task["id"] == "P004")
+    p004["extension_contract"][field] = replacement
+    p004.pop("expected_outcome", None)
+    p004.pop("expected_blocker_ids", None)
+    p004.pop("honest_block_contract", None)
+    _write_yaml(
+        tmp_path,
+        "MARKET_SCENARIOS.yaml",
+        {
+            "version": 1,
+            "scenarios": {"usd_rates_smile": {"description": "test rates market"}},
+        },
+    )
+    _write_yaml(
+        tmp_path,
+        "TASKS_EXTENSION.yaml",
+        {"version": payload["version"], "tasks": [p004]},
+    )
+
+    report = audit_task_manifests(
+        root=tmp_path,
+        manifest_names=("TASKS_EXTENSION.yaml",),
+    )
+
+    assert {
+        "extension.callable_collar_invalid_semantics",
+        "extension.callable_collar_missing_honest_block",
+    } <= _codes(report)
+
+
+@pytest.mark.parametrize("bad_schedule", ["fixing_order", "payment_before_period_end"])
+def test_p004_callable_collar_rejects_invalid_period_chronology(tmp_path, bad_schedule):
+    from trellis.agent.task_manifest_validation import audit_task_manifests
+
+    root = Path(__file__).resolve().parents[2]
+    payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
+    p004 = next(task for task in payload["tasks"] if task["id"] == "P004")
+    if bad_schedule == "fixing_order":
+        p004["extension_contract"]["fixing_dates"][1] = p004["extension_contract"][
+            "fixing_dates"
+        ][0]
+    else:
+        p004["extension_contract"]["payment_dates"][0] = "2025-01-14"
+    _write_yaml(
+        tmp_path,
+        "MARKET_SCENARIOS.yaml",
+        {
+            "version": 1,
+            "scenarios": {"usd_rates_smile": {"description": "test rates market"}},
+        },
+    )
+    _write_yaml(
+        tmp_path,
+        "TASKS_EXTENSION.yaml",
+        {"version": payload["version"], "tasks": [p004]},
+    )
+
+    report = audit_task_manifests(
+        root=tmp_path,
+        manifest_names=("TASKS_EXTENSION.yaml",),
+    )
+
+    assert "extension.callable_collar_invalid_schedule" in _codes(report)
+
+
+def test_callable_collar_exact_values_are_scoped_to_p004(tmp_path):
+    from trellis.agent.task_manifest_validation import audit_task_manifests
+
+    root = Path(__file__).resolve().parents[2]
+    payload = yaml.safe_load((root / "TASKS_EXTENSION.yaml").read_text(encoding="utf-8"))
+    task = next(task for task in payload["tasks"] if task["id"] == "P004")
+    task["id"] = "P900"
+    task["extension_contract"]["rate_index"] = "EUR-EURIBOR-3M"
+    task["extension_contract"]["collar_direction"] = "receive_cap_pay_floor"
+    task["extension_contract"]["controller_side"] = "collar_receiver"
+    _write_yaml(
+        tmp_path,
+        "MARKET_SCENARIOS.yaml",
+        {
+            "version": 1,
+            "scenarios": {"usd_rates_smile": {"description": "test rates market"}},
+        },
+    )
+    _write_yaml(
+        tmp_path,
+        "TASKS_EXTENSION.yaml",
+        {"version": payload["version"], "tasks": [task]},
+    )
+
+    report = audit_task_manifests(
+        root=tmp_path,
+        manifest_names=("TASKS_EXTENSION.yaml",),
+    )
+
+    assert not {
+        issue.code
+        for issue in report.blocking_issues
+        if issue.code.startswith("extension.callable_collar_")
+    }
+
+
 def test_tolerances_accept_exact_zero_and_reject_non_finite_values(tmp_path):
     from trellis.agent.task_manifest_validation import audit_task_manifests
 

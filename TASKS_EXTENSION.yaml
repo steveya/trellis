@@ -105,18 +105,115 @@ tasks:
     Return price and the relevant Greeks.
   market_scenario_id: usd_rates_smile
   validation_policy: invariants_and_cross_method
+  expected_outcome: honest_block
+  expected_blocker_ids:
+  - dynamic_composition:callable_collar_control
+  - dynamic_composition:callable_collar_continuation
+  honest_block_contract:
+    reason: callable_collar_dynamic_composition_missing
+    summary: Trellis can value the scheduled cap and floor legs, but it cannot value
+      the holder-controlled termination decision or continuation value of a callable
+      collar. Pricing as a non-callable collar would be a false green.
+    packet_type: dynamic_composition_gap
+    missing_capabilities:
+    - callable_collar_control
+    - callable_collar_continuation
+    suggested_action: Implement an exercise controller over the remaining collar-leg
+      continuation value before enabling P004 pricing.
+    follow_on_issue: QUA-1154
   extension_contract:
     product: rate_cap_floor_collar
     style: callable
     floor_strike: 0.02
     cap_strike: 0.04
     start_date: '2024-11-15'
-    maturity_tenor: 5Y
+    maturity_date: '2029-11-15'
+    payment_frequency: quarterly
+    day_count: act/360
+    rate_index: USD-SOFR-3M
+    calendar_name: weekend_only
+    business_day_adjustment: following
+    collar_direction: pay_cap_receive_floor
+    controller_side: collar_payer
+    call_action: terminate_remaining_strip
+    current_period_treatment: fixed_unpaid_cashflow_survives
+    call_settlement:
+      type: cash
+      amount: 0.0
+      currency: USD
+      timing: exercise_date
     callable_dates:
-    - '2026-11-15'
+    - '2026-11-16'
     - '2027-11-15'
     - '2028-11-15'
     irregular_schedule: true
+    accrual_dates:
+    - '2024-11-15'
+    - '2025-01-15'
+    - '2025-04-15'
+    - '2025-07-15'
+    - '2025-10-15'
+    - '2026-01-15'
+    - '2026-04-15'
+    - '2026-07-15'
+    - '2026-10-15'
+    - '2027-01-15'
+    - '2027-04-15'
+    - '2027-07-15'
+    - '2027-10-15'
+    - '2028-01-15'
+    - '2028-04-15'
+    - '2028-07-15'
+    - '2028-10-15'
+    - '2029-01-15'
+    - '2029-04-15'
+    - '2029-07-15'
+    - '2029-10-15'
+    - '2029-11-15'
+    fixing_dates:
+    - '2024-11-15'
+    - '2025-01-15'
+    - '2025-04-15'
+    - '2025-07-15'
+    - '2025-10-15'
+    - '2026-01-15'
+    - '2026-04-15'
+    - '2026-07-15'
+    - '2026-10-15'
+    - '2027-01-15'
+    - '2027-04-15'
+    - '2027-07-15'
+    - '2027-10-15'
+    - '2028-01-14'
+    - '2028-04-14'
+    - '2028-07-14'
+    - '2028-10-13'
+    - '2029-01-15'
+    - '2029-04-13'
+    - '2029-07-13'
+    - '2029-10-15'
+    payment_dates:
+    - '2025-01-15'
+    - '2025-04-15'
+    - '2025-07-15'
+    - '2025-10-15'
+    - '2026-01-15'
+    - '2026-04-15'
+    - '2026-07-15'
+    - '2026-10-15'
+    - '2027-01-15'
+    - '2027-04-15'
+    - '2027-07-15'
+    - '2027-10-15'
+    - '2028-01-17'
+    - '2028-04-17'
+    - '2028-07-17'
+    - '2028-10-16'
+    - '2029-01-15'
+    - '2029-04-16'
+    - '2029-07-16'
+    - '2029-10-15'
+    - '2029-11-15'
     notional: 1000000.0
 - id: P005
   title: 'Trellis extension: Bermudan swaption with irregular exercise schedule'

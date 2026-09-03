@@ -7,6 +7,7 @@ import math
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -494,6 +495,292 @@ def _validate_extension_task(
                 path=f"{path}.validation_policy",
             )
         )
+    if task_id == "P004":
+        issues.extend(
+            _validate_p004_callable_collar_contract(
+                manifest_name,
+                task,
+                contract if isinstance(contract, Mapping) else {},
+                path,
+            )
+        )
+    return issues
+
+
+def _validate_p004_callable_collar_contract(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    contract: Mapping[str, Any],
+    path: str,
+) -> list[TaskManifestIssue]:
+    task_id = _text(task.get("id"))
+    contract_path = f"{path}.extension_contract"
+    issues: list[TaskManifestIssue] = []
+    required_fields = (
+        "floor_strike",
+        "cap_strike",
+        "start_date",
+        "maturity_date",
+        "payment_frequency",
+        "day_count",
+        "rate_index",
+        "calendar_name",
+        "business_day_adjustment",
+        "collar_direction",
+        "controller_side",
+        "call_action",
+        "current_period_treatment",
+        "call_settlement",
+        "callable_dates",
+        "accrual_dates",
+        "fixing_dates",
+        "payment_dates",
+        "notional",
+    )
+    for field in required_fields:
+        if not _meaningful_value(contract.get(field)):
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.callable_collar_missing_field",
+                    f"callable collar requires authored {field}",
+                    task_id=task_id,
+                    path=f"{contract_path}.{field}",
+                )
+            )
+
+    accrual_dates = _iso_date_sequence(contract.get("accrual_dates"))
+    fixing_dates = _iso_date_sequence(contract.get("fixing_dates"))
+    payment_dates = _iso_date_sequence(contract.get("payment_dates"))
+    callable_dates = _iso_date_sequence(contract.get("callable_dates"))
+    for field, dates in (
+        ("accrual_dates", accrual_dates),
+        ("fixing_dates", fixing_dates),
+        ("payment_dates", payment_dates),
+        ("callable_dates", callable_dates),
+    ):
+        if dates is None:
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.callable_collar_invalid_schedule",
+                    f"{field} must be a non-empty ISO-date sequence",
+                    task_id=task_id,
+                    path=f"{contract_path}.{field}",
+                )
+            )
+    if accrual_dates is not None:
+        if len(accrual_dates) < 2 or any(
+            right <= left for left, right in zip(accrual_dates, accrual_dates[1:])
+        ):
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.callable_collar_invalid_schedule",
+                    "accrual_dates must be strictly increasing boundaries",
+                    task_id=task_id,
+                    path=f"{contract_path}.accrual_dates",
+                )
+            )
+        expected_periods = len(accrual_dates) - 1
+        if fixing_dates is not None and len(fixing_dates) != expected_periods:
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.callable_collar_invalid_schedule",
+                    "fixing_dates must contain one date per accrual period",
+                    task_id=task_id,
+                    path=f"{contract_path}.fixing_dates",
+                )
+            )
+        if payment_dates is not None and len(payment_dates) != expected_periods:
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.callable_collar_invalid_schedule",
+                    "payment_dates must contain one date per accrual period",
+                    task_id=task_id,
+                    path=f"{contract_path}.payment_dates",
+                )
+            )
+        if fixing_dates is not None and len(fixing_dates) == expected_periods:
+            if any(
+                right <= left for left, right in zip(fixing_dates, fixing_dates[1:])
+            ) or any(
+                fixing_date > accrual_dates[index]
+                for index, fixing_date in enumerate(fixing_dates)
+            ):
+                issues.append(
+                    _issue(
+                        manifest_name,
+                        "extension.callable_collar_invalid_schedule",
+                        "fixing dates must be strictly increasing and no later than period start",
+                        task_id=task_id,
+                        path=f"{contract_path}.fixing_dates",
+                    )
+                )
+        if payment_dates is not None and len(payment_dates) == expected_periods:
+            if any(
+                right <= left for left, right in zip(payment_dates, payment_dates[1:])
+            ) or any(
+                payment_date < accrual_dates[index + 1]
+                for index, payment_date in enumerate(payment_dates)
+            ):
+                issues.append(
+                    _issue(
+                        manifest_name,
+                        "extension.callable_collar_invalid_schedule",
+                        "payment dates must be strictly increasing and no earlier than period end",
+                        task_id=task_id,
+                        path=f"{contract_path}.payment_dates",
+                    )
+                )
+        start = _iso_date(contract.get("start_date"))
+        maturity = _iso_date(contract.get("maturity_date"))
+        if start != accrual_dates[0] or maturity != accrual_dates[-1]:
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.callable_collar_invalid_schedule",
+                    "start_date and maturity_date must match the authored accrual boundaries",
+                    task_id=task_id,
+                    path=contract_path,
+                )
+            )
+        if callable_dates is not None and any(
+            call_date <= accrual_dates[0] or call_date >= accrual_dates[-1]
+            for call_date in callable_dates
+        ):
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.callable_collar_invalid_schedule",
+                    "callable_dates must fall strictly inside the accrual horizon",
+                    task_id=task_id,
+                    path=f"{contract_path}.callable_dates",
+                )
+            )
+        if callable_dates is not None and any(
+            right <= left for left, right in zip(callable_dates, callable_dates[1:])
+        ):
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.callable_collar_invalid_schedule",
+                    "callable_dates must be strictly increasing",
+                    task_id=task_id,
+                    path=f"{contract_path}.callable_dates",
+                )
+            )
+
+    cap_strike = contract.get("cap_strike")
+    floor_strike = contract.get("floor_strike")
+    if (
+        not _finite_non_negative_number(cap_strike)
+        or not _finite_non_negative_number(floor_strike)
+        or float(cap_strike) <= float(floor_strike)
+        or not _finite_non_negative_number(contract.get("notional"))
+        or float(contract.get("notional") or 0.0) <= 0.0
+    ):
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.callable_collar_invalid_economics",
+                "cap_strike and floor_strike must be finite with cap_strike above floor_strike",
+                task_id=task_id,
+                path=contract_path,
+            )
+        )
+
+    expected_values = {
+        "product": "rate_cap_floor_collar",
+        "style": "callable",
+        "payment_frequency": "quarterly",
+        "day_count": "act/360",
+        "calendar_name": "weekend_only",
+        "business_day_adjustment": "following",
+        "collar_direction": "pay_cap_receive_floor",
+        "controller_side": "collar_payer",
+        "call_action": "terminate_remaining_strip",
+        "current_period_treatment": "fixed_unpaid_cashflow_survives",
+        "rate_index": "usd-sofr-3m",
+    }
+    for field, expected in expected_values.items():
+        if _text(contract.get(field)).lower() != expected:
+            issues.append(
+                _issue(
+                    manifest_name,
+                    "extension.callable_collar_invalid_semantics",
+                    f"{field} must be {expected!r} for the bounded P004 contract",
+                    task_id=task_id,
+                    path=f"{contract_path}.{field}",
+                )
+            )
+    if contract.get("irregular_schedule") is not True:
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.callable_collar_invalid_semantics",
+                "irregular_schedule must be explicitly true",
+                task_id=task_id,
+                path=f"{contract_path}.irregular_schedule",
+            )
+        )
+    settlement = contract.get("call_settlement")
+    if not (
+        isinstance(settlement, Mapping)
+        and _text(settlement.get("type")).lower() == "cash"
+        and _finite_non_negative_number(settlement.get("amount"))
+        and _text(settlement.get("currency")).upper() == "USD"
+        and _text(settlement.get("timing")).lower() == "exercise_date"
+    ):
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.callable_collar_invalid_semantics",
+                "call_settlement must author cash amount, USD currency, and exercise-date timing",
+                task_id=task_id,
+                path=f"{contract_path}.call_settlement",
+            )
+        )
+
+    required_blockers = {
+        "dynamic_composition:callable_collar_control",
+        "dynamic_composition:callable_collar_continuation",
+    }
+    blocker_ids = set(
+        str(item).strip()
+        for item in (task.get("expected_blocker_ids") or ())
+        if isinstance(item, str) and item.strip()
+    )
+    honest_block = task.get("honest_block_contract")
+    missing_capabilities = set(
+        str(item).strip()
+        for item in (
+            honest_block.get("missing_capabilities", ())
+            if isinstance(honest_block, Mapping)
+            else ()
+        )
+        if isinstance(item, str) and item.strip()
+    )
+    if (
+        _text(task.get("expected_outcome")) != "honest_block"
+        or not required_blockers.issubset(blocker_ids)
+        or not isinstance(honest_block, Mapping)
+        or not _text(honest_block.get("reason"))
+        or not {"callable_collar_control", "callable_collar_continuation"}.issubset(
+            missing_capabilities
+        )
+    ):
+        issues.append(
+            _issue(
+                manifest_name,
+                "extension.callable_collar_missing_honest_block",
+                "callable collar must declare the control and continuation dynamic-composition blockers",
+                task_id=task_id,
+                path=path,
+            )
+        )
     return issues
 
 
@@ -945,6 +1232,26 @@ def _meaningful_value(value: Any) -> bool:
     if isinstance(value, (int, float)) and not isinstance(value, bool):
         return math.isfinite(float(value))
     return value is not None
+
+
+def _iso_date(value: Any) -> date | None:
+    if isinstance(value, date):
+        return value
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def _iso_date_sequence(value: Any) -> tuple[date, ...] | None:
+    if not _nonempty_sequence(value):
+        return None
+    parsed = tuple(_iso_date(item) for item in value)
+    if any(item is None for item in parsed):
+        return None
+    return tuple(item for item in parsed if item is not None)
 
 
 def _nonempty_sequence(value: Any) -> bool:

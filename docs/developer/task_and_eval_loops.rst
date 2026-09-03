@@ -981,6 +981,16 @@ generic semantic-gap handling runs. That keeps compare-ready tasks such as
 ``E22`` on the actual pricing route without teaching the generic classifier
 any instrument-specific special cases.
 
+Callable collar requests are a stricter boundary. ``P004`` authors its exact
+irregular accrual, fixing, and payment dates together with the call controller,
+termination action, already-fixed unpaid-period treatment, and settlement.
+Product-specific manifest validation requires those fields and the named
+control/continuation blockers. The task runtime recognizes the declared honest
+block before task-specific market construction or builder invocation, while
+the lower analytical and Monte Carlo strip helpers
+independently raise when call terms reach them. This two-layer guard prevents a
+static collar value from being reported as callable-collar evidence.
+
 Comparison pricing now also prefers market-aligned smoke fixtures when the
 route family needs them. For the supported quanto slice, the comparison
 harness derives an at-the-money fixture strike from the resolved runtime

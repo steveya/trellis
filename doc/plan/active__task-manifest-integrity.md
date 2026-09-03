@@ -24,7 +24,7 @@ exact capability blocker before Trellis can synthesize economic inputs.
 | Order | Linear | Status | Outcome |
 | ---: | --- | --- | --- |
 | 1 | `QUA-1242` | Done | Fail-closed corpus validation and checked legacy-debt baseline |
-| 2 | `QUA-1243` | Backlog | P004 preserves callable-collar semantics or blocks honestly |
+| 2 | `QUA-1243` | In Progress | P004 preserves callable-collar semantics or blocks honestly |
 | 3 | `QUA-1248` | Blocked | T09 cannot price through the flat-coupon bootstrap |
 | 4 | `QUA-1249` | Blocked | T30/T96 get authored market and acceptance contracts |
 | 5 | `QUA-1250` | Blocked | T03/T83/T85 receive current dispositions |

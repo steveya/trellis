@@ -7286,9 +7286,14 @@ def _deterministic_exact_binding_evaluate_body(
                 instrument_class=getattr(spec, "instrument_class", None) or "{default_kind}",
                 coupon_dates=getattr(spec, "coupon_dates", None) or getattr(spec, "payment_dates", None),
                 accrual_dates=getattr(spec, "accrual_dates", None),
+                fixing_dates=getattr(spec, "fixing_dates", None),
                 cap_strike=getattr(spec, "cap_strike", None),
                 floor_strike=getattr(spec, "floor_strike", None),
-                call_price=getattr(spec, "call_price", None) or getattr(spec, "call_strike", None),
+                call_price=(
+                    getattr(spec, "call_price", None)
+                    if getattr(spec, "call_price", None) is not None
+                    else getattr(spec, "call_strike", None)
+                ),
                 exercise_dates=getattr(spec, "exercise_dates", None) or getattr(spec, "call_dates", None),
                 is_payer=getattr(spec, "is_payer", None),
                 notional=getattr(spec, "notional", None),
@@ -7324,9 +7329,14 @@ def _deterministic_exact_binding_evaluate_body(
                 instrument_class=getattr(spec, "instrument_class", None) or "{default_kind}",
                 coupon_dates=getattr(spec, "coupon_dates", None) or getattr(spec, "payment_dates", None),
                 accrual_dates=getattr(spec, "accrual_dates", None),
+                fixing_dates=getattr(spec, "fixing_dates", None),
                 cap_strike=getattr(spec, "cap_strike", None),
                 floor_strike=getattr(spec, "floor_strike", None),
-                call_price=getattr(spec, "call_price", None) or getattr(spec, "call_strike", None),
+                call_price=(
+                    getattr(spec, "call_price", None)
+                    if getattr(spec, "call_price", None) is not None
+                    else getattr(spec, "call_strike", None)
+                ),
                 exercise_dates=getattr(spec, "exercise_dates", None) or getattr(spec, "call_dates", None),
                 is_payer=getattr(spec, "is_payer", None),
                 n_paths=20000,
