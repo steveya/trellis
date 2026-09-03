@@ -2485,6 +2485,54 @@ def test_sparse_rate_pde_proof_row_blocks_honestly_without_build(monkeypatch, tm
     assert "[HONEST_BLOCK]" in capsys.readouterr().out
 
 
+def test_p004_callable_collar_blocks_honestly_without_build(monkeypatch, tmp_path):
+    from trellis.agent.task_manifests import load_task_manifest
+    from trellis.agent.task_runtime import run_task
+
+    task = next(
+        task
+        for task in load_task_manifest("TASKS_EXTENSION.yaml")
+        if task["id"] == "P004"
+    )
+    calls: list[dict] = []
+
+    def fake_build(**kwargs):
+        calls.append(kwargs)
+        raise AssertionError("P004 honest block should not invoke build")
+
+    monkeypatch.setattr(
+        "trellis.agent.task_run_store.persist_task_run_record",
+        lambda *_args, **_kwargs: {
+            "history_path": str(tmp_path / "history.json"),
+            "latest_path": str(tmp_path / "latest.json"),
+            "latest_index_path": str(tmp_path / "latest-index.json"),
+            "diagnosis_failure_bucket": "blocked",
+            "diagnosis_headline": "Callable collar blocked honestly.",
+            "diagnosis_decision_stage": "blocked",
+            "diagnosis_next_action": "Implement callable-collar control and continuation.",
+        },
+    )
+
+    result = run_task(
+        task,
+        market_state=object(),
+        build_fn=fake_build,
+        task_run_storage_root=tmp_path,
+    )
+
+    assert calls == []
+    assert result["success"] is False
+    assert result["expected_honest_block"] is True
+    assert result["outcome_class"] == "honest_block"
+    assert result["passed_expectation"] is True
+    assert result["attempts"] == 0
+    assert result["blocker_details"]["reason"] == "callable_collar_dynamic_composition_missing"
+    assert result["blocker_details"]["repair_packet"]["missing_capabilities"] == [
+        "callable_collar_control",
+        "callable_collar_continuation",
+    ]
+
+
 def test_weighted_nth_to_default_extension_declares_pricing_and_cross_method_contracts():
     from trellis.agent.task_manifests import load_task_manifest
 

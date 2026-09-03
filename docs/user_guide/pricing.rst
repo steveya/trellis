@@ -117,6 +117,15 @@ compounding, amortization, extra payments, early termination, and unsettled
 premiums remain blocked.
 This is bounded interoperability, not general FpML pricing coverage.
 
+The same economic boundary applies to native callable collars. Trellis can
+price explicitly scheduled non-callable cap, floor, and collar legs, including
+irregular periods with authored fixing and payment dates. It cannot currently
+price a party-controlled termination of the remaining collar. Supplying call
+terms to the vanilla analytical or Monte Carlo strip helpers raises instead of
+ignoring them. The ``P004`` pricing request therefore returns an expected
+``dynamic_composition`` block naming the missing callable-collar control and
+continuation capabilities; it does not return the static-leg proxy value.
+
 ``source_reference`` is an audit label, not a location that Trellis fetches.
 The caller must supply the XML bytes inline; the importer performs no network
 or external-entity resolution. A blocked compile returns a ``blocker_report``

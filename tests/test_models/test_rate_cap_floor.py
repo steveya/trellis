@@ -315,8 +315,6 @@ def test_rate_cap_floor_strip_accepts_generated_schedule_alias_collar_fields():
         coupon_dates=coupon_dates,
         cap_strike=0.04,
         floor_strike=0.02,
-        call_price=1_000.0,
-        exercise_dates=(date(2026, 11, 15),),
         is_payer=True,
         day_count=DayCountConvention.ACT_360,
         frequency=Frequency.QUARTERLY,
@@ -353,8 +351,6 @@ def test_rate_cap_floor_strip_accepts_generated_schedule_alias_collar_fields():
         coupon_dates=coupon_dates,
         cap_strike=0.04,
         floor_strike=0.02,
-        call_price=1_000.0,
-        exercise_dates=(date(2026, 11, 15),),
         is_payer=True,
         day_count=DayCountConvention.ACT_360,
         frequency=Frequency.QUARTERLY,
@@ -364,6 +360,39 @@ def test_rate_cap_floor_strip_accepts_generated_schedule_alias_collar_fields():
 
     assert alias_price == pytest.approx(expected)
     assert monte_carlo_alias_price == pytest.approx(alias_price, rel=0.25)
+
+
+@pytest.mark.parametrize(
+    "helper",
+    [
+        price_rate_cap_floor_strip_analytical,
+        price_rate_cap_floor_strip_monte_carlo,
+    ],
+)
+@pytest.mark.parametrize(
+    "call_terms",
+    [
+        {"call_price": 0.0},
+        {"exercise_dates": (date(2026, 11, 15),)},
+    ],
+)
+def test_non_callable_rate_strip_helpers_reject_call_terms(helper, call_terms):
+    market_state = _market_state(rate=0.05, vol=0.20)
+
+    with pytest.raises(
+        NotImplementedError,
+        match="callable-collar control and continuation",
+    ):
+        helper(
+            market_state=market_state,
+            notional=1_000_000.0,
+            strike=0.04,
+            start_date=date(2025, 2, 15),
+            end_date=date(2030, 2, 15),
+            day_count=DayCountConvention.ACT_360,
+            frequency=Frequency.QUARTERLY,
+            **call_terms,
+        )
 
 
 def test_rate_cap_floor_strip_includes_known_first_fixing_intrinsic():

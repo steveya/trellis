@@ -153,10 +153,12 @@ def _periods_from_schedule_aliases(
     *,
     accrual_dates: tuple[date, ...] | list[date] | None = None,
     coupon_dates: tuple[date, ...] | list[date] | None = None,
+    fixing_dates: tuple[date, ...] | list[date] | None = None,
 ) -> tuple[CapFloorPeriod, ...] | None:
     accrual = tuple(accrual_dates or ())
     coupons = tuple(coupon_dates or ())
-    if not accrual and not coupons:
+    fixings = tuple(fixing_dates or ())
+    if not accrual and not coupons and not fixings:
         return None
     if len(accrual) < 2:
         raise ValueError("accrual_dates must contain at least start and end dates")
@@ -172,15 +174,30 @@ def _periods_from_schedule_aliases(
         raise ValueError(
             "coupon_dates must have one date per accrual period or one date per accrual boundary"
         )
+    if fixings and len(fixings) != period_count:
+        raise ValueError("fixing_dates must have one date per accrual period")
 
     return tuple(
         CapFloorPeriod(
             start_date=accrual[index],
             end_date=accrual[index + 1],
             payment_date=payments[index],
-            fixing_date=accrual[index],
+            fixing_date=fixings[index] if fixings else accrual[index],
         )
         for index in range(period_count)
+    )
+
+
+def _reject_callable_strip_terms(
+    *,
+    call_price: float | None,
+    exercise_dates: tuple[date, ...] | list[date] | None,
+) -> None:
+    if call_price is None and not tuple(exercise_dates or ()):
+        return
+    raise NotImplementedError(
+        "Vanilla cap/floor strip helpers do not implement callable-collar control and continuation; "
+        "price the non-callable legs only or use a callable-collar controller."
     )
 
 
@@ -370,6 +387,7 @@ def price_rate_cap_floor_strip_analytical(
     periods: tuple[CapFloorPeriod, ...] | None = None,
     coupon_dates: tuple[date, ...] | list[date] | None = None,
     accrual_dates: tuple[date, ...] | list[date] | None = None,
+    fixing_dates: tuple[date, ...] | list[date] | None = None,
     cap_strike: float | None = None,
     floor_strike: float | None = None,
     call_price: float | None = None,
@@ -388,11 +406,15 @@ def price_rate_cap_floor_strip_analytical(
     shift: float | None = None,
     sabr: dict[str, float] | None = None,
 ) -> float:
-    """Price a cap/floor strip as a sum of discounted Black-76 caplets/floorlets."""
-    del call_price, exercise_dates
+    """Price a non-callable cap/floor strip as discounted Black-76 caplets/floorlets."""
+    _reject_callable_strip_terms(
+        call_price=call_price,
+        exercise_dates=exercise_dates,
+    )
     resolved_periods = periods or _periods_from_schedule_aliases(
         accrual_dates=accrual_dates,
         coupon_dates=coupon_dates,
+        fixing_dates=fixing_dates,
     )
     if cap_strike is not None or floor_strike is not None:
         cap_value = 0.0
@@ -495,6 +517,7 @@ def price_rate_cap_floor_strip_monte_carlo(
     periods: tuple[CapFloorPeriod, ...] | None = None,
     coupon_dates: tuple[date, ...] | list[date] | None = None,
     accrual_dates: tuple[date, ...] | list[date] | None = None,
+    fixing_dates: tuple[date, ...] | list[date] | None = None,
     cap_strike: float | None = None,
     floor_strike: float | None = None,
     call_price: float | None = None,
@@ -518,12 +541,16 @@ def price_rate_cap_floor_strip_monte_carlo(
     forward_curve=None,
     vol=None,
 ) -> float:
-    """Price a cap/floor strip by Monte Carlo on the caplet-strip forward surface."""
+    """Price a non-callable cap/floor strip on the caplet-strip forward surface."""
     del n_steps, mean_reversion, sigma, discount_curve, forward_curve, vol
-    del call_price, exercise_dates
+    _reject_callable_strip_terms(
+        call_price=call_price,
+        exercise_dates=exercise_dates,
+    )
     resolved_periods = periods or _periods_from_schedule_aliases(
         accrual_dates=accrual_dates,
         coupon_dates=coupon_dates,
+        fixing_dates=fixing_dates,
     )
     if cap_strike is not None or floor_strike is not None:
         cap_value = 0.0

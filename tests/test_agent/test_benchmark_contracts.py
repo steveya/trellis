@@ -119,6 +119,53 @@ def test_benchmark_request_description_surfaces_cap_model_specific_terms():
     assert "SABR parameters: alpha=0.025, beta=0.5, nu=0.35, rho=-0.2." in sabr_description
 
 
+def test_p004_overrides_preserve_authored_callable_collar_schedule_and_control():
+    task = _extension_tasks()["P004"]
+    contract = task["extension_contract"]
+
+    description = benchmark_request_description(task, root=ROOT)
+    overrides = benchmark_spec_overrides(task, root=ROOT)
+
+    assert description is not None
+    assert "Style: callable." in description
+    assert "Irregular schedule: true." in description
+    assert "Controller side: collar_payer." in description
+    assert "Call action: terminate_remaining_strip." in description
+    assert "Current-period treatment: fixed_unpaid_cashflow_survives." in description
+    assert "Call settlement: cash USD 0.0 on exercise_date." in description
+    assert "Accrual dates: 2024-11-15, 2025-01-15" in description
+    assert "Fixing dates: 2024-11-15, 2025-01-15" in description
+    assert "Payment dates: 2025-01-15, 2025-04-15" in description
+    assert overrides["accrual_dates"] == tuple(
+        date.fromisoformat(value) for value in contract["accrual_dates"]
+    )
+    assert overrides["fixing_dates"] == tuple(
+        date.fromisoformat(value) for value in contract["fixing_dates"]
+    )
+    assert overrides["payment_dates"] == tuple(
+        date.fromisoformat(value) for value in contract["payment_dates"]
+    )
+    assert len(overrides["accrual_dates"]) == len(overrides["fixing_dates"]) + 1
+    assert len(overrides["accrual_dates"]) == len(overrides["payment_dates"]) + 1
+    assert overrides["accrual_dates"][1] == date(2025, 1, 15)
+    assert overrides["exercise_dates"] == tuple(
+        date.fromisoformat(value) for value in contract["callable_dates"]
+    )
+    assert overrides["irregular_schedule"] is True
+    assert overrides["exercise_style"] == "callable"
+    assert overrides["collar_direction"] == "pay_cap_receive_floor"
+    assert overrides["controller_side"] == "collar_payer"
+    assert overrides["call_action"] == "terminate_remaining_strip"
+    assert overrides["current_period_treatment"] == "fixed_unpaid_cashflow_survives"
+    assert overrides["call_settlement"] == {
+        "type": "cash",
+        "amount": 0.0,
+        "currency": "USD",
+        "timing": "exercise_date",
+    }
+    assert overrides["rate_index"] == "USD-SOFR-3M"
+
+
 def test_extension_request_description_surfaces_bermudan_swaption_contract():
     tasks = {
         task["id"]: task

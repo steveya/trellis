@@ -111,6 +111,21 @@ leg level:
 
 In other words, a schedule-driven cap or floor is represented here as a
 strip of period rate options rather than as a helper-shaped wrapper name.
+That representation is deliberately non-callable. The analytical and Monte
+Carlo strip helpers reject a non-null call price or non-empty exercise-date
+set because static caplet/floorlet summation has no exercise controller or
+continuation-value recursion. A callable collar may reuse these static legs,
+but it also needs a separate dynamic control contract before it has a price.
+It must not be valued by silently discarding the call terms.
+
+The ``P004`` extension task records this boundary as executable evidence. Its
+short first stub, exact accrual/fixing/payment dates, call dates, collar side,
+controller, termination action, survival of an already-fixed unpaid period,
+and cash settlement are authored in the task
+manifest and survive task normalization. Until callable-collar control and
+continuation are implemented, the runtime returns the named
+``dynamic_composition`` honest block before code generation.
+
 The bounded FpML mapping follows the same rule: ``capRateSchedule`` becomes a
 call strip, ``floorRateSchedule`` becomes a put strip, and strike-schedule
 buyer/seller roles determine the ``SignedLeg`` direction. XML product labels,

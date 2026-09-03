@@ -248,7 +248,6 @@ def benchmark_spec_overrides(
         if root is not None
         else market_scenario_contract_from_task(task)
     )
-    benchmark_inputs = {} if scenario_contract is None else scenario_contract.financepy_inputs()
     overrides: dict[str, Any] = {}
 
     for key in _DIRECT_OVERRIDE_KEYS:
@@ -298,7 +297,9 @@ def benchmark_spec_overrides(
         ("callable_dates", "exercise_dates"),
         ("exercise_dates", "exercise_dates"),
         ("coupon_dates", "coupon_dates"),
+        ("payment_dates", "payment_dates"),
         ("accrual_dates", "accrual_dates"),
+        ("fixing_dates", "fixing_dates"),
     ):
         parsed_dates = _parse_date_sequence(contract.get(contract_key))
         if parsed_dates:
@@ -658,6 +659,8 @@ def _benchmark_summary_line(contract: Mapping[str, Any]) -> str:
     if product == "period_rate_option_strip":
         kind = str(contract.get("cap_floor") or "cap").strip().lower()
         return f"Price a {kind} strip under the declared benchmark rates surface."
+    if product == "rate_cap_floor_collar":
+        return "Evaluate the declared callable cap/floor collar without collapsing its exercise control into static legs."
     if product == "swaption":
         style = str(contract.get("style") or "european").strip().lower()
         if style == "bermudan":
@@ -772,6 +775,34 @@ def _benchmark_detail_lines(
                 + ", ".join(f"{key}={value}" for key, value in sorted(sabr.items()))
                 + "."
             )
+        return lines
+    if product == "rate_cap_floor_collar":
+        settlement = contract.get("call_settlement")
+        settlement = dict(settlement) if isinstance(settlement, Mapping) else {}
+        lines.extend(
+            [
+                f"Style: {contract.get('style')}.",
+                f"Cap strike: {contract.get('cap_strike')}.",
+                f"Floor strike: {contract.get('floor_strike')}.",
+                f"Collar direction: {contract.get('collar_direction')}.",
+                f"Notional: {contract.get('notional')}.",
+                f"Rate index: {contract.get('rate_index')}.",
+                f"Day count: {contract.get('day_count')}.",
+                f"Calendar: {contract.get('calendar_name')}.",
+                f"Business-day adjustment: {contract.get('business_day_adjustment')}.",
+                f"Irregular schedule: {str(contract.get('irregular_schedule')).lower()}.",
+                f"Accrual dates: {', '.join(str(item) for item in contract.get('accrual_dates', ()))}.",
+                f"Fixing dates: {', '.join(str(item) for item in contract.get('fixing_dates', ()))}.",
+                f"Payment dates: {', '.join(str(item) for item in contract.get('payment_dates', ()))}.",
+                f"Callable dates: {', '.join(str(item) for item in contract.get('callable_dates', ()))}.",
+                f"Controller side: {contract.get('controller_side')}.",
+                f"Call action: {contract.get('call_action')}.",
+                f"Current-period treatment: {contract.get('current_period_treatment')}.",
+                "Call settlement: "
+                f"{settlement.get('type')} {settlement.get('currency')} "
+                f"{settlement.get('amount')} on {settlement.get('timing')}.",
+            ]
+        )
         return lines
     if product == "swaption":
         style = str(contract.get("style") or "european").strip().lower()
@@ -965,6 +996,11 @@ def _rate_cap_floor_overrides(
     scenario_contract: MarketScenarioContract | None,
 ) -> dict[str, Any]:
     start_date = _parse_date(contract.get("start_date"))
+    collar_direction = str(contract.get("collar_direction") or "").strip().lower()
+    product = str(contract.get("product") or "").strip().lower()
+    rate_index = str(contract.get("rate_index") or "").strip()
+    if not rate_index and scenario_contract is not None:
+        rate_index = str(scenario_contract.forecast_curve_name or "").strip()
     return {
         "notional": _float_or_none(contract.get("notional")),
         "strike": _float_or_none(contract.get("strike")),
@@ -974,15 +1010,32 @@ def _rate_cap_floor_overrides(
         "day_count": _day_count(contract.get("day_count")),
         "calendar_name": str(contract.get("calendar_name") or "weekend_only").strip().lower() or None,
         "business_day_adjustment": str(contract.get("business_day_adjustment") or "following").strip().lower() or None,
-        "rate_index": (
-            scenario_contract.forecast_curve_name
-            if scenario_contract is not None and scenario_contract.forecast_curve_name
-            else None
+        "rate_index": rate_index or None,
+        "instrument_class": (
+            str(contract.get("cap_floor") or "").strip().lower()
+            or ("collar" if product == "rate_cap_floor_collar" else None)
         ),
-        "instrument_class": str(contract.get("cap_floor") or "").strip().lower() or None,
         "model": str(contract.get("model") or "black").strip().lower() or None,
         "shift": _float_or_none(contract.get("shift")),
         "sabr": dict(contract.get("sabr") or {}) or None,
+        "exercise_style": str(contract.get("style") or "").strip().lower() or None,
+        "irregular_schedule": contract.get("irregular_schedule"),
+        "collar_direction": collar_direction or None,
+        "is_payer": (
+            True
+            if collar_direction == "pay_cap_receive_floor"
+            else False if collar_direction == "receive_cap_pay_floor" else None
+        ),
+        "controller_side": str(contract.get("controller_side") or "").strip().lower() or None,
+        "call_action": str(contract.get("call_action") or "").strip().lower() or None,
+        "current_period_treatment": (
+            str(contract.get("current_period_treatment") or "").strip().lower() or None
+        ),
+        "call_settlement": (
+            dict(contract.get("call_settlement"))
+            if isinstance(contract.get("call_settlement"), Mapping)
+            else None
+        ),
     }
 
 

@@ -1382,6 +1382,7 @@ def test_deterministic_exact_binding_module_materializes_cap_strip_comparison_wr
     assert generated is not None
     assert f"{helper_name}(" in generated.code
     assert 'coupon_dates=getattr(spec, "coupon_dates", None)' in generated.code
+    assert 'fixing_dates=getattr(spec, "fixing_dates", None)' in generated.code
     assert 'cap_strike=getattr(spec, "cap_strike", None)' in generated.code
     assert 'floor_strike=getattr(spec, "floor_strike", None)' in generated.code
     assert EVALUATE_SENTINEL not in generated.code
