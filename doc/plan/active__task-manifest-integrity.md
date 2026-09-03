@@ -28,7 +28,7 @@ exact capability blocker before Trellis can synthesize economic inputs.
 | 3 | `QUA-1248` | Blocked | T09 cannot price through the flat-coupon bootstrap |
 | 4 | `QUA-1249` | Blocked | T30/T96 get authored market and acceptance contracts |
 | 5 | `QUA-1250` | Blocked | T03/T83/T85 receive current dispositions |
-| 6 | `QUA-1244` | In Progress | P003 monitoring and numerical controls are authored |
+| 6 | `QUA-1244` | Done | P003 monitoring and numerical controls are authored |
 | 7 | `QUA-1253` | Backlog | Reusable convention-aware dual-curve Bermudan swap tails |
 | 8 | `QUA-1245` | Blocked | P005 conventions/model inputs are authored |
 | 9 | `QUA-1246` | Blocked | P006 bounded terminal-protection semantics are authored |
