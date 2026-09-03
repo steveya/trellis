@@ -42,6 +42,16 @@ def _legacy_expected_block_task(**overrides):
     return task
 
 
+def _legacy_lookback_task(task_id: str = "T30"):
+    from trellis.agent.task_manifests import load_task_manifest
+
+    return next(
+        task
+        for task in load_task_manifest("TASKS_PROOF_LEGACY.yaml")
+        if task["id"] == task_id
+    )
+
+
 def test_missing_and_malformed_manifests_fail_closed(tmp_path):
     from trellis.agent.task_manifest_validation import audit_task_manifests
 
@@ -772,6 +782,42 @@ def test_validated_legacy_expected_honest_block_is_admitted_for_runtime():
     from trellis.agent.task_manifest_validation import assert_executable_task_selection
 
     assert_executable_task_selection([_legacy_expected_block_task()])
+
+
+@pytest.mark.parametrize("task_id", ("T30", "T96"))
+def test_authored_legacy_lookback_comparison_is_admitted_for_runtime(task_id):
+    from trellis.agent.task_manifest_validation import assert_executable_task_selection
+
+    assert_executable_task_selection([_legacy_lookback_task(task_id)])
+
+
+@pytest.mark.parametrize(
+    ("mutation"),
+    (
+        lambda task: task["benchmark_contract"].__setitem__("monitoring_style", "discrete"),
+        lambda task: task["benchmark_contract"].__setitem__("n_steps", 95),
+        lambda task: task["cross_validate"].__setitem__("reference_target", "mc_lookback"),
+        lambda task: task["cross_validate"].__setitem__("tolerance_pct", 5.0),
+        lambda task: task["cross_validate"]["target_contracts"].pop(
+            "conze_viswanathan_analytical"
+        ),
+    ),
+)
+def test_legacy_lookback_comparison_rejects_semantic_contract_drift(mutation):
+    from copy import deepcopy
+
+    from trellis.agent.task_manifest_validation import (
+        TaskManifestValidationError,
+        assert_executable_task_selection,
+    )
+
+    task = deepcopy(_legacy_lookback_task())
+    mutation(task)
+
+    with pytest.raises(TaskManifestValidationError) as exc_info:
+        assert_executable_task_selection([task])
+
+    assert "legacy.lookback_invalid_contract" in _codes(exc_info.value.report)
 
 
 def test_run_block_reports_real_t09_as_non_actionable_honest_block(

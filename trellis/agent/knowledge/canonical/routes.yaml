@@ -1940,6 +1940,9 @@ routes:
           - module: trellis.core.date_utils
             symbol: year_fraction
             role: time_measure
+          - module: trellis.core.differentiable
+            symbol: get_numpy
+            role: numeric_backend
           - module: trellis.models.analytical.support
             symbol: normalized_option_type
             role: payoff_primitive

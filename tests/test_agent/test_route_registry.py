@@ -2211,6 +2211,11 @@ class TestAnalyticalRoutes:
                 "time_measure",
             ),
             (
+                "trellis.core.differentiable",
+                "get_numpy",
+                "numeric_backend",
+            ),
+            (
                 "trellis.models.analytical.support",
                 "normalized_option_type",
                 "payoff_primitive",

@@ -53,7 +53,7 @@ authored T09 schedule.
 | `T27` | `proof_contract_bridge` | `TASKS_PROOF_LEGACY.yaml` | LSM basis function shootout at σ=0.20 and σ=0.40 |
 | `T28` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Heston MC: Euler vs QE scheme (Andersen 2008) |
 | `T29` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Asian option (arithmetic average): MC vs Turnbull-Wakeman |
-| `T30` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Lookback option: MC vs analytical (Goldman-Sosin-Gatto) |
+| `T30` | `executable_pricing` | `TASKS_PROOF_LEGACY.yaml` | Authored fixed-strike continuous lookback comparison on `equity_barrier_smile`; Conze-Viswanathan reference, explicit MC controls, 1.25% tolerance |
 | `T31` | `proof_contract_bridge` | `TASKS_PROOF_LEGACY.yaml` | Quasi-Monte Carlo: Sobol vs pseudo-random convergence |
 | `T32` | `proof_contract_bridge` | `TASKS_PROOF_LEGACY.yaml` | Multi-level Monte Carlo (MLMC) for variance reduction |
 | `T33` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Merton jump-diffusion MC vs FFT |
@@ -116,7 +116,7 @@ authored T09 schedule.
 | `T90` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Vega surface: per-expiry per-strike vega bucketing |
 | `T94` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | FX market bridge: Garman-Kohlhagen vs MC with explicit domestic/foreign curve selection |
 | `T95` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | xVA framework: CVA + DVA + FVA on IR swap portfolio |
-| `T96` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Lookback option (fixed strike): MC vs Goldman-Sosin-Gatto analytical |
+| `T96` | `executable_pricing` | `TASKS_PROOF_LEGACY.yaml` | Authored fixed-strike continuous lookback comparison on `equity_barrier_smile`; Conze-Viswanathan reference, explicit MC controls, 1.25% tolerance |
 | `T97` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Digital (cash-or-nothing) option: BS formula vs MC vs COS |
 | `T98` | `proof_only_hold` | `TASKS_PROOF_LEGACY.yaml` | Geometric Asian option: closed-form vs MC |
 | `T99` | `benchmark_rewrite_candidate` | `rewrite/new corpus` | Chooser option: Rubinstein formula vs MC |

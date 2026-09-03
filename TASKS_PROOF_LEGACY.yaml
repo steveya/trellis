@@ -613,8 +613,20 @@ tasks:
     - quantlib
   status: pending
 - id: T30
-  title: 'Lookback option: MC vs analytical (Goldman-Sosin-Gatto)'
-  construct: monte_carlo
+  title: 'Lookback option (fixed strike): conditional-bridge MC vs Conze-Viswanathan analytical'
+  description: >-
+    Price a one-year European fixed-strike continuously monitored SPX lookback
+    call with notional 1, spot 100, strike 100, and observed running maximum
+    100. Compare conditional Brownian-bridge Monte Carlo under exact
+    constant-parameter GBM with the fixed-strike continuous analytical formula
+    and return both present values.
+  instrument_type: lookback_option
+  construct:
+  - monte_carlo
+  - analytical
+  market_scenario_id: equity_barrier_smile
+  validation_policy: invariants_and_cross_method
+  task_disposition: executable_pricing
   benchmark_contract:
     product: lookback_option
     notional: 1.0
@@ -623,13 +635,45 @@ tasks:
     option_type: call
     lookback_type: fixed_strike
     monitoring_style: continuous
+    exercise_style: european
+    day_count: act/365
     running_extreme: 100.0
     expiry_years: 1.0
+    n_paths: 80000
+    n_steps: 96
+    seed: 42
   new_component: running_extrema_tracking
   cross_validate:
     internal:
     - mc_lookback
-    - gsg_analytical
+    - conze_viswanathan_analytical
+    reference_target: conze_viswanathan_analytical
+    relations:
+      mc_lookback: within_tolerance
+    tolerance_pct: 1.25
+    target_contracts:
+      mc_lookback:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        variant_parameters: {process: exact_gbm, extremum_sampling: conditional_log_bridge}
+        validation_bundle_id: monte_carlo:lookback_option
+        payoff_family: lookback_option
+        exercise_style: european
+        model_family: equity_diffusion
+        underlying_asset_class: equity
+        observation_style: path_dependent
+      conze_viswanathan_analytical:
+        method: analytical
+        route_id: analytical_black76
+        route_family: analytical
+        variant_parameters: {formula: fixed_strike_continuous_lookback}
+        validation_bundle_id: analytical:lookback_option
+        payoff_family: lookback_option
+        exercise_style: european
+        model_family: equity_diffusion
+        underlying_asset_class: equity
+        observation_style: path_dependent
     external:
     - quantlib
   status: pending
@@ -1573,10 +1617,20 @@ tasks:
     - quantlib
   status: pending
 - id: T96
-  title: 'Lookback option (fixed strike): MC vs Goldman-Sosin-Gatto analytical'
+  title: 'Lookback option (fixed strike): conditional-bridge MC vs Conze-Viswanathan analytical'
+  description: >-
+    Price a one-year European fixed-strike continuously monitored SPX lookback
+    call with notional 1, spot 100, strike 100, and observed running maximum
+    100. Compare conditional Brownian-bridge Monte Carlo under exact
+    constant-parameter GBM with the fixed-strike continuous analytical formula
+    and return both present values.
+  instrument_type: lookback_option
   construct:
   - monte_carlo
   - analytical
+  market_scenario_id: equity_barrier_smile
+  validation_policy: invariants_and_cross_method
+  task_disposition: executable_pricing
   benchmark_contract:
     product: lookback_option
     notional: 1.0
@@ -1585,15 +1639,47 @@ tasks:
     option_type: call
     lookback_type: fixed_strike
     monitoring_style: continuous
+    exercise_style: european
+    day_count: act/365
     running_extreme: 100.0
     expiry_years: 1.0
+    n_paths: 80000
+    n_steps: 96
+    seed: 42
   new_component:
   - lookback_payoff
-  - gsg_formula
+  - conze_viswanathan_formula
   cross_validate:
     internal:
     - mc_lookback
-    - gsg_analytical
+    - conze_viswanathan_analytical
+    reference_target: conze_viswanathan_analytical
+    relations:
+      mc_lookback: within_tolerance
+    tolerance_pct: 1.25
+    target_contracts:
+      mc_lookback:
+        method: monte_carlo
+        route_id: monte_carlo_paths
+        route_family: monte_carlo
+        variant_parameters: {process: exact_gbm, extremum_sampling: conditional_log_bridge}
+        validation_bundle_id: monte_carlo:lookback_option
+        payoff_family: lookback_option
+        exercise_style: european
+        model_family: equity_diffusion
+        underlying_asset_class: equity
+        observation_style: path_dependent
+      conze_viswanathan_analytical:
+        method: analytical
+        route_id: analytical_black76
+        route_family: analytical
+        variant_parameters: {formula: fixed_strike_continuous_lookback}
+        validation_bundle_id: analytical:lookback_option
+        payoff_family: lookback_option
+        exercise_style: european
+        model_family: equity_diffusion
+        underlying_asset_class: equity
+        observation_style: path_dependent
     external:
     - quantlib
     - financepy

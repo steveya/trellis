@@ -170,11 +170,13 @@ fixed_lookback_analytical_composition:
   modules:
     market_binding: trellis.models.resolution.single_state_diffusion
     time_measure: trellis.core.date_utils
+    numeric_backend: trellis.core.differentiable
     analytical_support: trellis.models.analytical.support
     probability: trellis.models.analytical.support.probability
   key_imports:
     - "from trellis.models.resolution.single_state_diffusion import resolve_scalar_diffusion_market_inputs"
     - "from trellis.core.date_utils import year_fraction"
+    - "from trellis.core.differentiable import get_numpy"
     - "from trellis.models.analytical.support import discount_factor_from_zero_rate, normalized_option_type"
     - "from trellis.models.analytical.support.probability import standard_normal_cdf"
   notes:

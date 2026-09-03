@@ -3353,6 +3353,194 @@ def test_generated_arithmetic_asian_primitive_lanes_execute_and_agree(option_typ
     )
 
 
+def test_deterministic_exact_binding_module_materializes_lookback_analytical_target():
+    from trellis.agent.codegen_guardrails import build_generation_plan
+    from trellis.agent.executor import (
+        EVALUATE_SENTINEL,
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.knowledge.schema import ProductIR
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.agent.quant import PricingPlan
+
+    generation_plan = build_generation_plan(
+        pricing_plan=PricingPlan(
+            method="analytical",
+            method_modules=[],
+            required_market_data={"discount_curve", "black_vol_surface"},
+            model_to_build="lookback_option",
+            reasoning="compose fixed lookback from analytical primitives",
+        ),
+        instrument_type="lookback_option",
+        inspected_modules=(),
+        product_ir=ProductIR(
+            instrument="lookback_option",
+            payoff_family="lookback_option",
+            payoff_traits=(
+                "lookback",
+                "path_dependent",
+                "fixed_strike",
+                "continuous_monitoring",
+            ),
+            exercise_style="european",
+            state_dependence="path_dependent",
+            model_family="equity_diffusion",
+        ),
+    )
+
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            STATIC_SPECS["lookback_option"],
+            "Lookback option analytical proof target",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        request_metadata={
+            "comparison_target_contract": {
+                "schema_version": 1,
+                "contract_id": "comparison-target:T30:conze_viswanathan_analytical:v1",
+                "target_id": "conze_viswanathan_analytical",
+                "method": "analytical",
+                "route_id": "analytical_black76",
+                "route_family": "analytical",
+                "variant_parameters": {
+                    "formula": "fixed_strike_continuous_lookback"
+                },
+                "validation_bundle_id": "analytical:lookback_option",
+                "payoff_family": "lookback_option",
+                "exercise_style": "european",
+                "model_family": "equity_diffusion",
+                "observation_style": "path_dependent",
+                "semantic_axes": {"underlying_asset_class": "equity"},
+                "explicit": True,
+            }
+        },
+        comparison_target="conze_viswanathan_analytical",
+    )
+
+    assert generated is not None
+    for symbol in (
+        "resolve_scalar_diffusion_market_inputs(",
+        "year_fraction(",
+        "get_numpy(",
+        "normalized_option_type(",
+        "discount_factor_from_zero_rate(",
+        "standard_normal_cdf(",
+        "running_extreme",
+        "fixed_strike",
+        "continuous",
+        "__trellis_comparison_bindings__",
+    ):
+        assert symbol in generated.code
+    assert "price_equity_fixed_lookback_option_analytical" not in generated.code
+    assert "trellis.models.analytical.equity_exotics" not in generated.code
+    assert "raise NotImplementedError" not in generated.code
+    assert EVALUATE_SENTINEL not in generated.code
+
+
+@pytest.mark.parametrize(
+    ("option_type", "running_extreme"),
+    [("call", 120.0), ("put", 82.0)],
+)
+def test_generated_lookback_analytical_composition_matches_checked_adapter(
+    option_type,
+    running_extreme,
+):
+    from datetime import date as _date
+
+    from trellis.agent.executor import (
+        _generate_skeleton,
+        _materialize_deterministic_exact_binding_module,
+    )
+    from trellis.agent.planner import STATIC_SPECS
+    from trellis.core.market_state import MarketState
+    from trellis.curves.yield_curve import YieldCurve
+    from trellis.instruments._agent.lookbackoption import (
+        LookbackOptionPayoff as CheckedLookbackOptionPayoff,
+    )
+    from trellis.instruments._agent.lookbackoption import (
+        LookbackOptionSpec as CheckedLookbackOptionSpec,
+    )
+    from trellis.models.vol_surface import FlatVol
+
+    primitive_refs = (
+        "trellis.models.resolution.single_state_diffusion.resolve_scalar_diffusion_market_inputs",
+        "trellis.core.date_utils.year_fraction",
+        "trellis.models.analytical.support.normalized_option_type",
+        "trellis.models.analytical.support.discount_factor_from_zero_rate",
+        "trellis.models.analytical.support.probability.standard_normal_cdf",
+        "trellis.core.differentiable.get_numpy",
+    )
+    generation_plan = SimpleNamespace(
+        lane_exact_binding_refs=primitive_refs,
+        primitive_plan=None,
+        method="analytical",
+        instrument_type="lookback_option",
+    )
+    schema = STATIC_SPECS["lookback_option"]
+    generated = _materialize_deterministic_exact_binding_module(
+        _generate_skeleton(
+            schema,
+            "Fixed lookback analytical primitive composition",
+            generation_plan=generation_plan,
+        ),
+        generation_plan,
+        request_metadata={
+            "comparison_target_contract": {
+                "schema_version": 1,
+                "contract_id": "comparison-target:T30:conze_viswanathan_analytical:v1",
+                "target_id": "conze_viswanathan_analytical",
+                "method": "analytical",
+                "route_id": "analytical_black76",
+                "route_family": "analytical",
+                "variant_parameters": {
+                    "formula": "fixed_strike_continuous_lookback"
+                },
+                "validation_bundle_id": "analytical:lookback_option",
+                "payoff_family": "lookback_option",
+                "exercise_style": "european",
+                "model_family": "equity_diffusion",
+                "observation_style": "path_dependent",
+                "semantic_axes": {"underlying_asset_class": "equity"},
+                "explicit": True,
+            }
+        },
+        comparison_target="conze_viswanathan_analytical",
+    )
+
+    assert generated is not None
+    namespace: dict = {}
+    exec(compile(generated.code, "<qua_1249>", "exec"), namespace)  # noqa: S102
+    kwargs = {
+        "notional": 1.7,
+        "spot": 100.0,
+        "strike": 100.0,
+        "expiry_date": _date(2025, 1, 1),
+        "option_type": option_type,
+        "lookback_type": "fixed_strike",
+        "monitoring_style": "continuous",
+        "running_extreme": running_extreme,
+        "dividend_yield": 0.01,
+    }
+    market_state = MarketState(
+        as_of=_date(2024, 1, 1),
+        settlement=_date(2024, 1, 1),
+        spot=103.0,
+        discount=YieldCurve.flat(0.03),
+        vol_surface=FlatVol(0.20),
+    )
+
+    composed = namespace[schema.class_name](
+        namespace[schema.spec_name](**kwargs)
+    ).evaluate(market_state)
+    checked = CheckedLookbackOptionPayoff(
+        CheckedLookbackOptionSpec(**kwargs)
+    ).evaluate(market_state)
+
+    assert composed == pytest.approx(checked, abs=1e-12)
+
+
 def test_deterministic_exact_binding_module_materializes_lookback_mc_target():
     from trellis.agent.codegen_guardrails import build_generation_plan
     from trellis.agent.executor import (

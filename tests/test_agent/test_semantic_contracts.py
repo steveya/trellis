@@ -1265,6 +1265,32 @@ def test_semantic_concept_resolution_maps_cap_wrapper_to_rate_option_strip():
     assert resolution.matched_wrapper == "cap"
 
 
+def test_semantic_concept_resolution_recognizes_bounded_fixed_lookback_option():
+    from trellis.agent.semantic_concepts import resolve_semantic_concept
+
+    resolution = resolve_semantic_concept(
+        "European fixed-strike continuously monitored SPX lookback call with a running maximum.",
+        instrument_type="lookback_option",
+    )
+
+    assert resolution.concept_id == "lookback_option"
+    assert resolution.resolution_kind == "reuse_existing_concept"
+    assert resolution.matched_alias == "lookback_option"
+
+
+def test_generic_continuous_monitoring_is_not_a_lookback_cue():
+    from trellis.agent.semantic_concepts import resolve_semantic_concept
+
+    resolution = resolve_semantic_concept(
+        "Continuously monitored variance swap on SPX.",
+        instrument_type="variance_swap",
+    )
+
+    assert resolution.concept_id != "lookback_option"
+    assert "lookback_option" not in resolution.candidate_concepts
+    assert "lookback_option" not in resolution.conflicting_concepts
+
+
 @pytest.mark.parametrize(
     "description,instrument_type,expected_concept_id,expected_concept_role",
     [

@@ -1147,7 +1147,123 @@ def _validate_legacy_task(
                 path=path,
             )
         )
+    if task_id in {"T30", "T96"}:
+        issues.extend(
+            _validate_legacy_lookback_comparison_contract(
+                manifest_name,
+                task,
+                path,
+            )
+        )
     return issues
+
+
+def _validate_legacy_lookback_comparison_contract(
+    manifest_name: str,
+    task: Mapping[str, Any],
+    path: str,
+) -> list[TaskManifestIssue]:
+    """Keep the two executable legacy lookback proofs on one bounded contract."""
+    contract = task.get("benchmark_contract")
+    cross_validate = task.get("cross_validate")
+    contract = contract if isinstance(contract, Mapping) else {}
+    cross_validate = cross_validate if isinstance(cross_validate, Mapping) else {}
+    targets = cross_validate.get("target_contracts")
+    targets = targets if isinstance(targets, Mapping) else {}
+
+    expected_contract = {
+        "product": "lookback_option",
+        "notional": 1.0,
+        "spot": 100.0,
+        "strike": 100.0,
+        "option_type": "call",
+        "lookback_type": "fixed_strike",
+        "monitoring_style": "continuous",
+        "exercise_style": "european",
+        "day_count": "act/365",
+        "running_extreme": 100.0,
+        "expiry_years": 1.0,
+        "n_paths": 80_000,
+        "n_steps": 96,
+        "seed": 42,
+    }
+    expected_targets = {
+        "mc_lookback": {
+            "method": "monte_carlo",
+            "route_id": "monte_carlo_paths",
+            "route_family": "monte_carlo",
+            "validation_bundle_id": "monte_carlo:lookback_option",
+            "payoff_family": "lookback_option",
+            "exercise_style": "european",
+            "model_family": "equity_diffusion",
+            "underlying_asset_class": "equity",
+            "observation_style": "path_dependent",
+        },
+        "conze_viswanathan_analytical": {
+            "method": "analytical",
+            "route_id": "analytical_black76",
+            "route_family": "analytical",
+            "validation_bundle_id": "analytical:lookback_option",
+            "payoff_family": "lookback_option",
+            "exercise_style": "european",
+            "model_family": "equity_diffusion",
+            "underlying_asset_class": "equity",
+            "observation_style": "path_dependent",
+        },
+    }
+
+    construct = task.get("construct")
+    construct_methods = (
+        tuple(str(item).strip() for item in construct)
+        if _nonempty_string_sequence(construct)
+        else ()
+    )
+    internal_targets = cross_validate.get("internal")
+    valid = all(
+        (
+            _text(task.get("task_disposition")) == "executable_pricing",
+            _text(task.get("instrument_type")) == "lookback_option",
+            _text(task.get("market_scenario_id")) == "equity_barrier_smile",
+            _text(task.get("validation_policy")) == "invariants_and_cross_method",
+            construct_methods == ("monte_carlo", "analytical"),
+            all(contract.get(key) == value for key, value in expected_contract.items()),
+            tuple(internal_targets or ())
+            == ("mc_lookback", "conze_viswanathan_analytical"),
+            _text(cross_validate.get("reference_target"))
+            == "conze_viswanathan_analytical",
+            cross_validate.get("relations") == {"mc_lookback": "within_tolerance"},
+            cross_validate.get("tolerance_pct") == 1.25,
+            set(targets) == set(expected_targets),
+            all(
+                isinstance(targets.get(target_id), Mapping)
+                and all(
+                    targets[target_id].get(key) == value
+                    for key, value in expected.items()
+                )
+                for target_id, expected in expected_targets.items()
+            ),
+            isinstance(targets.get("mc_lookback"), Mapping)
+            and targets["mc_lookback"].get("variant_parameters")
+            == {
+                "process": "exact_gbm",
+                "extremum_sampling": "conditional_log_bridge",
+            },
+            isinstance(targets.get("conze_viswanathan_analytical"), Mapping)
+            and targets["conze_viswanathan_analytical"].get("variant_parameters")
+            == {"formula": "fixed_strike_continuous_lookback"},
+        )
+    )
+    if valid:
+        return []
+    return [
+        _issue(
+            manifest_name,
+            "legacy.lookback_invalid_contract",
+            "T30/T96 require the bounded fixed-strike continuous lookback comparison contract",
+            task_id=_text(task.get("id")),
+            path=path,
+        )
+    ]
 
 
 def _validate_legacy_expected_honest_block(

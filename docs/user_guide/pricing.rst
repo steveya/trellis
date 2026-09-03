@@ -436,6 +436,16 @@ retained structured helper is statistical rather than a same-seed path replay.
 At least two paths are required so the generated route always has meaningful
 estimator evidence.
 
+The legacy comparison requests ``T30`` and ``T96`` bind this route to the
+``equity_barrier_smile`` scenario and make their statistical controls part of
+the request: 80,000 paths, 96 time steps, and seed 42. They compare the Monte
+Carlo PV to the fixed-strike continuous analytical PV with a 1.25% relative
+tolerance. Reproducing those proof results therefore requires preserving the
+authored controls; changing path count, time grid, or seed defines different
+numerical evidence.
+The analytical target is named ``conze_viswanathan_analytical`` to match the
+fixed-strike formula actually exercised by the library.
+
 Generated code applies strike, notional, expiry settlement, discounting, and
 estimator checks. This lane requires ``lookback_type="fixed_strike"``,
 ``monitoring_style="continuous"``, European exercise, and exact

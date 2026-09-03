@@ -1288,6 +1288,7 @@ def test_legacy_lookback_tasks_resolve_identity_independently_of_formula_alias(
         target.target_id: target.preferred_method
         for target in build_comparison_harness_plan(task).targets
     }
+    comparison_plan = build_comparison_harness_plan(task)
     analytical_plan = build_generation_plan(
         pricing_plan=PricingPlan(
             method="analytical",
@@ -1319,7 +1320,30 @@ def test_legacy_lookback_tasks_resolve_identity_independently_of_formula_alias(
     }
     assert methods == {
         "mc_lookback": "monte_carlo",
-        "gsg_analytical": "analytical",
+        "conze_viswanathan_analytical": "analytical",
+    }
+    assert comparison_plan.reference_target == "conze_viswanathan_analytical"
+    assert comparison_plan.tolerance_pct == pytest.approx(1.25)
+    assert {
+        target.target_id: target.relation for target in comparison_plan.targets
+    } == {
+        "mc_lookback": "within_tolerance",
+        "conze_viswanathan_analytical": None,
+    }
+    assert all(target.contract.explicit for target in comparison_plan.targets)
+    assert {
+        target.target_id: target.contract.route_id
+        for target in comparison_plan.targets
+    } == {
+        "mc_lookback": "monte_carlo_paths",
+        "conze_viswanathan_analytical": "analytical_black76",
+    }
+    assert {
+        target.target_id: target.contract.observation_style
+        for target in comparison_plan.targets
+    } == {
+        "mc_lookback": "path_dependent",
+        "conze_viswanathan_analytical": "path_dependent",
     }
     assert analytical_plan.primitive_plan is not None
     primitive_refs = {
