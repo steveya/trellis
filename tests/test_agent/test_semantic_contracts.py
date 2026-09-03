@@ -1291,6 +1291,93 @@ def test_generic_continuous_monitoring_is_not_a_lookback_cue():
     assert "lookback_option" not in resolution.conflicting_concepts
 
 
+def test_explicit_lookback_contract_validates_and_compiles_supported_methods():
+    from trellis.agent.semantic_contract_compiler import compile_semantic_contract
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import (
+        SemanticContract,
+        make_lookback_option_contract,
+    )
+
+    contract = make_lookback_option_contract(
+        description=(
+            "European fixed-strike continuously monitored SPX lookback call "
+            "with running maximum 100, strike 100, and expiry 2025-11-15"
+        ),
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+        preferred_method="analytical",
+    )
+    explicit_terms = dict(contract.product.term_fields)
+    explicit_terms.update({"strike": 100.0, "notional": 1_000_000.0})
+    contract = replace(
+        contract,
+        product=replace(contract.product, term_fields=explicit_terms),
+    )
+
+    assert isinstance(contract, SemanticContract)
+    assert validate_semantic_contract(contract).ok
+
+    analytical = compile_semantic_contract(contract)
+    monte_carlo = compile_semantic_contract(
+        contract,
+        preferred_method="monte_carlo",
+    )
+
+    assert analytical.semantic_id == "lookback_option"
+    assert analytical.product_ir.instrument == "lookback_option"
+    assert analytical.product_ir.payoff_family == "lookback_option"
+    assert analytical.pricing_plan.method == "analytical"
+    assert analytical.primitive_routes == ("analytical_black76",)
+    assert (
+        "trellis.models.resolution.single_state_diffusion"
+        in analytical.target_modules
+    )
+    assert monte_carlo.pricing_plan.method == "monte_carlo"
+    assert monte_carlo.primitive_routes == ("monte_carlo_paths",)
+    assert dict(monte_carlo.contract.product.term_fields) == explicit_terms
+    assert (
+        "trellis.models.monte_carlo.transition_state"
+        in monte_carlo.target_modules
+    )
+
+
+@pytest.mark.parametrize(
+    ("term_field", "value", "expected_error"),
+    (
+        ("lookback_type", "floating_strike", "lookback_type `fixed_strike`"),
+        ("monitoring_style", "discrete", "monitoring_style `continuous`"),
+        ("running_extreme", -1.0, "finite positive running_extreme"),
+    ),
+)
+def test_explicit_lookback_contract_rejects_unsupported_variants(
+    term_field,
+    value,
+    expected_error,
+):
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    contract = make_lookback_option_contract(
+        description="European fixed-strike continuous SPX lookback call",
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+    )
+    term_fields = dict(contract.product.term_fields)
+    term_fields[term_field] = value
+    contract = replace(
+        contract,
+        product=replace(contract.product, term_fields=term_fields),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any(expected_error in error for error in report.errors)
+
+
 @pytest.mark.parametrize(
     "description,instrument_type,expected_concept_id,expected_concept_role",
     [

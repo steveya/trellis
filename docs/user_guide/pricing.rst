@@ -445,6 +445,11 @@ authored controls; changing path count, time grid, or seed defines different
 numerical evidence.
 The analytical target is named ``conze_viswanathan_analytical`` to match the
 fixed-strike formula actually exercised by the library.
+For typed workflows, ``make_lookback_option_contract(...)`` constructs this
+same bounded semantic contract and ``compile_semantic_contract(...)`` accepts
+``analytical`` and ``monte_carlo`` as its two method surfaces. The factory
+requires one underlier, an expiry schedule, and a finite positive running
+extreme; compilation does not infer unsupported lookback variants.
 
 Generated code applies strike, notional, expiry settlement, discounting, and
 estimator checks. This lane requires ``lookback_type="fixed_strike"``,
