@@ -1418,6 +1418,18 @@ def test_explicit_lookback_contract_requires_exactly_one_expiry():
         )
 
 
+def test_explicit_lookback_contract_requires_valid_iso_expiry():
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    with pytest.raises(ValueError, match="valid ISO expiry"):
+        make_lookback_option_contract(
+            description="European fixed-strike continuous SPX lookback call",
+            underliers=("SPX",),
+            observation_schedule=("not-a-date",),
+            running_extreme=100.0,
+        )
+
+
 def test_lookback_validation_rejects_multiple_expiries():
     from trellis.agent.semantic_contract_validation import validate_semantic_contract
     from trellis.agent.semantic_contracts import make_lookback_option_contract
@@ -1440,6 +1452,30 @@ def test_lookback_validation_rejects_multiple_expiries():
 
     assert not report.ok
     assert any("exactly one expiry" in error for error in report.errors)
+
+
+def test_lookback_validation_rejects_invalid_iso_expiry():
+    from trellis.agent.semantic_contract_validation import validate_semantic_contract
+    from trellis.agent.semantic_contracts import make_lookback_option_contract
+
+    contract = make_lookback_option_contract(
+        description="European fixed-strike continuous SPX lookback call",
+        underliers=("SPX",),
+        observation_schedule=("2025-11-15",),
+        running_extreme=100.0,
+    )
+    contract = replace(
+        contract,
+        product=replace(
+            contract.product,
+            observation_schedule=("not-a-date",),
+        ),
+    )
+
+    report = validate_semantic_contract(contract)
+
+    assert not report.ok
+    assert any("valid ISO expiry" in error for error in report.errors)
 
 
 @pytest.mark.parametrize("option_type", (None, "straddle"))

@@ -6,6 +6,7 @@ import hashlib
 import math
 import re
 from dataclasses import dataclass
+from datetime import date
 from types import MappingProxyType
 
 import trellis.core.capabilities as capability_registry
@@ -1962,6 +1963,11 @@ def _validate_lookback_option_shape(
     observation_schedule = tuple(contract.product.observation_schedule or ())
     if len(observation_schedule) != 1:
         errors.append("Lookback option semantics require exactly one expiry date.")
+    else:
+        try:
+            date.fromisoformat(str(observation_schedule[0]))
+        except ValueError:
+            errors.append("Lookback option semantics require a valid ISO expiry date.")
     option_type = str(getattr(contract.product, "option_type", "") or "").strip().lower()
     if option_type not in _ALLOWED_OPTION_TYPES:
         errors.append(
